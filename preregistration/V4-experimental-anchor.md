@@ -44,15 +44,14 @@ easiest agreement in the comparison.
 
 **Threshold: ρ ≥ 0.6.**
 
-Stated as the judgement it is. No converged published range exists for this
-comparison: where the force-field literature quantifies agreement with
-B-factors it reports an absolute error in Å² rather than a correlation, and
-a survey of 41 NMR and 40 crystal structures found that B-factors do not
-show the coordinate-variance patterns MD trajectories and NMR ensembles
-share. Below 0.6 the orderings disagree enough that the simulation and the
-crystal are not identifying the same flexible regions. Above it they are —
-which is all this comparison establishes, and specifically not that the
-amplitudes agree.
+Stated as the judgement it is, and set without appeal to any published
+acceptance range. Below 0.6 the two orderings disagree enough that the
+simulation and the crystal are not identifying the same flexible regions;
+above it they are — which is all this comparison establishes, and
+specifically not that the amplitudes agree.
+
+The number is not derived from anything. It is written down here, before the
+result exists, so that it is a commitment rather than a description.
 
 ## Expected direction of disagreement
 
