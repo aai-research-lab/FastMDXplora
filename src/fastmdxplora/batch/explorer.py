@@ -788,8 +788,16 @@ class BatchExplorer:
         if not self.is_single:
             self._write_batch_manifest()
             self._maybe_aggregate_members()
-            self._maybe_build_comparison()
+            # The free energy first, because the comparison report reads it.
+            # `_umbrella_result` looks for `pmf.json` beside the manifest and
+            # treats its absence as "these runs are not an umbrella study",
+            # so building the comparison first meant an umbrella campaign was
+            # written up as a set of independent runs whose radius of
+            # gyration happened to differ -- the preamble that says otherwise
+            # exists, and never ran. A batch that is not umbrella exits
+            # `_maybe_build_pmf` at its first check and is unaffected.
             self._maybe_build_pmf()
+            self._maybe_build_comparison()
             self._print_summary()
         return list(self.results)
 
