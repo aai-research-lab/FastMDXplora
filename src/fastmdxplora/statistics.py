@@ -248,26 +248,37 @@ def summarise(
 
     discard, g, effective = detect_equilibration(values)
     kept = values[discard:]
+    resolved = correlation_is_resolved(kept)
 
     settled = Settled(
         discard=discard,
         inefficiency=g,
         effective_samples=effective,
         mean=float(np.mean(kept)),
+        # Withheld where the correlation is unresolved, rather than printed
+        # beside a warning that it cannot be trusted. An effective-sample
+        # count that is an upper bound makes an error computed from it a
+        # lower bound, and a number wrong in a knowable direction is worse
+        # than no number: the caveat is read once and the figure is used
+        # thereafter. Measured on ten replicas of one system differing only
+        # by integrator seed, errors computed this way came out five to eight
+        # times smaller than the spread of the ten means.
         standard_error=float(np.std(kept, ddof=1) / np.sqrt(effective))
-        if effective > 1 else float("nan"),
+        if (effective > 1 and resolved) else float("nan"),
         standard_deviation=float(np.std(kept, ddof=1)),
     )
 
-    if not correlation_is_resolved(kept):
+    if not resolved:
         return settled, (
             f"This run is not long against its own correlation time: taking "
             f"half the frames away changes the estimate, so {kept.size} frames "
             "cannot measure how correlated they are. The independent-sample "
-            f"count of {effective:.1f} is therefore an upper bound, and the "
-            "true figure is smaller -- on a test series where the answer was "
-            "known, an estimate made this way read eleven when the truth was "
-            "two. A longer run is the only remedy."
+            f"count of {effective:.1f} is an upper bound, so an error computed "
+            "from it would be a lower bound -- and none is reported here "
+            "rather than one that is wrong in a knowable direction. On ten "
+            "replicas of one system differing only by seed, errors of this "
+            "kind were five to eight times smaller than the spread of the ten "
+            "means. The remedy is a longer run, or replicas."
         )
 
     if effective < minimum_effective_samples:

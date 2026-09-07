@@ -213,7 +213,27 @@ class TestARunTooShortToMeasureItsOwnCorrelation:
     def test_the_refusal_says_the_count_is_an_upper_bound(self) -> None:
         _settled, refusal = summarise(_correlated(0.999, 4000, seed=7))
         assert "upper bound" in refusal
-        assert "longer run is the only remedy" in refusal
+        assert "longer run" in refusal
+        assert "replicas" in refusal, (
+            "a longer run was called the only remedy until ten replicas of one "
+            "system, differing only by integrator seed, spread five to eight "
+            "times wider than the error computed from within a single run. "
+            "Replicas measure that spread directly; the wording now says so")
+
+    def test_no_error_is_reported_where_the_correlation_is_unresolved(
+            self) -> None:
+        """An effective-sample count that is an upper bound makes an error
+        computed from it a lower bound. Printed beside its caveat, such a
+        number gets used and the caveat does not: three interaction
+        occupancies the analysis had flagged reached a manuscript draft that
+        way. It is withheld instead."""
+        settled, refusal = summarise(_correlated(0.999, 4000, seed=7))
+        assert refusal is not None
+        assert np.isnan(settled.standard_error)
+        assert not np.isnan(settled.mean), "the mean is still reported"
+        assert not np.isnan(settled.standard_deviation), (
+            "the spread of the series is a property of the system and does "
+            "not depend on how independent the frames are")
 
     def test_a_short_series_with_a_correlation_cannot_resolve_it(self) -> None:
         assert not correlation_is_resolved(np.arange(30.0))
