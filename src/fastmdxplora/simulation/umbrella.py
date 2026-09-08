@@ -300,7 +300,13 @@ def expand_umbrella(config: dict[str, Any]) -> dict[str, Any]:
         # per-system block replaces the top-level one rather than merging, so
         # a block holding only the umbrella settings silently discarded the
         # step counts, the timestep and everything else the study asked for.
-        merged = {k: v for k, v in simulation.items() if k != "umbrella"}
+        # `steered` is excluded alongside `umbrella`: a pull beside an
+        # umbrella block means "seed the windows from one pull", and copying
+        # it into every window would have each of them drag the ligand out
+        # again while restrained at a fixed point. The study keeps the block;
+        # the windows do not.
+        merged = {k: v for k, v in simulation.items()
+                  if k not in ("umbrella", "steered")}
         merged.update(entry.get("simulation") or {})
         entry["simulation"] = merged
         entry["simulation"]["umbrella"] = dict(

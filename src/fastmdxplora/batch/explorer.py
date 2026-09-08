@@ -913,11 +913,89 @@ class BatchExplorer:
         _check_selections_against(
             prepared, self.run_specs[0].options.get("simulation") or {})
 
+        seeds = self._maybe_seed_the_windows(prepared)
         for spec in self.run_specs:
             simulation = dict(spec.options.get("simulation") or {})
-            simulation["prepared_from"] = str(prepared)
+            index = (simulation.get("umbrella") or {}).get("index")
+            mine = seeds.get(int(index)) if index is not None else None
+            simulation["prepared_from"] = str(mine or prepared)
+            # A window does not pull. The block travels with the study so
+            # this method can find it; leaving it on the window would have
+            # every one of them drag the ligand out again while restrained.
+            simulation.pop("steered", None)
             spec.options["simulation"] = simulation
         return prepared
+
+    # ------------------------------------------------------------------
+    def _maybe_seed_the_windows(self, prepared: Path) -> dict[int, str]:
+        """Start each window where it belongs, from a steered pull.
+
+        Empty where the study did not ask for it, and every window then
+        shares the one prepared state as before.
+
+        Two ways to ask, because there are two situations. A `steered` block
+        beside the `umbrella` one means *pull, then seed*: one config, one
+        command, which is the case this exists for. `umbrella.seed_from`
+        naming a finished pull means *reuse that one*, which matters because
+        retuning the spacing or the force constant should not cost another
+        pull -- the windows change, the pathway does not.
+
+        The pull runs from the same prepared system the windows will use.
+        Seeds are positions in a particular `system.xml`, and positions from
+        a second preparation belong to a different arrangement of water.
+        """
+        from fastmdxplora.simulation.seeding import seed_windows
+        from fastmdxplora.simulation.umbrella import plan_from_expanded
+
+        raw = self._raw or {}
+        simulation = raw.get("simulation") or {}
+        pull_spec = simulation.get("steered")
+        plan = plan_from_expanded(raw)
+        if plan is None:
+            return {}
+
+        first_window = (self.run_specs[0].options.get("simulation") or {}
+                        ).get("umbrella") or {}
+        reuse = first_window.get("seed_from")
+        if not pull_spec and not reuse:
+            return {}
+
+        pull_output = (Path(reuse) if reuse
+                       else self.output_dir / "seed_pull")
+        if pull_spec and not _a_pull_is_there(pull_output):
+            print("\nPulling once, to start every window where it belongs\n"
+                  + "=" * 52)
+            options = dict(self.run_specs[0].to_dict())
+            carried = {k: v for k, v in simulation.items()
+                       if k not in ("umbrella", "steered")}
+            carried["prepared_from"] = str(prepared)
+            carried["steered"] = pull_spec
+            options["simulation"] = carried
+            result = _execute_run(
+                options, str(pull_output), ["simulation"], None,
+                self.verbose, None, quiet=False, force=self.force,
+            )
+            if result.status == "error":
+                raise RuntimeError(
+                    "The pull that seeds the windows did not finish, so "
+                    "there are no starting structures to take: "
+                    f"{result.message or pull_output}"
+                )
+
+        centres = [w.centre for w in plan.windows]
+        seeds = seed_windows(
+            pull_output, prepared, centres, self.output_dir / "seeds",
+            ligand_resname=str(first_window.get("ligand_resname") or ""),
+            site_selection=str(first_window.get("site_selection") or ""),
+            temperature_K=float(simulation.get("temperature_K", 300.0)),
+            random_seed=int(simulation.get("random_seed") or 0),
+        )
+        record = self.output_dir / "seeds" / "seeds.json"
+        record.write_text(
+            json.dumps({"pull": str(pull_output),
+                        "seeds": [s.as_record() for s in seeds]}, indent=2),
+            encoding="utf-8")
+        return {s.index: s.directory for s in seeds}
 
     # ------------------------------------------------------------------
     def _maybe_build_pmf(self) -> None:
@@ -1385,3 +1463,14 @@ class BatchExplorer:
         )
         print(f"Batch output:   {self.output_dir}")
         print(f"Manifest:       {self.output_dir / 'batch_manifest.json'}")
+
+
+def _a_pull_is_there(directory: Path) -> bool:
+    """Whether a finished pull already sits where one would be written.
+
+    A study re-run with the same output does not pull again: the pathway is
+    the expensive part and it does not change when the windows do.
+    """
+    root = directory / "simulation"
+    root = root if root.is_dir() else directory
+    return any(root.glob("*.dcd")) or any(root.glob("*.xtc"))

@@ -544,7 +544,14 @@ SIMULATION = PhaseSchema(
               "histogram must be before anything is concluded from it. The "
               "system is prepared once and every window simulates from it, "
               "so a difference between windows is the restraint rather than "
-              "where the water landed.",
+              "where the water landed. Add a `steered` block beside this one "
+              "and the study pulls once first and starts each window from "
+              "the frame nearest its own centre -- which is what a window "
+              "near a barrier needs, since a restraint cannot move a system "
+              "across one and a window started on the wrong side stays "
+              "there. `seed_from` reuses a finished pull instead of running "
+              "another, so retuning the spacing or the force constant costs "
+              "windows and not a pathway.",
               example={"collective_variable": "distance",
                        "selection_a": "resname BNZ", "selection_b": "protein",
                        "from": 0.3, "to": 1.5, "n_windows": 7,
