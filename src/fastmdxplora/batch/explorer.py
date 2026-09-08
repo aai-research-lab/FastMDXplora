@@ -858,8 +858,16 @@ class BatchExplorer:
         wanted = set(include) if include else {"setup", "simulation",
                                                "analysis", "report"}
         if "setup" not in wanted or "setup" in set(exclude or []):
-            # Nothing is being prepared at all -- the windows are simulating
-            # from something that already exists.
+            # Nothing is being prepared here -- the windows are simulating
+            # from something that already exists. They may still need
+            # seeding, and this is the path a study takes when it reuses a
+            # prepared system, which is exactly when seeding matters most.
+            # Returning early without seeding meant a study could ask to be
+            # seeded, say nothing, and start every window in the same place.
+            supplied = (self._raw or {}).get("simulation", {}).get(
+                "prepared_from")
+            if supplied:
+                self._give_each_window_its_start(Path(supplied))
             return None
         if wanted == {"setup"}:
             # Preparing is the whole study. There is nothing to share it
@@ -913,6 +921,19 @@ class BatchExplorer:
         _check_selections_against(
             prepared, self.run_specs[0].options.get("simulation") or {})
 
+        self._give_each_window_its_start(prepared)
+        return prepared
+
+    # ------------------------------------------------------------------
+    def _give_each_window_its_start(self, prepared: Path) -> None:
+        """Point every window at the system it begins from.
+
+        One place, because there are two ways to arrive here -- a system
+        prepared just now, or one named by `prepared_from` and reused -- and
+        a seeded study must behave the same either way. It did not: seeding
+        lived on one of those paths, so asking to reuse a prepared system
+        silently turned seeding off.
+        """
         seeds = self._maybe_seed_the_windows(prepared)
         for spec in self.run_specs:
             simulation = dict(spec.options.get("simulation") or {})
@@ -920,11 +941,11 @@ class BatchExplorer:
             mine = seeds.get(int(index)) if index is not None else None
             simulation["prepared_from"] = str(mine or prepared)
             # A window does not pull. The block travels with the study so
-            # this method can find it; leaving it on the window would have
-            # every one of them drag the ligand out again while restrained.
+            # `_maybe_seed_the_windows` can find it; leaving it on the window
+            # would have every one of them drag the ligand out again while
+            # restrained at a fixed point.
             simulation.pop("steered", None)
             spec.options["simulation"] = simulation
-        return prepared
 
     # ------------------------------------------------------------------
     def _maybe_seed_the_windows(self, prepared: Path) -> dict[int, str]:

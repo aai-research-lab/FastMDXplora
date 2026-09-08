@@ -378,9 +378,17 @@ def _pull_files(pull: Path) -> tuple[Path, Path]:
 def _check_against_colvar(pull: Path, measured: np.ndarray) -> None:
     """Compare the recomputed variable with the one PLUMED biased.
 
-    Not an alignment -- the two are written on different strides. Both cover
-    the same pull, so their ranges must match; where they do not, the
-    selections here are measuring something PLUMED was not.
+    Not an alignment -- the two are written on different strides. Both
+    sample the same run over the same interval, so their distributions must
+    sit in the same place; where they do not, the selections here are
+    measuring something PLUMED was not.
+
+    Compared on the median rather than the first and last values. Endpoints
+    work for a pull, whose ends are a nanometre and a half apart, and fail
+    for anything held still: a restrained window fluctuates by more than the
+    tolerance within a picosecond, so two correct series would disagree at
+    their last recorded value and a good measurement would be refused. The
+    median of a series does not care which stride wrote it.
     """
     simulation = pull / "simulation"
     root = simulation if simulation.is_dir() else pull
@@ -390,17 +398,17 @@ def _check_against_colvar(pull: Path, measured: np.ndarray) -> None:
                     "recomputed and not cross-checked.")
         return
     _, cv = record
-    for name, ours, theirs in (("start", measured[0], cv[0]),
-                               ("end", measured[-1], cv[-1])):
-        if abs(float(ours) - float(theirs)) > COLVAR_AGREEMENT_NM:
-            raise ValueError(
-                f"At the {name} of the pull this module measures "
-                f"{float(ours):.3f} nm and PLUMED recorded "
-                f"{float(theirs):.3f} nm. Those are different quantities, so "
-                "the `ligand_resname` and `site_selection` used to seed are "
-                "not the ones that were biased, and the seeds would sit at "
-                "distances nobody asked for."
-            )
+    ours, theirs = float(np.median(measured)), float(np.median(cv))
+    if abs(ours - theirs) > COLVAR_AGREEMENT_NM:
+        raise ValueError(
+            f"Over this run the collective variable recomputed here has "
+            f"median {ours:.3f} nm and the one PLUMED biased has median "
+            f"{theirs:.3f} nm (spans {measured.min():.3f}-{measured.max():.3f} "
+            f"against {cv.min():.3f}-{cv.max():.3f}). Those are different "
+            "quantities, so the `ligand_resname` and `site_selection` used to "
+            "seed are not the ones that were biased, and the seeds would sit "
+            "at distances nobody asked for."
+        )
 
 
 def _report(chosen: list[tuple[int, float]], centres: list[float],

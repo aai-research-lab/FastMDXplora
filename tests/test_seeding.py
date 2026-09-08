@@ -116,6 +116,28 @@ def test_the_pull_is_checked_against_what_plumed_actually_biased(tmp_path):
         _check_against_colvar(tmp_path, wrong)
 
 
+def test_a_held_window_is_not_refused_for_fluctuating(tmp_path):
+    """The check must survive a series that goes nowhere.
+
+    Comparing first and last values suits a pull, whose ends are a
+    nanometre apart. A restrained window moves further than the tolerance
+    between one frame and the next, so endpoint comparison refused correct
+    measurements. The median does not care where the series happened to be
+    when the last frame was written.
+    """
+    simulation = tmp_path / "simulation"
+    simulation.mkdir()
+    rng = np.random.default_rng(0)
+    held = 0.817 + 0.05 * rng.standard_normal(4000)
+    rows = "\n".join(f" {1500 + 0.2 * i:.6f} {v:.6f} 1.0"
+                      for i, v in enumerate(held))
+    (simulation / "COLVAR").write_text(
+        "#! FIELDS time cv restraint.bias\n" + rows + "\n", encoding="utf-8")
+
+    # The same distribution, sampled on a coarser stride, as a trajectory is.
+    _check_against_colvar(tmp_path, held[::50])
+
+
 def test_no_colvar_means_no_cross_check_rather_than_a_failure(tmp_path):
     _check_against_colvar(tmp_path, np.array([0.3, 0.4]))
 
@@ -197,3 +219,98 @@ def test_the_plan_still_rebuilds_from_a_seeded_study():
     assert len(plan.windows) == 5
     assert [w.index for w in plan.windows] == [0, 1, 2, 3, 4]
     assert plan.windows[0].force_constant == 3000.0
+
+
+def _explorer_with(windows, raw, monkeypatch, seeds=None):
+    """A BatchExplorer with only what these two paths read.
+
+    Built without `__init__` on purpose: constructing a real study needs a
+    structure, a force field and a directory, and none of that is what is
+    being tested here. What is being tested is which windows end up pointing
+    at which starting system.
+    """
+    from types import SimpleNamespace
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    explorer = BatchExplorer.__new__(BatchExplorer)
+    explorer._is_umbrella = True
+    explorer._raw = raw
+    explorer.run_specs = [
+        SimpleNamespace(options={"simulation": {"umbrella": {"index": i}}})
+        for i in range(windows)
+    ]
+    monkeypatch.setattr(explorer, "_maybe_seed_the_windows",
+                        lambda prepared: dict(seeds or {}))
+    return explorer
+
+
+def test_reusing_a_prepared_system_still_seeds_the_windows(monkeypatch):
+    """Excluding setup must not turn seeding off.
+
+    Reusing a prepared system is how a study avoids preparing twice, and it
+    is the path a seeded rerun takes. Seeding lived on the other path, so
+    asking for both gave every window the same starting point and the
+    original failure back, two days later.
+    """
+    explorer = _explorer_with(
+        3,
+        {"simulation": {"prepared_from": "runs/earlier/shared_setup/setup"}},
+        monkeypatch,
+        seeds={0: "seeds/window-00", 1: "seeds/window-01",
+               2: "seeds/window-02"},
+    )
+
+    assert explorer._maybe_prepare_once(None, ["setup"]) is None
+
+    starts = [s.options["simulation"]["prepared_from"]
+              for s in explorer.run_specs]
+    assert starts == ["seeds/window-00", "seeds/window-01", "seeds/window-02"]
+
+
+def test_a_window_without_a_seed_falls_back_to_the_shared_system(monkeypatch):
+    """A partial seeding is not a silent one.
+
+    Where no seed exists for a window it starts from the shared prepared
+    system, which is the behaviour before any of this existed.
+    """
+    explorer = _explorer_with(
+        3,
+        {"simulation": {"prepared_from": "runs/earlier/shared_setup/setup"}},
+        monkeypatch,
+        seeds={1: "seeds/window-01"},
+    )
+
+    explorer._maybe_prepare_once(None, ["setup"])
+
+    starts = [s.options["simulation"]["prepared_from"]
+              for s in explorer.run_specs]
+    assert starts == ["runs/earlier/shared_setup/setup",
+                      "seeds/window-01",
+                      "runs/earlier/shared_setup/setup"]
+
+
+def test_nothing_prepared_and_nothing_supplied_leaves_the_windows_alone(
+        monkeypatch):
+    explorer = _explorer_with(2, {"simulation": {}}, monkeypatch)
+
+    assert explorer._maybe_prepare_once(None, ["setup"]) is None
+    for spec in explorer.run_specs:
+        assert "prepared_from" not in spec.options["simulation"]
+
+
+def test_the_pull_block_never_reaches_a_window(monkeypatch):
+    """Windows must not inherit `steered` even by the reuse path."""
+    explorer = _explorer_with(
+        2,
+        {"simulation": {"prepared_from": "runs/earlier/shared_setup/setup"}},
+        monkeypatch,
+        seeds={0: "seeds/window-00", 1: "seeds/window-01"},
+    )
+    for spec in explorer.run_specs:
+        spec.options["simulation"]["steered"] = {"to": 2.0, "from": 0.334}
+
+    explorer._maybe_prepare_once(None, ["setup"])
+
+    for spec in explorer.run_specs:
+        assert "steered" not in spec.options["simulation"]
