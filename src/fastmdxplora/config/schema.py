@@ -667,6 +667,18 @@ ANALYSIS = PhaseSchema(
         Field("last", int, None,
               "Last frame index (exclusive). Default: full trajectory.",
               example=10000),
+        Field("figure_colours", str, "colour",
+              "What every figure is drawn in. 'colour' uses the Okabe-Ito "
+              "palette, which is chosen to stay distinguishable under the "
+              "common forms of colour vision deficiency. 'greyscale' drops "
+              "hue and carries the same distinctions in value and hatching, "
+              "which is what a print journal wants. 'both' writes the colour "
+              "figure as <name>.png and a greyscale copy as "
+              "<name>_greyscale.png beside it, so the choice does not have "
+              "to be made before the journal is. American spellings are "
+              "accepted.",
+              choices=("colour", "greyscale", "both"),
+              example="both"),
         Field("options", dict, None,
               "Per-analysis option overrides, keyed by analysis name. "
               "E.g. {cluster: {methods: [kmeans], n_clusters: 5}}.",
@@ -844,6 +856,9 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Which frames",
          "Trimming and thinning before anything is measured.",
          ("first", "last", "stride")),
+        ("What the figures look like",
+         "How every figure is drawn, for the screen or for print.",
+         ("figure_colours",)),
     ),
     "report": (
         ("What it says",

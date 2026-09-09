@@ -281,3 +281,101 @@ class TestOneModuleDecidesWhatThingsLookLike:
                 == set(plotting._ROLES_IN_GREY)), (
             "A role defined in one table and not the other is a figure that "
             "changes meaning when greyscale is switched on.")
+
+
+class TestAskingForBothColourAndGreyscale:
+    """A paper wants colour online and greyscale in print.
+
+    Deciding before the journal is chosen means re-running the analysis to
+    change it. Drawing both costs one extra render.
+    """
+
+    def _run_one(self, tmp_path, **kwargs):
+        import mdtraj as md
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator
+
+        top = md.Topology()
+        chain = top.add_chain()
+        residue = top.add_residue("ALA", chain)
+        for index in range(6):
+            top.add_atom("CA" if index == 0 else f"C{index}",
+                         md.element.carbon, residue)
+        traj = md.Trajectory(
+            np.random.RandomState(1).rand(40, 6, 3).astype(np.float32), top)
+        traj.time = (np.arange(40) + 1) * 10.0
+        traj.save_dcd(str(tmp_path / "t.dcd"))
+        traj[0].save_pdb(str(tmp_path / "t.pdb"))
+
+        orchestrator = AnalysisOrchestrator(
+            trajectory=str(tmp_path / "t.dcd"),
+            topology=str(tmp_path / "t.pdb"),
+            output_dir=tmp_path / "out",
+            saving_interval_ps=10.0,
+            **kwargs)
+        results = orchestrator.run(include=["rg"])
+        drawn = sorted(p.name for p in (tmp_path / "out" / "rg").glob("*.png"))
+        return results["rg"], drawn
+
+    def test_colour_alone_writes_one_figure(self, tmp_path):
+        result, drawn = self._run_one(tmp_path, figure_colours="colour")
+        assert drawn == ["rg.png"]
+        assert result.figure_path.name == "rg.png"
+
+    def test_greyscale_alone_still_writes_the_primary_name(self, tmp_path):
+        """Not `rg_greyscale.png`: the report looks for `rg.png`."""
+        result, drawn = self._run_one(tmp_path, figure_colours="greyscale")
+        assert drawn == ["rg.png"]
+
+    def test_both_writes_the_colour_figure_and_a_grey_copy(self, tmp_path):
+        result, drawn = self._run_one(tmp_path, figure_colours="both")
+
+        assert drawn == ["rg.png", "rg_greyscale.png"]
+        # The primary keeps its meaning, so a reader that knows only about
+        # figure_path is unaffected by asking for both.
+        assert result.figure_path.name == "rg.png"
+        names = {p.name for p in result.artifacts}
+        assert {"rg.png", "rg_greyscale.png"} <= names
+
+    def test_the_default_is_colour(self, tmp_path):
+        result, drawn = self._run_one(tmp_path)
+        assert drawn == ["rg.png"]
+
+    def test_an_american_spelling_is_accepted(self, tmp_path):
+        """`centres`/`centers` was the fourth time; this is not the fifth."""
+        result, drawn = self._run_one(tmp_path, figure_colours="grayscale")
+        assert drawn == ["rg.png"]
+
+    def test_the_mode_is_restored_even_when_drawing_raises(self):
+        from fastmdxplora.analysis import plotting
+
+        before = plotting.greyscale_is_on()
+        with pytest.raises(RuntimeError):
+            with plotting.drawn_in("greyscale"):
+                raise RuntimeError("boom")
+        assert plotting.greyscale_is_on() is before, (
+            "Process-wide state left switched by an exception would draw "
+            "every later figure in a mode nobody asked for.")
+
+    def test_a_misspelling_is_refused_by_name(self):
+        from fastmdxplora.analysis.plotting import settle_figure_colours
+
+        with pytest.raises(ValueError) as caught:
+            settle_figure_colours("rainbow")
+        message = str(caught.value)
+        assert "rainbow" in message
+        for accepted in ("colour", "greyscale", "both"):
+            assert accepted in message
+
+    def test_the_setting_reaches_every_interface(self):
+        """One declaration, three interfaces -- the batch 3 lesson.
+
+        `execution.mode` had its accepted values written twice and reached
+        neither the parser nor the form. This asserts the declaration is the
+        single source, so the flag and the form control come from it.
+        """
+        from fastmdxplora.config.schema import ANALYSIS
+
+        field = next(f for f in ANALYSIS.fields
+                     if f.name == "figure_colours")
+        assert field.choices == ("colour", "greyscale", "both")
+        assert field.default == "colour"

@@ -42,7 +42,9 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
-from fastmdxplora.analysis.plotting import new_figure, save_figure
+from fastmdxplora.analysis.plotting import (
+    drawn_in, new_figure, save_figure, settle_figure_colours,
+)
 from fastmdxplora.utils.logging import get_logger
 
 logger = get_logger("analysis.base")
@@ -189,6 +191,7 @@ class Analysis(ABC):
         ylabel: str | None = None,
         figsize: tuple[float, float] | None = None,
         xunit: str | None = None,
+        figure_colours: str | None = None,
         **options: Any,
     ) -> None:
         """Initialize the analysis with user-supplied options.
@@ -210,6 +213,12 @@ class Analysis(ABC):
             X-axis unit for time-series analyses (RMSD, Rg, etc.). The
             default is ``"ns"`` when the trajectory carries a timestep,
             else ``"frames"``. Analyses without a time axis ignore this.
+        figure_colours : {"colour", "greyscale", "both"}, optional
+            What the figure is drawn in. ``"both"`` writes the colour figure
+            as ``<name>.png`` and a greyscale copy as
+            ``<name>_greyscale.png``, which is what a paper usually wants:
+            colour for the online version, greyscale for print. American
+            spellings are accepted. Default ``"colour"``.
         **options
             Analysis-specific keyword arguments. Subclasses access these
             via ``self.options``.
@@ -239,6 +248,9 @@ class Analysis(ABC):
         self._user_ylabel: str | None = ylabel
         self._user_figsize: tuple[float, float] | None = figsize
         self._user_xunit: str | None = xunit
+        #: Settled here rather than at each use, so a misspelling is refused
+        #: once at construction and not discovered when the figure is drawn.
+        self.figure_colours: str = settle_figure_colours(figure_colours)
 
         self.result: Any = None
 
@@ -374,11 +386,18 @@ class Analysis(ABC):
             # learned about its own run was thrown away.
             options_path = self._write_options_manifest()
             data_path = self.save_data(self.result, self.output_dir / f"{self.name}.dat")
-            figure_path = self._do_plot()
-            svg_path = figure_path.with_suffix(".svg")
-            figure_artifacts = [figure_path]
-            if svg_path.is_file():
-                figure_artifacts.append(svg_path)
+            figures = self._do_plot()
+            # The first is the primary -- `<name>.png` -- and is what
+            # `figure_path` has always meant. Any greyscale copy is an
+            # artifact beside it, so a reader that knows only about
+            # `figure_path` is unaffected by asking for both.
+            figure_path = figures[0]
+            figure_artifacts = []
+            for drawn in figures:
+                figure_artifacts.append(drawn)
+                svg_path = drawn.with_suffix(".svg")
+                if svg_path.is_file():
+                    figure_artifacts.append(svg_path)
             finished = datetime.now(timezone.utc).isoformat()
             return AnalysisResult(
                 name=self.name,
@@ -580,8 +599,8 @@ class Analysis(ABC):
         # ns
         return time_ps / 1000.0, "Time (ns)"
 
-    def _do_plot(self) -> Path:
-        """Internal: create the figure, call self.plot, apply user overrides, save."""
+    def _draw_one(self, path: Path) -> Path:
+        """One figure, in whichever mode is in force, written to ``path``."""
         fig, ax = new_figure(title=self.figure_title(), figsize=self._user_figsize)
         self.plot(self.result, ax)
 
@@ -594,7 +613,33 @@ class Analysis(ABC):
         if ylabel is not None:
             ax.set_ylabel(ylabel)
 
-        return save_figure(fig, self.output_dir / f"{self.name}.png")
+        return save_figure(fig, path)
+
+    def _do_plot(self) -> list[Path]:
+        """Every figure this analysis was asked for, primary first.
+
+        ``figure_colours`` decides how many. The primary is always
+        ``<name>.png`` whichever mode it is drawn in, so the report, the
+        dashboard and every existing reader keep finding it where they look;
+        asking for both adds ``<name>_greyscale.png`` beside it rather than
+        renaming anything.
+
+        Drawing it twice costs one extra render and settles a question that
+        otherwise has to be answered before the journal has been chosen.
+        """
+        primary = self.output_dir / f"{self.name}.png"
+        if self.figure_colours == "both":
+            wanted = [("colour", primary),
+                      ("greyscale",
+                       self.output_dir / f"{self.name}_greyscale.png")]
+        else:
+            wanted = [(self.figure_colours, primary)]
+
+        written: list[Path] = []
+        for mode, path in wanted:
+            with drawn_in(mode):
+                written.append(self._draw_one(path))
+        return written
 
     def _write_options_manifest(self) -> Path:
         """Record what this analysis was asked to do, and what it found out.

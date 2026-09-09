@@ -13,6 +13,7 @@ do not silently hang waiting for a display.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
@@ -111,11 +112,69 @@ _ROLES_IN_GREY = {
 _GREYSCALE = False
 
 
+#: What a figure can be asked to be drawn in. British and American spellings
+#: of both words are accepted, because this package has already had to settle
+#: "one thing, two words" four times -- `centres`/`centers` among them -- and
+#: refusing `grayscale` from an American user would be the fifth.
+FIGURE_COLOURS = ("colour", "greyscale", "both")
+
+_COLOUR_SPELLINGS = {
+    "colour": "colour", "color": "colour", "coloured": "colour",
+    "colored": "colour", "hue": "colour",
+    "greyscale": "greyscale", "grayscale": "greyscale",
+    "grey": "greyscale", "gray": "greyscale", "mono": "greyscale",
+    "both": "both", "all": "both",
+}
+
+
+def settle_figure_colours(value: Any) -> str:
+    """One spelling for what a figure is drawn in, from any of the usual.
+
+    Raises on anything else rather than falling back to a default: a figure
+    silently drawn in a mode nobody asked for is worse than a refusal that
+    names what is accepted.
+    """
+    if value is None:
+        return "colour"
+    key = str(value).strip().lower().replace("-", "").replace("_", "")
+    settled = _COLOUR_SPELLINGS.get(key)
+    if settled is None:
+        raise ValueError(
+            f"figure_colours does not accept {value!r}. It accepts "
+            f"{', '.join(FIGURE_COLOURS)} -- 'colour' draws the figure in "
+            "colour, 'greyscale' draws it without hue, and 'both' writes the "
+            "colour figure and a greyscale copy beside it. American "
+            "spellings are accepted."
+        )
+    return settled
+
+
 def use_greyscale(on: bool = True) -> None:
     """Draw every figure without hue, using value and shape instead."""
     global _GREYSCALE
     _GREYSCALE = bool(on)
     apply_style()
+
+
+@contextmanager
+def drawn_in(mode: str):
+    """Draw inside this block in ``colour`` or ``greyscale``, then restore.
+
+    A context manager rather than two calls, because the mode is process-wide
+    state and an exception between setting and restoring it would leave every
+    later figure in the wrong one. Analyses run sequentially, so process-wide
+    is safe; were that ever to change this is the thing that would break, and
+    it is the one place to fix.
+    """
+    global _GREYSCALE
+    previous = _GREYSCALE
+    _GREYSCALE = (mode == "greyscale")
+    apply_style()
+    try:
+        yield
+    finally:
+        _GREYSCALE = previous
+        apply_style()
 
 
 def greyscale_is_on() -> bool:

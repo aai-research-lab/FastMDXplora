@@ -34,6 +34,7 @@ from typing import Any
 import mdtraj as md
 
 from fastmdxplora.analysis.base import Analysis, AnalysisResult
+from fastmdxplora.analysis.plotting import settle_figure_colours
 from fastmdxplora.config.schema import ANALYSIS
 from fastmdxplora.analysis.loading import (
     PathLike,
@@ -197,6 +198,7 @@ class AnalysisOrchestrator:
         first: int | None = None,
         last: int | None = None,
         saving_interval_ps: float | None = None,
+        figure_colours: str | None = None,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.output_dir: Path = (
@@ -213,6 +215,10 @@ class AnalysisOrchestrator:
         # with a meaningful own default (e.g. "name CA") keep it.
         self.scope: str = scope
         self.ligand_resname: str | None = ligand_resname
+        # Settled once here rather than per analysis, so a misspelling is
+        # refused before any trajectory is loaded rather than twenty-three
+        # times over while figures are being drawn.
+        self.figure_colours: str = settle_figure_colours(figure_colours)
         self.scope_selection: str | None = _resolve_scope(scope, ligand_resname)
 
         # Cache the trajectory and the load-time parameters so the manifest
@@ -282,6 +288,9 @@ class AnalysisOrchestrator:
             # analyses whose constructor doesn't accept it.
             if self.ligand_resname and "ligand_resname" not in raw_opts:
                 raw_opts["ligand_resname"] = self.ligand_resname
+            # Every analysis draws in the same mode unless one was told
+            # otherwise, the same way the ligand name is supplied above.
+            raw_opts.setdefault("figure_colours", self.figure_colours)
             opts = self._filter_kwargs(cls, raw_opts)
             # Selection precedence: an explicit per-analysis selection wins;
             # then an orchestrator-wide `selection`; otherwise, if the
@@ -757,6 +766,7 @@ class AnalysisOrchestrator:
                 str(self._topology_input) if self._topology_input else None
             ),
             "load_kwargs": self._load_kwargs,
+            "figure_colours": self.figure_colours,
             "default_selection": self.default_selection,
             "n_frames": int(self.traj.n_frames),
             "n_atoms": int(self.traj.n_atoms),

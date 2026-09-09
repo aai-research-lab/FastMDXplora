@@ -52,6 +52,7 @@ def run(
     selection: str | None = None,
     select_atoms: str | None = None,
     scope: str = "solute",
+    figure_colours: str | None = None,
     stride: int | None = None,
     first: int | None = None,
     last: int | None = None,
@@ -136,6 +137,7 @@ def run(
         first=first,
         last=last,
         saving_interval_ps=_saving_interval_ps(project_root),
+        figure_colours=figure_colours,
     )
 
     if presenter:
