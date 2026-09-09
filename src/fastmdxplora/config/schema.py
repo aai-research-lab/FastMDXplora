@@ -550,7 +550,9 @@ SIMULATION = PhaseSchema(
               "equilibrium sampling at a series of positions. A block with "
               "`collective_variable`, the selections it needs, a "
               "`force_constant`, and either `centres` or `from`/`to`/"
-              "`n_windows`. Each window becomes a run, and the sampling is "
+              "`n_windows`. A selection can be given as `select_atoms`, the "
+              "general word, wherever the variable takes only one; where it "
+              "takes two they are `select_atoms_a` and `select_atoms_b`. Each window becomes a run, and the sampling is "
               "recombined into a potential of mean force -- unless adjacent "
               "windows fail to overlap, in which case the gap is reported "
               "rather than bridged. `minimum_overlap` sets how much two "
@@ -567,9 +569,10 @@ SIMULATION = PhaseSchema(
               "another, so retuning the spacing or the force constant costs "
               "windows and not a pathway.",
               example={"collective_variable": "distance",
-                       "selection_a": "resname BNZ", "selection_b": "protein",
                        "from": 0.3, "to": 1.5, "n_windows": 7,
-                       "force_constant": 5000}),
+                       "force_constant": 5000,
+                       "selection_a": "resname BNZ",
+                       "selection_b": "protein"}),
         Field("steered", dict, None,
               "Pull the system along a named coordinate. A block with the "
               "same `collective_variable` metadynamics takes, plus `to` (the "
@@ -579,8 +582,9 @@ SIMULATION = PhaseSchema(
               "single fast pull overestimates a barrier. Its usual purpose "
               "is generating starting structures for umbrella sampling.",
               example={"collective_variable": "distance",
-                       "selection_a": "resname BNZ", "selection_b": "protein",
-                       "to": 1.5, "steps": 500000}),
+                       "from": 0.3, "to": 1.5, "steps": 500000,
+                       "selection_a": "resname BNZ",
+                       "selection_b": "protein"}),
         Field("metadynamics", dict, None,
               "Metadynamics from a named collective variable, without "
               "writing PLUMED input. A block with `collective_variable` "

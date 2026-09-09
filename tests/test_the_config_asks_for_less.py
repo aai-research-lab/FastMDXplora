@@ -355,3 +355,91 @@ def test_a_typo_in_a_window_setting_is_still_refused(tmp_path):
 
     with pytest.raises(ConfigError, match="minimum_ovelap"):
         load_config_file(path)
+
+
+# ---------------------------------------------------------------------------
+# The general word for a selection
+# ---------------------------------------------------------------------------
+def test_select_atoms_names_the_one_selection_a_variable_takes():
+    """Every tool has a word for a selection expression; this one had six.
+
+    `select_atoms` is what MDAnalysis calls it and what a user arrives
+    knowing. Where a variable takes exactly one selection there is nothing
+    to disambiguate, so the general word names it.
+    """
+    from fastmdxplora.simulation.metadynamics import plan_from_config
+
+    plan = plan_from_config(
+        {"collective_variable": "ligand_distance",
+         "ligand_name": "BNZ",
+         "select_atoms": "resid 1 to 3 and name CA",
+         "sigma": 0.05, "unbounded": True},
+        _topology())
+
+    assert sorted(plan.atoms) == ["ligand", "site"]
+    assert len(plan.atoms["site"]) == 3
+
+
+def test_the_role_name_still_wins_over_the_general_one():
+    from fastmdxplora.simulation.metadynamics import (
+        with_general_selection_names)
+
+    resolved = with_general_selection_names(
+        {"site_selection": "resid 1", "select_atoms": "resid 2"},
+        "ligand_distance")
+
+    assert resolved["site_selection"] == "resid 1"
+
+
+def test_two_groups_cannot_be_named_by_one_word():
+    """A distance is between two things, and `select_atoms` names one.
+
+    Picking a group and hoping would be the failure this package exists to
+    avoid: a run that completes, produces a number, and measured something
+    other than what was asked for.
+    """
+    from fastmdxplora.simulation.metadynamics import (
+        with_general_selection_names)
+
+    with pytest.raises(ValueError, match="does not say which is which"):
+        with_general_selection_names(
+            {"select_atoms": "resname BNZ"}, "distance")
+
+
+def test_the_suffixed_form_names_them_both():
+    from fastmdxplora.simulation.metadynamics import plan_from_config
+
+    plan = plan_from_config(
+        {"collective_variable": "distance",
+         "select_atoms_a": "resname BNZ",
+         "select_atoms_b": "resid 1 to 3 and name CA",
+         "sigma": 0.05, "unbounded": True},
+        _topology())
+
+    assert len(plan.atoms["selection_a"]) == 6
+    assert len(plan.atoms["selection_b"]) == 3
+
+
+def test_a_variable_taking_no_selection_says_so():
+    from fastmdxplora.simulation.metadynamics import (
+        with_general_selection_names)
+
+    with pytest.raises(ValueError, match="nothing to name here"):
+        with_general_selection_names(
+            {"select_atoms": "resname BNZ"}, "ligand_rmsd")
+
+
+def test_a_study_written_with_the_general_word_validates(tmp_path):
+    """End to end, because a reader that accepts it is only half the fix."""
+    from fastmdxplora.config import load_config_file, validate_config
+
+    path = tmp_path / "general.yml"
+    path.write_text(
+        STUDY.replace("site_selection:", "select_atoms:"), encoding="utf-8")
+
+    data = load_config_file(path)
+    validate_config(data)
+
+    assert len(data["systems"]) == 30
+    assert data["systems"][0]["simulation"]["umbrella"]["select_atoms"] == \
+        "resid 189 to 195 and name CA"

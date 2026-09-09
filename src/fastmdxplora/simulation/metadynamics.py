@@ -302,6 +302,9 @@ COLLECTIVE_VARIABLE_KEYS: frozenset[str] = frozenset({
     # the same defect as a reader that refuses what the user meant, and it
     # is the one the user meets first.
     "ligand_name",
+    # The general word for a selection expression, which every other tool
+    # has and this one did not. Resolved to whatever the variable calls it.
+    "select_atoms", "select_atoms_a", "select_atoms_b",
     # A distance and a coordination are between two groups, so they are named
     # in pairs. Read in a loop rather than one at a time, which is how they
     # went missing from the first version of this list.
@@ -317,6 +320,67 @@ METADYNAMICS_KEYS: frozenset[str] = COLLECTIVE_VARIABLE_KEYS | frozenset({
 })
 
 
+#: Variables that take exactly one selection, and what they call it. Where
+#: there is only one, `select_atoms` is unambiguous and names it.
+_THE_ONE_SELECTION: dict[str, str] = {
+    "ligand_distance": "site_selection",
+    "membrane_depth": "selection",
+    "angle": "selection",
+    "torsion": "selection",
+    "radius_of_gyration": "selection",
+    "q": "selection",
+}
+
+#: Variables measured between two groups. `select_atoms` alone cannot say
+#: which is which, so these take the suffixed form.
+_TWO_GROUPS: frozenset[str] = frozenset({"distance", "coordination"})
+
+
+def with_general_selection_names(spec: dict[str, Any],
+                                 variable: str) -> dict[str, Any]:
+    """`select_atoms` translated to whatever this variable calls it.
+
+    Every tool that takes a selection expression has a word for the thing:
+    MDAnalysis says ``select_atoms``, MDTraj says ``select``. This package
+    had six role-specific spellings and no general one, so a user who knew
+    what a selection was still had to look up what it was called here.
+
+    The role names are not going anywhere -- `site_selection` says which
+    of two points is being named, which `select_atoms` cannot. This adds
+    the general word where it is unambiguous, and refuses it where it is
+    not, rather than picking one of two groups and hoping.
+    """
+    general = spec.get("select_atoms")
+    paired = ("select_atoms_a" in spec) or ("select_atoms_b" in spec)
+    if general is None and not paired:
+        return spec
+
+    resolved = dict(spec)
+    for suffixed, role in (("select_atoms_a", "selection_a"),
+                           ("select_atoms_b", "selection_b")):
+        if resolved.pop(suffixed, None) is not None and role not in spec:
+            resolved[role] = spec[suffixed]
+
+    if general is None:
+        return resolved
+    resolved.pop("select_atoms", None)
+
+    if variable in _TWO_GROUPS:
+        raise ValueError(
+            f"`{variable}` is measured between two groups, so `select_atoms` "
+            "does not say which is which. Name them: `select_atoms_a` and "
+            "`select_atoms_b` (or `selection_a` and `selection_b`)."
+        )
+    role = _THE_ONE_SELECTION.get(variable)
+    if role is None:
+        raise ValueError(
+            f"`{variable}` does not take a selection, so `select_atoms` has "
+            "nothing to name here."
+        )
+    resolved.setdefault(role, general)
+    return resolved
+
+
 def plan_from_config(
     spec: dict[str, Any],
     topology: Any,
@@ -328,6 +392,7 @@ def plan_from_config(
     import mdtraj as md
 
     variable = str(spec.get("collective_variable", "")).lower()
+    spec = with_general_selection_names(spec, variable)
     if variable not in COLLECTIVE_VARIABLES:
         raise ValueError(
             f"Unknown collective variable {variable!r}. Available: "

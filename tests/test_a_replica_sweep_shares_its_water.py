@@ -72,8 +72,23 @@ class TestASeedSweepIsTold:
         messages = _warnings(caplog, specs)
 
         assert len(messages) == 1
-        assert "prepared_from" in messages[0]
+        # `setup_from` is the name now; the message must name the one a
+        # reader will find in the schema, not the one it used to be called.
+        assert "setup_from" in messages[0]
         assert "3 runs" in messages[0]
+
+    def test_silence_once_setup_from_is_set(self, caplog):
+        """The remedy having been applied, there is nothing to say.
+
+        Under either spelling. Checking only one told a study that had
+        already done the right thing to go and do it, which is the worst
+        shape a warning can have: a reader who believes it concludes their
+        working config is broken.
+        """
+        for key in ("setup_from", "prepared_from"):
+            specs = [_Spec(simulation={"random_seed": s, key: "out/setup"})
+                     for s in (1, 2, 3)]
+            assert _warnings(caplog, specs) == [], key
 
     def test_silence_once_prepared_from_is_set(self, caplog):
         """The remedy having been applied, there is nothing to say."""

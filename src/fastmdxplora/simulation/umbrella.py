@@ -145,6 +145,24 @@ def _accepted_keys() -> frozenset[str]:
     return _UMBRELLA_OWN_KEYS | COLLECTIVE_VARIABLE_KEYS
 
 
+#: The order a person reads them in: what is being biased, over what range,
+#: how hard, and only then the selections that resolve the variable. An
+#: alphabetical list opens with `axis_selection, bilayer_selection, centers,
+#: centres` and buries the three keys every umbrella block has.
+_READING_ORDER: tuple[str, ...] = (
+    "collective_variable", "from", "to", "n_windows", "centres", "centers",
+    "force_constant",
+    "equilibration_fraction", "minimum_overlap", "minimum_samples",
+    "seed_from",
+)
+
+
+def _in_reading_order(keys: "frozenset[str] | set[str]") -> list[str]:
+    """`keys` ordered by role, with anything unlisted sorted after."""
+    known = [k for k in _READING_ORDER if k in keys]
+    return known + sorted(set(keys) - set(known))
+
+
 def check_umbrella_keys(spec: dict[str, Any]) -> None:
     """Refuse a setting the block does not have.
 
@@ -182,7 +200,8 @@ def check_umbrella_keys(spec: dict[str, Any]) -> None:
         f"'{key}'{_suggest(key, set(accepted))}" for key in unknown)
     raise ConfigError(
         f"Unknown umbrella setting{'s' if len(unknown) > 1 else ''}: {named}. "
-        "Accepted: " + ", ".join(sorted(accepted - {"centre", "index"})) + "."
+        "Accepted: " + ", ".join(_in_reading_order(
+            accepted - {"centre", "index"})) + "."
     )
 
 

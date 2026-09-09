@@ -116,6 +116,9 @@ def plan_steered(
     # sigma is supplied and ignored rather than demanded of the user.
     cv_spec = {k: v for k, v in spec.items()
                if k not in ("to", "from", "force_constant", "steps")}
+    # The general selection word reaches a pull the same way it reaches
+    # anything else: `plan_from_config` translates it, and it is listed here
+    # so a reader of this function can see that it does.
     cv_spec.setdefault("sigma", 0.05)
     cv_spec.setdefault("unbounded", True)
     cv = plan_from_config(cv_spec, topology, temperature_K=temperature_K,

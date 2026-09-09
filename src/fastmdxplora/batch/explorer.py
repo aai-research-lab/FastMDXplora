@@ -568,7 +568,11 @@ def _say_if_the_replicas_will_not_share_water(run_specs) -> None:
 
     if len({preparation(spec) for spec in run_specs}) != 1:
         return  # Different systems, or prepared differently on purpose.
-    if any((spec.options.get("simulation") or {}).get("prepared_from")
+    # Both spellings. Checking only one told a study that had already done
+    # the right thing to go and do it -- the worst kind of warning, because
+    # a reader who believes it concludes their config is wrong.
+    if any((spec.options.get("simulation") or {}).get("setup_from")
+           or (spec.options.get("simulation") or {}).get("prepared_from")
            for spec in run_specs):
         return
 
@@ -577,8 +581,8 @@ def _say_if_the_replicas_will_not_share_water(run_specs) -> None:
         "only in how they are driven -- but each will solvate independently, "
         "and solvation does not place water the same way twice. Differences "
         "between them will include water placement as well as dynamics. Set "
-        "`simulation.prepared_from` to one run's `setup/` directory to give "
-        "them the same prepared system.",
+        "`simulation.setup_from` to a finished study to give them the same "
+        "prepared system.",
         len(run_specs))
 
 
@@ -864,8 +868,13 @@ class BatchExplorer:
             # prepared system, which is exactly when seeding matters most.
             # Returning early without seeding meant a study could ask to be
             # seeded, say nothing, and start every window in the same place.
-            supplied = (self._raw or {}).get("simulation", {}).get(
-                "prepared_from")
+            # Both spellings, and this is the one that matters most: a
+            # config saying `setup_from` took this path, matched nothing,
+            # and started every window in the same place -- the bug this
+            # branch exists to prevent, reintroduced by renaming the key
+            # that reaches it.
+            reused = (self._raw or {}).get("simulation") or {}
+            supplied = reused.get("setup_from") or reused.get("prepared_from")
             if supplied:
                 self._give_each_window_its_start(Path(supplied))
             return None

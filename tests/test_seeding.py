@@ -432,3 +432,34 @@ def test_the_reduction_agrees_with_an_exhaustive_search():
             points[:, None, :] + lattice[None, :, :], axis=2).min(axis=1)
 
         assert np.allclose(mine, exhaustive, atol=1e-9), name
+
+
+def test_seeding_survives_the_key_being_renamed(monkeypatch):
+    """`setup_from` must reach seeding exactly as `prepared_from` does.
+
+    The reuse path is where a seeded rerun lives, and it read one spelling.
+    Renaming the key in the schema without renaming it here would have made
+    every window start in the same place again -- silently, and only
+    visible two days later when the overlap gate refused.
+    """
+    from types import SimpleNamespace
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    for key in ("setup_from", "prepared_from"):
+        explorer = BatchExplorer.__new__(BatchExplorer)
+        explorer._is_umbrella = True
+        explorer._raw = {"simulation": {key: "runs/earlier"}}
+        explorer.run_specs = [
+            SimpleNamespace(options={"simulation": {"umbrella": {"index": i}}})
+            for i in range(2)
+        ]
+        monkeypatch.setattr(explorer, "_maybe_seed_the_windows",
+                            lambda prepared: {0: "seeds/window-00",
+                                              1: "seeds/window-01"})
+
+        explorer._maybe_prepare_once(None, ["setup"])
+
+        starts = [s.options["simulation"]["prepared_from"]
+                  for s in explorer.run_specs]
+        assert starts == ["seeds/window-00", "seeds/window-01"], key
