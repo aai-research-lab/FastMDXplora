@@ -257,3 +257,53 @@ def test_a_pull_the_selections_do_not_match_is_refused(a_finished_pull):
                      # The whole residue rather than its first atom: a
                      # different point, and a different distance.
                      site_selection="resname LIG")
+
+
+def test_the_seed_energy_check_runs_when_the_study_is_named_by_directory(
+        a_finished_pull, monkeypatch):
+    """The guard was silently skipping itself, which is the worst way to fail.
+
+    `write_seeds` resolved the prepared directory inside `_prepared_files`,
+    which returns the two files it needs without rebinding the caller's
+    name. So `_potential_of_prepared` was still handed `runs/<study>` and
+    looked for `state.xml` directly beneath it. It is not there -- it is in
+    `shared_setup/setup/` -- and that function returns None rather than
+    guessing at a reasonable energy.
+
+    Returning None is right. What was wrong is that it happened every time
+    a study was named the way the documentation says to name one, so the
+    check that exists to catch a seed which will not load did not run, said
+    nothing, and left no trace.
+    """
+    from fastmdxplora.simulation import seeding
+
+    root, prepared, pull = a_finished_pull
+
+    # The layout a real study has: the prepared system one level down,
+    # named by the study directory above it.
+    study = root / "study"
+    inside = study / "shared_setup" / "setup"
+    inside.mkdir(parents=True)
+    for name in ("system.xml", "state.xml", "topology.pdb"):
+        (inside / name).write_bytes((prepared / name).read_bytes())
+
+    saw = {}
+    original = seeding._potential_of_prepared
+
+    def _watch(context, prepared_dir, XmlSerializer, unit):
+        value = original(context, prepared_dir, XmlSerializer, unit)
+        saw["directory"] = prepared_dir
+        saw["reference"] = value
+        return value
+
+    monkeypatch.setattr(seeding, "_potential_of_prepared", _watch)
+
+    seeding.seed_windows(
+        pull, study, [1.00], root / "seeds",
+        ligand_resname="LIG", site_selection="resname ALA and name CA")
+
+    assert saw, "the energy reference was never consulted"
+    assert saw["reference"] is not None, (
+        "the seed energy check found no reference state, so it skipped "
+        f"itself; it looked in {saw['directory']}"
+    )

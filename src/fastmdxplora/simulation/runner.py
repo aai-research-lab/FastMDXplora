@@ -1373,9 +1373,13 @@ def run_simulation(
         if force is None:
             raise ValueError("An umbrella window needs a `force_constant`.")
 
+        # Both spellings. This listed `centres` and not `centers`, so a
+        # study written the American way carried a key with no meaning into
+        # a collective-variable plan. Every other site in the tree named
+        # both; a sweep of the source found this one and only this one.
         spec = {k: v for k, v in umbrella.items()
                 if k not in ("centre", "force_constant", "n_windows",
-                             "centres", "from", "to")}
+                             "centres", "centers", "from", "to")}
         spec.setdefault("sigma", 0.05)
         spec.setdefault("unbounded", True)
         # The ligand's residue name, which a ligand variable needs and the

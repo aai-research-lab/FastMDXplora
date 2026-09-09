@@ -589,3 +589,85 @@ class TestOneThingIsSpelledBothWaysEverywhere:
         })
         twice = normalise_config(dict(once))
         assert twice == once
+
+
+class TestNoFilterKnowsHalfAnAliasGroup:
+    """A structural check, because a sweep of the source found one.
+
+    Two spellings for one thing break in two directions. A *reader* that
+    knows one finds nothing -- that was 0037, 0038 and 0046, and the
+    boundary settles it. A *filter* that knows one leaves the other behind,
+    and the boundary makes that worse rather than better: after settling,
+    both spellings are present, so a filter naming only one lets the other
+    through.
+
+    `runner.py` built a collective-variable spec by dropping the window's
+    own keys and forwarding the rest. It dropped `centres` and not
+    `centers`, so a study written the American way carried a key with no
+    meaning into a plan that has no such key. Every other site in the tree
+    named both.
+
+    This reads the source rather than the behaviour, because the behaviour
+    only shows up for one spelling of one key in one code path, and the
+    property wanted is about all of them.
+    """
+
+    def test_every_exclusion_filter_names_a_whole_group(self):
+        import ast
+        import pathlib
+
+        from fastmdxplora.config.loader import ALIAS_GROUPS
+
+        root = pathlib.Path(
+            __import__("fastmdxplora").__file__).parent
+        offenders = []
+        for path in sorted(root.rglob("*.py")):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover - not our files
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Compare):
+                    continue
+                if not any(isinstance(o, (ast.In, ast.NotIn))
+                           for o in node.ops):
+                    continue
+                for comp in node.comparators:
+                    if not isinstance(comp, (ast.Tuple, ast.List, ast.Set)):
+                        continue
+                    named = {e.value for e in comp.elts
+                             if isinstance(e, ast.Constant)
+                             and isinstance(e.value, str)}
+                    for group in ALIAS_GROUPS:
+                        if (named & group) and not (group <= named):
+                            offenders.append(
+                                f"{path.name}:{node.lineno} names "
+                                f"{sorted(named & group)} but not "
+                                f"{sorted(group - named)}")
+
+        assert not offenders, (
+            "a filter names part of an alias group, so the spelling it "
+            "omits passes through it:\n  " + "\n  ".join(offenders)
+        )
+
+    def test_the_groups_are_actually_settled_at_the_boundary(self):
+        """The list is only worth having if the boundary uses it."""
+        from fastmdxplora.config.loader import ALIAS_GROUPS, normalise_config
+
+        for group in ALIAS_GROUPS:
+            for spelling in group:
+                if spelling in ("prepared_from", "setup_from"):
+                    data = normalise_config(
+                        {"simulation": {spelling: "runs/earlier"}})
+                    block = data["simulation"]
+                else:
+                    data = normalise_config({
+                        "simulation": {"steered": {
+                            "collective_variable": "ligand_distance",
+                            "to": 2.0, spelling: "x"}}})
+                    block = data["simulation"]["steered"]
+                assert group <= set(block), (
+                    f"writing {spelling!r} left "
+                    f"{sorted(group - set(block))} unset, so a reader of "
+                    "that spelling finds nothing"
+                )

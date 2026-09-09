@@ -303,7 +303,16 @@ def write_seeds(prepared: Path | str,
     from openmm import (  # noqa: PLC0415  -- optional at import time
         Context, LangevinMiddleIntegrator, Platform, XmlSerializer, unit)
 
-    prepared = Path(prepared)
+    # Resolved once, here, rather than inside each thing that reads a
+    # file out of it. `_prepared_files` resolved it and returned the two
+    # files without rebinding this name, so `_potential_of_prepared` was
+    # still handed `runs/<study>` and looked for `state.xml` directly
+    # beneath it. It is not there, and that function returns None rather
+    # than guessing -- so the seed energy check, which exists to catch a
+    # seed that will not load, silently did not run at all.
+    from fastmdxplora.simulation.pipeline import where_a_prepared_system_sits
+
+    prepared = where_a_prepared_system_sits(Path(prepared))
     destination = Path(destination)
     system_xml, topology_pdb = _prepared_files(prepared)
 

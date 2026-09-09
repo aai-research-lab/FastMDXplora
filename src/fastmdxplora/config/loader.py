@@ -262,6 +262,28 @@ def _split_on_commas(value: Any) -> Any:
 
 
 
+#: Every group of spellings that name one thing, in one place. A second
+#: list of them would be a second place to forget one, which is the defect
+#: this whole mechanism exists to end.
+#:
+#: `tests/test_the_config_asks_for_less.py` reads this and checks the
+#: invariant a sweep of the source found broken exactly once: any filter
+#: that names one member of a group must name all of them. A reader that
+#: knows one spelling finds nothing; a *filter* that knows one spelling
+#: leaves the other behind, which is the same defect wearing a mirror.
+#:
+#: `select_atoms` is absent because the name it settles to depends on which
+#: variable is being biased; that pairing is resolved below through
+#: `with_general_selection_names`, which owns the mapping.
+ALIAS_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"prepared_from", "setup_from"}),
+    frozenset({"ligand_name", "ligand_resname"}),
+    frozenset({"centres", "centers"}),
+    frozenset({"selection_a", "select_atoms_a"}),
+    frozenset({"selection_b", "select_atoms_b"}),
+)
+
+
 #: Spellings that name one thing. Each entry is (established, general): the
 #: first is what the code inside this package has always called it, the
 #: second is the word a user is likely to arrive knowing. Given both and
@@ -273,6 +295,18 @@ _ONE_THING_TWO_WORDS: dict[str, tuple[tuple[str, str], ...]] = {
     "setup": (("ligand_name", "ligand_resname"),),
     "analysis": (("selection", "select_atoms"),),
 }
+
+#: Pairs settled inside a biasing block, whichever block it is.
+_ONE_THING_TWO_WORDS_IN_A_BIASING_BLOCK: tuple[tuple[str, str], ...] = (
+    ("ligand_resname", "ligand_name"),
+    # British and American, and both were already accepted -- by every
+    # reader except one filter in the runner, which stripped `centres`
+    # from the spec it forwards and left `centers` behind to be carried
+    # into a collective-variable plan that has no such key.
+    ("centres", "centers"),
+    ("selection_a", "select_atoms_a"),
+    ("selection_b", "select_atoms_b"),
+)
 
 #: The biasing blocks, which additionally carry a selection whose role name
 #: depends on which variable is being biased.
@@ -333,8 +367,8 @@ def _settle_the_words_that_mean_one_thing(data: dict[str, Any]) -> None:
         block = simulation.get(name)
         if not isinstance(block, dict):
             continue
-        # The ligand is named by residue wherever it is named at all.
-        _mirror(block, "ligand_resname", "ligand_name")
+        for established, general in _ONE_THING_TWO_WORDS_IN_A_BIASING_BLOCK:
+            _mirror(block, established, general)
         variable = str(block.get("collective_variable", "")).lower()
         if not variable or "select_atoms" not in block:
             continue
