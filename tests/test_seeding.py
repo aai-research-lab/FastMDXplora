@@ -112,7 +112,7 @@ def test_the_pull_is_checked_against_what_plumed_actually_biased(tmp_path):
     _check_against_colvar(tmp_path, ours)  # agrees: no refusal
 
     wrong = ours + 10 * COLVAR_AGREEMENT_NM
-    with pytest.raises(ValueError, match="different quantities"):
+    with pytest.raises(ValueError, match="not the ones that were biased"):
         _check_against_colvar(tmp_path, wrong)
 
 
@@ -314,3 +314,121 @@ def test_the_pull_block_never_reaches_a_window(monkeypatch):
 
     for spec in explorer.run_specs:
         assert "steered" not in spec.options["simulation"]
+
+
+# ---------------------------------------------------------------------------
+# The periodic boundary, again
+# ---------------------------------------------------------------------------
+def _cell(edge: float = 8.1432) -> np.ndarray:
+    """One rhombic dodecahedron, the shape C1 was solvated in."""
+    half = edge / 2.0
+    return np.array([[[edge, 0.0, 0.0],
+                      [0.0, edge, 0.0],
+                      [half, half, edge / np.sqrt(2.0)]]])
+
+
+def test_a_pair_across_the_boundary_is_measured_the_short_way():
+    """The hazard the cross-tool benchmark already documents, in our code.
+
+    Frames are stored wrapped. Two centres in different images differ by a
+    vector across the box, and its length is not a distance between the
+    molecules -- it is a distance between one of them and a copy.
+    """
+    from fastmdxplora.simulation.seeding import shortest_vector
+
+    cell = _cell()
+    # 0.35 nm apart, then one of them wrapped by a whole cell vector.
+    true = np.array([[0.35, 0.0, 0.0]])
+    wrapped = true + cell[:, 0, :]
+
+    assert np.linalg.norm(wrapped) > 8.0            # what raw arithmetic sees
+    reduced = shortest_vector(wrapped, cell)
+    assert np.linalg.norm(reduced) == pytest.approx(0.35, abs=1e-6)
+
+
+def test_the_skewed_direction_is_reduced_too():
+    """A dodecahedron is skewed, and fractional rounding alone is not enough.
+
+    Reducing each fractional coordinate to its nearest integer gives the
+    right answer in a cube and not always in a sheared cell, so the
+    neighbouring translations are tried as well.
+    """
+    from fastmdxplora.simulation.seeding import shortest_vector
+
+    cell = _cell()
+    displaced = np.array([[0.2, 0.1, 0.05]]) + cell[:, 2, :]
+
+    reduced = shortest_vector(displaced, cell)
+
+    assert np.linalg.norm(reduced) == pytest.approx(
+        np.linalg.norm([0.2, 0.1, 0.05]), abs=1e-6)
+
+
+def test_a_distance_wider_than_the_box_is_named_as_impossible(tmp_path):
+    """The refusal should say what went wrong, not only that something did.
+
+    A median that disagrees has two causes and only one of them is the
+    selections. A value wider than the cell can hold has exactly one.
+    """
+    import mdtraj as md
+
+    from fastmdxplora.simulation.seeding import _check_against_colvar
+
+    simulation = tmp_path / "simulation"
+    simulation.mkdir()
+    (simulation / "COLVAR").write_text(COLVAR, encoding="utf-8")
+
+    topology = md.Topology()
+    chain = topology.add_chain()
+    residue = topology.add_residue("ALA", chain)
+    topology.add_atom("CA", md.element.carbon, residue)
+    frame = md.Trajectory(np.zeros((1, 1, 3), dtype=np.float32), topology)
+    frame.unitcell_vectors = _cell().astype(np.float32)
+
+    with pytest.raises(ValueError, match="wider than this box allows"):
+        _check_against_colvar(tmp_path, np.array([0.34, 8.218]), frame)
+
+
+def test_the_reduction_agrees_with_an_exhaustive_search():
+    """The one check that would have caught the greedy walk.
+
+    An earlier version updated the running best inside the scan, so each
+    translation was applied to whatever had won so far rather than to the
+    fractionally reduced vector. Lattice points were skipped, and for 17 of
+    3000 sampled points it returned a vector up to 2.42 nm too long -- with
+    the winning translation, (0, 0, -1), inside the search the whole time.
+
+    A distance that is quietly too long is a window seeded from the wrong
+    frame, and nothing downstream can tell. Compared here against every
+    translation within three cells, on three box shapes, because a reduction
+    is either exact or it is a source of plausible numbers.
+    """
+    from fastmdxplora.simulation.seeding import shortest_vector
+
+    edge = 8.1432
+    root2, root6 = np.sqrt(2.0), np.sqrt(6.0)
+    shapes = {
+        "cube": np.eye(3) * edge,
+        "dodecahedron": np.array([[edge, 0.0, 0.0],
+                                  [0.0, edge, 0.0],
+                                  [edge / 2, edge / 2, edge / root2]]),
+        "truncated octahedron": np.array(
+            [[edge, 0.0, 0.0],
+             [edge / 3, edge * 2 * root2 / 3, 0.0],
+             [-edge / 3, edge * root2 / 3, edge * root6 / 3]]),
+    }
+
+    for name, cell in shapes.items():
+        lattice = np.array([i * cell[0] + j * cell[1] + k * cell[2]
+                            for i in range(-3, 4) for j in range(-3, 4)
+                            for k in range(-3, 4)])
+        rng = np.random.default_rng(1)
+        points = (rng.random((600, 3)) * 3 - 1.5) @ cell
+
+        mine = np.linalg.norm(
+            shortest_vector(points, np.broadcast_to(
+                cell, (600, 3, 3)).copy()), axis=1)
+        exhaustive = np.linalg.norm(
+            points[:, None, :] + lattice[None, :, :], axis=2).min(axis=1)
+
+        assert np.allclose(mine, exhaustive, atol=1e-9), name

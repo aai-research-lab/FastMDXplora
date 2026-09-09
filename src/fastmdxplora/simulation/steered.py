@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import logging
+
 import numpy as np
 
 from fastmdxplora.simulation.metadynamics import (
@@ -37,6 +39,8 @@ from fastmdxplora.simulation.metadynamics import (
     MetadynamicsPlan,
     plan_from_config,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["SteeredPlan", "plan_steered", "build_steered_script"]
 
@@ -135,6 +139,18 @@ def plan_steered(
     from_value = spec.get("from")
     if from_value is None and structure is not None:
         from_value = measure_in(cv, structure)
+        if from_value is not None:
+            # Named, because it is a measurement rather than a setting and
+            # the structure it comes from is the one that exists when the
+            # script is written -- before equilibration, not after. The
+            # difference is small for a pull that travels a nanometre and a
+            # half, and it is not nothing: state `from` to anchor elsewhere.
+            logger.info(
+                "Pull anchored at %.4f nm, measured in the structure the "
+                "run starts from (%s), before equilibration. Set `from` to "
+                "anchor it elsewhere.", from_value,
+                getattr(structure, "__class__", type(structure)).__name__
+                if not isinstance(structure, str) else structure)
     if from_value is None:
         raise ValueError(
             "A steered pull needs `from`: the value of the collective "
@@ -203,7 +219,17 @@ def measure_in(cv: Any, structure: Any) -> float | None:
             / weight.sum()
 
     first, second = (np.asarray(g, dtype=int) for g in groups)
-    return float(np.linalg.norm(centre(first) - centre(second)))
+    delta = centre(first) - centre(second)
+    # Reduced to the nearest image where the structure has a box. A prepared
+    # structure usually has its molecules whole and in one image, so this
+    # rarely changes the answer -- but "rarely" is not a reason to report a
+    # distance across the box as the place a pull should start.
+    if frame.unitcell_vectors is not None:
+        from fastmdxplora.simulation.seeding import shortest_vector
+
+        delta = shortest_vector(delta[None, :],
+                                frame.unitcell_vectors[:1])[0]
+    return float(np.linalg.norm(delta))
 
 
 def build_steered_script(plan: SteeredPlan,

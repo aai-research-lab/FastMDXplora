@@ -120,6 +120,54 @@ def read_colvar(path: Path | str) -> tuple[np.ndarray, np.ndarray] | None:
     return table[:, fields.index("time")], table[:, fields.index("cv")]
 
 
+def shortest_vector(delta: np.ndarray, cell: np.ndarray) -> np.ndarray:
+    """`delta` reduced to the nearest periodic image, per frame.
+
+    Frames are stored wrapped, so the ligand and the pocket routinely sit in
+    different images and the raw difference of their centres is a distance
+    across the box rather than between the molecules. Left unreduced, a held
+    window whose true separation never leaves 0.3-0.5 nm reports values above
+    8 nm in a box only 5.8 nm wide -- a number that cannot be a distance, and
+    that is nevertheless the mean of nothing and the seed of a window.
+
+    This is the same hazard the cross-tool benchmark documents, where one
+    contact pair read 62.32 A raw and 3.70 A under minimum image. PLUMED
+    applies the convention; anything checking PLUMED has to as well.
+
+    The fractional reduction alone is not shortest in a skewed cell, so the
+    twenty-six neighbouring translations are compared against it. A rhombic
+    dodecahedron is skewed. `test_seeding` checks this against an exhaustive
+    search over several cells, because a reduction that is quietly wrong
+    gives distances that look entirely reasonable.
+    """
+    cell = np.asarray(cell, dtype=float)
+    matrix = cell.transpose(0, 2, 1)          # columns are the cell vectors
+    fractional = np.einsum("fij,fj->fi", np.linalg.inv(matrix), delta)
+    fractional -= np.round(fractional)
+    # `base` stays fixed and every candidate is measured from it. Updating it
+    # inside the loop turned the scan into a greedy walk: each shift was
+    # applied to whatever had won so far, so lattice points were skipped and
+    # others visited twice. It returned a vector 2.42 nm too long for 17 of
+    # 3000 sampled points, and the winning translation in the case examined
+    # was (0, 0, -1) -- inside the search the whole time, never compared
+    # against the right thing.
+    base = np.einsum("fij,fj->fi", matrix, fractional)
+    best = base.copy()
+    shortest = np.linalg.norm(best, axis=1)
+    for i in (-1, 0, 1):
+        for j in (-1, 0, 1):
+            for k in (-1, 0, 1):
+                if (i, j, k) == (0, 0, 0):
+                    continue
+                shift = np.array([i, j, k], dtype=float)
+                candidate = base + np.einsum("fij,j->fi", matrix, shift)
+                length = np.linalg.norm(candidate, axis=1)
+                closer = length < shortest
+                best[closer] = candidate[closer]
+                shortest[closer] = length[closer]
+    return best
+
+
 def measure_along(trajectory: Any, ligand_resname: str,
                   site_selection: str) -> np.ndarray:
     """The ligand-to-site centre distance in every frame, in nm.
@@ -127,6 +175,10 @@ def measure_along(trajectory: Any, ligand_resname: str,
     Mass-weighted on both sides, which is what PLUMED's ``COM`` is. An
     unweighted centroid differs by a few hundredths of a nanometre on a
     ligand with a heavy ring, which is a third of a window spacing.
+
+    Reduced to the minimum image, because the frames are wrapped. Where the
+    trajectory carries no box this falls back to the raw difference and says
+    so, since a structure without periodicity has no images to choose from.
     """
     topology = trajectory.topology
     ligand = topology.select(f"resname {ligand_resname}")
@@ -150,7 +202,13 @@ def measure_along(trajectory: Any, ligand_resname: str,
         return (xyz[:, selection, :] * weight[None, :, None]).sum(axis=1) \
             / weight.sum()
 
-    return np.linalg.norm(centre(ligand) - centre(site), axis=1)
+    delta = centre(ligand) - centre(site)
+    if trajectory.unitcell_vectors is None:
+        logger.info("No box on this trajectory, so the centres are compared "
+                    "as they are stored.")
+        return np.linalg.norm(delta, axis=1)
+    return np.linalg.norm(
+        shortest_vector(delta, trajectory.unitcell_vectors), axis=1)
 
 
 def frames_for_centres(measured: np.ndarray,
@@ -346,12 +404,18 @@ def seed_windows(pull_directory: Path | str,
             "are frames along a pull, so there is nothing to take."
         )
 
-    measured = measure_along(trajectory, ligand_resname, site_selection)
-    _check_against_colvar(pull, measured)
+    # Imaged before anything is measured, not only before positions are
+    # taken. A ligand split across the boundary has a centre of mass halfway
+    # across the box, and every distance computed from it is wrong in a way
+    # that looks like data.
+    whole = trajectory.image_molecules(inplace=False)
+
+    measured = measure_along(whole, ligand_resname, site_selection)
+    _check_against_colvar(pull, measured, whole)
 
     chosen = frames_for_centres(measured, centres)
     _report(chosen, centres, measured)
-    return write_seeds(prepared, trajectory, chosen, centres, destination,
+    return write_seeds(prepared, whole, chosen, centres, destination,
                        temperature_K=temperature_K, random_seed=random_seed)
 
 
@@ -375,7 +439,8 @@ def _pull_files(pull: Path) -> tuple[Path, Path]:
         "read.")
 
 
-def _check_against_colvar(pull: Path, measured: np.ndarray) -> None:
+def _check_against_colvar(pull: Path, measured: np.ndarray,
+                          trajectory: Any = None) -> None:
     """Compare the recomputed variable with the one PLUMED biased.
 
     Not an alignment -- the two are written on different strides. Both
@@ -399,16 +464,53 @@ def _check_against_colvar(pull: Path, measured: np.ndarray) -> None:
         return
     _, cv = record
     ours, theirs = float(np.median(measured)), float(np.median(cv))
-    if abs(ours - theirs) > COLVAR_AGREEMENT_NM:
-        raise ValueError(
-            f"Over this run the collective variable recomputed here has "
-            f"median {ours:.3f} nm and the one PLUMED biased has median "
-            f"{theirs:.3f} nm (spans {measured.min():.3f}-{measured.max():.3f} "
-            f"against {cv.min():.3f}-{cv.max():.3f}). Those are different "
-            "quantities, so the `ligand_resname` and `site_selection` used to "
-            "seed are not the ones that were biased, and the seeds would sit "
-            "at distances nobody asked for."
-        )
+    if abs(ours - theirs) <= COLVAR_AGREEMENT_NM:
+        return
+
+    # A distance wider than the box is not a distance. Said first, because
+    # it names the cause instead of the symptom: the frames were not reduced
+    # to the minimum image, and no change of selection would fix it.
+    impossible = ""
+    if trajectory is not None and trajectory.unitcell_vectors is not None:
+        widest = _widest_a_distance_can_be(trajectory.unitcell_vectors[0])
+        if float(measured.max()) > widest:
+            impossible = (
+                f" The largest value recomputed here, "
+                f"{float(measured.max()):.3f} nm, is wider than this box "
+                f"allows ({widest:.3f} nm), so these are not minimum-image "
+                "distances at all.")
+
+    raise ValueError(
+        f"Over this run the collective variable recomputed here has median "
+        f"{ours:.3f} nm and the one PLUMED biased has median {theirs:.3f} nm "
+        f"(spans {measured.min():.3f}-{measured.max():.3f} against "
+        f"{cv.min():.3f}-{cv.max():.3f}).{impossible} Either the "
+        "`ligand_resname` and `site_selection` used to seed are not the ones "
+        "that were biased, or the coordinates were read without the "
+        "periodicity PLUMED applied. Seeds taken from these frames would sit "
+        "at distances nobody asked for."
+    )
+
+
+def _widest_a_distance_can_be(cell: np.ndarray, samples: int = 4096) -> float:
+    """The largest separation minimum-image reduction can return in this cell.
+
+    Measured rather than derived. Half the longest diagonal is a correct
+    upper bound and a useless one -- for the dodecahedron C1 was solvated
+    in it is 9.1 nm, which would not have flagged an 8.2 nm "distance" in a
+    box whose reduction can never return more than about 3. The quantity
+    wanted is the lattice's covering radius, and sampling the cell with the
+    same reduction the caller uses gives it without a derivation that could
+    disagree with the code it is checking.
+    """
+    cell = np.asarray(cell, dtype=float)
+    rng = np.random.default_rng(0)
+    points = rng.random((samples, 3)) @ cell
+    reduced = shortest_vector(points, np.broadcast_to(
+        cell, (samples, 3, 3)).copy())
+    # A little slack, because this is sampled rather than exhaustive and the
+    # check exists to catch failures of orders of magnitude.
+    return 1.05 * float(np.linalg.norm(reduced, axis=1).max())
 
 
 def _report(chosen: list[tuple[int, float]], centres: list[float],
