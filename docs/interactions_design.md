@@ -95,9 +95,9 @@ message given in [Protein-ligand interactions](interactions.md#some-measurements
 What belongs here is why that refusal is the right behaviour rather than a
 gap.
 
-That defect was present in FastMDAnalysis v1, in PLIP and in ProLIF: all three
-return an answer where the honest response is that the question cannot be
-answered from what was given.
+Returning a number here would mean answering a question the input cannot
+support: without bonds there is no chemistry to type atoms by, so every
+interaction the result named would rest on a guess the caller could not see.
 
 ---
 

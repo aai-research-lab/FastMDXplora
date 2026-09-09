@@ -870,6 +870,26 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    sel = sub.add_parser(
+        "select",
+        help="Show which atoms and residues a selection matches.",
+        description=(
+            "Resolve a selection against a structure and print what it "
+            "matches, before a run uses it. A selection that matches the "
+            "wrong atoms is not an error and nothing downstream can detect "
+            "it, so the way to know is to look."
+        ),
+    )
+    sel.add_argument("expression",
+                     help="The selection, e.g. 'resSeq 189 to 195 and name CA'.")
+    sel.add_argument("--structure", "--topology", "-s", dest="structure",
+                     required=True,
+                     help="A PDB, CIF or trajectory topology to resolve against.")
+    sel.add_argument("--limit", type=int, default=40,
+                     help="How many atoms to list (default 40). 0 lists all.")
+    sel.add_argument("--atoms", action="store_true",
+                     help="List every matching atom rather than the residues.")
+
     gui = sub.add_parser(
         "gui",
         help="Open the FastMDXplora graphical interface in a browser.",
@@ -1445,6 +1465,69 @@ def _phase_status(phase: str, probed: dict[str, tuple[str, str]]) -> str:
     return "ready" + (f" ({', '.join(limits)})" if limits else "")
 
 
+def _cmd_select(args: argparse.Namespace) -> int:
+    """Show what a selection matches, before a run depends on it.
+
+    A selection that matches no atoms is refused when a study starts. A
+    selection that matches the *wrong* atoms is not an error and cannot be
+    made one -- `resid 189` and `resSeq 189` are both valid, both non-empty,
+    and name different residues in any structure that is not numbered from
+    one without gaps. This prints what the expression actually resolves to.
+    """
+    import mdtraj as md
+
+    structure = Path(args.structure)
+    if not structure.is_file():
+        print(f"fastmdx: no such structure: {structure}", file=sys.stderr)
+        return 2
+
+    try:
+        topology = md.load(str(structure)).topology
+    except Exception as exc:  # mdtraj raises a variety of types
+        print(f"fastmdx: could not read {structure}: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        indices = topology.select(args.expression)
+    except Exception as exc:
+        print(f"fastmdx: {args.expression!r} is not a valid selection: {exc}",
+              file=sys.stderr)
+        return 2
+
+    print(f"{args.expression!r} against {structure.name}")
+    print(f"  {len(indices)} of {topology.n_atoms} atoms")
+
+    if len(indices) == 0:
+        # Said here rather than left for the reader to infer, because an
+        # empty match is the one case where the next step is obvious.
+        print()
+        print("  Nothing matched. If you are naming residues from a paper, a")
+        print("  figure or a PDB entry, the number in them is `resSeq`;")
+        print("  `resid` counts residues from zero in file order.")
+        return 1
+
+    residues = []
+    for index in indices:
+        residue = topology.atom(int(index)).residue
+        if not residues or residues[-1] is not residue:
+            if residue not in residues:
+                residues.append(residue)
+
+    limit = None if args.limit == 0 else max(1, int(args.limit))
+    if args.atoms:
+        shown = [f"{topology.atom(int(i))}" for i in indices]
+        label = "atoms"
+    else:
+        shown = [f"{r.name}{r.resSeq}" for r in residues]
+        label = f"{len(residues)} residues"
+    print(f"  {label}: ", end="")
+    if limit is not None and len(shown) > limit:
+        print(", ".join(shown[:limit]) + f", ... ({len(shown) - limit} more)")
+    else:
+        print(", ".join(shown))
+    return 0
+
+
 def _cmd_info() -> int:
     print("FastMDXplora")
     print(f"  version: {__version__}")
@@ -1660,6 +1743,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_phase(args.command, args)
         if args.command == "info":
             return _cmd_info()
+        if args.command == "select":
+            return _cmd_select(args)
     except ConfigError as exc:
         print(f"fastmdx: config error: {exc}", file=sys.stderr)
         return 2

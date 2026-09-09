@@ -400,8 +400,8 @@ that number is noise. A smoke test that wants to reach the recombination can
 lower the threshold.
 
 A misspelled setting is refused rather than ignored, with the spelling it was
-probably meant to be. `minimum_ovelap` used to be accepted and dropped, and the
-study would stitch at the three per cent default believing otherwise.
+probably meant to be. Accepting `minimum_ovelap` and dropping it would let a
+study stitch at the three per cent default while believing otherwise.
 
 If the windows never reach their centres, the recombination says so rather
 than reporting the gap that leaves. A study seeded from one bound structure

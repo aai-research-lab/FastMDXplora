@@ -65,9 +65,9 @@ moves a run away from the parameterisation rather than towards it. Setting
 `nonbonded_cutoff_nm` or `switch_distance_nm` overrides this, and the run says
 which it used.
 
-OpenMM offers the potential-based switching function and not CHARMM's
-force-based one. That is the protocol CHARMM-GUI prescribes for OpenMM, having
-tested it against CHARMM's own results, and it is not the same function.
+The switching function is potential-based. A force-based switch is a
+different function and is not available here, so a protocol specifying one
+cannot be reproduced by setting `switch_distance_nm` alone.
 
 **Writes** `prepared.pdb`, `solvated.pdb`, `system.xml`, `state.xml`,
 `setup_parameters.json`, and an SDF per ligand.

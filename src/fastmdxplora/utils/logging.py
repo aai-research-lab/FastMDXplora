@@ -276,8 +276,44 @@ def setup_console(
         base.addHandler(handler)
         _console_handler = handler
     else:
+        # The console is wherever stdout points now, not wherever it pointed
+        # the first time this ran. A handler holds the stream object it was
+        # built with, so after a redirect it keeps writing to the old one --
+        # which means output going somewhere the caller cannot see, or, if
+        # that stream has since been closed, a ValueError raised from the
+        # logging call rather than from anything the caller did.
+        _rebind_console(_console_handler, style)
         _console_handler.setLevel(base.level)
     return base
+
+
+def _rebind_console(handler: logging.Handler, style: str) -> None:
+    """Point the console handler at the current ``sys.stdout``."""
+    current = sys.stdout
+    existing = getattr(handler, "stream", None)
+    if existing is current:
+        return
+    handler.acquire()
+    try:
+        try:
+            handler.flush()
+        except (ValueError, OSError):
+            # The stream we are leaving may already be closed, which is the
+            # commonest reason to be here at all. Nothing to flush it to.
+            pass
+        # Assigned rather than `setStream`, which flushes the outgoing
+        # stream itself and so raises on exactly the closed stream this
+        # exists to get away from.
+        handler.stream = current
+    finally:
+        handler.release()
+    if style != "plain":
+        # Whether to colour depends on what is being written to, so it is
+        # decided again rather than carried over from the previous stream.
+        use_color = bool(
+            getattr(current, "isatty", lambda: False)()
+        ) and not os.getenv("NO_COLOR")
+        handler.setFormatter(_PrettyFormatter(use_color))
 
 
 def attach_file_logger(

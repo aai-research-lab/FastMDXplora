@@ -71,12 +71,10 @@ The environment file carries the conda-only packages -- openmm-plumed above
 all, which has no PyPI distribution -- so a clone set up this way has the whole
 stack.
 
-That sentence was false for four releases: the file listed the core and the
-OpenMM stack and omitted rdkit, propka, openff-toolkit, openmm-plumed, scipy,
-pillow, netcdf4 and weasyprint, so the documented development setup had no
-ligand chemistry, no pKa assignment, no enhanced sampling and no PDF. Nothing
-tested it -- the dependency test reads the conda recipe, not this file -- which
-is why it went unnoticed. It is checked now.
+It carries rdkit, propka and openff-toolkit for ligand chemistry and pKa
+assignment, openmm-plumed for enhanced sampling, weasyprint for the PDF
+report, and scipy, pillow and netcdf4. A test checks this file against the
+declared dependencies, so an environment built from it runs every phase.
 
 ---
 

@@ -58,8 +58,8 @@ finding out later that it was wrong.
 A setting that is a *block* rather than a value — `umbrella`, `steered`,
 `metadynamics` — gets a box you write the block into, one setting per line,
 exactly as it appears in a config file. An example of the right shape sits in
-the box until you type. These used to be single-line fields, which meant the
-GUI was the one interface where enhanced sampling could not be set up.
+the box until you type, so enhanced sampling is set up here the same way it is
+set up anywhere else.
 
 `plumed` is the exception, because it is one script with an on-switch rather
 than a mapping of settings, and writing a working `.dat` file inside YAML

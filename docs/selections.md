@@ -13,17 +13,11 @@ analysis:
 Every selection expression is parsed by MDTraj's
 [atom selection language](https://mdtraj.org/1.9.4/atom_selection.html) and
 resolved with `topology.select()`. Whatever the key is called and whichever
-phase reads it, the string means what MDTraj says it means.
-
-The word `select_atoms` is MDAnalysis's, and the language is MDTraj's. That
-is deliberate: the word is what most people arrive knowing, and the language
-is what this package already parses everywhere else. Borrowing one without
-the other would be worse than borrowing neither.
+phase reads it, the string means the same thing.
 
 ### `resid` is not the residue number
 
-This catches people, and it has caught this project. MDTraj has two ways to
-name a residue and they are not the same:
+There are two ways to name a residue and they are not the same:
 
 | expression | means |
 | --- | --- |
@@ -44,11 +38,23 @@ or a PDB entry, you almost certainly want `resSeq`.**
 
 Check before you run:
 
-```python
-import mdtraj as md
-top = md.load("runs/my-study/shared_setup/setup/topology.pdb").topology
-print([str(top.atom(i).residue) for i in top.select("resSeq 189 to 195 and name CA")])
+```bash
+fastmdx select "resSeq 189 to 195 and name CA" -s trypsin.pdb
 ```
+
+```
+'resSeq 189 to 195 and name CA' against trypsin.pdb
+  7 of 3220 atoms
+  7 residues: ASP189, SER190, CYS191, GLN192, GLY193, ASP194, SER195
+```
+
+`--atoms` lists every matching atom instead of the residues, and `--limit 0`
+lists all of them rather than the first forty. Any structure the software can
+read works: the deposited entry, `prepared.pdb`, or the topology written
+beside a trajectory.
+
+An expression matching nothing says so and exits non-zero, so it can gate a
+script.
 
 ## Where selections appear
 
@@ -140,15 +146,8 @@ The role-specific names all still work and say more where they apply:
 
 **The two spellings are settled when the config is read, not where it is
 used.** After loading, a block that was given either name carries both, with
-the same value. Nothing downstream has to know which word you wrote, and no
-part of a run can disagree with another about what the block says — because
-there is no absent spelling for one of them to miss.
-
-This is not a detail. A study written with `select_atoms` once pulled a
-ligand for two and a half hours and then stopped, because the code that
-builds the PLUMED script translated the word and the code that seeds the
-windows did not. The translation was correct; it just lived in one of the two
-readers. It now lives before both.
+the same value. Nothing downstream has to know which word you wrote, so no
+part of a run can disagree with another about what the block says.
 
 The ligand is named by residue, not by selection, and `ligand_name` and
 `ligand_resname` are the same key:
@@ -195,10 +194,6 @@ make it one. That is what the `resid`/`resSeq` table above is for.
 ## Recorded with the results
 
 Every analysis writes the options it actually used into `options.json` beside
-its output, the resolved selection among them. This is not bookkeeping: when
-this project's radius of gyration disagreed with an independent recomputation
-by 5×10⁻² nm, the run's own record of which atoms it had measured is what
-resolved it — and the difference fell to 10⁻⁶ nm, floating-point reading
-precision, once the recomputation used the same selection.
-
-If two tools disagree about a number, compare their selections first.
+its output, the resolved selection among them. Two measurements of the same
+trajectory that disagree usually measured different atoms, and this is the
+record that settles it.

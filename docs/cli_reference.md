@@ -19,6 +19,7 @@ That is the shape of it: a command, a structure, somewhere to put the results.
 | `fastmdx report` | write up an existing run |
 | `fastmdx gui` | the [GUI](gui.md) |
 | `fastmdx info` | what is installed, and how to get what is not |
+| `fastmdx select` | what a selection matches, before a run uses it |
 | `fastmdx init-config` | write a commented config template |
 
 ---
@@ -145,7 +146,15 @@ Ten picoseconds, which the report will tell you supports nothing.
 fastmdx --version
 fastmdx info                          # backends, and what to install
 fastmdx explore --config study.yml --dry-run   # validate without running
+
+# What a selection matches, before a study depends on it. A selection that
+# matches the wrong atoms is not an error and nothing downstream detects it.
+fastmdx select "resSeq 189 to 195 and name CA" -s trypsin.pdb
+fastmdx select "protein and name CA" -s prepared.pdb --atoms --limit 0
 ```
+
+`select` exits non-zero when the expression matches nothing, so it can gate a
+script. See [Selections](selections.md).
 
 ---
 

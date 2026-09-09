@@ -224,7 +224,16 @@ class SessionPresenter:
         explain: bool = True,
         width: int | None = None,
     ) -> None:
-        self.stream: IO = stream if stream is not None else sys.stdout
+        # Held as "the stream I was given, or none" rather than as a
+        # resolved object. The presenter is a singleton built the first time
+        # anything prints, and `sys.stdout` is not fixed for the life of a
+        # process: a caller that redirects it afterwards would otherwise keep
+        # having output written to the stream it replaced -- invisible where
+        # it went, and a ValueError from this class if that stream has since
+        # been closed. Resolved at each write instead, so the console is
+        # wherever the console is now.
+        self._stream: IO | None = stream
+        self._color_override: bool | None = None
 
         # Auto-detect quiet mode from env when not explicitly set
         if quiet is None:
@@ -243,7 +252,6 @@ class SessionPresenter:
                 width = 80
         self.width: int = max(40, width)  # clamp absurdly narrow terminals
 
-        self._color: bool = _ansi_supported(self.stream)
         self._session_start: float | None = None
         self._phase_start: float | None = None
         self._current_phase: str | None = None
@@ -323,6 +331,31 @@ class SessionPresenter:
     }
     _WORDMARK = "FastMDXplora"
     _TAGLINE = "Fully Automated SysTem for Molecular Dynamics eXploration"
+
+    @property
+    def stream(self) -> IO:
+        """Where output goes now, not where it went at construction."""
+        return self._stream if self._stream is not None else sys.stdout
+
+    @stream.setter
+    def stream(self, value: IO) -> None:
+        self._stream = value
+
+    @property
+    def _color(self) -> bool:
+        """Whether to colour, decided against the stream being written to.
+
+        Derived rather than stored, for the same reason the stream is: a
+        redirect changes the answer. An explicit assignment still wins, so a
+        caller that forces colour on or off keeps that.
+        """
+        if self._color_override is not None:
+            return self._color_override
+        return _ansi_supported(self.stream)
+
+    @_color.setter
+    def _color(self, value: bool) -> None:
+        self._color_override = bool(value)
 
     def welcome(
         self,
