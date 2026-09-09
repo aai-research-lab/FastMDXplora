@@ -974,6 +974,9 @@ class BatchExplorer:
         Seeds are positions in a particular `system.xml`, and positions from
         a second preparation belong to a different arrangement of water.
         """
+        from fastmdxplora.simulation.metadynamics import (
+            with_general_selection_names,
+        )
         from fastmdxplora.simulation.seeding import seed_windows
         from fastmdxplora.simulation.umbrella import plan_from_expanded
 
@@ -1027,13 +1030,27 @@ class BatchExplorer:
                 )
 
         centres = [w.centre for w in plan.windows]
+        # The seeder has to read the same config the PLUMED builder reads.
+        # `with_general_selection_names` is what turns the general
+        # `select_atoms` into whichever role name a variable uses, and it
+        # runs inside `plan_from_config` -- so the pull was translated and
+        # this was not. A study written with `select_atoms`, which is the
+        # spelling the documentation leads with, therefore pulled for two
+        # and a half hours and then found nothing here to measure against.
+        #
+        # Two readers of one block again, which is what patch 0038 was
+        # about. The line below it already carried the lesson for the
+        # ligand and not for the selection.
+        window = with_general_selection_names(
+            dict(first_window),
+            str(first_window.get("collective_variable", "")).lower())
         seeds = seed_windows(
             pull_output, prepared, centres, self.output_dir / "seeds",
             # Either spelling: the umbrella block accepts both, so the
             # thing reading it has to as well.
-            ligand_resname=str(first_window.get("ligand_resname")
-                               or first_window.get("ligand_name") or ""),
-            site_selection=str(first_window.get("site_selection") or ""),
+            ligand_resname=str(window.get("ligand_resname")
+                               or window.get("ligand_name") or ""),
+            site_selection=str(window.get("site_selection") or ""),
             temperature_K=float(simulation.get("temperature_K", 300.0)),
             random_seed=int(simulation.get("random_seed") or 0),
         )

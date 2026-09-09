@@ -181,6 +181,27 @@ def measure_along(trajectory: Any, ligand_resname: str,
     so, since a structure without periodicity has no images to choose from.
     """
     topology = trajectory.topology
+    # Refused here rather than inside MDTraj. An empty expression reaches
+    # `topology.select` as a pyparsing failure -- "Expected '=~' operations
+    # (at char 0), (line:1, col:1)" -- which names a character position in a
+    # string the user never wrote and says nothing about which key was
+    # missing. A whole pull was lost to that message. The check below for a
+    # selection matching *no atoms* never got the chance to run, because a
+    # selection that is not an expression at all fails earlier.
+    if not str(site_selection).strip():
+        raise ValueError(
+            "No site selection reached the seeder, so there is nothing to "
+            "measure the ligand against. The umbrella block needs "
+            "`select_atoms` -- or the role name `site_selection` -- naming "
+            'the site, for example `select_atoms: "resSeq 189 to 195 and '
+            'name CA"`.'
+        )
+    if not str(ligand_resname).strip():
+        raise ValueError(
+            "No ligand name reached the seeder, so there is nothing to "
+            "measure from. Give the umbrella block `ligand_name` (or "
+            "`ligand_resname`), for example `ligand_name: BEN`."
+        )
     ligand = topology.select(f"resname {ligand_resname}")
     site = topology.select(site_selection)
     if ligand.size == 0:

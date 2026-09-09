@@ -539,3 +539,111 @@ def test_the_pull_is_not_run_as_an_umbrella_window(monkeypatch, tmp_path):
     assert simulation["steered"]["to"] == 2.0
     assert simulation["save_selection"] == "all"
     assert seen["include"] == ["simulation"]
+
+
+def test_the_seeder_reads_the_spelling_the_documentation_leads_with(
+        monkeypatch, tmp_path):
+    """`select_atoms` has to reach the seeder, not only the PLUMED builder.
+
+    `with_general_selection_names` translates the general `select_atoms`
+    into whichever role name a variable uses, and it runs inside
+    `plan_from_config` -- the PLUMED builder. The seeding hand-off read
+    `site_selection` straight off the window block and coerced a miss to
+    `""` with `or ""`.
+
+    So a study written the way `docs/selections.md` leads -- `select_atoms`
+    -- pulled correctly for two and a half hours, because the pull is built
+    through PLUMED, and then handed MDTraj an empty expression. MDTraj
+    answered "Expected '=~' operations (at char 0), (line:1, col:1)", which
+    names a character position in a string nobody wrote. Thirty windows
+    never started.
+
+    Two readers of one block, which is what patch 0038 was about; the line
+    directly above the bug already carried the lesson for the ligand name
+    and not for the selection beside it.
+    """
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import fastmdxplora.batch.explorer as explorer_module
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    SITE = "resSeq 189 to 195 and name CA"
+    seen = {}
+
+    def _capture_seed(pull, prepared, centres, out, **kwargs):
+        seen.update(kwargs)
+        # The real one creates this; the caller writes `seeds.json` into it.
+        Path(out).mkdir(parents=True, exist_ok=True)
+        return []
+
+    monkeypatch.setattr("fastmdxplora.simulation.seeding.seed_windows",
+                        _capture_seed)
+    monkeypatch.setattr(explorer_module, "_a_pull_is_there",
+                        lambda directory: True)
+
+    explorer = BatchExplorer.__new__(BatchExplorer)
+    explorer.output_dir = tmp_path
+    explorer.verbose = False
+    explorer.force = False
+    explorer._raw = {
+        "simulation": {
+            "duration_ns": 10,
+            "steered": {"collective_variable": "ligand_distance",
+                        "ligand_name": "BEN", "to": 2.0},
+        },
+    }
+
+    def _window(index, centre):
+        # `select_atoms`, and deliberately no `site_selection`: this is the
+        # config the documentation tells a user to write.
+        return {"umbrella": {"index": index, "centre": centre,
+                             "force_constant": 3000.0,
+                             "collective_variable": "ligand_distance",
+                             "ligand_name": "BEN",
+                             "select_atoms": SITE}}
+
+    explorer._raw["systems"] = [
+        {"id": f"window-{i:02d}", "simulation": _window(i, 0.4 + 0.05 * i)}
+        for i in range(3)
+    ]
+    window = _window(0, 0.4)
+    explorer.run_specs = [
+        SimpleNamespace(options={"simulation": dict(window)},
+                        to_dict=lambda: {"run_id": "window-00",
+                                         "system_id": "s", "system": "x.pdb",
+                                         "sweep_values": {},
+                                         "options": {"simulation": dict(window)}})
+    ]
+
+    explorer._maybe_seed_the_windows(tmp_path / "prepared")
+
+    assert seen.get("site_selection") == SITE, (
+        "the seeder did not receive the selection the study declared; "
+        f"it got {seen.get('site_selection')!r}"
+    )
+    assert seen.get("ligand_resname") == "BEN"
+
+
+def test_an_empty_site_selection_is_refused_by_name(tmp_path):
+    """The refusal says which key is missing, not which character.
+
+    `topology.select("")` raises a pyparsing error pointing at column one.
+    The check for a selection matching *no atoms* sits below it and never
+    runs, because a string that is not an expression fails earlier than one
+    that matches nothing.
+    """
+    import numpy as np
+    import pytest
+
+    md = pytest.importorskip("mdtraj")
+    from fastmdxplora.simulation.seeding import measure_along
+
+    top = md.Topology()
+    chain = top.add_chain()
+    residue = top.add_residue("LIG", chain)
+    top.add_atom("C", md.element.carbon, residue)
+    trajectory = md.Trajectory(np.zeros((1, 1, 3), dtype=np.float32), top)
+
+    with pytest.raises(ValueError, match="select_atoms"):
+        measure_along(trajectory, "LIG", "")
