@@ -995,7 +995,13 @@ class BatchExplorer:
         if pull_spec and not _a_pull_is_there(pull_output):
             print("\nPulling once, to start every window where it belongs\n"
                   + "=" * 52)
+            # `to_dict()` nests the phase blocks under "options", which is
+            # where `_execute_run` reads them. Assigning `options["simulation"]`
+            # put a key at the top level that nothing reads and left the
+            # window's own block in place -- so the pull ran as umbrella
+            # window 0, restrained at 0.4 nm, dragging nothing anywhere.
             options = dict(self.run_specs[0].to_dict())
+            options["run_id"] = "seed-pull"
             carried = {k: v for k, v in simulation.items()
                        if k not in ("umbrella", "steered")}
             carried["prepared_from"] = str(prepared)
@@ -1007,7 +1013,8 @@ class BatchExplorer:
             # produce one. Taking the water from the prepared system instead
             # would put bound-state solvent where the ligand now is.
             carried["save_selection"] = "all"
-            options["simulation"] = carried
+            options["options"] = dict(options.get("options") or {})
+            options["options"]["simulation"] = carried
             result = _execute_run(
                 options, str(pull_output), ["simulation"], None,
                 self.verbose, None, quiet=False, force=self.force,

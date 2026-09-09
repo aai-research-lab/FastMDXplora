@@ -1371,9 +1371,6 @@ def run_simulation(
             window.index, cv_plan.collective_variable, window.centre,
             window.force_constant)
         plumed = {"enabled": True, "script": str(script_path)}
-        if measure_the_anchor_again:
-            plumed["reanchor"] = {"spec": dict(steered),
-                                  "temperature_K": temperature_K}
 
     if len([x for x in (steered, metadynamics, umbrella) if x]) > 1:
         raise ValueError(
@@ -1419,6 +1416,17 @@ def run_simulation(
         script_path = Path(output_dir) / "steered.plumed"
         script_path.parent.mkdir(parents=True, exist_ok=True)
         script_path.write_text(script, encoding="utf-8")
+        if measure_the_anchor_again:
+            # Read again at production, from the state equilibration made.
+            # This belongs to the pull and lived, for one release, in the
+            # umbrella branch above -- where the name it tests is never
+            # assigned, so every window raised UnboundLocalError on its
+            # first second. Three `plumed = {...}` lines in one function and
+            # the edit landed on the wrong one.
+            reanchor_after_equilibration = {"spec": dict(steered),
+                                            "temperature_K": temperature_K}
+        else:
+            reanchor_after_equilibration = None
 
         rate = steered_plan.rate_per_ns(timestep_fs)
         logger.info(
@@ -1430,6 +1438,8 @@ def run_simulation(
             f" ({rate:.3g} per ns)" if rate is not None else "",
         )
         plumed = {"enabled": True, "script": str(script_path)}
+        if reanchor_after_equilibration:
+            plumed["reanchor"] = reanchor_after_equilibration
 
     if metadynamics:
         # A named collective variable becomes PLUMED input, which the existing

@@ -463,3 +463,75 @@ def test_seeding_survives_the_key_being_renamed(monkeypatch):
         starts = [s.options["simulation"]["prepared_from"]
                   for s in explorer.run_specs]
         assert starts == ["seeds/window-00", "seeds/window-01"], key
+
+
+def test_the_pull_is_not_run_as_an_umbrella_window(monkeypatch, tmp_path):
+    """The pull is the study's own run, not a copy of window 0.
+
+    `RunSpec.to_dict()` nests the phase blocks under "options", which is
+    where `_execute_run` reads them. Writing `options["simulation"]` put a
+    key at the top level that nothing reads and left window 0's block in
+    place -- so the pull started as "umbrella window 0, held at 0.4 nm with
+    k=3000", restrained at a point instead of dragging the ligand anywhere.
+    """
+    from types import SimpleNamespace
+
+    import fastmdxplora.batch.explorer as explorer_module
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    seen = {}
+
+    def _capture(spec_dict, run_out, include, exclude, *args, **kwargs):
+        seen["spec"] = spec_dict
+        seen["include"] = include
+        return SimpleNamespace(status="ok", message="")
+
+    monkeypatch.setattr(explorer_module, "_execute_run", _capture)
+    monkeypatch.setattr(explorer_module, "_a_pull_is_there",
+                        lambda directory: False)
+
+    explorer = BatchExplorer.__new__(BatchExplorer)
+    explorer.output_dir = tmp_path
+    explorer.verbose = False
+    explorer.force = False
+    explorer._raw = {
+        "simulation": {
+            "duration_ns": 10,
+            "steered": {"collective_variable": "ligand_distance",
+                        "ligand_name": "BEN", "to": 2.0},
+        },
+    }
+
+    def _window(index, centre):
+        return {"umbrella": {"index": index, "centre": centre,
+                             "force_constant": 3000.0,
+                             "collective_variable": "ligand_distance",
+                             "ligand_name": "BEN",
+                             "select_atoms": "resSeq 189 to 195 and name CA"}}
+
+    # The plan is rebuilt from the expanded systems, so there have to be
+    # windows there for the study to be an umbrella study at all.
+    explorer._raw["systems"] = [
+        {"id": f"window-{i:02d}", "simulation": _window(i, 0.4 + 0.05 * i)}
+        for i in range(3)
+    ]
+    window = _window(0, 0.4)
+    explorer.run_specs = [
+        SimpleNamespace(options={"simulation": dict(window)},
+                        to_dict=lambda: {"run_id": "window-00",
+                                         "system_id": "s", "system": "x.pdb",
+                                         "sweep_values": {},
+                                         "options": {"simulation": dict(window)}})
+    ]
+
+    # Stops after the pull "runs": there is no trajectory to seed from.
+    try:
+        explorer._maybe_seed_the_windows(tmp_path / "prepared")
+    except Exception:  # noqa: BLE001 -- the pull is what is under test
+        pass
+
+    simulation = seen["spec"]["options"]["simulation"]
+    assert "umbrella" not in simulation, "the pull inherited a window"
+    assert simulation["steered"]["to"] == 2.0
+    assert simulation["save_selection"] == "all"
+    assert seen["include"] == ["simulation"]
