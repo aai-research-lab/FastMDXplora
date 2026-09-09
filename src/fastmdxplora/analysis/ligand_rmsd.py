@@ -235,13 +235,13 @@ class LigandRMSD(Analysis):
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         x, _ = self.frame_axis_for_plot(result, self._traj_for_plot)
-        ax.plot(x, result, linewidth=1.4, color=colour("SERIES"))
-        ref_x = x[self._resolved_ref]
-        ax.axvline(
-            ref_x, color=colour("GUIDE"), linestyle=":", linewidth=1.0,
-            label=f"reference (frame {self._resolved_ref})",
-        )
-        ax.legend(loc="best")
+        ax.plot(x, result, linewidth=1.2, color=colour("SERIES"))
+        # No marker for the reference frame. It was a vertical line at the
+        # left edge labelled "reference (frame 0)", which took a legend entry
+        # to say that a curve of displacement from a frame starts at zero at
+        # that frame. What a reader needs from this plot is where the pose
+        # settled and what it settled at, and the base class draws that.
+        ax.set_ylim(bottom=0.0)
 
     # Plot plumbing mirrors RMSD.
     _traj_for_plot: md.Trajectory | None = None

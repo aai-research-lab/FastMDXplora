@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 
 from fastmdxplora.analysis.plotting import (
-    drawn_in, new_figure, save_figure, settle_figure_colours,
+    colour, drawn_in, new_figure, save_figure, settle_figure_colours,
 )
 from fastmdxplora.utils.logging import get_logger
 
@@ -160,6 +160,7 @@ class Analysis(ABC):
 
     #: Human-readable description used in figure titles.
     description: str = ""
+
 
     #: True for analyses that only apply to protein-ligand complexes (e.g.
     #: ligand pose RMSD). The orchestrator runs these automatically when a
@@ -472,7 +473,103 @@ class Analysis(ABC):
             record.update(settled.as_record())
         if reason is not None:
             record["not_a_measurement"] = reason
+        record["n_frames"] = int(series.size)
         self.findings["mean"] = record
+
+        # Kept so the figure can show what the mean rests on. The x axis is
+        # taken from the same call the plot uses, rather than reconstructed
+        # from frame numbers, so the shading lands where the data is
+        # whichever unit the axis ended up in.
+        try:
+            self._x_for_overlay = self.frame_axis(traj)[0]
+        except Exception:  # an analysis with an axis of its own
+            self._x_for_overlay = None
+
+    def _mark_what_the_mean_rests_on(self, ax: plt.Axes) -> None:
+        """Draw the settled region, its mean, and the error bar or its absence.
+
+        The software works out where a series settled, averages only after
+        that, and decides whether the run is long enough against its own
+        correlation time for an error bar to mean anything. Every one of
+        those numbers was computed and written to `options.json`, and none of
+        them reached the figure -- so a reader saw a line, and had to take on
+        trust both which part of it the reported mean came from and whether
+        that mean carried an uncertainty at all.
+
+        Where the software refuses an error bar, the figure says so in the
+        same place it would have drawn one. A mean printed without that is
+        the claim this package exists not to make.
+        """
+        record = self.findings.get("mean") or {}
+        mean = record.get("mean")
+        if mean is None or not np.isfinite(mean):
+            return
+
+        x = getattr(self, "_x_for_overlay", None)
+        n_frames = int(record.get("n_frames") or 0)
+        if x is None or len(x) != n_frames or n_frames == 0:
+            return
+        low, high = ax.get_xlim()
+        if not (low - 1e-9 <= float(x[0]) and float(x[-1]) <= high + 1e-9):
+            return  # the plot uses an axis of its own; do not guess
+
+        discard = int(record.get("discard") or 0)
+        if 0 < discard < n_frames:
+            # Light. The excluded frames still carry the evidence that the
+            # run needed that long to settle, so they are marked as not
+            # counted rather than hidden under a block of grey.
+            share = discard / n_frames
+            ax.axvspan(float(x[0]), float(x[discard]),
+                       facecolor=colour("FAINT"), alpha=0.30, zorder=0,
+                       linewidth=0,
+                       label=f"relaxation, excluded ({share:.0%} of frames)")
+            ax.axvline(float(x[discard]), color=colour("GUIDE"),
+                       linestyle=":", linewidth=0.8, zorder=1)
+
+        settled_from = float(x[discard]) if discard < n_frames else float(x[0])
+        error = record.get("standard_error")
+        has_error = error is not None and np.isfinite(error) and error > 0
+        if has_error:
+            ax.fill_between([settled_from, float(x[-1])],
+                            mean - error, mean + error,
+                            color=colour("BAND"), alpha=0.35,
+                            zorder=1, linewidth=0)
+        ax.plot([settled_from, float(x[-1])], [mean, mean],
+                color=colour("ACCENT"), linewidth=1.3,
+                linestyle="--", zorder=3,
+                label=self._mean_label(record, has_error))
+        ax.legend(loc="best", fontsize=7.5, framealpha=0.85)
+
+    def _mean_unit(self) -> str:
+        """The unit for the legend, taken from the axis that already states it.
+
+        `default_ylabel` declares it -- "RMSD (nm)", "Mean SASA (nm2)" -- so
+        it is read from there rather than declared a second time on each of
+        twenty-three analyses. Two places naming one unit is how they come to
+        disagree.
+        """
+        try:
+            label = self._user_ylabel or self.default_ylabel() or ""
+        except Exception:  # noqa: BLE001 - a label depending on run state
+            return ""
+        if label.endswith(")") and "(" in label:
+            inside = label[label.rindex("(") + 1:-1].strip()
+            if inside and len(inside) <= 12:
+                return f" {inside}"
+        return ""
+
+    def _mean_label(self, record: dict[str, Any], has_error: bool) -> str:
+        """What the dashed line is, said in the legend where it is read."""
+        mean = record["mean"]
+        unit = self._mean_unit()
+        if has_error:
+            return (f"settled mean {mean:.4g} ± {record['standard_error']:.2g}"
+                    f"{unit}")
+        effective = record.get("effective_samples")
+        if effective is not None and np.isfinite(effective):
+            return (f"settled mean {mean:.4g}{unit} — no error bar, "
+                    f"{effective:.1f} effective samples")
+        return f"settled mean {mean:.4g}{unit} — no error bar"
 
     def select_atoms(self, traj: md.Trajectory) -> np.ndarray:
         """Resolve :attr:`selection` to atom indices on a given trajectory.
@@ -612,6 +709,15 @@ class Analysis(ABC):
             ax.set_xlabel(xlabel)
         if ylabel is not None:
             ax.set_ylabel(ylabel)
+
+        # After the labels, so the unit the axis settled on is available, and
+        # after plot(), so an analysis that draws its own legend keeps it.
+        if self.time_series:
+            try:
+                self._mark_what_the_mean_rests_on(ax)
+            except Exception:  # noqa: BLE001 - a figure beats no figure
+                logger.debug("could not mark the settled mean on %s",
+                             self.name, exc_info=True)
 
         return save_figure(fig, path)
 
