@@ -21,8 +21,10 @@ bridges.
 
 ## Why FastMDXplora implements this rather than depending on PLIP or ProLIF
 
-Both tools do this well and both were used to check the implementation.
-Neither is a dependency, for reasons specific to each.
+Both tools do this well and neither is a dependency, for reasons specific to
+each. They also stand in different relations to what is below: ProLIF was run
+against this implementation and its results are recorded here; PLIP supplies
+criteria and was not run.
 
 **ProLIF requires MDAnalysis.** That is a second trajectory library beside
 MDTraj, with its own file handling, its own selection language and its own
@@ -35,6 +37,13 @@ between runs, and it discards the protonation FastMDXplora's setup phase
 settled at the simulated pH — which is the protonation the trajectory was
 actually generated under. A tool that re-decides it per frame is answering a
 different question from the one the simulation asked.
+
+That is also why PLIP does not appear in the checking below. Its published
+criteria are adopted and cited throughout — the hydrophobic threshold, the
+π-stacking and π-cation geometry, metal coordination, the water bridge — but a
+non-deterministic re-protonation cannot serve as a reference measurement for a
+trajectory whose protonation was fixed at setup. Citing a tool's criteria and
+running it are different claims, and only the first is made here.
 
 ---
 

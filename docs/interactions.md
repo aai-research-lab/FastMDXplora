@@ -145,13 +145,25 @@ hydrophobic,2637,1385,0.81,13,True,VAL87
 
 ## Why not PLIP or ProLIF
 
-Both were used to check this implementation, and neither is a dependency.
+Neither is a dependency, and the two stand in different relations to this
+implementation: one supplied criteria, the other supplied results.
 
-ProLIF requires MDAnalysis, which is a second trajectory library beside MDTraj
-with its own file handling and its own selection language. PLIP re-protonates
-each frame with OpenBabel, which is not deterministic between runs and
-discards the protonation that setup settled at the simulated pH.
+**PLIP is where several of the criteria come from.** The 4.0 Å hydrophobic
+contact, π-stacking, π-cation, metal coordination and the water bridge are
+PLIP's published definitions, cited in the table above and in each rule's
+docstring. PLIP itself is not run — not as a dependency and not as a check.
+It re-protonates every frame with OpenBabel, which is not deterministic
+between runs and discards the protonation that setup settled at the simulated
+pH. A tool that re-decides the protonation per frame is answering a different
+question from the one the simulation asked, and that disqualifies it as a
+reference measurement for the same reason it disqualifies it as a dependency.
 
-The validation is recorded in `interactions_design.md`: partners agree with
-ProLIF exactly, and counts agree once the threshold and counting differences
-are accounted for. Neither difference is a defect; both are settings.
+**ProLIF was run against this implementation.** It is not a dependency because
+it requires MDAnalysis: a second trajectory library beside MDTraj, with its own
+file handling and its own selection language.
+
+What the checking found is recorded in `interactions_design.md`. Against
+ProLIF the partners agree exactly, and the counts agree once the threshold and
+counting differences are accounted for; MDTraj's `baker_hubbard` agrees on the
+protein-internal hydrogen bonds. Neither difference from ProLIF is a defect;
+both are settings.
