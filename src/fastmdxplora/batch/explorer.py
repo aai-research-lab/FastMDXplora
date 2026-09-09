@@ -991,6 +991,13 @@ class BatchExplorer:
                        if k not in ("umbrella", "steered")}
             carried["prepared_from"] = str(prepared)
             carried["steered"] = pull_spec
+            # Every atom, overriding whatever the study saves elsewhere. A
+            # trajectory defaults to "not water" because water is ten times
+            # the file for questions nobody is asking -- but a seed is a
+            # complete set of positions, and a frame without solvent cannot
+            # produce one. Taking the water from the prepared system instead
+            # would put bound-state solvent where the ligand now is.
+            carried["save_selection"] = "all"
             options["simulation"] = carried
             result = _execute_run(
                 options, str(pull_output), ["simulation"], None,

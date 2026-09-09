@@ -269,11 +269,19 @@ def write_seeds(prepared: Path | str,
     system = XmlSerializer.deserialize(
         system_xml.read_text(encoding="utf-8"))
     if system.getNumParticles() != trajectory.n_atoms:
+        missing = system.getNumParticles() - trajectory.n_atoms
+        likely = (
+            " That is about the number of solvent atoms in it, so the pull "
+            "almost certainly saved a selection rather than the whole "
+            "system -- `save_selection` defaults to \"not water\". A seed is "
+            "a complete set of positions and cannot be built from a subset; "
+            "borrowing the missing water from the prepared system would put "
+            "bound-state solvent where the ligand has since moved. Re-run "
+            "the pull with `save_selection: all`."
+        ) if missing > 0 else ""
         raise ValueError(
             f"The prepared system has {system.getNumParticles()} particles "
-            f"and the pull's trajectory has {trajectory.n_atoms}. These are "
-            "not the same system, and a seed written from one into the other "
-            "would be nonsense."
+            f"and the pull's trajectory has {trajectory.n_atoms}.{likely}"
         )
 
     # One context for every window. Building a Reference context over tens of

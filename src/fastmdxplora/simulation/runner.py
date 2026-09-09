@@ -490,6 +490,59 @@ def _attach_state_reporter(
     return reporter
 
 
+def _anchor_the_pull_where_it_starts(simulation: Any, topology: Any,
+                                     reanchor: dict, script_path: "Path",
+                                     topology_path: Any) -> None:
+    """Rewrite the pull's script with the anchor equilibration produced.
+
+    A moving restraint travels from one value to another, and the first is
+    where the system is when the pull starts. That is not where the prepared
+    structure sat: minimisation, NVT and NPT all run first and all move it.
+    Anchoring at the earlier value leaves the restraint a little behind the
+    system, pulling backwards for an instant before the anchor overtakes --
+    small over a pull of a nanometre and a half, and avoidable, since by the
+    time the force is attached the right positions exist.
+
+    Failure here is not fatal. The script written from the starting structure
+    is already a working pull, so a problem reading the current state costs
+    the refinement and says so rather than costing the run.
+    """
+    from fastmdxplora.simulation.steered import (
+        build_steered_script, plan_steered)
+
+    try:
+        import mdtraj as md
+        from openmm import unit as openmm_unit
+
+        state = simulation.context.getState(getPositions=True)
+        positions = state.getPositions(asNumpy=True).value_in_unit(
+            openmm_unit.nanometer)
+        mdtop = (topology if isinstance(topology, md.Topology)
+                 else md.Topology.from_openmm(topology))
+        frame = md.Trajectory(positions[None, :, :], mdtop)
+        vectors = state.getPeriodicBoxVectors(asNumpy=True).value_in_unit(
+            openmm_unit.nanometer)
+        frame.unitcell_vectors = vectors[None, :, :]
+
+        plan = plan_steered(reanchor["spec"], mdtop,
+                            temperature_K=reanchor["temperature_K"],
+                            structure=frame)
+        script_path.write_text(
+            build_steered_script(
+                plan, reference_pdb=str(topology_path)
+                if plan.cv.collective_variable == "ligand_rmsd" else None),
+            encoding="utf-8")
+        logger.info(
+            "Pull re-anchored at %.4f nm, measured in the equilibrated "
+            "state rather than the structure the run started from.",
+            plan.from_value)
+    except Exception as exc:  # noqa: BLE001 -- a refinement, not the run
+        logger.warning(
+            "Could not re-measure the pull's anchor from the equilibrated "
+            "state (%s). The script written from the starting structure "
+            "stands, and its anchor is that structure's value.", exc)
+
+
 def resolve_save_selection(topology: Any, selection: str | None
                            ) -> "tuple[list[int] | None, str]":
     """Which atoms go into the trajectory, and a sentence about it.
@@ -1318,6 +1371,9 @@ def run_simulation(
             window.index, cv_plan.collective_variable, window.centre,
             window.force_constant)
         plumed = {"enabled": True, "script": str(script_path)}
+        if measure_the_anchor_again:
+            plumed["reanchor"] = {"spec": dict(steered),
+                                  "temperature_K": temperature_K}
 
     if len([x for x in (steered, metadynamics, umbrella) if x]) > 1:
         raise ValueError(
@@ -1343,6 +1399,17 @@ def run_simulation(
         # system already is. Without it the user has to measure the
         # variable by hand and type it back in -- a number this already
         # holds.
+        #
+        # Measured twice where it was not given. Here, from the structure
+        # the run starts out with, so the script on disk is complete and a
+        # reader can see what it will do; and again at production, from the
+        # state equilibration actually produced, which is where the pull
+        # begins and therefore where its anchor belongs. The two differ by
+        # a few hundredths of a nanometre -- 0.287 against 0.334 in the
+        # study this was written for -- which is small and is not nothing,
+        # since an anchor behind the system pulls backwards on the first
+        # step.
+        measure_the_anchor_again = steered.get("from") is None
         steered_plan = plan_steered(
             steered, topology, temperature_K=temperature_K,
             structure=str(topology_path) if topology_path else None)
@@ -1762,6 +1829,16 @@ def run_simulation(
         if plumed:
             from fastmdxplora.simulation.plumed import add_plumed_force
             from fastmdxplora.utils.native_output import suppress_native_output
+
+            # The anchor, from the state equilibration produced rather than
+            # the one it started from. The force is attached here, so the
+            # script is still ours to rewrite, and this is the first moment
+            # the positions the pull will actually begin at exist.
+            reanchor = plumed.pop("reanchor", None)
+            if reanchor:
+                _anchor_the_pull_where_it_starts(
+                    simulation, topology, reanchor,
+                    Path(plumed["script"]), topology_path)
 
             # PLUMED prints its whole setup at the moment the context takes
             # the force: which atoms the variable is built from, the hill
