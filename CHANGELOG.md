@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.5.6] — 2026-09-09
+
+A pull and its umbrella windows now come from one configuration, which is
+this release's reason for existing. Around it: selections given one
+vocabulary and one documented trap, free energies given an error bar or
+withheld with a reason, a box that grows by its own shape rather than a
+cube's, and a validation corpus that for the first time actually runs.
+
 ### The thermodynamics analysis could not find the record it needs
 
 `Thermodynamics` looked beside the run for `state_data.csv` and
@@ -118,6 +126,178 @@ A GPU platform that cannot compile its kernels is now skipped, with its
 reason logged, and the next candidate is used.
 
 - Tests: 3,191 → 3,218 collected.
+
+### A pull and its umbrella windows come from one configuration
+
+A window whose centre sits beyond a barrier cannot be started from a
+bound-state frame. A harmonic restraint holds a system where it already is;
+it cannot carry one across a barrier. A window seeded on the wrong side
+stays on the wrong side however long it runs, and its histogram describes
+the wrong basin while every completion check passes.
+
+The remedy is standard -- pull once, and start each window from the frame
+nearest its own centre. Doing that used to mean running a steered
+simulation, writing a script to pick frames out of its trajectory, and
+assembling the starting structures by hand: three tools and a directory of
+intermediate files, outside the configuration and outside the provenance
+record.
+
+`steered` may now appear beside `umbrella` in the same study.
+
+```yaml
+simulation:
+  steered:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    select_atoms: "resSeq 189 to 195 and name CA"
+    to: 2.0
+    steps: 5000000
+    force_constant: 5000.0
+  umbrella:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    select_atoms: "resSeq 189 to 195 and name CA"
+    force_constant: 3000.0
+    from: 0.4
+    to: 2.0
+    n_windows: 30
+```
+
+The pull runs first, each window takes the frame nearest its centre as its
+starting structure, and the windows then run as an ordinary campaign. The
+pull's work is not a free energy and is not reported as one: it depends on
+how fast the anchor moved, and its purpose here is starting structures.
+
+Six things that are easy to get wrong, and are now handled:
+
+- **The coordinate is measured under the minimum-image convention.**
+  Without it a ligand that crosses a periodic boundary appears to be
+  nanometres from its site. In a rhombic dodecahedron the fractional
+  reduction alone is not sufficient either; a search over the neighbouring
+  cell images is. A pull measured wrongly seeds every window wrongly.
+- **The recomputed coordinate is checked against PLUMED's own `COLVAR`.**
+  If the selections handed to the seeder are not the ones that were biased,
+  the study is refused by name rather than seeded from a coordinate nothing
+  drove.
+- **A seeding pull records every atom.** `save_selection` leaves water out
+  by default; a starting structure is a complete set of positions and a
+  subset cannot become one. A pull that will seed windows sets
+  `save_selection: all` for itself.
+- **Velocities are drawn fresh at temperature.** A pulled frame's velocities
+  point along the pull, which is the one direction that would bias the first
+  picoseconds of equilibrium sampling.
+- **The pull is re-anchored after equilibration**, so it starts from where
+  the equilibrated system is rather than from where the input structure was.
+- **A seed whose energy is not finite is refused**, with the window and the
+  measured coordinate named.
+
+`umbrella.seed_from` reuses a pull that has already finished, so a campaign
+that has to be relaunched does not repeat it. `setup_from` reuses a prepared
+system from an earlier study: preparation is the human activity and setup is
+the first automated phase, so `setup_from` is the name it is given, and it
+defaults to the earlier study's output directory rather than to the internal
+path beneath it. `prepared_from` continues to work.
+
+`umbrella.from` now defaults to the coordinate measured in the supplied
+structure after equilibration, rather than requiring a number the user has
+to measure first.
+
+### Selections say which atoms, in one language
+
+Four places ask which atoms -- what an analysis measures, what goes into the
+trajectory, what is held still during equilibration, and what a biased
+coordinate is measured between -- and they now use one vocabulary.
+`select_atoms` names the selection wherever a collective variable takes
+exactly one; where it takes two, `select_atoms_a` and `select_atoms_b` say
+which is which, and a bare `select_atoms` on a two-group variable is refused
+rather than assigned to a group and hoped over. `analysis.select_atoms`
+joins `analysis.selection`. The role-specific names -- `site_selection`,
+`bilayer_selection`, `axis_selection` -- all still work and say more where
+they apply. `ligand_name` and `ligand_resname` are the same key.
+
+Every expression is MDTraj's, and `docs/selections.md` is new: it documents
+the four sites, the per-variable table, when a selection is resolved, and
+one trap in particular.
+
+**`resid` is not the residue number.** `resid 189` is the 190th residue in
+the file, counting from zero; `resSeq 189` is the residue numbered 189. For
+a structure numbered from 1 with no gaps they coincide, and for a PDB entry
+they generally do not. In trypsin, numbered 16-245 with gaps,
+`resid 189 to 195` selects Ile212 through Gly219 while `resSeq 189 to 195`
+selects Asp189 through Ser195. Both are real selections, neither is empty,
+and nothing downstream can tell which was meant. This project ran a
+27-window umbrella campaign on the first of those before noticing.
+
+A biasing block's selections are now resolved against the prepared system
+before any window is launched, so an empty selection costs a validation
+error rather than a preparation and a failed run.
+
+### A free energy carries an error bar, or says why it cannot
+
+Reported free energies had no uncertainty attached. They now carry one, from
+the block-bootstrap over the windows for a PMF and from the reweighted
+average for a metadynamics surface -- and where the estimate is known to be a
+lower bound rather than an interval, the number is withheld and the reason
+named instead of being printed beside a caveat. A figure wrong in a knowable
+direction is worse than no figure, because the caveat is read once and the
+number is used thereafter.
+
+A metadynamics surface now carries its own convergence band and is labelled
+as carrying one.
+
+### The box grows by its own shape, not by a cube's
+
+Padding was applied as though the cell were a cube. A rhombic dodecahedron's
+perpendicular widths are not its edge length, so a padding that looked
+generous left a solute closer to its periodic image along the short axis
+than the requested clearance -- which matters most for exactly the runs that
+pull a ligand away from a protein, since the pulling direction is the one
+that has to stay clear.
+
+The requested clearance is now measured in the box that will actually be
+built. Relatedly, nine quantities that need the unit cell now consult it;
+three did before.
+
+### Preparation is a result, and it is cached
+
+A preparation that fails is a result and is now recorded as one, so a
+campaign that retries does not repeat a failure it has already paid for. The
+complex is repaired once per structure rather than once per ligand copy,
+which is what made two structures look hung when they were working: 900
+seconds of real work, now reported as such.
+
+### Metadynamics reads its own stored heights
+
+The stored hill heights are already tempered, and were being tempered a
+second time on readback. The bias is now looked up rather than resummed from
+every hill.
+
+### Interface parity is a test, not a promise
+
+The claim that graphical controls, command-line flags and Python options are
+generated from one set of declarations is now asserted by 53 tests across 12
+contracts, rather than maintained as documentation.
+
+### The validation corpus can run the corpus
+
+The corpus job installed with pip and the corpus needs conda, so the job had
+been passing without running anything it was written to run. It now runs, on
+a machine with somewhere to run it, and the end-to-end seeding test runs
+there too -- the path that opens trajectories and builds OpenMM contexts,
+which no other test reached and where both of the seeding bugs above lived.
+
+Also: `fastmdx info` is the command, not `fastmdx doctor`; a corpus test that
+asserted the installer now asserts the capability; and tests that shell out
+to a tool declare it.
+
+### Housekeeping
+
+A `.mailmap` collapses nine committer identities on `main` to one. Log
+capture takes the logger that emits, not the root. Water is not a ligand.
+Two claims about the literature that could not be sourced are removed. The
+V4 threshold is fixed before the result it judges exists. Tests that do not
+check an error bar no longer pay to compute one. Windows paths are compared
+as paths rather than as strings.
 
 ## [2.5.5] — 2026-08-22
 
