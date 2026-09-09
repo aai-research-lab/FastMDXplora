@@ -483,3 +483,109 @@ def test_the_earlier_analysis_word_still_works(tmp_path):
     validate_config(data)
 
     assert data["analysis"]["selection"] == "name CA"
+
+
+class TestOneThingIsSpelledBothWaysEverywhere:
+    """Alias pairs agree after loading, so no reader can pick the absent one.
+
+    Three defects in one week were the same defect: a block with two
+    spellings and two readers that each knew one. The reader accepted a
+    spelling the validator did not (0037); a rename left two readers behind
+    (0038); and the seeding hand-off read `site_selection` off a block that
+    said `select_atoms`, handed MDTraj an empty string, and lost a
+    two-and-a-half-hour steered pull to a parser error naming column one
+    (0046).
+
+    Each was fixed at its own call site, which is why it happened three
+    times. These tests are about the boundary instead: after
+    `normalise_config` both spellings carry the same value, so reading
+    either one is correct and no reader has to remember a translation.
+    """
+
+    def test_select_atoms_reaches_the_role_name(self):
+        from fastmdxplora.config.loader import normalise_config
+
+        data = normalise_config({
+            "simulation": {
+                "umbrella": {
+                    "collective_variable": "ligand_distance",
+                    "ligand_name": "BEN",
+                    "select_atoms": "resSeq 189 to 195 and name CA",
+                    "force_constant": 3000.0,
+                    "from": 0.4, "to": 2.0, "n_windows": 3,
+                },
+            },
+        })
+        # The block is lifted into `systems` as windows; every one of them
+        # has to carry the settled spelling, because that is what the
+        # seeder and the PLUMED builder each read.
+        windows = data["systems"]
+        assert windows, "the umbrella block did not expand"
+        for window in windows:
+            block = window["simulation"]["umbrella"]
+            assert block["site_selection"] == "resSeq 189 to 195 and name CA"
+            assert block["select_atoms"] == "resSeq 189 to 195 and name CA"
+            assert block["ligand_resname"] == "BEN"
+            assert block["ligand_name"] == "BEN"
+
+    def test_the_role_name_still_wins_when_both_are_given(self):
+        """`docs/selections.md` promises this, so it is tested."""
+        from fastmdxplora.config.loader import normalise_config
+
+        data = normalise_config({
+            "simulation": {
+                "steered": {
+                    "collective_variable": "ligand_distance",
+                    "site_selection": "name CA",
+                    "select_atoms": "name CB",
+                    "to": 2.0,
+                },
+            },
+        })
+        block = data["simulation"]["steered"]
+        assert block["site_selection"] == "name CA"
+        assert block["select_atoms"] == "name CA"
+
+    def test_setup_from_and_prepared_from_agree(self):
+        from fastmdxplora.config.loader import normalise_config
+
+        data = normalise_config({"simulation": {"setup_from": "runs/earlier"}})
+        assert data["simulation"]["prepared_from"] == "runs/earlier"
+        assert data["simulation"]["setup_from"] == "runs/earlier"
+
+    def test_analysis_speaks_both_words(self):
+        from fastmdxplora.config.loader import normalise_config
+
+        data = normalise_config({"analysis": {"select_atoms": "name CA"}})
+        assert data["analysis"]["selection"] == "name CA"
+        assert data["analysis"]["select_atoms"] == "name CA"
+
+    def test_a_two_group_variable_is_refused_while_reading_the_file(self):
+        """Not after a preparation has already run."""
+        import pytest
+
+        from fastmdxplora.config.loader import ConfigError, normalise_config
+
+        with pytest.raises(ConfigError, match="which is which"):
+            normalise_config({
+                "simulation": {
+                    "metadynamics": {
+                        "collective_variable": "distance",
+                        "select_atoms": "name CA",
+                    },
+                },
+            })
+
+    def test_settling_twice_changes_nothing(self):
+        """`normalise_config` is called on both routes into the software."""
+        from fastmdxplora.config.loader import normalise_config
+
+        once = normalise_config({
+            "simulation": {
+                "setup_from": "runs/earlier",
+                "steered": {"collective_variable": "ligand_distance",
+                            "select_atoms": "name CA", "to": 2.0},
+            },
+        })
+        twice = normalise_config(dict(once))
+        assert twice == once

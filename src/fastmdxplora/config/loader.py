@@ -261,12 +261,112 @@ def _split_on_commas(value: Any) -> Any:
     return out
 
 
+
+#: Spellings that name one thing. Each entry is (established, general): the
+#: first is what the code inside this package has always called it, the
+#: second is the word a user is likely to arrive knowing. Given both and
+#: they differ, the established name wins -- which is what
+#: `docs/selections.md` already promises for the role-specific selection
+#: names, applied here to every pair rather than to one of them.
+_ONE_THING_TWO_WORDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "simulation": (("prepared_from", "setup_from"),),
+    "setup": (("ligand_name", "ligand_resname"),),
+    "analysis": (("selection", "select_atoms"),),
+}
+
+#: The biasing blocks, which additionally carry a selection whose role name
+#: depends on which variable is being biased.
+_BIASING_BLOCKS = ("umbrella", "steered", "metadynamics")
+
+
+def _mirror(block: dict[str, Any], established: str, general: str) -> None:
+    """Leave both spellings present and equal, or leave both absent.
+
+    Resolving to one name would only move the problem: every reader would
+    then have to know which one won. Writing both means a reader cannot
+    pick the absent one, because there is no absent one.
+    """
+    if established in block and block[established] is not None:
+        block.setdefault(general, block[established])
+        block[general] = block[established]
+    elif general in block and block[general] is not None:
+        block[established] = block[general]
+
+
+def _settle_the_words_that_mean_one_thing(data: dict[str, Any]) -> None:
+    """Make every alias pair agree, once, before anything reads them.
+
+    Three defects in one week came from a block with two spellings and two
+    readers that each knew one. The reader accepted a spelling the validator
+    did not; a rename left two readers behind; and the seeding hand-off read
+    `site_selection` off a block that said `select_atoms`, handed MDTraj an
+    empty string, and lost a two-and-a-half-hour steered pull to a parser
+    error naming column one.
+
+    Each was fixed where it was found, which is how the same defect happened
+    three times. The translation existed -- `with_general_selection_names` --
+    but it ran inside the PLUMED builder, so whichever readers happened to go
+    through that path were correct and the rest were not.
+
+    Settled here instead, for the reason the umbrella expansion below is
+    settled here: every route into the software gets it, rather than each
+    reader remembering to ask.
+    """
+    # `_THE_ONE_SELECTION` is imported rather than restated. Duplicating the
+    # variable-to-role mapping would create a second place for it to be
+    # wrong, which is the defect this function exists to stop.
+    from fastmdxplora.simulation.metadynamics import (
+        _THE_ONE_SELECTION,
+        with_general_selection_names,
+    )
+
+    for phase, pairs in _ONE_THING_TWO_WORDS.items():
+        block = data.get(phase)
+        if isinstance(block, dict):
+            for established, general in pairs:
+                _mirror(block, established, general)
+
+    simulation = data.get("simulation")
+    if not isinstance(simulation, dict):
+        return
+    for name in _BIASING_BLOCKS:
+        block = simulation.get(name)
+        if not isinstance(block, dict):
+            continue
+        # The ligand is named by residue wherever it is named at all.
+        _mirror(block, "ligand_resname", "ligand_name")
+        variable = str(block.get("collective_variable", "")).lower()
+        if not variable or "select_atoms" not in block:
+            continue
+        try:
+            resolved = with_general_selection_names(dict(block), variable)
+        except ValueError as exc:
+            # A two-group variable given a bare `select_atoms`, or a
+            # variable that takes no selection at all. Both are real
+            # mistakes, and refusing them while reading the file is far
+            # better than refusing them after a preparation has run.
+            raise ConfigError(str(exc)) from exc
+        block.update(resolved)
+        # And back the other way, so the general word carries the value that
+        # won rather than the one it lost with. Given both spellings the
+        # role name wins, which `docs/selections.md` promises; leaving
+        # `select_atoms` holding the loser would keep a reader of the
+        # general word reading something the study did not mean.
+        role = _THE_ONE_SELECTION.get(variable)
+        if role and block.get(role) is not None:
+            block["select_atoms"] = block[role]
+
+
 def normalise_config(data: dict[str, Any]) -> dict[str, Any]:
     """Settle spellings that have one meaning, before anything is checked.
 
-    Two of these, both found by writing a config by hand and having it
-    refused. Neither is a judgement about what the author meant; each is a
-    single unambiguous reading that the validator was rejecting for its shape.
+    Three kinds. Alias pairs are made to agree, so no reader can pick the
+    spelling that happens to be absent. Empty phase blocks and comma-joined
+    lists are given the shape the validator expects. An umbrella block is
+    expanded into its windows. Each was found by writing a config by hand and
+    having it refused, or -- in the seeding case -- accepted and then failed
+    on hours later. None is a judgement about what the author meant; each is
+    a single unambiguous reading.
     """
     # A phase block present but empty. `analysis:` with nothing under it means
     # "run the analysis phase with its defaults" -- which is exactly what
@@ -288,6 +388,8 @@ def normalise_config(data: dict[str, Any]) -> dict[str, Any]:
         for field in ("include", "exclude"):
             if field in analysis:
                 analysis[field] = _split_on_commas(analysis[field])
+
+    _settle_the_words_that_mean_one_thing(data)
 
     # An umbrella block describes a set of windows; everything downstream runs
     # one system at a time, so the block becomes one `systems` entry per

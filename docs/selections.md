@@ -138,6 +138,18 @@ The role-specific names all still work and say more where they apply:
 `site_selection`, `bilayer_selection`, `axis_selection`, `selection`,
 `selection_a`, `selection_b`. Given both, the role name wins.
 
+**The two spellings are settled when the config is read, not where it is
+used.** After loading, a block that was given either name carries both, with
+the same value. Nothing downstream has to know which word you wrote, and no
+part of a run can disagree with another about what the block says — because
+there is no absent spelling for one of them to miss.
+
+This is not a detail. A study written with `select_atoms` once pulled a
+ligand for two and a half hours and then stopped, because the code that
+builds the PLUMED script translated the word and the code that seeds the
+windows did not. The translation was correct; it just lived in one of the two
+readers. It now lives before both.
+
 The ligand is named by residue, not by selection, and `ligand_name` and
 `ligand_resname` are the same key:
 
