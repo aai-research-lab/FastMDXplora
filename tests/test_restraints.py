@@ -660,3 +660,79 @@ class TestTheLadderStepsAcrossEquilibration:
         assert source.count("on_fraction=_ladder_over(") == 2
         # And the boundary sample that jumped it is gone.
         assert "_hold_at(0.5)" not in source
+
+
+class TestProductionCountsFromZero:
+    """Equilibration steps are not simulation steps.
+
+    OpenMM counts from the beginning of a run. Nothing reset that, so a
+    10 ns production after 1.5 ns of equilibration reported its first step
+    as 750,000 and its first time as 1500 ps, and everything downstream
+    inherited the offset.
+
+    Most of that was cosmetic. One part was not: PLUMED reads the same
+    counter, so a `MOVINGRESTRAINT` written with `STEP0=0` meant "1.5
+    nanoseconds ago". In a real pull the anchor entered production already
+    15% along its path, sat 0.243 nm outside the ligand it was meant to be
+    sitting on, and hit it with 147 kJ/mol in the first 400 femtoseconds --
+    throwing it out of the binding well before a single frame was written,
+    and reaching its destination with 1.5 ns of the run still to go.
+    """
+
+    def test_the_energy_log_of_a_real_run_starts_at_production(self, tmp_path):
+        """A whole run, because the offset only exists once stages compose."""
+        pytest.importorskip("openmm", reason="requires the [md] extra")
+
+        import openmm as omm
+        import openmm.unit as unit
+        from openmm.app import HBonds, PME, ForceField, Modeller, PDBFile
+
+        from fastmdxplora.simulation.runner import read_energy_csv, run_simulation
+
+        (tmp_path / "p.pdb").write_text(_ALANINE_PEPTIDE, encoding="utf-8")
+        pdb = PDBFile(str(tmp_path / "p.pdb"))
+        field = ForceField("amber14-all.xml", "amber14/tip3p.xml")
+        modeller = Modeller(pdb.topology, pdb.positions)
+        modeller.addHydrogens(field)
+        modeller.addSolvent(field, padding=0.7 * unit.nanometer)
+        system = field.createSystem(
+            modeller.topology, nonbondedMethod=PME,
+            nonbondedCutoff=1.0 * unit.nanometer, constraints=HBonds)
+        (tmp_path / "system.xml").write_text(omm.XmlSerializer.serialize(system))
+        integrator = omm.LangevinMiddleIntegrator(
+            300 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picoseconds)
+        context = omm.Context(system, integrator,
+                              omm.Platform.getPlatformByName("CPU"))
+        context.setPositions(modeller.positions)
+        (tmp_path / "state.xml").write_text(omm.XmlSerializer.serialize(
+            context.getState(getPositions=True, getVelocities=True,
+                             enforcePeriodicBox=True)))
+        with (tmp_path / "top.pdb").open("w") as handle:
+            PDBFile.writeFile(modeller.topology, modeller.positions, handle)
+
+        # Equilibration four times the length of production, so an offset
+        # cannot hide inside rounding.
+        run_simulation(
+            system_xml=tmp_path / "system.xml",
+            state_xml=tmp_path / "state.xml",
+            topology_pdb=tmp_path / "top.pdb",
+            output_dir=tmp_path / "run",
+            nvt_steps=200, npt_steps=200, production_steps=100,
+            trajectory_interval_steps=50, state_interval_steps=50,
+            platform="CPU", minimize=True, random_seed=11)
+
+        rows = read_energy_csv(tmp_path / "run" / "energy.csv")
+        assert rows, "production wrote no energy log"
+        steps = [int(r["Step"]) for r in rows]
+        assert max(steps) <= 100, (
+            "energy.csv holds equilibration: production ran 100 steps and "
+            f"the log reaches step {max(steps)}"
+        )
+
+        equilibration = tmp_path / "run" / "equilibration_energy.csv"
+        assert equilibration.is_file(), (
+            "equilibration is separated, not discarded"
+        )
+        assert [int(r["Step"]) for r in read_energy_csv(equilibration)], (
+            "the equilibration log is empty"
+        )

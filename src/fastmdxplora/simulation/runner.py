@@ -702,6 +702,29 @@ def _attach_checkpoint_reporter(
     return reporter
 
 
+def _close_one_reporter(simulation: Any, reporter: Any) -> None:
+    """Close and remove a single reporter, leaving the rest attached.
+
+    Not `_detach_all_reporters`: that one is the cleanup path, it belongs in
+    a `finally`, and there is a test asserting it sits there. Closing the
+    equilibration log when production begins is a different act with a
+    different meaning, and giving it the same name would have made the two
+    indistinguishable to anybody reading -- including that test.
+    """
+    if reporter is None:
+        return
+    close = getattr(reporter, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        simulation.reporters.remove(reporter)
+    except ValueError:
+        pass
+
+
 def _detach_all_reporters(simulation: Any) -> None:
     # Closing the trajectory reporter is what flushes the DCD header.
     for r in simulation.reporters:
@@ -1677,10 +1700,14 @@ def run_simulation(
 
             return _hook
 
-        _attach_state_reporter(
-            omm, simulation, energy_csv,
+        # Equilibration's own log, under its own name. It used to share
+        # `energy.csv` with production, so a reader could not tell which
+        # rows were the system being driven and which were the system being
+        # measured, and neither could anything computing a statistic.
+        equilibration_log = _attach_state_reporter(
+            omm, simulation, Path(output_dir) / "equilibration_energy.csv",
             interval=state_interval_steps,
-            total_steps=plan["nvt_steps"] + plan["npt_steps"] + plan["production_steps"],
+            total_steps=plan["nvt_steps"] + plan["npt_steps"],
         )
         current_step = 0
         if telemetry is not None:
@@ -1833,6 +1860,43 @@ def run_simulation(
             else:
                 _hold_at(1.0)
                 logger.info("Restraints released for production.")
+
+        # ---- The clock starts here ------------------------------------
+        #
+        # Production is what a user means by "the simulation": the frames
+        # the analysis reads, the nanoseconds a methods section quotes, the
+        # time axis of every plot. Equilibration is what it took to reach
+        # somewhere worth measuring from, and it is a separate quantity.
+        #
+        # OpenMM counts from the beginning of the run, and nothing here
+        # said otherwise -- so a 10 ns production after 1.5 ns of
+        # equilibration began at step 750,000 and at time 1500 ps, and
+        # everything downstream inherited the offset. COLVAR's time column.
+        # The energy log. And, expensively, PLUMED's MOVINGRESTRAINT: its
+        # `STEP0=0` meant "1.5 nanoseconds ago", so the anchor entered
+        # production already 15% along its path, sat 0.243 nm outside the
+        # ligand it was supposed to be sitting on, and threw it out of the
+        # binding well with 147 kJ/mol before a single frame was written.
+        #
+        # Reset before the force is attached, so PLUMED is built against a
+        # counter that starts where the pull starts.
+        simulation.context.setStepCount(0)
+        simulation.context.setTime(0.0)
+        simulation.currentStep = 0
+
+        # The energy log follows the same rule. It held equilibration and
+        # production in one file with one step column, so every statistic
+        # computed from it -- correlation time, effective sample size,
+        # anything with a settling region -- was measured over a series
+        # that begins with a system deliberately being driven somewhere.
+        # Equilibration is still recorded, beside the run, under its own
+        # name; `energy.csv` is production.
+        _close_one_reporter(simulation, equilibration_log)
+        _attach_state_reporter(
+            omm, simulation, energy_csv,
+            interval=state_interval_steps,
+            total_steps=plan["production_steps"],
+        )
 
         # ---- Stage 4: Production --------------------------------------
         # Production runs in NPT (the standard default ensemble).
