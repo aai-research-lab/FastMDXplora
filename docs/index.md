@@ -68,6 +68,8 @@ leave the page. See [Configuration](configuration.md).
   leaves behind and what makes a number one;
   [Protein-ligand interactions](interactions.md) for the measure that
   carries the most criteria.
+- **Naming which atoms?** [Selections](selections.md) -- one language in
+  four places, and why `resid 189` is not residue 189.
 - **Looking for a flag or a setting?** [CLI reference](cli_reference.md),
   [Configuration](configuration.md), or `fastmdx explore --help`, which is
   generated and therefore never out of date.
@@ -102,6 +104,7 @@ interactions
 :caption: The Config
 
 configuration
+selections
 usage_examples
 ```
 

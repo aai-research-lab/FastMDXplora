@@ -639,9 +639,15 @@ ANALYSIS = PhaseSchema(
               "Analyses to skip. Mutually exclusive with `include`.",
               choices=ANALYSIS_NAMES,
               example=["dimred"]),
+        Field("select_atoms", str, None,
+              "Which atoms the analyses measure, as an MDTraj selection "
+              "expression. Overrides `scope` when set. The same word the "
+              "umbrella, steered and metadynamics blocks take, so a "
+              "selection is a selection wherever it appears.",
+              example="name CA"),
         Field("selection", str, None,
-              "Default MDTraj atom selection applied across analyses. "
-              "Overrides `scope` when set.",
+              "The earlier name for `select_atoms`, still accepted. Given "
+              "both, `select_atoms` is ignored.",
               example="name CA"),
         Field("scope", str, "solute",
               "Which atoms an analysis measures when it has no selection of "
@@ -834,7 +840,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("include", "exclude", "options")),
         ("What to measure it on",
          "The trajectory, and which atoms count.",
-         ("trajectory", "topology", "selection", "scope")),
+         ("trajectory", "topology", "select_atoms", "selection", "scope")),
         ("Which frames",
          "Trimming and thinning before anything is measured.",
          ("first", "last", "stride")),

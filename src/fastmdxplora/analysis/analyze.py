@@ -50,6 +50,7 @@ def run(
     exclude: list[str] | None = None,
     options: dict[str, dict[str, Any]] | None = None,
     selection: str | None = None,
+    select_atoms: str | None = None,
     scope: str = "solute",
     stride: int | None = None,
     first: int | None = None,
@@ -69,6 +70,13 @@ def run(
     missing input.
     """
     import json
+
+    # One word for a selection expression, whichever phase is asking. The
+    # collective-variable blocks take `select_atoms`; an analysis taking a
+    # different word for the same string would put the general name back
+    # where it started, which is a thing to look up.
+    if select_atoms is not None and selection is None:
+        selection = select_atoms
 
     project_root = orchestrator.output_dir
     traj_path = Path(trajectory) if trajectory else project_root / "simulation" / "production.dcd"

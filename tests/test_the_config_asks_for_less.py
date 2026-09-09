@@ -443,3 +443,43 @@ def test_a_study_written_with_the_general_word_validates(tmp_path):
     assert len(data["systems"]) == 30
     assert data["systems"][0]["simulation"]["umbrella"]["select_atoms"] == \
         "resid 189 to 195 and name CA"
+
+
+def test_the_analysis_phase_takes_the_general_word_too(tmp_path):
+    """One word for a selection, whichever phase is asking.
+
+    The variable blocks take `select_atoms`; an analysis taking a different
+    word for the same string puts the general name back where it started,
+    which is a thing to look up.
+    """
+    from fastmdxplora.config import load_config_file, validate_config
+
+    path = tmp_path / "analysis.yml"
+    path.write_text(
+        "output: runs/x\n"
+        "systems:\n  - id: one\n    system: ./a.pdb\n"
+        "analysis:\n"
+        "  select_atoms: \"name CA\"\n"
+        "  include: [rmsd]\n", encoding="utf-8")
+
+    data = load_config_file(path)
+    validate_config(data)
+
+    assert data["analysis"]["select_atoms"] == "name CA"
+
+
+def test_the_earlier_analysis_word_still_works(tmp_path):
+    from fastmdxplora.config import load_config_file, validate_config
+
+    path = tmp_path / "analysis.yml"
+    path.write_text(
+        "output: runs/x\n"
+        "systems:\n  - id: one\n    system: ./a.pdb\n"
+        "analysis:\n"
+        "  selection: \"name CA\"\n"
+        "  include: [rmsd]\n", encoding="utf-8")
+
+    data = load_config_file(path)
+    validate_config(data)
+
+    assert data["analysis"]["selection"] == "name CA"
