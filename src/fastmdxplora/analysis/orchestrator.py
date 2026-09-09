@@ -196,6 +196,7 @@ class AnalysisOrchestrator:
         stride: int | None = None,
         first: int | None = None,
         last: int | None = None,
+        saving_interval_ps: float | None = None,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.output_dir: Path = (
@@ -218,11 +219,19 @@ class AnalysisOrchestrator:
         # can record exactly what was analyzed.
         self._trajectory_input = trajectory
         self._topology_input = topology
-        self._load_kwargs = {"stride": stride, "first": first, "last": last}
+        # The interval belongs in the recorded load parameters, not beside
+        # them: it decides whether every time axis in this run is in
+        # nanoseconds or in frames, and a manifest that does not say which
+        # leaves a reader unable to tell the two apart afterwards.
+        self._load_kwargs = {
+            "stride": stride, "first": first, "last": last,
+            "saving_interval_ps": saving_interval_ps,
+        }
 
         logger.debug("AnalysisOrchestrator: loading trajectory...")
         self.traj: md.Trajectory = load_trajectory(
-            trajectory, topology, stride=stride, first=first, last=last
+            trajectory, topology, stride=stride, first=first, last=last,
+            saving_interval_ps=saving_interval_ps,
         )
 
         # Results from the most recent run() call.

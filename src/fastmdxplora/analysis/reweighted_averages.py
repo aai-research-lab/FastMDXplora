@@ -731,6 +731,45 @@ def reweight_results(
     Returns the record written to disk, or ``None`` where no bias applies and
     there is nothing to correct.
     """
+    # Placing a frame in the deposition history compares this clock against
+    # PLUMED's, and PLUMED's is real simulated time. A DCD read through
+    # MDTraj used to hand over the frame index instead, so on a 100 ns run
+    # every frame was matched against only the hills laid in the first 2 ns
+    # -- the reweighting then under-corrected a fully biased ensemble, and
+    # unlike the failure `felt_bias` documents, this one leaves the effective
+    # sample size looking healthy and raises nothing. `loading` now marks an
+    # unknown clock with NaN rather than a frame index, and this is where
+    # that has to be refused: the comparison is the whole method.
+    #
+    # Gated on there being a bias at all, using this module's own detector
+    # rather than a second reader of the same thing -- an ordinary unbiased
+    # run has no correction to refuse and must not acquire a record saying
+    # one was unavailable.
+    method = biasing_method(Path(output_dir))
+    times = np.asarray(frame_times_ps, dtype=float)
+    if method is not None and times.size and not np.all(np.isfinite(times)):
+        record = {
+            "n_frames": int(n_frames),
+            "applies": False,
+            "biasing_method": method,
+            "reason": (
+                "How much simulated time separates the saved frames was not "
+                "recorded, so they cannot be placed against the hills PLUMED "
+                "deposited in real time -- and that placement is what undoing "
+                "the bias consists of. Record the trajectory saving interval, "
+                "or pass saving_interval_ps when loading, and the correction "
+                "becomes available. The averages stand as averages over the "
+                "biased ensemble."),
+            "quantities": [],
+            "populations": [],
+            "warnings": [],
+        }
+        directory = Path(output_dir) / "reweighted"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "reweighted_averages.json").write_text(
+            json.dumps(record, indent=2), encoding="utf-8")
+        return record
+
     weights, provenance = weights_for_run(Path(output_dir), frame_times_ps)
     if weights is None:
         method = biasing_method(Path(output_dir))

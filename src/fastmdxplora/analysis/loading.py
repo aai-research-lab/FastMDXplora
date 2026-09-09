@@ -37,6 +37,27 @@ EXTERNAL_TOPOLOGY_FORMATS = frozenset(
     {".dcd", ".xtc", ".trr", ".nc", ".netcdf", ".binpos", ".lammpstrj", ".dtr", ".xyz"}
 )
 
+# Formats that come back from MDTraj carrying the simulation clock the run
+# actually kept. Everything else -- DCD above all, which is what this package
+# writes -- comes back with ``time`` set to the frame index in picoseconds,
+# and a frame index in picoseconds is indistinguishable from a real clock
+# until someone reads the axis.
+#
+# Measured, mdtraj 1.11.1, 2,000 frames written 50 ps apart:
+#
+#   written by                                     span read back
+#   mdtraj.reporters.DCDReporter                      1.999 ns
+#   openmm.app.DCDFile, dt=2 fs, interval=25000       1.999 ns
+#   the same frames as .xtc                          99.950 ns
+#   the same frames as .nc                           99.950 ns
+#
+# So it is not the reporter and not OpenMM: DCD carries a timestep in its
+# header and MDTraj's reader discards it. The two writers agree because
+# neither is consulted.
+FORMATS_THAT_CARRY_A_CLOCK = frozenset(
+    {".xtc", ".trr", ".nc", ".netcdf", ".h5", ".lh5", ".dtr"}
+)
+
 
 PathLike = Union[str, Path]
 TrajectoryInput = Union[PathLike, Sequence[PathLike]]
@@ -198,6 +219,91 @@ def _with_one_clock(trajectory: md.Trajectory, n_files: int) -> md.Trajectory:
     return trajectory
 
 
+def _with_a_real_clock(
+    trajectory: md.Trajectory,
+    paths: list[Path],
+    saving_interval_ps: float | None,
+    stride: int | None,
+) -> md.Trajectory:
+    """The run's own clock, or none at all -- never the frame index.
+
+    A DCD read through MDTraj comes back with ``time`` equal to the frame
+    index in picoseconds (see ``FORMATS_THAT_CARRY_A_CLOCK``). Every
+    time-series figure takes its x axis from ``time`` and labels it
+    "Time (ns)", so on a 100 ns run saved every 50 ps the axis reads 0-2 ns
+    and says nothing about being wrong. Audited across every run on one
+    workstation: 75 of 75 trajectories carried a fabricated clock, understated
+    by up to 50x on production runs and *overstated* five-fold on short ones,
+    because the interval crosses 1 ps somewhere between the two.
+
+    Worse than the axis, ``analysis/reweight.py`` places each frame in a
+    metadynamics deposition history by comparing this clock against PLUMED's,
+    which is real. On a 100 ns run every frame is then matched against only
+    the hills laid in the first 2 ns, so the reweighting under-corrects a
+    fully biased ensemble -- and unlike the failure that module's docstring
+    describes, this one leaves the effective sample size looking healthy and
+    raises no complaint.
+
+    Three cases, and the third is the point:
+
+    * The format carries a clock and it varies -- trust it, touch nothing.
+    * The interval is known -- build the clock from it. Frame ``k`` was
+      written at ``(k + 1) * interval`` because a reporter fires after its
+      first interval, not at step zero.
+    * Neither -- **fill ``time`` with NaN.** A frame axis is honest and a
+      wrong nanosecond axis is not, and NaN is the one marker that survives
+      slicing, joining and ``atom_slice`` (checked, not assumed), so it still
+      says "no clock" by the time a figure asks. An arbitrary attribute does
+      not survive ``traj[a:b]``, which every analysis does.
+
+    Note that the guard already in ``frame_axis`` cannot stand in for this.
+    It asks whether the clock *varies*; a frame index varies perfectly, and
+    ``np.allclose`` against NaN is False, so a NaN clock would read as usable.
+    Both readings are fixed there by requiring the values to be finite.
+    """
+    n = trajectory.n_frames
+    if n == 0:
+        return trajectory
+
+    suffixes = {p.suffix.lower() for p in paths}
+    time = getattr(trajectory, "time", None)
+    carries_its_own = (
+        bool(suffixes) and suffixes <= FORMATS_THAT_CARRY_A_CLOCK
+        and time is not None and len(time) > 1
+        and bool(np.all(np.isfinite(time)))
+        and not bool(np.allclose(time, time[0]))
+    )
+    if carries_its_own:
+        return trajectory
+
+    if saving_interval_ps and float(saving_interval_ps) > 0:
+        step = int(stride) if stride and int(stride) > 0 else 1
+        interval = float(saving_interval_ps)
+        trajectory.time = (
+            (np.arange(n, dtype=np.float64) * step + 1.0) * interval
+        ).astype(np.float32)
+        logger.info(
+            "Time axis set from the run's own record: %.4g ps between saved "
+            "frames%s, so %d frames span %.4g ns. The file format does not "
+            "carry this and MDTraj would otherwise report one picosecond per "
+            "frame.",
+            interval, "" if step == 1 else f" x stride {step}",
+            n, float(trajectory.time[-1]) / 1000.0,
+        )
+        return trajectory
+
+    trajectory.time = np.full(n, np.nan, dtype=np.float32)
+    logger.warning(
+        "No saving interval is recorded for this trajectory and %s does not "
+        "carry one, so there is no way to know how much simulated time a "
+        "frame represents. Time-series figures will be drawn against frame "
+        "number rather than against a nanosecond axis that would be invented. "
+        "Pass saving_interval_ps to label them in time.",
+        ", ".join(sorted(suffixes)) or "the format",
+    )
+    return trajectory
+
+
 def load_trajectory(
     traj: TrajectoryInput,
     top: PathLike | None = None,
@@ -205,6 +311,7 @@ def load_trajectory(
     stride: int | None = None,
     first: int | None = None,
     last: int | None = None,
+    saving_interval_ps: float | None = None,
 ) -> md.Trajectory:
     """Load one or more trajectory files into a single MDTraj trajectory.
 
@@ -222,6 +329,12 @@ def load_trajectory(
     first, last : int, optional
         Frame slice applied after loading. ``last`` is exclusive (Python
         slice semantics).
+    saving_interval_ps : float, optional
+        Picoseconds of simulated time between saved frames. Required to put
+        a trajectory in a format that does not carry its own clock -- DCD
+        above all -- on a real time axis; without it such a trajectory is
+        given a NaN clock and every time series is drawn against frame
+        number. Ignored for formats that carry the clock themselves.
 
     Returns
     -------
@@ -293,6 +406,11 @@ def load_trajectory(
 
     trajectory = _made_whole(trajectory)
     trajectory = _with_one_clock(trajectory, len(traj_paths))
+    # Last, so it wins: where the interval is known it supersedes both what
+    # the file said and what the seam-mender inferred, and where it is not
+    # known the clock is marked absent rather than left as a frame index.
+    trajectory = _with_a_real_clock(
+        trajectory, traj_paths, saving_interval_ps, stride)
 
     if first is not None or last is not None:
         n = trajectory.n_frames

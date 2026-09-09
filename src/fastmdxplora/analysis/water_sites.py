@@ -329,10 +329,27 @@ class WaterSites(Analysis):
         # that had not left yet -- and every site in it will look fully
         # occupied. Reporting "one molecule, bound" from ten picoseconds is a
         # claim about residence the run cannot support.
+        #
+        # The clock has to be real for that comparison to mean anything. A
+        # DCD read through MDTraj reports one picosecond per frame, so this
+        # was measuring the frame count: a 100 ns run read as 1,999 ps and
+        # cleared the threshold below for the wrong reason, while a genuinely
+        # short run with many frames would have cleared it too. Where no
+        # interval is recorded `loading` marks the clock NaN, and the honest
+        # answer is that the run's length is unknown rather than a number.
         duration_ps = None
-        if traj.time is not None and traj.n_frames > 1:
-            duration_ps = float(traj.time[-1] - traj.time[0])
+        time = getattr(traj, "time", None)
+        if time is not None and traj.n_frames > 1 and np.all(np.isfinite(time)):
+            duration_ps = float(time[-1] - time[0])
         self.findings["duration_ps"] = duration_ps
+        if duration_ps is None and traj.n_frames > 1:
+            self.findings["duration_unknown"] = (
+                "How much simulated time this trajectory covers was not "
+                "recorded, so whether it is long enough to distinguish a held "
+                "water from one that had not yet left cannot be checked. The "
+                "occupancies below stand; their interpretation as residence "
+                "does not."
+            )
         if duration_ps is not None and duration_ps < 1000.0:
             self.findings["too_short_for_residence"] = (
                 f"This trajectory is {duration_ps:.0f} ps. Water on a protein "

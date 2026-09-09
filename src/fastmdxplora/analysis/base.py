@@ -553,11 +553,21 @@ class Analysis(ABC):
                 )
 
         # If user didn't specify, prefer ns when timing data is available.
-        # MDTraj sets time=0 by default for trajectories without timestamps,
-        # so check whether time actually varies.
+        #
+        # "Available" has to mean more than "varies". A DCD read through
+        # MDTraj comes back with time equal to the frame index in
+        # picoseconds, which varies perfectly and passed this test for
+        # months -- so every time-series figure from a 100 ns run drew a
+        # 2 ns axis. `loading._with_a_real_clock` now either sets the run's
+        # own interval or fills time with NaN to say there isn't one, and
+        # NaN is why the finite check comes first: np.allclose against NaN
+        # is False, so a NaN clock would otherwise read as usable.
         time_ps = np.asarray(traj.time, dtype=float)
-        has_real_time = time_ps is not None and len(time_ps) > 1 and not np.allclose(
-            time_ps, time_ps[0]
+        has_real_time = (
+            time_ps is not None
+            and len(time_ps) > 1
+            and bool(np.all(np.isfinite(time_ps)))
+            and not np.allclose(time_ps, time_ps[0])
         )
 
         if unit is None:

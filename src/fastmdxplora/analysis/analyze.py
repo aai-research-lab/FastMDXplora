@@ -135,6 +135,7 @@ def run(
         stride=stride,
         first=first,
         last=last,
+        saving_interval_ps=_saving_interval_ps(project_root),
     )
 
     if presenter:
@@ -182,6 +183,55 @@ def run(
                     artifacts.append(str(p))
     artifacts.append("analysis_manifest.json")
     return artifacts
+
+
+def _saving_interval_ps(project_root: Path) -> float | None:
+    """Picoseconds between saved frames, from the run's own record.
+
+    DCD does not carry this through MDTraj, so without it every time series
+    is drawn against a frame index labelled "Time (ns)" -- see
+    ``loading._with_a_real_clock``. The simulation phase records both halves
+    of the answer already and neither had a reader.
+
+    The reporter interval is preferred over the summary fields because it is
+    what the reporter was actually configured with, and stays right when a
+    run stops early: ``duration_ns_actual`` and ``n_production_frames`` are
+    both counted from the steps production ran, so their ratio is also
+    correct, but it is a reconstruction where the first is a setting.
+
+    ``None`` where neither is recorded -- a foreign trajectory, or a run from
+    before this was written -- which the loader turns into a frame axis
+    rather than an invented one.
+    """
+    import json
+
+    manifest = project_root / "simulation" / "simulation_parameters.json"
+    try:
+        record = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+    params = record.get("parameters") or {}
+    steps = params.get("trajectory_interval_steps")
+    timestep_fs = params.get("timestep_fs")
+    try:
+        if steps and timestep_fs:
+            interval = float(steps) * float(timestep_fs) / 1000.0
+            if interval > 0:
+                return interval
+    except (TypeError, ValueError):
+        pass
+
+    frames = record.get("n_production_frames")
+    duration_ns = record.get("duration_ns_actual")
+    try:
+        if frames and duration_ns:
+            interval = float(duration_ns) * 1000.0 / float(frames)
+            if interval > 0:
+                return interval
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
+    return None
 
 
 def _detect_ligand_resname(project_root: Path) -> str | None:
