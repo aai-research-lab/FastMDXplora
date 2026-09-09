@@ -647,3 +647,41 @@ def test_an_empty_site_selection_is_refused_by_name(tmp_path):
 
     with pytest.raises(ValueError, match="select_atoms"):
         measure_along(trajectory, "LIG", "")
+
+
+def test_a_study_directory_resolves_to_where_its_system_actually_sits(tmp_path):
+    """`setup_from: runs/earlier` is what a user writes, and it has to work.
+
+    The simulation phase already searched `<named>`, `<named>/shared_setup/
+    setup` and `<named>/setup` -- a single run keeps its preparation in one
+    of those, a set of umbrella windows in another, and which is this
+    package's layout rather than the user's business.
+
+    The seeder took the named path literally. So a study that pointed at
+    `runs/c1-benzamidine-pmf`, which the simulation phase reads correctly,
+    reached the seeder as a directory containing no `system.xml`, and said
+    so only after the pull it was seeding from had run for two and a half
+    hours. Two readers of one path: the same defect as two readers of one
+    spelling, and now the same single resolver.
+    """
+    from fastmdxplora.simulation.seeding import _prepared_files
+
+    study = tmp_path / "runs" / "earlier"
+    inside = study / "shared_setup" / "setup"
+    inside.mkdir(parents=True)
+    for name in ("system.xml", "state.xml", "topology.pdb"):
+        (inside / name).write_text("<x/>", encoding="utf-8")
+
+    system, topology = _prepared_files(study)
+    assert system == inside / "system.xml"
+    assert topology == inside / "topology.pdb"
+
+
+def test_a_missing_preparation_says_where_it_looked(tmp_path):
+    """The error named one path and searched three."""
+    import pytest
+
+    from fastmdxplora.simulation.seeding import _prepared_files
+
+    with pytest.raises(FileNotFoundError, match="Looked in:"):
+        _prepared_files(tmp_path / "runs" / "nothing-here")

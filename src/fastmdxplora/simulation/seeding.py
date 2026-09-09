@@ -249,15 +249,35 @@ def frames_for_centres(measured: np.ndarray,
 # Writing the seeds
 # ---------------------------------------------------------------------------
 def _prepared_files(prepared: Path) -> tuple[Path, Path]:
+    """The system and topology of the preparation the windows will use.
+
+    Resolved through the same search the simulation phase uses. A study is
+    named by its output directory -- `runs/c1-benzamidine-pmf` -- and where
+    the prepared system sits inside it is this package's layout, not the
+    user's business. Taking the named path literally here meant the phase
+    that runs a window and the code that seeds it disagreed about what
+    `setup_from` pointed at, and the disagreement surfaced only after a
+    two-and-a-half-hour pull had already finished.
+    """
+    from fastmdxplora.simulation.pipeline import (
+        PREPARED_SYSTEM_LAYOUTS,
+        where_a_prepared_system_sits,
+    )
+
+    prepared = where_a_prepared_system_sits(Path(prepared))
     system = prepared / "system.xml"
     topology = prepared / "topology.pdb"
     for path in (system, topology):
         if not path.is_file():
+            looked = ", ".join(
+                str(Path(prepared) / s) if s else str(prepared)
+                for s in PREPARED_SYSTEM_LAYOUTS
+            )
             raise FileNotFoundError(
                 f"{path} is not there, so the seeds cannot be built from the "
                 "same system the windows will simulate. Seeds written "
                 "against a different preparation place the waters "
-                "differently and will not load."
+                "differently and will not load. Looked in: " + looked
             )
     return system, topology
 

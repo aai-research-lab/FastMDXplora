@@ -100,6 +100,39 @@ def _a_prepared_system_sits_in(directory: Path) -> bool:
                for name in ("system.xml", "state.xml", "topology.pdb"))
 
 
+#: The places a study keeps a prepared system, in the order they are tried.
+#: A single run keeps it in `setup/`; a set of umbrella windows keeps one in
+#: `shared_setup/setup/` for all of them.
+PREPARED_SYSTEM_LAYOUTS = ("", "shared_setup/setup", "setup")
+
+
+def where_a_prepared_system_sits(named: Path) -> Path:
+    """The real directory behind a study a user named.
+
+    A study is what a person has and remembers: `runs/reference`. Where the
+    prepared system sits inside it is this package's own layout, and it is
+    not one thing. Requiring the exact interior path meant knowing which
+    shape the earlier study had, and the error for getting it wrong told
+    the user to go and look. Looking is something this can do.
+
+    Public, and shared, because it was not. The seeder resolved
+    `prepared_from` by taking it literally, so a study that named
+    `runs/c1-benzamidine-pmf` -- which the simulation phase reads correctly
+    -- reached the seeder as a directory with no `system.xml` in it. Two
+    readers of one path, which is the same defect as two readers of one
+    spelling: whoever writes the second reader has to know the first one
+    exists.
+
+    Returns what was named when nothing is found, so the error names the
+    path the user wrote rather than one of the places it was looked for.
+    """
+    for suffix in PREPARED_SYSTEM_LAYOUTS:
+        candidate = named / suffix if suffix else named
+        if _a_prepared_system_sits_in(candidate):
+            return candidate
+    return named
+
+
 def _write_steered_work(output_dir: Path, params: dict, presenter: Any) -> str | None:
     """Summarise the work done by a pull, beside the run.
 
@@ -332,22 +365,7 @@ def _where_the_system_was_prepared(
         # typing the path can see it.
         named = Path.cwd() / named
 
-    # A study is what a person has and remembers: `runs/reference`. Where
-    # the prepared system sits inside it is this package's own layout, and
-    # it is not one thing -- a single run keeps it in `setup/`, a set of
-    # umbrella windows keeps one in `shared_setup/setup/` for all of them.
-    # Requiring the exact interior path meant knowing which shape the
-    # earlier study had, and the error for getting it wrong told the user
-    # to go and look. Looking is something this can do.
-    for candidate in (named,
-                      named / "shared_setup" / "setup",
-                      named / "setup"):
-        if _a_prepared_system_sits_in(candidate):
-            return candidate, True
-
-    # Nothing found: hand back what was named, so the error names the path
-    # the user wrote rather than one of the places it was looked for.
-    return named, True
+    return where_a_prepared_system_sits(named), True
 
 
 def run(
