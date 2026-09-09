@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import logging
+
 import mdtraj as md
 import numpy as np
 import pytest
@@ -152,3 +154,30 @@ class TestItIsReachableAndDocumented:
         assert "import mdtraj" not in page, (
             "A user should not have to write a script to find out what their "
             "own selection matches.")
+
+
+class TestInvokingTheCLILeavesTheSuiteAsItFoundIt:
+    """The CLI configures the package logger for a command-line session.
+
+    `setup_console()` sets `propagate = False` so records are not printed
+    twice. In a process that is one run of the tool that is right. In a
+    process that is a test suite it persists into every test that follows,
+    and `caplog` reads through propagation -- so a later test asserting on a
+    message the code definitely emitted sees an empty string, silently, and
+    only when collection order puts a CLI call before it.
+
+    These two run in definition order. The second is the one that matters.
+    """
+
+    def test_a_cli_call_configures_the_console(self, gapped):
+        main(["select", "protein", "-s", str(gapped)])
+
+        assert logging.getLogger("fastmdx").propagate is False, (
+            "If this ever passes as True the CLI has stopped configuring "
+            "the console, and the fixture below is guarding nothing.")
+
+    def test_and_the_next_test_starts_with_it_back(self):
+        assert logging.getLogger("fastmdx").propagate is True, (
+            "A test that invoked the CLI has left the package logger "
+            "unable to propagate, so every caplog assertion after it reads "
+            "an empty string.")
