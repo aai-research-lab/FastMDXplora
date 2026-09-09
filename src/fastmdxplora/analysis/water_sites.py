@@ -34,6 +34,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -385,7 +386,7 @@ class WaterSites(Analysis):
                    for row in result.itertuples()]
 
         ax.barh(labels, result["occupancy"], color=colours,
-                edgecolor="#4E79A7")
+                edgecolor=colour("SERIES"))
         ax.set_xlabel("fraction of frames occupied")
         ax.set_xlim(0, 1)
         ax.invert_yaxis()

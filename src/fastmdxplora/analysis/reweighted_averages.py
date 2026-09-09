@@ -29,7 +29,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from fastmdxplora.analysis.plotting import new_figure, save_figure
+from fastmdxplora.analysis.plotting import new_figure, save_figure, colour
 from fastmdxplora.analysis.reweight import (
     KB_KJ_PER_MOL_K,
     Weights,
@@ -951,7 +951,7 @@ def _plot(record: dict[str, Any], path: Path) -> None:
     positions = np.arange(len(labels))
     ax.barh(positions, shifts,
             color=["#c0504d" if abs(s) > 5 else "#4f81bd" for s in shifts])
-    ax.axvline(0.0, color="#444444", linewidth=1.0)
+    ax.axvline(0.0, color=colour("ACCENT"), linewidth=1.0)
     ax.set_yticks(positions)
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
@@ -963,7 +963,7 @@ def _plot(record: dict[str, Any], path: Path) -> None:
             xytext=(4 if item["shift_percent"] >= 0 else -4, 0),
             textcoords="offset points", va="center",
             ha="left" if item["shift_percent"] >= 0 else "right",
-            fontsize=8, color="#333333")
+            fontsize=8, color=colour("ANNOTATION"))
 
     ess = record["effective_sample_size"]
     caption = (f"{ess:.0f} effective frames of {record['n_frames']}")

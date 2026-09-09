@@ -52,6 +52,7 @@ import mdtraj as md
 import numpy as np
 from scipy.special import expit
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -333,7 +334,7 @@ class QValue(Analysis):
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         x, _ = self.frame_axis_for_plot(self._traj_for_plot, len(result))
         ax.plot(x, result, linewidth=1.4)
-        ax.axhline(1.0, color="#888888", linestyle=":", linewidth=0.8)
+        ax.axhline(1.0, color=colour("GUIDE"), linestyle=":", linewidth=0.8)
         ax.set_ylim(-0.02, 1.05)
         # Annotate the number of native contacts in the legend
         n = getattr(self, "_n_native", None)

@@ -28,6 +28,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -184,11 +185,24 @@ class Contacts(Analysis):
             return
         top = pr.head(20)  # avoid an unreadable axis for large pockets
         y = np.arange(len(top))
-        ax.barh(y, top["contact_frequency"].to_numpy(), color="#3a7ca5")
+        ax.barh(y, top["contact_frequency"].to_numpy(), color=colour("SERIES"))
         ax.set_yticks(y)
         ax.set_yticklabels(top["residue"].tolist(), fontsize=8)
         ax.invert_yaxis()  # highest frequency at top
         ax.set_xlim(0, 1)
+
+    def figure_title(self) -> str:
+        """What this figure shows, which is half of what the analysis does.
+
+        ``description`` names the analysis -- a per-frame contact count and a
+        per-residue frequency, both of which it computes and writes. The
+        figure draws only the second, so inheriting that description put
+        "count + per-residue frequency" above a chart containing no count and
+        sent a reader looking for one. The count is in ``pl_contacts.dat``.
+        """
+        if self._user_title is not None:
+            return self._user_title
+        return "Protein-ligand contact frequency by residue"
 
     def default_xlabel(self) -> str | None:
         return "Contact frequency (fraction of frames)"

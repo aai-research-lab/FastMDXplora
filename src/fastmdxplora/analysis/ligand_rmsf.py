@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.rmsf import _atom_labels
@@ -114,7 +115,7 @@ class LigandRMSF(Analysis):
         serials = result[:, 0].astype(int)
         rmsf = result[:, 1]
         x = np.arange(len(serials))
-        ax.bar(x, rmsf, color="#b5651d")
+        ax.bar(x, rmsf, color=colour("SERIES"))
         ax.set_xticks(x)
         ax.set_xticklabels([str(s) for s in serials], fontsize=7, rotation=90)
 

@@ -29,6 +29,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -117,7 +118,7 @@ class PMF(Analysis):
         sampled = np.isfinite(energy)
         if sampled.any():
             lowest = int(np.nanargmin(np.where(sampled, energy, np.inf)))
-            ax.axvline(coordinate[lowest], color="#888888", linestyle=":",
+            ax.axvline(coordinate[lowest], color=colour("GUIDE"), linestyle=":",
                        linewidth=1.0,
                        label=f"minimum at {coordinate[lowest]:.3g}")
             ax.legend(loc="best")
@@ -126,7 +127,7 @@ class PMF(Analysis):
         # judge a feature sitting on a seam between two of them.
         for overlap in getattr(self, "_overlaps", []):
             for centre in overlap.get("centres", []):
-                ax.axvline(float(centre), color="#cccccc", linewidth=0.6,
+                ax.axvline(float(centre), color=colour("FAINT"), linewidth=0.6,
                            zorder=0)
 
         if getattr(self, "_unsampled", 0):

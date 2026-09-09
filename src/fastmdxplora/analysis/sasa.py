@@ -26,6 +26,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -281,7 +282,7 @@ class SASA(Analysis):
             means = result["mean_sasa_nm2"].to_numpy()
             ax.bar(residues, means,
                    yerr=result["std_sasa_nm2"].to_numpy(),
-                   color="#3a7ca5", error_kw={"ecolor": "#1f4257",
+                   color=colour("SERIES"), error_kw={"ecolor": colour("ACCENT"),
                                               "elinewidth": 0.8, "capsize": 2})
             ax.set_ylim(bottom=0)
         else:

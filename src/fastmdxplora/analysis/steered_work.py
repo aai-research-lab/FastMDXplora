@@ -30,6 +30,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -94,7 +95,7 @@ class SteeredWork(Analysis):
         if self._requested is not None:
             requested = float(self._requested)
             if abs(requested - reached) > 1e-6:
-                ax.axvline(requested, color="#cc8888", linestyle="--",
+                ax.axvline(requested, color=colour("WARN"), linestyle="--",
                            linewidth=1.0,
                            label=f"asked for {requested:.3g}, reached "
                                  f"{reached:.3g}")

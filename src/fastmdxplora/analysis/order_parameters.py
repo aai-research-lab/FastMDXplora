@@ -52,6 +52,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -448,10 +449,10 @@ class OrderParameters(Analysis):
                 linewidth=1.0, label="simulation")
         if result.shape[1] > 2 and np.isfinite(result[:, 2]).any():
             ax.plot(result[:, 0], result[:, 2], marker="s", markersize=2.5,
-                    linewidth=0.0, color="#EE6677", label="measured")
+                    linewidth=0.0, color=colour("SERIES"), label="measured")
             ax.legend(loc="lower right", fontsize="small")
         ax.set_ylim(0.0, 1.05)
-        ax.axhline(1.0, color="#888888", linestyle=":", linewidth=0.8)
+        ax.axhline(1.0, color=colour("GUIDE"), linestyle=":", linewidth=0.8)
 
     def save_data(self, result: np.ndarray, path: Path) -> Path:
         """Three named columns where a reference was compared.

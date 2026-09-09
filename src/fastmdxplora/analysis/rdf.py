@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -271,7 +272,7 @@ class RadialDistribution(Analysis):
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         ax.plot(result[:, 0], result[:, 1], linewidth=1.2)
-        ax.axhline(1.0, color="#888888", linestyle=":", linewidth=0.8)
+        ax.axhline(1.0, color=colour("GUIDE"), linestyle=":", linewidth=0.8)
 
     def default_xlabel(self) -> str | None:
         return "r (nm)"

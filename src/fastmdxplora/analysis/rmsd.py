@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -134,7 +135,7 @@ class RMSD(Analysis):
         ref_x = x[self._resolved_ref]
         ax.axvline(
             ref_x,
-            color="#888888",
+            color=colour("GUIDE"),
             linestyle=":",
             linewidth=1.0,
             label=f"reference (frame {self._resolved_ref})",

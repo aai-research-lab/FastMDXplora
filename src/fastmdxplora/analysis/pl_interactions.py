@@ -25,6 +25,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -37,6 +38,32 @@ ALL_KINDS = (
     "hydrophobic", "hydrogen_bond", "salt_bridge", "pi_stacking",
     "pi_cation", "halogen_bond", "metal_coordination", "water_bridge",
 )
+
+
+def _row_label(row: Any) -> str:
+    """One row of the figure, named so that no other row shares the name.
+
+    A row is an atom pair, and the residue alone does not identify one. On a
+    trypsin-benzamidine run the twenty rows drawn included four hydrogen
+    bonds to ASP189, five hydrophobic contacts to TRP215 and four to GLN192:
+    fourteen of twenty carried a label identical to another row's. A reader
+    could not say which pair any of them was, could not cite one, and had
+    nothing to warn them that the rows sharing a residue are not independent
+    and must not be added up.
+
+    The atoms are what separate them, so the atoms are in the label. Falls
+    back to the residue alone where the names are absent, which is what a
+    table written before they were recorded looks like.
+    """
+    kind = getattr(row, "kind", "")
+    residue = getattr(row, "residue", "")
+    protein_atom = getattr(row, "protein_atom_name", None)
+    ligand_atom = getattr(row, "ligand_atom_name", None)
+    if not protein_atom or not ligand_atom:
+        return f"{kind}  {residue}"
+    if isinstance(protein_atom, float) or isinstance(ligand_atom, float):
+        return f"{kind}  {residue}"  # NaN from an older table
+    return f"{kind}  {residue} {protein_atom}–{ligand_atom}"
 
 
 class ProteinLigandInteractions(Analysis):
@@ -249,6 +276,7 @@ class ProteinLigandInteractions(Analysis):
         if not occupancies:
             return pd.DataFrame(columns=[
                 "kind", "ligand_atom", "protein_atom", "residue",
+                "ligand_atom_name", "protein_atom_name",
                 "frames_present", "frames_total", "occupancy", "episodes",
                 "standard_error", "well_sampled",
             ])
@@ -257,6 +285,17 @@ class ProteinLigandInteractions(Analysis):
         for entry in occupancies:
             record = entry.as_record()
             record["residue"] = str(traj.topology.atom(entry.protein_atom).residue)
+            # The atom names, because the indices are the only thing that
+            # distinguishes one row from another and an index is not
+            # readable. A trypsin run puts four hydrogen bonds to ASP189 and
+            # five hydrophobic contacts to TRP215 in the same table: without
+            # these, fourteen of twenty rows in the figure carried a label
+            # identical to another row's, and no reader could say which pair
+            # any of them was, cite one, or know they must not be summed.
+            record["ligand_atom_name"] = str(
+                traj.topology.atom(entry.ligand_atom).name)
+            record["protein_atom_name"] = str(
+                traj.topology.atom(entry.protein_atom).name)
             rows.append(record)
         frame = pd.DataFrame(rows)
         return frame.rename(columns={"fraction": "occupancy"})
@@ -303,7 +342,7 @@ class ProteinLigandInteractions(Analysis):
             return
 
         top = result.head(20).iloc[::-1]
-        labels = [f"{row.kind}  {row.residue}" for row in top.itertuples()]
+        labels = [_row_label(row) for row in top.itertuples()]
         positions = np.arange(len(top))
 
         # Thinly observed contacts are drawn hollow. An occupancy resting on
@@ -312,12 +351,12 @@ class ProteinLigandInteractions(Analysis):
         for position, row in zip(positions, top.itertuples()):
             well = bool(row.well_sampled)
             ax.barh(position, row.occupancy,
-                    color="#3fb0ac" if well else "none",
-                    edgecolor="#3fb0ac", hatch=None if well else "///")
+                    color=colour("SERIES") if well else "none",
+                    edgecolor=colour("SERIES"), hatch=None if well else "///")
             error = row.standard_error
             if error is not None and not (isinstance(error, float) and np.isnan(error)):
                 ax.errorbar(row.occupancy, position, xerr=error,
-                            color="#20504f", capsize=3, fmt="none")
+                            color=colour("ACCENT"), capsize=3, fmt="none")
 
         ax.set_yticks(positions)
         ax.set_yticklabels(labels, fontsize=8)
@@ -327,7 +366,7 @@ class ProteinLigandInteractions(Analysis):
             ax.text(0.98, 0.02,
                     f"{thin} hatched: fewer than five separate observations",
                     transform=ax.transAxes, ha="right", va="bottom",
-                    fontsize=8, color="#666666")
+                    fontsize=8, color=colour("ANNOTATION"))
 
     def default_xlabel(self) -> str | None:
         return "Fraction of frames present"

@@ -61,6 +61,83 @@ PALETTE = (
     "#7F3C8D",  # violet
 )
 
+#: The same palette with the hue taken out. Ordered so that neighbouring
+#: entries stay apart in value, which is what carries a distinction once
+#: there is no hue left to carry it.
+GREYSCALE_PALETTE = (
+    "#000000", "#5A5A5A", "#8C8C8C", "#B4B4B4", "#2E2E2E",
+    "#737373", "#A6A6A6", "#1A1A1A", "#C8C8C8", "#404040",
+)
+
+#: What a colour is *for*, so an analysis asks for a role and not for a hex
+#: value. Before this there were twenty-eight hardcoded colours across
+#: ``analysis/*.py``, and they did not agree with each other: `contacts` and
+#: `pl_hbonds` drew `#3a7ca5`, `pl_interactions` `#3fb0ac`, `ligand_rmsd` and
+#: `ligand_rmsf` `#b5651d`, `order_parameters` `#EE6677`, `water_sites`
+#: `#4E79A7` -- four different blues in one report, none of them from the
+#: palette this module installs, while its own docstring called itself "a
+#: single point of style configuration so every analysis figure looks
+#: consistent".
+#:
+#: ``SERIES`` is the measurement, ``ACCENT`` its error bars or a second
+#: series, ``GUIDE`` a reference the reader compares against, ``FAINT`` a
+#: subordinate one (window centres, a grid of positions), ``BAND`` a shaded
+#: region, ``ANNOTATION`` a footnote, ``WARN`` something asked for that was
+#: not achieved.
+_ROLES_IN_COLOUR = {
+    "SERIES": PALETTE[0],
+    "ACCENT": PALETTE[1],
+    "GUIDE": "#888888",
+    "FAINT": "#CCCCCC",
+    "BAND": PALETTE[5],
+    "ANNOTATION": "#666666",
+    "WARN": PALETTE[1],
+}
+
+_ROLES_IN_GREY = {
+    "SERIES": "#4D4D4D",
+    "ACCENT": "#111111",
+    "GUIDE": "#888888",
+    "FAINT": "#CCCCCC",
+    "BAND": "#D9D9D9",
+    "ANNOTATION": "#666666",
+    "WARN": "#111111",
+}
+
+#: Whether figures are drawn without hue. Off by default; a journal that
+#: wants greyscale, or an author who prefers shape and value to colour, sets
+#: it once and every analysis follows, because every analysis asks `colour()`
+#: rather than naming a hex value.
+_GREYSCALE = False
+
+
+def use_greyscale(on: bool = True) -> None:
+    """Draw every figure without hue, using value and shape instead."""
+    global _GREYSCALE
+    _GREYSCALE = bool(on)
+    apply_style()
+
+
+def greyscale_is_on() -> bool:
+    return _GREYSCALE
+
+
+def colour(role: str) -> str:
+    """The colour for a role, in whichever mode is in force.
+
+    Raises on an unknown role rather than returning a default: a silent
+    fallback is how a figure ends up drawn in a colour nobody chose.
+    """
+    table = _ROLES_IN_GREY if _GREYSCALE else _ROLES_IN_COLOUR
+    try:
+        return table[role]
+    except KeyError:
+        raise KeyError(
+            f"No colour role named {role!r}. Roles are: "
+            f"{', '.join(sorted(_ROLES_IN_COLOUR))}."
+        ) from None
+
+
 PAPER_TICK_SIZE = 9.0
 PAPER_LABEL_SIZE = 10.0
 PAPER_TITLE_SIZE = 11.0
@@ -109,7 +186,8 @@ def apply_style() -> None:
             "axes.labelpad": 5.0,
             "axes.grid": True,
             "axes.axisbelow": True,
-            "axes.prop_cycle": plt.cycler(color=PALETTE),
+            "axes.prop_cycle": plt.cycler(
+                color=GREYSCALE_PALETTE if _GREYSCALE else PALETTE),
             "grid.color": "#E6E6E6",
             "grid.linewidth": 0.5,
             "grid.linestyle": "--",
@@ -317,6 +395,25 @@ def _has_categorical_ticks(ax: Axes, axis: str) -> bool:
                for label in target.get_ticklabels())
 
 
+#: Step sizes for an axis whose full extent is one whole -- a fraction, an
+#: occupancy, a probability. Matplotlib's default set includes 1.5, 3, 4, 6
+#: and 8, and on a 0-1 axis with the tick budget these figures get it chooses
+#: 0.15: ticks at 0, 0.15 ... 0.90, and the end of the axis never labelled.
+#: That is how `pl_contacts` came to draw twelve bars reaching 1.00 above a
+#: scale whose last number was 0.90, with no way to read what the bars said.
+#:
+#: Restricted only here, and deliberately not everywhere: a torsion axis
+#: spanning -180 to 180 wants the 3 and 6 that this set drops, and would be
+#: made worse by it. The rule is about a whole, not about nice numbers.
+_STEPS_THAT_DIVIDE_A_WHOLE = [1, 2, 2.5, 5, 10]
+
+
+def _is_a_fraction_axis(ax: Axes, axis: str) -> bool:
+    """True when this axis runs from zero to one, so its end is a whole."""
+    low, high = ax.get_xlim() if axis == "x" else ax.get_ylim()
+    return bool(np.isclose(low, 0.0) and np.isclose(high, 1.0))
+
+
 def _finalise_axes(ax: Axes) -> None:
     """Adaptive tick density and a legible legend, applied to every figure."""
     for axis in ("x", "y"):
@@ -326,7 +423,13 @@ def _finalise_axes(ax: Axes) -> None:
         scale = ax.get_xscale() if axis == "x" else ax.get_yscale()
         if scale != "linear":
             continue
-        target.set_major_locator(MaxNLocator(nbins=_tick_budget(ax, axis)))
+        bins = _tick_budget(ax, axis)
+        if _is_a_fraction_axis(ax, axis):
+            locator = MaxNLocator(
+                nbins=bins, steps=_STEPS_THAT_DIVIDE_A_WHOLE)
+        else:
+            locator = MaxNLocator(nbins=bins)
+        target.set_major_locator(locator)
         target.set_minor_locator(AutoMinorLocator())
 
     legend = ax.get_legend()

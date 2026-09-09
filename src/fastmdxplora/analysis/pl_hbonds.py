@@ -21,6 +21,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -162,8 +163,8 @@ class ProteinLigandHBonds(Analysis):
         else:
             x = result["frame"].to_numpy()
         y = result["n_hbonds"].to_numpy()
-        ax.plot(x, y, linewidth=1.4, color="#3a7ca5")
-        ax.fill_between(x, 0, y, alpha=0.15, color="#3a7ca5")
+        ax.plot(x, y, linewidth=1.4, color=colour("SERIES"))
+        ax.fill_between(x, 0, y, alpha=0.15, color=colour("SERIES"))
         # Integer y ticks (counts).
         ax.set_ylim(bottom=0)
 

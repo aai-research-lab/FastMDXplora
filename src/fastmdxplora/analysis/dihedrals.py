@@ -30,6 +30,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -200,8 +201,8 @@ class Dihedrals(Analysis):
             ax.set_aspect("equal")
 
         # Standard Ramachandran reference lines through the origin
-        ax.axhline(0, color="#888888", linewidth=0.5)
-        ax.axvline(0, color="#888888", linewidth=0.5)
+        ax.axhline(0, color=colour("GUIDE"), linewidth=0.5)
+        ax.axvline(0, color=colour("GUIDE"), linewidth=0.5)
         ax.set_xlim(-180, 180)
         ax.set_ylim(-180, 180)
         ax.set_xticks([-180, -90, 0, 90, 180])

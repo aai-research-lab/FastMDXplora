@@ -29,6 +29,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -146,7 +147,7 @@ class MetadynamicsSurface(Analysis):
             ax.figure.colorbar(image, ax=ax, label="Free energy (kJ/mol)")
             lowest = np.unravel_index(np.nanargmin(energy), energy.shape)
             ax.plot(first[lowest[0]], second[lowest[1]], marker="o",
-                    markersize=4, color="white", markeredgecolor="#555555")
+                    markersize=4, color="white", markeredgecolor=colour("ACCENT"))
             if self._provisional:
                 ax.set_title(f"{self.figure_title()} (provisional)")
             return
@@ -163,13 +164,13 @@ class MetadynamicsSurface(Analysis):
         band = self._band()
         if band is not None and band.shape == energy.shape:
             ax.fill_between(coordinate, energy - band, energy + band,
-                            alpha=0.18, linewidth=0, color="#4477aa",
+                            alpha=0.18, linewidth=0, color=colour("BAND"),
                             label="convergence band (not a standard error)")
 
         sampled = np.isfinite(energy)
         if sampled.any():
             lowest = int(np.nanargmin(np.where(sampled, energy, np.inf)))
-            ax.axvline(coordinate[lowest], color="#888888", linestyle=":",
+            ax.axvline(coordinate[lowest], color=colour("GUIDE"), linestyle=":",
                        linewidth=1.0,
                        label=f"minimum at {coordinate[lowest]:.3g}")
 
@@ -180,7 +181,7 @@ class MetadynamicsSurface(Analysis):
         ceiling = self._evidence.get("drift_ceiling_kjmol")
         if ceiling and sampled.any():
             floor = float(np.nanmin(energy))
-            ax.axhline(floor + float(ceiling), color="#cccccc",
+            ax.axhline(floor + float(ceiling), color=colour("FAINT"),
                        linestyle="--", linewidth=0.8,
                        label=f"judged below {ceiling:g} kJ/mol")
         if sampled.any():

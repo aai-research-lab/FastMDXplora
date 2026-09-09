@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 
@@ -234,10 +235,10 @@ class LigandRMSD(Analysis):
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         x, _ = self.frame_axis_for_plot(result, self._traj_for_plot)
-        ax.plot(x, result, linewidth=1.4, color="#b5651d")
+        ax.plot(x, result, linewidth=1.4, color=colour("SERIES"))
         ref_x = x[self._resolved_ref]
         ax.axvline(
-            ref_x, color="#888888", linestyle=":", linewidth=1.0,
+            ref_x, color=colour("GUIDE"), linestyle=":", linewidth=1.0,
             label=f"reference (frame {self._resolved_ref})",
         )
         ax.legend(loc="best")
