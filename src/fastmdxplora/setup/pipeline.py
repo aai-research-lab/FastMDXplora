@@ -351,7 +351,11 @@ def _explicit_ligand_resnames(params: dict) -> tuple[str, ...]:
     guessing here would risk vouching for a component that was genuinely
     dropped.
     """
-    named = params.get("ligand_name")
+    # Accepted under either spelling. The collective-variable blocks call
+    # this `ligand_resname`, and one concept answering to two words
+    # depending on which block it sits in is a thing to remember for no
+    # reason.
+    named = params.get("ligand_name") or params.get("ligand_resname")
     if not named:
         return ()
     names = [named] if isinstance(named, str) else list(named)
@@ -750,6 +754,15 @@ def run(
     setup_dir = output_dir
 
     params: dict[str, Any] = {**DEFAULTS, **options}
+
+    # One ligand, either spelling. The collective-variable blocks call this
+    # `ligand_resname` and setup has always called it `ligand_name`, and a
+    # user who named the ligand once should not have to learn the other
+    # word to bias the thing they named. Read from `options` rather than
+    # `params`, because `ligand_name` carries a default and a default must
+    # not outrank something the user actually wrote.
+    if options.get("ligand_resname") and not options.get("ligand_name"):
+        params["ligand_name"] = options["ligand_resname"]
 
     # Force-field selection is either the named selector OR a raw XML list,
     # not both. Check the user-supplied options (not merged defaults), since

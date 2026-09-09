@@ -1006,7 +1006,10 @@ class BatchExplorer:
         centres = [w.centre for w in plan.windows]
         seeds = seed_windows(
             pull_output, prepared, centres, self.output_dir / "seeds",
-            ligand_resname=str(first_window.get("ligand_resname") or ""),
+            # Either spelling: the umbrella block accepts both, so the
+            # thing reading it has to as well.
+            ligand_resname=str(first_window.get("ligand_resname")
+                               or first_window.get("ligand_name") or ""),
             site_selection=str(first_window.get("site_selection") or ""),
             temperature_K=float(simulation.get("temperature_K", 300.0)),
             random_seed=int(simulation.get("random_seed") or 0),

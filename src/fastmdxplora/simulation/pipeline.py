@@ -89,6 +89,17 @@ def _setup_outputs_present(setup_dir: Path) -> tuple[Path | None, Path | None, P
     return system_xml, state_xml, topology
 
 
+def _a_prepared_system_sits_in(directory: Path) -> bool:
+    """Whether this directory holds a system a run could start from.
+
+    All three files or none: a directory with two of them is a setup that
+    did not finish, and starting from it fails later and less clearly than
+    saying so here.
+    """
+    return all((directory / name).is_file()
+               for name in ("system.xml", "state.xml", "topology.pdb"))
+
+
 def _write_steered_work(output_dir: Path, params: dict, presenter: Any) -> str | None:
     """Summarise the work done by a pull, beside the run.
 
@@ -320,6 +331,22 @@ def _where_the_system_was_prepared(
         # Relative to where the run was started, which is where somebody
         # typing the path can see it.
         named = Path.cwd() / named
+
+    # A study is what a person has and remembers: `runs/reference`. Where
+    # the prepared system sits inside it is this package's own layout, and
+    # it is not one thing -- a single run keeps it in `setup/`, a set of
+    # umbrella windows keeps one in `shared_setup/setup/` for all of them.
+    # Requiring the exact interior path meant knowing which shape the
+    # earlier study had, and the error for getting it wrong told the user
+    # to go and look. Looking is something this can do.
+    for candidate in (named,
+                      named / "shared_setup" / "setup",
+                      named / "setup"):
+        if _a_prepared_system_sits_in(candidate):
+            return candidate, True
+
+    # Nothing found: hand back what was named, so the error names the path
+    # the user wrote rather than one of the places it was looked for.
     return named, True
 
 
@@ -350,8 +377,17 @@ def run(
     notes: list[str] = []
 
     # ---- Locate setup outputs ------------------------------------------
+    # `setup_from` is the name; `prepared_from` is what it used to be
+    # called and still answers to. "Preparation" is what a person does to a
+    # structure before any of this runs; `setup` is the phase that wrote
+    # the directory being named.
+    # Named back to the user under the spelling they used. A message about
+    # `setup_from` sends somebody searching a config that says
+    # `prepared_from`, and the two are the same key.
+    named_by = "setup_from" if params.get("setup_from") else "prepared_from"
     setup_dir, prepared_elsewhere = _where_the_system_was_prepared(
-        orchestrator, params.get("prepared_from")
+        orchestrator,
+        params.get("setup_from") or params.get("prepared_from"),
     )
     system_xml, state_xml, topology = _setup_outputs_present(setup_dir)
     if system_xml is None and prepared_elsewhere:
@@ -359,10 +395,11 @@ def run(
         # has not run yet, and saying "run setup first" would send somebody
         # to fix the wrong thing.
         raise RuntimeError(
-            f"prepared_from points at {setup_dir}, which does not hold a "
-            "prepared system (system.xml, state.xml and topology.pdb). It "
-            "should be the setup directory of a run that completed, not the "
-            "run directory above it."
+            f"{named_by} points at {setup_dir}, and neither it, nor "
+            f"{setup_dir / 'setup'}, nor "
+            f"{setup_dir / 'shared_setup' / 'setup'} holds a prepared "
+            "system (system.xml, state.xml and topology.pdb). Name a study "
+            "that finished its setup phase, or the setup directory itself."
         )
     if system_xml is None:
         notes.append(

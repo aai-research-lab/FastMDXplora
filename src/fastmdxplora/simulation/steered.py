@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 from fastmdxplora.simulation.metadynamics import (
     COLLECTIVE_VARIABLES,
     cv_lines,
@@ -95,6 +97,7 @@ def plan_steered(
     *,
     temperature_K: float = 300.0,
     ligand_resname: str | None = None,
+    structure: Any = None,
 ) -> SteeredPlan:
     """Read a steered-MD block, reusing the collective-variable machinery."""
     if "to" not in spec:
@@ -118,26 +121,89 @@ def plan_steered(
     if steps <= 0:
         raise ValueError("Steered MD needs a positive number of `steps`.")
 
+    # Where the pull starts. Zero is not a default: it is a real position
+    # for most coordinates, and anchoring there drags the system towards it
+    # before the pull begins. But the value in the structure about to be
+    # simulated is a default, and it is the one the old error message told
+    # the user to go and measure by hand. Measuring is something this can
+    # do, and a framework that asks for a number it is holding is asking
+    # for the wrong reason.
+    #
     # Refused here rather than where the script is written, because the
     # script is written after equilibration has already run: a missing
     # starting anchor should cost a config error, not four minutes of NVT.
-    if spec.get("from") is None:
+    from_value = spec.get("from")
+    if from_value is None and structure is not None:
+        from_value = measure_in(cv, structure)
+    if from_value is None:
         raise ValueError(
             "A steered pull needs `from`: the value of the collective "
             f"variable ({cv.collective_variable}) where the run starts. "
-            "PLUMED's moving restraint travels between two given anchors and "
-            "there is no sensible default for the first -- zero is a real "
-            "position for most coordinates, and anchoring there drags the "
-            "system towards it before the pull begins. Measure the variable "
-            "in the structure being simulated and set `from` to it.")
+            "It would ordinarily be read from the structure being "
+            "simulated, and could not be here -- either no structure was "
+            "available yet, or this variable is not one that can be "
+            f"measured from coordinates alone ({cv.collective_variable} is "
+            "not). Measure it and set `from`.")
 
     return SteeredPlan(
         cv=cv,
         to_value=float(spec["to"]),
-        from_value=(None if spec.get("from") is None else float(spec["from"])),
+        from_value=float(from_value),
         force_constant=float(spec.get("force_constant", DEFAULT_FORCE)),
         steps=steps,
     )
+
+
+#: Variables whose value can be read straight from one set of coordinates.
+#: A pull is along one of these in practice; the rest need a reference
+#: structure, a contact map or a history, and are left to the user to state.
+MEASURABLE = ("distance", "ligand_distance", "radius_of_gyration", "torsion")
+
+
+def measure_in(cv: Any, structure: Any) -> float | None:
+    """The variable's value in a structure, where it can be read from one.
+
+    `structure` is anything MDTraj loads, or an already-loaded trajectory;
+    the first frame is used. Returns ``None`` where the variable is not one
+    of :data:`MEASURABLE`, so the caller can say so rather than guess.
+
+    Centres are mass-weighted, which is what PLUMED's ``COM`` is. An
+    unweighted centroid differs by a few hundredths of a nanometre on a
+    ligand with a heavy ring -- small, and the whole point of this number
+    is that the pull starts where the system already is.
+    """
+    if cv.collective_variable not in MEASURABLE:
+        return None
+
+    import mdtraj as md
+
+    frame = structure if hasattr(structure, "xyz") else md.load(str(structure))
+    frame = frame[0]
+    groups = list(cv.atoms.values())
+
+    if cv.collective_variable == "radius_of_gyration":
+        selection = groups[0] if groups else None
+        subset = frame.atom_slice(selection) if selection else frame
+        return float(md.compute_rg(subset)[0])
+
+    if cv.collective_variable == "torsion":
+        indices = [i for group in groups for i in group]
+        if len(indices) != 4:
+            return None
+        return float(md.compute_dihedrals(frame, [indices])[0][0])
+
+    if len(groups) != 2:
+        return None
+    masses = np.array([a.element.mass for a in frame.topology.atoms],
+                      dtype=float)
+
+    def centre(selection):
+        weight = masses[selection]
+        return (frame.xyz[0][selection] * weight[:, None]).sum(axis=0) \
+            / weight.sum()
+
+    first, second = (np.asarray(g, dtype=int) for g in groups)
+    return float(np.linalg.norm(centre(first) - centre(second)))
 
 
 def build_steered_script(plan: SteeredPlan,

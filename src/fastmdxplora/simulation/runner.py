@@ -1339,8 +1339,13 @@ def run_simulation(
             plan_steered,
         )
 
+        # The structure is handed over so `from` can default to where the
+        # system already is. Without it the user has to measure the
+        # variable by hand and type it back in -- a number this already
+        # holds.
         steered_plan = plan_steered(
-            steered, topology, temperature_K=temperature_K)
+            steered, topology, temperature_K=temperature_K,
+            structure=str(topology_path) if topology_path else None)
         script = build_steered_script(
             steered_plan, reference_pdb=str(topology_path)
             if steered_plan.cv.collective_variable == "ligand_rmsd" else None)

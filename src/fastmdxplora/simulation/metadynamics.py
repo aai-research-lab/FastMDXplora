@@ -344,8 +344,11 @@ def plan_from_config(
 
     atoms: dict[str, list[int]] = {}
     if variable in ("ligand_rmsd", "ligand_distance"):
-        resname = (spec.get("ligand_resname") or ligand_resname
-                   or detect_ligand(topology))
+        # `ligand_name` is what the setup block calls this, and a user who
+        # named the ligand once should not have to learn a second word for
+        # it to bias the thing they named. Both are accepted everywhere.
+        resname = (spec.get("ligand_resname") or spec.get("ligand_name")
+                   or ligand_resname or detect_ligand(topology))
         if not resname:
             raise ValueError(
                 f"{variable} needs a ligand. None was given, and the system "

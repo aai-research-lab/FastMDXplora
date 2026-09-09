@@ -285,7 +285,13 @@ SETUP = PhaseSchema(
               "force field.",
               example="openff-2.2.1"),
         Field("ligand_name", str, "LIG",
-              "Residue/molecule name assigned to the ligand."),
+              "Residue/molecule name assigned to the ligand. Also accepted "
+              "as `ligand_resname`, which is what the collective-variable "
+              "blocks call it -- one ligand should not need two words."),
+        Field("ligand_resname", str, None,
+              "The same thing as `ligand_name`, under the spelling the "
+              "umbrella, steered and metadynamics blocks use. Given both, "
+              "this one is ignored."),
         Field("ligand_net_charge", int, None,
               "Ligand formal net charge. Read from the chemistry file's own "
               "formal charges when not given, and checked against them when "
@@ -416,13 +422,21 @@ SIMULATION = PhaseSchema(
         Field("production_steps", int, None,
               "Production step count (overrides duration_ns). Default: 1000000.",
               example=1000000),
+        Field("setup_from", str, None,
+              "A finished study or setup directory to simulate from instead "
+              "of running setup again. Point it at the study -- "
+              "`runs/reference` -- and the setup directory inside is found; "
+              "pointing straight at `runs/reference/setup` also works. Runs "
+              "that share one prepared system share its water placement, so "
+              "a difference between them is the setting that was changed "
+              "rather than where the solvent happened to land. Pair it with "
+              "`--exclude setup`, since nothing needs setting up.",
+              example="runs/reference"),
         Field("prepared_from", str, None,
-              "Directory holding a setup phase's system.xml, state.xml and "
-              "topology.pdb, to simulate from instead of preparing again. "
-              "Runs that share one prepared system share its water "
-              "placement, so a difference between them is the setting that "
-              "was changed rather than where the solvent happened to land.",
-              example="runs/reference/setup"),
+              "The earlier name for `setup_from`, still accepted. `setup` "
+              "is what this package calls the automated first phase, so "
+              "`setup_from` is what a directory that phase wrote is called.",
+              example="runs/reference"),
         Field("minimize", bool, True,
               "Run energy minimization before equilibration."),
         Field("integrator", str, "langevin_middle",
@@ -748,7 +762,8 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
           "mutations", "mutation_chain")),
         ("The ligand",
          "Found and parameterised, or named if the structure is ambiguous.",
-         ("ligand", "ligand_name", "ligand_forcefield", "ligand_net_charge",
+         ("ligand", "ligand_name", "ligand_resname", "ligand_forcefield",
+          "ligand_net_charge",
           "ligand_pose", "check_ligand_clashes",
           "ligand_clash_threshold_nm")),
         ("The membrane",
@@ -777,7 +792,8 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Where it starts",
          "A system prepared here or elsewhere, and how hard it is minimised "
          "first.",
-         ("prepared_from", "minimize", "minimize_tolerance_kjmol_per_nm",
+         ("setup_from", "prepared_from", "minimize",
+          "minimize_tolerance_kjmol_per_nm",
           "minimize_max_iterations")),
         ("Conditions",
          "The thermodynamic state the run is held at.",
