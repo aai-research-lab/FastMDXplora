@@ -7,6 +7,8 @@ here, because that is the decision a wrong answer would hide in.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -283,11 +285,13 @@ def test_a_window_without_a_seed_falls_back_to_the_shared_system(monkeypatch):
 
     explorer._maybe_prepare_once(None, ["setup"])
 
+    # `str()` of a Path, so the separator is the platform's. Asserting the
+    # POSIX spelling passed everywhere except Windows, where the same code
+    # is correct and the test was not.
+    shared = str(Path("runs/earlier/shared_setup/setup"))
     starts = [s.options["simulation"]["prepared_from"]
               for s in explorer.run_specs]
-    assert starts == ["runs/earlier/shared_setup/setup",
-                      "seeds/window-01",
-                      "runs/earlier/shared_setup/setup"]
+    assert starts == [shared, "seeds/window-01", shared]
 
 
 def test_nothing_prepared_and_nothing_supplied_leaves_the_windows_alone(
