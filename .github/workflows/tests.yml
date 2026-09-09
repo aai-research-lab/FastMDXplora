@@ -100,6 +100,14 @@ jobs:
       # the whole report with it: no failure section, no summary, nothing for
       # the other hundred tests. A corpus that fetches real structures will
       # meet a slow one, and it should cost that one test.
+      # Before the corpus, because it takes eight seconds and the corpus
+      # takes an hour. These are the tests that need a real OpenMM: the
+      # seeding path opens a trajectory, builds a context and writes a
+      # `state.xml`, none of which the pip-installed matrix legs can do.
+      # It was 44% of a diff and it held both bugs that reached a real run.
+      - name: Run the tests that need a real OpenMM
+        run: pytest tests/test_seeding_end_to_end.py -v --timeout-method=signal --timeout=600
+
       - name: Run the network-marked corpus
         run: pytest -m network tests/validation -v --timeout-method=signal --timeout=2400
 
