@@ -296,6 +296,12 @@ def detect_ligand(topology: Any) -> str | None:
 COLLECTIVE_VARIABLE_KEYS: frozenset[str] = frozenset({
     "collective_variable", "selection", "site_selection", "bilayer_selection",
     "axis_selection", "ligand_resname", "switch_distance_nm",
+    # The setup block's word for the same string. Accepted by the reader
+    # since both spellings became one concept, and it has to be accepted
+    # here too -- a validator that refuses what the reader understands is
+    # the same defect as a reader that refuses what the user meant, and it
+    # is the one the user meets first.
+    "ligand_name",
     # A distance and a coordination are between two groups, so they are named
     # in pairs. Read in a loop rather than one at a time, which is how they
     # went missing from the first version of this list.

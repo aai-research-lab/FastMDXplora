@@ -243,3 +243,115 @@ def test_the_centre_is_mass_weighted():
     centroid = (5 * 1.0 + 2.0) / 6
 
     assert measured > centroid + 0.1
+
+
+# ---------------------------------------------------------------------------
+# The config a person would actually write
+# ---------------------------------------------------------------------------
+STUDY = """
+output: runs/pull-then-hold
+systems:
+  - id: complex
+    system: ./3PTB.pdb
+setup:
+  ph: 7.4
+  ligand: ./BEN_ideal.sdf
+  ligand_name: BEN
+simulation:
+  setup_from: runs/earlier
+  duration_ns: 10
+  timestep_fs: 2.0
+  steered:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    site_selection: "resid 189 to 195 and name CA"
+    to: 2.0
+    steps: 5000000
+    force_constant: 5000.0
+  umbrella:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    site_selection: "resid 189 to 195 and name CA"
+    force_constant: 3000.0
+    from: 0.4
+    to: 2.0
+    n_windows: 30
+    equilibration_fraction: 0.2
+execution:
+  mode: sequential
+"""
+
+
+def test_the_whole_study_validates(tmp_path):
+    """Pull-then-hold, written the way the documentation says to write it.
+
+    Everything below was accepted piecemeal and refused as a config: the
+    reader took `ligand_name` in a variable block while the validator did
+    not, and `seed_from` was documented in the schema before it was on the
+    accepted list. A reader that understands what a validator refuses is
+    the same defect as a validator that refuses what the user meant -- and
+    it is the one the user meets first, before anything runs.
+
+    Nothing here was caught by a unit test because every unit passed. This
+    is the config, whole.
+    """
+    from fastmdxplora.config import load_config_file, validate_config
+
+    path = tmp_path / "study.yml"
+    path.write_text(STUDY, encoding="utf-8")
+
+    data = load_config_file(path)
+    validate_config(data)
+
+    assert len(data["systems"]) == 30
+    for entry in data["systems"]:
+        assert "steered" not in entry["simulation"]
+        assert entry["simulation"]["umbrella"]["force_constant"] == 3000.0
+    assert "steered" in data["simulation"]
+
+
+def test_a_study_reusing_a_pull_validates(tmp_path):
+    """The other way to ask: name a finished pull instead of running one."""
+    from fastmdxplora.config import load_config_file, validate_config
+
+    text = STUDY.replace("""  steered:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    site_selection: "resid 189 to 195 and name CA"
+    to: 2.0
+    steps: 5000000
+    force_constant: 5000.0
+""", "")
+    text = text.replace("    equilibration_fraction: 0.2",
+                        "    equilibration_fraction: 0.2\n"
+                        "    seed_from: runs/earlier-pull")
+
+    path = tmp_path / "reuse.yml"
+    path.write_text(text, encoding="utf-8")
+
+    data = load_config_file(path)
+    validate_config(data)
+
+    assert len(data["systems"]) == 30
+    assert data["systems"][0]["simulation"]["umbrella"]["seed_from"] == \
+        "runs/earlier-pull"
+
+
+def test_a_typo_in_a_window_setting_is_still_refused(tmp_path):
+    """Widening the list must not have opened it.
+
+    The block refuses unknown keys because every guard it offers can be
+    switched off by a misspelling -- `minimum_ovelap` was accepted once,
+    ignored, and the study stitched at the default while its author
+    believed otherwise.
+    """
+    from fastmdxplora.config import load_config_file
+    from fastmdxplora.config.loader import ConfigError
+
+    path = tmp_path / "typo.yml"
+    path.write_text(STUDY.replace("minimum_overlap", "minimum_ovelap")
+                    .replace("    equilibration_fraction: 0.2",
+                             "    minimum_ovelap: 0.15"), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="minimum_ovelap"):
+        load_config_file(path)

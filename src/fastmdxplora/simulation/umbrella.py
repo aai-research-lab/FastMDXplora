@@ -122,6 +122,11 @@ _UMBRELLA_OWN_KEYS: frozenset[str] = frozenset({
     "force_constant", "centres", "centers", "from", "to", "n_windows",
     "equilibration_fraction",
     "minimum_overlap", "minimum_samples",
+    # A finished pull to take starting structures from, instead of running
+    # another. Documented in the schema before it was accepted here, which
+    # is a config error waiting for the first person to follow the
+    # documentation.
+    "seed_from",
     # Written by the expansion onto each window, and read back from it.
     "centre", "index",
 })
