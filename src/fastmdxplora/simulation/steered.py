@@ -236,12 +236,29 @@ def measure_in(cv: Any, structure: Any) -> float | None:
 
 
 def build_steered_script(plan: SteeredPlan,
-                         reference_pdb: str | None = None) -> str:
+                         reference_pdb: str | None = None,
+                         first_step: int = 0) -> str:
     """The PLUMED input for a pull.
 
     Written out rather than hidden, because the pulling rate is the thing
     that decides whether the result means anything and somebody checking a
     number should be able to read it.
+
+    `first_step` is the step PLUMED will be on when production begins, and
+    it is not zero. PLUMED counts from the start of the *simulation*, and
+    minimisation, NVT and NPT all run first -- 1500 ps of equilibration is
+    750,000 steps at 2 fs. Written with `STEP0=0`, a restraint therefore
+    starts production already part-way along its path: in a real 10 ns pull
+    it had travelled 15% of the way, so the anchor sat 0.243 nm outside a
+    ligand it was meant to be sitting on, hit it with 147 kJ/mol in the
+    first 400 fs, and threw it out of the binding well before a single
+    frame was recorded. The well was never sampled, and it reached `AT1`
+    with 1.5 ns still to run.
+
+    Nothing in the log said so. The anchor value was right, the script was
+    valid, PLUMED was content, and the only trace was a bias energy of 147
+    kJ/mol on the first line of COLVAR where a restraint sitting on its own
+    anchor should read zero.
     """
     variable = plan.cv.collective_variable
     lines = [
@@ -278,8 +295,9 @@ def build_steered_script(plan: SteeredPlan,
             "`from` to it.")
     lines.append(
         "pull: MOVINGRESTRAINT ARG=cv "
-        f"AT0={plan.from_value:g} STEP0=0 KAPPA0={plan.force_constant:g} "
-        + f"AT1={plan.to_value:g} STEP1={plan.steps:d} "
+        f"AT0={plan.from_value:g} STEP0={first_step:d} "
+        f"KAPPA0={plan.force_constant:g} "
+        + f"AT1={plan.to_value:g} STEP1={first_step + plan.steps:d} "
         f"KAPPA1={plan.force_constant:g}"
     )
     lines.append("")

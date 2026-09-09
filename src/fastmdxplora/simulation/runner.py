@@ -530,7 +530,11 @@ def _anchor_the_pull_where_it_starts(simulation: Any, topology: Any,
         script_path.write_text(
             build_steered_script(
                 plan, reference_pdb=str(topology_path)
-                if plan.cv.collective_variable == "ligand_rmsd" else None),
+                if plan.cv.collective_variable == "ligand_rmsd" else None,
+                # Where PLUMED's counter actually is. Equilibration has
+                # already run, and a restraint told to start at step zero
+                # starts production part-way along its path.
+                first_step=int(getattr(simulation, "currentStep", 0) or 0)),
             encoding="utf-8")
         logger.info(
             "Pull re-anchored at %.4f nm, measured in the equilibrated "

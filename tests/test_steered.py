@@ -413,3 +413,62 @@ class TestThePullFlushesAsItGoes:
     def test_the_work_is_still_printed(self) -> None:
         script = self._script()
         assert "pull.work" in script
+
+
+def test_the_restraint_starts_where_plumed_actually_is():
+    """`STEP0=0` is wrong whenever equilibration ran first, which is always.
+
+    PLUMED counts from the start of the simulation, not from the start of
+    production. Minimisation, NVT and NPT all run before the pull, so by
+    the time production begins the counter is already at 750,000 steps for
+    a 1500 ps equilibration at 2 fs.
+
+    A restraint written with `STEP0=0` therefore begins production having
+    already interpolated part of its path. In the pull this was found in --
+    0.381 nm to 2.0 nm over 5,000,000 steps, after 1500 ps of equilibration
+    -- the anchor was at
+
+        0.381271 + (2 - 0.381271) * 750000/5000000 = 0.624080 nm
+
+    while the ligand sat at 0.381271, so the first recorded bias was
+
+        0.5 * 5000 * (0.381271 - 0.624080)^2 = 147.39 kJ/mol
+
+    COLVAR's first row read 147.390866. The ligand was thrown out of the
+    binding well in 400 fs, that well was never sampled, and the anchor
+    reached its destination with 1.5 ns of the run still to go.
+
+    Nothing failed. The anchor value was right, the script was valid, and
+    the only trace was a bias where zero belonged.
+    """
+    from fastmdxplora.simulation.steered import build_steered_script
+
+    class _CV:
+        collective_variable = "ligand_distance"
+
+    class _Plan:
+        cv = _CV()
+        from_value = 0.381271
+        to_value = 2.0
+        steps = 5_000_000
+        force_constant = 5000.0
+
+    import fastmdxplora.simulation.steered as steered_module
+
+    original = steered_module.cv_lines
+    steered_module.cv_lines = lambda cv, ref: ["cv: DISTANCE ATOMS=1,2"]
+    try:
+        at_zero = build_steered_script(_Plan())
+        after_equilibration = build_steered_script(_Plan(), first_step=750_000)
+    finally:
+        steered_module.cv_lines = original
+
+    # The default is unchanged for a run that really does start at zero.
+    assert "STEP0=0 " in at_zero
+    assert "STEP1=5000000 " in at_zero
+
+    # And the whole schedule shifts, rather than only its start: an anchor
+    # told to arrive at step 5,000,000 while production ends at 5,750,000
+    # stops moving with 1.5 ns left to run.
+    assert "STEP0=750000 " in after_equilibration
+    assert "STEP1=5750000 " in after_equilibration
