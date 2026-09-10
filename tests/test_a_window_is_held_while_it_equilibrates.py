@@ -35,26 +35,23 @@ from fastmdxplora.simulation.umbrella import collect_samples
 
 
 def _window_on_disk(root: Path, index: int, *, equilibration, production,
-                    began_at_ps=None, step_ps=1.0):
-    """One window's COLVAR, optionally with a record of where production began.
+                    step_ps=1.0, equilibration_starts_at=0.0):
+    """One window's COLVAR, written the way a held window writes one.
 
-    `equilibration` and `production` are the collective-variable values, in
-    order. Written as PLUMED writes them: a header, then time and value.
+    The equilibration rows carry a clock running forward from
+    `equilibration_starts_at`; the production rows restart from zero, which
+    is what `setStepCount(0)` at production does to PLUMED's clock. Giving
+    no equilibration rows produces the file a window biased only for
+    production writes -- one series, no jump.
     """
     directory = root / f"window-{index:02d}" / "simulation"
     directory.mkdir(parents=True, exist_ok=True)
-    values = list(equilibration) + list(production)
     lines = ["#! FIELDS time cv restraint.bias"]
-    lines += [f"{n * step_ps:.3f} {v:.6f} 0.0" for n, v in enumerate(values)]
+    lines += [f"{equilibration_starts_at + n * step_ps:.3f} {v:.6f} 0.0"
+              for n, v in enumerate(equilibration)]
+    lines += [f"{n * step_ps:.3f} {v:.6f} 0.0"
+              for n, v in enumerate(production)]
     (directory / "COLVAR").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    if began_at_ps is not None:
-        (directory / "umbrella_window.json").write_text(
-            json.dumps({"index": index, "centre": 0.9,
-                        "force_constant": 3000.0,
-                        "held_from_the_start": True,
-                        "production_start_step": 0,
-                        "production_start_ps": began_at_ps}),
-            encoding="utf-8")
     return directory.parent
 
 
@@ -65,8 +62,7 @@ class TestTheArrivalIsNotSampling:
         directory = _window_on_disk(
             tmp_path, 0,
             equilibration=np.linspace(0.55, 0.90, 100),
-            production=np.full(100, 0.90),
-            began_at_ps=100.0)
+            production=np.full(100, 0.90))
 
         samples = collect_samples({0: directory}, equilibration_fraction=0.0)
 
@@ -83,20 +79,18 @@ class TestTheArrivalIsNotSampling:
         directory = _window_on_disk(
             tmp_path, 0,
             equilibration=np.full(400, 0.55),
-            production=np.full(100, 0.90),
-            began_at_ps=400.0)
+            production=np.full(100, 0.90))
 
         samples = collect_samples({0: directory}, equilibration_fraction=0.2)
 
         assert samples[0].size == 80        # a fifth of 100, not of 500
         assert np.allclose(samples[0], 0.90)
 
-    def test_a_run_without_the_record_is_read_as_it_always_was(self, tmp_path):
-        """Every window that has already run was not held while it settled.
+    def test_a_file_with_one_clock_is_read_as_it_always_was(self, tmp_path):
+        """Every window that has already run was biased at production only.
 
-        Those files are still on disk and still readable, and nothing about
-        them changes: no record means no production marker, and the whole
-        COLVAR is the production run, which is what it was.
+        Those files are still on disk and still readable: one series, no
+        backwards jump, the whole COLVAR is the production run.
         """
         directory = _window_on_disk(
             tmp_path, 0,
@@ -107,22 +101,54 @@ class TestTheArrivalIsNotSampling:
 
         assert samples[0].size == 80
 
-    def test_a_marker_past_the_end_does_not_empty_the_window(self, tmp_path):
-        """A run that stopped before production would otherwise vanish here.
+    def test_the_equilibration_clock_need_not_start_at_zero(self, tmp_path):
+        """It does not, in practice.
 
-        Reporting no sampling at all reads as a missing file and would be
-        refused as one. Better to read what is there and let the sampling
-        gate say the window is thin, which is what it is.
+        Adding the barostat reinitialises the context, PLUMED reopens COLVAR
+        and truncates what NVT wrote, so the file a real run leaves begins
+        part-way through equilibration -- 50 ps in, on the smoke test that
+        found this. The boundary is the jump, not the value either side.
         """
         directory = _window_on_disk(
             tmp_path, 0,
-            equilibration=np.full(50, 0.55),
-            production=[],
-            began_at_ps=10_000.0)
+            equilibration=np.full(252, 0.55),
+            production=np.full(1000, 0.90),
+            step_ps=0.2, equilibration_starts_at=50.0)
 
         samples = collect_samples({0: directory}, equilibration_fraction=0.0)
 
-        assert samples[0].size == 50
+        assert samples[0].size == 1000
+        assert np.allclose(samples[0], 0.90)
+
+
+class TestFindingWhereProductionBegins:
+
+    def test_it_is_the_row_after_the_clock_goes_backwards(self):
+        from fastmdxplora.simulation.umbrella import production_begins_at
+
+        times = np.array([50.0, 50.2, 50.4, 0.2, 0.4, 0.6])
+
+        assert production_begins_at(times) == 3
+
+    def test_a_clock_that_only_runs_forward_starts_at_the_top(self):
+        from fastmdxplora.simulation.umbrella import production_begins_at
+
+        assert production_begins_at(np.arange(10.0)) == 0
+
+    def test_the_last_reset_wins(self):
+        """A file carrying two resets should give the final run, not the
+        middle one."""
+        from fastmdxplora.simulation.umbrella import production_begins_at
+
+        times = np.array([5.0, 5.2, 0.2, 0.4, 0.6, 0.2, 0.4])
+
+        assert production_begins_at(times) == 5
+
+    def test_an_empty_or_single_row_file_does_not_raise(self):
+        from fastmdxplora.simulation.umbrella import production_begins_at
+
+        assert production_begins_at(np.array([])) == 0
+        assert production_begins_at(np.array([1.0])) == 0
 
 
 def _events_of_a_run(tmp_path, **kwargs):
@@ -227,8 +253,25 @@ class TestWhenTheBiasGoesOn:
         assert written["centre"] == 0.9
         assert written["held_from_the_start"] is True
         # 20 steps of equilibration at the default 2 fs.
-        assert written["production_start_step"] == 20
-        assert written["production_start_ps"] == pytest.approx(0.04)
+        assert written["equilibration_steps"] == 20
+        assert written["equilibration_ps"] == pytest.approx(0.04)
+
+    def test_the_record_does_not_claim_to_locate_production(self):
+        """It cannot, and saying so cost a smoke test.
+
+        Production resets the context's step counter and clock, which rewinds
+        PLUMED's clock behind the runner's back -- so a step count recorded
+        here described a file whose production rows begin at 0.2 ps. The
+        reader finds the boundary in the clock instead.
+        """
+        import inspect
+
+        from fastmdxplora.simulation import umbrella
+
+        source = inspect.getsource(umbrella.collect_samples)
+
+        assert "production_start_ps" not in source
+        assert "production_begins_at" in source
 
 
 class TestTheLogSaysWhatItDoes:

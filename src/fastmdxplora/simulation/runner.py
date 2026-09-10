@@ -2007,25 +2007,28 @@ def run_simulation(
         # steps actually run rather than from the steps that were planned.
         production_start_step = current_step
         if umbrella:
-            # A held window's COLVAR now covers equilibration as well, and
-            # the rows written while the window was still arriving are not
-            # sampling. Recorded rather than recomputed from the plan: a run
-            # that stopped early or resumed did not equilibrate for the
-            # number of steps the plan asked for, and `collect_samples` needs
-            # the number that happened.
+            # What this window was, beside the window. Read by anything
+            # asking what the run held and how hard, which otherwise has to
+            # find the study's plan and index into it.
             #
-            # PLUMED's clock is the integrator's step count times the
-            # timestep, which is what its COLVAR time column holds -- the
-            # same identity `_anchor_the_pull_where_it_starts` relies on.
+            # It does not say where production begins, and an earlier version
+            # did. The step count above is the runner's own, and a few lines
+            # up production reset the context's counter and clock to zero --
+            # so a record saying "production starts at 100 ps" described a
+            # file whose production rows begin at 0.2. `collect_samples`
+            # reads the boundary off the clock instead, where it is visible:
+            # the time column jumps backwards exactly once, at this reset.
             (Path(output_dir) / "umbrella_window.json").write_text(
                 json.dumps({
                     "index": int(umbrella.get("index", 0)),
                     "centre": float(umbrella["centre"]),
                     "force_constant": float(umbrella["force_constant"]),
                     "held_from_the_start": True,
-                    "production_start_step": int(production_start_step),
-                    "production_start_ps": float(
+                    "equilibration_steps": int(production_start_step),
+                    "equilibration_ps": float(
                         production_start_step * timestep_fs / 1000.0),
+                    # So nobody reads the COLVAR as one series again.
+                    "colvar_clock_rewinds_at_production": True,
                 }, indent=2),
                 encoding="utf-8")
         # Checkpoint reporter for crash recovery / restart.

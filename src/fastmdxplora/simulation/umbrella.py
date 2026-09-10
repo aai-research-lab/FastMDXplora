@@ -430,12 +430,23 @@ def collect_samples(
 
     A window held from the first step writes a COLVAR covering its
     equilibration too, and those rows are the window arriving rather than
-    sampling. The run records where production began and they are dropped
-    before the fraction is applied, so `equilibration_fraction` keeps meaning
-    a fraction of the production run. A run from before the window was held
-    has no such record and is read as it always was.
+    sampling. They are dropped before the fraction is applied, so
+    `equilibration_fraction` keeps meaning a fraction of the production run.
+
+    Where production begins is read off the clock rather than from a record
+    of the step count. Production resets the counter to zero -- deliberately,
+    so that the nanoseconds a methods section quotes are production's and not
+    production's plus equilibration's -- and with the restraint attached
+    before equilibration that reset now rewinds PLUMED's clock in the middle
+    of the file. So the boundary is visible in the data: the time column runs
+    forward, then jumps backwards once, and everything after that jump is
+    production. A step count recorded alongside would have to agree with a
+    clock that was reset behind its back, and the first version of this did
+    not: it recorded 100 ps and the production rows begin at 0.2.
+
+    A file with no backwards jump is read whole, which is every window that
+    ran before the restraint was held from the start.
     """
-    import json
     from pathlib import Path
 
     samples: dict[int, np.ndarray] = {}
@@ -461,20 +472,7 @@ def collect_samples(
             missing.append(f"window {index} (empty COLVAR)")
             continue
         values = np.asarray(rows)
-
-        record = Path(directory) / "simulation" / "umbrella_window.json"
-        began = None
-        if record.is_file():
-            try:
-                began = json.loads(
-                    record.read_text(encoding="utf-8")
-                ).get("production_start_ps")
-            except (OSError, ValueError):
-                began = None
-        if began is not None:
-            production = np.asarray(times) >= float(began)
-            if production.any():
-                values = values[production]
+        values = values[production_begins_at(np.asarray(times)):]
 
         cut = int(len(values) * equilibration_fraction)
         samples[index] = values[cut:]
@@ -487,6 +485,29 @@ def collect_samples(
             "them to stitch through."
         )
     return samples
+
+
+def production_begins_at(times: np.ndarray) -> int:
+    """The first row of production in a COLVAR, from the clock alone.
+
+    Production resets the step counter and the simulation clock to zero, so
+    a window held from before equilibration writes a file whose time column
+    runs forward and then jumps backwards exactly once. Everything after that
+    jump is production.
+
+    Returns 0 where the clock never goes backwards, which is a window that
+    was biased only for production -- every window that ran before the
+    restraint was held from the start, and the reason those files still read
+    the same way.
+
+    The last jump rather than the first, so that a file carrying more than
+    one reset still yields the final run rather than something in the middle
+    of it.
+    """
+    if times.size < 2:
+        return 0
+    backwards = np.flatnonzero(np.diff(times) < 0)
+    return int(backwards[-1]) + 1 if backwards.size else 0
 
 
 def overlap_between(a: np.ndarray, b: np.ndarray, bins: int = 50) -> float:
