@@ -103,15 +103,23 @@ class TestAnUnreadableBoxIsNotAFailure:
 
 
 class TestTheLogSaysWhenTheBiasApplies:
-    """PLUMED biasing is added just before production; equilibration runs
-    unbiased. The lines announcing it are printed where the script is
-    written, which is before minimisation, and used the present tense."""
+    """Metadynamics and a pull are biased just before production and
+    equilibrate unbiased; an umbrella window is held from the first step.
+    The lines announcing all three are printed where the script is written,
+    which is before minimisation, so they used the present tense.
+
+    The umbrella line said "the restraint applies to production only" and was
+    accurate: the window equilibrated with nothing holding its coordinate,
+    and on a thirty-window study twenty-six began production more than four
+    sigma from where they were seeded. `test_a_window_is_held_while_it_
+    equilibrates` measures the behaviour; this file watches the wording.
+    """
 
     @pytest.mark.parametrize("phrase", [
         "Metadynamics prepared on",
         "production only; minimisation and equilibration run unbiased",
         "Umbrella window %d prepared",
-        "The restraint applies to production only",
+        "from minimisation onwards",
         "Steered pull prepared",
     ])
     def test_the_wording_states_the_stage(self, phrase: str) -> None:
@@ -124,6 +132,8 @@ class TestTheLogSaysWhenTheBiasApplies:
     @pytest.mark.parametrize("stale", [
         '"Metadynamics biasing %s. %s"',
         '"Umbrella window %d: holding %s at %g with k=%g."',
+        # It was true when it was written, and the truth was the bug.
+        "The restraint applies to production only.",
     ])
     def test_the_old_present_tense_is_gone(self, stale: str) -> None:
         from pathlib import Path

@@ -22,6 +22,7 @@ from __future__ import annotations
 import time as _time
 
 import csv
+import json
 import math
 import shutil
 from dataclasses import dataclass
@@ -1397,11 +1398,29 @@ def run_simulation(
             window.plumed_lines(cv_lines(cv_plan, str(topology_path))),
             encoding="utf-8")
         logger.info(
-            "Umbrella window %d prepared: production holds %s at %g with "
-            "k=%g. The restraint applies to production only.",
+            "Umbrella window %d prepared: %s held at %g with k=%g. "
+            "The restraint is on from minimisation onwards, not from "
+            "production: a window left free while it equilibrates "
+            "equilibrates somewhere else.",
             window.index, cv_plan.collective_variable, window.centre,
             window.force_constant)
-        plumed = {"enabled": True, "script": str(script_path)}
+        # Held from the first step, not from production. A window is a
+        # restraint at a position, and equilibrating without it equilibrates
+        # a different system: the structure this window starts from is the
+        # one frame of a pull that sits at this centre, and left free it
+        # relaxes down the gradient it was chosen from. C1b seeded thirty
+        # windows to within 0.0006 nm of their centres and twenty-six of them
+        # began production more than four sigma away -- the window seeded at
+        # 2.0020 nm started at 0.8879, having slid 1.11 nm while nothing held
+        # it. The restraint then dragged each back out, which mostly works
+        # and did not work at the one window whose centre sits just past a
+        # barrier.
+        #
+        # Metadynamics is the opposite case and keeps the old behaviour:
+        # there is no position to hold, and hills deposited during
+        # equilibration would bias a surface with a system still settling.
+        plumed = {"enabled": True, "script": str(script_path),
+                  "hold_from_the_start": True}
 
     if len([x for x in (steered, metadynamics, umbrella) if x]) > 1:
         raise ValueError(
@@ -1531,9 +1550,10 @@ def run_simulation(
         )
         plumed = {"enabled": True, "script": str(script_path)}
 
-    # PLUMED biasing (if enabled) is added just before the production stage,
-    # not here — equilibration runs unbiased, matching standard enhanced-
-    # sampling protocol. See Stage 4 below.
+    # PLUMED biasing is added just before production for metadynamics and for
+    # a pull, which is the standard protocol: equilibrate unbiased, then bias.
+    # An umbrella window sets `hold_from_the_start` and is attached before
+    # minimisation instead -- see `_attach_the_bias` and Stage 4 below.
 
     # ---- Platform ------------------------------------------------------
     platform_obj, platform_props, platform_name = select_platform(
@@ -1619,7 +1639,62 @@ def run_simulation(
         if on_progress:
             on_progress(msg)
 
+    bias_is_attached: list[bool] = []
+
+    def _attach_the_bias() -> None:
+        """Put the PLUMED force on the system, once.
+
+        Called either before minimisation -- for an umbrella window, which
+        has to be held while it equilibrates or it equilibrates somewhere
+        else -- or immediately before production, which is right for
+        metadynamics and for a pull. The list is the guard: attaching twice
+        would apply the restraint twice and halve the width of every window.
+        """
+        if not plumed or bias_is_attached:
+            return
+        from fastmdxplora.simulation.plumed import add_plumed_force
+        from fastmdxplora.utils.native_output import suppress_native_output
+
+        # The anchor, from the state equilibration produced rather than the
+        # one it started from. The force is attached here, so the script is
+        # still ours to rewrite, and this is the first moment the positions
+        # the pull will actually begin at exist. An umbrella window never
+        # carries one: its centre is fixed by the plan, and a window
+        # re-anchored to wherever it drifted is a different window.
+        reanchor = plumed.pop("reanchor", None)
+        if reanchor:
+            _anchor_the_pull_where_it_starts(
+                simulation, topology, reanchor,
+                Path(plumed["script"]), topology_path)
+
+        # PLUMED prints its whole setup at the moment the context takes the
+        # force: which atoms the variable is built from, the hill width, the
+        # pace, the bias factor, the temperature it inferred. Forty lines,
+        # written from C++ straight to the file descriptor, arriving in the
+        # middle of a progress bar. It is provenance and worth keeping, so it
+        # goes to a file beside the run rather than to the terminal or to
+        # nowhere.
+        plumed_log = Path(output_dir) / "plumed.log"
+        with suppress_native_output(into=plumed_log):
+            plumed_force = add_plumed_force(
+                omm, system, plumed, Path(output_dir))
+            if plumed_force is not None:
+                simulation.context.reinitialize(preserveState=True)
+        bias_is_attached.append(True)
+        if plumed_force is not None:
+            logger.info(
+                "PLUMED enabled: biasing force added; resolved script "
+                "-> %s", (Path(output_dir) / "plumed.dat").as_posix())
+        if plumed_log.is_file():
+            logger.info("PLUMED's own setup log -> %s", plumed_log.as_posix())
+
     try:
+        # The window is held before anything moves. Minimisation alone will
+        # not carry a ligand across a barrier, but it is the first stage that
+        # moves atoms and there is no reason for it to run free.
+        if plumed and plumed.get("hold_from_the_start"):
+            _attach_the_bias()
+
         # ---- Stage 1: Minimize ----------------------------------------
         if minimize:
             if telemetry is not None:
@@ -1908,40 +1983,7 @@ def run_simulation(
         # Enhanced sampling: add the PLUMED biasing force now (not during
         # equilibration), then reinitialize the context so it takes effect —
         # the standard protocol equilibrates unbiased and biases production.
-        if plumed:
-            from fastmdxplora.simulation.plumed import add_plumed_force
-            from fastmdxplora.utils.native_output import suppress_native_output
-
-            # The anchor, from the state equilibration produced rather than
-            # the one it started from. The force is attached here, so the
-            # script is still ours to rewrite, and this is the first moment
-            # the positions the pull will actually begin at exist.
-            reanchor = plumed.pop("reanchor", None)
-            if reanchor:
-                _anchor_the_pull_where_it_starts(
-                    simulation, topology, reanchor,
-                    Path(plumed["script"]), topology_path)
-
-            # PLUMED prints its whole setup at the moment the context takes
-            # the force: which atoms the variable is built from, the hill
-            # width, the pace, the bias factor, the temperature it inferred.
-            # Forty lines, written from C++ straight to the file descriptor,
-            # arriving in the middle of a progress bar. It is provenance and
-            # worth keeping, so it goes to a file beside the run rather than
-            # to the terminal or to nowhere.
-            plumed_log = Path(output_dir) / "plumed.log"
-            with suppress_native_output(into=plumed_log):
-                plumed_force = add_plumed_force(
-                    omm, system, plumed, Path(output_dir))
-                if plumed_force is not None:
-                    simulation.context.reinitialize(preserveState=True)
-            if plumed_force is not None:
-                logger.info(
-                    "PLUMED enabled: biasing force added; resolved script "
-                    "-> %s", (Path(output_dir) / "plumed.dat").as_posix())
-            if plumed_log.is_file():
-                logger.info("PLUMED's own setup log -> %s",
-                            plumed_log.as_posix())
+        _attach_the_bias()
         saved_atoms, saved_description = resolve_save_selection(
             topology, save_selection)
         _attach_dcd_reporter(
@@ -1964,6 +2006,28 @@ def run_simulation(
         # Where production begins, so what it produced can be measured from
         # steps actually run rather than from the steps that were planned.
         production_start_step = current_step
+        if umbrella:
+            # A held window's COLVAR now covers equilibration as well, and
+            # the rows written while the window was still arriving are not
+            # sampling. Recorded rather than recomputed from the plan: a run
+            # that stopped early or resumed did not equilibrate for the
+            # number of steps the plan asked for, and `collect_samples` needs
+            # the number that happened.
+            #
+            # PLUMED's clock is the integrator's step count times the
+            # timestep, which is what its COLVAR time column holds -- the
+            # same identity `_anchor_the_pull_where_it_starts` relies on.
+            (Path(output_dir) / "umbrella_window.json").write_text(
+                json.dumps({
+                    "index": int(umbrella.get("index", 0)),
+                    "centre": float(umbrella["centre"]),
+                    "force_constant": float(umbrella["force_constant"]),
+                    "held_from_the_start": True,
+                    "production_start_step": int(production_start_step),
+                    "production_start_ps": float(
+                        production_start_step * timestep_fs / 1000.0),
+                }, indent=2),
+                encoding="utf-8")
         # Checkpoint reporter for crash recovery / restart.
         _attach_checkpoint_reporter(
             omm, simulation, output_dir / "checkpoint.chk",

@@ -427,7 +427,15 @@ def collect_samples(
     where it will equilibrate, and counting the approach as sampling biases the
     histogram towards where the run started -- which is the one place the
     free energy is guaranteed not to be flat.
+
+    A window held from the first step writes a COLVAR covering its
+    equilibration too, and those rows are the window arriving rather than
+    sampling. The run records where production began and they are dropped
+    before the fraction is applied, so `equilibration_fraction` keeps meaning
+    a fraction of the production run. A run from before the window was held
+    has no such record and is read as it always was.
     """
+    import json
     from pathlib import Path
 
     samples: dict[int, np.ndarray] = {}
@@ -438,13 +446,14 @@ def collect_samples(
         if not colvar.is_file():
             missing.append(f"window {index} ({colvar})")
             continue
-        rows = []
+        times, rows = [], []
         for line in colvar.read_text(encoding="utf-8").splitlines():
             if line.startswith("#") or not line.strip():
                 continue
             parts = line.split()
             if len(parts) >= 2:
                 try:
+                    times.append(float(parts[0]))
                     rows.append(float(parts[1]))
                 except ValueError:
                     continue
@@ -452,6 +461,21 @@ def collect_samples(
             missing.append(f"window {index} (empty COLVAR)")
             continue
         values = np.asarray(rows)
+
+        record = Path(directory) / "simulation" / "umbrella_window.json"
+        began = None
+        if record.is_file():
+            try:
+                began = json.loads(
+                    record.read_text(encoding="utf-8")
+                ).get("production_start_ps")
+            except (OSError, ValueError):
+                began = None
+        if began is not None:
+            production = np.asarray(times) >= float(began)
+            if production.any():
+                values = values[production]
+
         cut = int(len(values) * equilibration_fraction)
         samples[index] = values[cut:]
 
