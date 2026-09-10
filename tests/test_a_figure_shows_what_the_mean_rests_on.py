@@ -101,10 +101,31 @@ class TestAnAbsentErrorBarIsSaidSo:
         ax = _drawn(_series(_record()))
         labels = " ".join(t.get_text() for t in ax.get_legend().get_texts())
 
-        assert "no error bar" in labels
-        assert "9.8 effective samples" in labels, (
-            "The reason has to travel with the refusal, or the figure looks "
-            "like an oversight rather than a decision.")
+        assert "too few for an error bar" in labels, (
+            "The consequence has to be stated, or the absence reads as an "
+            "oversight rather than a decision.")
+        assert "9.8 independent samples" in labels
+
+    def test_the_count_is_called_independent_not_effective(self):
+        """Because the author of this package had to ask what it meant.
+
+        "Effective samples" is the term of art and it did not communicate.
+        Independence is what the number is about: consecutive frames of a
+        trajectory are not independent observations of anything.
+        """
+        ax = _drawn(_series(_record()))
+        labels = " ".join(t.get_text() for t in ax.get_legend().get_texts())
+
+        assert "independent" in labels
+        assert "effective" not in labels
+
+    def test_the_label_is_two_lines(self):
+        """One line carrying the value and the caveat overflowed the axes."""
+        ax = _drawn(_series(_record()))
+        settled = [t.get_text() for t in ax.get_legend().get_texts()
+                   if "settled mean" in t.get_text()]
+
+        assert settled and "\n" in settled[0]
 
     def test_an_error_bar_that_exists_is_drawn_and_quoted(self):
         series = _series(_record(standard_error=0.0031))
@@ -150,3 +171,57 @@ class TestItDeclinesRatherThanGuesses:
         series = _series(_record(), x=np.linspace(0.0, 100.0, 7))
         ax = _drawn(series)
         assert ax.get_legend() is None
+
+
+class TestTheLegendStaysInsideTheAxes:
+    """`loc="best"` finds the emptiest corner; it does not check the width.
+
+    Matplotlib will draw a legend wider than the axes, running past the
+    frame into blank canvas. At the full 6.5-inch width nothing notices. At
+    a journal single-column width it lands on the label most worth reading.
+    """
+
+    def _overflow(self, figsize):
+        from fastmdxplora.analysis.plotting import fit_legend
+
+        fig, ax = new_figure(title="t", figsize=figsize)
+        ax.plot([0, 1], [0, 1], label="settled mean 0.1143 nm\n"
+                                      "9.8 independent samples: too few "
+                                      "for an error bar")
+        ax.legend(loc="best", fontsize=7.5)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        before = ax.get_legend().get_window_extent(renderer=renderer).width
+        fit_legend(ax)
+        fig.canvas.draw()
+        after = ax.get_legend().get_window_extent(renderer=renderer).width
+        available = ax.get_window_extent(renderer=renderer).width
+        return before, after, available
+
+    def test_a_column_width_legend_is_brought_inside(self):
+        before, after, available = self._overflow((3.3, 2.4))
+
+        assert before > available, (
+            "If this stops overflowing, matplotlib has changed and the fix "
+            "may no longer be needed.")
+        assert after <= available * 1.02
+
+    def test_a_legend_that_already_fits_is_left_alone(self):
+        from fastmdxplora.analysis.plotting import fit_legend
+
+        fig, ax = new_figure(title="t", figsize=(6.5, 4.2))
+        ax.plot([0, 1], [0, 1], label="short")
+        ax.legend(loc="best", fontsize=7.5)
+        fig.canvas.draw()
+        sizes_before = [t.get_fontsize() for t in ax.get_legend().get_texts()]
+        fit_legend(ax)
+        sizes_after = [t.get_fontsize() for t in ax.get_legend().get_texts()]
+
+        assert sizes_before == sizes_after
+
+    def test_no_legend_is_not_an_error(self):
+        from fastmdxplora.analysis.plotting import fit_legend
+
+        fig, ax = new_figure(title="t")
+        ax.plot([0, 1], [0, 1])
+        fit_legend(ax)   # must not raise

@@ -43,7 +43,8 @@ import numpy as np
 import pandas as pd
 
 from fastmdxplora.analysis.plotting import (
-    colour, drawn_in, new_figure, save_figure, settle_figure_colours,
+    colour, drawn_in, fit_legend, new_figure, save_figure,
+    settle_figure_colours,
 )
 from fastmdxplora.utils.logging import get_logger
 
@@ -539,6 +540,10 @@ class Analysis(ABC):
                 linestyle="--", zorder=3,
                 label=self._mean_label(record, has_error))
         ax.legend(loc="best", fontsize=7.5, framealpha=0.85)
+        # A legend wider than the axes runs past the frame; matplotlib does
+        # not check. It only bites at a journal column width, which is
+        # exactly where these labels matter.
+        fit_legend(ax)
 
     def _mean_unit(self) -> str:
         """The unit for the legend, taken from the axis that already states it.
@@ -559,17 +564,36 @@ class Analysis(ABC):
         return ""
 
     def _mean_label(self, record: dict[str, Any], has_error: bool) -> str:
-        """What the dashed line is, said in the legend where it is read."""
+        """What the dashed line is, said in the legend where it is read.
+
+        Two lines: the value, then what stands behind it. One line carrying
+        both was long enough to overflow the axes at a journal column width,
+        and it read as jargon -- the author of this package had to ask what
+        "9.8 effective samples" meant, which settles whether it was clear.
+
+        "Independent" rather than "effective": consecutive frames of a
+        trajectory are not independent observations, and independence is the
+        thing the number is about. "Too few for an error bar" states the
+        consequence, so the absence reads as a decision rather than an
+        omission.
+        """
         mean = record["mean"]
         unit = self._mean_unit()
-        if has_error:
-            return (f"settled mean {mean:.4g} ± {record['standard_error']:.2g}"
-                    f"{unit}")
         effective = record.get("effective_samples")
-        if effective is not None and np.isfinite(effective):
-            return (f"settled mean {mean:.4g}{unit} — no error bar, "
-                    f"{effective:.1f} effective samples")
-        return f"settled mean {mean:.4g}{unit} — no error bar"
+        counted = (f"{effective:.0f}" if effective is not None
+                   and np.isfinite(effective) and effective >= 10
+                   else f"{effective:.1f}" if effective is not None
+                   and np.isfinite(effective) else None)
+        if has_error:
+            head = (f"settled mean {mean:.4g} ± "
+                    f"{record['standard_error']:.2g}{unit}")
+            if counted is None:
+                return head
+            return f"{head}\n({counted} independent samples)"
+        if counted is None:
+            return f"settled mean {mean:.4g}{unit}\n(no error bar)"
+        return (f"settled mean {mean:.4g}{unit}\n"
+                f"{counted} independent samples: too few for an error bar")
 
     def select_atoms(self, traj: md.Trajectory) -> np.ndarray:
         """Resolve :attr:`selection` to atom indices on a given trajectory.

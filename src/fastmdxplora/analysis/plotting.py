@@ -507,6 +507,45 @@ def _finalise_axes(ax: Axes) -> None:
                 ax.set_ylim(low, high + (high - low) * 0.12)
 
 
+def fit_legend(ax: Axes, *, floor: float = 6.0) -> None:
+    """Keep a legend inside the axes it belongs to.
+
+    `loc="best"` finds the emptiest corner and puts the legend there; it does
+    not check that the legend is narrower than the axes, and matplotlib will
+    happily draw one that runs past the frame into blank canvas. At full
+    width nothing notices. At a journal single-column width -- 3.3 inches --
+    a legend carrying a measured value and its sample count is wider than the
+    plot, and the overflow lands exactly where the label is most worth
+    reading.
+
+    The font is reduced until it fits, down to `floor` points, below which
+    shrinking further trades one unreadable figure for another. Nothing is
+    changed where the legend already fits, which is the common case.
+    """
+    legend = ax.get_legend()
+    if legend is None:
+        return
+    figure = ax.get_figure()
+    if figure is None or figure.canvas is None:
+        return
+    try:
+        renderer = figure.canvas.get_renderer()
+    except AttributeError:  # a backend without a renderer to ask
+        return
+
+    available = ax.get_window_extent(renderer=renderer).width
+    for _ in range(6):
+        width = legend.get_window_extent(renderer=renderer).width
+        if width <= available * 0.98:
+            return
+        size = max(t.get_fontsize() for t in legend.get_texts())
+        if size <= floor:
+            return
+        for text in legend.get_texts():
+            text.set_fontsize(max(floor, size - 0.75))
+        figure.canvas.draw_idle()
+
+
 def _style_all_axes(fig: plt.Figure) -> None:
     for ax in fig.axes:
         apply_slide_style(ax)
