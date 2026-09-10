@@ -579,21 +579,41 @@ class Analysis(ABC):
         """
         mean = record["mean"]
         unit = self._mean_unit()
-        effective = record.get("effective_samples")
-        counted = (f"{effective:.0f}" if effective is not None
-                   and np.isfinite(effective) and effective >= 10
-                   else f"{effective:.1f}" if effective is not None
-                   and np.isfinite(effective) else None)
+        counted = self._independent_samples(record.get("effective_samples"))
         if has_error:
             head = (f"settled mean {mean:.4g} ± "
                     f"{record['standard_error']:.2g}{unit}")
             if counted is None:
                 return head
-            return f"{head}\n({counted} independent samples)"
+            return f"{head}\n({counted})"
         if counted is None:
             return f"settled mean {mean:.4g}{unit}\n(no error bar)"
         return (f"settled mean {mean:.4g}{unit}\n"
-                f"{counted} independent samples: too few for an error bar")
+                f"{counted}: too few for an error bar")
+
+    @staticmethod
+    def _independent_samples(effective: Any) -> str | None:
+        """How many independent observations the mean rests on, as a count.
+
+        The quantity is N/g -- settled frames over the statistical
+        inefficiency -- so arithmetically it is a ratio and comes out at
+        9.77. Printing that as "9.8 independent samples" claims a precision
+        it does not have: `g` is itself an estimate, and on a run this short
+        the software's own record says halving the frames changes it. There
+        is also no such thing as eight tenths of an observation.
+
+        So it is rounded and hedged. "About 10" is both more honest about
+        the precision and easier to read than "9.8", and nothing downstream
+        turns on the difference -- ten is as far below a usable count as
+        nine point eight is.
+        """
+        if effective is None or not np.isfinite(effective):
+            return None
+        if effective < 1.0:
+            return "fewer than one independent sample"
+        rounded = int(round(float(effective)))
+        noun = "sample" if rounded == 1 else "samples"
+        return f"about {rounded} independent {noun}"
 
     def select_atoms(self, traj: md.Trajectory) -> np.ndarray:
         """Resolve :attr:`selection` to atom indices on a given trajectory.

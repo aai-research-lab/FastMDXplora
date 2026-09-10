@@ -104,7 +104,33 @@ class TestAnAbsentErrorBarIsSaidSo:
         assert "too few for an error bar" in labels, (
             "The consequence has to be stated, or the absence reads as an "
             "oversight rather than a decision.")
-        assert "9.8 independent samples" in labels
+        assert "about 10 independent samples" in labels
+
+    def test_the_count_is_a_whole_number(self):
+        """N/g is a ratio; a fraction of an observation is not a thing.
+
+        873 settled frames over a statistical inefficiency of 89 gives
+        9.77, and printing "9.8 independent samples" claims a precision the
+        estimate does not have -- `g` is itself uncertain, and on a run this
+        short the software's own record says halving the frames changes it.
+        """
+        ax = _drawn(_series(_record()))
+        labels = " ".join(t.get_text() for t in ax.get_legend().get_texts())
+
+        assert "9.8" not in labels
+        assert "about 10" in labels
+
+    def test_a_count_below_one_is_said_in_words(self):
+        from fastmdxplora.analysis.base import Analysis
+
+        assert Analysis._independent_samples(0.4) == (
+            "fewer than one independent sample")
+
+    def test_one_sample_is_singular(self):
+        from fastmdxplora.analysis.base import Analysis
+
+        assert "1 independent sample" in Analysis._independent_samples(1.2)
+        assert "samples" not in Analysis._independent_samples(1.2)
 
     def test_the_count_is_called_independent_not_effective(self):
         """Because the author of this package had to ask what it meant.
@@ -126,6 +152,25 @@ class TestAnAbsentErrorBarIsSaidSo:
                    if "settled mean" in t.get_text()]
 
         assert settled and "\n" in settled[0]
+
+
+class TestGreyscaleStillCarriesTheOverlay:
+    """The overlay must survive the mode it was not drawn in."""
+
+    def test_the_mean_and_the_span_are_told_apart_without_hue(self):
+        from fastmdxplora.analysis import plotting
+
+        try:
+            plotting.use_greyscale(True)
+            ax = _drawn(_series(_record()))
+            dashed = [line for line in ax.get_lines()
+                      if line.get_linestyle() == "--"]
+            assert dashed, "The settled mean is still drawn."
+            assert ax.get_legend() is not None
+            # Value and line style carry the distinction, not hue.
+            assert plotting.colour("FAINT") != plotting.colour("ACCENT")
+        finally:
+            plotting.use_greyscale(False)
 
     def test_an_error_bar_that_exists_is_drawn_and_quoted(self):
         series = _series(_record(standard_error=0.0031))
