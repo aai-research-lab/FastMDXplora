@@ -593,7 +593,7 @@ SIMULATION = PhaseSchema(
               "selections it needs, and `sigma` -- "
               "the hill width, roughly the size of the fluctuations within a "
               "single state. Well-tempered by default, because plain "
-              "metadynamics never lets the bias settle. Choosing the "
+              "metadynamics never lets the bias converge. Choosing the "
               "variable is the decision the method turns on: if it does not "
               "distinguish the states that matter, the surface converges and "
               "describes something that is not the system.",

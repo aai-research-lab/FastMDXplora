@@ -4,7 +4,7 @@ The free energy over the chosen collective variable, reconstructed from the
 bias the run deposited. Read it like a landscape: basins are the states the
 system visits, and the walls between them are the barriers, in kJ/mol. The
 surface arrives with its own convergence evidence -- basin transitions
-counted, drift measured -- and a run whose bias has not settled still gets
+counted, drift measured -- and a run whose bias has not converged still gets
 its picture, drawn and clearly labelled provisional, with a note beside it
 saying exactly what is missing. Only a metadynamics run deposits a bias to
 read; elsewhere this has nothing to say, and says so.
@@ -207,7 +207,7 @@ class MetadynamicsSurface(Analysis):
             first_name, second_name = result["axis_names"]
             header = f"# {first_name} {second_name} free_energy_kjmol"
             if self._provisional:
-                header += ("\n# provisional: the bias had not settled "
+                header += ("\n# provisional: the bias had not converged "
                            "when this was cut")
             lines = [header]
             energy = result["free_energy_kjmol"]
@@ -229,12 +229,12 @@ class MetadynamicsSurface(Analysis):
         if band is not None:
             header += " convergence_band_kjmol"
         if self._provisional:
-            header += "\n# provisional: the bias had not settled when this was cut"
+            header += "\n# provisional: the bias had not converged when this was cut"
         if band is not None:
             # Spelled out in the file, because a third column beside a free
             # energy is read as its error bar and this one is not that. The
             # column is the spread of the surface over the later part of its
-            # own deposition -- whether the bias settled here -- and it
+            # own deposition -- whether the bias converged here -- and it
             # cannot see how far the surface would move in an independent
             # run. Replicas are the statistical error.
             header += (

@@ -1,5 +1,6 @@
 """Ten analyses averaged over the whole production run without asking whether
-it had settled, or how many independent samples the average rested on.
+it had equilibrated, or how many independent samples the average rested
+on.
 
 Both follow from one quantity, so both are fixed by one piece of arithmetic:
 the statistical inefficiency is the number of frames per independent sample,
@@ -91,7 +92,7 @@ class TestFindingWhereARunSettled:
 
         assert 2 * tau < discard < 6 * tau
 
-    def test_an_already_settled_run_keeps_its_frames(self) -> None:
+    def test_an_already_equilibrated_run_keeps_its_frames(self) -> None:
         rng = np.random.RandomState(0)
         discard, _g, effective = detect_equilibration(rng.normal(size=5000))
 
@@ -118,28 +119,28 @@ class TestAnErrorBarThatMeansSomething:
         a difference between two systems becomes significant on paper without
         being real."""
         series = _correlated(0.95, 20000, seed=1)
-        settled, refusal = summarise(series)
+        equilibrated, refusal = summarise(series)
 
         assert refusal is None
         naive = float(np.std(series, ddof=1) / np.sqrt(series.size))
-        assert settled.standard_error > 4 * naive
+        assert equilibrated.standard_error > 4 * naive
 
     def test_the_spread_is_not_the_error(self) -> None:
         """One is a property of the system, the other of how long it was
         watched, and reporting either for the other is a common way to make a
         result look tighter or looser than it is."""
-        settled, _ = summarise(_correlated(0.8, 20000, seed=2))
-        assert settled.standard_deviation > settled.standard_error
+        equilibrated, _ = summarise(_correlated(0.8, 20000, seed=2))
+        assert equilibrated.standard_deviation > equilibrated.standard_error
 
     def test_a_run_with_too_few_independent_samples_is_refused(self) -> None:
         """Uncorrelated, so the count is measurable -- and there are still not
         enough of them."""
         rng = np.random.RandomState(0)
-        settled, refusal = summarise(rng.normal(size=8))
+        equilibrated, refusal = summarise(rng.normal(size=8))
 
         assert refusal is not None
         assert "independent samples" in refusal
-        assert settled is not None, "the numbers are still returned to be read"
+        assert equilibrated is not None, "the numbers are still returned to be read"
 
     def test_the_refusal_says_recording_more_often_will_not_help(self) -> None:
         """It is the commonest wrong response: the frames are correlated, so
@@ -227,11 +228,11 @@ class TestARunTooShortToMeasureItsOwnCorrelation:
         number gets used and the caveat does not: three interaction
         occupancies the analysis had flagged reached a manuscript draft that
         way. It is withheld instead."""
-        settled, refusal = summarise(_correlated(0.999, 4000, seed=7))
+        equilibrated, refusal = summarise(_correlated(0.999, 4000, seed=7))
         assert refusal is not None
-        assert np.isnan(settled.standard_error)
-        assert not np.isnan(settled.mean), "the mean is still reported"
-        assert not np.isnan(settled.standard_deviation), (
+        assert np.isnan(equilibrated.standard_error)
+        assert not np.isnan(equilibrated.mean), "the mean is still reported"
+        assert not np.isnan(equilibrated.standard_deviation), (
             "the spread of the series is a property of the system and does "
             "not depend on how independent the frames are")
 
@@ -248,8 +249,8 @@ class TestARunTooShortToMeasureItsOwnCorrelation:
         assert correlation_is_resolved(rng.normal(size=24))
 
     def test_nothing_to_average_is_said_plainly(self) -> None:
-        settled, refusal = summarise(np.array([1.0]))
-        assert settled is None
+        equilibrated, refusal = summarise(np.array([1.0]))
+        assert equilibrated is None
         assert "nothing to average" in refusal
 
     def test_frames_that_are_not_numbers_are_dropped_first(self) -> None:
@@ -257,14 +258,14 @@ class TestARunTooShortToMeasureItsOwnCorrelation:
         series = rng.normal(size=5000)
         series[[10, 20, 30]] = np.nan
 
-        settled, refusal = summarise(series)
+        equilibrated, refusal = summarise(series)
         assert refusal is None
-        assert np.isfinite(settled.mean) and np.isfinite(settled.standard_error)
+        assert np.isfinite(equilibrated.mean) and np.isfinite(equilibrated.standard_error)
 
     def test_the_record_carries_every_number_behind_the_mean(self) -> None:
         """So a reader can check the claim rather than take it."""
-        settled, _ = summarise(_correlated(0.5, 20000, seed=8))
-        assert set(settled.as_record()) == {
+        equilibrated, _ = summarise(_correlated(0.5, 20000, seed=8))
+        assert set(equilibrated.as_record()) == {
             "discard", "statistical_inefficiency", "effective_samples",
             "mean", "standard_error", "standard_deviation"}
 

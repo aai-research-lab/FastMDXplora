@@ -1,8 +1,9 @@
 """A time-series figure shows which frames its mean came from.
 
-The software works out where a series settled, averages only after that,
-and decides whether the run is long enough against its own correlation time
-for an error bar to mean anything. Every one of those numbers went into
+The software works out where a series equilibrated, averages only after
+that, and decides whether the run is long enough against its own
+correlation time for an error bar to mean anything. Every one of those
+numbers went into
 `options.json` and none reached the figure -- so a reader saw a line and had
 to take on trust both which part of it the mean came from and whether that
 mean carried an uncertainty at all.
@@ -82,14 +83,14 @@ class TestTheEquilibratedRegionIsVisible:
 
         assert not any("equilibration, excluded" in text for text in labels)
 
-    def test_the_mean_is_drawn_only_over_the_settled_part(self):
+    def test_the_mean_is_drawn_only_over_the_equilibrated_part(self):
         series = _series(_record())
         ax = _drawn(series)
-        settled = [line for line in ax.get_lines()
+        equilibrated = [line for line in ax.get_lines()
                    if line.get_linestyle() == "--"]
 
-        assert settled, "The mean after equilibration should be drawn."
-        left = settled[0].get_xdata()[0]
+        assert equilibrated, "The mean after equilibration should be drawn."
+        left = equilibrated[0].get_xdata()[0]
         assert left > 50.0, (
             "A mean line spanning the discarded frames says the average "
             "includes them.")
@@ -109,7 +110,7 @@ class TestAnAbsentErrorBarIsSaidSo:
     def test_the_count_is_a_whole_number(self):
         """N/g is a ratio; a fraction of an observation is not a thing.
 
-        873 settled frames over a statistical inefficiency of 89 gives
+        873 equilibrated frames over a statistical inefficiency of 89 gives
         9.77, and printing "9.8 independent samples" claims a precision the
         estimate does not have -- `g` is itself uncertain, and on a run this
         short the software's own record says halving the frames changes it.
@@ -148,10 +149,10 @@ class TestAnAbsentErrorBarIsSaidSo:
     def test_the_label_is_two_lines(self):
         """One line carrying the value and the caveat overflowed the axes."""
         ax = _drawn(_series(_record()))
-        settled = [t.get_text() for t in ax.get_legend().get_texts()
+        equilibrated = [t.get_text() for t in ax.get_legend().get_texts()
                    if "mean after equilibration" in t.get_text()]
 
-        assert settled and "\n" in settled[0]
+        assert equilibrated and "\n" in equilibrated[0]
 
 
 class TestGreyscaleStillCarriesTheOverlay:
@@ -165,7 +166,7 @@ class TestGreyscaleStillCarriesTheOverlay:
             ax = _drawn(_series(_record()))
             dashed = [line for line in ax.get_lines()
                       if line.get_linestyle() == "--"]
-            assert dashed, "The settled mean is still drawn."
+            assert dashed, "The mean after equilibration is still drawn."
             assert ax.get_legend() is not None
             # Value and line style carry the distinction, not hue.
             assert plotting.colour("FAINT") != plotting.colour("ACCENT")
