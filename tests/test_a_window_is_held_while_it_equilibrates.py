@@ -167,8 +167,8 @@ def _events_of_a_run(tmp_path, **kwargs):
         events.append(f"stage:{kw.get('label', '?')}")
         return int(kw.get("current_step", 0)) + int(kw.get("n_steps", 0))
 
-    def watched_bias(_omm, _system, _plumed, _out):
-        events.append("bias")
+    def watched_bias(_omm, _system, _plumed, _out, **_kw):
+        events.append(f"bias:{Path(_plumed['script']).name}")
         return None       # as when openmm-plumed is not installed
 
     for name in ("system.xml", "state.xml"):
@@ -180,6 +180,8 @@ def _events_of_a_run(tmp_path, **kwargs):
 
     with patch.object(_runner, "_import_openmm", return_value=omm), \
          patch.object(_runner, "_run_md_stage", side_effect=watched_stage), \
+         patch.object(_runner, "_remove_force",
+                      side_effect=lambda *a: events.append("remove")), \
          patch.object(_runner, "_run_minimize",
                       side_effect=lambda *a, **k: events.append("minimise")), \
          patch("fastmdxplora.simulation.plumed.add_plumed_force",
@@ -202,30 +204,57 @@ def _events_of_a_run(tmp_path, **kwargs):
     return events
 
 
+_UMBRELLA = {"collective_variable": "ligand_distance", "centre": 0.9,
+             "force_constant": 3000.0, "index": 9}
+
+
 class TestWhenTheBiasGoesOn:
 
     def test_a_window_is_held_before_anything_moves(self, tmp_path):
-        events = _events_of_a_run(
-            tmp_path,
-            umbrella={"collective_variable": "ligand_distance",
-                      "centre": 0.9, "force_constant": 3000.0, "index": 9})
+        events = _events_of_a_run(tmp_path, umbrella=dict(_UMBRELLA))
+        biases = [e for e in events if e.startswith("bias:")]
 
-        assert "bias" in events, "the window was never held"
-        assert events.index("bias") < events.index("minimise"), (
+        assert biases, "the window was never held"
+        assert events.index(biases[0]) < events.index("minimise"), (
             "Equilibration ran before the restraint went on, which is the "
             "defect this file exists for: the window equilibrates wherever "
             "the free energy takes it and production starts there.")
 
-    def test_it_is_held_once(self, tmp_path):
-        """Attaching at both points would apply the restraint twice, halving
-        the width of every window and the overlap between them -- and the
-        study would refuse for a gap that the fix had opened."""
-        events = _events_of_a_run(
-            tmp_path,
-            umbrella={"collective_variable": "ligand_distance",
-                      "centre": 0.9, "force_constant": 3000.0, "index": 9})
+    def test_the_restraint_is_never_doubled(self, tmp_path):
+        """It goes on twice -- once writing the settling, once writing
+        production -- and the first must come off before the second goes on.
 
-        assert events.count("bias") == 1
+        Two live PLUMED forces would hold the same coordinate at the same
+        centre with twice the constant, halving the width of every window and
+        the overlap between them. The study would then refuse for a gap the
+        fix had opened, which is the worst way to be wrong.
+        """
+        events = _events_of_a_run(tmp_path, umbrella=dict(_UMBRELLA))
+        order = [e for e in events if e == "remove" or e.startswith("bias:")]
+
+        assert order == ["bias:umbrella_equilibration.plumed",
+                         "remove",
+                         "bias:umbrella.plumed"]
+
+    def test_colvar_is_production_and_the_settling_has_its_own_file(
+            self, tmp_path):
+        """A COLVAR holding both was a file that began part-way through
+        equilibration, lost what NVT wrote, and ran its clock backwards in the
+        middle. Every reader had to know all three things."""
+        _events_of_a_run(tmp_path, umbrella=dict(_UMBRELLA))
+        out = tmp_path / "out"
+
+        production = (out / "umbrella.plumed").read_text("utf-8")
+        settling = (out / "umbrella_equilibration.plumed").read_text("utf-8")
+
+        assert "FILE=COLVAR\n" in production
+        assert "FILE=COLVAR.equilibration" in settling
+        assert settling.startswith("RESTART"), (
+            "Without it the barostat's reinitialise reopens the file and "
+            "everything NVT wrote is gone.")
+        # Same window, same hold, either side of the swap.
+        for script in (production, settling):
+            assert "AT=0.9 KAPPA=3000" in script
 
     def test_metadynamics_still_equilibrates_unbiased(self, tmp_path):
         """There is no position to hold, and hills deposited while the system
@@ -235,12 +264,14 @@ class TestWhenTheBiasGoesOn:
             metadynamics={"collective_variable": "ligand_rmsd",
                           "sigma": 0.05, "height": 1.0, "pace": 500,
                           "bias_factor": 10.0})
+        biases = [e for e in events if e.startswith("bias:")]
 
-        if "bias" not in events:        # the branch may refuse this stand-in
+        if not biases:                  # the branch may refuse this stand-in
             pytest.skip("metadynamics did not reach the attach in this fake")
-        assert events.index("bias") > events.index("minimise")
+        assert len(biases) == 1
+        assert events.index(biases[0]) > events.index("minimise")
 
-    def test_the_window_records_where_production_began(self, tmp_path):
+    def test_the_window_records_what_it_held(self, tmp_path):
         _events_of_a_run(
             tmp_path,
             umbrella={"collective_variable": "ligand_distance",

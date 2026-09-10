@@ -92,6 +92,8 @@ def add_plumed_force(
     system: Any,
     plumed_config: dict[str, Any],
     output_dir: Path,
+    *,
+    resolved_name: str = "plumed.dat",
 ) -> Any | None:
     """Add a PLUMED biasing force to ``system`` if PLUMED is enabled.
 
@@ -111,6 +113,13 @@ def add_plumed_force(
             ``.dat``/``.plumed`` file.
     output_dir : pathlib.Path
         Directory for PLUMED output files (COLVAR, HILLS, ...).
+    resolved_name : str
+        What to call the copy of the resolved script saved beside the run.
+        A run that attaches twice -- an umbrella window, held through
+        equilibration with one script and switched to another at production
+        -- would otherwise have the second overwrite the first, and the
+        record of what actually ran during equilibration would be the
+        production script.
 
     Returns
     -------
@@ -137,7 +146,7 @@ def add_plumed_force(
     system.addForce(force)
 
     # Save the resolved script alongside the run for reproducibility.
-    resolved = output_dir / "plumed.dat"
+    resolved = output_dir / resolved_name
     resolved.write_text(script, encoding="utf-8")
     # Said by the caller, not here. This runs inside a block that redirects
     # the file descriptors to catch PLUMED's own forty lines of setup, and a

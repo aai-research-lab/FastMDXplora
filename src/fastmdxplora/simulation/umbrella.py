@@ -61,13 +61,26 @@ class Window:
     centre: float
     force_constant: float
 
-    def plumed_lines(self, cv_lines: list[str]) -> str:
-        return "\n".join(cv_lines + [
+    def plumed_lines(self, cv_lines: list[str], *,
+                     colvar: str = "COLVAR", restart: bool = False) -> str:
+        """The window's PLUMED input, writing its trace to `colvar`.
+
+        The file is named rather than fixed because a held window runs the
+        restraint through equilibration as well, and the two belong in
+        different files. `COLVAR` is production and nothing else, which is
+        what it has always been and what everything downstream reads; the
+        settling goes to `COLVAR.equilibration`.
+
+        `restart` makes PLUMED append rather than truncate. Equilibration
+        needs it: adding the barostat reinitialises the context, PLUMED is
+        rebuilt, and without it the reopened file loses everything NVT wrote.
+        """
+        return "\n".join((["RESTART", ""] if restart else []) + cv_lines + [
             "",
             f"restraint: RESTRAINT ARG=cv AT={self.centre:g} "
             f"KAPPA={self.force_constant:g}",
             "",
-            "PRINT ARG=cv,restraint.bias STRIDE=100 FILE=COLVAR",
+            f"PRINT ARG=cv,restraint.bias STRIDE=100 FILE={colvar}",
         ]) + "\n"
 
 
@@ -433,19 +446,18 @@ def collect_samples(
     sampling. They are dropped before the fraction is applied, so
     `equilibration_fraction` keeps meaning a fraction of the production run.
 
-    Where production begins is read off the clock rather than from a record
-    of the step count. Production resets the counter to zero -- deliberately,
-    so that the nanoseconds a methods section quotes are production's and not
-    production's plus equilibration's -- and with the restraint attached
-    before equilibration that reset now rewinds PLUMED's clock in the middle
-    of the file. So the boundary is visible in the data: the time column runs
-    forward, then jumps backwards once, and everything after that jump is
-    production. A step count recorded alongside would have to agree with a
-    clock that was reset behind its back, and the first version of this did
-    not: it recorded 100 ps and the production rows begin at 0.2.
+    A held window writes its settling to `COLVAR.equilibration` and its
+    production to `COLVAR`, so this reads `COLVAR` and gets production, which
+    is what it has always got.
 
-    A file with no backwards jump is read whole, which is every window that
-    ran before the restraint was held from the start.
+    The clock check below is a guard rather than the mechanism. For one patch
+    the restraint wrote both phases into `COLVAR`, and because production
+    resets the step counter to zero -- deliberately, so the nanoseconds a
+    methods section quotes are production's alone -- those files run their
+    time column forward and then jump backwards once. Runs from that patch
+    are still on disk. Everything after the last such jump is production;
+    a file whose clock only runs forward is read whole, which is every other
+    window ever run.
     """
     from pathlib import Path
 

@@ -1392,10 +1392,21 @@ def run_simulation(
 
         window = Window(index=int(umbrella.get("index", 0)),
                         centre=float(centre), force_constant=float(force))
+        lines = cv_lines(cv_plan, str(topology_path))
         script_path = Path(output_dir) / "umbrella.plumed"
         script_path.parent.mkdir(parents=True, exist_ok=True)
-        script_path.write_text(
-            window.plumed_lines(cv_lines(cv_plan, str(topology_path))),
+        script_path.write_text(window.plumed_lines(lines), encoding="utf-8")
+        # The same restraint, writing somewhere else. A held window runs
+        # through equilibration too, and putting both in COLVAR left a file
+        # that began at 500 ps, lost what NVT wrote, and ran its clock
+        # backwards in the middle -- because production resets the counter.
+        # Every reader of that file, ours and the user's, had to know all
+        # three things. COLVAR is production and nothing else, as it has
+        # always been; the settling has its own name.
+        settling_path = Path(output_dir) / "umbrella_equilibration.plumed"
+        settling_path.write_text(
+            window.plumed_lines(lines, colvar="COLVAR.equilibration",
+                                restart=True),
             encoding="utf-8")
         logger.info(
             "Umbrella window %d prepared: %s held at %g with k=%g. "
@@ -1419,8 +1430,9 @@ def run_simulation(
         # Metadynamics is the opposite case and keeps the old behaviour:
         # there is no position to hold, and hills deposited during
         # equilibration would bias a surface with a system still settling.
-        plumed = {"enabled": True, "script": str(script_path),
-                  "hold_from_the_start": True}
+        plumed = {"enabled": True, "script": str(settling_path),
+                  "hold_from_the_start": True,
+                  "production_script": str(script_path)}
 
     if len([x for x in (steered, metadynamics, umbrella) if x]) > 1:
         raise ValueError(
@@ -1639,9 +1651,9 @@ def run_simulation(
         if on_progress:
             on_progress(msg)
 
-    bias_is_attached: list[bool] = []
+    bias_is_attached: list[int] = []
 
-    def _attach_the_bias() -> None:
+    def _attach_the_bias(*, resolved_name: str = "plumed.dat") -> None:
         """Put the PLUMED force on the system, once.
 
         Called either before minimisation -- for an umbrella window, which
@@ -1649,6 +1661,8 @@ def run_simulation(
         else -- or immediately before production, which is right for
         metadynamics and for a pull. The list is the guard: attaching twice
         would apply the restraint twice and halve the width of every window.
+        It holds the force's index, so `_swap_in_the_production_bias` can
+        take the equilibration one off again.
         """
         if not plumed or bias_is_attached:
             return
@@ -1677,23 +1691,46 @@ def run_simulation(
         plumed_log = Path(output_dir) / "plumed.log"
         with suppress_native_output(into=plumed_log):
             plumed_force = add_plumed_force(
-                omm, system, plumed, Path(output_dir))
+                omm, system, plumed, Path(output_dir),
+                resolved_name=resolved_name)
             if plumed_force is not None:
                 simulation.context.reinitialize(preserveState=True)
-        bias_is_attached.append(True)
+        # `addForce` appends, so the force just added is the last one.
+        bias_is_attached.append(system.getNumForces() - 1)
         if plumed_force is not None:
             logger.info(
                 "PLUMED enabled: biasing force added; resolved script "
-                "-> %s", (Path(output_dir) / "plumed.dat").as_posix())
+                "-> %s", (Path(output_dir) / resolved_name).as_posix())
         if plumed_log.is_file():
             logger.info("PLUMED's own setup log -> %s", plumed_log.as_posix())
+
+    def _swap_in_the_production_bias() -> None:
+        """Change which file the restraint writes to, at production.
+
+        The window is held throughout, but the trace belongs in two files.
+        `COLVAR` is production and nothing else -- what it has always been,
+        what `collect_samples` reads, and what a person plots. The settling
+        goes to `COLVAR.equilibration`.
+
+        The script is fixed when the force is built, so pointing it at a
+        different file means a different force: the equilibration one comes
+        off and the production one goes on. Both hold the same coordinate at
+        the same centre with the same constant, so nothing the system feels
+        changes across the swap.
+        """
+        production = (plumed or {}).get("production_script")
+        if not production or not bias_is_attached:
+            return
+        _remove_force(system, bias_is_attached.pop())
+        plumed["script"] = production
+        _attach_the_bias(resolved_name="plumed.dat")
 
     try:
         # The window is held before anything moves. Minimisation alone will
         # not carry a ligand across a barrier, but it is the first stage that
         # moves atoms and there is no reason for it to run free.
         if plumed and plumed.get("hold_from_the_start"):
-            _attach_the_bias()
+            _attach_the_bias(resolved_name="plumed_equilibration.dat")
 
         # ---- Stage 1: Minimize ----------------------------------------
         if minimize:
@@ -1980,9 +2017,14 @@ def run_simulation(
         # ---- Stage 4: Production --------------------------------------
         # Production runs in NPT (the standard default ensemble).
         #
-        # Enhanced sampling: add the PLUMED biasing force now (not during
-        # equilibration), then reinitialize the context so it takes effect —
-        # the standard protocol equilibrates unbiased and biases production.
+        # Metadynamics and a pull are biased from here: the standard
+        # protocol equilibrates unbiased and biases production. An umbrella
+        # window has been held since before minimisation and only changes
+        # which file it writes to -- the same rule the energy log above
+        # follows, where equilibration is kept under its own name and
+        # `energy.csv` is production. Both happen after the counter and the
+        # clock are reset, so COLVAR starts at zero like everything else.
+        _swap_in_the_production_bias()
         _attach_the_bias()
         saved_atoms, saved_description = resolve_save_selection(
             topology, save_selection)
@@ -2027,8 +2069,9 @@ def run_simulation(
                     "equilibration_steps": int(production_start_step),
                     "equilibration_ps": float(
                         production_start_step * timestep_fs / 1000.0),
-                    # So nobody reads the COLVAR as one series again.
-                    "colvar_clock_rewinds_at_production": True,
+                    # Which file holds what, said once, beside the files.
+                    "colvar": "COLVAR is production only",
+                    "equilibration_colvar": "COLVAR.equilibration",
                 }, indent=2),
                 encoding="utf-8")
         # Checkpoint reporter for crash recovery / restart.
