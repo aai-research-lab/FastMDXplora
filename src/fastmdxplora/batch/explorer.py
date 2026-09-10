@@ -17,11 +17,20 @@ Output layout adapts to the run count:
 Execution modes (``execution:`` block):
 
   - **sequential** (default) — one run at a time, in process.
-  - **parallel** — a process pool of ``workers`` runs at once. On GPU,
-    set ``devices: [0, 1, ...]`` and each worker is pinned to a distinct
-    device round-robin (one run per GPU), which is the only safe way to
-    parallelize GPU MD — oversubscribing a single GPU is slower than
-    sequential.
+  - **parallel** — a process pool of ``workers`` runs at once. Setting
+    ``devices: [0, 1, ...]`` pins each worker to a distinct device
+    round-robin, one run per GPU, which is the safe default where there is
+    more than one card.
+
+    ``workers`` without ``devices`` puts them all on the same GPU. This
+    said that was always slower than sequential, and that is not a
+    measurement -- it depends entirely on whether one run saturates the
+    card, and a modestly sized solvated system on a large modern GPU does
+    not. A thirty-window umbrella study of trypsin and benzamidine, three
+    at a time on one RTX 4090, ran ten groups of three at about 390 ns/day
+    aggregate; the claim above would have had it run one at a time. How
+    many fit is a property of the system and the card, so measure it rather
+    than take a number from here.
 
 Process-based (not thread-based) parallelism is mandatory: OpenMM
 contexts and the GIL don't share across threads. Each run is therefore

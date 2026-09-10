@@ -324,8 +324,26 @@ simulation:
 ```
 
 Each window becomes a run. They are scheduled by the same machinery that runs
-a multi-system campaign, so `execution.workers` and `execution.devices` pin
-them one per GPU exactly as they would separate systems.
+a multi-system campaign, so `execution.workers` and `execution.devices` place
+them exactly as they would separate systems.
+
+With several cards, `devices: [0, 1]` pins one window per GPU. With one card,
+`workers` on its own puts that many windows on it at once, and for umbrella
+sampling that is usually worth doing: a window is a small system and one of
+them rarely keeps a large GPU busy. Thirty windows of trypsin and benzamidine,
+three at a time on one RTX 4090, ran at about 390 ns/day aggregate — a little
+over 21 hours for a study that would otherwise have gone one window after
+another. How many fit depends on the system and the card, so try two or three
+on a short run and read the ns/day the log reports before committing a long
+one. Leave the card to the study while it runs; a second job on it makes that
+number about scheduling instead.
+
+```yaml
+execution:
+  mode: parallel
+  workers: 3            # three windows sharing one GPU
+  continue_on_error: false
+```
 
 ### Overlap is what makes it work
 
