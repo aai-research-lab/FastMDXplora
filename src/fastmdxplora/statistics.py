@@ -14,8 +14,9 @@ average rests on.
 
 **The first.** A structure that has just been minimised, heated and pressure-
 equilibrated is still relaxing when production begins. Averaging from the
-first frame averages the relaxation together with the equilibrium, and the
-answer depends on how long the run was rather than on the system.
+first frame averages the approach to equilibrium together with equilibrium
+itself, and the answer depends on how long the run was rather than on the
+system.
 
 **The second.** Frames are not independent. A trajectory written every
 picosecond from a system whose fluctuations decorrelate over a hundred
@@ -27,8 +28,8 @@ paper without being real.
 Both follow from one quantity. The statistical inefficiency ``g`` is the
 number of frames per independent sample, so a series of ``n`` frames carries
 ``n / g`` of them. Chodera's method chooses where to start averaging by
-maximising that count: discard too little and the relaxation is still in the
-average, discard too much and there is nothing left to average.
+maximising that count: discard too little and the equilibration is still in
+the average, discard too much and there is nothing left to average.
 
     Chodera, J. D. A simple method for automated equilibration detection in
     molecular simulations. J. Chem. Theory Comput. 2016, 12, 1799-1805.
@@ -214,7 +215,8 @@ def detect_equilibration(
     Returns the number of frames to discard, the statistical inefficiency of
     what remains, and the effective sample count. The discard point is the one
     maximising that count, which is the trade Chodera's method makes explicit:
-    keeping the relaxation costs independence, and discarding it costs frames.
+    keeping the equilibration costs independence, and discarding it costs
+    frames.
 
     Candidate points are strided rather than exhaustive, because the count
     varies smoothly with where the average starts and evaluating every frame

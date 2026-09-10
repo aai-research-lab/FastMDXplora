@@ -201,8 +201,8 @@ def assess_series(name: str, values: Any) -> Assessment:
     # in its own section, both labelled the mean.
     #
     # Drift is still measured over the whole series. It is the question of
-    # whether the run was still relaxing, and discarding the relaxation before
-    # asking would answer it by construction.
+    # whether the run was still relaxing, and discarding the equilibration
+    # before asking would answer it by construction.
     equilibrated, _reason = summarise(series)
     correlation = autocorrelation_time(series)
     # Whether the series can see how long its own memory is. A correlation
