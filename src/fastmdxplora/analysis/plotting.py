@@ -13,6 +13,7 @@ do not silently hang waiting for a display.
 from __future__ import annotations
 
 import os
+import textwrap
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
@@ -521,6 +522,16 @@ def fit_legend(ax: Axes, *, floor: float = 6.0) -> None:
     The font is reduced until it fits, down to `floor` points, below which
     shrinking further trades one unreadable figure for another. Nothing is
     changed where the legend already fits, which is the common case.
+
+    Reaching the floor is not the end of it. The label a time series actually
+    carries -- "mean after equilibration 0.1143 nm" over "about 10
+    independent samples: too few for an error bar" -- is still 7% too wide at
+    six points in a 3.3-inch column, so a version that only shrank returned
+    having done nothing and left the overflow where it was. The remaining
+    width is taken out of the line rather than the type: the label is wrapped
+    at its own spaces, which costs height where there is room for it. A line
+    with nowhere to break is left alone; a legend cannot be made narrower
+    than its longest word.
     """
     legend = ax.get_legend()
     if legend is None:
@@ -540,9 +551,41 @@ def fit_legend(ax: Axes, *, floor: float = 6.0) -> None:
             return
         size = max(t.get_fontsize() for t in legend.get_texts())
         if size <= floor:
-            return
+            break
         for text in legend.get_texts():
             text.set_fontsize(max(floor, size - 0.75))
+        figure.canvas.draw_idle()
+
+    # At the floor and still over. Wrap, measuring after each pass rather
+    # than predicting: how many characters fit depends on which ones they
+    # are, and a budget computed from an average lands wrong on a label that
+    # is mostly digits or mostly "i".
+    for _ in range(4):
+        width = legend.get_window_extent(renderer=renderer).width
+        if width <= available * 0.98:
+            return
+        longest = max(
+            (len(line) for text in legend.get_texts()
+             for line in text.get_text().split("\n")),
+            default=0)
+        budget = max(8, int(longest * available / width))
+        changed = False
+        for text in legend.get_texts():
+            wrapped = "\n".join(
+                "\n".join(textwrap.wrap(
+                    line, budget,
+                    # A legend label carries measured values, and
+                    # `textwrap` breaks a long word mid-token by default:
+                    # "0.114327" wrapped to "0.1143" over "27" is a
+                    # different number, printed legibly, in a figure. It
+                    # breaks at spaces or it does not break.
+                    break_long_words=False, break_on_hyphens=False)) or line
+                for line in text.get_text().split("\n"))
+            if wrapped != text.get_text():
+                text.set_text(wrapped)
+                changed = True
+        if not changed:      # every line is one unbreakable word
+            return
         figure.canvas.draw_idle()
 
 

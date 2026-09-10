@@ -87,7 +87,7 @@ class TestTheEquilibratedRegionIsVisible:
         series = _series(_record())
         ax = _drawn(series)
         equilibrated = [line for line in ax.get_lines()
-                   if line.get_linestyle() == "--"]
+                        if line.get_linestyle() == "--"]
 
         assert equilibrated, "The mean after equilibration should be drawn."
         left = equilibrated[0].get_xdata()[0]
@@ -150,7 +150,7 @@ class TestAnAbsentErrorBarIsSaidSo:
         """One line carrying the value and the caveat overflowed the axes."""
         ax = _drawn(_series(_record()))
         equilibrated = [t.get_text() for t in ax.get_legend().get_texts()
-                   if "mean after equilibration" in t.get_text()]
+                        if "mean after equilibration" in t.get_text()]
 
         assert equilibrated and "\n" in equilibrated[0]
 
@@ -231,8 +231,8 @@ class TestTheLegendStaysInsideTheAxes:
         from fastmdxplora.analysis.plotting import fit_legend
 
         fig, ax = new_figure(title="t", figsize=figsize)
-        ax.plot([0, 1], [0, 1], label="settled mean 0.1143 nm\n"
-                                      "9.8 independent samples: too few "
+        ax.plot([0, 1], [0, 1], label="mean after equilibration 0.1143 nm\n"
+                                      "about 10 independent samples: too few "
                                       "for an error bar")
         ax.legend(loc="best", fontsize=7.5)
         fig.canvas.draw()
@@ -271,3 +271,71 @@ class TestTheLegendStaysInsideTheAxes:
         fig, ax = new_figure(title="t")
         ax.plot([0, 1], [0, 1])
         fit_legend(ax)   # must not raise
+
+    def _fitted(self, label, figsize=(3.3, 2.4)):
+        from fastmdxplora.analysis.plotting import fit_legend
+
+        fig, ax = new_figure(title="t", figsize=figsize)
+        ax.plot([0, 1], [0, 1], label=label)
+        ax.legend(loc="best", fontsize=7.5)
+        fig.canvas.draw()
+        fit_legend(ax)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        return (ax.get_legend().get_window_extent(renderer=renderer).width,
+                ax.get_window_extent(renderer=renderer).width,
+                ax.get_legend())
+
+    def test_the_label_the_software_writes_fits(self):
+        """The real label, not a stand-in for it.
+
+        This class was written around a shorter invented string, and passed
+        while the label a run actually produces was still 7% too wide at
+        six points -- the floor, where the version that only shrank the type
+        returned having changed nothing. Shrinking alone does not fit this
+        label; the width has to come out of the line.
+        """
+        record = _record()
+        label = _series(record)._mean_label(record, has_error=False)
+        width, available, _ = self._fitted(label)
+
+        assert width <= available * 1.02
+
+    def test_wrapping_moves_the_breaks_and_keeps_the_words(self):
+        """A narrower legend that has quietly lost half the sentence is worse
+        than one that overflows, because nothing about it looks wrong."""
+        record = _record()
+        label = _series(record)._mean_label(record, has_error=False)
+        _, _, legend = self._fitted(label)
+        drawn = " ".join(t.get_text() for t in legend.get_texts())
+
+        assert drawn.split() == label.split()
+
+    def test_a_word_too_long_to_break_is_left_alone(self):
+        """No legend can be narrower than its longest word, and a fitter
+        that keeps trying to make one is a loop that does not end.
+
+        It returns still too wide, which is the honest outcome: the label
+        given to it cannot be made to fit, and silently truncating it would
+        hide that from the only person who can shorten it.
+        """
+        unbreakable = "x" * 300
+        width, available, legend = self._fitted(unbreakable)
+
+        assert width > available
+        assert legend.get_texts()[0].get_text() == unbreakable
+
+    def test_a_number_is_never_broken_across_two_lines(self):
+        """`textwrap` splits a long word mid-token unless told not to.
+
+        A legend is where a measured value is read, and 0.1143274418 broken
+        after the fifth digit is a different number set legibly in a figure.
+        There is no reading of the line that recovers the first one.
+        """
+        value = "0.1143274418290553"
+        _, _, legend = self._fitted(f"mean after equilibration {value} nm "
+                                    f"over the part that equilibrated")
+        drawn = legend.get_texts()[0].get_text()
+
+        assert any(value in line for line in drawn.split("\n")), (
+            f"the value was split across lines: {drawn!r}")
