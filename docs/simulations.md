@@ -373,6 +373,41 @@ The `force_constant` therefore has no default: it decides how far a window
 wanders and so whether neighbours meet. Too stiff and they do not; too soft
 and the system escapes towards the nearest minimum.
 
+### When one force constant will not do
+
+A restraint at `k` keeps a window within two sigma of its centre against a
+free-energy gradient of `2*sqrt(k*kT)`, and no further. On a coordinate with a
+steep stretch — a ligand leaving a salt bridge, a torsion crossing a barrier —
+that number decides whether the windows there hold their centres at all:
+
+| k (kJ/mol/nm²) | sigma (nm) | holds against |
+| --- | --- | --- |
+| 3000 | 0.029 | 173 kJ/mol/nm |
+| 6000 | 0.020 | 245 |
+| 13000 | 0.014 | 360 |
+
+Raising it everywhere does not work, because sigma falls as `sqrt(kT/k)`: the
+windows narrow, the overlap goes with them, and the study refuses for a gap
+the stiffening opened. So `force_constant` takes a list as well as a number,
+one per window, and `centres` takes the spacing those windows need:
+
+```yaml
+  umbrella:
+    collective_variable: ligand_distance
+    select_atoms: "resSeq 189 to 195 and name CA"
+    centres: [0.40, 0.46, 0.51, 0.83, 0.86, 0.89, 0.91, 1.10, 1.16]
+    force_constant: [3000, 3000, 3000, 13000, 13000, 13000, 13000, 3000, 3000]
+```
+
+Windows held at different constants recombine correctly — each window's bias
+is built from its own — so the only thing to get right is the overlap, and
+half the spacing buys back what twice the stiffness costs.
+
+**How to know which windows need it.** Run the study, and read what the
+windows did rather than guessing: a window sitting well inside its centre with
+a large sustained restraint energy is being held too softly, and `k` times its
+displacement is the gradient it is losing to. That number sizes the restraint.
+
 ### One system, many windows
 
 The windows are the same molecule held at different points along the

@@ -115,13 +115,24 @@ class UmbrellaPlan:
     minimum_samples: int = 200
 
     def as_record(self) -> dict[str, Any]:
+        forces = [w.force_constant for w in self.windows]
+        # `force_constant` is the study's, where it has one. This used to be
+        # `self.windows[0].force_constant` -- correct while a single value
+        # was the only thing a config could express, and silently wrong the
+        # moment it was not: a study holding its barrier windows four times
+        # harder than its flat ones would have written the flat one here and
+        # every reader downstream, including the harvest and the manuscript,
+        # would have quoted it as the study's. None rather than a number
+        # that is true of one window in thirty. `force_constants` always
+        # carries them all.
+        uniform = len(set(forces)) == 1
         return {
             "collective_variable": self.collective_variable,
             "n_windows": len(self.windows),
             "from": self.windows[0].centre if self.windows else None,
             "to": self.windows[-1].centre if self.windows else None,
-            "force_constant": (self.windows[0].force_constant
-                               if self.windows else None),
+            "force_constant": forces[0] if uniform else None,
+            "force_constants": forces,
             "equilibration_fraction": self.equilibration_fraction,
             "minimum_overlap": self.minimum_overlap,
             "minimum_samples": self.minimum_samples,
@@ -267,7 +278,6 @@ def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
             "escapes towards the nearest minimum. There is no value that is "
             "right for an arbitrary coordinate."
         )
-    force = float(force)
 
     if "centres" in spec or "centers" in spec:
         centres = [float(c) for c in (spec.get("centres") or spec.get("centers"))]
@@ -289,15 +299,64 @@ def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
         centres = [float(c) for c in np.linspace(
             float(spec["from"]), float(spec["to"]), count)]
 
+    forces = _a_force_for_every_window(force, len(centres))
+
     return UmbrellaPlan(
-        windows=tuple(Window(index=i, centre=c, force_constant=force)
-                      for i, c in enumerate(centres)),
+        windows=tuple(Window(index=i, centre=c, force_constant=k)
+                      for i, (c, k) in enumerate(zip(centres, forces))),
         collective_variable=variable,
         equilibration_fraction=_checked_fraction(
             spec.get("equilibration_fraction", 0.2)),
         minimum_overlap=float(spec.get("minimum_overlap", 0.03)),
         minimum_samples=int(spec.get("minimum_samples", 200)),
     )
+
+
+def _a_force_for_every_window(force: Any, count: int) -> list[float]:
+    """One force constant per window, from one value or a list of them.
+
+    A single number holds every window the same, which is the usual thing to
+    want and stays the usual way to write it.
+
+    A list holds each window at its own, which is what a coordinate with a
+    steep stretch needs. How stiff a window must be to stay at its centre is
+    set by the free energy's slope there: a restraint holds within two sigma
+    against a gradient of ``2*sqrt(k*kT)``, so on a surface whose slope
+    varies by a factor of two the constant that holds the steep part is four
+    times the one the flat part needs -- and using that everywhere narrows
+    every window, because sigma is ``sqrt(kT/k)``, until neighbours no longer
+    overlap. One value cannot do both jobs.
+
+    Windows held at different constants recombine correctly: WHAM builds each
+    window's bias from that window's own constant, and always has.
+    """
+    if isinstance(force, (str, bytes)):
+        raise ValueError(
+            f"`force_constant` is {force!r}, which is text. It is a number "
+            "in kJ/mol per unit of the collective variable squared, or a "
+            "list of them, one per window."
+        )
+    if isinstance(force, (list, tuple)):
+        if len(force) != count:
+            raise ValueError(
+                f"`force_constant` was given as {len(force)} values for "
+                f"{count} windows. A list holds each window at its own "
+                "constant and has to have one for each; a single number "
+                "holds them all the same."
+            )
+        values = [float(k) for k in force]
+    else:
+        values = [float(force)] * count
+
+    for index, k in enumerate(values):
+        if not k > 0:
+            raise ValueError(
+                f"Window {index} was given a force constant of {k:g}. A "
+                "restraint has to pull towards its centre: zero holds "
+                "nothing and a negative one pushes the system away from "
+                "the place the window exists to sample."
+            )
+    return values
 
 
 def expand_umbrella(config: dict[str, Any]) -> dict[str, Any]:

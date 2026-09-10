@@ -567,7 +567,14 @@ SIMULATION = PhaseSchema(
               "across one and a window started on the wrong side stays "
               "there. `seed_from` reuses a finished pull instead of running "
               "another, so retuning the spacing or the force constant costs "
-              "windows and not a pathway.",
+              "windows and not a pathway. `force_constant` takes one number "
+              "for every window, or a list with one per window where the "
+              "coordinate has a steep stretch: a restraint holds within two "
+              "sigma against a gradient of 2*sqrt(k*kT), so the constant a "
+              "barrier needs is far larger than the flat parts do, and using "
+              "it everywhere narrows every window until neighbours stop "
+              "overlapping. Give the steep windows their own, and put them "
+              "closer together with `centres` to keep the overlap.",
               example={"collective_variable": "distance",
                        "from": 0.3, "to": 1.5, "n_windows": 7,
                        "force_constant": 5000,
