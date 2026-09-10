@@ -4,7 +4,7 @@
 reported the largest movement anywhere it judged. That single figure decides
 the verdict and is the right thing to decide it with -- but as a description of
 the surface it is the worst point on the grid, which on any run with a real
-barrier is the barrier's shoulder. A run settled to a tenth of a kJ/mol across
+barrier is the barrier's shoulder. A run converged to a tenth of a kJ/mol across
 both its wells and moving by two at the top reported two, and a reader plotting
 the wells had nothing to say how firm they were.
 
@@ -201,7 +201,7 @@ class TestTheCutsAreDistinctSurfaces:
 
 class TestTheBandMeasuresWhetherTheBiasStoppedMoving:
 
-    def test_a_settled_run_gives_a_narrow_band(self) -> None:
+    def test_a_converged_run_gives_a_narrow_band(self) -> None:
         """Deposition that decays: the late passes barely change the surface,
         which is what a well-tempered run approaching convergence does."""
         grid = _grid()
@@ -225,7 +225,7 @@ class TestTheBandMeasuresWhetherTheBiasStoppedMoving:
 
         assert band["typical_kjmol"] > 1.0
 
-    def test_it_is_wider_where_the_surface_is_less_settled(self) -> None:
+    def test_it_is_wider_where_the_surface_is_less_converged(self) -> None:
         """The whole reason for a band rather than a number. A surface whose
         right half keeps deepening while its left half is finished should say
         so at each point, not report the right half everywhere."""
@@ -276,7 +276,7 @@ class TestSurfacesAreAlignedBeforeTheyAreCompared:
     Which statistic does the aligning is the decision, and all three
     candidates fail differently: the minimum ties every point to the single
     lowest one, the mean shares a local change out over the whole grid, and
-    the median needs more than half the grid to have settled. The last is the
+    the median needs more than half the grid to have converged. The last is the
     only one whose failure mode is the case the drift check has already
     caught."""
 
@@ -304,14 +304,14 @@ class TestSurfacesAreAlignedBeforeTheyAreCompared:
     def test_a_change_in_one_region_is_not_shared_out_over_the_rest(
             self) -> None:
         """Aligned on the mean, a third of the grid deepening by 3 kJ/mol
-        lifts the settled two thirds by 1, and the wells acquire a band they
+        lifts the converged two thirds by 1, and the wells acquire a band they
         did not earn -- which is the failure the band exists to avoid, since
         the whole point of measuring per point is to say the wells are firm.
         """
-        settled = np.linspace(0.0, 6.0, 30)
+        converged = np.linspace(0.0, 6.0, 30)
         cuts = []
         for k in range(5):
-            cut = settled.copy()
+            cut = converged.copy()
             cut[20:] -= 3.0 * k / 4.0
             cuts.append(cut)
 
@@ -382,14 +382,14 @@ class TestItIsNeverSoldAsAStandardError:
 
 class TestItReachesTheRecordTheRunWrites:
 
-    def _settled(self, tmp_path):
+    def _converged(self, tmp_path):
         grid = _grid()
         hills = _hills(_double_well(grid), grid, centres=300, passes=6,
                        decay=1.5)
         return _written(tmp_path, hills), grid
 
     def test_the_one_dimensional_evidence_carries_it(self, tmp_path) -> None:
-        path, grid = self._settled(tmp_path)
+        path, grid = self._converged(tmp_path)
         sampled = np.tile(np.linspace(0.0, 1.0, 50), 20)
 
         outcome = compute_surface(path, sampled, points=len(grid))
@@ -402,7 +402,7 @@ class TestItReachesTheRecordTheRunWrites:
         """The simulation phase writes `evidence` whole into
         metadynamics_surface.json. A numpy array in there would raise at the
         end of a run that had already finished simulating."""
-        path, grid = self._settled(tmp_path)
+        path, grid = self._converged(tmp_path)
 
         outcome = compute_surface(path, np.linspace(0.0, 1.0, 100))
 
@@ -412,7 +412,7 @@ class TestItReachesTheRecordTheRunWrites:
         """Evidence, not a gate. The band is reported and never consulted:
         a threshold on it would be a second convergence criterion nobody
         pre-registered, and the drift check already decides."""
-        path, _ = self._settled(tmp_path)
+        path, _ = self._converged(tmp_path)
 
         outcome = compute_surface(path, np.linspace(0.0, 1.0, 100))
 
@@ -448,7 +448,7 @@ class TestItReachesTheRecordTheRunWrites:
         """Twenty-four squared is 576 numbers and an 80-point default is
         6,400. The per-dimension bands are what anything plots against; the
         whole-surface figure is two scalars, because a surface can be
-        settled along both marginals while a corner of it is not."""
+        converged along both marginals while a corner of it is not."""
         n = 300
         rng = np.random.default_rng(12)
         centres = rng.uniform(-1.0, 1.0, size=(n, 2))

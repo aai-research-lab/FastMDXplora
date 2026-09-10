@@ -570,7 +570,7 @@ class Analysis(ABC):
         Two lines: the value, then what stands behind it. One line carrying
         both was long enough to overflow the axes at a journal column width,
         and it read as jargon -- the author of this package had to ask what
-        "9.8 effective samples" meant, which settles whether it was clear.
+        "9.8 effective samples" meant, which decides whether it was clear.
 
         "Independent" rather than "effective": consecutive frames of a
         trajectory are not independent observations, and independence is the

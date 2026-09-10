@@ -306,7 +306,7 @@ class TestARunThatDoesNotSupportASurface:
             # The same drift measured point by point instead of as its worst
             # value, which on any run with a real barrier is the barrier's
             # shoulder. Labelled a convergence indicator and never an error
-            # bar: `test_a_surface_says_whether_it_settled` is about keeping
+            # bar: `test_a_surface_says_whether_it_converged` is about keeping
             # those apart.
             "convergence",
             "barrier_kjmol"}
