@@ -9,7 +9,7 @@ temperature that misses the thermostat's setpoint says the run was not doing
 what the configuration said.
 
 Each column is treated as the correlated time series it is, with the same
-settling and effective-sample machinery every other observable here gets, so
+equilibration and effective-sample machinery every other observable here gets, so
 a density arrives with an error that reflects how many independent
 observations stand behind it rather than how many lines were written.
 
@@ -97,7 +97,7 @@ class Thermodynamics(Analysis):
 
     Output
     ------
-    ``thermodynamics.dat`` -- one row per observable, with its settled mean,
+    ``thermodynamics.dat`` -- one row per observable, with its mean after equilibration,
     the error on it, and the number of independent observations behind it.
     """
 
@@ -192,16 +192,16 @@ class Thermodynamics(Analysis):
                 }
                 continue
 
-            settled, reason = summarise(values)
+            equilibrated, reason = summarise(values)
             entry: dict[str, Any] = {"units": units}
-            if settled is not None:
-                entry.update(settled.as_record())
+            if equilibrated is not None:
+                entry.update(equilibrated.as_record())
                 labels.append(key)
                 rows.append((
-                    float(settled.mean),
-                    float(settled.standard_error),
-                    float(settled.effective_samples),
-                    float(settled.standard_deviation),
+                    float(equilibrated.mean),
+                    float(equilibrated.standard_error),
+                    float(equilibrated.effective_samples),
+                    float(equilibrated.standard_deviation),
                 ))
             if reason is not None:
                 entry["not_a_measurement"] = reason
@@ -228,7 +228,7 @@ class Thermodynamics(Analysis):
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         labels = getattr(self, "_labels", [])
         if not labels:
-            ax.text(0.5, 0.5, "no settled observables",
+            ax.text(0.5, 0.5, "no equilibrated observables",
                     ha="center", va="center", transform=ax.transAxes)
             return
         position = np.arange(len(labels))

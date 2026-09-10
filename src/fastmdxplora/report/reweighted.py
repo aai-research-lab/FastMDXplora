@@ -154,7 +154,7 @@ def reweighted_section(project_root: Path,
 
     ess = record.get("effective_sample_size")
     frames = record.get("n_frames")
-    settled = bool(record.get("settled"))
+    converged = bool(record.get("converged", record.get("settled")))
 
     lines = ["### Averages after reweighting", ""]
     lines.append(
@@ -175,10 +175,10 @@ def reweighted_section(project_root: Path,
     lines.append(
         f"The weights carry {_number(ess, 3)} effective frames of {frames}."
         + caution)
-    if not settled:
+    if not converged:
         lines.append("")
         lines.append(
-            "_The bias had not settled when the run ended, so these are "
+            "_The bias had not converged when the run ended, so these are "
             "approximate._")
     lines.append("")
 

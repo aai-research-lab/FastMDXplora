@@ -65,13 +65,13 @@ def _drawn(series):
     return ax
 
 
-class TestTheSettledRegionIsVisible:
+class TestTheEquilibratedRegionIsVisible:
 
     def test_the_excluded_frames_are_marked_and_named(self):
         ax = _drawn(_series(_record()))
         labels = [t.get_text() for t in ax.get_legend().get_texts()]
 
-        assert any("relaxation, excluded" in text for text in labels)
+        assert any("equilibration, excluded" in text for text in labels)
         assert any("56%" in text for text in labels), (
             "How much of the run was thrown away is the reader's first "
             "question about a mean drawn over part of it.")
@@ -80,7 +80,7 @@ class TestTheSettledRegionIsVisible:
         ax = _drawn(_series(_record(discard=0)))
         labels = [t.get_text() for t in ax.get_legend().get_texts()]
 
-        assert not any("relaxation" in text for text in labels)
+        assert not any("equilibration, excluded" in text for text in labels)
 
     def test_the_mean_is_drawn_only_over_the_settled_part(self):
         series = _series(_record())
@@ -88,7 +88,7 @@ class TestTheSettledRegionIsVisible:
         settled = [line for line in ax.get_lines()
                    if line.get_linestyle() == "--"]
 
-        assert settled, "The settled mean should be drawn."
+        assert settled, "The mean after equilibration should be drawn."
         left = settled[0].get_xdata()[0]
         assert left > 50.0, (
             "A mean line spanning the discarded frames says the average "
@@ -149,7 +149,7 @@ class TestAnAbsentErrorBarIsSaidSo:
         """One line carrying the value and the caveat overflowed the axes."""
         ax = _drawn(_series(_record()))
         settled = [t.get_text() for t in ax.get_legend().get_texts()
-                   if "settled mean" in t.get_text()]
+                   if "mean after equilibration" in t.get_text()]
 
         assert settled and "\n" in settled[0]
 

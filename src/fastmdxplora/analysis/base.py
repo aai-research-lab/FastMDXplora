@@ -172,9 +172,10 @@ class Analysis(ABC):
     #: Whether ``compute`` returns one value per frame.
     #:
     #: A quantity measured every frame has a mean, and a mean is not a
-    #: measurement until two things are known: whether the system had settled
-    #: by the time the averaging started, and how many *independent*
-    #: observations the average rests on. Both are recorded automatically for
+    #: measurement until two things are known: whether the system had
+    #: equilibrated by the time the averaging started, and how many
+    #: *independent* observations the average rests on. Both are recorded
+    #: automatically for
     #: an analysis that says yes here.
     #:
     #: Declared rather than inferred from the array's length. A per-atom
@@ -468,10 +469,10 @@ class Analysis(ABC):
         if series.ndim != 1 or series.size != traj.n_frames:
             return
 
-        settled, reason = summarise(series)
+        equilibrated, reason = summarise(series)
         record: dict[str, Any] = {}
-        if settled is not None:
-            record.update(settled.as_record())
+        if equilibrated is not None:
+            record.update(equilibrated.as_record())
         if reason is not None:
             record["not_a_measurement"] = reason
         record["n_frames"] = int(series.size)
@@ -487,9 +488,9 @@ class Analysis(ABC):
             self._x_for_overlay = None
 
     def _mark_what_the_mean_rests_on(self, ax: plt.Axes) -> None:
-        """Draw the settled region, its mean, and the error bar or its absence.
+        """Draw the equilibrated region, its mean, and the error bar or its absence.
 
-        The software works out where a series settled, averages only after
+        The software works out where a series equilibrated, averages only
         that, and decides whether the run is long enough against its own
         correlation time for an error bar to mean anything. Every one of
         those numbers was computed and written to `options.json`, and none of
@@ -517,25 +518,25 @@ class Analysis(ABC):
         discard = int(record.get("discard") or 0)
         if 0 < discard < n_frames:
             # Light. The excluded frames still carry the evidence that the
-            # run needed that long to settle, so they are marked as not
+            # run needed that long to equilibrate, so they are marked as not
             # counted rather than hidden under a block of grey.
             share = discard / n_frames
             ax.axvspan(float(x[0]), float(x[discard]),
                        facecolor=colour("FAINT"), alpha=0.30, zorder=0,
                        linewidth=0,
-                       label=f"relaxation, excluded ({share:.0%} of frames)")
+                       label=f"equilibration, excluded ({share:.0%} of frames)")
             ax.axvline(float(x[discard]), color=colour("GUIDE"),
                        linestyle=":", linewidth=0.8, zorder=1)
 
-        settled_from = float(x[discard]) if discard < n_frames else float(x[0])
+        equilibrated_from = float(x[discard]) if discard < n_frames else float(x[0])
         error = record.get("standard_error")
         has_error = error is not None and np.isfinite(error) and error > 0
         if has_error:
-            ax.fill_between([settled_from, float(x[-1])],
+            ax.fill_between([equilibrated_from, float(x[-1])],
                             mean - error, mean + error,
                             color=colour("BAND"), alpha=0.35,
                             zorder=1, linewidth=0)
-        ax.plot([settled_from, float(x[-1])], [mean, mean],
+        ax.plot([equilibrated_from, float(x[-1])], [mean, mean],
                 color=colour("ACCENT"), linewidth=1.3,
                 linestyle="--", zorder=3,
                 label=self._mean_label(record, has_error))
@@ -581,21 +582,21 @@ class Analysis(ABC):
         unit = self._mean_unit()
         counted = self._independent_samples(record.get("effective_samples"))
         if has_error:
-            head = (f"settled mean {mean:.4g} ± "
+            head = (f"mean after equilibration {mean:.4g} ± "
                     f"{record['standard_error']:.2g}{unit}")
             if counted is None:
                 return head
             return f"{head}\n({counted})"
         if counted is None:
-            return f"settled mean {mean:.4g}{unit}\n(no error bar)"
-        return (f"settled mean {mean:.4g}{unit}\n"
+            return f"mean after equilibration {mean:.4g}{unit}\n(no error bar)"
+        return (f"mean after equilibration {mean:.4g}{unit}\n"
                 f"{counted}: too few for an error bar")
 
     @staticmethod
     def _independent_samples(effective: Any) -> str | None:
         """How many independent observations the mean rests on, as a count.
 
-        The quantity is N/g -- settled frames over the statistical
+        The quantity is N/g -- equilibrated frames over the statistical
         inefficiency -- so arithmetically it is a ratio and comes out at
         9.77. Printing that as "9.8 independent samples" claims a precision
         it does not have: `g` is itself an estimate, and on a run this short
@@ -754,13 +755,13 @@ class Analysis(ABC):
         if ylabel is not None:
             ax.set_ylabel(ylabel)
 
-        # After the labels, so the unit the axis settled on is available, and
+        # After the labels, so the unit the axis ended up in is available,
         # after plot(), so an analysis that draws its own legend keeps it.
         if self.time_series:
             try:
                 self._mark_what_the_mean_rests_on(ax)
             except Exception:  # noqa: BLE001 - a figure beats no figure
-                logger.debug("could not mark the settled mean on %s",
+                logger.debug("could not mark the equilibrated mean on %s",
                              self.name, exc_info=True)
 
         return save_figure(fig, path)

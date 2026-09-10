@@ -72,9 +72,9 @@ class Assessment:
     #: convergence report to err in.
     correlation_is_measurable: bool = True
     #: Whether the series is long enough to say anything about drift at all.
-    #: Two points cannot show a trend, and reporting one as settled is a claim
-    #: from no evidence -- the same defect as reporting independence that was
-    #: never measured.
+    #: Two points cannot show a trend, and reporting one as equilibrated is a
+    #: claim from no evidence -- the same defect as reporting independence that
+    #: was never measured.
     drift_is_measurable: bool = True
 
     @property
@@ -100,16 +100,27 @@ class Assessment:
                 and self.effective_samples >= _ENOUGH_SAMPLES)
 
     @property
-    def has_settled(self) -> bool | None:
+    def has_equilibrated(self) -> bool | None:
         """Whether the observable has stopped moving in one direction.
 
         ``None`` where the series is too short to tell. A two-point series
-        reported as settled is a claim from no evidence, and it appeared
+        reported as equilibrated is a claim from no evidence, and it appeared
         beside "too few independent samples" about the same numbers.
         """
         if not self.drift_is_measurable:
             return None
         return abs(self.drift_in_noise) < 2.0
+
+    @property
+    def has_settled(self) -> bool | None:
+        """The former name, kept so nothing outside has to move at once.
+
+        The word was never the field's: `detect_equilibration` implements
+        Chodera's automated equilibration detection, and the literature
+        calls the discarded transient the equilibration period. "Settled"
+        was a second vocabulary for one idea.
+        """
+        return self.has_equilibrated
 
     def as_record(self) -> dict[str, Any]:
         return {
@@ -124,7 +135,11 @@ class Assessment:
                                else round(self.standard_error, 5)),
             "sampled_enough": self.is_sampled_enough,
             "correlation_measurable": self.correlation_is_measurable,
-            "settled": self.has_settled,
+            # Both spellings. `equilibrated` is the name; `settled` is what
+            # runs already on disk carry, and a report regenerated from one
+            # of those must not lose the field.
+            "equilibrated": self.has_equilibrated,
+            "settled": self.has_equilibrated,
             "drift_measurable": self.drift_is_measurable,
             "drift_in_noise": round(self.drift_in_noise, 2),
         }
@@ -179,7 +194,7 @@ def assess_series(name: str, values: Any) -> Assessment:
 
     from fastmdxplora.statistics import correlation_is_resolved, summarise
 
-    # The mean is taken over the settled part, which is what the per-analysis
+    # The mean is taken over the equilibrated part, which is what the
     # findings report. Taken over the whole series here, the same observable
     # appeared twice in one document with two different means and nothing to
     # say why: the RMSD of a real study read 0.08895 in this table and 0.09461
@@ -188,7 +203,7 @@ def assess_series(name: str, values: Any) -> Assessment:
     # Drift is still measured over the whole series. It is the question of
     # whether the run was still relaxing, and discarding the relaxation before
     # asking would answer it by construction.
-    settled, _reason = summarise(series)
+    equilibrated, _reason = summarise(series)
     correlation = autocorrelation_time(series)
     # Whether the series can see how long its own memory is. A correlation
     # approaching what the sum can reach is a floor rather than a measurement,
@@ -209,13 +224,13 @@ def assess_series(name: str, values: Any) -> Assessment:
     return Assessment(
         name=name,
         n_frames=int(n),
-        discard=int(settled.discard) if settled else 0,
-        mean=float(settled.mean) if settled else float(series.mean()),
-        spread=(float(settled.standard_deviation) if settled
+        discard=int(equilibrated.discard) if equilibrated else 0,
+        mean=float(equilibrated.mean) if equilibrated else float(series.mean()),
+        spread=(float(equilibrated.standard_deviation) if equilibrated
                 else (float(series.std(ddof=1)) if n > 1 else 0.0)),
-        correlation_frames=(float(settled.inefficiency) if settled
+        correlation_frames=(float(equilibrated.inefficiency) if equilibrated
                             else correlation),
-        effective_samples=(float(settled.effective_samples) if settled
+        effective_samples=(float(equilibrated.effective_samples) if equilibrated
                            else float(n / correlation)),
         drift_in_noise=_drift_in_noise(series),
         correlation_is_measurable=bool(measurable),
@@ -271,20 +286,21 @@ def assess_run(
                 "the settings describe."
             )
 
-    unsettled = [a.name for a in assessments.values()
-                 if a.has_settled is False]
-    undrifted = [a.name for a in assessments.values() if a.has_settled is None]
-    if unsettled:
+    still_drifting = [a.name for a in assessments.values()
+                      if a.has_equilibrated is False]
+    undecidable = [a.name for a in assessments.values()
+                   if a.has_equilibrated is None]
+    if still_drifting:
         findings.append(
-            "Still moving in one direction: " + ", ".join(sorted(unsettled))
+            "Still moving in one direction: " + ", ".join(sorted(still_drifting))
             + ". The run has not finished equilibrating, so averages over it "
             "describe the approach rather than the state."
         )
 
-    if undrifted:
+    if undecidable:
         findings.append(
-            "Too short to say whether it has settled: "
-            + ", ".join(sorted(undrifted))
+            "Too short to say whether it has equilibrated: "
+            + ", ".join(sorted(undecidable))
             + ". Drift is judged by comparing the start of the run against "
             "the end, and a series this short has no start and end to "
             "compare."
@@ -319,5 +335,6 @@ def assess_run(
         "findings": findings,
         # The single question somebody wants answered, and the honest answer
         # for most short runs is no.
-        "interpretable": not (thin or unsettled or unmeasurable or undrifted),
+        "interpretable": not (thin or still_drifting or unmeasurable
+                              or undecidable),
     }

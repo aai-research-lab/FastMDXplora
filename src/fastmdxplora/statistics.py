@@ -1,4 +1,4 @@
-"""Where a run settled, and how many independent samples it actually holds.
+"""Where a run equilibrated, and how many independent samples it holds.
 
 At the top level rather than under ``analysis``, because it is not an
 analysis: nothing registers it, it produces no figure, and both the analyses
@@ -42,6 +42,8 @@ from typing import Any
 import numpy as np
 
 __all__ = [
+    "Equilibrated",
+    # The old name, kept importable so nothing outside has to move at once.
     "Settled",
     "statistical_inefficiency",
     "correlation_is_resolved",
@@ -57,8 +59,16 @@ MINIMUM_EFFECTIVE_SAMPLES = 10.0
 
 
 @dataclass(frozen=True)
-class Settled:
-    """What a series supports, once the relaxation is out of it."""
+class Equilibrated:
+    """What a series supports, once the equilibration is out of it.
+
+    Named for the method it implements. `detect_equilibration` below is
+    Chodera's automated equilibration detection, and the field calls the
+    discarded transient the equilibration period -- so this is the
+    equilibrated part, not a "settled" one. The two words were doing one
+    job, and only one of them is a term a reader of the literature already
+    knows.
+    """
 
     #: Frames discarded before averaging.
     discard: int
@@ -84,6 +94,12 @@ class Settled:
             "standard_error": self.standard_error,
             "standard_deviation": self.standard_deviation,
         }
+
+
+#: The name this carried before it was matched to the method it implements.
+#: Kept as an alias rather than deleted, because a rename that breaks an
+#: import teaches nothing and costs a user an afternoon.
+Settled = Equilibrated
 
 
 def statistical_inefficiency(series: np.ndarray) -> float:
@@ -230,7 +246,7 @@ def summarise(
     series: np.ndarray,
     *,
     minimum_effective_samples: float = MINIMUM_EFFECTIVE_SAMPLES,
-) -> tuple[Settled | None, str | None]:
+) -> tuple[Equilibrated | None, str | None]:
     """A mean with an honest error on it, or a reason there is not one.
 
     The refusal is about independence, not length: a long run of highly
@@ -250,7 +266,7 @@ def summarise(
     kept = values[discard:]
     resolved = correlation_is_resolved(kept)
 
-    settled = Settled(
+    equilibrated = Equilibrated(
         discard=discard,
         inefficiency=g,
         effective_samples=effective,
@@ -269,7 +285,7 @@ def summarise(
     )
 
     if not resolved:
-        return settled, (
+        return equilibrated, (
             f"This run is not long against its own correlation time: taking "
             f"half the frames away changes the estimate, so {kept.size} frames "
             "cannot measure how correlated they are. The independent-sample "
@@ -282,7 +298,7 @@ def summarise(
         )
 
     if effective < minimum_effective_samples:
-        return settled, (
+        return equilibrated, (
             f"{effective:.1f} independent samples in {kept.size} frames "
             f"(one every {g:.0f}). Below {minimum_effective_samples:g} a mean "
             "and its error describe how this particular run happened to go "
@@ -290,4 +306,4 @@ def summarise(
             "so recording them more often will not help -- the run has to be "
             "longer."
         )
-    return settled, None
+    return equilibrated, None

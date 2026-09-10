@@ -219,7 +219,7 @@ def _order_parameters_without_hydrogens() -> Any:
     return OrderParameters().compute(_peptide(with_hydrogens=False))
 
 
-def _order_parameters_on_a_settled_run() -> Any:
+def _order_parameters_on_a_equilibrated_run() -> Any:
     from fastmdxplora.analysis.order_parameters import OrderParameters
     analysis = OrderParameters()
     analysis.compute(_peptide())
@@ -412,7 +412,7 @@ def _metadynamics_without_a_recrossing():
         centres, points=60)
 
 
-def _metadynamics_that_crossed_and_settled():
+def _metadynamics_that_crossed_and_equilibrated():
     np = _numpy()
     from fastmdxplora.simulation.metad_surface import compute_surface
 
@@ -463,8 +463,8 @@ def _a_run_too_short_for_its_own_correlation():
     # A slow drift: each half is internally consistent, the halves differ.
     series = np.linspace(0.0, 1.0, 400) + np.random.RandomState(0).normal(
         scale=0.01, size=400)
-    settled, reason = summarise(series)
-    return {"mean": None if settled is None else settled.mean,
+    equilibrated, reason = summarise(series)
+    return {"mean": None if equilibrated is None else equilibrated.mean,
             "not_a_measurement": reason}
 
 
@@ -474,8 +474,8 @@ def _a_run_long_against_its_correlation():
 
     rng = np.random.RandomState(0)
     series = 0.3 + rng.normal(scale=0.01, size=4000)
-    settled, reason = summarise(series)
-    return {"mean": None if settled is None else settled.mean,
+    equilibrated, reason = summarise(series)
+    return {"mean": None if equilibrated is None else equilibrated.mean,
             "not_a_measurement": reason}
 
 
@@ -846,8 +846,8 @@ CLEAN: list[Case] = [
          _complete_pmf, "proceeded",
          "the tail follows a free ligand's shape, so the reference is a "
          "reference"),
-    Case("order parameters on a settled peptide",
-         _order_parameters_on_a_settled_run, "proceeded",
+    Case("order parameters on an equilibrated peptide",
+         _order_parameters_on_a_equilibrated_run, "proceeded",
          "the halves agree, so the values are not qualified"),
     Case("radial distribution within the box",
          _rdf_within_the_box, "proceeded",
@@ -855,8 +855,8 @@ CLEAN: list[Case] = [
     Case("mutation named against the residue that is there",
          _mutation_that_matches, "proceeded",
          "the structure holds what the mutation says it holds"),
-    Case("metadynamics that crossed and settled",
-         _metadynamics_that_crossed_and_settled, "proceeded",
+    Case("metadynamics that crossed and equilibrated",
+         _metadynamics_that_crossed_and_equilibrated, "proceeded",
          "the system visited both basins repeatedly and the hills "
          "flattened"),
     Case("a run long against its correlation time",

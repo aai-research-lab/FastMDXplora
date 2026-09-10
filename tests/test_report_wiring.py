@@ -1469,22 +1469,22 @@ class TestConvergenceSaysWhatARunCanSupport:
             "independence that could not be measured must not count as found"
         )
 
-    def test_a_drifting_observable_is_reported_as_unsettled(self) -> None:
+    def test_a_drifting_observable_is_reported_as_still_drifting(self) -> None:
         import numpy as np
 
         from fastmdxplora.report.convergence import assess_series
 
         rng = np.random.RandomState(2)
         climbing = np.linspace(0, 5, 300) + rng.normal(scale=0.1, size=300)
-        assert not assess_series("climbing", climbing).has_settled
+        assert not assess_series("climbing", climbing).has_equilibrated
 
-    def test_a_settled_observable_is_not(self) -> None:
+    def test_an_equilibrated_observable_is_not(self) -> None:
         import numpy as np
 
         from fastmdxplora.report.convergence import assess_series
 
         rng = np.random.RandomState(3)
-        assert assess_series("flat", rng.normal(size=300)).has_settled
+        assert assess_series("flat", rng.normal(size=300)).has_equilibrated
 
     def test_a_run_that_cannot_be_interpreted_says_so_plainly(self) -> None:
         """Returning a number for everything would launder a short run into
@@ -1718,7 +1718,7 @@ class TestAShortSeriesSaysWhatItCannotJudge:
         from fastmdxplora.report.convergence import assess_series
 
         found = assess_series("potential_energy", [-490000.0, -476830.0])
-        assert found.has_settled is None
+        assert found.has_equilibrated is None
         assert not found.drift_is_measurable
 
     def test_a_long_series_still_can(self) -> None:
@@ -1727,7 +1727,7 @@ class TestAShortSeriesSaysWhatItCannotJudge:
         from fastmdxplora.report.convergence import assess_series
 
         rng = np.random.RandomState(0)
-        assert assess_series("t", 300 + rng.normal(scale=2, size=400)).has_settled
+        assert assess_series("t", 300 + rng.normal(scale=2, size=400)).has_equilibrated
 
     def test_energy_drift_needs_more_than_two_samples(self) -> None:
         """It reported ninety-four kJ/mol per ns per atom from two samples of
@@ -2059,7 +2059,7 @@ class TestTheSummarySaysWhatTheStudyWas:
 
         import inspect
         source = inspect.getsource(_what_the_run_supports)
-        assert "unjudged = total - settled - drifting" in source, (
+        assert "unjudged = total - equilibrated - drifting" in source, (
             "the three states must be exclusive or the counts do not sum")
 
 
@@ -2332,12 +2332,12 @@ class TestOneMeanPerObservable:
         assert "| measure | frames | discarded | independent" in source
 
 
-class TestSettledIsNotTheSameAsSampled:
+class TestEquilibratedIsNotTheSameAsSampled:
     """The summary said "All 5 observables assessed had settled" for a run
     whose RMSD held six independent samples and whose density held ten -- at
     or under the point where a mean stops describing the system."""
 
-    def test_a_settled_but_thinly_sampled_run_says_so(self) -> None:
+    def test_an_equilibrated_but_thinly_sampled_run_says_so(self) -> None:
         from fastmdxplora.report.document import _what_the_run_supports
 
         records = {
@@ -2354,7 +2354,7 @@ class TestSettledIsNotTheSameAsSampled:
                         return_value=records):
             said = _what_the_run_supports(Path("/nowhere"))
 
-        assert "had settled" in said
+        assert "had equilibrated" in said
         assert "too few independent samples" in said
 
     def test_a_run_that_is_both_says_neither(self) -> None:

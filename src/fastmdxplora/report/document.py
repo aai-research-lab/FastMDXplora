@@ -157,30 +157,35 @@ def _what_the_run_supports(project_root: Path) -> str | None:
         return None
 
     # The three states are exclusive, so the counts add up. A first version
-    # counted "settled" and "could not be judged" from overlapping conditions
-    # and reported three and six out of six.
+    # counted "equilibrated" and "could not be judged" from overlapping
+    # conditions and reported three and six out of six.
     total = len(records)
-    settled = sum(1 for r in records if r["settled"] is True)
-    drifting = sum(1 for r in records if r["settled"] is False)
-    unjudged = total - settled - drifting
-    # Settled and adequately sampled are different questions. A real study
-    # reported all five observables settled while two of them held six and ten
+    equilibrated = sum(
+        1 for r in records
+        if r.get("equilibrated", r.get("settled")) is True)
+    drifting = sum(
+        1 for r in records
+        if r.get("equilibrated", r.get("settled")) is False)
+    unjudged = total - equilibrated - drifting
+    # Equilibrated and adequately sampled are different questions. A real
+    # study reported all five observables equilibrated while two held six
+    # and ten
     # independent samples -- at or under the point where a mean stops
     # describing the system -- and the summary said only the first.
     thin = sum(1 for r in records if not r.get("sampled_enough", True))
 
     what = "observable" if total == 1 else "observables"
-    if settled == total and not thin:
-        return (f"All {total} {what} assessed had settled and hold enough "
-                "independent samples to average.")
-    if settled == total:
-        return (f"All {total} {what} assessed had settled, but {thin} hold "
-                "too few independent samples for the mean to describe the "
-                "system rather than this run; see Convergence.")
+    if equilibrated == total and not thin:
+        return (f"All {total} {what} assessed had equilibrated and hold "
+                "enough independent samples to average.")
+    if equilibrated == total:
+        return (f"All {total} {what} assessed had equilibrated, but {thin} "
+                "hold too few independent samples for the mean to describe "
+                "the system rather than this run; see Convergence.")
 
     parts = []
-    if settled:
-        parts.append(f"{settled} had settled")
+    if equilibrated:
+        parts.append(f"{equilibrated} had equilibrated")
     if drifting:
         parts.append(f"{drifting} had not")
     if unjudged:
@@ -564,7 +569,7 @@ def _convergence_section(project_root: Path) -> str:
     lines.append("")
     lines.append(
         "| measure | frames | discarded | independent | mean | uncertainty "
-        "| settled |"
+        "| equilibrated |"
     )
     lines.append("|---|---|---|---|---|---|---|")
     for record in assessed["observables"].values():
@@ -576,7 +581,7 @@ def _convergence_section(project_root: Path) -> str:
             + (f"{error:.3g}" if error is not None else "not enough to say")
             + " | "
             + {True: "yes", False: "no", None: "too short to say"}[
-                record["settled"]]
+                record.get("equilibrated", record.get("settled"))]
             + " |"
         )
     lines.append("")
@@ -589,7 +594,7 @@ def _convergence_section(project_root: Path) -> str:
         lines.append("")
     else:
         lines.append(
-            "Every measure settled and carries enough independent observation "
+            "Every measure equilibrated and carries enough independent observation "
             "to average. That is a statement about sampling, not about whether "
             "the force field describes the system."
         )
@@ -616,7 +621,7 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
                  if isinstance(error, (int, float)) and error == error
                  else f"{measured['mean']:.4g}")
         independent = measured.get("effective_samples")
-        said = f"Mean over the settled part of the run: {value}"
+        said = f"Mean over the equilibrated part of the run: {value}"
         if isinstance(independent, (int, float)):
             said += f", from {independent:.0f} independent samples"
         discarded = measured.get("discard")

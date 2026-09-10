@@ -126,12 +126,12 @@ class TestItDoesNotOverflowOrLieWhenItCannot:
         assert np.all(np.isfinite(weights.values))
         assert np.isfinite(weights.effective_sample_size)
 
-    def test_an_unsettled_bias_is_flagged(self) -> None:
+    def test_a_bias_that_had_not_converged_is_flagged(self) -> None:
         """The simple estimator assumes a converged bias. Weights from a
         surface still filling are approximate, and worth having and saying."""
         weights = weights_from_bias(
-            np.zeros(100), temperature_K=300.0, settled=False)
-        assert weights.settled is False
+            np.zeros(100), temperature_K=300.0, converged=False)
+        assert weights.converged is False
         assert "approximate" in weights.note
 
     def test_no_frames_is_not_an_answer(self) -> None:

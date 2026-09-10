@@ -303,7 +303,7 @@ def c_of_t(hills: Any, times_ps: np.ndarray, temperature_K: float,
     frames by when they were written: on a four-nanosecond well-tempered run
     the last fifth of the frames carried the entire weight, and a reweighted
     average over five hundred frames rested on seven. That is not a bias that
-    has not settled -- it happens to a fully converged run -- and no warning
+    has not converged -- it happens to a fully converged run -- and no warning
     about convergence covers it.
 
     Tiwary and Parrinello's c(t) is the term that removes it: the free-energy
@@ -569,20 +569,20 @@ def weights_for_run(
     offset = c_of_t(hills, times, temperature, periodic=periodic)
     corrected = felt - offset
 
-    # Whether the surface settled is already judged by the simulation phase,
+    # Whether the surface converged is already judged by the simulation phase,
     # and judging it a second time here by a different rule would let a run
     # be converged in the report and provisional in the analyses.
-    settled = False
+    converged = False
     surface = _find(output_dir, "metadynamics_surface.json")
     if surface is not None:
         try:
             record = json.loads(surface.read_text(encoding="utf-8"))
-            settled = not bool(record.get("provisional", True))
+            converged = not bool(record.get("provisional", True))
         except (OSError, json.JSONDecodeError):
-            settled = False
+            converged = False
 
     weights = weights_from_bias(
-        corrected, temperature_K=temperature, settled=settled)
+        corrected, temperature_K=temperature, converged=converged)
 
     # PLUMED computed the same quantity as it went. Comparing against it is
     # the only independent check available on this reconstruction, and a
@@ -614,7 +614,9 @@ def weights_for_run(
         "colvar_column": (cv_names[0] if hills.n_dims == 1 else cv_names),
         "temperature_K": temperature,
         "temperature_from_record": measured,
-        "settled": settled,
+        # A bias converges; `settled` is what runs already on disk carry.
+        "converged": converged,
+        "settled": converged,
         "estimator": "Tiwary-Parrinello c(t)",
         "c_of_t_range_kjmol": [float(np.min(offset)), float(np.max(offset))],
         "effective_sample_size": weights.effective_sample_size,
@@ -855,9 +857,9 @@ def reweight_results(
             f"effective frames of {n_frames}. These reweighted averages rest "
             "on that many, and the spreads beside them are correspondingly "
             "wide; a longer run is what fixes it.")
-    if not weights.settled:
+    if not weights.converged:
         warnings.append(
-            "The bias had not settled when the run ended, so these averages "
+            "The bias had not converged when the run ended, so these averages "
             "are approximate. The c(t) offset is applied and corrects the "
             "growth of the bias with time, but it is computed from a surface "
             "that is still filling, and a shape that is still moving cannot "
@@ -880,7 +882,8 @@ def reweight_results(
         "n_frames": int(n_frames),
         "effective_sample_size": weights.effective_sample_size,
         "usable_fraction": weights.usable_fraction,
-        "settled": weights.settled,
+        "converged": weights.converged,
+        "settled": weights.converged,
         "provenance": provenance,
         "quantities": quantities,
         "populations": occupancies,
@@ -920,8 +923,8 @@ def _write_table(record: dict[str, Any], path: Path) -> None:
         f"# effective_sample_size {record['effective_sample_size']:.1f} "
         f"of {record['n_frames']} frames",
     ]
-    if not record["settled"]:
-        lines.append("# provisional: the bias had not settled")
+    if not record.get("converged", record.get("settled")):
+        lines.append("# provisional: the bias had not converged")
     lines.append("# analysis raw_mean raw_std reweighted_mean "
                  "reweighted_std shift_percent")
     for item in record["quantities"]:
@@ -967,8 +970,8 @@ def _plot(record: dict[str, Any], path: Path) -> None:
 
     ess = record["effective_sample_size"]
     caption = (f"{ess:.0f} effective frames of {record['n_frames']}")
-    if not record["settled"]:
-        caption += " — provisional, the bias had not settled"
+    if not record.get("converged", record.get("settled")):
+        caption += " — provisional, the bias had not converged"
     ax.set_xlabel(f"Change from the biased average (%)\n{caption}")
 
     margin = max([abs(s) for s in shifts] + [1.0]) * 0.45

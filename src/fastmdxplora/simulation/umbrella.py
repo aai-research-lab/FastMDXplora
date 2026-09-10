@@ -78,12 +78,12 @@ class UmbrellaPlan:
     windows: tuple[Window, ...]
     collective_variable: str
     #: Steps to discard at the start of each window before it counts. A
-    #: window begins away from where it will settle, and counting that
+    #: window begins away from where it will equilibrate, and counting that
     #: approach as sampling biases the histogram towards where it started.
     #: The fraction of each window's sampling discarded before its histogram
-    #: is built. A window begins away from where it will settle and the
+    #: is built. A window begins away from where it will equilibrate and the
     #: approach is not sampling, so some must go; how much is a judgement
-    #: about how long a window takes to settle, which depends on the barrier
+    #: about how long a window takes to equilibrate, which depends on the barrier
     #: and the force constant, so it belongs to whoever is making the claim
     #: rather than to this file. A fifth is a common choice and the default.
     equilibration_fraction: float = 0.2
@@ -424,7 +424,7 @@ def collect_samples(
     The caller knows where it put things.
 
     The first part of each window is discarded. A window begins away from
-    where it will settle, and counting the approach as sampling biases the
+    where it will equilibrate, and counting the approach as sampling biases the
     histogram towards where the run started -- which is the one place the
     free energy is guaranteed not to be flat.
     """
@@ -909,7 +909,7 @@ def compute_pmf(
     # What the loop finished at, so the caller can be told. It used to run to
     # 2000 and stop with no `else`, no flag and no field in the returned
     # dict: nine stiff windows finished at 4.2e-05 against a 1e-06 tolerance
-    # and the PMF was reported as though it had settled. A number produced by
+    # and the PMF was reported as though it had equilibrated. A number produced by
     # an iteration that ran out is not the same number as one that converged,
     # and nothing said which this was.
     residual = float("inf")
@@ -1009,7 +1009,7 @@ def compute_pmf(
         "temperature_K": float(temperature_K),
         "n_windows": len(ordered),
         # Stated rather than implied. A caller reading `pmf` has no other way
-        # to tell an answer that settled from one that ran out of iterations.
+        # to tell an answer that equilibrated from one that ran out of iterations.
         "converged": converged,
         "final_residual_kjmol": None if residual == float("inf") else residual,
         "wham_tolerance_kjmol": WHAM_TOLERANCE_KJMOL,

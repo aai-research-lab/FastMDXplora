@@ -29,7 +29,7 @@ satisfies them both for the wrong reasons.
 
 That last check returns one number for the whole surface -- the largest
 movement anywhere it is judged -- which decides the verdict and says nothing
-about where the surface is solid. A run can be settled to a tenth of a kJ/mol
+about where the surface is solid. A run can be converged to a tenth of a kJ/mol
 across both its wells and moving by two at the shoulder of a barrier, and the
 single figure reports the shoulder. `convergence_band` is the same measurement
 made point by point, from several cumulative cuts through the later deposition
@@ -480,12 +480,12 @@ def convergence_band(
       landscape had changed everywhere.
     * On the mean, a change confined to one region is shared out over the whole
       grid in proportion to its size. A right-hand third that deepens by 3
-      kJ/mol lifts the settled two thirds by 1, so the wells acquire a band
+      kJ/mol lifts the converged two thirds by 1, so the wells acquire a band
       they did not earn and the ratio between the moving part and the quiet
       part is flattened towards one.
     * On the median, a region that did not move sets the reference as long as
       it is more than half the judged grid, which is what "most of the surface
-      has settled" means. Where it is not -- a run whose surface is moving
+      has converged" means. Where it is not -- a run whose surface is moving
       nearly everywhere -- the reference lands in the moving part and the band
       understates, which is the same direction as every other limitation here
       and is reported as a small band on a run whose drift check has already
@@ -551,7 +551,7 @@ def convergence_band(
             "share a single trajectory, so they cannot see how far this "
             "surface would move in an independent run, and a coordinate that "
             "stayed in one basin gives a narrow band for that reason. Read it "
-            "as whether the bias has settled at each point. Independent "
+            "as whether the bias has converged at each point. Independent "
             "replicas are the statistical error; the calibration experiment "
             "is what relates the two."
         ),
@@ -821,7 +821,7 @@ def compute_surface(
     # makes the number the worst point rather than the typical one -- and the
     # worst point is always the top of the highest barrier, estimated from a
     # handful of visits out of thousands of hills. A tripeptide's psi torsion
-    # settled to 1.2 kJ/mol within 10 of its minimum and 2.3 within 20, while
+    # converged to 1.2 kJ/mol within 10 of its minimum and 2.3 within 20, while
     # the whole-grid figure read 5.4 from a single point at the top of a 65
     # kJ/mol barrier. On that measure no steep coordinate can ever pass,
     # however well its wells are resolved: the test could not say yes to a
@@ -856,7 +856,7 @@ def compute_surface(
 
     first = float(np.mean(hills.height[:max(1, len(hills) // 20)]))
     last = float(np.mean(hills.height[-max(1, len(hills) // 20):]))
-    settled = last <= SETTLED_HEIGHT_FRACTION * first if first > 0 else False
+    converged = last <= SETTLED_HEIGHT_FRACTION * first if first > 0 else False
 
     # Between the two deepest basins, which are the states a crossing goes
     # between. Falls back to a band placed a quarter in from the extremes of
@@ -929,7 +929,7 @@ def compute_surface(
     }
 
     reasons: list[str] = []
-    if not settled:
+    if not converged:
         reasons.append(
             f"the hills are still arriving at {last:.2f} kJ/mol against "
             f"{first:.2f} at the start, so the bias is still filling the "
@@ -1073,7 +1073,7 @@ def compute_surface_2d(
 
     first = float(np.mean(hills.height[:max(1, len(hills) // 20)]))
     last = float(np.mean(hills.height[-max(1, len(hills) // 20):]))
-    settled = last <= SETTLED_HEIGHT_FRACTION * first if first > 0 else False
+    converged = last <= SETTLED_HEIGHT_FRACTION * first if first > 0 else False
 
     sampled = (None if colvar_values is None
                else np.asarray(colvar_values, dtype=float))
@@ -1182,7 +1182,7 @@ def compute_surface_2d(
                 "measurement rather than an anecdote"
             )
 
-    if not settled:
+    if not converged:
         reasons.append(
             f"the hills have not flattened: the last are {last:.3g} kJ/mol "
             f"against {first:.3g} at the start, and a bias still growing is "
@@ -1194,7 +1194,7 @@ def compute_surface_2d(
     # in a manifest nobody reads point by point, and the per-dimension bands
     # above are what a reader plots against. The two summary figures are
     # here because the marginals integrate a coordinate out, and a surface
-    # can be settled along both marginals while a corner of it is not.
+    # can be converged along both marginals while a corner of it is not.
     whole = convergence_band(
         later, judged=(surface <= DRIFT_CEILING_KJMOL), hills_at=cuts)
     whole.pop("band_kjmol", None)

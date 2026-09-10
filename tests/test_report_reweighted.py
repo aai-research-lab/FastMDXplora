@@ -102,9 +102,9 @@ class TestItSaysWhatWasNotCorrected:
         text = reweighted_section(_project(tmp_path, _record()))
         assert "dimensionality reduction is not reweighted" in text
 
-    def test_an_unsettled_bias_is_marked(self, tmp_path: Path) -> None:
+    def test_a_bias_that_had_not_converged_is_marked(self, tmp_path: Path) -> None:
         text = reweighted_section(_project(tmp_path, _record(settled=False)))
-        assert "had not settled" in text
+        assert "had not converged" in text
 
     def test_warnings_are_carried_through(self, tmp_path: Path) -> None:
         text = reweighted_section(

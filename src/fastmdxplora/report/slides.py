@@ -446,7 +446,7 @@ def _findings_bullets(project_root: Path) -> list[str]:
         value = (f"{record['mean']:.4g} ± {error:.3g}" if error is not None
                  else f"{record['mean']:.4g}")
         note = {True: "", False: " (still drifting)",
-                None: " (too short to say if settled)"}[record["settled"]]
+                None: " (too short to say if equilibrated)"}[record.get("equilibrated", record.get("settled"))]
         bullets.append(
             f"{record['observable']}: {value}"
             f"  [{record['effective_samples']:.0f} independent samples]{note}")

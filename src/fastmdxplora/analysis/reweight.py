@@ -23,7 +23,7 @@ only the hills deposited before it.
 **Well-tempered runs converge to a scaled free energy**, not to -F: the bias
 approaches -(1 - 1/gamma) F. Tiwary and Parrinello's estimator handles this
 with a time-dependent offset c(t); what is implemented here is the simpler
-form that holds once the bias has settled, and the caller is told when it has
+form that holds once the bias has converged, and the caller is told when
 not. A surface still filling gives weights that are only approximately right,
 which is worth having and worth saying.
 
@@ -60,7 +60,7 @@ class Weights:
     is the number that says whether a reweighted average means anything.
     """
 
-    settled: bool
+    converged: bool
     """Whether the bias had stopped growing when the run ended.
 
     Weights from a surface still filling are approximately right rather than
@@ -122,7 +122,7 @@ def weights_from_bias(
     bias_kjmol: np.ndarray,
     *,
     temperature_K: float = 300.0,
-    settled: bool = True,
+    converged: bool = True,
 ) -> Weights:
     """Turn a per-frame bias into weights that undo it.
 
@@ -133,7 +133,7 @@ def weights_from_bias(
     """
     bias = np.asarray(bias_kjmol, dtype=float)
     if not len(bias):
-        return Weights(np.asarray([]), 0.0, settled, "no frames")
+        return Weights(np.asarray([]), 0.0, converged, "no frames")
 
     kT = KB_KJ_PER_MOL_K * float(temperature_K)
     exponent = (bias - float(np.max(bias))) / kT
@@ -141,7 +141,7 @@ def weights_from_bias(
     total = float(np.sum(raw))
     if total <= 0 or not np.isfinite(total):
         return Weights(
-            np.ones(len(bias)), float(len(bias)), settled,
+            np.ones(len(bias)), float(len(bias)), converged,
             "the bias could not be turned into weights, so the frames are "
             "counted equally -- which is the biased average, not the "
             "unbiased one")
@@ -149,11 +149,11 @@ def weights_from_bias(
     values = raw * (len(bias) / total)
     effective = float(np.sum(values) ** 2 / np.sum(values ** 2))
     note = ""
-    if not settled:
+    if not converged:
         note = (
-            "the bias had not settled when the run ended, so these weights "
+            "the bias had not converged when the run ended, so these weights "
             "are approximate: the simple estimator assumes a converged bias")
-    return Weights(values, effective, settled, note)
+    return Weights(values, effective, converged, note)
 
 
 def weighted_mean(values: np.ndarray, weights: Weights) -> float:
@@ -298,7 +298,7 @@ def weights_for_run(
 
     first = float(np.mean(hills.height[:max(1, len(hills.height) // 20)]))
     last = float(np.mean(hills.height[-max(1, len(hills.height) // 20):]))
-    settled = bool(first > 0 and last <= SETTLED_HEIGHT_FRACTION * first)
+    converged = bool(first > 0 and last <= SETTLED_HEIGHT_FRACTION * first)
 
     return weights_from_bias(
-        bias, temperature_K=temperature_K, settled=settled)
+        bias, temperature_K=temperature_K, converged=converged)
