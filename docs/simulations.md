@@ -403,10 +403,26 @@ Windows held at different constants recombine correctly — each window's bias
 is built from its own — so the only thing to get right is the overlap, and
 half the spacing buys back what twice the stiffness costs.
 
-**How to know which windows need it.** Run the study, and read what the
-windows did rather than guessing: a window sitting well inside its centre with
-a large sustained restraint energy is being held too softly, and `k` times its
-displacement is the gradient it is losing to. That number sizes the restraint.
+**How to know which windows need it, and what to set.** Run the study. A
+window that could not be held is a measurement of the surface that beat it —
+it comes to rest where the restraint's pull matches the free energy's, so its
+displacement times its force constant is the gradient there — and the refusal
+does that arithmetic for you, per window:
+
+```
+  window   held at    sat at    needs k    at spacing
+       0    0.8966    0.8276       4286        0.0482
+       1    0.9517    0.8319      12944        0.0278
+```
+
+Both columns matter. Raising the constant and leaving the windows where they
+are trades a refusal for drift for a refusal for a gap the stiffening opened.
+
+One thing to check before believing the numbers: **a window that did not
+start at its centre is not measuring a gradient.** If the windows were not
+seeded from a pull near their own centres, fix that first — a constant sized
+from a window's starting position is sized from the wrong thing. The refusal
+says so before it shows the table.
 
 ### One system, many windows
 

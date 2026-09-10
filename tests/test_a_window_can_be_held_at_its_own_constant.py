@@ -186,3 +186,116 @@ class TestTheRecombinationUsesEachWindowsOwn:
         assert np.max(np.abs(recovered - (expected - expected.min()))) < 0.5, (
             "The well came back the wrong shape, which is what using one "
             "force constant for windows held at two would do.")
+
+
+class TestADriftedWindowSaysWhatWouldHaveHeldIt:
+    """A window that slid is a measurement of the surface it slid down.
+
+    It stops where the restraint's pull matches the free energy's, so its
+    displacement times its force constant is the gradient there -- the only
+    place an umbrella study reports the slope of the surface directly. The
+    algebra from that to a force constant is three steps, and the run has
+    every input, so it does them rather than leaving them to the reader.
+    """
+
+    def _drifted(self, sat_at):
+        from fastmdxplora.simulation.umbrella import windows_that_drifted
+
+        centres = [0.896552, 0.951724, 1.006897]
+        plan = plan_windows({"collective_variable": "distance",
+                             "centres": centres, "force_constant": 3000.0})
+        rng = np.random.default_rng(0)
+        samples = {i: s + 0.0288 * rng.standard_normal(9000)
+                   for i, s in enumerate(sat_at)}
+        return windows_that_drifted(samples, plan, 300.0)
+
+    def test_it_reports_the_gradient_it_lost_to(self):
+        """3000 kJ/mol/nm^2 times 0.12 nm is 360 kJ/mol/nm, which is what
+        the real study measured through this stretch."""
+        drifted = self._drifted([0.896552, 0.8318, 1.006897])
+
+        assert len(drifted) == 1
+        assert drifted[0]["gradient_kjmol_per_unit"] == pytest.approx(
+            360.0, rel=0.02)
+
+    def test_it_reports_the_constant_that_would_have_held_it(self):
+        """The number this study then ran at, and at which the same window
+        sat 0.06 sigma from its centre."""
+        drifted = self._drifted([0.896552, 0.8318, 1.006897])
+
+        assert drifted[0]["force_constant_that_would_hold_it"] == pytest.approx(
+            13000.0, rel=0.02)
+
+    def test_the_recommendation_is_self_consistent(self):
+        """A window at the recommended constant, against the same gradient,
+        sits exactly two sigma out -- which is what "holds it" was defined
+        as. If these two ever disagree the arithmetic has drifted.
+
+        The spacing is the same number, and that is not a coincidence worth
+        worrying about: a gradient displaces every window in a stretch by the
+        same amount, so the distance between where they actually sit is the
+        distance between their centres. Two sigma apart leaves neighbours
+        sharing about a third of their area.
+        """
+        import math
+
+        from fastmdxplora.simulation.umbrella import KB_KJ
+
+        drifted = self._drifted([0.896552, 0.8318, 1.006897])[0]
+        needed = drifted["force_constant_that_would_hold_it"]
+        would_sit = drifted["gradient_kjmol_per_unit"] / needed
+        two_sigma = 2 * math.sqrt(KB_KJ * 300.0 / needed)
+
+        assert would_sit == pytest.approx(two_sigma, rel=1e-6)
+        assert drifted["spacing_it_would_need"] == pytest.approx(two_sigma)
+
+    def test_a_window_at_its_centre_is_not_in_the_list(self):
+        assert self._drifted([0.896552, 0.951724, 1.006897]) == []
+
+
+class TestTheRefusalCarriesTheNumbers:
+
+    def _refusal(self):
+        from fastmdxplora.simulation.umbrella import compute_pmf
+
+        centres = [0.896552, 0.951724, 1.006897]
+        plan = plan_windows({"collective_variable": "distance",
+                             "centres": centres, "force_constant": 3000.0,
+                             "minimum_samples": 100})
+        rng = np.random.default_rng(0)
+        samples = {i: s + 0.0288 * rng.standard_normal(9000)
+                   for i, s in enumerate([0.8281, 0.8318, 1.0069])}
+        return compute_pmf(samples, plan, temperature_K=300.0)["refused"]
+
+    def test_it_names_a_force_constant(self):
+        """Rather than "hold them harder", which is what it used to say and
+        which leaves the reader to do the algebra this run has the inputs
+        for."""
+        refused = self._refusal()
+
+        assert "needs k" in refused
+        assert "12" in refused or "13" in refused
+
+    def test_it_says_the_spacing_has_to_change_too(self):
+        """The half of the answer that is easy to miss. A stiffer window is
+        a narrower one, so raising the constant alone trades a refusal for
+        drift for a refusal for a gap the stiffening opened."""
+        refused = self._refusal()
+
+        assert "at spacing" in refused
+        assert "not optional" in refused
+
+    def test_it_says_both_settings_take_a_list(self):
+        """Otherwise the reader has the numbers and no way to write them."""
+        refused = self._refusal()
+
+        assert "`force_constant` and `centres` both take a list" in refused
+
+    def test_it_still_says_to_check_the_seeding_first(self):
+        """A window that began somewhere else is not measuring a gradient,
+        and a force constant sized from its displacement would be sized from
+        a starting position."""
+        refused = self._refusal()
+
+        assert "seed them from a steered run" in refused
+        assert refused.index("seed them") < refused.index("needs k")

@@ -1279,8 +1279,11 @@ class TestAWindowThatIsNotWhereItWasHeld:
         refused = compute_pmf(self._sampled(plan, where, 0.03), plan, bootstrap_resamples=0)["refused"]
 
         assert "larger `force_constant`" in refused
-        assert "A softer one will make this worse." in refused
+        assert "A softer one will make this worse" in refused
         assert "or a softer force constant so each wanders further" not in refused
+        # And it names one, rather than leaving the reader to size it.
+        assert "needs k" in refused
+        assert "at spacing" in refused
 
     def test_a_genuine_gap_still_gets_the_advice_for_a_genuine_gap(self) -> None:
         """Windows on their centres that simply do not reach each other want
@@ -1377,6 +1380,7 @@ class TestARunTooShortToJudge:
         refused = compute_pmf(self._sampled(plan, 4000, where), plan, bootstrap_resamples=0)["refused"]
 
         assert "larger `force_constant`" in refused
+        assert "needs k" in refused
         assert "Sample for longer first" not in refused
 
     def test_the_threshold_belongs_to_the_study(self) -> None:

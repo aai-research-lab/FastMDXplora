@@ -28,6 +28,7 @@ where it will sit.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -606,7 +607,8 @@ def overlap_between(a: np.ndarray, b: np.ndarray, bins: int = 50) -> float:
 
 
 def windows_that_drifted(
-    samples: dict[int, np.ndarray], plan: "UmbrellaPlan"
+    samples: dict[int, np.ndarray], plan: "UmbrellaPlan",
+    temperature_K: float = 300.0,
 ) -> list[dict[str, Any]]:
     """Windows whose sampling is not where the restraint was told to hold it.
 
@@ -668,8 +670,94 @@ def windows_that_drifted(
                 "centre": window.centre,
                 "sampled_at": sat_at,
                 "away_by": away,
+                "force_constant": window.force_constant,
+                **_what_would_hold_it(window.force_constant, away,
+                                      temperature_K),
             })
     return drifted
+
+
+def _how_hard_they_needed_holding(drifted: list[dict[str, Any]]) -> str:
+    """The two numbers a drifted window is asking for, said as a table.
+
+    Every window that slid is a measurement of the surface it slid down, and
+    of what it would have taken to stay. Working that out by hand -- balance
+    the forces, invert the hold condition, remember that sigma moves too --
+    is three steps of algebra that the run has all the inputs for. It does
+    them here so the answer to "what force constant should I use, and where"
+    is in the refusal rather than in the reader.
+    """
+    rows = [
+        "  window   held at    sat at    needs k    at spacing",
+    ]
+    for entry in drifted:
+        needed = entry.get("force_constant_that_would_hold_it")
+        spacing = entry.get("spacing_it_would_need")
+        if needed is None or spacing is None:
+            continue
+        rows.append(
+            f"  {entry['window']:>6d}  {entry['centre']:8.4f}  "
+            f"{entry['sampled_at']:8.4f}  {needed:9.0f}  {spacing:12.4f}"
+        )
+    stiffest = max(
+        (d.get("force_constant_that_would_hold_it") or 0.0) for d in drifted)
+    closest = min(
+        (d.get("spacing_it_would_need") or float("inf")) for d in drifted)
+    return "\n".join(rows) + (
+        "\n\n"
+        "`needs k` is a larger `force_constant` than this study used, and it "
+        "comes from where each window came to rest: a window stops where the "
+        "restraint's pull matches the surface's, so its displacement times "
+        "its force constant is the gradient it lost to, and a restraint "
+        "holds within two sigma of a gradient of 2*sqrt(k*kT). A softer one "
+        "will make this worse -- it is the remedy for windows that never "
+        "reach each other, and these have gone somewhere else.\n\n"
+        "`at spacing` is not optional. Sigma falls as sqrt(kT/k), so a "
+        "stiffer window is a narrower one -- raising the constant and "
+        "leaving the windows where they are trades this refusal for a gap "
+        f"the stiffening opened. Holding these at {stiffest:.0f} means "
+        f"putting windows {closest:.4f} apart through the stretch they are "
+        "in.\n\n"
+        "`force_constant` and `centres` both take a list, one entry per "
+        "window, so the steep stretch can be stiff and close while the rest "
+        "of the coordinate stays as it is. Windows held at different "
+        "constants recombine correctly: each window's bias is built from its "
+        "own."
+    )
+
+
+def _what_would_hold_it(force_constant: float, away_by: float,
+                        temperature_K: float = 300.0) -> dict[str, float]:
+    """How stiff this window needed to be, and how close its neighbours.
+
+    A window comes to rest where the restraint's pull matches the free
+    energy's, so a window that stopped `away_by` from its centre is losing to
+    a gradient of about ``k * away_by`` there. That is a measurement, not a
+    guess: it is the only thing in an umbrella study that reports the slope
+    of the surface directly.
+
+    A restraint holds within two sigma of its centre against a gradient of
+    ``2*sqrt(k*kT)``, so the constant that would have held this window is
+    that inverted -- ``(k * away_by)^2 / (4 kT)``. On C1d's window at 0.9517,
+    3000 kJ/mol/nm^2 and a displacement of 0.1199 nm gave 360 kJ/mol/nm and
+    asked for 13000; run at 13000 the same window sat 0.06 sigma from its
+    centre.
+
+    The spacing matters as much and is easier to forget. Sigma falls as
+    ``sqrt(kT/k)``, so a stiffer window is a narrower one: raising the
+    constant without closing the gaps trades a study that refuses for drift
+    for a study that refuses for a gap the stiffening opened. Two sigma at
+    the new constant is what keeps roughly a third of two neighbours' area
+    shared, which is what a spacing of two sigma gives.
+    """
+    kT = KB_KJ * float(temperature_K)
+    gradient = float(force_constant) * float(away_by)
+    needed = gradient ** 2 / (4.0 * kT)
+    return {
+        "gradient_kjmol_per_unit": gradient,
+        "force_constant_that_would_hold_it": needed,
+        "spacing_it_would_need": 2.0 * math.sqrt(kT / needed),
+    }
 
 
 def windows_with_too_little_sampling(
@@ -901,7 +989,7 @@ def compute_pmf(
         if shared < minimum_overlap:
             gaps.append((left, right, shared))
 
-    drifted = windows_that_drifted(samples, plan)
+    drifted = windows_that_drifted(samples, plan, temperature_K)
     thin = windows_with_too_little_sampling(samples, plan)
 
     if thin:
@@ -975,10 +1063,12 @@ def compute_pmf(
                 "lost its window leaves the ground between them unvisited "
                 "however many more are added.\n\n"
                 "Windows started from one structure are strained at the far "
-                "end of the range and relax back towards the bound state. "
-                "Seed each window from a steered run near its own centre, or "
-                "hold them harder with a larger `force_constant`. A softer "
-                "one will make this worse."
+                "end of the range and relax back towards the bound state, so "
+                "the first thing to check is where each window began: seed "
+                "them from a steered run near their own centres. Where they "
+                "did begin there and still slid, the surface is steeper than "
+                "the restraint, and each window measured how much:\n\n"
+                + _how_hard_they_needed_holding(drifted)
             )
         else:
             reason += (
