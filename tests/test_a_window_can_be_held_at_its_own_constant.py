@@ -220,34 +220,69 @@ class TestADriftedWindowSaysWhatWouldHaveHeldIt:
 
     def test_it_reports_the_constant_that_would_have_held_it(self):
         """The number this study then ran at, and at which the same window
-        sat 0.06 sigma from its centre."""
+        sat 0.06 sigma from its centre.
+
+        The windows here are 0.0552 nm apart, so the gate is 0.0276, and
+        3000 x 0.1199 / 0.0276 is 13030 -- which is the 13000 the next study
+        used. The recommendation is checked against the run that took it.
+        """
         drifted = self._drifted([0.896552, 0.8318, 1.006897])
 
         assert drifted[0]["force_constant_that_would_hold_it"] == pytest.approx(
             13000.0, rel=0.02)
 
-    def test_the_recommendation_is_self_consistent(self):
+    def test_the_recommendation_is_sized_against_the_gate_that_failed(self):
         """A window at the recommended constant, against the same gradient,
-        sits exactly two sigma out -- which is what "holds it" was defined
-        as. If these two ever disagree the arithmetic has drifted.
+        comes to rest exactly at the gate it broke. That is the definition
+        the flag uses, so it is the one the remedy has to answer.
 
-        The spacing is the same number, and that is not a coincidence worth
-        worrying about: a gradient displaces every window in a stretch by the
-        same amount, so the distance between where they actually sit is the
-        distance between their centres. Two sigma apart leaves neighbours
-        sharing about a third of their area.
+        The first version sized to two sigma instead. Two sigma is a looser
+        test wherever windows sit closer than four sigma apart, and on a
+        study 0.06 nm apart at 3000 it returned 1584 -- softer than the
+        constant that had just failed, printed under advice to hold the
+        windows harder.
         """
-        import math
-
-        from fastmdxplora.simulation.umbrella import KB_KJ
+        centres = [0.896552, 0.951724, 1.006897]
+        allowed = 0.5 * (centres[1] - centres[0])
 
         drifted = self._drifted([0.896552, 0.8318, 1.006897])[0]
         needed = drifted["force_constant_that_would_hold_it"]
         would_sit = drifted["gradient_kjmol_per_unit"] / needed
-        two_sigma = 2 * math.sqrt(KB_KJ * 300.0 / needed)
 
-        assert would_sit == pytest.approx(two_sigma, rel=1e-6)
-        assert drifted["spacing_it_would_need"] == pytest.approx(two_sigma)
+        assert would_sit == pytest.approx(allowed, rel=1e-6)
+
+    def test_it_never_recommends_a_softer_constant(self):
+        """The whole point of the advice is to hold the window harder.
+
+        A window 0.042 nm off centre at 3000, with windows 0.06 nm apart,
+        is inside two sigma and outside the gate -- the case the old
+        arithmetic answered with 1584.
+        """
+        from fastmdxplora.simulation.umbrella import _what_would_hold_it
+
+        answer = _what_would_hold_it(3000.0, 0.0419, 0.030)
+
+        assert answer["force_constant_that_would_hold_it"] > 3000.0
+        assert answer["force_constant_that_would_hold_it"] == pytest.approx(
+            4190.0, rel=0.01)
+
+    def test_the_spacing_keeps_the_neighbours_overlapping(self):
+        """Two and a half sigma at the new constant, which leaves about a
+        fifth of two histograms shared. Recommending a stiffer window without
+        closing the gaps trades this refusal for a gap the stiffening made."""
+        import math
+
+        from fastmdxplora.simulation.umbrella import (
+            KB_KJ, _what_would_hold_it)
+
+        answer = _what_would_hold_it(3000.0, 0.1199, 0.0276)
+        needed = answer["force_constant_that_would_hold_it"]
+
+        assert answer["spacing_it_would_need"] == pytest.approx(
+            2.5 * math.sqrt(KB_KJ * 300.0 / needed))
+        # The design the next study actually ran.
+        assert answer["spacing_it_would_need"] == pytest.approx(0.0346,
+                                                                abs=5e-4)
 
     def test_a_window_at_its_centre_is_not_in_the_list(self):
         assert self._drifted([0.896552, 0.951724, 1.006897]) == []

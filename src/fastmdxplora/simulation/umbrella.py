@@ -672,7 +672,7 @@ def windows_that_drifted(
                 "away_by": away,
                 "force_constant": window.force_constant,
                 **_what_would_hold_it(window.force_constant, away,
-                                      temperature_K),
+                                      allowed, temperature_K),
             })
     return drifted
 
@@ -708,10 +708,13 @@ def _how_hard_they_needed_holding(drifted: list[dict[str, Any]]) -> str:
         "`needs k` is a larger `force_constant` than this study used, and it "
         "comes from where each window came to rest: a window stops where the "
         "restraint's pull matches the surface's, so its displacement times "
-        "its force constant is the gradient it lost to, and a restraint "
-        "holds within two sigma of a gradient of 2*sqrt(k*kT). A softer one "
-        "will make this worse -- it is the remedy for windows that never "
-        "reach each other, and these have gone somewhere else.\n\n"
+        "its force constant is the gradient it lost to, and the constant "
+        "that holds it against that gradient inside the gate above is that "
+        "gradient divided by the gate. A softer one will make this worse -- "
+        "it is the remedy for windows that never reach each other, and these "
+        "have gone somewhere else. Both columns are upper bounds where the "
+        "surface steepens inward, because the gradient is measured where the "
+        "window stopped rather than at its centre.\n\n"
         "`at spacing` is not optional. Sigma falls as sqrt(kT/k), so a "
         "stiffer window is a narrower one -- raising the constant and "
         "leaving the windows where they are trades this refusal for a gap "
@@ -727,6 +730,7 @@ def _how_hard_they_needed_holding(drifted: list[dict[str, Any]]) -> str:
 
 
 def _what_would_hold_it(force_constant: float, away_by: float,
+                        allowed: float,
                         temperature_K: float = 300.0) -> dict[str, float]:
     """How stiff this window needed to be, and how close its neighbours.
 
@@ -736,27 +740,42 @@ def _what_would_hold_it(force_constant: float, away_by: float,
     guess: it is the only thing in an umbrella study that reports the slope
     of the surface directly.
 
-    A restraint holds within two sigma of its centre against a gradient of
-    ``2*sqrt(k*kT)``, so the constant that would have held this window is
-    that inverted -- ``(k * away_by)^2 / (4 kT)``. On C1d's window at 0.9517,
-    3000 kJ/mol/nm^2 and a displacement of 0.1199 nm gave 360 kJ/mol/nm and
-    asked for 13000; run at 13000 the same window sat 0.06 sigma from its
-    centre.
+    The constant is then sized against the test the window actually failed.
+    A window is flagged for sampling further from its centre than `allowed`
+    -- half the distance to its nearest neighbour, because beyond that it is
+    sampling where another window was supposed to be -- so the constant that
+    would have held it is ``k * away_by / allowed``, the one whose pull
+    balances the same gradient at the edge of the gate rather than beyond it.
+
+    The first version of this sized against two sigma instead, which is a
+    different and looser test wherever windows sit closer together than four
+    sigma. On a study whose windows were 0.06 nm apart at 3000 kJ/mol/nm^2 it
+    returned 1584 -- *softer* than the constant that had just failed, printed
+    under advice to hold the windows harder. Sizing against the gate gives
+    13033 on the study that went on to run at 13000 and hold every window
+    inside 0.3 sigma, so the number it returns is the one that worked.
 
     The spacing matters as much and is easier to forget. Sigma falls as
     ``sqrt(kT/k)``, so a stiffer window is a narrower one: raising the
     constant without closing the gaps trades a study that refuses for drift
-    for a study that refuses for a gap the stiffening opened. Two sigma at
-    the new constant is what keeps roughly a third of two neighbours' area
-    shared, which is what a spacing of two sigma gives.
+    for a study that refuses for a gap the stiffening opened. Two and a half
+    sigma at the new constant leaves neighbours sharing about a fifth of
+    their area.
+
+    Both numbers are upper bounds where the surface steepens inward, because
+    the gradient is measured where the window came to rest rather than at its
+    centre, and a window that slid inward slid towards the steeper part.
     """
     kT = KB_KJ * float(temperature_K)
     gradient = float(force_constant) * float(away_by)
-    needed = gradient ** 2 / (4.0 * kT)
+    # `away_by > allowed` is what being in this list means, so this is always
+    # stiffer than the constant that failed. Guarded anyway: advice to hold a
+    # window harder must never carry a smaller number than the one in use.
+    needed = max(float(force_constant), gradient / float(allowed))
     return {
         "gradient_kjmol_per_unit": gradient,
         "force_constant_that_would_hold_it": needed,
-        "spacing_it_would_need": 2.0 * math.sqrt(kT / needed),
+        "spacing_it_would_need": 2.5 * math.sqrt(kT / needed),
     }
 
 
