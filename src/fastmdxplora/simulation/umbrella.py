@@ -807,11 +807,12 @@ def design_from_a_pilot(
 
     The design checks itself before returning: `predicted` carries, for every
     window it proposes, where that window would come to rest, how much of its
-    gate that uses, and the area it would share with its neighbour. That last
-    number is why the spacing widens by only a quarter at a time: a window is
-    held for the nearer of its two neighbours, so one placed beside a much
-    finer stretch is held much harder, comes out much narrower, and the pair
-    between them overlaps at the narrow one's width rather than at its own.
+    gate that uses, and the area it would share with its neighbour. Two
+    rules in the placing exist to keep that last number near the 0.21 the
+    design aims at, both because a window is held for whatever is steepest
+    around it while a pair overlaps at the narrower of the two: the spacing
+    widens by only a quarter at a time, and each step is sized by the ground
+    on both sides of it rather than by what lies ahead alone.
     """
     kT = KB_KJ * float(temperature_K)
     if not 0.0 < float(gate_used) <= 1.0:
@@ -917,8 +918,16 @@ def design_from_a_pilot(
         # at the point it starts from -- and shortening it changes the ground
         # it crosses, so the two are settled together.
         for _ in range(4):
+            # Behind as well as ahead. Overlap is a property of a pair, and
+            # the window now being placed was itself sized by the ground it
+            # sits on -- so coming down off a barrier, where the slope ahead
+            # is gentle and the window behind is stiff and narrow, a step
+            # sized only by what is in front leaves the pair sharing the
+            # narrow one's width.
+            behind = last_step if last_step is not None else step
             shorter = min(coarsest, 3.125 * gate_used * kT
-                          / max(steepest_over(x, x + step), 1e-9))
+                          / max(steepest_over(max(x - behind, start),
+                                              x + 1.5 * step), 1e-9))
             if shorter >= step - 1e-12:
                 break
             step = shorter

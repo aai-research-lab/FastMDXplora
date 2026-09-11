@@ -342,29 +342,39 @@ class TestTheDesignChecksItselfBeforeItIsRun:
             assert design["worst_predicted_overlap"] > plan.minimum_overlap, (
                 f"gate_used={gate_used} opened a gap")
 
-    def test_a_surface_that_flattens_quickly_still_leaves_them_overlapping(
-            self):
-        """Where the spacing may widen in one move, the window beside the
-        finer stretch is held for its nearer neighbour -- much harder than
-        the window after it -- and the pair between them overlaps at the
-        narrower one's width rather than at its own.
+    @pytest.mark.parametrize("shape,gradient", [
+        ("flat", lambda x: 5.0),
+        ("a narrow barrier", lambda x: 5.0 + 295.0 * math.exp(
+            -((x - 0.70) / 0.03) ** 2)),
+        ("a broad barrier", lambda x: 5.0 + 295.0 * math.exp(
+            -((x - 0.70) / 0.06) ** 2)),
+        ("a climb", lambda x: 5.0 + 795.0 / (
+            1.0 + math.exp(-(x - 0.80) / 0.02))),
+        ("a descent", lambda x: 5.0 + 795.0 / (
+            1.0 + math.exp((x - 0.60) / 0.02))),
+    ])
+    def test_the_thinnest_pair_lands_near_the_target_whatever_the_shape(
+            self, shape, gradient):
+        """A design placing windows at two and a half sigma aims at 0.21,
+        which is what two such neighbours share. Holding near that on a
+        surface that changes steepness takes sizing each step by the ground
+        on both sides of it: a window is held for whatever is steepest around
+        it, and a pair overlaps at the narrower of the two.
 
-        The design aims at 0.21, which is what two windows two and a half
-        sigma apart share. On this surface, letting the spacing widen in one
-        move takes the thinnest pair to 0.145, and on a real study's windows
-        to 0.108; widening by a quarter at a time holds it at 0.166.
+        Sized by the ground ahead alone, these five shapes came back at
+        0.247, 0.194, 0.166, 0.212 and 0.157, and a real study's windows at
+        0.137. Sized by both sides: 0.247, 0.228, 0.223, 0.183 and 0.185 --
+        the worst case moves from two thirds of the target to seven eighths
+        of it, at the cost of two or three windows.
         """
         drawn, plan = a_pilot(
             centres=[0.40, 0.52, 0.64, 0.76, 0.88, 1.00],
-            force_constant=3000.0,
-            gradient=lambda x: 5.0 + 295.0 * math.exp(
-                -((x - 0.70) / 0.06) ** 2),
-            spread=1e-6,
+            force_constant=3000.0, gradient=gradient, spread=1e-6,
         )
 
         design = design_from_a_pilot(drawn, plan)
 
-        assert design["worst_predicted_overlap"] > 0.15
+        assert design["worst_predicted_overlap"] > 0.18, shape
 
     def test_the_predicted_overlap_is_what_the_study_would_measure(self):
         """`overlap_between` is the area of two histograms; the prediction is
