@@ -396,3 +396,65 @@ class TestAStudyThatPassesStillSaysWhatItsWindowsDid:
         result = self._all_slid_to_the_same_place()
 
         assert "thin" in result
+
+
+class TestTheRecombinationIsGivenRoomToFinish:
+    """The iteration ceiling was 2000, and a real study needed 4838.
+
+    Direct WHAM converges linearly and how many passes that takes grows with
+    the number of windows and the range they span. A thirty-six window study
+    of a ligand leaving a pocket stopped at a residual of about 1e-3 and
+    recorded `converged: false` -- on a free energy whose remaining movement
+    was five ten-thousandths of a kT, in a solve that takes under a second.
+    The ceiling was buying nothing and costing the one field that says
+    whether the answer is finished.
+    """
+
+    def _a_study_of(self, n_windows):
+        from fastmdxplora.simulation.umbrella import KB_KJ, compute_pmf
+
+        kT = KB_KJ * 300.0
+        centres = list(np.linspace(0.40, 2.00, n_windows))
+        forces = [3000.0] * n_windows
+        plan = plan_windows({"collective_variable": "distance",
+                             "centres": centres, "force_constant": forces,
+                             "minimum_samples": 100})
+        rng = np.random.default_rng(4)
+
+        def surface(x):
+            return (-28 * np.exp(-((x - 0.45) / 0.13) ** 2)
+                    + 9 * np.exp(-((x - 0.93) / 0.09) ** 2)
+                    - 2 * kT * np.log(np.clip(x, 0.05, None)))
+
+        samples = {}
+        for index, (centre, k) in enumerate(zip(centres, forces)):
+            grid = np.linspace(centre - 0.14, centre + 0.14, 3001)
+            weight = np.exp(-(surface(grid) + 0.5 * k * (grid - centre) ** 2)
+                            / kT)
+            samples[index] = rng.choice(grid, size=8000,
+                                        p=weight / weight.sum())
+        return compute_pmf(samples, plan, temperature_K=300.0,
+                           bootstrap_resamples=0)
+
+    def test_a_study_with_many_windows_converges(self):
+        """The case that did not, at the old ceiling."""
+        result = self._a_study_of(36)
+
+        assert result["refused"] is None, result["refused"]
+        assert result["converged"] is True
+        assert result["final_residual_kjmol"] < 1e-6
+
+    def test_it_reports_how_many_passes_it_took(self):
+        """A study needing tens of thousands is saying something about its
+        conditioning that a bare `converged: true` hides."""
+        result = self._a_study_of(36)
+
+        assert result["wham_iterations"] > 1
+        assert result["wham_iterations"] < 100_000
+
+    def test_the_ceiling_is_well_clear_of_what_a_real_study_needs(self):
+        """So that reaching it means the iteration is not converging, rather
+        than that it ran out of room."""
+        from fastmdxplora.simulation.umbrella import WHAM_MAX_ITERATIONS
+
+        assert WHAM_MAX_ITERATIONS >= 20 * 4838

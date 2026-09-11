@@ -958,8 +958,19 @@ def displacement(values: Any, centre: float, periodic: bool) -> np.ndarray:
 #: finished at is reported rather than assumed.
 WHAM_TOLERANCE_KJMOL = 1e-6
 
-#: Iterations before the loop gives up and says so.
-WHAM_MAX_ITERATIONS = 2000
+#: How many self-consistent passes the recombination may take before it
+#: gives up. Direct WHAM iteration converges linearly, and how many passes
+#: that needs grows with the number of windows and the range they span: a
+#: thirty-six window study of a ligand leaving a pocket reaches 1e-4 in 1640
+#: passes, 1e-5 in 3238, and the 1e-6 above in 4838.
+#:
+#: This was 2000, which stopped that study at a residual of about 1e-3 and
+#: recorded `converged: false` on a free energy whose remaining movement was
+#: five ten-thousandths of a kT. The whole solve takes under a second, so the
+#: ceiling was buying nothing and costing the one field that says whether the
+#: answer is finished. It is now high enough that reaching it means the
+#: iteration is not converging rather than that it ran out of room.
+WHAM_MAX_ITERATIONS = 100_000
 
 
 def compute_pmf(
@@ -1147,7 +1158,9 @@ def compute_pmf(
     # and nothing said which this was.
     residual = float("inf")
     converged = False
+    passes = 0
     for _ in range(WHAM_MAX_ITERATIONS):
+        passes += 1
         weights = np.exp((free_energies[:, None] - bias) / kT)
         denominator = (n_per_window[:, None] * weights).sum(axis=0)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -1272,4 +1285,8 @@ def compute_pmf(
         "converged": converged,
         "final_residual_kjmol": None if residual == float("inf") else residual,
         "wham_tolerance_kjmol": WHAM_TOLERANCE_KJMOL,
+        # How hard it was, not only whether it finished. A study needing tens
+        # of thousands of passes is saying something about its conditioning
+        # that a bare `converged: true` hides.
+        "wham_iterations": int(passes),
     }
