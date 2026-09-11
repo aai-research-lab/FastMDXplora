@@ -53,7 +53,7 @@ def detect_ligand_format(ligand_file: str | Path) -> str:
             f"Unsupported ligand format {ext!r} for {ligand_file!r}. "
             f"Use one of: {supported}. (A ligand embedded in a PDB lacks the "
             f"bond/charge information OpenFF needs; export it to SDF/MOL2.)"
-        )
+        , code="setup.ligand.format_unsupported", given=ext, permitted=list(SUPPORTED_LIGAND_FORMATS))
     return ext
 
 
@@ -76,7 +76,7 @@ def _import_openff() -> Any:
             "openmmforcefields\n\n"
             "Or install FastMDXplora itself from conda-forge, which brings "
             "the whole ligand path with it."
-        ) from exc
+        , code="environment.backend.missing", packages=["openff-toolkit"]) from exc
     return Molecule
 
 
@@ -110,7 +110,7 @@ def pose_by_policy(molecule: Any, structure: str | Path, resname: str,
             f"ligand_pose: unknown policy {policy!r}; expected one of "
             f"{', '.join(POSE_POLICIES)}. `auto` takes the pose from the "
             "structure where it holds the residue and from the file where "
-            "it does not; `structure` and `file` insist on one side.")
+            "it does not; `structure` and `file` insist on one side.", code="setup.ligand.pose_unavailable", policy=policy)
     if chosen == "file":
         return molecule, (
             f"the supplied file's pose stands for {resname} by request "
@@ -305,7 +305,7 @@ def load_ligand(
                 f"    curl -O https://files.rcsb.org/ligands/download/"
                 f"{given.upper()}_ideal.sdf"
             )
-        raise LigandError(f"Ligand file not found: {path}")
+        raise LigandError(f"Ligand file not found: {path}", code="setup.ligand.unreadable", path=str(path))
     detect_ligand_format(path)
 
     Molecule = _import_openff()
@@ -315,7 +315,7 @@ def load_ligand(
         raise LigandError(
             f"Could not read ligand {path.name!r} as a valid molecule: {exc}. "
             f"Ensure the SDF/MOL2 has explicit hydrogens and bond orders."
-        ) from exc
+        , code="setup.ligand.unreadable", path=str(path)) from exc
 
     # Molecule.from_file may return a list when the file holds multiple
     # molecules; we parameterize a single ligand for now (the config is
@@ -326,7 +326,7 @@ def load_ligand(
                 f"Ligand file {path.name!r} contains {len(molecule)} "
                 f"molecules; provide a single-molecule SDF/MOL2 (multi-ligand "
                 f"support is not yet implemented)."
-            )
+            , code="setup.ligand.multiple_molecules", path=str(path), count=len(molecule))
         molecule = molecule[0]
 
     molecule.name = name
@@ -355,7 +355,7 @@ def load_ligand(
             "not the Chemical Component Dictionary's ideal form, which is "
             "drawn neutral), or drop `ligand_net_charge` and let the file "
             "speak for itself."
-        )
+        , code="setup.chemistry.charge_contradicted", resname=name, stated=net_charge)
     resolved_charge = net_charge if net_charge is not None else inferred
     logger.info(
         "Loaded ligand %s from %s (net charge=%s, taken from the file's own "

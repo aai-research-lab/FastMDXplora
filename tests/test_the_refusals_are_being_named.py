@@ -43,7 +43,7 @@ FORWARDERS = frozenset({"_rewrapped"})
 #: The floor. Raise it when the number rises; never lower it. Left a little
 #: below the measured value so an unrelated refactor that adds one raise
 #: site does not fail an unrelated branch.
-CODED_FRACTION_FLOOR = 0.15
+CODED_FRACTION_FLOOR = 0.24
 
 
 def _raise_sites() -> list[tuple[pathlib.Path, int, str, bool]]:

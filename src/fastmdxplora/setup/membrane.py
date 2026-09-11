@@ -29,6 +29,7 @@ mistake that runs to completion.
 from __future__ import annotations
 
 from typing import Any
+from fastmdxplora.refusals import StudyError
 
 __all__ = [
     "LIPIDS",
@@ -96,18 +97,18 @@ def membrane_forcefield_files(existing: list[str], lipid: str = "POPC") -> list[
 
                 ForceField(*candidate)
             except Exception as exc:  # noqa: BLE001
-                raise ValueError(
+                raise StudyError(
                     f"Adding {parameters} for the {lipid} bilayer did not "
                     f"work: {exc}"
-                ) from exc
+                , code="setup.membrane.lipid_unparameterized", lipid=lipid) from exc
             return candidate
 
-    raise ValueError(
+    raise StudyError(
         f"A {lipid} bilayer needs lipid parameters, and the force field files "
         f"given carry none: {', '.join(files)}. The amber14 and charmm36 "
         "families both have them; if you are using another, add its lipid "
         "parameter file to `force_field` yourself."
-    )
+    , code="setup.membrane.lipid_unparameterized", lipid=lipid)
 
 
 def check_orientation(topology: Any, positions: Any) -> str | None:
