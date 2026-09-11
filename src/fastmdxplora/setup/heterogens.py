@@ -28,6 +28,7 @@ from enum import Enum
 from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("setup.heterogens")
 
@@ -214,12 +215,14 @@ class Decision:
         return self.resname.strip().upper() in ION_NAMES
 
 
-class AmbiguousStructureError(RuntimeError):
+class AmbiguousStructureError(CodedError, RuntimeError):
     """The structure does not determine what should be simulated.
 
     Raised rather than resolved, so that no trajectory is ever produced from
     a guess about what the depositors meant.
     """
+
+    default_code = "setup.structure.undetermined"
 
 
 def _standard_residues() -> frozenset[str]:

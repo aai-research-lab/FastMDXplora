@@ -24,6 +24,7 @@ import mdtraj as md
 import numpy as np
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("analysis.loading")
 
@@ -63,8 +64,10 @@ PathLike = Union[str, Path]
 TrajectoryInput = Union[PathLike, Sequence[PathLike]]
 
 
-class TrajectoryLoadError(ValueError):
+class TrajectoryLoadError(CodedError, ValueError):
     """Raised when a trajectory cannot be located, opened, or parsed."""
+
+    default_code = "analysis.trajectory.unreadable"
 
 
 def _resolve_paths(traj: TrajectoryInput) -> list[Path]:

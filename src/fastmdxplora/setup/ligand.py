@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     pass
@@ -33,7 +34,7 @@ logger = get_logger("setup.ligand")
 SUPPORTED_LIGAND_FORMATS = ("sdf", "mol2")
 
 
-class LigandError(Exception):
+class LigandError(CodedError, Exception):
     """Raised for ligand input problems (format, missing file, charge, deps)."""
 
 

@@ -35,10 +35,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fastmdxplora.config.schema import PHASE_KEYS
+from fastmdxplora.refusals import CodedError
 
 
-class SweepError(ValueError):
+class SweepError(CodedError, ValueError):
     """Raised for malformed systems/sweep specifications."""
+
+    default_code = "batch.sweep.invalid"
 
 
 # A safe slug for run-directory names: keep alnum, dot, plus, minus.

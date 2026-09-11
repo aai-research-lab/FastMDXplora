@@ -25,11 +25,12 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("simulation.plumed")
 
 
-class PlumedError(RuntimeError):
+class PlumedError(CodedError, RuntimeError):
     """Raised for PLUMED configuration or environment problems."""
 
 

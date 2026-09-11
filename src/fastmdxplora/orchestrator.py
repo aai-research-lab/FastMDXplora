@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import refusal_of
 
 logger = get_logger("project")
 
@@ -48,6 +49,19 @@ class PhaseResult:
     finished_at: str = ""
     message: str = ""
     artifacts: list[str] = field(default_factory=list)
+    refusal: dict[str, Any] = field(default_factory=dict)
+    """What this phase refused, as a record rather than as a sentence.
+
+    Present on an errored phase, empty otherwise. ``message`` holds the
+    prose and always did; this holds the same fact in the form a program
+    can branch on -- the stable code, its kind, whether it is worth
+    retrying, and the particulars the sentence interpolated.
+
+    Written into the manifest, so a reader opening the run afterwards
+    sees what an in-process caller saw. A refusal is a result, and a
+    study that stopped should record why it stopped in the same place it
+    would have recorded what it found.
+    """
     produced_by: dict[str, Any] = field(default_factory=dict)
     """Version, host and package environment that produced *this* phase.
 
@@ -73,6 +87,8 @@ class PhaseResult:
             "message": self.message,
             "artifacts": self.artifacts,
         }
+        if self.refusal:
+            record["refusal"] = self.refusal
         if self.produced_by:
             record["produced_by"] = self.produced_by
         return record
@@ -892,6 +908,12 @@ class FastMDXplora:
                 started_at=started,
                 finished_at=finished,
                 message=str(exc),
+                # Total by construction: an exception from a raise site that
+                # has not been coded yet, or from a dependency, comes back
+                # as `unclassified` carrying its own message. So the field
+                # is always there and its resolution improves as the
+                # migration proceeds, rather than appearing and disappearing.
+                refusal=refusal_of(exc).as_dict(),
                 produced_by=self._phase_provenance(),
             )
 

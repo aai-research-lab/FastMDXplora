@@ -105,6 +105,7 @@ interactions
 
 configuration
 selections
+refusals
 usage_examples
 ```
 

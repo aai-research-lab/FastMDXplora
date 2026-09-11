@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("setup.ccd")
 
@@ -77,11 +78,13 @@ TITRATABLE_SMARTS: dict[str, str] = {
 }
 
 
-class ChemistryUnavailableError(RuntimeError):
+class ChemistryUnavailableError(CodedError, RuntimeError):
     """The chemistry needed to parameterize a component could not be obtained."""
 
+    default_code = "setup.chemistry.unavailable"
 
-class ProtonationUndeterminedError(RuntimeError):
+
+class ProtonationUndeterminedError(CodedError, RuntimeError):
     """The component's protonation at the requested pH is not determined.
 
     Raised rather than resolved. A ligand's pKa in a binding site is a
@@ -90,6 +93,8 @@ class ProtonationUndeterminedError(RuntimeError):
     ordinary. Any answer computed from the ligand alone would be a confident
     guess at a question the ligand cannot answer.
     """
+
+    default_code = "setup.chemistry.protonation_undetermined"
 
 
 @dataclass(frozen=True)

@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("setup.protonation")
 
@@ -69,7 +70,7 @@ class _CapturingHandler(logging.Handler):
         self.messages.append(record.getMessage())
 
 
-class ProtonationError(RuntimeError):
+class ProtonationError(CodedError, RuntimeError):
     """The ligand's protonation at the requested pH could not be settled."""
 
 
