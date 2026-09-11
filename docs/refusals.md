@@ -144,6 +144,75 @@ mechanism exists to prevent. Cap the repair attempts, and treat exhausting
 the cap as a refusal rather than falling through to whatever last
 validated.
 
+## Not enough data is a refusal too
+
+The `analysis.sampling.*` family is the one this software is most
+distinctive for. A mean over a trajectory is not a measurement until two
+things are known about it: whether the system had stopped changing by the
+time averaging started, and how many independent observations the average
+rests on. `summarise` has always withheld a mean it could not stand
+behind; the withholding now says which condition it was.
+
+```python
+from fastmdxplora.statistics import summarise, sampling_shortfall
+from fastmdxplora.refusals import refusal_of
+
+equilibrated, why = summarise(rmsd_series)
+if why is not None:
+    refusal_of(why).code
+    # 'analysis.sampling.correlation_unresolved'
+```
+
+`why` is still a plain string and prints as it always did — it is a `str`
+subclass that carries the code alongside.
+
+The companion question is how much further the run would have to go:
+
+```python
+short = sampling_shortfall(rmsd_series,
+                           target_independent=10,
+                           frame_interval_ns=0.01)
+print(short)
+# 8.7 independent samples of the 10 needed. At one every 54 frames,
+# that is 72 further frames, about 0.72 ns more.
+```
+
+Both numbers come from the same statistical inefficiency the refusal
+used, measured from this series rather than assumed, so the answer is for
+this system rather than for a typical one. Two systems with the same
+trajectory length can need very different amounts of further sampling for
+the same claim, and the difference is not visible in the length.
+
+One caveat the function states and this repeats: where the frames in hand
+are too few to resolve the correlation time, `g` is an underestimate and
+the shortfall is a lower bound. It is a planning figure. Run at least that
+much and measure again.
+
+## Which exception to raise
+
+Prefer the specific class where one exists — `LigandError`,
+`ProtonationError`, `TrajectoryLoadError` and the rest each say something
+a generic class does not.
+
+Where none fits, raise `fastmdxplora.refusals.StudyError`. It subclasses
+`ValueError`, so anything catching `ValueError` today keeps catching it,
+and unlike a bare `ValueError` it can carry a code.
+
+```python
+from fastmdxplora.refusals import StudyError
+
+raise StudyError(
+    f"Unknown force field {name!r}. Valid choices: {valid}.",
+    code="setup.forcefield.unknown",
+    given=name, permitted=sorted(_REGISTRY),
+)
+```
+
+The prose comes first and stays whole. It is what a person reads, and it
+should not be assembled from the details by a formatter that does not know
+which particulars matter. The details repeat what the sentence says, for a
+reader that is not a person.
+
 ## Listing the registry
 
 ```python

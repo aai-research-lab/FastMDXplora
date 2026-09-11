@@ -44,6 +44,9 @@ import numpy as np
 
 __all__ = [
     "Equilibrated",
+    "Withholding",
+    "Shortfall",
+    "sampling_shortfall",
     # The old name, kept importable so nothing outside has to move at once.
     "Settled",
     "statistical_inefficiency",
@@ -244,6 +247,37 @@ def detect_equilibration(
     return best
 
 
+class Withholding(str):
+    """The reason a mean was withheld, carrying its code.
+
+    A ``str`` subclass so that nothing which already reads this changes:
+    it prints, formats, compares and tests truthy exactly as the plain
+    string it replaces did, and ``summarise``'s signature is unaltered.
+
+    What it adds is ``.refusal`` -- the same fact in the form a program
+    can branch on. A caller that can extend a run wants to distinguish
+    "the correlation time is not resolved, run longer" from "there are
+    three frames here" without matching on prose, and the three
+    withholdings below are different conditions with different remedies.
+
+    Read it with :func:`fastmdxplora.refusals.refusal_of`, which takes
+    anything carrying a ``refusal`` attribute.
+    """
+
+    __slots__ = ("refusal",)
+
+    def __new__(cls, message: str, *, code: str, **details: Any):
+        from fastmdxplora.refusals import Refusal, known
+
+        obj = super().__new__(cls, message)
+        obj.refusal = Refusal(
+            code=code if known(code) else "unclassified",
+            message=message,
+            details={k: v for k, v in details.items() if v is not None},
+        )
+        return obj
+
+
 def summarise(
     series: np.ndarray,
     *,
@@ -259,9 +293,11 @@ def summarise(
     values = np.asarray(series, dtype=float)
     values = values[np.isfinite(values)]
     if values.size < 3:
-        return None, (
+        return None, Withholding(
             f"{values.size} usable frame(s): there is nothing to average, and "
-            "nothing to say about how it varies."
+            "nothing to say about how it varies.",
+            code="analysis.sampling.too_few_frames",
+            found=int(values.size), needed=3,
         )
 
     discard, g, effective = detect_equilibration(values)
@@ -287,7 +323,7 @@ def summarise(
     )
 
     if not resolved:
-        return equilibrated, (
+        return equilibrated, Withholding(
             f"This run is not long against its own correlation time: taking "
             f"half the frames away changes the estimate, so {kept.size} frames "
             "cannot measure how correlated they are. The independent-sample "
@@ -296,16 +332,133 @@ def summarise(
             "rather than one that is wrong in a knowable direction. On ten "
             "replicas of one system differing only by seed, errors of this "
             "kind were five to eight times smaller than the spread of the ten "
-            "means. The remedy is a longer run, or replicas."
+            "means. The remedy is a longer run, or replicas.",
+            code="analysis.sampling.correlation_unresolved",
+            frames=int(kept.size), independent=float(effective),
+            statistical_inefficiency=float(g),
         )
 
     if effective < minimum_effective_samples:
-        return equilibrated, (
+        return equilibrated, Withholding(
             f"{effective:.1f} independent samples in {kept.size} frames "
             f"(one every {g:.0f}). Below {minimum_effective_samples:g} a mean "
             "and its error describe how this particular run happened to go "
             "rather than the system it was run on. The frames are correlated, "
             "so recording them more often will not help -- the run has to be "
-            "longer."
+            "longer.",
+            code="analysis.sampling.too_few_independent",
+            independent=float(effective), frames=int(kept.size),
+            statistical_inefficiency=float(g),
+            needed=float(minimum_effective_samples),
         )
     return equilibrated, None
+
+
+@dataclass(frozen=True)
+class Shortfall:
+    """How much more of a run a claim would need.
+
+    A refusal for want of sampling is only half an answer. The other half
+    is the number that turns "not enough" into a decision: how much
+    longer, and is that an afternoon or a fortnight.
+
+    Both numbers here rest on the same ``g`` the refusal did. Frames are
+    worth ``1/g`` of an independent sample each, so reaching ``target``
+    of them takes ``target * g`` frames past equilibration -- and the
+    frames already in hand count, which is why this is a shortfall rather
+    than a total.
+
+    ``more_ns`` is ``None`` where the caller did not say how far apart the
+    frames are. It is not guessed: a frame interval is a fact about how
+    the run was written out, and inventing one would put a plausible
+    duration in front of somebody who would then plan around it.
+    """
+
+    #: Independent samples asked for.
+    target: float
+    #: Independent samples in hand.
+    have: float
+    #: Frames per independent sample, from the series itself.
+    inefficiency: float
+    #: Further frames needed. Zero where the target is already met.
+    more_frames: int
+    #: The same, in nanoseconds, where a frame interval was given.
+    more_ns: float | None = None
+
+    @property
+    def met(self) -> bool:
+        return self.more_frames == 0
+
+    def as_record(self) -> dict[str, Any]:
+        record = {
+            "target_independent": self.target,
+            "independent": self.have,
+            "statistical_inefficiency": self.inefficiency,
+            "more_frames": self.more_frames,
+        }
+        if self.more_ns is not None:
+            record["more_ns"] = self.more_ns
+        return record
+
+    def __str__(self) -> str:
+        if self.met:
+            return (f"{self.have:.1f} independent samples, which meets the "
+                    f"{self.target:g} asked for.")
+        duration = ("" if self.more_ns is None
+                    else f", about {self.more_ns:.3g} ns more")
+        return (
+            f"{self.have:.1f} independent samples of the {self.target:g} "
+            f"needed. At one every {self.inefficiency:.0f} frames, that is "
+            f"{self.more_frames} further frames{duration}."
+        )
+
+
+def sampling_shortfall(
+    series: np.ndarray,
+    *,
+    target_independent: float = MINIMUM_EFFECTIVE_SAMPLES,
+    frame_interval_ns: float | None = None,
+) -> Shortfall:
+    """What it would take to support a claim this run does not yet support.
+
+    The companion to :func:`summarise`'s refusal. Where that says a mean is
+    not worth reporting, this says how much further the run has to go
+    before it is.
+
+    Measured from the series rather than assumed, so it costs nothing to
+    ask and it answers for this system rather than for a typical one. A
+    system whose fluctuations decorrelate in 5 frames and one that takes
+    500 need very different amounts of further sampling for the same
+    claim, and the difference is not visible in the trajectory length.
+
+    Note what this does *not* do. It reads the correlation from the
+    frames in hand, so where those frames are too few to resolve it --
+    the condition ``correlation_is_resolved`` names -- ``g`` is an
+    underestimate and the shortfall is a lower bound. It is a planning
+    figure, not a guarantee, and the honest use of it is to run at least
+    that much and measure again.
+    """
+    values = np.asarray(series, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size < 3:
+        # Nothing to read a correlation time from. Reporting g = 1 here
+        # would say the frames are independent, which is the most
+        # optimistic possible answer at the moment there is least reason
+        # for optimism.
+        return Shortfall(
+            target=float(target_independent), have=0.0, inefficiency=float("nan"),
+            more_frames=0, more_ns=None,
+        )
+
+    discard, g, effective = detect_equilibration(values)
+    kept = int(values.size - discard)
+    wanted_frames = int(np.ceil(float(target_independent) * g))
+    more = max(0, wanted_frames - kept)
+    return Shortfall(
+        target=float(target_independent),
+        have=float(effective),
+        inefficiency=float(g),
+        more_frames=more,
+        more_ns=(None if frame_interval_ns is None
+                 else float(more * frame_interval_ns)),
+    )
