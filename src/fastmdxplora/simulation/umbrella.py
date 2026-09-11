@@ -1292,6 +1292,7 @@ def compute_pmf(
     bootstrap_resamples: int = DEFAULT_RESAMPLES,
     bootstrap_seed: int = 0,
     _edges: np.ndarray | None = None,
+    _resampling: bool = False,
 ) -> dict[str, Any]:
     """A potential of mean force, or a refusal saying why not.
 
@@ -1510,7 +1511,7 @@ def compute_pmf(
     # know to look for it.
     free_energy = [None if np.isnan(value) else float(value) for value in pmf]
     unsampled = int(np.count_nonzero(~sampled))
-    if unsampled:
+    if unsampled and not _resampling:
         logger.info(
             "%d of %d bins hold no samples and are reported as unknown rather "
             "than given a value. Windows further apart than their restraints "
@@ -1535,7 +1536,14 @@ def compute_pmf(
     # confident measurement of a stretch of coordinate none of them was asked
     # to sample, with `covered` naming the centres rather than where the
     # sampling went.
-    if drifted:
+    # Once, from the study -- not once per bootstrap resample. The error bar
+    # recombines the study a couple of hundred times over resampled data, and
+    # each of those runs found the same windows off their centres and said
+    # so: a real 36-window campaign finished by printing this paragraph about
+    # two hundred times, with the count flickering between four and six as
+    # the marginal windows fell either side of the gate in each resample. The
+    # finding is the one from the data, which is computed and reported here.
+    if drifted and not _resampling:
         logger.warning(
             "%d of %d windows sampled away from their centres, and the "
             "overlaps still passed -- windows that drift together keep "
@@ -1561,7 +1569,8 @@ def compute_pmf(
         def _curve(drawn: dict[int, np.ndarray]) -> np.ndarray:
             inner = compute_pmf(
                 drawn, plan, temperature_K=temperature_K, bins=bins,
-                minimum_overlap=0.0, bootstrap_resamples=0, _edges=edges)
+                minimum_overlap=0.0, bootstrap_resamples=0, _edges=edges,
+                _resampling=True)
             return np.array(
                 [np.nan if v is None else v
                  for v in inner["pmf"]["free_energy_kjmol"]], dtype=float)

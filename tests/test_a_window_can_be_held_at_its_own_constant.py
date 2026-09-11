@@ -392,6 +392,41 @@ class TestAStudyThatPassesStillSaysWhatItsWindowsDid:
         assert "sampled away from their centres" in said
         assert "overlaps still passed" in said
 
+    def test_it_says_it_once_and_not_once_per_resample(self, caplog):
+        """The error bar recombines the study a couple of hundred times over
+        resampled data, and every one of those runs finds the same windows
+        off their centres.
+
+        A real 36-window campaign ended by printing this paragraph about two
+        hundred times, the count flickering between four and six windows as
+        the marginal ones fell either side of the gate in each resample --
+        burying the free energy it had spent a day computing. The finding
+        belongs to the study's own sampling, which is where it is computed.
+        """
+        import logging
+
+        from fastmdxplora.simulation.umbrella import compute_pmf
+
+        plan = plan_windows({"collective_variable": "distance",
+                             "centres": [0.896552, 0.951724, 1.006897],
+                             "force_constant": 3000.0,
+                             "minimum_samples": 100})
+        rng = np.random.default_rng(0)
+        samples = {i: s + 0.0288 * rng.standard_normal(9000)
+                   for i, s in enumerate([0.828, 0.832, 0.836])}
+
+        with caplog.at_level(logging.WARNING):
+            result = compute_pmf(samples, plan, temperature_K=300.0,
+                                 bootstrap_resamples=25)
+
+        said = [record.getMessage() for record in caplog.records
+                if "sampled away from their centres" in record.getMessage()]
+
+        assert len(said) == 1
+        assert result["pmf"]["uncertainty"] is not None, (
+            "the error bar still has to be computed -- quietening the "
+            "resamples must not have skipped them")
+
     def test_thin_is_carried_on_a_passing_study_too(self):
         result = self._all_slid_to_the_same_place()
 
