@@ -1082,8 +1082,10 @@ class BatchExplorer:
         import json
 
         from fastmdxplora.simulation.umbrella import (
+            as_a_config_block,
             collect_samples,
             compute_pmf,
+            design_from_a_pilot,
             plan_from_expanded,
         )
 
@@ -1123,6 +1125,24 @@ class BatchExplorer:
                 .get("temperature_K", 300.0))
             payload = compute_pmf(samples, plan, temperature_K=temperature)
             payload["plan"] = plan.as_record()
+
+            # What these windows say the study should have been. Every
+            # window measures the gradient where it came to rest, and the
+            # gradient fixes both settings a study has to choose, so a run
+            # that has just finished can size the next one -- a short set of
+            # windows run deliberately as a pilot, or this one.
+            #
+            # Computed whether the study passed or refused, and especially
+            # when it refused: a refusal that says which windows slid is
+            # worth less than one that comes with the design that holds
+            # them. It sits in a `try` because it is advice, and a study
+            # that produced a free energy must not lose it to a failure in
+            # the paragraph recommending the next study.
+            try:
+                payload["next_study"] = design_from_a_pilot(
+                    samples, plan, temperature_K=temperature)
+            except (ValueError, ZeroDivisionError) as exc:
+                payload["next_study"] = {"not_designed": str(exc)}
 
             # A binding free energy only where there is a free energy to
             # take it from. The overlap and sampling gates decide that, and
@@ -1167,6 +1187,20 @@ class BatchExplorer:
         else:
             drawn_note = f", drawn in {drawn.parent.name}/" if drawn else ""
             print(f"Free energy:    {destination}{drawn_note}")
+
+        # Printed when the study refused, or when it passed with windows off
+        # their centres -- the two cases where the person is about to choose
+        # settings for another run. A study where everything held prints
+        # nothing and leaves the design in `pmf.json`.
+        design = payload.get("next_study") or {}
+        if design.get("centres") and (payload.get("refused")
+                                      or payload.get("drifted")):
+            print(f"Next study:     {design['n_windows']} windows from these "
+                  f"windows' own gradients, "
+                  f"{design['covers'][0]:g} to {design['covers'][1]:g}, "
+                  f"worst overlap {design['worst_predicted_overlap']:.2f} "
+                  "predicted")
+            print(as_a_config_block(design), end="")
 
     def _clear_previous_drawing(self) -> None:
         """Remove a figure from an earlier study of this directory.

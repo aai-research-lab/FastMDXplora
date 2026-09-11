@@ -48,6 +48,8 @@ __all__ = [
     "collect_samples",
     "overlap_between",
     "compute_pmf",
+    "design_from_a_pilot",
+    "as_a_config_block",
 ]
 
 #: Boltzmann's constant in kJ/mol/K, so a PMF comes out in kJ/mol.
@@ -726,6 +728,304 @@ def _how_hard_they_needed_holding(drifted: list[dict[str, Any]]) -> str:
         "of the coordinate stays as it is. Windows held at different "
         "constants recombine correctly: each window's bias is built from its "
         "own."
+    )
+
+
+def _ideal_overlap(centre_a: float, force_a: float,
+                   centre_b: float, force_b: float, kT: float) -> float:
+    """The area two windows would share if each sampled its own restraint.
+
+    The same quantity `overlap_between` measures from histograms, computed
+    from the distributions a plan implies -- so a design can be checked
+    against the gate that will judge it before any of it runs. A window
+    under a harmonic restraint of `k` at temperature T samples a Gaussian of
+    width ``sqrt(kT/k)`` about its centre, wherever the surface is flat
+    enough over that width.
+    """
+    sigma_a = math.sqrt(kT / float(force_a))
+    sigma_b = math.sqrt(kT / float(force_b))
+    lo = min(centre_a - 6 * sigma_a, centre_b - 6 * sigma_b)
+    hi = max(centre_a + 6 * sigma_a, centre_b + 6 * sigma_b)
+    x = np.linspace(lo, hi, 4001)
+    root = math.sqrt(2.0 * math.pi)
+    pa = np.exp(-0.5 * ((x - centre_a) / sigma_a) ** 2) / (sigma_a * root)
+    pb = np.exp(-0.5 * ((x - centre_b) / sigma_b) ** 2) / (sigma_b * root)
+    return float(np.minimum(pa, pb).sum() * (x[1] - x[0]))
+
+
+def design_from_a_pilot(
+    samples: dict[int, np.ndarray],
+    plan: "UmbrellaPlan",
+    *,
+    temperature_K: float = 300.0,
+    coarsest: float | None = None,
+    softest: float | None = None,
+    gate_used: float = 0.8,
+) -> dict[str, Any]:
+    """The windows a study needs, from a short run of the ones it has.
+
+    Every window is a measurement of the free energy's slope wherever it came
+    to rest: it settles where the restraint's pull matches the surface's, so
+    ``k`` times its displacement is the gradient there. That is true of a
+    window that held its centre as much as one that did not -- the drift gate
+    decides whether to complain, not whether the number exists.
+
+    From a gradient, two requirements fix the design together. A window has
+    to stay within half the distance to its neighbour or it samples where
+    another window belongs, which bounds the constant from below; and
+    neighbours have to overlap, ``d <= 2.5 sigma``, which bounds it from
+    above. Asking a window to use only `gate_used` of the room it is allowed
+    and solving both at once:
+
+        d = 3.125 f kT / G        k = 0.64 G^2 / (f^2 kT)
+
+    At ``f = 1`` -- a window sized to come to rest exactly on the gate -- a
+    gradient of 223 kJ/mol/nm gives 0.0350 nm at 12760, and the study this
+    was written from arrived at 0.0344 nm at 13000 for that stretch over
+    three runs and two days. The default leaves a fifth of the gate unused,
+    because that study's window at 13000 was flagged for drift anyway and the
+    pair beside it came back with the thinnest overlap in the study: a design
+    that lands exactly on a threshold crosses it half the time. At ``f =
+    0.8`` the arithmetic is also the easiest to carry: ``d = 2.5 kT / G`` and
+    ``k = G^2 / kT``.
+
+    **A pilot can be short.** The displacement is a mean-like quantity and
+    converges like one: 1500 samples know the median to about 0.0005 nm, so
+    the gradient to within about 6 kJ/mol/nm. Three hundred picoseconds of
+    each window is enough to size a study that will run for a day.
+
+    Two things the caller must get right, both learned the hard way. The
+    pilot has to hold each window from its first step, or it measures where
+    the seeds relaxed to rather than the surface. And the arrival has to be
+    discarded before the median is taken, or a window still settling reports
+    its starting position as a gradient.
+
+    `coarsest` and `softest` bound the answer to what was already tried, so
+    a recommendation is only ever finer and stiffer than the pilot. Where a
+    window sat at its centre the measured gradient is near zero, and without
+    a bound that asks for infinitely wide, infinitely soft windows.
+
+    The design checks itself before returning: `predicted` carries, for every
+    window it proposes, where that window would come to rest, how much of its
+    gate that uses, and the area it would share with its neighbour. That last
+    number is why the spacing widens by only a quarter at a time: a window is
+    held for the nearer of its two neighbours, so one placed beside a much
+    finer stretch is held much harder, comes out much narrower, and the pair
+    between them overlaps at the narrow one's width rather than at its own.
+    """
+    kT = KB_KJ * float(temperature_K)
+    if not 0.0 < float(gate_used) <= 1.0:
+        raise ValueError(
+            "`gate_used` is the fraction of the drift gate a window is "
+            f"allowed to use, so it lies in (0, 1]; {gate_used} was given.")
+    gate_used = float(gate_used)
+    ordered = [w for w in plan.windows if w.index in samples]
+    if len(ordered) < 2:
+        raise ValueError(
+            "Sizing a study from a pilot needs at least two windows with "
+            f"sampling in them; {len(ordered)} were given."
+        )
+    periodic = getattr(plan, "collective_variable", None) in PERIODIC_VARIABLES
+
+    measured = []
+    for window in ordered:
+        held = samples[window.index]
+        # The circular mean where the coordinate wraps, for the reason
+        # `windows_that_drifted` uses it: the median of values either side of
+        # the join lands opposite where they are, and here that would be read
+        # as an enormous gradient.
+        if periodic:
+            sat_at = float(np.arctan2(np.mean(np.sin(held)),
+                                      np.mean(np.cos(held))))
+        else:
+            sat_at = float(np.median(held))
+        away = float(np.abs(displacement(
+            np.array([sat_at]), window.centre, periodic)[0]))
+        measured.append({
+            "window": window.index,
+            "centre": window.centre,
+            "force_constant": window.force_constant,
+            "sampled_at": sat_at,
+            "away_by": away,
+            "gradient_kjmol_per_unit": window.force_constant * away,
+        })
+
+    spacings = [abs(b.centre - a.centre) for a, b in zip(ordered, ordered[1:])]
+    if coarsest is None:
+        coarsest = max(spacings) if spacings else 0.1
+    if softest is None:
+        softest = min(w.force_constant for w in ordered)
+    softest, coarsest = float(softest), float(coarsest)
+    # Where the gradient is flat the constant falls to `softest` and the
+    # spacing is whatever `coarsest` allows -- a pair the pilot need never
+    # have run together. Two and a half sigma at the softest constant is the
+    # widest those two can be and still overlap, so the walk cannot step
+    # past it.
+    coarsest = min(coarsest, 2.5 * math.sqrt(kT / softest))
+
+    # The slope where each window measured it, read back at any position.
+    # Each reading belongs where the window came to rest, not at the centre
+    # it was held at: the balance of forces is struck where the window sits.
+    at = np.array([m["sampled_at"] for m in measured])
+    slope = np.array([m["gradient_kjmol_per_unit"] for m in measured])
+    order = np.argsort(at)
+    at, slope = at[order], slope[order]
+    # Windows that came to rest in the same place disagree about the slope
+    # there, and one of them is a window that slid to get there. The steeper
+    # reading is kept, which makes the design that follows finer and stiffer
+    # -- the safe direction to be wrong in.
+    kept_at: list[float] = []
+    kept_slope: list[float] = []
+    for position, value in zip(at, slope):
+        if kept_at and position - kept_at[-1] < 1e-6:
+            kept_slope[-1] = max(kept_slope[-1], float(value))
+        else:
+            kept_at.append(float(position))
+            kept_slope.append(float(value))
+    at, slope = np.array(kept_at), np.array(kept_slope)
+
+    def gradient_at(x: float) -> float:
+        return float(np.interp(x, at, slope))
+
+    # Windows in a different order than their centres have slid past each
+    # other, and the profile through that stretch is two readings of the same
+    # ground that cannot both be right. The design is still the conservative
+    # one -- the steeper reading wins -- but the pilot was too soft to resolve
+    # there, and running it again at what this recommends would resolve it.
+    crossed = [
+        after["window"]
+        for before, after in zip(measured, measured[1:])
+        if after["sampled_at"] <= before["sampled_at"]
+    ]
+
+    def steepest_over(lo: float, hi: float) -> float:
+        if hi <= lo:
+            return gradient_at(lo)
+        return max(gradient_at(float(p)) for p in np.linspace(lo, hi, 17))
+
+    start = min(w.centre for w in ordered)
+    finish = max(w.centre for w in ordered)
+    positions = [start]
+    x = start
+    # The ceiling is generous; reaching it means the gradient asked for
+    # windows so close together that the answer is a different coordinate,
+    # not a finer grid.
+    last_step = None
+    while positions[-1] < finish - 1e-9 and len(positions) < 2000:
+        step = coarsest
+        # A step has to answer the steepest ground it crosses, not the slope
+        # at the point it starts from -- and shortening it changes the ground
+        # it crosses, so the two are settled together.
+        for _ in range(4):
+            shorter = min(coarsest, 3.125 * gate_used * kT
+                          / max(steepest_over(x, x + step), 1e-9))
+            if shorter >= step - 1e-12:
+                break
+            step = shorter
+        # The spacing widens gradually rather than in one move. A window is
+        # held for the nearer of its two neighbours, so one beside a much
+        # finer stretch is held much harder than its far neighbour, comes out
+        # much narrower, and the pair between them overlaps at the narrow
+        # one's width. Growing the spacing by a quarter at a time keeps
+        # neighbours comparable; it can still tighten as fast as the surface
+        # steepens, since that direction is answered at once.
+        if last_step is not None:
+            step = min(step, 1.25 * last_step)
+        last_step = step
+        x += step
+        positions.append(x)
+    # The last step overshoots the end of the coordinate. Everything is then
+    # drawn in a little so the final window lands on it: every spacing
+    # shrinks, and a grid that overlaps at a given spacing still overlaps at
+    # a smaller one. Leaving the overshoot in instead, or appending the end
+    # as one more window, puts a sliver of a window at the far end.
+    walked = positions[-1] - start
+    if walked > 0:
+        squeeze = (finish - start) / walked
+        positions = [start + (p - start) * squeeze for p in positions]
+
+    def hold_them(places: list[float]
+                  ) -> tuple[list[float], list[dict[str, float]]]:
+        """How hard each window in a grid has to be held, and what it would do.
+
+        The constant comes from the spacing the window actually got rather
+        than from the one the walk asked for, so a grid that was drawn in --
+        or split -- is still held hard enough to keep every window inside its
+        share of it.
+        """
+        forces: list[float] = []
+        predicted: list[dict[str, float]] = []
+        for index, place in enumerate(places):
+            neighbours = [abs(places[index + offset] - place)
+                          for offset in (-1, 1)
+                          if 0 <= index + offset < len(places)]
+            # The same definition the drift gate uses, so the design is sized
+            # against the test it will be judged by.
+            allowed = 0.5 * min(neighbours) if neighbours else coarsest / 2.0
+            gradient = steepest_over(max(place - allowed, start),
+                                     min(place + allowed, finish))
+            force = max(softest, gradient / (gate_used * allowed))
+            # Rounded up rather than to nearest: a constant reported one step
+            # below the one just computed is a window advertised as inside
+            # its gate and held just outside it.
+            forces.append(float(10 * math.ceil(force / 10.0)))
+            predicted.append({
+                "window": index,
+                "centre": round(float(place), 4),
+                "force_constant": forces[-1],
+                "gradient_kjmol_per_unit": round(gradient, 1),
+                "would_sit_at": round(place - gradient / forces[-1], 4),
+                "gate": round(allowed, 4),
+                "gate_it_would_use": round(gradient / forces[-1] / allowed, 3),
+            })
+        return forces, predicted
+
+    forces, predicted = hold_them(positions)
+
+    centres = [round(float(p), 4) for p in positions]
+    for index in range(len(positions) - 1):
+        predicted[index]["overlap_with_next"] = round(_ideal_overlap(
+            centres[index], forces[index],
+            centres[index + 1], forces[index + 1], kT), 4)
+
+    shared = [p["overlap_with_next"] for p in predicted[:-1]]
+    return {
+        "measured": measured,
+        "centres": centres,
+        "force_constants": forces,
+        "n_windows": len(centres),
+        "covers": [round(start, 4), round(finish, 4)],
+        # Where the evidence is. A window on a rising surface comes to rest
+        # below its centre, so the readings stop short of the far end of the
+        # coordinate and the stretch beyond them is held at the last slope
+        # measured rather than at one of its own.
+        "measured_over": [round(float(at.min()), 4), round(float(at.max()), 4)],
+        "crossed": crossed,
+        "gate_used": gate_used,
+        "predicted": predicted,
+        "worst_predicted_overlap": round(min(shared), 4) if shared else None,
+        "was": {"n_windows": len(ordered),
+                "spacing": round(max(spacings), 4) if spacings else None,
+                "force_constants": sorted({w.force_constant for w in ordered})},
+    }
+
+
+def as_a_config_block(design: dict[str, Any], width: int = 66) -> str:
+    """The design as the `centres` and `force_constant` a study would carry."""
+    import textwrap
+
+    def listed(values, fmt):
+        body = ", ".join(fmt.format(v) for v in values)
+        return "\n".join("      " + line
+                         for line in textwrap.wrap(body, width))
+
+    return (
+        "    centres: [\n"
+        + listed(design["centres"], "{:.4f}") + "\n"
+        + "    ]\n"
+        + "    force_constant: [\n"
+        + listed(design["force_constants"], "{:.0f}") + "\n"
+        + "    ]\n"
     )
 
 

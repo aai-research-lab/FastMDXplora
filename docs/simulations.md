@@ -424,6 +424,79 @@ seeded from a pull near their own centres, fix that first — a constant sized
 from a window's starting position is sized from the wrong thing. The refusal
 says so before it shows the table.
 
+### Sizing a study from a short pilot
+
+The gradient is what fixes both settings, and every window measures the
+gradient where it sits. So a handful of windows, run briefly, size the study
+that follows: spread six or so over the range and give each a few hundred
+picoseconds.
+
+```yaml
+simulation:
+  production_steps: 150000        # 300 ps a window
+  umbrella:
+    collective_variable: ligand_distance
+    select_atoms: "resSeq 189 to 195 and name CA"
+    from: 0.40
+    to: 2.00
+    n_windows: 6
+    force_constant: 3000
+```
+
+Every umbrella study writes the design its own windows imply into `pmf.json`
+under `next_study`, and prints it when the study refused or when a window
+drifted:
+
+```
+Next study:     34 windows from these windows' own gradients, 0.4 to 2,
+                worst overlap 0.18 predicted
+    centres: [
+      0.4000, 0.4565, 0.5059, 0.5486, 0.5844, 0.6153, 0.6431, 0.6710,
+      ...
+    ]
+    force_constant: [
+      4870, 5530, 7320, 9840, 12750, 16140, 18050, 19960, 20000, 20000,
+      ...
+    ]
+```
+
+Those two lists go into the config as they are.
+
+**The arithmetic.** A window comes to rest where the restraint's pull matches
+the free energy's, so `k` times its displacement is the gradient `G` there.
+Two requirements then fix the design together: a window has to stay within
+half the distance to its neighbour, which sets the constant from below, and
+neighbours have to overlap — `d <= 2.5 sigma` — which sets it from above.
+Asking a window to use four fifths of the room it is allowed and solving both
+at once leaves
+
+    d = 2.5 kT / G        k = G² / kT
+
+with `kT = 2.494 kJ/mol` at 300 K. A stretch measuring 223 kJ/mol/nm gets
+windows 0.028 nm apart held at 20,000; a flat stretch measuring 10 gets the
+widest spacing the pilot's own softest constant still overlaps at. Neither
+setting is ever loosened past what the pilot ran, since a window sitting on
+its centre measures nothing and, unbounded, would ask for infinitely wide
+windows.
+
+Three things worth reading beside the answer, all in `next_study`:
+
+- `predicted` says, for every window it proposes, where that window would come
+  to rest, how much of its allowance that uses, and the area it would share
+  with its neighbour. The design is checked against the gates it will be
+  judged by before it runs.
+- `measured_over` is where the readings are. A window on a rising surface
+  comes to rest below its centre, so the readings stop short of the far end of
+  the range, and the stretch beyond them is held at the last slope measured.
+- `crossed` names windows that came to rest past one another. That stretch was
+  too steep for the pilot's constant to resolve; the design takes the steeper
+  reading, and running it again at what it recommends resolves it.
+
+A pilot has to be held from its first step and seeded near its centres, which
+is what the umbrella phase does — the point is that nothing else is required
+of a pilot. Three hundred picoseconds is enough: a displacement converges like
+a mean, and 1,500 samples fix the gradient to about 6 kJ/mol/nm.
+
 ### One system, many windows
 
 The windows are the same molecule held at different points along the
