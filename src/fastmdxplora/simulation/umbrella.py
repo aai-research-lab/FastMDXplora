@@ -1027,6 +1027,10 @@ def compute_pmf(
         )
         return {
             "pmf": None,
+            # Carried on a refusal as well. A reader asking how big the study
+            # was should not have to find that out from somewhere else
+            # because it did not produce a curve.
+            "n_windows": len(ordered),
             "overlaps": overlaps,
             "drifted": drifted,
             "thin": thin,
@@ -1079,6 +1083,10 @@ def compute_pmf(
             )
         return {
             "pmf": None,
+            # Carried on a refusal as well. A reader asking how big the study
+            # was should not have to find that out from somewhere else
+            # because it did not produce a curve.
+            "n_windows": len(ordered),
             "overlaps": overlaps,
             "drifted": drifted,
             "thin": thin,
@@ -1177,6 +1185,27 @@ def compute_pmf(
     window_centres = [w.centre for w in ordered]
     covered = (min(window_centres), max(window_centres))
 
+    # Said on the way out even though the gates let this through. `drifted`
+    # and `thin` used to appear only in a refusal, so a study that passed
+    # reported nothing about whether its windows sat where they were put --
+    # and windows can drift together. Three windows at 0.897, 0.952 and 1.007
+    # all came to rest near 0.83 in a real study: they overlapped each other
+    # beautifully, and a free energy built from them would have been a
+    # confident measurement of a stretch of coordinate none of them was asked
+    # to sample, with `covered` naming the centres rather than where the
+    # sampling went.
+    if drifted:
+        logger.warning(
+            "%d of %d windows sampled away from their centres, and the "
+            "overlaps still passed -- windows that drift together keep "
+            "sharing histograms. `covered` below is where the windows were "
+            "placed; %s went somewhere else. `drifted` in the record says "
+            "how far each one went and what force constant would have held "
+            "it.",
+            len(drifted), len(ordered),
+            ", ".join(f"window {d['window']}" for d in drifted),
+        )
+
     # An error bar on the curve, from resampling each window's own samples in
     # contiguous blocks. Without it the PMF was a line with no width, and a
     # binding free energy taken from it was quoted to four figures with
@@ -1211,6 +1240,11 @@ def compute_pmf(
                                 periodic=periodic),
         "unsampled_bins": unsampled,
         "overlaps": overlaps,
+        # Both carried whether or not they refused anything. A reader asking
+        # "did this study's windows do what they were told" should not have to
+        # infer it from the absence of a refusal.
+        "drifted": drifted,
+        "thin": thin,
         "refused": None,
         "temperature_K": float(temperature_K),
         "n_windows": len(ordered),

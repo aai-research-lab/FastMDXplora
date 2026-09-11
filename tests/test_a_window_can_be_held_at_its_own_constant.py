@@ -299,3 +299,65 @@ class TestTheRefusalCarriesTheNumbers:
 
         assert "seed them from a steered run" in refused
         assert refused.index("seed them") < refused.index("needs k")
+
+
+class TestAStudyThatPassesStillSaysWhatItsWindowsDid:
+    """`drifted` and `thin` appeared only in a refusal.
+
+    So a study that cleared the overlap gate reported nothing about whether
+    its windows sat where they were put -- and windows drift *together*.
+    Three held at 0.897, 0.952 and 1.007 all came to rest near 0.83 in a real
+    run: they overlap each other beautifully, the gate passes, and the free
+    energy that comes out is a confident measurement of a stretch of
+    coordinate none of them was asked to sample.
+    """
+
+    def _all_slid_to_the_same_place(self):
+        from fastmdxplora.simulation.umbrella import compute_pmf
+
+        plan = plan_windows({"collective_variable": "distance",
+                             "centres": [0.896552, 0.951724, 1.006897],
+                             "force_constant": 3000.0,
+                             "minimum_samples": 100})
+        rng = np.random.default_rng(0)
+        samples = {i: s + 0.0288 * rng.standard_normal(9000)
+                   for i, s in enumerate([0.828, 0.832, 0.836])}
+        return compute_pmf(samples, plan, temperature_K=300.0,
+                           bootstrap_resamples=0)
+
+    def test_the_gate_passes_because_they_drifted_together(self):
+        """Establishing the premise: this is not caught by the overlap check,
+        which is why it has to be reported separately."""
+        assert self._all_slid_to_the_same_place()["refused"] is None
+
+    def test_it_names_them_anyway(self):
+        result = self._all_slid_to_the_same_place()
+
+        assert [d["window"] for d in result["drifted"]] == [0, 1, 2]
+
+    def test_covered_is_where_they_were_put_not_where_they_went(self):
+        """The field a reader takes the range of the result from. It names
+        the centres, and with every window a tenth of a nanometre inside them
+        that is the thing `drifted` exists to qualify."""
+        result = self._all_slid_to_the_same_place()
+
+        assert result["covered"] == [0.896552, 1.006897]
+        assert all(d["sampled_at"] < 0.84 for d in result["drifted"])
+
+    def test_it_warns_rather_than_only_recording(self, caplog):
+        """A field in a JSON file is not a warning. Somebody watching the run
+        finish should be told that its windows went somewhere else."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            self._all_slid_to_the_same_place()
+
+        said = " ".join(record.getMessage() for record in caplog.records)
+
+        assert "sampled away from their centres" in said
+        assert "overlaps still passed" in said
+
+    def test_thin_is_carried_on_a_passing_study_too(self):
+        result = self._all_slid_to_the_same_place()
+
+        assert "thin" in result
