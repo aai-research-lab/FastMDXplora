@@ -303,6 +303,11 @@ CODES: tuple[Code, ...] = (
          "This machine has not been measured, so there is no basis for a "
          "duration estimate.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.calibration.inconsistent",
+         "Runs on this machine disagree about what a particle-step costs by "
+         "more than the cost model's assumption allows.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION,
+         detail_keys=("spread", "runs")),
     Code("environment.calibration.stale",
          "The stored measurement was taken on different hardware or under "
          "different settings than the study asks for.",

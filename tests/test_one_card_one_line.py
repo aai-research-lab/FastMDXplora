@@ -357,3 +357,118 @@ class TestTheMachineCanMeasureItself(unittest.TestCase):
         warmup = source.index("simulation.step(max(100")
         timed = source.index("started = _time.perf_counter()")
         self.assertLess(warmup, timed)
+
+
+class TestTheMachineLearnsFromWhatItHasRun(unittest.TestCase):
+    """Argon is a bootstrap. Real studies are better information.
+
+    `measure_this_machine` gives one point from a system with no water, no
+    PME and no constraints. A machine that has run real studies knows more
+    about itself than that, and fitting across them also does something a
+    single point cannot: it says whether the cost model's assumption holds
+    here at all.
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+
+    def run_costing(self, name, particles, steps, seconds,
+                    platform="CUDA", precision="mixed"):
+        import json
+
+        directory = self.root / name / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "cost.json").write_text(json.dumps({
+            "particles": particles, "steps": steps, "seconds": seconds,
+            "platform": platform, "precision": precision}))
+
+    def test_it_fits_across_consistent_runs(self):
+        from fastmdxplora.cost import calibrate_from_runs
+
+        for index, (particles, steps, seconds) in enumerate(
+                [(30_000, 5_000, 42.0), (62_000, 10_000, 175.0),
+                 (45_000, 8_000, 102.0), (80_000, 4_000, 90.0)]):
+            self.run_costing(f"s{index}", particles, steps, seconds)
+
+        fit = calibrate_from_runs(self.root, platform_name="CUDA",
+                                  precision="mixed",
+                                  path=self.root / "cal.json")
+        self.assertEqual(fit.runs, 4)
+        self.assertTrue(fit.trustworthy)
+        self.assertAlmostEqual(fit.seconds_per_particle_step, 2.8e-7, places=8)
+
+    def test_the_fit_is_usable_as_a_calibration(self):
+        from fastmdxplora.cost import calibrate_from_runs, estimate_seconds
+
+        self.run_costing("a", 30_000, 5_000, 42.0)
+        self.run_costing("b", 60_000, 5_000, 84.0)
+        calibrate_from_runs(self.root, platform_name="CUDA",
+                            precision="mixed", path=self.root / "cal.json")
+        estimate = estimate_seconds(particles=30_000, steps=5_000,
+                                    platform_name="CUDA", precision="mixed",
+                                    path=self.root / "cal.json")
+        self.assertAlmostEqual(estimate.seconds, 42.0, places=4)
+
+    def test_runs_that_disagree_are_refused_rather_than_averaged(self):
+        # Not a noisy measurement. A disagreement this wide says the linear
+        # model fails on this hardware, and averaging through it would give
+        # a confident constant for a relationship that is not there.
+        from fastmdxplora.cost import calibrate_from_runs
+
+        self.run_costing("a", 30_000, 5_000, 42.0)
+        self.run_costing("b", 200_000, 1_000, 900.0)
+        with self.assertRaises(StudyError) as caught:
+            calibrate_from_runs(self.root, platform_name="CUDA",
+                                precision="mixed", path=self.root / "cal.json")
+        refusal = refusal_of(caught.exception)
+        self.assertEqual(refusal.code, "environment.calibration.inconsistent")
+        self.assertGreater(refusal.details["spread"], 3.0)
+
+    def test_runs_from_another_platform_are_excluded_not_averaged(self):
+        # A mixed-precision GPU run and a double-precision CPU run have
+        # genuinely different constants, and a mean of the two describes
+        # neither.
+        from fastmdxplora.cost import calibrate_from_runs
+
+        self.run_costing("gpu", 30_000, 5_000, 42.0)
+        self.run_costing("cpu", 30_000, 5_000, 900.0, platform="CPU")
+        fit = calibrate_from_runs(self.root, platform_name="CUDA",
+                                  precision="mixed",
+                                  path=self.root / "cal.json")
+        self.assertEqual(fit.runs, 1)
+
+    def test_a_machine_with_no_runs_says_where_to_start(self):
+        from fastmdxplora.cost import calibrate_from_runs
+
+        with self.assertRaises(StudyError) as caught:
+            calibrate_from_runs(self.root, path=self.root / "cal.json")
+        self.assertIn("measure_this_machine",
+                      refusal_of(caught.exception).message)
+
+    def test_the_median_is_used_so_one_slow_run_does_not_pull_it(self):
+        # A run that swapped, or shared the card, is slow by an arbitrary
+        # amount. Nothing makes a run anomalously fast, so the distribution
+        # is one-sided and the median is the honest centre.
+        from fastmdxplora.cost import calibrate_from_runs
+
+        for index in range(5):
+            self.run_costing(f"s{index}", 30_000, 5_000, 42.0)
+        self.run_costing("slow", 30_000, 5_000, 100.0)
+        fit = calibrate_from_runs(self.root, platform_name="CUDA",
+                                  precision="mixed",
+                                  path=self.root / "cal.json")
+        self.assertAlmostEqual(fit.seconds_per_particle_step, 2.8e-7,
+                               places=8)
+
+    def test_an_unreadable_record_is_skipped_rather_than_fatal(self):
+        from fastmdxplora.cost import calibrate_from_runs, costs_under
+
+        self.run_costing("good", 30_000, 5_000, 42.0)
+        broken = self.root / "bad" / "simulation"
+        broken.mkdir(parents=True)
+        (broken / "cost.json").write_text("{not json")
+        self.assertEqual(len(costs_under(self.root)), 1)
+        self.assertEqual(
+            calibrate_from_runs(self.root, platform_name="CUDA",
+                                precision="mixed",
+                                path=self.root / "cal.json").runs, 1)

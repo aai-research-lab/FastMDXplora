@@ -741,3 +741,47 @@ something, and it says where to look.
 `--terse` drops the help text from the prompt. The help is most of those
 tokens, and whether it earns them is exactly the sort of thing this exists
 to settle rather than assume.
+
+## The machine learns from what it has run
+
+`measure_this_machine()` is a bootstrap: argon, no water, no PME, no
+constraints. A machine that has run real studies knows more about itself
+than that.
+
+Every finished run writes `cost.json` beside its output — particles,
+steps, seconds, platform, precision. Fitting across them gives a constant
+from real systems with real force fields at the settings the next study
+will use.
+
+```python
+from fastmdxplora.cost import calibrate_from_runs
+
+fit = calibrate_from_runs("runs", platform_name="CUDA", precision="mixed")
+fit.runs      # 4
+fit.spread    # 1.01 — the runs agree
+```
+
+The fit does something a single point cannot: it says whether the cost
+model's assumption holds here at all. Seconds are taken to go as particles
+times steps, and if that fails on some hardware — a mesh term dominating
+differently, occupancy changing sharply with system size — the per-run
+constants will not agree.
+
+```
+environment.calibration.inconsistent
+  The 5 runs under runs/ disagree about what a particle-step costs by a
+  factor of 16.1. ... Averaging through it would give a confident constant
+  for a relationship that is not there.
+```
+
+Refused rather than averaged, and the threshold is generous at a factor of
+three, because refusing a usable fit sends somebody back to argon, which
+is worse information.
+
+Runs from another platform or precision are excluded rather than averaged
+in — a mixed-precision GPU run and a double-precision CPU run have
+genuinely different constants, and a mean of the two describes neither.
+
+The median is used rather than the mean. A run that swapped, or shared the
+card, is slow by an arbitrary amount; nothing makes a run anomalously
+fast, so the distribution is one-sided.

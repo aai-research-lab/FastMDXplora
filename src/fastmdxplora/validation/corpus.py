@@ -1118,7 +1118,64 @@ def _a_mean_from_segments_that_scatter() -> Any:
     return record
 
 
+
+def _a_fit_from_runs_that_disagree() -> Any:
+    """Fitting a cost constant across runs the model does not describe.
+
+    The cost model assumes seconds go as particles times steps. Where that
+    holds, per-run constants agree and a fit is better information than a
+    synthetic benchmark. Where it does not -- a mesh term dominating
+    differently, occupancy changing sharply with size -- the constants
+    scatter, and averaging through produces a confident number for a
+    relationship that is not there.
+    """
+    import json
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate_from_runs
+
+    root = _Path(tempfile.mkdtemp())
+    for name, particles, steps, seconds in [
+            ("a", 30_000, 5_000, 42.0), ("b", 200_000, 1_000, 900.0)]:
+        directory = root / name / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "cost.json").write_text(json.dumps(
+            {"particles": particles, "steps": steps, "seconds": seconds,
+             "platform": "CUDA", "precision": "mixed"}))
+    return calibrate_from_runs(root, platform_name="CUDA",
+                               precision="mixed", path=root / "cal.json")
+
+
+def _a_fit_from_runs_that_agree() -> Any:
+    import json
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate_from_runs
+
+    root = _Path(tempfile.mkdtemp())
+    for index, (particles, steps, seconds) in enumerate(
+            [(30_000, 5_000, 42.0), (62_000, 10_000, 175.0),
+             (45_000, 8_000, 102.0)]):
+        directory = root / f"s{index}" / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "cost.json").write_text(json.dumps(
+            {"particles": particles, "steps": steps, "seconds": seconds,
+             "platform": "CUDA", "precision": "mixed"}))
+    fit = calibrate_from_runs(root, platform_name="CUDA", precision="mixed",
+                              path=root / "cal.json")
+    return {"seconds_per_particle_step": fit.seconds_per_particle_step,
+            "runs": fit.runs, "spread": fit.spread}
+
+
 DEFECTS: list[Case] = [
+    Case("a cost constant fitted across runs that disagree",
+         _a_fit_from_runs_that_disagree, "refused",
+         "the per-run constants differ by more than the model's assumption "
+         "allows, which says the relationship does not hold on this "
+         "hardware rather than that the measurements were noisy",
+         mentioning="disagree"),
     Case("a mean pooled over segments of a run that never settled",
          _a_mean_from_a_run_that_never_settled, "refused",
          "the segment means move in order, so pooling would give a "
@@ -1246,6 +1303,10 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("a cost constant fitted across runs that agree",
+         _a_fit_from_runs_that_agree, "proceeded",
+         "three real runs of different sizes give the same constant, which "
+         "is better information than argon and says the model holds here"),
     Case("a mean pooled over segments that scatter without a trend",
          _a_mean_from_segments_that_scatter, "qualified",
          "disagreement in no order says the per-segment errors are too "

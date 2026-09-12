@@ -1978,6 +1978,11 @@ def run_simulation(
             total_steps=plan["nvt_steps"] + plan["npt_steps"],
         )
         current_step = 0
+        # The clock for what this run cost. Started after the system is
+        # built and before the first step, so it times integration rather
+        # than setup -- setup does not scale with step count and charging
+        # it to the constant would overstate short runs badly.
+        run_started = datetime.now(timezone.utc)
         if telemetry is not None:
             if plan["nvt_steps"] > 0:
                 telemetry.mark_stage("nvt", "current", status="running", current_step=current_step)
@@ -2282,6 +2287,32 @@ def run_simulation(
         # checkpoint from the last reporter interval and no seal, and the
         # next segment refuses rather than continuing from a file that may
         # have been half written when the process died.
+        # What this run cost, in the three numbers an estimate is built
+        # from. Written because the cost model can otherwise only be
+        # calibrated from a synthetic benchmark, and a machine that has run
+        # real studies knows more about itself than argon does.
+        #
+        # Beside the run rather than in the manifest's phase record because
+        # it belongs to the simulation and not to the orchestration: a study
+        # run through the API without an orchestrator should leave one too.
+        try:
+            wall_seconds = (datetime.now(timezone.utc)
+                            - run_started).total_seconds()
+            (output_dir / "cost.json").write_text(json.dumps({
+                "particles": int(system.getNumParticles()),
+                # Steps integrated in this run. For a resumed segment that
+                # is the segment's own steps, which is what it cost -- the
+                # earlier ones were paid for by an earlier run and are in
+                # its own record.
+                "steps": int(current_step),
+                "seconds": float(wall_seconds),
+                "platform": platform_name,
+                "precision": str(precision),
+                "timestep_fs": float(timestep_fs),
+            }, indent=2), encoding="utf-8")
+        except Exception:  # noqa: BLE001 - a run that finished still finished
+            logger.debug("Could not record what this run cost.")
+
         checkpoint_path = output_dir / "checkpoint.chk"
         try:
             with checkpoint_path.open("wb") as fh:

@@ -55,6 +55,9 @@ __all__ = [
     "calibration_path",
     "calibrate",
     "measure_this_machine",
+    "calibrate_from_runs",
+    "costs_under",
+    "Fit",
     "load_calibration",
     "estimate_seconds",
     "estimate_study",
@@ -485,3 +488,154 @@ def measure_this_machine(
     return calibrate(particles=particles, steps=steps, seconds=elapsed,
                      platform_name=measured_on, precision=precision,
                      path=path, save=save)
+
+
+@dataclass(frozen=True)
+class Fit:
+    """A constant fitted from real runs, and how well it fits.
+
+    ``measure_this_machine`` gives one point from argon. A machine that has
+    run real studies knows more about itself than argon does: different
+    sizes, different force fields, PME rather than a plain cutoff. Fitting
+    across them is strictly better information, and it also does something
+    a single point cannot -- it says whether the model holds here at all.
+
+    ``spread`` is the ratio of the largest per-run constant to the
+    smallest. One would mean every run agreed exactly. The cost model
+    assumes seconds go as particles times steps, and if that assumption
+    fails on some hardware -- a PME mesh term dominating differently, a GPU
+    whose occupancy changes sharply with system size -- the constants will
+    not agree and the spread is how that shows up.
+    """
+
+    seconds_per_particle_step: float
+    runs: int
+    spread: float
+    #: The per-run constants, so a reader can see the distribution rather
+    #: than a summary of it. Two clusters and one outlier are different
+    #: stories and a spread of 4 tells all three the same way.
+    constants: tuple[float, ...]
+    machine: dict[str, str]
+
+    @property
+    def trustworthy(self) -> bool:
+        return self.spread <= SPREAD_REFUSE_ABOVE
+
+
+#: How far the per-run constants may disagree before a fit is refused.
+#: Three is generous -- the model is only claimed to a few tens of per cent
+#: -- and it is generous on purpose, because refusing a usable fit sends
+#: somebody back to argon, which is worse information.
+SPREAD_REFUSE_ABOVE = 3.0
+
+
+def costs_under(root: Path | str) -> list[dict[str, Any]]:
+    """Every `cost.json` a run left under here.
+
+    Walks rather than taking a list, because a campaign leaves them one per
+    segment per study and asking a caller to enumerate those is asking them
+    not to bother.
+    """
+    found: list[dict[str, Any]] = []
+    for record in sorted(Path(root).rglob("cost.json")):
+        try:
+            data = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if all(data.get(key) for key in ("particles", "steps", "seconds")):
+            found.append(data)
+    return found
+
+
+def calibrate_from_runs(
+    root: Path | str,
+    *,
+    platform_name: str = "",
+    precision: str = "",
+    path: Path | None = None,
+    save: bool = True,
+) -> Fit:
+    """Fit this machine's constant from studies it has actually run.
+
+    Better than argon in the ways that matter: real system sizes, real
+    force fields, PME rather than a plain cutoff, and the same integrator
+    settings the next study will use.
+
+    Runs from other platforms or precisions are excluded rather than
+    averaged in. A mixed-precision GPU run and a double-precision CPU run
+    have genuinely different constants, and a mean of the two describes
+    neither.
+
+    Raises
+    ------
+    StudyError
+        With ``environment.calibration.inconsistent`` where the per-run
+        constants disagree by more than :data:`SPREAD_REFUSE_ABOVE`. That
+        is not a noisy measurement, it is the linear model failing on this
+        hardware, and averaging through it would produce a confident
+        constant for a relationship that does not hold. The refusal names
+        the spread so a reader can decide whether to fit over a narrower
+        range of system sizes instead.
+    """
+    wanted = describe_machine(platform_name, precision)
+    records = [
+        r for r in costs_under(root)
+        if (not platform_name or r.get("platform") == platform_name)
+        and (not precision or r.get("precision") == precision)
+    ]
+    if not records:
+        raise StudyError(
+            f"No completed runs under {root} to fit from. A run writes "
+            "`cost.json` beside its output when it finishes; a machine "
+            "that has not run anything here has to start from "
+            "`measure_this_machine()`.",
+            code="environment.calibration.absent",
+        )
+
+    constants = tuple(
+        float(r["seconds"]) / (float(r["particles"]) * float(r["steps"]))
+        for r in records)
+    low, high = min(constants), max(constants)
+    spread = (high / low) if low > 0 else float("inf")
+
+    if spread > SPREAD_REFUSE_ABOVE:
+        raise StudyError(
+            f"The {len(records)} runs under {root} disagree about what a "
+            f"particle-step costs by a factor of {spread:.1f}. The cost "
+            "model assumes seconds go as particles times steps, and a "
+            "disagreement this wide says that does not hold here rather "
+            "than that the measurements were noisy. Averaging through it "
+            "would give a confident constant for a relationship that is "
+            "not there. Fit over a narrower range of system sizes, or use "
+            "`measure_this_machine()` and treat its estimates as rough.",
+            code="environment.calibration.inconsistent",
+            spread=spread, runs=len(records),
+        )
+
+    # The median rather than the mean. One run that swapped, or shared the
+    # card with something else, is slow by an arbitrary amount and pulls a
+    # mean with it; nothing makes a run anomalously fast, so the
+    # distribution is one-sided and the median is the honest centre.
+    ordered = sorted(constants)
+    middle = len(ordered) // 2
+    constant = (ordered[middle] if len(ordered) % 2
+                else (ordered[middle - 1] + ordered[middle]) / 2)
+
+    total_particles = sum(int(r["particles"]) for r in records)
+    total_steps = sum(int(r["steps"]) for r in records)
+    total_seconds = sum(float(r["seconds"]) for r in records)
+    fitted = Calibration(
+        seconds_per_particle_step=constant,
+        particles=total_particles // len(records),
+        steps=total_steps // len(records),
+        seconds=total_seconds,
+        machine=wanted,
+        measured_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    )
+    if save:
+        target = path or calibration_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(fitted.as_record(), indent=2),
+                          encoding="utf-8")
+    return Fit(seconds_per_particle_step=constant, runs=len(records),
+               spread=spread, constants=constants, machine=wanted)
