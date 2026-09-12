@@ -552,6 +552,20 @@ carries `share_of_a_sphere` and `correction_kjmol`, computed by integrating the
 wall's own Boltzmann factor rather than assuming a hard edge, because the wall
 is soft and the ligand leans on it.
 
+**What the correction rests on, and how that is checked.** The bulk state
+gives up room; the bound state gives up none — *provided the bound pose fits
+inside the cone*. A cone too narrow for it has removed part of the population
+the binding integral is taken over, and no analytic term puts that back. So
+every window writes the wall's bias beside its coordinate, and the binding free
+energy is refused where the wall carried more than 0.25 kJ/mol in the windows
+holding the bound state, naming the number and asking for a wider angle. Where
+no such column exists the result says `cone_wall_checked: false` rather than
+implying the check passed.
+
+`pmf.json` carries both numbers: `delta_g_before_the_cone_kjmol` is what the
+curve says, `delta_g_kjmol` is what it means, and `cone_correction_kjmol` is
+the step between them.
+
 **The check that comes with it.** The correction depends on the angle and the
 answer must not. Run two cone angles and compare: 20° and 45° differ by
 3.8 kJ/mol in the correction, so if the corrected binding free energies agree

@@ -48,6 +48,7 @@ __all__ = [
     "plan_windows",
     "windows_as_sweep",
     "collect_samples",
+    "wall_bias_where_the_bound_state_is",
     "overlap_between",
     "compute_pmf",
     "design_from_a_pilot",
@@ -661,6 +662,57 @@ def windows_as_sweep(plan: UmbrellaPlan) -> list[dict[str, Any]]:
         }
         for w in plan.windows
     ]
+
+
+def wall_bias_where_the_bound_state_is(
+    directories: "dict[int, Any]", plan: "UmbrellaPlan",
+    bound_below: float, *, equilibration_fraction: float | None = None,
+) -> float | None:
+    """How hard the cone's wall pushed where the bound state is.
+
+    The correction for running inside a cone assumes the bound pose fits
+    within it: the bulk state gives up ``4 pi / Omega`` of room and the bound
+    state gives up nothing. A wall that bites in the bound windows has taken
+    part of the population the binding integral is over, and no analytic term
+    puts that back -- so the assumption is measured here, from the column the
+    run writes for it, rather than assumed.
+
+    Returns None where no window recorded one, which is every study that ran
+    without a cone and every study that ran before the column existed.
+    """
+    from pathlib import Path
+
+    fraction = (plan.equilibration_fraction if equilibration_fraction is None
+                else float(equilibration_fraction))
+    inside = {w.index for w in plan.windows if w.centre <= bound_below}
+    carried: list[float] = []
+    for index, directory in sorted(directories.items()):
+        if index not in inside:
+            continue
+        colvar = Path(directory) / "simulation" / "COLVAR"
+        if not colvar.is_file():
+            continue
+        names: list[str] = []
+        rows: list[float] = []
+        for line in colvar.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#"):
+                if "FIELDS" in line and not names:
+                    names = line.split("FIELDS")[1].split()
+                continue
+            if not line.strip() or "cone.bias" not in names:
+                continue
+            parts = line.split()
+            column = names.index("cone.bias")
+            if len(parts) > column:
+                try:
+                    rows.append(float(parts[column]))
+                except ValueError:
+                    continue
+        if rows:
+            kept = np.asarray(rows)[int(len(rows) * fraction):]
+            if kept.size:
+                carried.append(float(np.mean(kept)))
+    return max(carried) if carried else None
 
 
 def collect_samples(

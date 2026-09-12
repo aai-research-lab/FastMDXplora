@@ -216,3 +216,142 @@ class TestAConfigSaysIt:
     def test_nothing_is_not_a_cone(self):
         assert cone_from_config(None) is None
         assert cone_from_config({}) is None
+
+
+class TestWhatTheCorrectionRestsOn:
+    """A bulk state that gave up room, and a bound state that did not.
+
+    The correction is the difference between those two, so it is valid only
+    while the second half is true. A cone narrow enough to cut the bound pose
+    has removed part of the population the binding integral is over, and no
+    analytic term puts that back -- so the wall's bias in the bound windows is
+    a measurement the answer depends on.
+    """
+
+    @staticmethod
+    def _a_well(depth=12.0, edge=0.5):
+        import numpy as np
+
+        radius = np.linspace(0.3, 2.0, 60)
+        potential = np.where(radius < edge, -depth, 0.0)
+        energy = potential - 2.0 * KT * np.log(radius)
+        return radius, energy - energy.min()
+
+    def test_the_correction_is_added_and_both_numbers_are_shown(self):
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        radius, energy = self._a_well()
+        plain = binding_free_energy(radius, energy)
+        caged = binding_free_energy(radius, energy,
+                                    cone=Cone(half_angle_deg=30.0),
+                                    wall_bias_kjmol=0.0)
+
+        assert caged["delta_g_before_the_cone_kjmol"] == pytest.approx(
+            plain["delta_g_kjmol"])
+        assert caged["delta_g_kjmol"] == pytest.approx(
+            plain["delta_g_kjmol"] + caged["cone_correction_kjmol"])
+        assert caged["cone_correction_kjmol"] == pytest.approx(6.56, abs=0.05)
+
+    def test_a_wall_that_bit_the_bound_state_is_refused(self):
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        radius, energy = self._a_well()
+        answer = binding_free_energy(radius, energy,
+                                     cone=Cone(half_angle_deg=30.0),
+                                     wall_bias_kjmol=2.0)
+
+        assert answer["delta_g_kjmol"] is None
+        assert "bites in the bound state" in answer["refused"]
+        assert "Widen `half_angle_deg`" in answer["refused"]
+
+    def test_an_unchecked_wall_says_so_rather_than_passing_quietly(self):
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        radius, energy = self._a_well()
+        answer = binding_free_energy(radius, energy,
+                                     cone=Cone(half_angle_deg=30.0))
+
+        assert answer["delta_g_kjmol"] is not None
+        assert answer["cone_wall_checked"] is False
+
+    def test_a_study_without_a_cone_carries_none_of_this(self):
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        radius, energy = self._a_well()
+        answer = binding_free_energy(radius, energy)
+
+        assert answer["cone"] is None
+        assert answer["cone_correction_kjmol"] is None
+        assert answer["cone_wall_checked"] is None
+
+    def test_the_record_on_disk_serves_as_well_as_the_object(self):
+        """A study recombining from what its runs wrote has the record, not
+        the object that made it."""
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        radius, energy = self._a_well()
+        cone = Cone(half_angle_deg=30.0)
+        from_object = binding_free_energy(radius, energy, cone=cone,
+                                          wall_bias_kjmol=0.0)
+        from_record = binding_free_energy(radius, energy,
+                                          cone=cone.as_record(),
+                                          wall_bias_kjmol=0.0)
+
+        # To within the rounding the record carries: it writes the
+        # correction to four decimals, which is four more than a free energy
+        # is ever quoted to.
+        assert from_record["delta_g_kjmol"] == pytest.approx(
+            from_object["delta_g_kjmol"], abs=1e-3)
+
+    def test_the_wall_is_read_off_the_windows_that_hold_the_bound_state(
+            self, tmp_path):
+        """From the column the run writes, discarding what the study
+        discards, and taking the worst window rather than the average of
+        them: one window with the wall against it is enough to have removed
+        population from the integral."""
+        import numpy as np
+
+        from fastmdxplora.simulation.umbrella import (
+            wall_bias_where_the_bound_state_is,
+        )
+
+        plan = plan_windows({"collective_variable": "ligand_distance",
+                             "centres": [0.40, 0.50, 1.60],
+                             "force_constant": 3000.0,
+                             "cone": {"half_angle_deg": 30}})
+        directories = {}
+        for index, bias in enumerate((0.0, 1.7, 9.0)):
+            run = tmp_path / f"window-{index}" / "simulation"
+            run.mkdir(parents=True)
+            rows = "\n".join(
+                f"{i * 0.2:.1f} 0.5 1.0 2.9 {bias:.3f}" for i in range(100))
+            run.joinpath("COLVAR").write_text(
+                "#! FIELDS time cv restraint.bias cone_angle cone.bias\n"
+                + rows, encoding="utf-8")
+            directories[index] = run.parent
+
+        # The bound state ends at 0.9: the far window is not part of it, and
+        # its wall is against the stops.
+        worst = wall_bias_where_the_bound_state_is(directories, plan, 0.9)
+
+        assert worst == pytest.approx(1.7)
+        assert np.isclose(
+            wall_bias_where_the_bound_state_is(directories, plan, 0.45), 0.0)
+
+    def test_a_run_with_no_such_column_reports_nothing_rather_than_zero(
+            self, tmp_path):
+        """Zero would say the wall was quiet. Nothing says nobody looked."""
+        from fastmdxplora.simulation.umbrella import (
+            wall_bias_where_the_bound_state_is,
+        )
+
+        plan = plan_windows({"collective_variable": "ligand_distance",
+                             "centres": [0.40, 0.50, 1.60],
+                             "force_constant": 3000.0})
+        run = tmp_path / "window-0" / "simulation"
+        run.mkdir(parents=True)
+        run.joinpath("COLVAR").write_text(
+            "#! FIELDS time cv restraint.bias\n0.0 0.4 0.1\n", encoding="utf-8")
+
+        assert wall_bias_where_the_bound_state_is(
+            {0: run.parent}, plan, 0.9) is None

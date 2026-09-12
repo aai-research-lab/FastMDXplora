@@ -1168,10 +1168,30 @@ class BatchExplorer:
                 from fastmdxplora.simulation.binding import (
                     binding_free_energy)
 
+                # The cone the windows ran under, and the measurement the
+                # correction for it rests on. A wall that bit where the bound
+                # state is has removed part of the population the integral is
+                # over, so the number it pushed is read off the runs rather
+                # than assumed to be zero.
+                from fastmdxplora.simulation.umbrella import (
+                    wall_bias_where_the_bound_state_is,
+                )
+
+                wall = None
+                if plan.cone is not None:
+                    minimum = min(
+                        (point for point in zip(
+                            payload["pmf"]["coordinate"],
+                            payload["pmf"]["free_energy_kjmol"])
+                         if point[1] is not None),
+                        key=lambda point: point[1], default=(0.0, 0.0))[0]
+                    wall = wall_bias_where_the_bound_state_is(
+                        directories, plan, bound_below=float(minimum) * 1.25)
                 payload["binding"] = binding_free_energy(
                     payload["pmf"]["coordinate"],
                     payload["pmf"]["free_energy_kjmol"],
                     temperature_K=temperature,
+                    cone=plan.cone, wall_bias_kjmol=wall,
                 )
 
         destination = Path(self.output_dir) / "pmf.json"
