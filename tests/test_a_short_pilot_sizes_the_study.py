@@ -452,6 +452,36 @@ class TestTheCurveIsTheBetterGradientWhereThereIsOne:
         # such dip: the stiffness there is the stiffness either side.
         assert softest_beside_it(from_curve) > 0.7
 
+    def test_a_barrier_face_is_not_averaged_with_the_ground_beyond_it(self):
+        """A slope taken through two bins at once is not the slope of either.
+
+        On the study this came from, consecutive bins rise at 197 kJ/mol/nm
+        across the face of the barrier and the two-bin slope through the same
+        point reads 136. The window held there measured what it needed --
+        13013 -- and a design sized from 136 would have given it 7400 and
+        watched it slide. The finest the curve resolves is one bin, and the
+        steeper of the two meeting at a point is the one a window has to be
+        held against.
+        """
+        along = np.linspace(0.40, 1.00, 61)
+        # Flat, one steep bin, flat again: a face with ground either side.
+        height = np.zeros_like(along)
+        face = 30
+        height[face + 1:] = 197.0 * (along[face + 1] - along[face])
+        drawn, plan = a_pilot(centres=list(np.linspace(0.40, 1.00, 6)),
+                              force_constant=3000.0, gradient=5.0,
+                              spread=1e-6)
+
+        design = design_from_a_pilot(
+            drawn, plan, curve=(along.tolist(), height.tolist()))
+
+        constants = np.asarray(design["force_constants"])
+        centres = np.asarray(design["centres"])
+        at_the_face = constants[np.abs(centres - along[face]) < 0.02]
+        # 197^2/kT is what that face needs; half the slope would be a
+        # quarter of the constant.
+        assert at_the_face.max() > 0.6 * 197.0 ** 2 / KT
+
     def test_the_design_says_which_reading_it_used(self):
         drawn, plan, curve = self._a_climb()
 

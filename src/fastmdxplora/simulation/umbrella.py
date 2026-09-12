@@ -903,7 +903,20 @@ def design_from_a_pilot(
                 f"points with a free energy on them; {int(known.sum())} had "
                 "one.")
         at = along[known]
-        slope = np.abs(np.gradient(height[known], at))
+        rise = np.abs(np.diff(height[known]))
+        run = np.diff(at)
+        each = rise / np.where(run == 0.0, np.inf, run)
+        # The steeper of the two intervals meeting at a point, rather than
+        # the slope through both of them. A central difference spans two bins
+        # and averages the face of a barrier with the ground beyond it: on
+        # the study this came from it read 136 kJ/mol/nm where consecutive
+        # bins rise at 197, and a window sized from 136 comes to rest outside
+        # its share of the spacing -- which is what the window held there
+        # measured, asking for 13013 where the smoothed reading would have
+        # given it 7400.
+        slope = np.empty(at.size)
+        slope[0], slope[-1] = each[0], each[-1]
+        slope[1:-1] = np.maximum(each[:-1], each[1:])
     else:
         at = np.array([m["sampled_at"] for m in measured])
         slope = np.array([m["gradient_kjmol_per_unit"] for m in measured])
