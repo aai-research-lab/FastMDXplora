@@ -1360,7 +1360,7 @@ def run_simulation(
         # One window. The set of them is expanded above, so what arrives here
         # is a coordinate and the position this run holds it at.
         from fastmdxplora.simulation.metadynamics import cv_lines, plan_from_config
-        from fastmdxplora.simulation.umbrella import Window
+        from fastmdxplora.simulation.umbrella import Window, cone_from_config
 
         centre = umbrella.get("centre")
         if centre is None:
@@ -1378,9 +1378,11 @@ def run_simulation(
         # study written the American way carried a key with no meaning into
         # a collective-variable plan. Every other site in the tree named
         # both; a sweep of the source found this one and only this one.
+        # `cone` is umbrella's own and means nothing to the coordinate
+        # layer, which refuses a key it does not know.
         spec = {k: v for k, v in umbrella.items()
                 if k not in ("centre", "force_constant", "n_windows",
-                             "centres", "centers", "from", "to")}
+                             "centres", "centers", "from", "to", "cone")}
         spec.setdefault("sigma", 0.05)
         spec.setdefault("unbounded", True)
         # The ligand's residue name, which a ligand variable needs and the
@@ -1393,9 +1395,49 @@ def run_simulation(
         window = Window(index=int(umbrella.get("index", 0)),
                         centre=float(centre), force_constant=float(force))
         lines = cv_lines(cv_plan, str(topology_path))
+
+        # A wall on the angle, where the study asked for one. The axis is the
+        # direction from the named group's centre to the site, so "straight
+        # out" is away from the protein and the cone opens into solvent. The
+        # selection is resolved here rather than carried as text, because a
+        # selection matching nothing has to fail before a window runs for a
+        # day rather than inside PLUMED's parser afterwards.
+        cone = cone_from_config(umbrella.get("cone"))
+        if cone is not None:
+            if cv_plan.collective_variable not in ("ligand_distance",
+                                                   "distance"):
+                raise ValueError(
+                    "A cone restrains the angle between an axis and the "
+                    "line from the site to the ligand, which needs a "
+                    "coordinate that is a distance between two groups. This "
+                    f"study biases {cv_plan.collective_variable!r}.")
+            import mdtraj as _md
+
+            mdtop = _md.load(str(topology_path)).topology
+            axis_atoms = [int(i) for i in mdtop.select(cone.axis_selection)]
+            if not axis_atoms:
+                raise ValueError(
+                    f"The cone's axis selection {cone.axis_selection!r} "
+                    "matched no atoms, so there is no direction for the cone "
+                    "to point away from.")
+            site, ligand = (("site", "lig")
+                            if cv_plan.collective_variable == "ligand_distance"
+                            else ("b", "a"))
+            lines = lines + cone.plumed_lines(axis_atoms, site=site,
+                                              ligand=ligand)
+            logger.info(
+                "Cone: the ligand is held within %g degrees of the axis out "
+                "of %r, a cap %.1f%% of a sphere. A binding free energy "
+                "measured under it needs %+.2f kJ/mol adding back, and the "
+                "run records the angle so the wall can be checked against "
+                "the bound state.",
+                cone.half_angle_deg, cone.axis_selection,
+                100.0 * cone.solid_angle(temperature_K) / (4.0 * math.pi),
+                cone.correction_kjmol(temperature_K))
         script_path = Path(output_dir) / "umbrella.plumed"
         script_path.parent.mkdir(parents=True, exist_ok=True)
-        script_path.write_text(window.plumed_lines(lines), encoding="utf-8")
+        script_path.write_text(window.plumed_lines(lines, cone=cone),
+                               encoding="utf-8")
         # The same restraint, writing somewhere else. A held window runs
         # through equilibration too, and putting both in COLVAR left a file
         # that began at 500 ps, lost what NVT wrote, and ran its clock
@@ -1406,7 +1448,7 @@ def run_simulation(
         settling_path = Path(output_dir) / "umbrella_equilibration.plumed"
         settling_path.write_text(
             window.plumed_lines(lines, colvar="COLVAR.equilibration",
-                                restart=True),
+                                restart=True, cone=cone),
             encoding="utf-8")
         logger.info(
             "Umbrella window %d prepared: %s held at %g with k=%g. "
@@ -2072,6 +2114,13 @@ def run_simulation(
                     # Which file holds what, said once, beside the files.
                     "colvar": "COLVAR is production only",
                     "equilibration_colvar": "COLVAR.equilibration",
+                    # The cone this window ran under, where it ran under one.
+                    # Carried per window rather than only in the study's plan
+                    # because the correction it implies belongs to the window
+                    # that was restrained, and a study recombined from runs on
+                    # disk should not need the config to know.
+                    "cone": (cone.as_record(temperature_K)
+                             if cone is not None else None),
                 }, indent=2),
                 encoding="utf-8")
         # Checkpoint reporter for crash recovery / restart.

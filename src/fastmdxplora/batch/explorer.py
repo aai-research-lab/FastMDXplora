@@ -224,6 +224,9 @@ def _first_error_phase_message(phases: list[Any]) -> str:
 _UMBRELLA_ONLY = frozenset({
     "centres", "centers", "centre", "from", "to", "n_windows",
     "force_constant", "minimum_overlap", "minimum_samples",
+    # The wall on the angle is umbrella's own: the coordinate layer biases a
+    # distance and knows nothing about the cone around it.
+    "cone",
     "index",
 })
 

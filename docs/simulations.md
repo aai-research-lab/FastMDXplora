@@ -497,6 +497,66 @@ is what the umbrella phase does — the point is that nothing else is required
 of a pilot. Three hundred picoseconds is enough: a displacement converges like
 a mean, and 1,500 samples fix the gradient to about 6 kJ/mol/nm.
 
+### The sphere a distance coordinate leaves open
+
+A window on a distance holds the ligand at a radius and leaves it free to be
+anywhere on the sphere of that radius. That is what the `-2kT ln r` in the bulk
+reference is about: the room at radius r is `4πr²`, so a free ligand is more
+likely to be found at 2 nm than at 1 nm for no energetic reason at all.
+
+Two things have to be true for that reference to mean anything, and on a real
+site neither is:
+
+- **The sphere has to be open.** A coordinate measured to a group of backbone
+  atoms has its origin inside the protein. On trypsin's S1 site, 12% of the
+  sphere at 1.0 nm is outside the protein and 50% at 2.0 — so the room grows as
+  `r^4.3`, not `r²`, and no length of run makes `-2kT ln r` the right shape.
+- **The ligand has to visit it.** A sphere of radius 2 nm has 50 nm² of
+  surface. A ligand held there crosses a few nm² in ten nanoseconds, so one
+  window sees a patch.
+
+`cone` answers both. It puts a flat-bottomed wall on the angle between the
+site-to-ligand line and an axis fixed in the protein, so the ligand is confined
+to a cap:
+
+```yaml
+  umbrella:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    select_atoms: "resSeq 189 to 195 and name CA"
+    centres: [...]
+    force_constant: [...]
+    cone:
+      half_angle_deg: 30
+      force_constant: 5000        # kJ/mol/rad², the wall
+      axis_selection: protein     # what the cone points away from
+```
+
+The cap's area is `Ω r²` with `Ω = 2π(1 − cos θ)`, still exactly proportional
+to `r²` — so the reference is right by construction — and at 30° the cap is
+7% of a sphere, which a ligand covers in a fraction of the time.
+
+The axis is the direction from `axis_selection`'s centre to the site, so
+"straight out" is away from the protein and the cone turns with the molecule
+rather than pointing at a fixed corner of the box.
+
+**Flat-bottomed, not harmonic.** Inside the cone there is no bias at all, so
+what happens there is the system's own. A harmonic restraint on the angle would
+pull the ligand towards the axis everywhere, including in the bound state.
+
+**What it costs.** The bulk state under a cone is `4π/Ω` smaller than a free
+ligand's, while a bound pose that fits inside the cone loses nothing — so a
+binding free energy measured this way is too negative by `kT ln(4π/Ω)` until
+that is added back. The study records the number: the plan's `cone` block
+carries `share_of_a_sphere` and `correction_kjmol`, computed by integrating the
+wall's own Boltzmann factor rather than assuming a hard edge, because the wall
+is soft and the ligand leans on it.
+
+**The check that comes with it.** The correction depends on the angle and the
+answer must not. Run two cone angles and compare: 20° and 45° differ by
+3.8 kJ/mol in the correction, so if the corrected binding free energies agree
+the correction is being applied properly, and if they do not, it is not.
+
 ### One system, many windows
 
 The windows are the same molecule held at different points along the

@@ -39,6 +39,8 @@ from fastmdxplora.uncertainty import DEFAULT_RESAMPLES, block_bootstrap
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "Cone",
+    "cone_from_config",
     "Window",
     "expand_umbrella",
     "plan_from_expanded",
@@ -57,6 +59,151 @@ KB_KJ = 0.008314462618
 
 
 @dataclass(frozen=True)
+class Cone:
+    """A wall on the angle, so the shell around the site stops needing to be
+    sampled.
+
+    A window on a distance holds the ligand at a radius and leaves it free on
+    the sphere of that radius. The recombination's reference assumes the whole
+    sphere is available and that the ligand visits all of it, because the room
+    at radius r is ``4 pi r^2`` and that is where the ``-2kT ln r`` in bulk
+    comes from. Neither assumption survives contact with a real site: on a
+    real study the shell 1 nm from a pocket was 12% outside the protein and
+    50% at 2 nm, and one window's ligand visited between a twentieth and a
+    third of what was open to it in ten nanoseconds.
+
+    A flat-bottomed wall on the angle between the site-to-ligand vector and an
+    axis fixed in the protein confines the ligand to a cap of solid angle
+    ``Omega = 2 pi (1 - cos theta)``. The cap's area is ``Omega r^2``, still
+    exactly proportional to ``r^2``, so the reference is right again by
+    construction -- and at 30 degrees the cap is a fifteenth of a sphere,
+    which the ligand covers in a fraction of the time.
+
+    **Flat-bottomed, not harmonic.** Inside the cone there is no bias at all,
+    so the sampling there is the system's own. A harmonic restraint on the
+    angle pulls the ligand towards the axis everywhere, including in the bound
+    state where it has no business being pushed.
+
+    **What it costs.** The bulk state under a cone is smaller than a free
+    ligand's by ``4 pi / Omega``, and the bound state is not -- a bound pose
+    that fits inside the cone loses nothing. So a binding free energy from a
+    cone run is too negative by ``kT ln(4 pi / Omega)`` until that is added
+    back. `correction_kjmol` is that number, and it is exact rather than
+    nominal: the wall is soft, the ligand leaks past it, and `solid_angle`
+    integrates the wall's own Boltzmann factor instead of assuming a hard
+    edge.
+
+    **What has to be checked.** The correction assumes the cone does not cut
+    the bound state. That is measurable -- the wall's bias in the bound
+    windows must be nothing -- and it is checked rather than assumed.
+    """
+
+    #: Half-angle of the cone, in degrees.
+    half_angle_deg: float
+    #: Stiffness of the wall, in kJ/mol/rad^2. PLUMED's walls have no half in
+    #: them: the penalty is ``KAPPA * (theta - theta_max)^2``.
+    force_constant: float = 5000.0
+    #: What the axis points away from. The direction from this group's centre
+    #: to the site is "straight out", so the default puts the whole protein
+    #: behind the site and the cone in front of it.
+    axis_selection: str = "protein"
+
+    def __post_init__(self) -> None:
+        if not 0.0 < float(self.half_angle_deg) < 180.0:
+            raise ValueError(
+                "A cone's `half_angle_deg` is the angle from its axis to its "
+                f"edge, so it lies between 0 and 180; {self.half_angle_deg} "
+                "was given.")
+        if float(self.force_constant) <= 0.0:
+            raise ValueError(
+                "A cone's wall needs a positive `force_constant` in "
+                f"kJ/mol/rad^2; {self.force_constant} was given.")
+
+    @property
+    def half_angle_rad(self) -> float:
+        return math.radians(float(self.half_angle_deg))
+
+    def solid_angle(self, temperature_K: float = 300.0) -> float:
+        """The solid angle the ligand actually has, wall softness included.
+
+        A hard cone would give ``2 pi (1 - cos theta)``. The wall is a
+        quadratic penalty rather than a cliff, so the ligand spends some of
+        its time past the edge -- at 5000 kJ/mol/rad^2 about three degrees of
+        it -- and the cap is that much bigger than nominal. Integrating the
+        wall's Boltzmann factor over the sphere costs nothing and removes the
+        approximation, which matters because this number goes into the answer
+        as a logarithm.
+        """
+        kT = KB_KJ * float(temperature_K)
+        angle = np.linspace(0.0, math.pi, 20001)
+        past = np.clip(angle - self.half_angle_rad, 0.0, None)
+        weight = np.exp(-float(self.force_constant) * past ** 2 / kT)
+        integrand = weight * np.sin(angle)
+        step = float(angle[1] - angle[0])
+        return float(2.0 * math.pi * 0.5 * step
+                     * np.sum(integrand[:-1] + integrand[1:]))
+
+    def correction_kjmol(self, temperature_K: float = 300.0) -> float:
+        """What to add to a binding free energy measured under this cone."""
+        kT = KB_KJ * float(temperature_K)
+        return float(kT * math.log(4.0 * math.pi
+                                   / self.solid_angle(temperature_K)))
+
+    def plumed_lines(self, axis_atoms: "list[int]", *, site: str = "site",
+                     ligand: str = "lig") -> list[str]:
+        """The angle this restrains, defined from the atoms that fix it.
+
+        `ANGLE` at the site between the axis group and the ligand is pi when
+        the ligand is straight out, so the cone is a *lower* wall: the angle
+        must stay above ``pi - theta``.
+        """
+        from fastmdxplora.simulation.metadynamics import _plumed_list
+
+        return [
+            f"cone_axis: COM ATOMS={_plumed_list(axis_atoms)}",
+            f"cone_angle: ANGLE ATOMS=cone_axis,{site},{ligand}",
+        ]
+
+    def as_record(self, temperature_K: float = 300.0) -> dict[str, Any]:
+        return {
+            "half_angle_deg": float(self.half_angle_deg),
+            "force_constant": float(self.force_constant),
+            "axis_selection": self.axis_selection,
+            "solid_angle_sr": round(self.solid_angle(temperature_K), 6),
+            "share_of_a_sphere": round(
+                self.solid_angle(temperature_K) / (4.0 * math.pi), 6),
+            "correction_kjmol": round(self.correction_kjmol(temperature_K), 4),
+        }
+
+
+def cone_from_config(spec: "dict[str, Any] | None") -> "Cone | None":
+    """A cone from what a config says, or nothing where it says nothing."""
+    if not spec:
+        return None
+    if not isinstance(spec, dict):
+        raise ValueError(
+            "`cone` takes a block with `half_angle_deg`, and optionally "
+            f"`force_constant` and `axis_selection`; {spec!r} was given.")
+    unknown = set(spec) - {"half_angle_deg", "half_angle", "force_constant",
+                           "axis_selection", "axis"}
+    if unknown:
+        raise ValueError(
+            f"A cone takes `half_angle_deg`, `force_constant` and "
+            f"`axis_selection`. It was also given {sorted(unknown)}.")
+    angle = spec.get("half_angle_deg", spec.get("half_angle"))
+    if angle is None:
+        raise ValueError(
+            "A cone needs a `half_angle_deg`: the angle from its axis to its "
+            "edge. Thirty degrees is a cap a fifteenth of a sphere in area.")
+    return Cone(
+        half_angle_deg=float(angle),
+        force_constant=float(spec.get("force_constant", 5000.0)),
+        axis_selection=str(spec.get("axis_selection")
+                           or spec.get("axis") or "protein"),
+    )
+
+
+@dataclass(frozen=True)
 class Window:
     """One position along the coordinate, held there by a spring."""
 
@@ -65,7 +212,8 @@ class Window:
     force_constant: float
 
     def plumed_lines(self, cv_lines: list[str], *,
-                     colvar: str = "COLVAR", restart: bool = False) -> str:
+                     colvar: str = "COLVAR", restart: bool = False,
+                     cone: "Cone | None" = None) -> str:
         """The window's PLUMED input, writing its trace to `colvar`.
 
         The file is named rather than fixed because a held window runs the
@@ -78,13 +226,30 @@ class Window:
         needs it: adding the barostat reinitialises the context, PLUMED is
         rebuilt, and without it the reopened file loses everything NVT wrote.
         """
-        return "\n".join((["RESTART", ""] if restart else []) + cv_lines + [
+        held = [
             "",
             f"restraint: RESTRAINT ARG=cv AT={self.centre:g} "
             f"KAPPA={self.force_constant:g}",
-            "",
-            f"PRINT ARG=cv,restraint.bias STRIDE=100 FILE={colvar}",
-        ]) + "\n"
+        ]
+        printed = "cv,restraint.bias"
+        if cone is not None:
+            # A lower wall, because the angle at the site between the axis
+            # group and the ligand is pi when the ligand is straight out: the
+            # cone is "stay above pi minus theta". The angle and the wall's
+            # own bias are both printed, because the correction that follows
+            # from a cone is only valid if the wall never bit in the bound
+            # state, and that is read off this column rather than assumed.
+            held += [
+                f"cone: LOWER_WALLS ARG=cone_angle "
+                f"AT={math.pi - cone.half_angle_rad:.6f} "
+                f"KAPPA={cone.force_constant:g}",
+            ]
+            printed += ",cone_angle,cone.bias"
+        return "\n".join((["RESTART", ""] if restart else []) + cv_lines
+                         + held + [
+                             "",
+                             f"PRINT ARG={printed} STRIDE=100 FILE={colvar}",
+                         ]) + "\n"
 
 
 @dataclass(frozen=True)
@@ -116,6 +281,11 @@ class UmbrellaPlan:
     #: than evidence. Like the overlap threshold, it is a judgement, so a
     #: study can set its own.
     minimum_samples: int = 200
+    #: A wall on the angle, where the study asked for one. Without it a window
+    #: leaves the ligand free on the whole sphere at its radius, and the
+    #: recombination's bulk reference assumes the ligand visits all of that
+    #: sphere -- which a run of any affordable length does not.
+    cone: "Cone | None" = None
 
     def as_record(self) -> dict[str, Any]:
         forces = [w.force_constant for w in self.windows]
@@ -139,6 +309,7 @@ class UmbrellaPlan:
             "equilibration_fraction": self.equilibration_fraction,
             "minimum_overlap": self.minimum_overlap,
             "minimum_samples": self.minimum_samples,
+            "cone": self.cone.as_record() if self.cone else None,
         }
 
 
@@ -154,6 +325,9 @@ _UMBRELLA_OWN_KEYS: frozenset[str] = frozenset({
     # is a config error waiting for the first person to follow the
     # documentation.
     "seed_from",
+    # A wall on the angle, so the shell at each radius stops needing to be
+    # sampled and the bulk reference means what it says.
+    "cone",
     # Written by the expansion onto each window, and read back from it.
     "centre", "index",
 })
@@ -312,6 +486,7 @@ def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
             spec.get("equilibration_fraction", 0.2)),
         minimum_overlap=float(spec.get("minimum_overlap", 0.03)),
         minimum_samples=int(spec.get("minimum_samples", 200)),
+        cone=cone_from_config(spec.get("cone")),
     )
 
 
@@ -441,6 +616,7 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
     fraction = 0.2
     minimum = 0.03
     fewest = 200
+    cone: "Cone | None" = None
     for entry in systems:
         block = ((entry.get("simulation") or {}).get("umbrella")
                  if isinstance(entry, dict) else None)
@@ -451,6 +627,8 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
             block.get("equilibration_fraction", fraction))
         minimum = float(block.get("minimum_overlap", minimum))
         fewest = int(block.get("minimum_samples", fewest))
+        if block.get("cone"):
+            cone = cone_from_config(block["cone"])
         windows.append(Window(
             index=int(block.get("index", len(windows))),
             centre=float(block["centre"]),
@@ -464,6 +642,7 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
         equilibration_fraction=fraction,
         minimum_overlap=minimum,
         minimum_samples=fewest,
+        cone=cone,
     )
 
 
