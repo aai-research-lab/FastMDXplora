@@ -45,7 +45,9 @@ import numpy as np
 __all__ = [
     "Equilibrated",
     "Withholding",
+    "Pooled",
     "Shortfall",
+    "summarise_segments",
     "sampling_shortfall",
     # The old name, kept importable so nothing outside has to move at once.
     "Settled",
@@ -462,3 +464,165 @@ def sampling_shortfall(
         more_ns=(None if frame_interval_ns is None
                  else float(more * frame_interval_ns)),
     )
+
+
+@dataclass(frozen=True)
+class Pooled:
+    """What a joined run supports, taking the joins into account.
+
+    A trajectory assembled from segments is contiguous in time and is not
+    a single sample path. Each join is a place where the reporters
+    restarted and, under a barostat, where the move size re-adapted. That
+    matters to two things.
+
+    **The correlation time.** An autocorrelation function computed across
+    a discontinuity reads the step as long-time correlation and inflates
+    ``g``, which understates the independent samples and makes a real
+    difference look unsupported. Conservative in direction, wrong in
+    magnitude, and the magnitude is what a caller is deciding on.
+
+    **The equilibration detection.** Chodera's method picks the discard
+    that maximises effective samples. A jump at a join is exactly what
+    that method is built to find, so on a joined series it will often
+    discard everything before the last join -- throwing away nine tenths
+    of a ten-segment run and reporting the remainder as if that had been
+    the study.
+
+    So each segment is analysed on its own and the results are pooled.
+    Effective samples add, because the segments are disjoint in time and
+    each is independent of the others by construction. The mean is
+    weighted by effective samples, which is the minimum-variance
+    combination of estimates with different precisions. The standard error
+    comes from the pooled effective count rather than from any one
+    segment.
+    """
+
+    #: Per-segment results, in order. A segment that supported nothing is
+    #: absent, so this can be shorter than the number of segments.
+    segments: tuple[Equilibrated, ...]
+    mean: float
+    standard_error: float
+    effective_samples: float
+    #: Segments that were dropped, and why. Kept rather than counted: a
+    #: run where four of ten segments said nothing is a different object
+    #: from one where all ten contributed, and a bare count does not say
+    #: which.
+    withheld: tuple[tuple[int, str], ...] = ()
+
+    @property
+    def contributing(self) -> int:
+        return len(self.segments)
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "mean": self.mean,
+            "standard_error": self.standard_error,
+            "effective_samples": self.effective_samples,
+            "segments_contributing": self.contributing,
+            "segments_withheld": [
+                {"segment": index, "reason": reason}
+                for index, reason in self.withheld
+            ],
+            # Said plainly, because a reader comparing this against a run
+            # that went through in one piece should know they are not the
+            # same kind of number.
+            "pooled_across_joins": True,
+        }
+
+
+def summarise_segments(
+    series: np.ndarray,
+    joins: "list[int] | tuple[int, ...]",
+    *,
+    minimum_effective_samples: float = MINIMUM_EFFECTIVE_SAMPLES,
+) -> "tuple[Pooled | None, Withholding | None]":
+    """Summarise a joined series, analysing each segment on its own.
+
+    Parameters
+    ----------
+    series
+        The whole joined series, in order.
+    joins
+        Frame indices where a new segment begins. The first segment starts
+        at zero and is not listed. An empty list means the run went
+        through in one piece, and this falls through to
+        :func:`summarise` -- so a caller need not branch on whether a run
+        was segmented.
+
+    Returns
+    -------
+    (Pooled, None) or (None, Withholding)
+        Withheld where no segment supported a mean, or where the pooled
+        effective count falls short. Pooling does not rescue a run that
+        was too short: ten segments of two independent samples each is
+        twenty, and twenty is twenty however it was collected -- but ten
+        segments that each support nothing support nothing together.
+    """
+    values = np.asarray(series, dtype=float)
+    values = values[np.isfinite(values)]
+    boundaries = sorted({int(j) for j in joins if 0 < int(j) < values.size})
+
+    if not boundaries:
+        equilibrated, why = summarise(
+            values, minimum_effective_samples=minimum_effective_samples)
+        if equilibrated is None:
+            return None, why
+        return Pooled(segments=(equilibrated,), mean=equilibrated.mean,
+                      standard_error=equilibrated.standard_error,
+                      effective_samples=equilibrated.effective_samples), None
+
+    edges = [0, *boundaries, values.size]
+    pieces: list[Equilibrated] = []
+    withheld: list[tuple[int, str]] = []
+    for index, (start, stop) in enumerate(zip(edges, edges[1:])):
+        # Each segment is equilibrated on its own. A segment that begins
+        # after a join has its own approach to settle -- under a barostat
+        # the move size is re-adapting -- and detecting that per segment is
+        # the point, not an inconvenience.
+        piece, why = summarise(
+            values[start:stop],
+            minimum_effective_samples=0.0)
+        if piece is None:
+            withheld.append((index, str(why)))
+            continue
+        pieces.append(piece)
+
+    if not pieces:
+        return None, Withholding(
+            "No segment of this joined run supports a mean. Pooling does "
+            "not rescue a run that was too short: segments that each say "
+            "nothing say nothing together.",
+            code="analysis.sampling.too_few_independent",
+            independent=0.0, frames=int(values.size),
+            needed=float(minimum_effective_samples),
+        )
+
+    weights = np.array([p.effective_samples for p in pieces], dtype=float)
+    means = np.array([p.mean for p in pieces], dtype=float)
+    total = float(weights.sum())
+
+    if total < minimum_effective_samples:
+        return None, Withholding(
+            f"{total:.1f} independent samples across {len(pieces)} "
+            f"segment(s), against the {minimum_effective_samples:g} a mean "
+            "needs. The segments are disjoint in time so their independent "
+            "samples add, and they still do not reach it. The remedy is "
+            "longer segments or more of them.",
+            code="analysis.sampling.too_few_independent",
+            independent=total, frames=int(values.size),
+            needed=float(minimum_effective_samples),
+        )
+
+    # Weighting by effective samples is the minimum-variance combination of
+    # estimates whose variances differ, which is what segments of unequal
+    # usable length give.
+    mean = float((weights * means).sum() / total)
+    variances = np.array([p.standard_deviation ** 2 for p in pieces])
+    pooled_variance = float((weights * variances).sum() / total)
+    return Pooled(
+        segments=tuple(pieces),
+        mean=mean,
+        standard_error=float(np.sqrt(pooled_variance / total)),
+        effective_samples=total,
+        withheld=tuple(withheld),
+    ), None

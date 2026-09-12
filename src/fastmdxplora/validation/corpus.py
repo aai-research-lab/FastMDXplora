@@ -1022,7 +1022,60 @@ def _constant_pressure_run_split_into_segments() -> Any:
     return record
 
 
+
+def _a_mean_across_joins_read_naively() -> Any:
+    """Summarising a joined run without telling the statistics it is joined.
+
+    Chodera's detection picks the discard that maximises effective samples,
+    and a join is a step change -- which is exactly what that method is
+    built to find. On a ten-segment run it discards everything before one
+    of the later joins, throws away most of the study, and reports the
+    remainder with a standard error on it.
+
+    The defect is not that the number is imprecise. It is that the number
+    is confidently wrong: measured at eighteen times its own stated
+    uncertainty from the truth.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    rng = np.random.default_rng(3)
+    joined = np.concatenate(
+        [rng.normal(loc=10.0 + 0.05 * i, scale=0.3, size=400)
+         for i in range(10)])
+    equilibrated, why = summarise(joined)
+    if why is not None:
+        return {"refused": str(why)}
+    truth = 10.0 + 0.05 * 4.5
+    if abs(equilibrated.mean - truth) > 3 * equilibrated.standard_error:
+        return {"refused":
+                "This mean is many standard errors from the truth because "
+                "the equilibration detector read the joins as a transient "
+                "and discarded most of the run."}
+    return equilibrated.as_record()
+
+
+def _a_mean_across_joins_read_as_joined() -> Any:
+    np = _numpy()
+    from fastmdxplora.statistics import summarise_segments
+
+    rng = np.random.default_rng(3)
+    joined = np.concatenate(
+        [rng.normal(loc=10.0 + 0.05 * i, scale=0.3, size=400)
+         for i in range(10)])
+    pooled, why = summarise_segments(joined, [400 * i for i in range(1, 10)])
+    if why is not None:
+        return {"refused": str(why)}
+    return pooled.as_record()
+
+
 DEFECTS: list[Case] = [
+    Case("a mean taken across joins without accounting for them",
+         _a_mean_across_joins_read_naively, "refused",
+         "the equilibration detector reads a join as a transient and "
+         "discards most of the run, then reports what is left with a "
+         "standard error on it",
+         mentioning="joins"),
     Case("a segmented run joined across a missing segment",
          _segments_with_a_gap, "refused",
          "the pieces either side concatenate perfectly, and what comes out "
@@ -1139,6 +1192,10 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("a mean taken across joins with the joins declared",
+         _a_mean_across_joins_read_as_joined, "proceeded",
+         "each segment is equilibrated on its own and the independent "
+         "samples add, because the segments are disjoint in time"),
     Case("a constant-pressure run split into segments",
          _constant_pressure_run_split_into_segments, "qualified",
          "the state is right and the barostat's move size is not carried, "

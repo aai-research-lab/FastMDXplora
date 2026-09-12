@@ -549,3 +549,49 @@ estimate afterwards — on a GPU by a great deal. And it records the
 platform it actually ran on rather than the one that was asked for, since
 a constant labelled CUDA that was measured on CPU would understate a real
 CUDA run enormously.
+
+## Reading a joined run
+
+A trajectory assembled from segments is contiguous in time and is not a
+single sample path, and reading it as one loses most of it.
+
+```python
+from fastmdxplora.analysis.joining import join_segments
+from fastmdxplora.statistics import summarise_segments
+
+record = join_segments("runs/tau/scaffold-3", "scaffold-3.dcd")
+pooled, why = summarise_segments(rmsd_series, record["joins"])
+```
+
+Chodera's equilibration detection picks the discard that maximises
+effective samples. A join is a small step change — under a barostat the
+move size is re-adapting — and a step change is exactly what that method
+is built to find. On a ten-segment run it will often discard everything
+before one of the later joins.
+
+Measured on ten segments drawn from the same distribution with a small
+shift at each join:
+
+| | discard | independent samples | mean | error vs truth |
+|---|---|---|---|---|
+| naive | 2460 of 4000 | 1383 | 10.375 | 18 standard errors |
+| join-aware | per segment | 3732 | 10.225 | under 1 |
+
+The naive number is not merely imprecise. It is confidently wrong, with a
+standard error on it that says otherwise.
+
+`summarise_segments` equilibrates each segment on its own and pools.
+Effective samples add, because the segments are disjoint in time. The mean
+is weighted by effective samples, which is the minimum-variance
+combination of estimates with different precisions.
+
+Pooling does not rescue a short run: segments that each say nothing say
+nothing together, and that refuses. A segment that was withheld is named
+rather than counted, because a run where four of ten said nothing is a
+different object from one where all ten contributed.
+
+An empty join list falls through to the ordinary reading, so a caller need
+not branch on whether a run was segmented.
+
+`join_segments` records `joins` as frame indices into the joined file.
+That is the only thing the joined file cannot be asked for afterwards.

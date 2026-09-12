@@ -209,8 +209,15 @@ def join_segments(
     out = Path(destination)
     out.parent.mkdir(parents=True, exist_ok=True)
     frames = 0
+    # Where each segment starts, in frames of the joined file. Without this
+    # the join record is a list of segment numbers that no analysis can
+    # locate, and `summarise_segments` has nothing to split on. It is the
+    # only thing the joined file cannot be asked for afterwards.
+    joins: list[int] = []
     with mdtraj.formats.DCDTrajectoryFile(str(out), "w") as writer:
         for piece in pieces:
+            if piece.index != pieces[0].index:
+                joins.append(frames)
             for chunk in mdtraj.iterload(str(piece.trajectory),
                                          top=str(topology_path), chunk=500):
                 writer.write(chunk.xyz * 10.0,
@@ -224,6 +231,7 @@ def join_segments(
         "trajectory": str(out),
         "segments": [p.index for p in pieces],
         "frames": frames,
+        "joins": joins,
         "topology": str(topology_path),
         # Stated so a reader knows this file is derived without having to
         # infer it from the directory it sits in.

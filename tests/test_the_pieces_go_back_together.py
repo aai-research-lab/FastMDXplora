@@ -140,3 +140,27 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+    def test_the_record_says_where_the_joins_fall_in_frames(self):
+        # The only thing the joined file cannot be asked for afterwards,
+        # and the thing summarise_segments needs to split on. Without it
+        # the join record is a list of segment numbers nothing can locate.
+        for index in range(3):
+            self.segment(index, frames=10)
+        record = join_segments(self.root, self.root / "joined.dcd")
+        self.assertEqual(record["joins"], [10, 20])
+
+    def test_the_joins_can_be_handed_straight_to_the_statistics(self):
+        import numpy as np
+
+        from fastmdxplora.statistics import summarise_segments
+
+        for index in range(4):
+            self.segment(index, frames=400)
+        record = join_segments(self.root, self.root / "joined.dcd")
+        rng = np.random.default_rng(0)
+        series = np.concatenate(
+            [rng.normal(loc=i * 0.1, size=400) for i in range(4)])
+        pooled, why = summarise_segments(series, record["joins"])
+        self.assertIsNone(why)
+        self.assertEqual(pooled.contributing, 4)
