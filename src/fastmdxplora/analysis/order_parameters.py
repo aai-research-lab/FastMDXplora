@@ -55,6 +55,7 @@ import numpy as np
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 def read_reference(path: "str | Path") -> "dict[int, float]":
@@ -80,10 +81,10 @@ def read_reference(path: "str | Path") -> "dict[int, float]":
             continue          # a header row, or a comment without its hash
         values[residue] = s2
     if not values:
-        raise ValueError(
+        raise StudyError(
             f"{path} holds no usable rows. Expected two columns, residue "
             "number and S^2, with anything else on a `#` line."
-        )
+        , code="analysis.data.absent")
     return values
 
 
@@ -284,18 +285,18 @@ class OrderParameters(Analysis):
         # defined by are different questions.
         pairs = amide_pairs(traj.topology, self.select_atoms(traj))
         if not pairs:
-            raise ValueError(
+            raise StudyError(
                 "No backbone amide N--H pairs were found, so there are no "
                 "order parameters to compute. A structure prepared without "
                 "hydrogens does this, and so does a united-atom model: the "
                 "measurement is of a bond vector, and the bond has to be "
                 "present. Prepare the system with hydrogens, or compare "
                 "fluctuations instead."
-            )
+            , code="analysis.sampling.too_few_frames")
 
         align_idx = traj.topology.select(self.align_selection)
         if len(align_idx) < 3:
-            raise ValueError(
+            raise StudyError(
                 f"The alignment selection {self.align_selection!r} matched "
                 f"{len(align_idx)} atoms. Removing global tumbling needs at "
                 "least three, and in practice a rigid core rather than the "
@@ -305,10 +306,10 @@ class OrderParameters(Analysis):
         n_frames = traj.n_frames
         ref = self.ref if self.ref >= 0 else n_frames + self.ref
         if not (0 <= ref < n_frames):
-            raise ValueError(
+            raise StudyError(
                 f"Reference frame {self.ref} is out of range for trajectory "
                 f"with {n_frames} frames."
-            )
+            , code="analysis.option.out_of_range")
 
         aligned = superposed(traj, frame=ref, atom_indices=align_idx)
         nitrogen = np.array([p[0] for p in pairs])

@@ -42,6 +42,8 @@ from sklearn.manifold import TSNE
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import new_figure, save_figure
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 
 VALID_METHODS = ("pca", "mds", "tsne", "umap")
@@ -104,9 +106,9 @@ class DimRed(Analysis):
         methods = [m.lower() for m in methods]
         unknown = [m for m in methods if m not in VALID_METHODS]
         if unknown:
-            raise ValueError(
+            raise StudyError(
                 f"Unknown dimred method(s): {unknown}. Valid: {VALID_METHODS}"
-            )
+            , code="analysis.option.not_permitted")
         self.methods: list[str] = methods
         self.n_components: int = int(n_components)
         self.perplexity: float = float(perplexity)
@@ -150,14 +152,14 @@ class DimRed(Analysis):
         # fare no better: there are no neighbourhoods to preserve among points
         # that are all the same point.
         if not np.any(coords.var(axis=0) > 0):
-            raise ValueError(
+            raise StudyError(
                 "There is nothing to decompose: once aligned, every frame of "
                 "the selected atoms is identical, so the coordinates have no "
                 "variance. A single repeated structure, a minimisation written "
                 "as a trajectory, or a selection whose atoms happen not to "
                 "move will do this. Widen the selection, or analyse a "
                 "trajectory that samples."
-            )
+            , code="analysis.sampling.no_variance")
 
         results: dict[str, np.ndarray] = {}
         for method in self.methods:
@@ -194,10 +196,10 @@ class DimRed(Analysis):
                 try:
                     import umap  # type: ignore[import-not-found]
                 except ImportError as exc:
-                    raise ImportError(
+                    raise BackendUnavailable(
                         "UMAP requested but the umap-learn package is not "
                         "installed. Install it with: pip install umap-learn"
-                    ) from exc
+                    , code="environment.backend.missing") from exc
                 model = umap.UMAP(
                     n_components=self.n_components,
                     n_neighbors=min(self.n_neighbors, traj.n_frames - 1),

@@ -45,6 +45,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -189,31 +191,31 @@ def measure_along(trajectory: Any, ligand_resname: str,
     # selection matching *no atoms* never got the chance to run, because a
     # selection that is not an expression at all fails earlier.
     if not str(site_selection).strip():
-        raise ValueError(
+        raise StudyError(
             "No site selection reached the seeder, so there is nothing to "
             "measure the ligand against. The umbrella block needs "
             "`select_atoms` -- or the role name `site_selection` -- naming "
             'the site, for example `select_atoms: "resSeq 189 to 195 and '
             'name CA"`.'
-        )
+        , code="simulation.cv.selection_empty")
     if not str(ligand_resname).strip():
-        raise ValueError(
+        raise StudyError(
             "No ligand name reached the seeder, so there is nothing to "
             "measure from. Give the umbrella block `ligand_name` (or "
             "`ligand_resname`), for example `ligand_name: BEN`."
-        )
+        , code="simulation.cv.selection_empty")
     ligand = topology.select(f"resname {ligand_resname}")
     site = topology.select(site_selection)
     if ligand.size == 0:
-        raise ValueError(
+        raise StudyError(
             f"No atom matches `resname {ligand_resname}` in the pull's "
             "topology, so there is no ligand to measure from."
-        )
+        , code="simulation.cv.selection_empty")
     if site.size == 0:
-        raise ValueError(
+        raise StudyError(
             f"No atom matches `{site_selection}` in the pull's topology, so "
             "there is no site to measure to."
-        )
+        , code="simulation.cv.selection_empty")
 
     masses = np.array([a.element.mass for a in topology.atoms], dtype=float)
     xyz = trajectory.xyz  # (frames, atoms, 3), nm
@@ -329,7 +331,7 @@ def write_seeds(prepared: Path | str,
             "bound-state solvent where the ligand has since moved. Re-run "
             "the pull with `save_selection: all`."
         ) if missing > 0 else ""
-        raise ValueError(
+        raise StudyError(
             f"The prepared system has {system.getNumParticles()} particles "
             f"and the pull's trajectory has {trajectory.n_atoms}.{likely}"
         )
@@ -377,9 +379,9 @@ def write_seeds(prepared: Path | str,
         # exists to avoid.
         for name in ("system.xml", "state.xml", "topology.pdb"):
             if not (out / name).is_file():
-                raise RuntimeError(
+                raise BackendUnavailable(
                     f"{out / name} was not written, so window {index} has no "
-                    "starting system.")
+                    "starting system.", code="simulation.seed.unusable")
 
         seeds.append(Seed(index=index, centre=float(centre), frame=int(frame),
                           measured=float(measured), directory=str(out)))
@@ -414,17 +416,17 @@ def _refuse_an_impossible_seed(potential: float, reference: float | None,
                                measured: float) -> None:
     if reference is None or not np.isfinite(potential):
         if not np.isfinite(potential):
-            raise ValueError(
+            raise StudyError(
                 f"Window {index}'s seed has a potential energy of "
                 f"{potential}, which is what a frame with a molecule split "
                 "across the periodic boundary gives. The frame was imaged "
                 "before it was used, so this is more likely a topology that "
                 "does not match the system."
-            )
+            , code="simulation.seed.unusable")
         return
     excess = (potential - reference) / max(particles, 1)
     if excess > ENERGY_TOLERANCE_KJMOL_PER_ATOM:
-        raise ValueError(
+        raise StudyError(
             f"Window {index}, seeded at {measured:.3f} nm, has a potential "
             f"energy {excess:.1f} kJ/mol per atom above the prepared system "
             f"({potential:.3g} against {reference:.3g}). A pulled frame is "
@@ -457,7 +459,7 @@ def seed_windows(pull_directory: Path | str,
     trajectory_file, topology_file = _pull_files(pull)
     trajectory = md.load(str(trajectory_file), top=str(topology_file))
     if trajectory.n_frames < 2:
-        raise ValueError(
+        raise StudyError(
             f"The pull at {pull} has {trajectory.n_frames} frame(s). Seeds "
             "are frames along a pull, so there is nothing to take."
         )
@@ -538,7 +540,7 @@ def _check_against_colvar(pull: Path, measured: np.ndarray,
                 f"allows ({widest:.3f} nm), so these are not minimum-image "
                 "distances at all.")
 
-    raise ValueError(
+    raise StudyError(
         f"Over this run the collective variable recomputed here has median "
         f"{ours:.3f} nm and the one PLUMED biased has median {theirs:.3f} nm "
         f"(spans {measured.min():.3f}-{measured.max():.3f} against "

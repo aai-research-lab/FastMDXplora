@@ -27,6 +27,7 @@ import numpy as np
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 def _followed_across_the_boundary(traj, ligand_idx, anchor_idx):
@@ -162,11 +163,11 @@ class LigandRMSD(Analysis):
     ) -> None:
         super().__init__(**kwargs)
         if not ligand_resname:
-            raise ValueError(
+            raise StudyError(
                 "LigandRMSD requires `ligand_resname` (the ligand residue "
                 "name, e.g. 'LIG'). This analysis applies only to "
                 "protein-ligand complexes."
-            )
+            , code="analysis.option.missing_companion")
         self.ligand_resname: str = str(ligand_resname)
         self.align_selection: str = str(align_selection)
         self.ref: int = int(ref)
@@ -186,13 +187,13 @@ class LigandRMSD(Analysis):
         """
         ligand_idx = traj.topology.select(f"resname {self.ligand_resname}")
         if len(ligand_idx) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"No atoms matched ligand resname "
                 f"{self.ligand_resname!r}; cannot compute ligand RMSD."
-            )
+            , code="analysis.selection.empty")
         align_idx = traj.topology.select(self.align_selection)
         if len(align_idx) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"Alignment selection {self.align_selection!r} matched zero "
                 f"atoms; cannot align on the protein."
             )
@@ -200,10 +201,10 @@ class LigandRMSD(Analysis):
         n = traj.n_frames
         ref = self.ref if self.ref >= 0 else n + self.ref
         if not (0 <= ref < n):
-            raise ValueError(
+            raise StudyError(
                 f"Reference frame {self.ref} is out of range for trajectory "
                 f"with {n} frames."
-            )
+            , code="analysis.option.out_of_range")
 
         # Align every frame onto the reference using the PROTEIN atoms. This
         # transforms all coordinates (including the ligand) by the same

@@ -33,6 +33,8 @@ import numpy as np
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.statistics import summarise
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
 
 #: The columns worth reporting, and what each is called in the record
 #: OpenMM writes. Matched on a substring because the header carries units
@@ -136,19 +138,19 @@ class Thermodynamics(Analysis):
     def compute(self, traj: Any) -> np.ndarray:
         path = self._state_path()
         if path is None:
-            raise FileNotFoundError(
+            raise MissingResultError(
                 "No state record beside this run, so there is nothing to "
                 "report the ensemble from. The simulation phase writes one; "
                 "a trajectory imported from elsewhere brings its "
                 "coordinates and not its thermodynamics."
-            )
+            , code="analysis.data.absent")
 
         table = read_state_table(path)
         if not table:
-            raise ValueError(
+            raise StudyError(
                 f"{path} holds no rows, so the run recorded no state. A run "
                 "that stopped before its first report does this."
-            )
+            , code="analysis.data.absent")
 
         found = {}
         for key, (needle, _units) in COLUMNS.items():

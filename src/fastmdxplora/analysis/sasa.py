@@ -29,6 +29,7 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 #: What a SASA run reports. ``total`` is the whole molecule per frame,
@@ -180,9 +181,9 @@ class SASA(Analysis):
         super().__init__(**kwargs)
         mode = str(mode).lower()
         if mode not in VALID_MODES:
-            raise ValueError(
+            raise StudyError(
                 f"SASA mode must be one of {VALID_MODES}; got {mode!r}"
-            )
+            , code="analysis.option.not_permitted")
         self.mode: str = mode
         self.probe_radius: float = float(probe_radius)
         self.n_sphere_points: int = int(n_sphere_points)

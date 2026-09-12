@@ -142,7 +142,7 @@ def normalize_systems(raw: Any) -> list[dict[str, Any]]:
     seen_ids: set[str] = set()
     for i, entry in enumerate(raw):
         if not isinstance(entry, dict):
-            raise SweepError(f"`systems[{i}]` must be a mapping, got {type(entry).__name__}.")
+            raise SweepError(f"`systems[{i}]` must be a mapping, got {type(entry).__name__}.", code="batch.sweep.invalid")
         if "system" not in entry or not entry["system"]:
             raise SweepError(f"`systems[{i}]` is missing a `system` input.")
 

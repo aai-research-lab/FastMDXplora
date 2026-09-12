@@ -44,7 +44,7 @@ def _import_plumed():
             "which is not installed. Install it with:\n"
             "    conda install -c conda-forge openmm-plumed\n"
             "or disable PLUMED (simulation.plumed.enabled = false)."
-        ) from exc
+        , code="environment.backend.missing") from exc
     return PlumedForce
 
 
@@ -64,7 +64,7 @@ def load_plumed_script(script: str | Path) -> str:
                                   or "/" in text or "\\" in text):
         # Looked like a path but doesn't exist — fail clearly rather than
         # silently treating a typo'd path as an (invalid) inline script.
-        raise PlumedError(f"PLUMED script file not found: {candidate}")
+        raise PlumedError(f"PLUMED script file not found: {candidate}", code="environment.path.not_found")
     return text
 
 
@@ -134,7 +134,7 @@ def add_plumed_force(
         raise PlumedError(
             "simulation.plumed.enabled is true but no 'script' was provided. "
             "Supply a PLUMED script (inline text or a path to a .dat file)."
-        )
+        , code="simulation.bias.parameter_missing")
 
     PlumedForce = _import_plumed()
 

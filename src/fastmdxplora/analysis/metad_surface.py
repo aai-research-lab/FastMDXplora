@@ -32,6 +32,8 @@ import numpy as np
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
 
 
 class MetadynamicsSurface(Analysis):
@@ -65,12 +67,12 @@ class MetadynamicsSurface(Analysis):
     def compute(self, traj: Any) -> dict[str, Any]:
         path = self._record_path()
         if path is None:
-            raise FileNotFoundError(
+            raise MissingResultError(
                 "No metadynamics_surface.json beside this run, so there is "
                 "no surface to draw. This analysis reports what the "
                 "simulation phase computed from the hills; it does not "
                 "recompute it."
-            )
+            , code="analysis.data.absent")
         record = json.loads(path.read_text(encoding="utf-8"))
         self._refused = record.get("refused")
         self._provisional = bool(record.get("provisional"))
@@ -94,7 +96,7 @@ class MetadynamicsSurface(Analysis):
             expected = tuple(len(axis) for axis in axes)
             if energy.size and (
                     len(axes) != dimensions or energy.shape != expected):
-                raise ValueError(
+                raise StudyError(
                     "The metadynamics record says it is two-dimensional, "
                     f"but its axes have lengths {expected} and its free-energy "
                     f"array has shape {energy.shape}. A surface needs one "
@@ -113,17 +115,17 @@ class MetadynamicsSurface(Analysis):
                     "free_energy_kjmol": energy,
                 }
         else:
-            raise ValueError(
+            raise StudyError(
                 f"The metadynamics record has {dimensions} dimensions; this "
                 "analysis can draw one- and two-dimensional surfaces."
             )
 
-        raise ValueError(
+        raise StudyError(
             "The metadynamics record holds no surface: "
             + (str(self._refused) if self._refused
                else "the coordinate did not move, so there is nothing "
                     "along it to draw.")
-        )
+        , code="analysis.data.absent")
 
     def _band(self) -> "np.ndarray | None":
         """The per-point convergence band, where the run computed one.

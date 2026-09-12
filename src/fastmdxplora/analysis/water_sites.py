@@ -37,6 +37,7 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 __all__ = ["WaterSites"]
 
@@ -147,10 +148,10 @@ class WaterSites(Analysis):
 
         atoms = traj.topology.select(expression)
         if len(atoms) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"The site selection {expression!r} matched no atoms, so "
                 "there is nothing for a water to be near."
-            )
+            , code="analysis.selection.empty")
         return atoms, expression
 
     def compute(self, traj: Any) -> pd.DataFrame:
@@ -163,11 +164,11 @@ class WaterSites(Analysis):
             and atom.element is not None and atom.element.symbol == "O"
         ]
         if not water_oxygens:
-            raise ValueError(
+            raise StudyError(
                 "No water was found in the trajectory. This analysis needs an "
                 "explicitly solvated system; a run stripped of water, or one "
                 "using an implicit solvent, has no water sites to find."
-            )
+            , code="analysis.sampling.too_few_frames")
 
         site_atoms, site_expression = self._resolve_site(traj)
         self.findings["site"] = {

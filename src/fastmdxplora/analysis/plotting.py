@@ -41,6 +41,7 @@ from matplotlib.ticker import (  # noqa: E402
     MaxNLocator,
 )
 import numpy as np  # noqa: E402
+from fastmdxplora.refusals import StudyError
 
 
 NumericSeq = Optional[Union[Sequence[float], np.ndarray]]
@@ -140,13 +141,13 @@ def settle_figure_colours(value: Any) -> str:
     key = str(value).strip().lower().replace("-", "").replace("_", "")
     settled = _COLOUR_SPELLINGS.get(key)
     if settled is None:
-        raise ValueError(
+        raise StudyError(
             f"figure_colours does not accept {value!r}. It accepts "
             f"{', '.join(FIGURE_COLOURS)} -- 'colour' draws the figure in "
             "colour, 'greyscale' draws it without hue, and 'both' writes the "
             "colour figure and a greyscale copy beside it. American "
             "spellings are accepted."
-        )
+        , code="analysis.option.not_permitted")
     return settled
 
 

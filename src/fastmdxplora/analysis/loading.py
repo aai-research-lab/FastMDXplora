@@ -422,7 +422,7 @@ def load_trajectory(
         if not (0 <= f <= l <= n):
             raise TrajectoryLoadError(
                 f"Invalid frame slice [{f}:{l}] for trajectory with {n} frames."
-            )
+            , code="analysis.option.out_of_range")
         trajectory = trajectory[f:l]
 
     logger.debug(

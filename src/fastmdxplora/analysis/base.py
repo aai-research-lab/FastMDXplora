@@ -47,6 +47,7 @@ from fastmdxplora.analysis.plotting import (
     settle_figure_colours,
 )
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
 
 logger = get_logger("analysis.base")
 
@@ -227,12 +228,12 @@ class Analysis(ABC):
             via ``self.options``.
         """
         if selection is not None and not self.honours_selection:
-            raise ValueError(
+            raise StudyError(
                 f"{type(self).__name__} works out its own atoms, so "
                 f"`selection` would have no effect. Accepting it would let a "
                 f"measurement look as though it had been restricted when it "
                 f"had not."
-            )
+            , code="analysis.option.inapplicable")
         #: What the analysis worked out while running, as opposed to what it
         #: was told. Recorded beside the options and kept out of them, because
         #: a report lists the options.
@@ -626,10 +627,10 @@ class Analysis(ABC):
             return np.arange(traj.n_atoms)
         idx = traj.topology.select(self.selection)
         if len(idx) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"Atom selection {self.selection!r} matched zero atoms in "
                 f"this trajectory."
-            )
+            , code="analysis.selection.empty")
         self._note_residues_the_selection_dropped(traj, idx)
         return idx
 
@@ -709,9 +710,9 @@ class Analysis(ABC):
         if unit is not None:
             unit = unit.lower()
             if unit not in {"ns", "ps", "frames"}:
-                raise ValueError(
+                raise StudyError(
                     f"xunit must be one of 'ns', 'ps', or 'frames'; got {unit!r}"
-                )
+                , code="analysis.option.not_permitted")
 
         # If user didn't specify, prefer ns when timing data is available.
         #

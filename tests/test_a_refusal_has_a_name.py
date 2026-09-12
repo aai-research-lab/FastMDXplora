@@ -351,3 +351,47 @@ class TestSamplingRefusalsCarryTheirNumbers(unittest.TestCase):
         from fastmdxplora.statistics import sampling_shortfall
         short = sampling_shortfall(self.correlated(), target_independent=40)
         self.assertIsNone(short.more_ns)
+
+
+class TestTheWideningClassesDoNotNarrow(unittest.TestCase):
+    """Three classes exist so that raise sites could gain codes.
+
+    Each replaced a builtin at sites that already existed, so the thing to
+    hold is that nothing which caught them before stops catching them.
+    Widening is safe; narrowing would be a silent break in somebody's
+    downstream handler, and the kind that only shows up in production.
+    """
+
+    def test_a_study_error_is_still_a_value_error(self):
+        from fastmdxplora.refusals import StudyError
+        self.assertTrue(issubclass(StudyError, ValueError))
+
+    def test_a_missing_result_is_still_a_file_not_found(self):
+        from fastmdxplora.refusals import MissingResultError
+        self.assertTrue(issubclass(MissingResultError, FileNotFoundError))
+        self.assertTrue(issubclass(MissingResultError, OSError))
+
+    def test_an_unavailable_backend_answers_to_both_names(self):
+        # These sites raised ImportError in one module and RuntimeError in
+        # another, for no reason either module could state. Inheriting from
+        # both means an except written for either keeps working.
+        from fastmdxplora.refusals import BackendUnavailable
+        self.assertTrue(issubclass(BackendUnavailable, ImportError))
+        self.assertTrue(issubclass(BackendUnavailable, RuntimeError))
+
+    def test_they_all_carry_refusals(self):
+        from fastmdxplora.refusals import (
+            BackendUnavailable, MissingResultError, StudyError)
+        for cls in (StudyError, MissingResultError, BackendUnavailable):
+            with self.subTest(cls=cls.__name__):
+                self.assertIsInstance(refusal_of(cls("x")).code, str)
+
+    def test_a_default_code_is_registered(self):
+        # A class whose default is a typo would give every one of its sites
+        # `unclassified` and nothing would say so.
+        import fastmdxplora.refusals as module
+        for name in dir(module):
+            obj = getattr(module, name)
+            if isinstance(obj, type) and issubclass(obj, CodedError):
+                with self.subTest(cls=name):
+                    self.assertTrue(known(obj.default_code))

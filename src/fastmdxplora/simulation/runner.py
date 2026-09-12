@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 logger = get_logger("simulation.runner")
 
@@ -118,12 +120,12 @@ def _import_openmm() -> dict:
             StateDataReporter,
         )
     except ImportError as exc:
-        raise ImportError(
+        raise BackendUnavailable(
             "Simulation phase requires OpenMM. Install via conda "
             "(recommended): conda install -c conda-forge openmm — or via "
             "pip with the optional [md] extras: "
             "pip install fastmdxplora[md]."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
     return {
         "openmm": openmm,
@@ -321,10 +323,10 @@ def select_platform(
         )
         return platform, props, name
 
-    raise RuntimeError(
+    raise BackendUnavailable(
         f"No usable OpenMM platform among {candidates}. "
         f"Install GPU drivers + a matching OpenMM build, or pass platform='CPU'."
-    )
+    , code="environment.platform.unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -378,10 +380,10 @@ def _make_integrator(
     elif key == "variable_verlet":
         integ = openmm.VariableVerletIntegrator(float(error_tolerance))
     else:
-        raise ValueError(
+        raise StudyError(
             f"Unknown integrator {name!r}. Supported: "
             f"{', '.join(SUPPORTED_INTEGRATORS)}."
-        )
+        , code="simulation.cv.unknown")
 
     if random_seed is not None and hasattr(integ, "setRandomNumberSeed"):
         integ.setRandomNumberSeed(int(random_seed))
@@ -590,12 +592,12 @@ def resolve_save_selection(topology: Any, selection: str | None
         # not a fact about the system, and it is fixable in one edit. That
         # is worth stopping for, where a valid selection matching nothing
         # is not.
-        raise ValueError(
+        raise StudyError(
             f"`save_selection` {selection!r} is not a selection this can "
             f"read: {exc}. It is written in MDTraj's language -- `not "
             "water`, `protein`, `all` -- and a run will not start on one "
             "that cannot be parsed, because every frame would be affected."
-        ) from exc
+        , code="simulation.cv.selection_empty") from exc
     if not kept:
         # Everything, rather than nothing or a refusal. A box of pure water
         # is a legitimate study -- it is how a water model's density is
@@ -1364,15 +1366,15 @@ def run_simulation(
 
         centre = umbrella.get("centre")
         if centre is None:
-            raise ValueError(
+            raise StudyError(
                 "An umbrella run needs a `centre`: the value of the "
                 "collective variable this window holds. A block describing a "
                 "whole set of windows is expanded into runs before it reaches "
                 "here."
-            )
+            , code="simulation.bias.parameter_missing")
         force = umbrella.get("force_constant")
         if force is None:
-            raise ValueError("An umbrella window needs a `force_constant`.")
+            raise StudyError("An umbrella window needs a `force_constant`.", code="simulation.bias.parameter_missing")
 
         # Both spellings. This listed `centres` and not `centers`, so a
         # study written the American way carried a key with no meaning into
@@ -1435,18 +1437,18 @@ def run_simulation(
                   "production_script": str(script_path)}
 
     if len([x for x in (steered, metadynamics, umbrella) if x]) > 1:
-        raise ValueError(
+        raise StudyError(
             "A run can be steered, biased with metadynamics, or held in an "
             "umbrella window -- not more than one. They are different ways "
             "of moving the same coordinate and their forces would add."
-        )
+        , code="config.option.conflicting")
 
     if steered and metadynamics:
-        raise ValueError(
+        raise StudyError(
             "A run can be steered or biased with metadynamics, not both: "
             "they are two ways of moving the same coordinate and their "
             "forces would add. Pick one."
-        )
+        , code="config.option.conflicting")
 
     if steered:
         from fastmdxplora.simulation.steered import (

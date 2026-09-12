@@ -66,6 +66,8 @@ __all__ = [
     "CODES",
     "CodedError",
     "StudyError",
+    "MissingResultError",
+    "BackendUnavailable",
     "Kind",
     "Disclosure",
     "Refusal",
@@ -412,6 +414,24 @@ CODES: tuple[Code, ...] = (
          "A biased run deposited nothing, so it did not bias anything.",
          Kind.INSUFFICIENT, Disclosure.NOTHING,
          detail_keys=("path",)),
+    Code("simulation.restraint.selection_arity",
+         "A restraint selection matched a number of atoms the restraint "
+         "cannot use.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("expression", "expected", "found")),
+    Code("simulation.windows.too_few",
+         "Fewer windows than the method needs.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("found", "needed")),
+    Code("simulation.windows.no_sampling",
+         "Windows that produced no usable sampling, so there is no free "
+         "energy to report.",
+         Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
+         detail_keys=("windows",)),
+    Code("simulation.seed.unusable",
+         "A seeded window's starting state is not one a run can begin from.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("window", "potential", "measured")),
     Code("simulation.reference.unusable",
          "A reference structure was given and does not support the "
          "measurement.",
@@ -443,6 +463,10 @@ CODES: tuple[Code, ...] = (
          "A selection matched no atoms in this trajectory.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("expression", "role")),
+    Code("analysis.option.out_of_range",
+         "A frame index or slice past the end of the trajectory.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("option", "given", "frames")),
     Code("analysis.selection.arity",
          "A selection matched a number of atoms the analysis cannot use.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
@@ -715,6 +739,45 @@ class CodedError(Exception):
     def matches(self, prefix: str) -> bool:
         """Whether this is the given code or inside its family."""
         return self.refusal.matches(prefix)
+
+
+class MissingResultError(CodedError, FileNotFoundError):
+    """What an analysis reads was never produced by this study.
+
+    Distinct from a file the user named that is not on disk. This is an
+    analysis looking for the output of a phase that did not run, or ran
+    and refused: no `pmf.json` beside an umbrella study, no state record
+    beside a run that stopped in setup.
+
+    The remedy is a phase, not a path, and for an automated caller that is
+    the difference between "fix what you asked for" and "run the thing
+    this depends on first". Subclasses ``FileNotFoundError`` so the
+    existing handlers and the existing message are untouched.
+    """
+
+    default_code = "analysis.data.absent"
+
+
+class BackendUnavailable(CodedError, ImportError, RuntimeError):
+    """An optional backend is not installed, or would not load.
+
+    Subclasses both ``ImportError`` and ``RuntimeError`` because the sites
+    it replaces raised one or the other, arbitrarily: SciPy missing was an
+    ``ImportError`` in one module and a ``RuntimeError`` in another, for
+    no reason either module could state. Inheriting from both means every
+    existing ``except`` keeps catching, whichever one it named.
+
+    Widening what catches an exception is safe in a way narrowing is not.
+    Nothing that handled these before stops handling them; a handler that
+    was written for one of the two now also sees the other, which is what
+    it would have wanted in the first place.
+
+    Distinct from ``MissingBackendError``, which is raised up front for a
+    whole phase and carries the install command for every dependency at
+    once. This is for a single backend discovered missing partway through.
+    """
+
+    default_code = "environment.backend.missing"
 
 
 class StudyError(CodedError, ValueError):

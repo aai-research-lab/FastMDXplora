@@ -35,6 +35,8 @@ from typing import Any
 import numpy as np
 
 from fastmdxplora.uncertainty import DEFAULT_RESAMPLES, block_bootstrap
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
 
 logger = logging.getLogger(__name__)
 
@@ -220,14 +222,14 @@ def check_umbrella_keys(spec: dict[str, Any]) -> None:
             "it discarded only the default fraction. Use "
             "`equilibration_fraction` instead -- a fraction of each window's "
             "production, which is what the discard is actually measured in."
-        )
+        , code="config.option.inapplicable")
     named = ", ".join(
         f"'{key}'{_suggest(key, set(accepted))}" for key in unknown)
     raise ConfigError(
         f"Unknown umbrella setting{'s' if len(unknown) > 1 else ''}: {named}. "
         "Accepted: " + ", ".join(_in_reading_order(
             accepted - {"centre", "index"})) + "."
-    )
+    , code="simulation.cv.unknown")
 
 
 def _checked_fraction(value: Any) -> float:
@@ -242,14 +244,14 @@ def _checked_fraction(value: Any) -> float:
     try:
         fraction = float(value)
     except (TypeError, ValueError):
-        raise ValueError(
-            f"equilibration_fraction must be a number, got {value!r}.") from None
+        raise StudyError(
+            f"equilibration_fraction must be a number, got {value!r}.", code="config.option.wrong_type") from None
     if not 0.0 < fraction < 1.0:
-        raise ValueError(
+        raise StudyError(
             f"equilibration_fraction is {fraction:g}; it must be above 0 and "
             "below 1. A window begins away from where it settles, so some of "
             "it has to be discarded, and discarding all of it leaves no "
-            "histogram to place.")
+            "histogram to place.", code="config.option.wrong_type")
     return fraction
 
 
@@ -264,37 +266,37 @@ def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
 
     variable = str(spec.get("collective_variable", "")).lower()
     if not variable:
-        raise ValueError(
+        raise StudyError(
             "Umbrella sampling needs a `collective_variable` -- the coordinate "
             "the free energy is a function of."
-        )
+        , code="simulation.bias.parameter_missing")
 
     force = spec.get("force_constant")
     if force is None:
-        raise ValueError(
+        raise StudyError(
             "Umbrella sampling needs a `force_constant`: how firmly each "
             "window is held, in kJ/mol per unit of the variable squared. It "
             "sets how far a window wanders, and therefore whether neighbours "
             "overlap -- too stiff and they do not, too soft and the system "
             "escapes towards the nearest minimum. There is no value that is "
             "right for an arbitrary coordinate."
-        )
+        , code="simulation.bias.parameter_missing")
 
     if "centres" in spec or "centers" in spec:
         centres = [float(c) for c in (spec.get("centres") or spec.get("centers"))]
         if len(centres) < 2:
-            raise ValueError("Umbrella sampling needs at least two windows.")
+            raise StudyError("Umbrella sampling needs at least two windows.", code="simulation.windows.too_few")
     else:
         for key in ("from", "to", "n_windows"):
             if spec.get(key) is None:
-                raise ValueError(
+                raise StudyError(
                     "Umbrella windows are given either as `centres`, or as "
                     "`from`, `to` and `n_windows`. "
                     f"`{key}` is missing."
-                )
+                , code="simulation.bias.parameter_missing")
         count = int(spec["n_windows"])
         if count < 2:
-            raise ValueError("Umbrella sampling needs at least two windows.")
+            raise StudyError("Umbrella sampling needs at least two windows.", code="simulation.windows.too_few")
         # Plain floats: numpy scalars serialise as "!!python/object" in YAML
         # and are not JSON, so a config written back out would not reload.
         centres = [float(c) for c in np.linspace(
@@ -332,31 +334,31 @@ def _a_force_for_every_window(force: Any, count: int) -> list[float]:
     window's bias from that window's own constant, and always has.
     """
     if isinstance(force, (str, bytes)):
-        raise ValueError(
+        raise StudyError(
             f"`force_constant` is {force!r}, which is text. It is a number "
             "in kJ/mol per unit of the collective variable squared, or a "
             "list of them, one per window."
-        )
+        , code="config.option.wrong_type")
     if isinstance(force, (list, tuple)):
         if len(force) != count:
-            raise ValueError(
+            raise StudyError(
                 f"`force_constant` was given as {len(force)} values for "
                 f"{count} windows. A list holds each window at its own "
                 "constant and has to have one for each; a single number "
                 "holds them all the same."
-            )
+            , code="config.option.wrong_type")
         values = [float(k) for k in force]
     else:
         values = [float(force)] * count
 
     for index, k in enumerate(values):
         if not k > 0:
-            raise ValueError(
+            raise StudyError(
                 f"Window {index} was given a force constant of {k:g}. A "
                 "restraint has to pull towards its centre: zero holds "
                 "nothing and a negative one pushes the system away from "
                 "the place the window exists to sample."
-            )
+            , code="config.option.wrong_type")
     return values
 
 
@@ -377,7 +379,7 @@ def expand_umbrella(config: dict[str, Any]) -> dict[str, Any]:
         return config
 
     if config.get("systems") and len(config["systems"]) > 1:
-        raise ValueError(
+        raise StudyError(
             "Umbrella sampling holds one system at many positions. This "
             f"config has {len(config['systems'])} systems, and a window set "
             "for each would be several separate free energies -- run them as "
@@ -550,12 +552,12 @@ def collect_samples(
         samples[index] = values[cut:]
 
     if missing:
-        raise FileNotFoundError(
+        raise MissingResultError(
             "These windows produced no sampling: " + "; ".join(missing) + ". "
             "A free energy cannot be computed from a partial set, because "
             "the windows either side of a missing one have nothing between "
             "them to stitch through."
-        )
+        , code="simulation.windows.no_sampling")
     return samples
 
 
@@ -972,10 +974,10 @@ def compute_pmf(
 
     ordered = [w for w in plan.windows if w.index in samples]
     if len(ordered) < 2:
-        raise ValueError(
+        raise StudyError(
             "A potential of mean force needs at least two windows with "
             f"sampling in them; {len(ordered)} were given."
-        )
+        , code="simulation.windows.too_few")
 
     gaps = []
     overlaps = []
@@ -1156,11 +1158,11 @@ def compute_pmf(
         pmf = np.where(sampled, -kT * np.log(np.clip(probability, 1e-300, None)),
                        np.nan)
     if not sampled.any():
-        raise ValueError(
+        raise StudyError(
             "No window contributed a single sample, so there is no free "
             "energy to report. Check that the windows ran and that the "
             "coordinate they biased is the one being histogrammed."
-        )
+        , code="simulation.windows.no_sampling")
     pmf -= np.nanmin(pmf)
 
     # `null` rather than a number: the coordinate exists and the free energy

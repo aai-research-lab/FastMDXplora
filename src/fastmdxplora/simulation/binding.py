@@ -42,6 +42,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from fastmdxplora.refusals import StudyError
 
 __all__ = ["STANDARD_VOLUME_NM3", "binding_free_energy"]
 
@@ -93,10 +94,10 @@ def binding_free_energy(
     radius = np.asarray(coordinate, dtype=float)
     energy = np.asarray(free_energy_kjmol, dtype=float)
     if radius.ndim != 1 or radius.shape != energy.shape:
-        raise ValueError(
+        raise StudyError(
             "The coordinate and the free energy must be one-dimensional and "
             f"the same length; got {radius.shape} and {energy.shape}."
-        )
+        , code="simulation.bias.dimension_mismatch")
     order = np.argsort(radius)
     radius, energy = radius[order], energy[order]
 

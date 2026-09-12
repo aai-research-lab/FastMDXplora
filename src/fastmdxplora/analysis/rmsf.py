@@ -22,6 +22,7 @@ import numpy as np
 
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 def _atom_labels(atoms) -> "np.ndarray":
@@ -109,10 +110,10 @@ class RMSF(Analysis):
         n = traj.n_frames
         ref = self.ref if self.ref >= 0 else n + self.ref
         if not (0 <= ref < n):
-            raise ValueError(
+            raise StudyError(
                 f"Reference frame {self.ref} is out of range for trajectory "
                 f"with {n} frames."
-            )
+            , code="analysis.option.out_of_range")
 
         aligned = superposed(traj, frame=ref, atom_indices=atom_idx)
 
