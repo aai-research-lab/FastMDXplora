@@ -990,6 +990,7 @@ class BatchExplorer:
         silently turned seeding off.
         """
         seeds = self._maybe_seed_the_windows(prepared)
+        self._give_each_window_its_cone()
         for spec in self.run_specs:
             simulation = dict(spec.options.get("simulation") or {})
             index = (simulation.get("umbrella") or {}).get("index")
@@ -1000,6 +1001,55 @@ class BatchExplorer:
             # would have every one of them drag the ligand out again while
             # restrained at a fixed point.
             simulation.pop("steered", None)
+            spec.options["simulation"] = simulation
+
+    # ------------------------------------------------------------------
+    def _give_each_window_its_cone(self) -> None:
+        """Hand the measured cone to every window, and to the analysis.
+
+        A study that writes `cone: auto` has asked for an angle and an axis it
+        does not know yet. The pull that seeds the windows supplies both, and
+        `_maybe_seed_the_windows` has just written the measurement down. Here
+        it stops being a file and becomes the restraint: the concrete angle
+        and the atoms it opens away from, on every window's block.
+
+        Written onto the expanded systems as well as onto the run specs,
+        because that is where the analysis rebuilds the plan from -- and the
+        correction the cone costs is several kJ/mol on the answer, so a
+        recombination that read `auto` would have nothing to correct by.
+        """
+        from fastmdxplora.simulation.umbrella import (
+            ConeToMeasure,
+            plan_from_expanded,
+        )
+
+        plan = plan_from_expanded(self._raw or {})
+        if plan is None or not isinstance(plan.cone, ConeToMeasure):
+            return
+
+        measured = self.output_dir / "seeds" / "cone.json"
+        if not measured.is_file():
+            # Nothing to hand over. Left to the window to refuse, where the
+            # message can say what a measured cone needs -- a pull -- instead
+            # of this one saying a file is missing.
+            return
+        record = json.loads(measured.read_text(encoding="utf-8"))
+        block = {key: record[key] for key in
+                 ("half_angle_deg", "force_constant", "axis_selection",
+                  "axis_atoms") if key in record}
+
+        for entry in (self._raw or {}).get("systems") or []:
+            window = ((entry.get("simulation") or {}).get("umbrella")
+                      if isinstance(entry, dict) else None)
+            if window and window.get("cone"):
+                window["cone"] = dict(block)
+        for spec in self.run_specs:
+            simulation = dict(spec.options.get("simulation") or {})
+            window = dict(simulation.get("umbrella") or {})
+            if not window.get("cone"):
+                continue
+            window["cone"] = dict(block)
+            simulation["umbrella"] = window
             spec.options["simulation"] = simulation
 
     # ------------------------------------------------------------------
@@ -1024,7 +1074,10 @@ class BatchExplorer:
             with_general_selection_names,
         )
         from fastmdxplora.simulation.seeding import seed_windows
-        from fastmdxplora.simulation.umbrella import plan_from_expanded
+        from fastmdxplora.simulation.umbrella import (
+            ConeToMeasure,
+            plan_from_expanded,
+        )
 
         raw = self._raw or {}
         simulation = raw.get("simulation") or {}
@@ -1099,6 +1152,12 @@ class BatchExplorer:
             site_selection=str(window.get("site_selection") or ""),
             temperature_K=float(simulation.get("temperature_K", 300.0)),
             random_seed=int(simulation.get("random_seed") or 0),
+            # Measured here, off the trajectory the seeder has already
+            # opened. The pull is the one continuous path from the site to
+            # bulk, so it is where the way out is visible -- and reading it
+            # twice would mean loading tens of thousands of atoms twice.
+            cone=(plan.cone.as_asked()
+                  if isinstance(plan.cone, ConeToMeasure) else None),
         )
         record = self.output_dir / "seeds" / "seeds.json"
         record.write_text(
@@ -1208,11 +1267,17 @@ class BatchExplorer:
                 # over, so the number it pushed is read off the runs rather
                 # than assumed to be zero.
                 from fastmdxplora.simulation.umbrella import (
+                    cone_the_windows_ran_under,
                     wall_bias_where_the_bound_state_is,
                 )
 
+                # What the windows ran under, not what the config asked for.
+                # A cone measured from the pull was never written in the
+                # config at all, and a config edited since the windows
+                # finished would correct by a cone that did not run.
+                cone = cone_the_windows_ran_under(directories)
                 wall = None
-                if plan.cone is not None:
+                if cone is not None:
                     minimum = min(
                         (point for point in zip(
                             payload["pmf"]["coordinate"],
@@ -1221,12 +1286,24 @@ class BatchExplorer:
                         key=lambda point: point[1], default=(0.0, 0.0))[0]
                     wall = wall_bias_where_the_bound_state_is(
                         directories, plan, bound_below=float(minimum) * 1.25)
-                payload["binding"] = binding_free_energy(
-                    payload["pmf"]["coordinate"],
-                    payload["pmf"]["free_energy_kjmol"],
-                    temperature_K=temperature,
-                    cone=plan.cone, wall_bias_kjmol=wall,
-                )
+                if plan.cone is not None and cone is None:
+                    # Asked for a cone and no window recorded one. The
+                    # correction is worth several kJ/mol, so a number without
+                    # it is not the same number -- said, rather than quietly
+                    # produced.
+                    payload["binding"] = {"refused": (
+                        "This study asked for a cone and no window recorded "
+                        "one, so how much room the bulk state gave up is not "
+                        "known. Without it a binding free energy would be too "
+                        "negative by kT ln(4 pi / Omega) and there is nothing "
+                        "here to say what Omega was.")}
+                else:
+                    payload["binding"] = binding_free_energy(
+                        payload["pmf"]["coordinate"],
+                        payload["pmf"]["free_energy_kjmol"],
+                        temperature_K=temperature,
+                        cone=cone, wall_bias_kjmol=wall,
+                    )
 
         destination = Path(self.output_dir) / "pmf.json"
         destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")

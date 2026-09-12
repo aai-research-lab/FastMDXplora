@@ -526,19 +526,69 @@ to a cap:
     select_atoms: "resSeq 189 to 195 and name CA"
     centres: [...]
     force_constant: [...]
-    cone:
-      half_angle_deg: 30
-      force_constant: 5000        # kJ/mol/rad², the wall
-      axis_selection: protein     # what the cone points away from
+    cone: auto
+    seed_from: runs/earlier-study/seed_pull
 ```
 
 The cap's area is `Ω r²` with `Ω = 2π(1 − cos θ)`, still exactly proportional
 to `r²` — so the reference is right by construction — and at 30° the cap is
 7% of a sphere, which a ligand covers in a fraction of the time.
 
+#### Where the axis and the angle come from
+
+`auto` measures both off the pull that seeds the windows. That pull is the one
+continuous trajectory the study has from the site to bulk, and every window
+starts on it, so a cone measured there is a cone every window begins inside.
+
+Both numbers are results rather than preferences:
+
+- **The axis** is the direction the ligand leaves by, which is rarely the line
+  out of the protein's centre — on trypsin's S1 site the two are 42–61° apart.
+  It is found by searching four thousand directions for the one that holds the
+  path in the smallest cone, *not* by averaging the path: a route that leaves a
+  pocket sideways and then swings into bulk has a mean far from both of its
+  ends, and on that study the mean gave 107° where the search gave 61°.
+- **The group** is the backbone alpha carbons lying opposite that direction,
+  within 0.4–2.0 nm of the site. Several group sizes are tried and the one that
+  holds the path in the smallest angle is kept, so the size is a result too.
+- **The half-angle** is measured through that group — frame by frame, exactly
+  the angle PLUMED will restrain — at the 98th percentile of the path, widened
+  by a fifth. Taking it from the group rather than from the ideal direction
+  means the difference between them needs no allowance.
+
+The measurement is written to `seeds/cone.json`, which carries what the wall
+was sized against: `held_within_deg` is how far the path strays from the axis,
+`bound_end_deg` the same for the bound end — the half that decides whether the
+wall bites — and `worst_deg` the single worst frame.
+
+`keep` and `margin` adjust the last step, and `axis_selection` names the group
+yourself and leaves only the angle to be measured:
+
+```yaml
+    cone:
+      keep: 98            # percentile of the path the cone must hold
+      margin: 1.2         # how much wider than that to open it
+      force_constant: 5000  # kJ/mol/rad², the wall
+```
+
+A study can also state the angle outright, and then nothing is measured:
+
+```yaml
+    cone:
+      half_angle_deg: 30
+      axis_selection: protein   # what the cone points away from
+```
+
 The axis is the direction from `axis_selection`'s centre to the site, so
 "straight out" is away from the protein and the cone turns with the molecule
 rather than pointing at a fixed corner of the box.
+
+Two refusals rather than a number that looks like one. A named group sitting
+where the ligand goes, instead of behind the site, asks for a cone of most of a
+sphere — that is refused, naming the group, rather than clipped to something
+shaped like a restraint. So is a pull that leaves in no settled direction: a
+ligand taking several routes out needs a coordinate that follows one of them,
+not a wall around all of them.
 
 **Flat-bottomed, not harmonic.** Inside the cone there is no bias at all, so
 what happens there is the system's own. A harmonic restraint on the angle would

@@ -1360,7 +1360,11 @@ def run_simulation(
         # One window. The set of them is expanded above, so what arrives here
         # is a coordinate and the position this run holds it at.
         from fastmdxplora.simulation.metadynamics import cv_lines, plan_from_config
-        from fastmdxplora.simulation.umbrella import Window, cone_from_config
+        from fastmdxplora.simulation.umbrella import (
+            ConeToMeasure,
+            Window,
+            cone_from_config,
+        )
 
         centre = umbrella.get("centre")
         if centre is None:
@@ -1411,10 +1415,24 @@ def run_simulation(
                     "line from the site to the ligand, which needs a "
                     "coordinate that is a distance between two groups. This "
                     f"study biases {cv_plan.collective_variable!r}.")
-            import mdtraj as _md
+            if isinstance(cone, ConeToMeasure):
+                raise ValueError(
+                    "This window's cone was never measured. `cone: auto` is "
+                    "read off the pull that seeds the windows, so it needs a "
+                    "study that pulls -- a `steered` block beside the "
+                    "`umbrella` one, or `seed_from` naming a finished pull. "
+                    "Without one, give the cone a `half_angle_deg` and an "
+                    "`axis_selection` outright.")
+            # The atoms a measurement chose, where there was one. Otherwise
+            # the selection, resolved here rather than carried as text: a
+            # selection matching nothing has to fail before a window runs for
+            # a day rather than inside PLUMED's parser afterwards.
+            axis_atoms = list(cone.axis_atoms or ())
+            if not axis_atoms:
+                import mdtraj as _md
 
-            mdtop = _md.load(str(topology_path)).topology
-            axis_atoms = [int(i) for i in mdtop.select(cone.axis_selection)]
+                mdtop = _md.load(str(topology_path)).topology
+                axis_atoms = [int(i) for i in mdtop.select(cone.axis_selection)]
             if not axis_atoms:
                 raise ValueError(
                     f"The cone's axis selection {cone.axis_selection!r} "

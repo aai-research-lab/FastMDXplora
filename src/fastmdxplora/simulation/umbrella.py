@@ -40,7 +40,10 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "Cone",
+    "ConeToMeasure",
+    "narrowest_cone",
     "cone_from_config",
+    "cone_the_windows_ran_under",
     "Window",
     "expand_umbrella",
     "plan_from_expanded",
@@ -108,6 +111,12 @@ class Cone:
     #: to the site is "straight out", so the default puts the whole protein
     #: behind the site and the cone in front of it.
     axis_selection: str = "protein"
+    #: The atoms themselves, where a measurement chose them. Then
+    #: `axis_selection` is documentation and this is what the restraint uses:
+    #: a measured group is a set of atoms, and turning it into a selection
+    #: string and back can pick up a different set -- 3PTB numbers two
+    #: residues 184 and 184A, and `resSeq 184` matches both.
+    axis_atoms: "tuple[int, ...] | None" = None
 
     def __post_init__(self) -> None:
         if not 0.0 < float(self.half_angle_deg) < 180.0:
@@ -119,6 +128,13 @@ class Cone:
             raise ValueError(
                 "A cone's wall needs a positive `force_constant` in "
                 f"kJ/mol/rad^2; {self.force_constant} was given.")
+        if self.axis_atoms is not None:
+            atoms = tuple(int(i) for i in self.axis_atoms)
+            if len(atoms) < 1:
+                raise ValueError(
+                    "A cone's `axis_atoms` names the group the angle opens "
+                    "away from, so it cannot be empty.")
+            object.__setattr__(self, "axis_atoms", atoms)
 
     @property
     def half_angle_rad(self) -> float:
@@ -150,8 +166,8 @@ class Cone:
         return float(kT * math.log(4.0 * math.pi
                                    / self.solid_angle(temperature_K)))
 
-    def plumed_lines(self, axis_atoms: "list[int]", *, site: str = "site",
-                     ligand: str = "lig") -> list[str]:
+    def plumed_lines(self, axis_atoms: "list[int] | None" = None, *,
+                     site: str = "site", ligand: str = "lig") -> list[str]:
         """The angle this restrains, defined from the atoms that fix it.
 
         `ANGLE` at the site between the axis group and the ligand is pi when
@@ -160,8 +176,16 @@ class Cone:
         """
         from fastmdxplora.simulation.metadynamics import _plumed_list
 
+        atoms = list(axis_atoms if axis_atoms is not None
+                     else (self.axis_atoms or ()))
+        if not atoms:
+            raise ValueError(
+                "A cone's angle is measured against a group of atoms, and "
+                f"none reached it. `axis_selection` is {self.axis_selection!r} "
+                "-- resolve it against the topology and pass the result, or "
+                "give the cone `axis_atoms`.")
         return [
-            f"cone_axis: COM ATOMS={_plumed_list(axis_atoms)}",
+            f"cone_axis: COM ATOMS={_plumed_list(atoms)}",
             f"cone_angle: ANGLE ATOMS=cone_axis,{site},{ligand}",
         ]
 
@@ -170,37 +194,198 @@ class Cone:
             "half_angle_deg": float(self.half_angle_deg),
             "force_constant": float(self.force_constant),
             "axis_selection": self.axis_selection,
+            "axis_atoms": (list(self.axis_atoms)
+                           if self.axis_atoms is not None else None),
             "solid_angle_sr": round(self.solid_angle(temperature_K), 6),
             "share_of_a_sphere": round(
                 self.solid_angle(temperature_K) / (4.0 * math.pi), 6),
             "correction_kjmol": round(self.correction_kjmol(temperature_K), 4),
         }
 
+    @classmethod
+    def from_record(cls, record: "dict[str, Any] | None") -> "Cone | None":
+        """The cone a record describes, or nothing where it describes none.
 
-def cone_from_config(spec: "dict[str, Any] | None") -> "Cone | None":
+        The counterpart of `as_record`, so that a study's own account of what
+        it ran can be read back. That matters for the correction: it is worth
+        `kT ln(4 pi / Omega)` on the answer, and taking it from a config that
+        may have been edited since the windows ran would be taking it from the
+        wrong cone.
+        """
+        if not record:
+            return None
+        angle = record.get("half_angle_deg")
+        if angle is None or isinstance(angle, str):
+            return None
+        atoms = record.get("axis_atoms")
+        return cls(
+            half_angle_deg=float(angle),
+            force_constant=float(record.get("force_constant", 5000.0)),
+            axis_selection=str(record.get("axis_selection") or "protein"),
+            axis_atoms=tuple(int(i) for i in atoms) if atoms else None,
+        )
+
+
+@dataclass(frozen=True)
+class ConeToMeasure:
+    """A cone the study has been asked for and has not measured yet.
+
+    The axis and the half-angle are properties of how the ligand leaves, and
+    the study already runs the trajectory that shows it: the pull that seeds
+    the windows is one continuous path from the site to bulk. Reading them off
+    it is a measurement, so it does not belong in a config any more than a
+    force constant does.
+
+    Held as its own type rather than as a `Cone` with holes in it, so that an
+    unmeasured cone cannot reach PLUMED: what a window needs is an angle and a
+    group of atoms, and there is no sensible default for either.
+    """
+
+    #: The wall's stiffness, which is not measured -- it only has to be firm
+    #: enough that the cap is the cap. Its effect on the answer is integrated
+    #: rather than assumed either way.
+    force_constant: float = 5000.0
+    #: Where the cone points away from, if the study already knows. Left out,
+    #: the axis is measured too.
+    axis_selection: str | None = None
+    #: How much of the path the cone must hold. The 98th percentile rather
+    #: than all of it: a handful of frames at a turn should not set the width
+    #: of a restraint that has to hold a study.
+    keep: float = 98.0
+    #: How much wider than that to open it. A cone sized exactly to the path
+    #: it holds has its wall against the sampling everywhere, and a wall that
+    #: is touched biases the run in a way the recombination cannot see.
+    margin: float = 1.2
+
+    def __post_init__(self) -> None:
+        if not 0.0 < float(self.keep) <= 100.0:
+            raise ValueError(
+                "A cone's `keep` is the percentile of the path it must hold, "
+                f"so it lies in (0, 100]; {self.keep} was given.")
+        if float(self.margin) < 1.0:
+            raise ValueError(
+                "A cone's `margin` opens it wider than the path it holds, so "
+                f"it is at least 1; {self.margin} was given.")
+        if float(self.force_constant) <= 0.0:
+            raise ValueError(
+                "A cone's wall needs a positive `force_constant` in "
+                f"kJ/mol/rad^2; {self.force_constant} was given.")
+
+    def as_asked(self) -> dict[str, Any]:
+        """The settings, as the measurement wants them."""
+        return {
+            "force_constant": float(self.force_constant),
+            "axis_selection": self.axis_selection,
+            "keep": float(self.keep),
+            "margin": float(self.margin),
+        }
+
+    def as_record(self, temperature_K: float = 300.0) -> dict[str, Any]:
+        return {
+            "half_angle_deg": "measured from the pull",
+            "force_constant": float(self.force_constant),
+            "axis_selection": self.axis_selection or "measured from the pull",
+            "keep": float(self.keep),
+            "margin": float(self.margin),
+        }
+
+
+def narrowest_cone(direction: Any, keep: float = 98.0,
+                   candidates: int = 4000) -> "tuple[np.ndarray, float]":
+    """The axis that holds a path in the smallest cone, and how wide that is.
+
+    The mean direction is the wrong axis for a path that turns. A ligand
+    leaving a pocket sideways and then swinging into bulk has a mean somewhere
+    in the middle of the bend, far from both of its ends: on the study this
+    was written from, the mean gave a cone of 107 degrees where the right axis
+    gives 61. What a cone has to do is contain the path, so the axis is the
+    one that minimises the angle it must open to -- a search over directions
+    rather than an average of them.
+
+    Searched on a grid rather than optimised, because the objective is a
+    percentile and has flat spots and kinks, and four thousand directions on a
+    sphere are two degrees apart -- finer than the margin the answer is
+    widened by.
+    """
+    direction = np.asarray(direction, dtype=float)
+    if direction.ndim != 2 or direction.shape[1] != 3:
+        raise ValueError(
+            "A path is an array of unit vectors with shape (frames, 3); "
+            f"{direction.shape} was given.")
+    if direction.shape[0] < 3:
+        raise ValueError(
+            "Measuring a cone needs a path to measure; "
+            f"{direction.shape[0]} frames were given.")
+    lengths = np.linalg.norm(direction, axis=1)
+    direction = direction / np.where(lengths == 0.0, 1.0, lengths)[:, None]
+
+    index = np.arange(candidates) + 0.5
+    z = 1.0 - 2.0 * index / candidates
+    ring = np.sqrt(np.maximum(0.0, 1.0 - z * z))
+    turn = np.pi * (1.0 + 5.0 ** 0.5) * index
+    axes = np.column_stack([ring * np.cos(turn), ring * np.sin(turn), z])
+
+    angles = np.degrees(np.arccos(np.clip(direction @ axes.T, -1.0, 1.0)))
+    spread = np.percentile(angles, float(keep), axis=0)
+    best = int(np.argmin(spread))
+    return axes[best], float(spread[best])
+
+
+def cone_from_config(spec: "dict[str, Any] | None"
+                     ) -> "Cone | ConeToMeasure | None":
     """A cone from what a config says, or nothing where it says nothing."""
     if not spec:
         return None
+    # `cone: auto` is the usual way to ask for one: the axis and the angle are
+    # measurements, and the trajectory that supplies them is the pull the
+    # study already runs.
+    if isinstance(spec, str):
+        if spec.strip().lower() not in ("auto", "measured", "measure"):
+            raise ValueError(
+                f"`cone` is {spec!r}. It is either `auto` -- measured from "
+                "the pull that seeds the windows -- or a block with "
+                "`half_angle_deg`.")
+        return ConeToMeasure()
     if not isinstance(spec, dict):
         raise ValueError(
-            "`cone` takes a block with `half_angle_deg`, and optionally "
-            f"`force_constant` and `axis_selection`; {spec!r} was given.")
+            "`cone` takes `auto`, or a block with `half_angle_deg` and "
+            f"optionally `force_constant` and `axis_selection`; {spec!r} was "
+            "given.")
     unknown = set(spec) - {"half_angle_deg", "half_angle", "force_constant",
-                           "axis_selection", "axis"}
+                           "axis_selection", "axis", "keep", "margin",
+                           "axis_atoms"}
     if unknown:
         raise ValueError(
-            f"A cone takes `half_angle_deg`, `force_constant` and "
-            f"`axis_selection`. It was also given {sorted(unknown)}.")
+            f"A cone takes `half_angle_deg`, `force_constant`, "
+            f"`axis_selection`, `keep` and `margin`. It was also given "
+            f"{sorted(unknown)}.")
     angle = spec.get("half_angle_deg", spec.get("half_angle"))
-    if angle is None:
-        raise ValueError(
-            "A cone needs a `half_angle_deg`: the angle from its axis to its "
-            "edge. Thirty degrees is a cap a fifteenth of a sphere in area.")
+    measure = angle is None or (isinstance(angle, str)
+                                and angle.strip().lower() in
+                                ("auto", "measured", "measure"))
+    if measure:
+        # An angle left out is an angle to be measured. There is no default
+        # worth having: a cone too narrow cuts the bound state and a cone too
+        # wide restrains nothing, and which is which depends on the path.
+        return ConeToMeasure(
+            force_constant=float(spec.get("force_constant", 5000.0)),
+            axis_selection=(str(spec["axis_selection"])
+                            if spec.get("axis_selection") else
+                            str(spec["axis"]) if spec.get("axis") else None),
+            keep=float(spec.get("keep", 98.0)),
+            margin=float(spec.get("margin", 1.2)),
+        )
+    atoms = spec.get("axis_atoms")
     return Cone(
         half_angle_deg=float(angle),
         force_constant=float(spec.get("force_constant", 5000.0)),
         axis_selection=str(spec.get("axis_selection")
                            or spec.get("axis") or "protein"),
+        # Not something a person writes. It is how a measured cone travels
+        # from the pull to the window that runs under it, and the atoms are
+        # the measurement -- a selection string rebuilt from them can match a
+        # different set.
+        axis_atoms=tuple(int(i) for i in atoms) if atoms else None,
     )
 
 
@@ -662,6 +847,55 @@ def windows_as_sweep(plan: UmbrellaPlan) -> list[dict[str, Any]]:
         }
         for w in plan.windows
     ]
+
+
+def cone_the_windows_ran_under(directories: "dict[int, Any]") -> "Cone | None":
+    """The cone the runs actually had, read back from what each window wrote.
+
+    Not the one the config asks for. The correction is worth several kJ/mol on
+    a binding free energy, and a study whose cone was measured from its pull
+    never had the angle in its config at all -- while a study whose config was
+    edited between running and analysing would take the correction from a cone
+    that did not run.
+
+    Every window records its own, so they are compared: windows that ran under
+    different cones cannot be recombined, and saying so is more useful than
+    quietly using the first one.
+    """
+    import json
+    from pathlib import Path
+
+    seen: dict[str, list[int]] = {}
+    records: dict[str, dict[str, Any]] = {}
+    for index, directory in sorted(directories.items()):
+        written = Path(directory) / "umbrella_window.json"
+        if not written.is_file():
+            continue
+        try:
+            record = json.loads(written.read_text(encoding="utf-8")).get("cone")
+        except (OSError, ValueError):
+            continue
+        if not record:
+            continue
+        key = json.dumps({k: record.get(k) for k in
+                          ("half_angle_deg", "force_constant", "axis_atoms",
+                           "axis_selection")}, sort_keys=True)
+        seen.setdefault(key, []).append(int(index))
+        records[key] = record
+
+    if not seen:
+        return None
+    if len(seen) > 1:
+        described = "; ".join(
+            f"windows {min(v)}-{max(v)} at "
+            f"{records[k].get('half_angle_deg')} degrees"
+            for k, v in sorted(seen.items(), key=lambda kv: min(kv[1])))
+        raise ValueError(
+            "These windows did not all run under the same cone, so they are "
+            f"not sampling one system: {described}. A free energy stitched "
+            "across them would be stitched across two different reference "
+            "states.")
+    return Cone.from_record(next(iter(records.values())))
 
 
 def wall_bias_where_the_bound_state_is(

@@ -206,12 +206,20 @@ class TestAConfigSaysIt:
         ({"half_angle_deg": 0}, "between 0 and 180"),
         ({"half_angle_deg": 200}, "between 0 and 180"),
         ({"half_angle_deg": 30, "force_constant": 0}, "positive"),
-        ({"force_constant": 5000}, "needs a `half_angle_deg`"),
         ({"half_angle_deg": 30, "kappa": 5000}, "also given"),
     ])
     def test_what_it_refuses(self, given, complaint):
         with pytest.raises(ValueError, match=complaint):
             cone_from_config(given)
+
+    def test_an_angle_left_out_is_an_angle_to_be_measured(self):
+        """There is no default worth having -- a cone too narrow cuts the
+        bound state and a cone too wide restrains nothing, and which is which
+        depends on the path the ligand takes out."""
+        from fastmdxplora.simulation.umbrella import ConeToMeasure
+
+        asked = cone_from_config({"force_constant": 4000})
+        assert asked == ConeToMeasure(force_constant=4000.0)
 
     def test_nothing_is_not_a_cone(self):
         assert cone_from_config(None) is None
