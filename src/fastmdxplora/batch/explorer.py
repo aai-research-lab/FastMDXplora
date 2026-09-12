@@ -873,6 +873,40 @@ class BatchExplorer:
 
         wanted = set(include) if include else {"setup", "simulation",
                                                "analysis", "report"}
+        # A study that names a prepared system is not asking to prepare
+        # another one. Preparing anyway solvates a second box, and solvation
+        # does not place water the same way twice: the named system's frames
+        # -- the seeds a study takes from a pull run in it -- then belong to
+        # a different set of atoms. A real study said `setup_from`, ran with
+        # the setup phase in its list, and stopped ten seconds later with
+        # "the prepared system has 36075 particles and the pull's trajectory
+        # has 36087". The refusal was right and the silence before it was
+        # not: the setting had been ignored rather than obeyed.
+        named = ((self._raw or {}).get("simulation") or {})
+        named = named.get("setup_from") or named.get("prepared_from")
+        if named and "setup" in wanted and "setup" not in set(exclude or []):
+            where = Path(named)
+            if not (_a_prepared_system_is_there(where)
+                    or _a_prepared_system_is_there(where / "setup")
+                    or _a_prepared_system_is_there(
+                        where / "shared_setup" / "setup")):
+                raise FileNotFoundError(
+                    f"`simulation.setup_from` names {named!r}, and there is "
+                    "no prepared system there: a directory holding "
+                    "`system.xml`, `state.xml` and `topology.pdb`, or one "
+                    "with `setup/` or `shared_setup/setup/` under it. "
+                    "Preparing one instead would give this study a different "
+                    "box of water from the one that setting points at, and "
+                    "anything taken from it -- seeds from a pull, a frame to "
+                    "start from -- would not fit."
+                )
+            logger.info(
+                "Preparing nothing: `setup_from` names %s, and this study "
+                "uses that system. A second preparation would solvate a "
+                "second box, and water is not placed the same way twice -- "
+                "so frames from the named system would belong to a different "
+                "set of atoms than the one being simulated.", named)
+            exclude = list(exclude or []) + ["setup"]
         if "setup" not in wanted or "setup" in set(exclude or []):
             # Nothing is being prepared here -- the windows are simulating
             # from something that already exists. They may still need

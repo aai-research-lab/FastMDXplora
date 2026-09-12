@@ -594,8 +594,18 @@ simulation:
   prepared_from: runs/reference/setup
 ```
 
-It names the `setup` directory of a run that completed — the one holding
-`system.xml`, `state.xml` and `topology.pdb` — not the run directory above it.
+It names a run that completed: the `setup` directory holding `system.xml`,
+`state.xml` and `topology.pdb`, or a directory with `setup/` or
+`shared_setup/setup/` under it.
+
+**Naming one turns preparation off.** Solvation does not place water the same
+way twice, so preparing a second system gives a second set of atoms — and
+anything taken from the named one, a frame to start from or the seeds from a
+pull run in it, then belongs to a different molecule. A study that said
+`setup_from` and prepared anyway stopped ten seconds later with *"the prepared
+system has 36075 particles and the pull's trajectory has 36087"*. The refusal
+was right; ignoring the setting beforehand was not. A `setup_from` that points
+at no prepared system is refused rather than quietly prepared around.
 
 ### Where the windows start
 
