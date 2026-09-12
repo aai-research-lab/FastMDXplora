@@ -395,3 +395,32 @@ class TestTheWideningClassesDoNotNarrow(unittest.TestCase):
             if isinstance(obj, type) and issubclass(obj, CodedError):
                 with self.subTest(cls=name):
                     self.assertTrue(known(obj.default_code))
+
+    def test_a_missing_result_answers_to_both_names(self):
+        # Narrowing is the failure mode these classes exist to avoid, and
+        # this is the one that caught us: the sites replaced raised
+        # FileNotFoundError in analysis/ and RuntimeError in simulation/,
+        # and inheriting only the first stopped the simulation pipeline's
+        # graceful-degradation path from catching its own refusal.
+        from fastmdxplora.refusals import MissingResultError
+        self.assertTrue(issubclass(MissingResultError, FileNotFoundError))
+        self.assertTrue(issubclass(MissingResultError, RuntimeError))
+
+    def test_every_widening_class_only_widens(self):
+        # The general rule, asserted rather than remembered. A class that
+        # replaced a builtin must still be an instance of it, or somebody's
+        # handler stops running and nothing says so.
+        from fastmdxplora import refusals as module
+        replaced = {
+            "StudyError": (ValueError,),
+            "MissingResultError": (FileNotFoundError, RuntimeError),
+            "MissingPathError": (FileNotFoundError,),
+            "OutputExistsError": (FileExistsError,),
+            "BackendUnavailable": (ImportError, RuntimeError),
+            "UnstableRun": (RuntimeError,),
+        }
+        for name, bases in replaced.items():
+            cls = getattr(module, name)
+            for base in bases:
+                with self.subTest(cls=name, base=base.__name__):
+                    self.assertTrue(issubclass(cls, base))

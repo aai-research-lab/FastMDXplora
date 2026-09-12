@@ -115,7 +115,7 @@ def render_pdf(
     """
     markdown_path = Path(markdown_path)
     if not markdown_path.is_file():
-        raise PdfUnavailable(f"No report to convert at {markdown_path}.")
+        raise PdfUnavailable(f"No report to convert at {markdown_path}.", code="analysis.data.absent")
 
     target = Path(pdf_path) if pdf_path else markdown_path.with_suffix(".pdf")
 

@@ -157,6 +157,70 @@ FAMILIES: list[tuple[str, str, str]] = [
      "report.format.unavailable"),
     ("gui", r"outside the|not under|is not a directory|does not exist",
      "environment.path.not_found"),
+
+    # -- setup: inputs, chains, force fields ------------------------------
+    ("setup", r"Could not classify system input|Unknown input_form",
+     "setup.input.unrecognised"),
+    ("setup", r"requires a system input|Specify either `forcefield`|"
+     r"raw `force_field` XML list", "config.option.conflicting"),
+    ("setup", r"No structure at |Input PDB not found|Prepared PDB not found",
+     "environment.path.not_found"),
+    ("setup", r"No chain named|hold no polymer atoms|has no \"\s*\"chains to",
+     "setup.structure.chain_unknown"),
+    ("setup", r"auto identified components", "setup.structure.undetermined"),
+    ("setup", r"does not support ligands", "setup.forcefield.incompatible"),
+    ("setup", r"Could not fetch .* from RCSB", "environment.service.unreachable"),
+    ("setup", r"heterogens: unknown policy|Unknown nonbonded_method",
+     "config.option.not_permitted"),
+    ("setup", r"nm across for ", "setup.structure.implausible_extent"),
+    ("setup", r"requires pdbfixer and openmm", "environment.backend.missing"),
+    ("setup", r"structure was asked for, but|looks like a residue",
+     "setup.ligand.pose_unavailable"),
+
+    # -- simulation: pipeline and seeds -----------------------------------
+    ("simulation", r"setup outputs are missing|points at |not found: ",
+     "analysis.data.absent"),
+    ("simulation", r"No topology beside", "analysis.data.absent"),
+    ("simulation", r"collective variable recomputed here has median|"
+     r"has \{trajectory.n_frames\} frame", "simulation.seed.unusable"),
+    ("simulation", r"funnel bounds where a ligand goes|"
+     r"funnel restraint is built around|"
+     r"fraction of a reference structure's native",
+     "simulation.cv.missing_companion"),
+
+    # -- report -----------------------------------------------------------
+    # Not a bare "region_highlights": every message in that module names
+    # the setting, including the one reporting that the RMSF output it
+    # reads was never produced, which belongs to the data family.
+    ("report", r"region_highlights\[|region_highlights must be",
+     "report.region.invalid"),
+    ("report", r"No report to convert|require existing RMSF output|"
+     r"contains no residue values|must have at least two columns",
+     "analysis.data.absent"),
+
+    # -- batch and gui ----------------------------------------------------
+    ("batch", r"requires `config`|requires either `systems`",
+     "config.option.missing_companion"),
+    ("batch", r"already", "environment.path.exists"),
+    ("batch", r"could not be prepared|did not finish", "analysis.data.absent"),
+    ("batch", r"by resolving the", "simulation.cv.selection_empty"),
+    ("gui", r"must be between|must be a number|is too large|must be an object",
+     "config.option.wrong_type"),
+    ("gui", r"data is empty|must be an n x 4|must include",
+     "analysis.data.absent"),
+    ("gui", r"did not write a preview|No dashboard ports",
+     "environment.platform.unavailable"),
+
+    # -- top level: orchestrator and uncertainty --------------------------
+    ("", r"Pass either `system=`|Specify either `include` or `exclude`",
+     "config.option.conflicting"),
+    ("", r"requires either a `system` input|needs an output directory",
+     "config.option.missing_companion"),
+    ("", r"Unknown phase", "config.phase.unknown"),
+    ("", r"already holds output from", "environment.path.exists"),
+    ("", r"needs at least one non-empty series|needs at least one array|"
+     r"needs non-empty arrays", "analysis.sampling.too_few_frames"),
+    ("", r"paired arrays must be the same length", "config.option.wrong_type"),
 ]
 
 SKIP_TYPES = frozenset({

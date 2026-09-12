@@ -55,6 +55,8 @@ from fastmdxplora.gui.telemetry import (
     run_stages,
 )
 from fastmdxplora.gui.trajectory_playback import playback_info
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 logger = logging.getLogger("fastmdxplora.gui.server")
 
@@ -560,11 +562,11 @@ def make_handler(
             if length <= 0:
                 return {}
             if length > 1_000_000:
-                raise ValueError("Request body is too large")
+                raise StudyError("Request body is too large", code="config.option.wrong_type")
             raw = self.rfile.read(length)
             data = json.loads(raw.decode("utf-8"))
             if not isinstance(data, dict):
-                raise ValueError("JSON body must be an object")
+                raise StudyError("JSON body must be an object", code="config.option.wrong_type")
             return data
 
         def _send_json(self, payload: dict[str, Any], *, status: int = 200) -> None:
@@ -833,7 +835,7 @@ def start_dashboard_session(
         )
     if last_error is not None:
         raise last_error
-    raise OSError("No dashboard ports were available")
+    raise BackendUnavailable("No dashboard ports were available", code="environment.platform.unavailable")
 
 
 def start_test_server(

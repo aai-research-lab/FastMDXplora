@@ -47,6 +47,7 @@ from typing import Any
 import numpy as np
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
+from fastmdxplora.refusals import MissingResultError
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +276,7 @@ def _prepared_files(prepared: Path) -> tuple[Path, Path]:
                 str(Path(prepared) / s) if s else str(prepared)
                 for s in PREPARED_SYSTEM_LAYOUTS
             )
-            raise FileNotFoundError(
+            raise MissingResultError(
                 f"{path} is not there, so the seeds cannot be built from the "
                 "same system the windows will simulate. Seeds written "
                 "against a different preparation place the waters "
@@ -462,7 +463,7 @@ def seed_windows(pull_directory: Path | str,
         raise StudyError(
             f"The pull at {pull} has {trajectory.n_frames} frame(s). Seeds "
             "are frames along a pull, so there is nothing to take."
-        )
+        , code="simulation.seed.unusable")
 
     # Imaged before anything is measured, not only before positions are
     # taken. A ligand split across the boundary has a centre of mass halfway
@@ -487,16 +488,16 @@ def _pull_files(pull: Path) -> tuple[Path, Path]:
         [p for p in root.glob("*.dcd")] + [p for p in root.glob("*.xtc")],
         key=lambda p: p.stat().st_size, reverse=True)
     if not trajectories:
-        raise FileNotFoundError(
+        raise MissingResultError(
             f"No trajectory under {root}. A pull that wrote no frames cannot "
             "seed anything -- check that the run finished.")
     for name in ("trajectory_topology.pdb", "topology.pdb"):
         candidate = root / name
         if candidate.is_file():
             return trajectories[0], candidate
-    raise FileNotFoundError(
+    raise MissingResultError(
         f"No topology beside {trajectories[0]}, so its frames cannot be "
-        "read.")
+        "read.", code="analysis.data.absent")
 
 
 def _check_against_colvar(pull: Path, measured: np.ndarray,
@@ -549,7 +550,7 @@ def _check_against_colvar(pull: Path, measured: np.ndarray,
         "that were biased, or the coordinates were read without the "
         "periodicity PLUMED applied. Seeds taken from these frames would sit "
         "at distances nobody asked for."
-    )
+    , code="simulation.seed.unusable")
 
 
 def _widest_a_distance_can_be(cell: np.ndarray, samples: int = 4096) -> float:

@@ -227,7 +227,7 @@ def expand_runs(
     elif base_system is not None:
         sys_entries = [{"id": "s1", "system": base_system, "options": {}}]
     else:
-        raise SweepError("expand_runs requires either `systems` or `base_system`.")
+        raise SweepError("expand_runs requires either `systems` or `base_system`.", code="config.option.missing_companion")
 
     # Build the sweep grid: list of (axis_key, value) tuples per point
     if sweep:

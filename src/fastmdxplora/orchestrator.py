@@ -28,6 +28,8 @@ from typing import Any
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import refusal_of
+from fastmdxplora.refusals import OutputExistsError
+from fastmdxplora.refusals import StudyError
 
 logger = get_logger("project")
 
@@ -203,10 +205,10 @@ class FastMDXplora:
         # config/config_data execution is deferred to explore().
         n_config = sum(x is not None for x in (config, config_data))
         if n_config and system is not None:
-            raise ValueError(
+            raise StudyError(
                 "Pass either `system=` (a single study) or a config "
                 "(`config=` / `config_data=`), not both."
-            )
+            , code="config.option.conflicting")
 
         self._config_path: str | None = (
             str(config) if config is not None else None
@@ -229,11 +231,11 @@ class FastMDXplora:
 
         # ---- Direct single-study path -----------------------------------
         if system is None:
-            raise ValueError(
+            raise StudyError(
                 "FastMDXplora requires either a `system` input (a PDB/CIF "
                 "file path, a 4-character PDB ID, or a one-letter sequence) "
                 "or a `config` file."
-            )
+            , code="config.option.missing_companion")
 
         self.system: str = str(system)
 
@@ -538,10 +540,10 @@ class FastMDXplora:
             self, "output_dir", None
         )
         if target is None:
-            raise ValueError(
+            raise StudyError(
                 "compare() needs an output directory — pass output_dir=, or "
                 "call it after explore() so the run's output is known."
-            )
+            , code="config.option.missing_companion")
         return build_comparison_report(target)
 
     # ------------------------------------------------------------------
@@ -744,17 +746,17 @@ class FastMDXplora:
         want_report: bool,
     ) -> list[str]:
         if include is not None and exclude is not None:
-            raise ValueError("Specify either `include` or `exclude`, not both.")
+            raise StudyError("Specify either `include` or `exclude`, not both.", code="config.option.conflicting")
 
         if include is not None:
             unknown = set(include) - set(PHASES)
             if unknown:
-                raise ValueError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}")
+                raise StudyError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}", code="config.phase.unknown")
             plan = [p for p in PHASES if p in include]
         elif exclude is not None:
             unknown = set(exclude) - set(PHASES)
             if unknown:
-                raise ValueError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}")
+                raise StudyError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}", code="config.phase.unknown")
             plan = [p for p in PHASES if p not in exclude]
         else:
             plan = list(PHASES)
@@ -791,11 +793,11 @@ class FastMDXplora:
         ]
         if not occupied:
             return
-        raise FileExistsError(
+        raise OutputExistsError(
             f"{self.output_dir} already holds output from "
             f"{', '.join(occupied)}. Choose another --output directory, "
             f"delete this one, or pass --force-overwrite to overwrite it."
-        )
+        , code="environment.path.exists")
 
     def _merge_options(
         self, override: dict[str, dict[str, Any]] | None
@@ -804,9 +806,9 @@ class FastMDXplora:
         if override:
             for phase, opts in override.items():
                 if phase not in PHASES:
-                    raise ValueError(
+                    raise StudyError(
                         f"Unknown phase '{phase}' in options. Valid: {PHASES}"
-                    )
+                    , code="config.phase.unknown")
                 merged[phase].update(opts)
         return merged
 
@@ -941,7 +943,7 @@ class FastMDXplora:
             from fastmdxplora.report import run
 
             return run
-        raise ValueError(f"Unknown phase: {phase}")
+        raise StudyError(f"Unknown phase: {phase}", code="config.phase.unknown")
 
     def _add_run_record_to_bundle(self) -> None:
         """Put the manifest and the resolved config into the bundle.

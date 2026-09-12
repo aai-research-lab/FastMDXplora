@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import CodedError
+from fastmdxplora.refusals import StudyError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     pass
@@ -168,7 +169,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
     def _stand(reason: str) -> tuple[Any, str]:
         if required:
             raise LigandError(
-                f"ligand_pose: structure was asked for, but {reason}.")
+                f"ligand_pose: structure was asked for, but {reason}.", code="setup.ligand.pose_unavailable")
         return molecule, reason
 
     import numpy as _np
@@ -197,7 +198,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
                 "there is no pose in the structure to take. Where the pose is "
                 "meant to come from the supplied file -- an apo protein and a "
                 "docked or deliberately unbound ligand -- say so with "
-                "ligand_pose: file.")
+                "ligand_pose: file.", code="setup.ligand.pose_unavailable")
         return molecule, None
     if copy >= len(matches):
         return _stand(
@@ -304,7 +305,7 @@ def load_ligand(
                 "pass the path:\n\n"
                 f"    curl -O https://files.rcsb.org/ligands/download/"
                 f"{given.upper()}_ideal.sdf"
-            )
+            , code="setup.ligand.pose_unavailable")
         raise LigandError(f"Ligand file not found: {path}", code="setup.ligand.unreadable", path=str(path))
     detect_ligand_format(path)
 
@@ -345,7 +346,7 @@ def load_ligand(
     # they were given.
     inferred = _infer_net_charge(molecule)
     if net_charge is not None and inferred is not None and net_charge != inferred:
-        raise ValueError(
+        raise StudyError(
             f"Ligand {name}: the study states a net charge of {net_charge:+d}, "
             f"and {path.name} carries formal charges summing to "
             f"{inferred:+d}. The file is the chemistry -- its protonation "

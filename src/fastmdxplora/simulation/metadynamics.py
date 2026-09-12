@@ -536,7 +536,7 @@ def plan_from_config(
             raise StudyError(
                 "A funnel bounds where a ligand goes as it leaves, so it "
                 f"applies to ligand_distance and not to {variable}."
-            )
+            , code="simulation.cv.missing_companion")
         axis = funnel_spec.get("axis_selection")
         if not axis:
             raise StudyError(
@@ -723,7 +723,7 @@ def cv_lines(plan: "MetadynamicsPlan",
                 "contacts, and no reference structure was given. S is fixed "
                 "by that structure, so without one there is no set of "
                 "contacts and nothing to bias."
-            )
+            , code="simulation.cv.missing_companion")
         lines.extend(_q_contact_lines(plan, reference_pdb, label=cv))
     elif variable == "angle":
         lines.append(f"{cv}: ANGLE "
@@ -955,7 +955,7 @@ def plan_pair_from_config(
                 "explicitly rather than inferring, so it is refused here: "
                 "bias the funnel coordinate alone, or write the PLUMED "
                 "input directly."
-            )
+            , code="simulation.cv.missing_companion")
 
     return MetadynamicsPair(first=plans[0], second=plans[1])
 

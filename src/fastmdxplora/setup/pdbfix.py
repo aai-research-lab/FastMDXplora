@@ -38,6 +38,8 @@ from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
+from fastmdxplora.refusals import MissingPathError
 
 logger = get_logger("setup.pdbfix")
 
@@ -382,18 +384,18 @@ def fix_pdb_with_pdbfixer(
         from openmm.app import PDBFile
         from pdbfixer import PDBFixer
     except ImportError as exc:
-        raise ImportError(
+        raise BackendUnavailable(
             "fix_pdb_with_pdbfixer requires pdbfixer and openmm. Install "
             "via conda (recommended): conda install -c conda-forge "
             "pdbfixer openmm — or via pip with the optional [setup] "
             "extras: pip install fastmdxplora[md]."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
     inp = Path(input_pdb)
     out = Path(output_pdb)
 
     if not inp.exists():
-        raise FileNotFoundError(f"Input PDB not found: {inp}")
+        raise MissingPathError(f"Input PDB not found: {inp}", code="environment.path.not_found")
 
     logger.info("Fixing PDB with PDBFixer: %s (pH=%s)", inp, ph)
 
@@ -411,7 +413,7 @@ def fix_pdb_with_pdbfixer(
                 raise StudyError(
                     "A mutation was asked for and the structure has no "
                     "chains to apply it to."
-                )
+                , code="setup.structure.chain_unknown")
             chain_id = str(first.id)
 
         applied = []

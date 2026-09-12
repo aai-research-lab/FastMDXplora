@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
 
 if TYPE_CHECKING:
     from fastmdxplora.orchestrator import FastMDXplora
@@ -692,7 +693,7 @@ def _summarise_data_file(data_path: Path, kind: str) -> str:
     if kind == "ss":
         _matrix, residues, frames = _secondary_structure_matrix(data_path)
         if not _matrix:
-            raise ValueError("secondary structure data is empty")
+            raise StudyError("secondary structure data is empty", code="analysis.data.absent")
         return f"{len(frames)} frames, {len(residues)} residues"
 
     if kind == "dendrogram":
@@ -700,27 +701,27 @@ def _summarise_data_file(data_path: Path, kind: str) -> str:
 
         linkage_matrix = np.load(data_path)
         if linkage_matrix.ndim != 2 or linkage_matrix.shape[1] != 4:
-            raise ValueError("hierarchical linkage data must be an n x 4 matrix")
+            raise StudyError("hierarchical linkage data must be an n x 4 matrix", code="analysis.data.absent")
         return f"{linkage_matrix.shape[0] + 1} frames"
 
     rows = _numeric_rows(data_path)
     if not rows:
-        raise ValueError("numeric data is empty")
+        raise StudyError("numeric data is empty", code="analysis.data.absent")
 
     if kind == "scatter":
         if any(len(row) < 3 for row in rows):
-            raise ValueError("projection data must include frame and two components")
+            raise StudyError("projection data must include frame and two components", code="analysis.data.absent")
         return f"{len(rows)} frames"
 
     if kind in {"cluster", "cluster_counts"}:
         if any(len(row) < 2 for row in rows):
-            raise ValueError("cluster data must include frame and cluster columns")
+            raise StudyError("cluster data must include frame and cluster columns", code="analysis.data.absent")
         clusters = {int(row[1]) for row in rows}
         return f"{len(clusters)} clusters"
 
     if kind == "dihedrals":
         if any(len(row) < 4 for row in rows):
-            raise ValueError("dihedral data must include frame, residue, phi, and psi")
+            raise StudyError("dihedral data must include frame, residue, phi, and psi", code="analysis.data.absent")
         return f"{len(rows)} angles"
 
     values = [row[0] for row in rows] if all(len(row) == 1 for row in rows) \

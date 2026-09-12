@@ -32,7 +32,8 @@ from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
-from fastmdxplora.refusals import BackendUnavailable
+from fastmdxplora.refusals import BackendUnavailable, UnstableRun
+from fastmdxplora.refusals import MissingResultError
 
 logger = get_logger("simulation.runner")
 
@@ -788,7 +789,7 @@ def _value_in_unit(quantity: Any, unit_value: Any) -> Any:
 
 def _validation_error(stage: str, detail: str, *, topology: Any = None,
                       positions: Any = None, platform: str | None = None
-                      ) -> RuntimeError:
+                      ) -> "UnstableRun":
     """Say what failed, reading the state where one is available.
 
     The remedies this used to list -- lower the timestep, lower the
@@ -805,19 +806,21 @@ def _validation_error(stage: str, detail: str, *, topology: Any = None,
             # replaced by it. They say what the integrator noticed, which is
             # searchable and links to its FAQ; the diagnosis says which atoms
             # it happened to. Neither substitutes for the other.
-            return RuntimeError(
+            return UnstableRun(
                 f"{diagnose_failure(topology, positions, stage=stage, platform=platform).as_text()}"
-                f"\n\nOpenMM reported: {detail}.")
+                f"\n\nOpenMM reported: {detail}.",
+                stage=stage, diagnosis=detail)
         except Exception:  # noqa: BLE001 - a diagnosis that fails is not the
             # failure worth reporting; fall through to the general message.
             pass
 
-    return RuntimeError(
+    return UnstableRun(
         f"Invalid simulation state after {stage}: {detail}. "
         "Try safer settings: lower --simulate-timestep-fs, lower "
         "--simulate-temperature-K, increase --simulate-friction-per-ps, use "
         "--simulate-precision double, or disable NPT for the first smoke test "
-        "with --simulate-npt-steps 0."
+        "with --simulate-npt-steps 0.",
+        stage=stage, diagnosis=detail,
     )
 
 
@@ -1304,7 +1307,7 @@ def run_simulation(
     for label, path in [("system_xml", system_xml_path), ("state_xml", state_xml_path),
                         ("topology_pdb", topology_path)]:
         if not path.exists():
-            raise FileNotFoundError(f"{label} not found: {path}")
+            raise MissingResultError(f"{label} not found: {path}", code="analysis.data.absent")
 
     with system_xml_path.open(encoding="utf-8") as fh:
         system = omm["openmm"].XmlSerializer.deserialize(fh.read())

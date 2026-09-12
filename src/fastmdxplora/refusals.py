@@ -67,7 +67,10 @@ __all__ = [
     "CodedError",
     "StudyError",
     "MissingResultError",
+    "MissingPathError",
+    "OutputExistsError",
     "BackendUnavailable",
+    "UnstableRun",
     "Kind",
     "Disclosure",
     "Refusal",
@@ -286,6 +289,16 @@ CODES: tuple[Code, ...] = (
          detail_keys=("requested", "available")),
 
     # -- setup: structure ---------------------------------------------------
+    Code("setup.input.unrecognised",
+         "A system input that is neither a path, a PDB identifier, nor a "
+         "sequence.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("given",)),
+    Code("setup.structure.implausible_extent",
+         "The prepared structure spans further than its residue count can "
+         "account for, which usually means periodic images were not rejoined.",
+         Kind.SEMANTIC, Disclosure.NOTHING,
+         detail_keys=("extent_nm", "residues")),
     Code("setup.structure.undetermined",
          "The deposited entry does not determine what should be simulated.",
          Kind.SEMANTIC, Disclosure.NOTHING,
@@ -528,6 +541,11 @@ CODES: tuple[Code, ...] = (
          "A sweep whose cross-product holds no runs.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
          detail_keys=("options",)),
+    Code("report.region.invalid",
+         "A requested report region does not describe a residue range this "
+         "study holds.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("index", "start", "end", "residues")),
     Code("report.format.unavailable",
          "A report format was asked for that this environment cannot write.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
@@ -741,7 +759,37 @@ class CodedError(Exception):
         return self.refusal.matches(prefix)
 
 
-class MissingResultError(CodedError, FileNotFoundError):
+class OutputExistsError(CodedError, FileExistsError):
+    """Writing here would overwrite a study that is already there.
+
+    A refusal rather than a prompt, and rather than a silent overwrite.
+    The thing at risk is somebody's completed run, and the cost of being
+    wrong is asymmetric: refusing costs a caller one more argument,
+    overwriting costs whatever the run took to produce.
+    """
+
+    default_code = "environment.path.exists"
+
+
+class MissingPathError(CodedError, FileNotFoundError):
+    """A file the study named is not on disk.
+
+    The counterpart to :class:`MissingResultError`, and the distinction is
+    the whole reason both exist. This is a path the user gave that is not
+    there, and the remedy is to correct the path. That one is an analysis
+    looking for the output of a phase that did not run, and the remedy is
+    to run the phase.
+
+    Both were ``FileNotFoundError`` and indistinguishable, so a caller
+    seeing one could only guess which had happened -- and guessing wrong
+    means either editing a correct config or re-running a phase that was
+    never the problem.
+    """
+
+    default_code = "environment.path.not_found"
+
+
+class MissingResultError(CodedError, FileNotFoundError, RuntimeError):
     """What an analysis reads was never produced by this study.
 
     Distinct from a file the user named that is not on disk. This is an
@@ -751,8 +799,18 @@ class MissingResultError(CodedError, FileNotFoundError):
 
     The remedy is a phase, not a path, and for an automated caller that is
     the difference between "fix what you asked for" and "run the thing
-    this depends on first". Subclasses ``FileNotFoundError`` so the
-    existing handlers and the existing message are untouched.
+    this depends on first".
+
+    Subclasses ``FileNotFoundError`` and ``RuntimeError`` because the sites
+    it replaces used one or the other with no principle behind the choice:
+    a missing `pmf.json` raised ``FileNotFoundError`` in `analysis/` while
+    a missing prepared system raised ``RuntimeError`` in `simulation/`.
+    Inheriting only the first narrowed what caught the second, and the
+    graceful-degradation path in the simulation pipeline stopped catching
+    it -- found by the suite, which is the argument for the suite.
+
+    Widening never breaks a handler and narrowing silently does, so where
+    a class replaces two builtins it inherits from both.
     """
 
     default_code = "analysis.data.absent"
@@ -778,6 +836,27 @@ class BackendUnavailable(CodedError, ImportError, RuntimeError):
     """
 
     default_code = "environment.backend.missing"
+
+
+class UnstableRun(CodedError, RuntimeError):
+    """The integration produced a state that is not a physical one.
+
+    Positions that are NaN, an energy that is infinite, an integrator that
+    stopped. Raised through one helper in the runner, which is why this
+    class rather than a code at each site: eleven raise sites share a
+    single constructor, and coding the constructor codes all of them and
+    keeps them consistent by construction.
+
+    Semantic rather than structural, and the reason is worth stating
+    because it decides what an automated caller should do with it. A
+    blown-up run is not a config that can be repaired by consulting the
+    schema. It may be a timestep, or a temperature, or a ligand whose
+    parameters are wrong, and no timestep is small enough for the last of
+    those. The software does not know which, so `Disclosure.NOTHING`
+    applies and the remedy belongs to whoever reads the diagnosis.
+    """
+
+    default_code = "simulation.run.unstable"
 
 
 class StudyError(CodedError, ValueError):
