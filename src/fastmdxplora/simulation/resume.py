@@ -71,12 +71,22 @@ class Segmentability:
     method: str
     reason: str
     code: str = ""
+    qualification: str = ""
+    """What is true of a split run that is not true of one that ran through.
+
+    Distinct from ``reason``, and distinct from refusing. A qualification
+    says the split is sound and something about the result is different
+    anyway -- which is a third answer the corpus already has a name for,
+    and the right one for a constant-pressure run.
+    """
 
     def as_record(self) -> dict[str, Any]:
         record = {"segmentable": self.allowed, "method": self.method,
                   "reason": self.reason}
         if self.code:
             record["code"] = self.code
+        if self.qualification:
+            record["qualification"] = self.qualification
         return record
 
     def __str__(self) -> str:
@@ -126,17 +136,46 @@ def segmentability(config: dict[str, Any] | None) -> Segmentability:
             "stand alone.",
             code="simulation.resume.bias_not_carried")
 
+    # Measured rather than assumed, on the CPU platform with argon in a
+    # periodic box. A constant-volume run resumed from a checkpoint
+    # reproduces the run it continued to within 8e-8 nm. The same run at
+    # constant pressure does not, and seeding the barostat does not fix
+    # it: positions, velocities and box vectors all come back exactly, but
+    # the Monte Carlo barostat's adaptive volume-move size is not in the
+    # checkpoint and is not a Context parameter, so it restarts at its
+    # default and re-adapts over the moves after the join.
+    #
+    # That is a qualification and not a refusal. The state the second
+    # piece starts from is physically right, and the trajectory it
+    # produces is a valid sample of the same ensemble -- it is simply not
+    # the trajectory the unsplit run would have produced, and the
+    # barostat's acceptance rate is off for a while at each join. Refusing
+    # would refuse constant pressure, which is most work anybody does.
+    # Saying nothing would leave a volume artefact for somebody to find.
+    barostat = (block.get("pressure_bar") is not None
+                or block.get("pressure_atm") is not None)
+    qualification = (
+        "The barostat's adaptive move size is not carried by a checkpoint, "
+        "so it restarts at its default and re-adapts after each join. The "
+        "state is right and the ensemble is right; the acceptance rate is "
+        "off for a while, and volume or density averaged across a join "
+        "carries that transient. Analyses that care should discard a "
+        "window after each join, which `provenance['joins']` records."
+        if barostat else "")
+
     if block.get("umbrella"):
         return Segmentability(
             True, "umbrella",
             "An umbrella window may be split. Its restraint is a function "
             "of the collective variable and not of time, so a window that "
-            "stops and continues is doing what it was doing before.")
+            "stops and continues is doing what it was doing before.",
+            qualification=qualification)
 
     return Segmentability(
         True, "unbiased",
         "An unbiased run may be split. It carries no state beyond "
-        "positions and velocities, which a checkpoint restores.")
+        "positions and velocities, which a checkpoint restores.",
+        qualification=qualification)
 
 
 def require_segmentable(config: dict[str, Any] | None, *,
@@ -156,7 +195,8 @@ def require_segmentable(config: dict[str, Any] | None, *,
 
 def resume_provenance(previous: dict[str, Any] | None, *, segment: int,
                       of_segments: int, from_step: int,
-                      checkpoint: str = "") -> dict[str, Any]:
+                      checkpoint: str = "",
+                      qualification: str = "") -> dict[str, Any]:
     """What the manifest should say about a run that was picked up.
 
     A trajectory assembled from pieces is not the same object as one that
@@ -177,6 +217,7 @@ def resume_provenance(previous: dict[str, Any] | None, *, segment: int,
         "segments": of_segments,
         "segment": segment,
         "joins": joins,
+        "qualification": qualification,
         # Stated rather than left to be worked out from len(joins), because
         # the thing an analysis wants to test is "did this run through",
         # and that should not require arithmetic.

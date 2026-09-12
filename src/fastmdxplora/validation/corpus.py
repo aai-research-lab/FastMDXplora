@@ -73,7 +73,11 @@ def _classify(value: Any) -> tuple[str, str]:
     # name. Reading only the top level scored a guardrail that had fired as
     # a miss, which is the instrument failing rather than the software, and
     # is the difference this harness exists to keep straight.
-    QUALIFIERS = ("not_a_measurement", "capped", "calibration")
+    # A result that stands with something attached to it. Each name is a
+    # key an analysis writes when it wants the number used and used
+    # knowingly. `qualified` is the general one; the others predate it and
+    # say what kind.
+    QUALIFIERS = ("not_a_measurement", "capped", "calibration", "qualified")
 
     def _qualification(record: dict) -> "tuple[str, str] | None":
         for key in QUALIFIERS:
@@ -994,6 +998,30 @@ def _a_whole_checkpoint() -> Any:
     return {"verified": verify_checkpoint(checkpoint, require_seal=True)}
 
 
+
+def _constant_pressure_run_split_into_segments() -> Any:
+    """Splitting an NPT run: sound, and not free.
+
+    Measured on the CPU platform. A constant-volume run resumed from a
+    checkpoint reproduces the run it continued to within 8e-8 nm. The same
+    run at constant pressure does not, and seeding the barostat does not
+    fix it: the Monte Carlo barostat's adaptive volume-move size is not in
+    the checkpoint and is not a Context parameter.
+
+    Qualified rather than refused. The state is right and the ensemble is
+    right; the acceptance rate is off for a while at each join. Refusing
+    would refuse constant pressure, which is most work anybody does.
+    """
+    from fastmdxplora.simulation.resume import segmentability
+
+    verdict = segmentability(
+        {"simulation": {"duration_ns": 100, "pressure_bar": 1.0}})
+    record = verdict.as_record()
+    if verdict.qualification:
+        record["qualified"] = verdict.qualification
+    return record
+
+
 DEFECTS: list[Case] = [
     Case("a segmented run joined across a missing segment",
          _segments_with_a_gap, "refused",
@@ -1111,6 +1139,11 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("a constant-pressure run split into segments",
+         _constant_pressure_run_split_into_segments, "qualified",
+         "the state is right and the barostat's move size is not carried, "
+         "so the acceptance rate re-adapts at each join and volume "
+         "averaged across one holds that transient"),
     Case("a checkpoint that is the whole file that was written",
          _a_whole_checkpoint, "proceeded",
          "size and digest match the seal, so it is the file that was "

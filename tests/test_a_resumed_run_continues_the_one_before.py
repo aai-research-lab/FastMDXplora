@@ -244,3 +244,117 @@ class TestAResumedRunIsTheRunItContinued(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+def _a_periodic_system(n: int = 64, *, barostat: bool = False):
+    """Argon in a periodic box, optionally at constant pressure."""
+    system = mm.System()
+    length = 2.0
+    vectors = (mm.Vec3(length, 0, 0), mm.Vec3(0, length, 0),
+               mm.Vec3(0, 0, length))
+    system.setDefaultPeriodicBoxVectors(*[v * unit.nanometer for v in vectors])
+    topology = app.Topology()
+    topology.setUnitCellDimensions(
+        mm.Vec3(length, length, length) * unit.nanometer)
+    chain = topology.addChain()
+    residue = topology.addResidue("AR", chain)
+    nonbonded = mm.NonbondedForce()
+    nonbonded.setNonbondedMethod(mm.NonbondedForce.CutoffPeriodic)
+    nonbonded.setCutoffDistance(0.8 * unit.nanometer)
+    argon = app.Element.getBySymbol("Ar")
+    for index in range(n):
+        system.addParticle(39.948 * unit.amu)
+        topology.addAtom(f"AR{index}", argon, residue)
+        nonbonded.addParticle(0.0, 0.34 * unit.nanometer,
+                              0.996 * unit.kilojoule_per_mole)
+    system.addForce(nonbonded)
+    if barostat:
+        system.addForce(
+            mm.MonteCarloBarostat(1.0 * unit.bar, 300 * unit.kelvin, 5))
+    grid = int(round(n ** (1 / 3))) + 1
+    positions = [mm.Vec3(0.45 * (i % grid), 0.45 * ((i // grid) % grid),
+                         0.45 * (i // grid ** 2)) for i in range(n)]
+    return system, topology, positions * unit.nanometer
+
+
+@unittest.skipUnless(HAVE_OPENMM, "OpenMM is not installed")
+class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
+    """Measured, because the answer differs between NVT and NPT."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+
+    def _continue_and_resume(self, *, barostat):
+        system, topology, positions = _a_periodic_system(barostat=barostat)
+        first = _a_simulation(system, topology, positions)
+        first.minimizeEnergy(maxIterations=50)
+        first.context.setVelocitiesToTemperature(300 * unit.kelvin, 99)
+        first.step(1000)
+
+        checkpoint = self.root / f"{'npt' if barostat else 'nvt'}.chk"
+        checkpoint.write_bytes(first.context.createCheckpoint())
+        box_at_checkpoint = first.context.getState().getPeriodicBoxVectors(
+            asNumpy=True).value_in_unit(unit.nanometer)
+
+        first.step(1000)
+        straight = first.context.getState(getPositions=True).getPositions(
+            asNumpy=True).value_in_unit(unit.nanometer)
+
+        system2, topology2, _ = _a_periodic_system(barostat=barostat)
+        second = _a_simulation(system2, topology2, positions)
+        second.context.loadCheckpoint(checkpoint.read_bytes())
+        box_after_load = second.context.getState().getPeriodicBoxVectors(
+            asNumpy=True).value_in_unit(unit.nanometer)
+        second.step(1000)
+        resumed = second.context.getState(getPositions=True).getPositions(
+            asNumpy=True).value_in_unit(unit.nanometer)
+        return box_at_checkpoint, box_after_load, straight, resumed
+
+    def test_the_box_comes_back_exactly_under_pressure(self):
+        # The part that does work. Positions, velocities and box vectors
+        # are all in the checkpoint, so the state a second segment starts
+        # from is the state the first one ended at.
+        at_checkpoint, after_load, _, _ = self._continue_and_resume(
+            barostat=True)
+        np.testing.assert_allclose(at_checkpoint, after_load, atol=1e-9)
+
+    def test_constant_volume_resumes_exactly(self):
+        _, _, straight, resumed = self._continue_and_resume(barostat=False)
+        np.testing.assert_allclose(straight, resumed, atol=1e-5)
+
+    def test_constant_pressure_does_not_and_that_is_why_it_is_qualified(self):
+        # The finding the qualification exists for. The barostat's adaptive
+        # volume-move size is not in the checkpoint and is not a Context
+        # parameter, so it restarts at its default and re-adapts after the
+        # join. The state is right and the ensemble is right; the
+        # trajectory is not the one an unsplit run would have produced.
+        #
+        # If a future OpenMM starts carrying that state, this test fails
+        # and the qualification should come off rather than be kept out of
+        # habit.
+        _, _, straight, resumed = self._continue_and_resume(barostat=True)
+        self.assertFalse(
+            np.allclose(straight, resumed, atol=1e-5),
+            "constant pressure now resumes exactly; drop the qualification")
+
+    def test_the_qualification_is_attached_to_constant_pressure_studies(self):
+        from fastmdxplora.simulation.resume import segmentability
+
+        under_pressure = segmentability(
+            {"simulation": {"duration_ns": 10, "pressure_bar": 1.0}})
+        self.assertTrue(under_pressure.allowed)
+        self.assertIn("barostat", under_pressure.qualification)
+
+        constant_volume = segmentability({"simulation": {"duration_ns": 10}})
+        self.assertTrue(constant_volume.allowed)
+        self.assertEqual(constant_volume.qualification, "")
+
+    def test_it_is_a_qualification_rather_than_a_refusal(self):
+        # Refusing would refuse constant pressure, which is most work
+        # anybody does. Saying nothing would leave a volume artefact for
+        # somebody to find.
+        from fastmdxplora.simulation.resume import require_segmentable
+
+        require_segmentable(
+            {"simulation": {"duration_ns": 10, "pressure_bar": 1.0}},
+            segments=10)

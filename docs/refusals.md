@@ -482,3 +482,70 @@ Required for segments, where the predecessor was written by this software
 and is always sealed on a clean finish. Not required otherwise — refusing
 a hand-made checkpoint would be refusing a legitimate use over a
 convention nobody agreed to.
+
+## What a join costs under pressure
+
+Measured on the CPU platform with argon in a periodic box, because the
+answer differs between constant volume and constant pressure and reading
+the OpenMM source would not have settled it.
+
+A constant-volume run resumed from a checkpoint reproduces the run it
+continued to within 8e-8 nm. Positions, velocities and box vectors all
+come back exactly.
+
+A constant-pressure run does not, and seeding the barostat does not fix
+it. The Monte Carlo barostat's adaptive volume-move size is not in the
+checkpoint and is not a Context parameter, so it restarts at its default
+and re-adapts over the moves after each join.
+
+That is a **qualification**, not a refusal. The state the second piece
+starts from is physically right and the trajectory it produces is a valid
+sample of the same ensemble. It is simply not the trajectory an unsplit
+run would have produced, and the barostat's acceptance rate is off for a
+while at each join.
+
+```python
+segmentability({"simulation": {"duration_ns": 100, "pressure_bar": 1.0}})
+# .allowed        True
+# .qualification  "The barostat's adaptive move size is not carried by a
+#                  checkpoint, so it restarts at its default and re-adapts
+#                  after each join..."
+```
+
+Refusing would refuse constant pressure, which is most work anybody does.
+Saying nothing would leave a volume artefact for somebody to find. So the
+qualification travels into the run's own provenance, and volume or density
+averaged across a join should discard a window on either side —
+`provenance["joins"]` records where they are.
+
+If a future OpenMM starts carrying the barostat's state, the test asserting
+this fails, and the qualification should come off rather than be kept out
+of habit.
+
+## Measuring this machine
+
+```python
+from fastmdxplora.cost import measure_this_machine
+
+measure_this_machine()
+# k = 5.0e-07 s per particle-step, from 2000 steps on 3000 particles in 3.0s
+```
+
+`calibrate()` takes a measurement; this one makes it. The difference
+decides whether the cost model gets used at all — a caller who has to
+produce a timed run before they can get an estimate will not bother, every
+estimate will refuse, and the refusal will look like the software being
+difficult rather than honest.
+
+What runs is argon in a periodic box with a cutoff and no water: the
+cheapest thing that exercises the nonbonded calculation the cost model is
+built on. It is not a protein and does not need to be, because the
+constant being measured is seconds per particle per step on this hardware
+and the nonbonded kernel is what sets it.
+
+It warms up before timing. The first steps pay for kernel compilation and
+buffer allocation, and charging them to the constant would overstate every
+estimate afterwards — on a GPU by a great deal. And it records the
+platform it actually ran on rather than the one that was asked for, since
+a constant labelled CUDA that was measured on CPU would understate a real
+CUDA run enormously.

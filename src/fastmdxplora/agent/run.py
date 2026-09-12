@@ -29,7 +29,11 @@ from typing import Any, Callable
 
 from fastmdxplora.agent.queue import Job, Queue
 from fastmdxplora.cost import Estimate
-from fastmdxplora.simulation.resume import plan_segments, resume_provenance
+from fastmdxplora.simulation.resume import (
+    plan_segments,
+    resume_provenance,
+    segmentability,
+)
 
 __all__ = ["study_runner", "submit_study", "segment_directory"]
 
@@ -164,7 +168,10 @@ def study_runner(
                 previous_provenance, segment=segment,
                 of_segments=of_segments,
                 from_step=int(payload.get("from_step", 0)),
-                checkpoint=block.get("resume_from", "")),
+                checkpoint=block.get("resume_from", ""),
+                # Carried into the run's own record, so a reader sees it
+                # without going back to the config to re-derive it.
+                qualification=segmentability(config).qualification),
         }
         # Whatever the study produced travels with it verbatim. A watcher
         # deciding whether to abandon a chain should read the study's own

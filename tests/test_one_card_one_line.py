@@ -16,6 +16,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
+try:  # pragma: no cover - the skip is the point
+    import openmm  # noqa: F401
+
+    HAS_OPENMM = True
+except ImportError:  # pragma: no cover
+    HAS_OPENMM = False
+
 from fastmdxplora.agent import Queue
 from fastmdxplora.cost import (
     Calibration,
@@ -291,3 +300,60 @@ class TestTheTwoWorkTogether(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM is not installed")
+class TestTheMachineCanMeasureItself(unittest.TestCase):
+    """calibrate() takes a measurement; this one makes it.
+
+    The difference decides whether the cost model gets used at all. A
+    caller who has to produce a timed run before they can get an estimate
+    will not bother, every estimate will refuse, and the refusal will look
+    like the software being difficult rather than honest.
+    """
+
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / "calibration.json"
+
+    def test_it_produces_a_usable_constant(self):
+        from fastmdxplora.cost import estimate_seconds, measure_this_machine
+
+        # Small: the point is that nobody is discouraged from running it.
+        calibration = measure_this_machine(particles=500, steps=200,
+                                           path=self.path)
+        self.assertGreater(calibration.seconds_per_particle_step, 0.0)
+        self.assertGreater(calibration.seconds, 0.0)
+
+        estimate = estimate_seconds(
+            particles=500, steps=200,
+            platform_name=calibration.machine["platform"],
+            precision="mixed", path=self.path)
+        self.assertAlmostEqual(estimate.seconds, calibration.seconds, places=6)
+
+    def test_it_records_the_platform_it_actually_ran_on(self):
+        # Not the one that was asked for. A caller that asked for CUDA on a
+        # machine without it got CPU, and a constant labelled CUDA would
+        # then be reused for a real CUDA run and understate it enormously.
+        from fastmdxplora.cost import measure_this_machine
+
+        calibration = measure_this_machine(particles=300, steps=100,
+                                           path=self.path)
+        self.assertIn(calibration.machine["platform"],
+                      ("CPU", "Reference", "CUDA", "OpenCL", "HIP"))
+        self.assertNotEqual(calibration.machine["platform"], "unknown")
+
+    def test_it_warms_up_before_timing(self):
+        # The first steps pay for kernel compilation and buffer allocation.
+        # Charging them to the constant would overstate every estimate
+        # afterwards, on a GPU by a great deal. Asserted by source rather
+        # than by timing, because a timing assertion on shared CI hardware
+        # is a flake waiting to happen.
+        import inspect
+
+        from fastmdxplora import cost
+
+        source = inspect.getsource(cost.measure_this_machine)
+        self.assertIn("Warm up before timing", source)
+        warmup = source.index("simulation.step(max(100")
+        timed = source.index("started = _time.perf_counter()")
+        self.assertLess(warmup, timed)

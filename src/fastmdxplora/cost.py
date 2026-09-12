@@ -54,6 +54,7 @@ __all__ = [
     "Estimate",
     "calibration_path",
     "calibrate",
+    "measure_this_machine",
     "load_calibration",
     "estimate_seconds",
     "estimate_study",
@@ -374,3 +375,113 @@ def estimate_study(
         calibration=calibration,
         path=path,
     )
+
+
+def measure_this_machine(
+    *,
+    particles: int = 3000,
+    steps: int = 2000,
+    platform_name: str = "",
+    precision: str = "mixed",
+    path: Path | None = None,
+    save: bool = True,
+) -> Calibration:
+    """Run a small system here and record what it cost.
+
+    :func:`calibrate` takes a measurement; this makes one. The difference
+    matters because a caller who has to produce a timed run before they
+    can get an estimate will not bother, and then every estimate refuses
+    and the refusal looks like the software being difficult rather than
+    honest.
+
+    What runs is argon in a periodic box with a cutoff and no water: the
+    cheapest thing that exercises the nonbonded calculation the cost model
+    is built on. It is not a protein, and it does not need to be -- the
+    constant being measured is seconds per particle per step on this
+    hardware, and the nonbonded kernel is what sets it.
+
+    Two thousand steps on three thousand particles is a few seconds on
+    anything. Large enough that the fixed per-step overhead is not most of
+    it, small enough that nobody is discouraged from running it.
+
+    Raises
+    ------
+    BackendUnavailable
+        Where OpenMM is not installed. Nothing here can measure a machine
+        without it, and a fabricated constant would be worse than none.
+    """
+    import time as _time
+
+    try:
+        import openmm as mm
+        import openmm.app as app
+        from openmm import unit
+    except ImportError as exc:
+        from fastmdxplora.refusals import BackendUnavailable
+
+        raise BackendUnavailable(
+            "Measuring this machine needs OpenMM, and it is not installed. "
+            "Without it there is no way to time a run here, and a constant "
+            "taken from anywhere else would describe another machine.",
+            code="environment.backend.missing", packages=["openmm"],
+        ) from exc
+
+    system = mm.System()
+    spacing = 0.45
+    side = int(round(particles ** (1 / 3))) + 1
+    length = spacing * side
+    system.setDefaultPeriodicBoxVectors(
+        mm.Vec3(length, 0, 0) * unit.nanometer,
+        mm.Vec3(0, length, 0) * unit.nanometer,
+        mm.Vec3(0, 0, length) * unit.nanometer)
+    topology = app.Topology()
+    topology.setUnitCellDimensions(
+        mm.Vec3(length, length, length) * unit.nanometer)
+    chain = topology.addChain()
+    residue = topology.addResidue("AR", chain)
+    nonbonded = mm.NonbondedForce()
+    nonbonded.setNonbondedMethod(mm.NonbondedForce.CutoffPeriodic)
+    nonbonded.setCutoffDistance(0.9 * unit.nanometer)
+    argon = app.Element.getBySymbol("Ar")
+    positions = []
+    for index in range(particles):
+        system.addParticle(39.948 * unit.amu)
+        topology.addAtom(f"AR{index}", argon, residue)
+        nonbonded.addParticle(0.0, 0.34 * unit.nanometer,
+                              0.996 * unit.kilojoule_per_mole)
+        positions.append(mm.Vec3(spacing * (index % side),
+                                 spacing * ((index // side) % side),
+                                 spacing * (index // side ** 2)))
+    system.addForce(nonbonded)
+
+    integrator = mm.LangevinMiddleIntegrator(
+        300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtosecond)
+    if platform_name:
+        platform = mm.Platform.getPlatformByName(platform_name)
+        properties = ({"Precision": precision}
+                      if platform_name in ("CUDA", "OpenCL", "HIP") else None)
+        simulation = app.Simulation(topology, system, integrator, platform,
+                                    properties)
+        measured_on = platform_name
+    else:
+        simulation = app.Simulation(topology, system, integrator)
+        measured_on = simulation.context.getPlatform().getName()
+
+    simulation.context.setPositions(positions * unit.nanometer)
+    simulation.minimizeEnergy(maxIterations=50)
+    simulation.context.setVelocitiesToTemperature(300 * unit.kelvin, 1)
+
+    # Warm up before timing. The first steps pay for kernel compilation and
+    # buffer allocation, and charging them to the constant would overstate
+    # every estimate afterwards -- on a GPU by a great deal.
+    simulation.step(max(100, steps // 10))
+    simulation.context.getState(getEnergy=True)
+
+    started = _time.perf_counter()
+    simulation.step(steps)
+    simulation.context.getState(getEnergy=True)  # make the queue drain
+    elapsed = _time.perf_counter() - started
+
+    return calibrate(particles=particles, steps=steps, seconds=elapsed,
+                     platform_name=measured_on, precision=precision,
+                     path=path, save=save)
