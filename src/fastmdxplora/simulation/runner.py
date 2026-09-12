@@ -1203,6 +1203,140 @@ def trajectory_interval_for(
 # ---------------------------------------------------------------------------
 # Top-level runner
 # ---------------------------------------------------------------------------
+
+CHECKPOINT_DIGEST_SUFFIX = ".sha256"
+
+
+def seal_checkpoint(path: str | Path) -> Path:
+    """Record a finished checkpoint's size and digest beside it.
+
+    Written after a run completes, which makes the sidecar two things at
+    once: a way to detect a truncated file, and a marker that the segment
+    which produced it got to the end. A segment killed mid-write leaves a
+    checkpoint and no seal, and the next segment refuses rather than
+    continuing from a partial one.
+
+    Necessary because OpenMM will not catch this. A checkpoint truncated
+    to half its length loads without complaint and yields the right
+    positions; truncated to a tenth it loads without complaint and yields
+    wrong ones. Measured, not assumed -- see
+    ``tests/test_a_resumed_run_continues_the_one_before.py``. There is no
+    length or checksum in the format, so the only way to know a checkpoint
+    is whole is to have written down what whole meant.
+    """
+    import hashlib
+
+    checkpoint = Path(path)
+    payload = checkpoint.read_bytes()
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    seal.write_text(
+        f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
+        encoding="utf-8")
+    return seal
+
+
+def verify_checkpoint(path: str | Path, *, require_seal: bool = False) -> bool:
+    """Whether a checkpoint is the whole file that was written.
+
+    Returns True when a seal exists and matches. Raises when a seal exists
+    and does not, or when one is required and absent.
+
+    ``require_seal`` is on for segments and off for anything else. A
+    segment's predecessor was written by this software and always sealed,
+    so a missing seal there means the run was killed mid-write. A
+    checkpoint a person produced by hand has no seal and no reason to,
+    and refusing it would be refusing a legitimate use over a convention
+    they never agreed to.
+    """
+    import hashlib
+
+    checkpoint = Path(path)
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    if not seal.is_file():
+        if require_seal:
+            raise MissingResultError(
+                f"The checkpoint at {checkpoint} has no seal beside it, so "
+                "the segment that wrote it did not finish. Continuing from "
+                "a partially written checkpoint is not something this can "
+                "detect afterwards -- OpenMM loads a truncated one without "
+                "complaint. Rerun that segment.",
+                code="simulation.resume.unsealed", path=str(checkpoint),
+            )
+        return False
+
+    try:
+        size_text, digest = seal.read_text(encoding="utf-8").split()
+        expected_size = int(size_text)
+    except ValueError as exc:
+        raise UnstableRun(
+            f"The seal beside {checkpoint} is not readable, so whether the "
+            "checkpoint is whole cannot be established.",
+            code="simulation.resume.checkpoint_rejected",
+            path=str(checkpoint),
+        ) from exc
+
+    payload = checkpoint.read_bytes()
+    if len(payload) != expected_size or hashlib.sha256(
+            payload).hexdigest() != digest:
+        raise UnstableRun(
+            f"The checkpoint at {checkpoint} is {len(payload)} bytes and "
+            f"its seal says {expected_size}. It was truncated or altered "
+            "after it was written. OpenMM would load it without "
+            "complaint and, past a point, give the wrong positions.",
+            code="simulation.resume.checkpoint_truncated",
+            path=str(checkpoint), found=len(payload), expected=expected_size,
+        )
+    return True
+
+
+def load_checkpoint(omm: dict, simulation: Any, path: str | Path, *,
+                    require_seal: bool = False) -> Path:
+    """Continue this run from a checkpoint, or refuse.
+
+    A checkpoint supersedes ``state.xml``: it holds the positions and
+    velocities this segment continues from, while ``state.xml`` is
+    whatever the study started at.
+
+    Loaded after the System and Platform exist rather than before, because
+    a checkpoint is only valid against the exact pair it was written from.
+    OpenMM raises when they do not match -- "Checkpoint contains the wrong
+    number of particles" and the like -- and that raise is the only check
+    available. There is no cheaper way to ask whether a checkpoint belongs
+    to this system, so it is turned into a refusal and never swallowed. A
+    mismatched checkpoint that loaded quietly would continue somebody's
+    run from another system's coordinates, and nothing downstream would
+    look wrong.
+
+    Separated from :func:`run_simulation` so it can be exercised on a real
+    System without a two-thousand-line function around it. The claim that
+    a resumed run continues the one before is worth testing rather than
+    reading.
+    """
+    checkpoint = Path(path)
+    if not checkpoint.is_file():
+        raise MissingResultError(
+            f"No checkpoint at {checkpoint}. A segment after the first "
+            "continues from the one before, so the previous segment must "
+            "have finished and written one.",
+            code="analysis.data.absent", path=str(checkpoint),
+        )
+    verify_checkpoint(checkpoint, require_seal=require_seal)
+    try:
+        with checkpoint.open("rb") as fh:
+            simulation.context.loadCheckpoint(fh.read())
+    except Exception as exc:  # noqa: BLE001 - reported with its cause
+        raise UnstableRun(
+            f"The checkpoint at {checkpoint} could not be loaded into this "
+            f"system: {exc}. A checkpoint is only valid for the exact "
+            "system, platform and precision it was written from, so this "
+            "usually means it was written by a different study or on "
+            "different hardware.",
+            code="simulation.resume.checkpoint_rejected",
+            path=str(checkpoint),
+        ) from exc
+    return checkpoint
+
+
 def run_simulation(
     *,
     system_xml: str | Path,
@@ -1599,39 +1733,12 @@ def run_simulation(
     _validate_state_finite(omm, simulation, stage="loading state.xml")
 
     if resume_from is not None:
-        # A checkpoint supersedes state.xml: it holds the positions and
-        # velocities this segment must continue from, and state.xml is
-        # whatever the study started at.
-        #
-        # It is loaded here rather than before `setState` because a
-        # checkpoint is only valid against the exact System and Platform it
-        # was written from, and both exist only now. OpenMM raises if they
-        # do not match, and that raise is the check -- there is no cheaper
-        # way to verify a checkpoint belongs to this system, and a wrong
-        # one must not be allowed to look like a successful load.
-        checkpoint = Path(resume_from)
-        if not checkpoint.is_file():
-            raise MissingResultError(
-                f"No checkpoint at {checkpoint}. A segment after the first "
-                "continues from the one before, so the previous segment "
-                "must have finished and written one.",
-                code="analysis.data.absent", path=str(checkpoint),
-            )
-        try:
-            with checkpoint.open("rb") as fh:
-                simulation.context.loadCheckpoint(fh.read())
-        except Exception as exc:  # noqa: BLE001 - reported with its cause
-            raise UnstableRun(
-                f"The checkpoint at {checkpoint} could not be loaded into "
-                f"this system: {exc}. A checkpoint is only valid for the "
-                "exact system, platform and precision it was written from, "
-                "so this usually means the segment was written by a "
-                "different study or on different hardware.",
-                code="simulation.resume.checkpoint_rejected",
-                path=str(checkpoint),
-            ) from exc
+        # require_seal: the predecessor was written by this software and is
+        # always sealed on a clean finish, so a missing seal means it was
+        # killed mid-write.
+        load_checkpoint(omm, simulation, resume_from, require_seal=True)
         _validate_state_finite(omm, simulation, stage="loading the checkpoint")
-        logger.info("Resumed from %s", checkpoint.as_posix())
+        logger.info("Resumed from %s", Path(resume_from).as_posix())
 
     # Output paths
     traj_path = output_dir / "production.dcd"
@@ -2168,6 +2275,23 @@ def run_simulation(
         )
         with final_state_path.open("w", encoding="utf-8") as fh:
             fh.write(omm["openmm"].XmlSerializer.serialize(final_state))
+
+        # The run reached the end, so write a final checkpoint and seal it.
+        # Sealing here rather than in the reporter is what makes the seal
+        # mean "this segment finished": a run killed partway leaves a
+        # checkpoint from the last reporter interval and no seal, and the
+        # next segment refuses rather than continuing from a file that may
+        # have been half written when the process died.
+        checkpoint_path = output_dir / "checkpoint.chk"
+        try:
+            with checkpoint_path.open("wb") as fh:
+                fh.write(simulation.context.createCheckpoint())
+            seal_checkpoint(checkpoint_path)
+        except Exception:  # noqa: BLE001 - a run that finished still finished
+            logger.warning(
+                "Could not write a sealed checkpoint to %s; this run is "
+                "complete but cannot be continued from.",
+                checkpoint_path.as_posix())
         if telemetry is not None:
             n_frames = _frames_written(
                 current_step - production_start_step, trajectory_interval_steps

@@ -119,3 +119,5 @@ __all__ = [
     "register_analysis",
     "run",
 ]
+
+from fastmdxplora.analysis.joining import join_segments, survey_segments  # noqa: E402,F401

@@ -919,7 +919,98 @@ def _umbrella_split_into_segments() -> Any:
         segments=10).as_record()
 
 
+
+def _segments_with_a_gap() -> Any:
+    """Joining a run whose third segment is missing.
+
+    The failure that most looks like success. The pieces either side
+    concatenate perfectly and the result is not a shorter trajectory; it
+    is one with a jump in the middle that every analysis reads straight
+    through.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.analysis.joining import join_segments
+
+    root = _Path(tempfile.mkdtemp())
+    for index in (0, 1, 3):
+        directory = root / f"segment-{index:03d}" / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "production.dcd").write_bytes(b"")
+        (directory / "checkpoint.chk").write_bytes(b"x")
+        (directory / "checkpoint.chk.sha256").write_text("1 abc\n")
+    return join_segments(root, root / "joined.dcd")
+
+
+def _segments_from_an_unfinished_run() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.analysis.joining import join_segments
+
+    root = _Path(tempfile.mkdtemp())
+    for index in range(3):
+        directory = root / f"segment-{index:03d}" / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "production.dcd").write_bytes(b"")
+        (directory / "checkpoint.chk").write_bytes(b"x")
+        if index != 1:
+            (directory / "checkpoint.chk.sha256").write_text("1 abc\n")
+    return join_segments(root, root / "joined.dcd")
+
+
+def _a_truncated_checkpoint() -> Any:
+    """A checkpoint that lost half its bytes.
+
+    OpenMM loads one of these without complaint and, past a point, gives
+    the wrong positions. There is no length or checksum in the format, so
+    the only way to know a checkpoint is whole is to have written down
+    what whole meant.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.simulation.runner import seal_checkpoint, verify_checkpoint
+
+    root = _Path(tempfile.mkdtemp())
+    checkpoint = root / "checkpoint.chk"
+    checkpoint.write_bytes(b"y" * 4000)
+    seal_checkpoint(checkpoint)
+    checkpoint.write_bytes(b"y" * 2000)
+    return verify_checkpoint(checkpoint)
+
+
+def _a_whole_checkpoint() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.simulation.runner import seal_checkpoint, verify_checkpoint
+
+    root = _Path(tempfile.mkdtemp())
+    checkpoint = root / "checkpoint.chk"
+    checkpoint.write_bytes(b"y" * 4000)
+    seal_checkpoint(checkpoint)
+    return {"verified": verify_checkpoint(checkpoint, require_seal=True)}
+
+
 DEFECTS: list[Case] = [
+    Case("a segmented run joined across a missing segment",
+         _segments_with_a_gap, "refused",
+         "the pieces either side concatenate perfectly, and what comes out "
+         "is not a shorter trajectory but one with a jump in the middle "
+         "that every analysis reads straight through",
+         mentioning="jump in the middle"),
+    Case("a segmented run joined while one segment is unfinished",
+         _segments_from_an_unfinished_run, "refused",
+         "a run that stopped partway has a trajectory ending wherever the "
+         "process died, and nothing in the file says so",
+         mentioning="did not finish"),
+    Case("a checkpoint truncated after it was written",
+         _a_truncated_checkpoint, "refused",
+         "OpenMM loads a truncated checkpoint without complaint and, past "
+         "a point, gives the wrong positions",
+         mentioning="truncated"),
     Case("a metadynamics run split into segments",
          _metadynamics_split_into_segments, "refused",
          "a checkpoint does not carry the deposited bias, so the second "
@@ -1020,6 +1111,10 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("a checkpoint that is the whole file that was written",
+         _a_whole_checkpoint, "proceeded",
+         "size and digest match the seal, so it is the file that was "
+         "written and resuming from it continues the run"),
     Case("an unbiased run split into segments",
          _unbiased_split_into_segments, "proceeded",
          "it carries no state beyond positions and velocities, which a "

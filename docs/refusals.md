@@ -433,3 +433,52 @@ worth continuing is a question about the science, not about queueing.
 job that would not fit — a campaign whose next job was estimated above its
 allowance has an empty line and a full budget, and being told the line is
 empty sends somebody looking for a job they already submitted.
+
+## Putting a segmented run back together
+
+Each segment writes to its own directory. Appending into one file would
+leave a crashed segment's half-written frames in the middle of the run's
+output with no way to tell which were good, so joining is a separate,
+explicit step and the joined trajectory is a derived artefact.
+
+```python
+from fastmdxplora.analysis.joining import survey_segments, join_segments
+
+survey_segments("runs/tau/scaffold-3")     # what is on disk
+join_segments("runs/tau/scaffold-3", "scaffold-3.dcd")
+```
+
+Concatenation is four lines. The refusals are the module.
+
+**A gap** is the failure that most looks like success — segments two and
+four concatenate perfectly with three missing, and what comes out is not a
+shorter trajectory but one with a jump in the middle. Equilibration
+detection would find a transient that is really a discontinuity, and a
+correlation time computed across it means nothing.
+
+**An unfinished segment** has no sealed checkpoint. Its trajectory ends
+wherever the process died and nothing in the file says so.
+
+**Segments from two studies** look alike on disk and concatenate without
+complaint. Each segment's resolved config says which study it was, and the
+settings that vary between segments by design — production steps,
+minimize, resume_from — are excluded before comparing, since including
+them would say every segment came from a different study.
+
+## The checkpoint seal
+
+OpenMM will not tell you a checkpoint is truncated. Measured: one cut to
+half its length loads without complaint and gives the right positions; cut
+to a tenth it loads without complaint and gives wrong ones. There is no
+length or checksum in the format.
+
+So a finished run writes `checkpoint.chk.sha256` beside its checkpoint,
+holding the size and digest. That makes the seal two things at once: a way
+to detect truncation, and a marker that the segment got to the end. A run
+killed partway leaves a checkpoint from the last reporter interval and no
+seal, and the next segment refuses.
+
+Required for segments, where the predecessor was written by this software
+and is always sealed on a clean finish. Not required otherwise — refusing
+a hand-made checkpoint would be refusing a legitimate use over a
+convention nobody agreed to.

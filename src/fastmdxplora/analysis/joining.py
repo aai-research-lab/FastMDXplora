@@ -1,0 +1,235 @@
+"""Putting the pieces back together, and refusing where they do not fit.
+
+A segmented run leaves one directory per segment, which is right:
+appending into a single file would leave a crashed segment's half-written
+frames in the middle of the run's own output with no way to tell which
+were good. So joining is a separate, explicit step, and the joined
+trajectory is a derived artefact that looks like one.
+
+What makes this worth a module rather than a call to ``mdconvert`` is
+everything it refuses.
+
+**A gap.** Segment three missing between two and four does not produce a
+shorter trajectory. It produces a trajectory with a discontinuity in the
+middle that every analysis downstream will read straight through:
+equilibration detection will find a transient that is really a jump, and
+a correlation time computed across it is meaningless. A gap is not a
+smaller run, it is a different and silently wrong one.
+
+**A segment that did not finish.** Its checkpoint has no seal, which is
+the same marker the resume path reads. A run whose fourth segment was
+killed has four directories and three usable ones.
+
+**Segments from different studies.** Two runs of the same length under
+different settings leave directories that look alike and concatenate
+without complaint. The resolved config of each says which study it was,
+and they must agree.
+
+The refusals are the point. Concatenation itself is four lines.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from fastmdxplora.refusals import MissingResultError, StudyError
+
+__all__ = ["SegmentPiece", "survey_segments", "join_segments"]
+
+
+@dataclass(frozen=True)
+class SegmentPiece:
+    """One segment's output, as found on disk."""
+
+    index: int
+    directory: Path
+    trajectory: Path | None
+    finished: bool
+    config_digest: str
+
+    @property
+    def usable(self) -> bool:
+        return self.finished and self.trajectory is not None
+
+
+def _config_digest(directory: Path) -> str:
+    """What study this segment was, from its own resolved config.
+
+    Reads the settings that define the study rather than hashing the file:
+    the resolved config differs between segments by design -- production
+    steps, minimize, resume_from -- so hashing it whole would say every
+    segment came from a different study, which is exactly backwards.
+    """
+    import hashlib
+
+    resolved = directory / "resolved_config.yml"
+    if not resolved.is_file():
+        return ""
+    try:
+        import yaml
+
+        data = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 - an unreadable config is not a study
+        return ""
+
+    simulation = dict(data.get("simulation") or {})
+    for varies_by_design in ("production_steps", "duration_ns", "minimize",
+                             "nvt_steps", "npt_steps", "resume_from",
+                             "nvt_duration_ns", "npt_duration_ns"):
+        simulation.pop(varies_by_design, None)
+    identity = {"setup": data.get("setup"), "systems": data.get("systems"),
+                "simulation": simulation}
+    return hashlib.sha256(
+        json.dumps(identity, sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
+
+
+def survey_segments(root: Path | str, *,
+                    trajectory_name: str = "production.dcd") -> list[SegmentPiece]:
+    """What is on disk, without judging whether it joins.
+
+    Separated from :func:`join_segments` so a caller can see the state of
+    a campaign without committing to producing a file from it -- which is
+    what somebody coming back to a run that stopped overnight actually
+    wants first.
+    """
+    from fastmdxplora.simulation.runner import CHECKPOINT_DIGEST_SUFFIX
+
+    base = Path(root)
+    pieces: list[SegmentPiece] = []
+    for directory in sorted(base.glob("segment-*")):
+        if not directory.is_dir():
+            continue
+        try:
+            index = int(directory.name.split("-", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        simulation_dir = directory / "simulation"
+        trajectory = simulation_dir / trajectory_name
+        seal = (simulation_dir / "checkpoint.chk").with_suffix(
+            ".chk" + CHECKPOINT_DIGEST_SUFFIX)
+        pieces.append(SegmentPiece(
+            index=index,
+            directory=directory,
+            trajectory=trajectory if trajectory.is_file() else None,
+            finished=seal.is_file(),
+            config_digest=_config_digest(simulation_dir),
+        ))
+    return pieces
+
+
+def join_segments(
+    root: Path | str,
+    destination: Path | str,
+    *,
+    topology: Path | str | None = None,
+    trajectory_name: str = "production.dcd",
+) -> dict[str, Any]:
+    """Concatenate a segmented run into one trajectory, or refuse.
+
+    Returns a record of what was joined, which belongs beside the output:
+    a joined trajectory is derived, and a reader should be able to see how
+    many pieces it came from and which segments they were without opening
+    it.
+
+    Raises
+    ------
+    StudyError, MissingResultError
+        On a gap, an unfinished segment, or segments that are not from the
+        same study. Each is a case where concatenating would succeed and
+        produce something wrong.
+    """
+    base = Path(root)
+    pieces = survey_segments(base, trajectory_name=trajectory_name)
+    if not pieces:
+        raise MissingResultError(
+            f"No segment directories under {base}. A segmented run writes "
+            "one per segment; if this study ran in a single piece its "
+            "trajectory is already whole and does not need joining.",
+            code="analysis.data.absent", path=str(base))
+
+    # Gaps first, because a gap is the failure that most looks like
+    # success: the pieces either side concatenate perfectly.
+    found = sorted(p.index for p in pieces)
+    expected = list(range(found[0], found[-1] + 1))
+    missing = sorted(set(expected) - set(found))
+    if missing or found[0] != 0:
+        gap = missing or [0]
+        raise StudyError(
+            f"Segments {gap} are missing from {base}, so joining what is "
+            "here would produce a trajectory with a jump in the middle "
+            "rather than a shorter one. Every analysis downstream reads "
+            "straight through that: equilibration detection would find a "
+            "transient that is really a discontinuity, and a correlation "
+            "time computed across it means nothing.",
+            code="analysis.data.absent",
+            needs=f"segments {gap}")
+
+    unfinished = [p.index for p in pieces if not p.finished]
+    if unfinished:
+        raise MissingResultError(
+            f"Segments {unfinished} have no sealed checkpoint, so they did "
+            "not finish. Rerun them before joining; a run that stopped "
+            "partway has a trajectory that ends wherever the process died, "
+            "and nothing in the file says so.",
+            code="simulation.resume.unsealed",
+            path=str(base))
+
+    without_trajectory = [p.index for p in pieces if p.trajectory is None]
+    if without_trajectory:
+        raise MissingResultError(
+            f"Segments {without_trajectory} have no {trajectory_name}. "
+            "A segment that finished without writing frames was configured "
+            "not to, and joining would silently skip its time.",
+            code="analysis.data.absent", path=str(base))
+
+    digests = {p.config_digest for p in pieces if p.config_digest}
+    if len(digests) > 1:
+        raise StudyError(
+            f"The segments under {base} are not all from the same study: "
+            f"{len(digests)} different sets of settings. Two runs of the "
+            "same length under different settings leave directories that "
+            "look alike and concatenate without complaint.",
+            code="analysis.data.absent",
+            needs="segments from one study")
+
+    import mdtraj
+
+    topology_path = Path(topology) if topology else (
+        pieces[0].directory / "simulation" / "topology.pdb")
+    if not topology_path.is_file():
+        raise MissingResultError(
+            f"No topology at {topology_path}, and a trajectory cannot be "
+            "read without one.",
+            code="analysis.data.absent", path=str(topology_path))
+
+    out = Path(destination)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    frames = 0
+    with mdtraj.formats.DCDTrajectoryFile(str(out), "w") as writer:
+        for piece in pieces:
+            for chunk in mdtraj.iterload(str(piece.trajectory),
+                                         top=str(topology_path), chunk=500):
+                writer.write(chunk.xyz * 10.0,
+                             cell_lengths=(chunk.unitcell_lengths * 10.0
+                                           if chunk.unitcell_lengths is not None
+                                           else None),
+                             cell_angles=chunk.unitcell_angles)
+                frames += chunk.n_frames
+
+    record = {
+        "trajectory": str(out),
+        "segments": [p.index for p in pieces],
+        "frames": frames,
+        "topology": str(topology_path),
+        # Stated so a reader knows this file is derived without having to
+        # infer it from the directory it sits in.
+        "joined_from_segments": True,
+        "ran_through": False,
+    }
+    (out.with_suffix(out.suffix + ".join.json")).write_text(
+        json.dumps(record, indent=2), encoding="utf-8")
+    return record

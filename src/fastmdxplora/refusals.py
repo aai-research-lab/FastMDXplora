@@ -468,6 +468,15 @@ CODES: tuple[Code, ...] = (
          "measurement.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("path", "reason")),
+    Code("simulation.resume.checkpoint_truncated",
+         "A checkpoint that is not the whole file that was written.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("path", "found", "expected")),
+    Code("simulation.resume.unsealed",
+         "A checkpoint with no seal beside it, so the segment that wrote "
+         "it did not finish.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("path",)),
     Code("simulation.resume.checkpoint_rejected",
          "A checkpoint that does not belong to this system, platform or "
          "precision.",
