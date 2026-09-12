@@ -101,7 +101,7 @@ class MetadynamicsSurface(Analysis):
                     f"but its axes have lengths {expected} and its free-energy "
                     f"array has shape {energy.shape}. A surface needs one "
                     "array dimension per collective-variable axis."
-                )
+                , code="simulation.bias.dimension_mismatch")
             if energy.size and np.isfinite(energy).any():
                 per_dimension = self._evidence.get("per_dimension") or []
                 self._axis_names = tuple(
@@ -118,7 +118,7 @@ class MetadynamicsSurface(Analysis):
             raise StudyError(
                 f"The metadynamics record has {dimensions} dimensions; this "
                 "analysis can draw one- and two-dimensional surfaces."
-            )
+            , code="simulation.bias.dimension_mismatch")
 
         raise StudyError(
             "The metadynamics record holds no surface: "

@@ -154,7 +154,7 @@ class HBonds(Analysis):
         self.exclude_water: bool = bool(exclude_water)
         self.count_multiplier: int = int(count_multiplier)
         if self.count_multiplier < 1:
-            raise StudyError("count_multiplier must be at least 1")
+            raise StudyError("count_multiplier must be at least 1", code="analysis.option.wrong_type")
         if self.count_multiplier != 1:
             logger.warning(
                 "hbonds: multiplying the per-frame count by %d. MDTraj lists "

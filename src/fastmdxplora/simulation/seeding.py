@@ -335,7 +335,7 @@ def write_seeds(prepared: Path | str,
         raise StudyError(
             f"The prepared system has {system.getNumParticles()} particles "
             f"and the pull's trajectory has {trajectory.n_atoms}.{likely}"
-        )
+        , code="simulation.seed.unusable")
 
     # One context for every window. Building a Reference context over tens of
     # thousands of particles takes seconds, and thirty of them takes minutes
@@ -434,7 +434,7 @@ def _refuse_an_impossible_seed(potential: float, reference: float | None,
             "strained, but not by this much: something is wrong with the "
             "frame or with the topology it was read against, and a window "
             "started here would fail on its first step."
-        )
+        , code="simulation.seed.unusable")
 
 
 # ---------------------------------------------------------------------------

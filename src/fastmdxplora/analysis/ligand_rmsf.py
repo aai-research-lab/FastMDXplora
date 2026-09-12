@@ -89,7 +89,7 @@ class LigandRMSF(Analysis):
             raise StudyError(
                 f"Alignment selection {self.align_selection!r} matched zero "
                 f"atoms; cannot align on the protein."
-            )
+            , code="analysis.selection.arity")
 
         n = traj.n_frames
         ref = self.ref if self.ref >= 0 else n + self.ref

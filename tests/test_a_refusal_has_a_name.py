@@ -424,3 +424,11 @@ class TestTheWideningClassesDoNotNarrow(unittest.TestCase):
             for base in bases:
                 with self.subTest(cls=name, base=base.__name__):
                     self.assertTrue(issubclass(cls, base))
+
+    def test_a_defective_backend_is_still_a_runtime_error(self):
+        # Distinct from BackendUnavailable, and the distinction decides what
+        # a reader does: an absent backend is installed, a defective one
+        # cannot be and the remedy is another platform.
+        from fastmdxplora.refusals import BackendDefect
+        self.assertTrue(issubclass(BackendDefect, RuntimeError))
+        self.assertFalse(issubclass(BackendDefect, ValueError))

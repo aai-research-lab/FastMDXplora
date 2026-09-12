@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from fastmdxplora.refusals import StudyError
 
 __all__ = [
     "Contact",
@@ -194,7 +195,7 @@ def donors_and_acceptors(
     # PDB is enough to lose its standard bonds, and a ligand deposited without
     # CONECT records arrives the same way. Saying so beats returning zero.
     if orphan_hydrogens:
-        raise ValueError(
+        raise StudyError(
             f"{orphan_hydrogens} hydrogen(s) in this selection are bonded to "
             "nothing, so it cannot be seen to donate a hydrogen bond -- only "
             "to accept one. "
@@ -202,7 +203,7 @@ def donors_and_acceptors(
             "though it were both. Give a topology that carries the "
             "connectivity: a PDB with CONECT records, or the topology the "
             "setup phase writes."
-        )
+        , code="analysis.system.inapplicable")
     return donors, acceptors
 
 
@@ -547,13 +548,13 @@ def salt_bridges(
     ``allow_ambiguous_charge`` knowing what it means.
     """
     if getattr(chemistry, "charge_was_ambiguous", False) and not allow_ambiguous_charge:
-        raise ValueError(
+        raise StudyError(
             f"The net charge of {chemistry.resname!r} was not determined -- "
             f"{chemistry.detail}. A salt bridge is a claim about charge, and "
             "reporting one computed from a charge that was guessed would be "
             "asserting more than is known. State the ligand's net charge, or "
             "supply its chemistry as an SDF."
-        )
+        , code="setup.chemistry.charge_undetermined")
 
     ligand_positive, ligand_negative = ligand_charged_groups(
         chemistry, ligand_indices)
@@ -766,12 +767,12 @@ def pi_cation(
     does -- it is a claim about charge.
     """
     if getattr(chemistry, "charge_was_ambiguous", False) and not allow_ambiguous_charge:
-        raise ValueError(
+        raise StudyError(
             f"The net charge of {chemistry.resname!r} was not determined -- "
             f"{chemistry.detail}. A pi-cation interaction is a claim about "
             "charge. State the ligand's net charge, or supply its chemistry "
             "as an SDF."
-        )
+        , code="setup.chemistry.charge_undetermined")
 
     ligand_positive, _ligand_negative = ligand_charged_groups(
         chemistry, ligand_indices)

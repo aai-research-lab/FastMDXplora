@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from fastmdxplora.refusals import StudyError
 
 #: Boltzmann's constant in kJ/mol/K, as the rest of the package uses it.
 KB_KJ_PER_MOL_K = 0.008314462618
@@ -200,9 +201,9 @@ def weighted_uncertainty(
     v = np.asarray(values, dtype=float).ravel()
     w = np.asarray(weights.values, dtype=float).ravel()
     if v.size != w.size or v.size == 0:
-        raise ValueError(
+        raise StudyError(
             f"{v.size} values against {w.size} weights: a reweighted average "
-            "needs one weight per frame.")
+            "needs one weight per frame.", code="simulation.bias.dimension_mismatch")
 
     def _mean(a: "np.ndarray", b: "np.ndarray") -> float:
         total = float(np.sum(b))
@@ -250,9 +251,9 @@ def read_colvar(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     """Times and collective-variable values, from a PLUMED COLVAR."""
     columns = np.atleast_2d(np.loadtxt(path, comments="#"))
     if columns.shape[1] < 2:
-        raise ValueError(
+        raise StudyError(
             f"{Path(path).name} holds {columns.shape[1]} column(s); the "
-            "collective variable is the second, after the time.")
+            "collective variable is the second, after the time.", code="simulation.bias.dimension_mismatch")
     return columns[:, 0], columns[:, 1]
 
 

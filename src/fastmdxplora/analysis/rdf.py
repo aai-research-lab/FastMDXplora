@@ -202,7 +202,7 @@ class RadialDistribution(Analysis):
                 "to take a bulk density from and no g(r) to normalise "
                 "against it. A trajectory stripped of its box, or one built "
                 "in vacuum, does this."
-            )
+            , code="analysis.system.inapplicable")
 
         a = traj.topology.select(self.selection_a)
         b = traj.topology.select(self.selection_b)

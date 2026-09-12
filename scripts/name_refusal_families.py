@@ -221,6 +221,50 @@ FAMILIES: list[tuple[str, str, str]] = [
     ("", r"needs at least one non-empty series|needs at least one array|"
      r"needs non-empty arrays", "analysis.sampling.too_few_frames"),
     ("", r"paired arrays must be the same length", "config.option.wrong_type"),
+
+    # -- the remainder, by family ------------------------------------------
+    ("analysis", r"matched \{len\(|matched zero|has \{len\(ligand_hydrogens",
+     "analysis.selection.arity"),
+    ("analysis", r"count_multiplier must be|must be a dict, got",
+     "analysis.option.wrong_type"),
+    ("analysis", r"hydrogen\(s\) in this selection are bonded|"
+     r"carries no unit cell", "analysis.system.inapplicable"),
+    ("analysis", r"net charge of \{chemistry.resname",
+     "setup.chemistry.charge_undetermined"),
+    ("analysis", r"chemistry of \{resname!r\} could not be established",
+     "setup.chemistry.uninterpretable"),
+    ("analysis", r"dimensions; this|says it is two-dimensional|"
+     r"hills hold \{hills.n_dims\}|values against|holds \{columns.shape",
+     "simulation.bias.dimension_mismatch"),
+    ("analysis", r"is already registered to", "analysis.option.not_permitted"),
+    ("analysis", r"Unknown analysis:|Unknown analyses in|No colour role named",
+     "analysis.unknown"),
+    ("analysis", r"returned unwritten frames", "analysis.data.absent"),
+    ("analysis", r"No deposited structure with B-factors",
+     "analysis.data.absent"),
+
+    ("setup", r"same residue name|ligand names given for|"
+     r"ligand charges given for|a single ligand name",
+     "config.option.conflicting"),
+    ("setup", r"clashes with the protein", "setup.ligand.clash"),
+    ("setup", r"Unknown constraints option", "config.option.not_permitted"),
+    ("setup", r"requires OpenMM|needs openmmforcefields",
+     "environment.backend.missing"),
+    ("setup", r"is not a lipid OpenMM can build",
+     "setup.membrane.lipid_unparameterized"),
+    ("setup", r"StudyError\(problem\)", "setup.membrane.orientation_unchecked"),
+    ("setup", r"exceeds \"\s*\"half|Nonbonded cutoff", "config.option.wrong_type"),
+
+    ("simulation", r"could not be \"\s*\"resolved|restraint selection",
+     "simulation.cv.selection_empty"),
+    ("simulation", r"prepared system has|has a potential \"",
+     "simulation.seed.unusable"),
+    ("simulation", r"holds one system at many positions",
+     "config.option.conflicting"),
+
+    ("batch", r"ALREADY_HOLD_RESULTS", "environment.path.exists"),
+    ("validation", r"holds no data rows", "analysis.data.absent"),
+    ("validation", r"needs MDAnalysis and ProLIF", "environment.backend.missing"),
 ]
 
 SKIP_TYPES = frozenset({
@@ -230,7 +274,12 @@ SKIP_TYPES = frozenset({
 
 #: Builtins it is safe to widen into, and what to widen them into. A
 #: RuntimeError is deliberately absent.
-PROMOTE = {"ValueError": "StudyError"}
+PROMOTE = {
+    "ValueError": "StudyError",
+        "FileExistsError": "OutputExistsError",
+    "FileNotFoundError": "MissingResultError",
+    "ImportError": "BackendUnavailable",
+}
 
 
 def migrate(path: pathlib.Path, *, dry_run: bool = False) -> tuple[int, int, list[str]]:
@@ -286,12 +335,19 @@ def migrate(path: pathlib.Path, *, dry_run: bool = False) -> tuple[int, int, lis
         out = "\n".join(lines)
         for old, new in PROMOTE.items():
             out = re.sub(rf"\braise {old}\(", f"raise {new}(", out)
-        if "StudyError" in out and "import StudyError" not in out:
+        for name in ("StudyError", "OutputExistsError", "MissingResultError",
+                     "BackendUnavailable"):
+            if f"{name}(" not in out or f"import {name}" in out:
+                continue
+            if any(l.startswith("from fastmdxplora.refusals") and name in l
+                   for l in out.split("\n")):
+                continue
             body = ast.parse(out).body
             end = max((n.end_lineno for n in body
                        if isinstance(n, (ast.Import, ast.ImportFrom))), default=0)
             out_lines = out.split("\n")
-            out_lines.insert(end, "from fastmdxplora.refusals import StudyError")
+            out_lines.insert(end,
+                             f"from fastmdxplora.refusals import {name}")
             out = "\n".join(out_lines)
         ast.parse(out)
         path.write_text(out, encoding="utf-8")

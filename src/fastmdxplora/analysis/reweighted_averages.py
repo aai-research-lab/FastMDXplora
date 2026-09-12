@@ -39,6 +39,7 @@ from fastmdxplora.analysis.reweight import (
     weights_from_bias,
 )
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
 
 logger = get_logger("analysis.reweighted")
 
@@ -270,10 +271,10 @@ def felt_bias(hills: Any, heights: np.ndarray, *, times: Any, values: Any,
         from fastmdxplora.simulation.metad_surface import bias_from_hills_nd
 
         if frames.ndim != 2 or frames.shape[1] != hills.n_dims:
-            raise ValueError(
+            raise StudyError(
                 f"The hills hold {hills.n_dims} biased variables but frame "
                 f"coordinates have shape {frames.shape}."
-            )
+            , code="simulation.bias.dimension_mismatch")
         wrap = tuple(periodic) if not isinstance(periodic, bool) else (
             (periodic,) * hills.n_dims)
         frame_times = np.asarray(times, dtype=float)
@@ -396,10 +397,10 @@ def _c_of_t_nd(
     from fastmdxplora.simulation.metad_surface import Hills, bias_from_hills_nd
 
     if len(periodic) != hills.n_dims:
-        raise ValueError(
+        raise StudyError(
             f"The hills hold {hills.n_dims} variables but periodicity has "
             f"{len(periodic)} entries."
-        )
+        , code="simulation.bias.dimension_mismatch")
 
     kT = KB_KJ_PER_MOL_K * float(temperature_K)
     order = np.argsort(hills.time_ps)

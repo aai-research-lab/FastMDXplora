@@ -66,10 +66,12 @@ __all__ = [
     "CODES",
     "CodedError",
     "StudyError",
+    "CodedKeyError",
     "MissingResultError",
     "MissingPathError",
     "OutputExistsError",
     "BackendUnavailable",
+    "BackendDefect",
     "UnstableRun",
     "Kind",
     "Disclosure",
@@ -267,6 +269,11 @@ CODES: tuple[Code, ...] = (
          "An optional chemistry backend the requested phase needs.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("packages", "install_command")),
+    Code("environment.backend.defective",
+         "An optional backend is installed and returning wrong answers, so "
+         "the measurement cannot be made on this platform.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION,
+         detail_keys=("backend", "attempts")),
     Code("environment.service.unreachable",
          "An external service did not answer.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
@@ -506,6 +513,10 @@ CODES: tuple[Code, ...] = (
          "An analysis option outside its declared choices.",
          Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,
          detail_keys=("analysis", "option", "given", "permitted")),
+    Code("analysis.option.wrong_type",
+         "An analysis option carrying a value of the wrong type.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("analysis", "option", "expected_type", "found_type")),
     Code("analysis.option.inapplicable",
          "An option given to an analysis that has no use for it.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
@@ -884,6 +895,21 @@ class MissingResultError(CodedError, FileNotFoundError, RuntimeError):
     default_code = "analysis.data.absent"
 
 
+class BackendDefect(CodedError, RuntimeError):
+    """An optional backend is installed, and is returning wrong answers.
+
+    Distinct from :class:`BackendUnavailable`, and the distinction decides
+    what a reader should do. An absent backend is installed. A defective
+    one cannot be, and the remedy is another platform or another method.
+
+    ``RuntimeError`` because that is what these sites raised, and because
+    it is what they mean: nothing about the study is wrong and nothing a
+    caller can write will fix it.
+    """
+
+    default_code = "environment.backend.defective"
+
+
 class BackendUnavailable(CodedError, ImportError, RuntimeError):
     """An optional backend is not installed, or would not load.
 
@@ -925,6 +951,29 @@ class UnstableRun(CodedError, RuntimeError):
     """
 
     default_code = "simulation.run.unstable"
+
+
+class CodedKeyError(CodedError, KeyError):
+    """A lookup that failed, with a code on it.
+
+    ``KeyError`` rather than ``StudyError`` because these are registry
+    lookups -- an analysis by name, a colour by role -- and code that
+    treats a registry as a mapping catches ``KeyError``. Widening those
+    into ``ValueError`` would be the narrowing mistake in reverse: the
+    handler that was written stops running, and nothing says so.
+
+    One wrinkle worth knowing. ``KeyError.__str__`` quotes its argument,
+    so ``str(exc)`` on one of these has quotation marks around it that a
+    ``ValueError`` would not add. That is ``KeyError``'s behaviour and not
+    something to paper over; ``refusal.message`` holds the sentence
+    unquoted for anything that needs it clean.
+    """
+
+    default_code = "unclassified"
+
+    def __init__(self, message: str = "", /, *args: Any,
+                 code: str | None = None, **details: Any) -> None:
+        super().__init__(message, *args, code=code, **details)
 
 
 class StudyError(CodedError, ValueError):

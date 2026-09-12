@@ -301,7 +301,7 @@ class OrderParameters(Analysis):
                 f"{len(align_idx)} atoms. Removing global tumbling needs at "
                 "least three, and in practice a rigid core rather than the "
                 "smallest set that satisfies the arithmetic."
-            )
+            , code="analysis.selection.arity", expression=self.align_selection)
 
         n_frames = traj.n_frames
         ref = self.ref if self.ref >= 0 else n_frames + self.ref

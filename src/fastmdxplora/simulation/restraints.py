@@ -229,7 +229,7 @@ def build_restraint_forces(
             raise StudyError(
                 f"The restraint selection {restraint.selection!r} could not be "
                 f"read: {exc}"
-            ) from exc
+            , code="simulation.cv.selection_empty") from exc
         if len(atoms) == 0:
             raise StudyError(
                 f"The restraint selection {restraint.selection!r} matched no "

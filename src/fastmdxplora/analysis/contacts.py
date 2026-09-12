@@ -118,7 +118,7 @@ class Contacts(Analysis):
             raise StudyError(
                 f"Protein selection {self.protein_selection!r} matched zero "
                 f"atoms; cannot compute protein-ligand contacts."
-            )
+            , code="analysis.selection.arity")
 
         # Per-frame: protein atoms within cutoff of any ligand atom.
         # compute_neighbors returns a list (one array per frame) of haystack

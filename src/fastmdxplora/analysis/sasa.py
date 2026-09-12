@@ -29,7 +29,7 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
-from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendDefect, StudyError
 
 
 #: What a SASA run reports. ``total`` is the whole molecule per frame,
@@ -118,7 +118,7 @@ def _areas_that_were_written(
             )
         truncated.append(int(empty.size))
 
-    raise RuntimeError(
+    raise BackendDefect(
         f"The surface-area calculation returned unwritten frames on all "
         f"{ATTEMPTS} attempts ({', '.join(str(n) for n in truncated)} frames "
         "each time). A molecule has surface, so a residue exposed in some "
@@ -128,7 +128,7 @@ def _areas_that_were_written(
         "trajectory, seen on Windows. On a platform where it occurs this "
         "often, solvent-accessible surface area cannot be computed reliably; "
         "run the analysis elsewhere, or omit it."
-    )
+    , code="analysis.data.absent")
 
 
 class SASA(Analysis):

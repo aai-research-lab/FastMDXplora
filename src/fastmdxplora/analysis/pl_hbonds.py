@@ -95,7 +95,7 @@ class ProteinLigandHBonds(Analysis):
             raise StudyError(
                 f"Protein selection {self.protein_selection!r} matched zero "
                 f"atoms; cannot compute protein-ligand hydrogen bonds."
-            )
+            , code="analysis.selection.arity")
 
         # H-bond detection needs bond connectivity: a donor is found as a
         # nitrogen or oxygen with a hydrogen bonded to it. create_standard_bonds
@@ -129,7 +129,7 @@ class ProteinLigandHBonds(Analysis):
                     "a topology that carries the ligand's connectivity: a PDB "
                     "with CONECT records for it, or the topology written by "
                     "the setup phase."
-                )
+                , code="analysis.selection.arity", expression=self.ligand_resname)
 
         # Wernet-Nilsson returns, per frame, an array of (donor, H, acceptor)
         # atom-index triplets. Keep a triplet only if the donor and acceptor

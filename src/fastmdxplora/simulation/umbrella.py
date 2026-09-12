@@ -385,7 +385,7 @@ def expand_umbrella(config: dict[str, Any]) -> dict[str, Any]:
             "for each would be several separate free energies -- run them as "
             "separate studies so each has its own windows and its own "
             "overlap check."
-        )
+        , code="config.option.conflicting")
 
     plan = plan_windows(spec)
     base = dict(config.get("systems", [{}])[0]) if config.get("systems") else {}

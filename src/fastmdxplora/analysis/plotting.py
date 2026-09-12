@@ -42,6 +42,7 @@ from matplotlib.ticker import (  # noqa: E402
 )
 import numpy as np  # noqa: E402
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import CodedKeyError
 
 
 NumericSeq = Optional[Union[Sequence[float], np.ndarray]]
@@ -193,10 +194,10 @@ def colour(role: str) -> str:
     try:
         return table[role]
     except KeyError:
-        raise KeyError(
+        raise CodedKeyError(
             f"No colour role named {role!r}. Roles are: "
             f"{', '.join(sorted(_ROLES_IN_COLOUR))}."
-        ) from None
+        , code="analysis.unknown") from None
 
 
 PAPER_TICK_SIZE = 9.0

@@ -63,6 +63,7 @@ from fastmdxplora.config import load_config_file, validate_config
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import MissingResultError
+from fastmdxplora.refusals import OutputExistsError
 
 if TYPE_CHECKING:
     from fastmdxplora.orchestrator import RunResult
@@ -727,12 +728,12 @@ class BatchExplorer:
                 clashes.append(f"{run_out} ({', '.join(occupied)})")
         if clashes:
             listed = "\n  ".join(clashes)
-            raise FileExistsError(
+            raise OutputExistsError(
                 f"{ALREADY_HOLD_RESULTS}\n  "
                 f"{listed}\n"
                 "Choose another output directory, delete these, or pass "
                 "--force-overwrite to overwrite them."
-            )
+            , code="environment.path.exists")
 
     def _run_output_dir(self, spec: RunSpec) -> Path:
         """Flat output for a single run; runs/<id>/ for many."""

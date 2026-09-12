@@ -56,6 +56,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 HARMONIZED_OCCUPANCY_TOL_PP = 5.0
 OBSERVABLE_TOL_NM = 1e-3
@@ -97,13 +99,13 @@ def _reference_tools():
         import MDAnalysis as mda
         import prolif as plf
     except ImportError as exc:  # pragma: no cover - depends on the env
-        raise ImportError(
+        raise BackendUnavailable(
             "The cross-tool comparison needs MDAnalysis and ProLIF, which "
             "are not dependencies of FastMDXplora: they are the independent "
             "implementations it measures agreement against. Install them "
             "with `pip install \"fastmdxplora[validation]\"` or `conda "
             "install -c conda-forge mdanalysis prolif`."
-        ) from exc
+        , code="environment.backend.missing") from exc
     return mda, plf
 
 def our_kind_family(kind: str) -> str | None:
@@ -646,7 +648,7 @@ def _numeric_column(path: Path, prefer: str):
     # that must never contain a comma is a trap for whoever edits it next.
     body_lines = [l for l in lines if not l.lstrip().startswith("#")]
     if not body_lines:
-        raise ValueError(f"{path} holds no data rows")
+        raise StudyError(f"{path} holds no data rows", code="analysis.data.absent")
     delim = "," if "," in body_lines[0] else None
 
     # A `#` line describes the file; it is not the column header. Where one

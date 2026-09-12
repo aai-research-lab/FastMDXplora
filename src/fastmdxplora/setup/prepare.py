@@ -52,6 +52,7 @@ from fastmdxplora.setup.ligand import load_ligand, pose_by_policy
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import MissingResultError
+from fastmdxplora.refusals import BackendUnavailable
 
 logger = get_logger("setup.prepare")
 
@@ -313,12 +314,12 @@ def _import_openmm():
             "Ewald": Ewald,
         }
     except ImportError as exc:
-        raise ImportError(
+        raise BackendUnavailable(
             "Setup-phase system parameterization requires OpenMM. Install "
             "via conda (recommended): conda install -c conda-forge openmm "
             "pdbfixer — or via pip with the optional [md] extras: "
             "pip install fastmdxplora[md]."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
 
 #: Metals that sit in a protein site rather than in the solvent, and whose
@@ -676,7 +677,7 @@ def prepare_system(
             raise StudyError(
                 f"{lipid} is not a lipid OpenMM can build a bilayer from. "
                 f"Available: {', '.join(sorted(LIPIDS))}."
-            )
+            , code="setup.membrane.lipid_unparameterized")
 
         if membrane_orient and not membrane_orientation_checked:
             # Whether the rotation can be trusted, before doing it. A protein
@@ -688,7 +689,7 @@ def prepare_system(
             problem = check_axis_is_well_defined(
                 modeller.topology, modeller.positions)
             if problem:
-                raise StudyError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
 
         if membrane_orient:
             # Asked for rather than done quietly: rotating by principal axes
@@ -710,7 +711,7 @@ def prepare_system(
         if not membrane_orientation_checked:
             problem = check_orientation(modeller.topology, modeller.positions)
             if problem:
-                raise StudyError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
 
             # And whether what came out looks like a membrane protein at all.
             # Rotating by principal axes is right for a transmembrane bundle
@@ -721,7 +722,7 @@ def prepare_system(
             problem = check_hydrophobic_belt(
                 modeller.topology, modeller.positions)
             if problem:
-                raise StudyError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
 
             # And whether the copies agree with each other. Each one passes
             # the checks above whichever way up it is; only together do they
@@ -731,7 +732,7 @@ def prepare_system(
             problem = check_chains_point_the_same_way(
                 modeller.topology, modeller.positions)
             if problem:
-                raise StudyError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
             logger.info(
                 "Hydrophobic belt check passed: the hydrophobic residues sit "
                 "nearer the middle than the charged ones, as a bilayer-"
@@ -857,7 +858,7 @@ def prepare_system(
                     f"{solvent_padding_nm:.2f} nm) or decrease "
                     f"nonbonded_cutoff_nm so that the cutoff is at most half "
                     f"the box."
-                )
+                , code="config.option.wrong_type")
 
     try:
         system = ff.createSystem(modeller.topology, **create_system_kwargs)
@@ -986,7 +987,7 @@ def _resolve_ligand_names(ligands, ligand_name) -> list[str]:
             raise StudyError(
                 f"{len(names)} ligand names given for {len(ligands)} ligands; "
                 "give one name per ligand, or none to use the file names."
-            )
+            , code="config.option.conflicting")
     elif len(ligands) == 1:
         names = [str(ligand_name or "LIG").strip().upper()]
     elif ligand_name:
@@ -996,7 +997,7 @@ def _resolve_ligand_names(ligands, ligand_name) -> list[str]:
             f"a single ligand name ({ligand_name!r}) was given for "
             f"{len(ligands)} ligands. Give one name per ligand, or none to "
             "take them from the file names."
-        )
+        , code="config.option.conflicting")
     else:
         # A single name across several ligands would make them
         # indistinguishable in the topology and in every later selection.
@@ -1023,7 +1024,7 @@ def _resolve_ligand_names(ligands, ligand_name) -> list[str]:
             "by chain and residue number -- but two different molecules "
             "cannot, in the topology or in any analysis that selects by "
             "residue."
-        )
+        , code="config.option.conflicting")
     return names
 
 
@@ -1035,7 +1036,7 @@ def _resolve_ligand_charges(ligands, ligand_net_charge) -> list:
             raise StudyError(
                 f"{len(charges)} ligand charges given for {len(ligands)} "
                 "ligands; give one per ligand, or none to infer them."
-            )
+            , code="config.option.conflicting")
         return charges
     return [ligand_net_charge] * len(ligands)
 
@@ -1181,7 +1182,7 @@ def _build_ligand_forcefield(force_field, small_molecule_ff, ligand_mols):
             "installed. Install the ligand extra (pip install "
             "'fastmdxplora[ligand]') or via conda-forge "
             "(conda install -c conda-forge openmmforcefields)."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
     system_generator = SystemGenerator(
         forcefields=list(force_field),
@@ -1337,7 +1338,7 @@ def _check_ligand_clashes(
             f"`ligand_clash_threshold_nm` or set `check_ligand_clashes=False`. "
             f"(Hydrogens are excluded from this check, so these are "
             f"heavy-atom overlaps.)"
-        )
+        , code="setup.ligand.clash")
     logger.info(
         "Ligand-protein clash check passed (closest contact %.3f nm).",
         math.sqrt(min_dist_sq) if min_dist_sq != math.inf else 0.0,
@@ -1365,5 +1366,5 @@ def _resolve_constraints(omm: dict, constraints: str):
         raise StudyError(
             f"Unknown constraints option {constraints!r}. Valid: "
             f"None, HBonds, AllBonds, HAngles."
-        )
+        , code="config.option.not_permitted")
     return mapping[key]

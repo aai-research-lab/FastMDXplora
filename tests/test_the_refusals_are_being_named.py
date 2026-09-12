@@ -40,10 +40,20 @@ NOT_REFUSALS = frozenset({
 #: that calls one is coded by delegation.
 FORWARDERS = frozenset({"_rewrapped"})
 
-#: The floor. Raise it when the number rises; never lower it. Left a little
-#: below the measured value so an unrelated refactor that adds one raise
-#: site does not fail an unrelated branch.
-CODED_FRACTION_FLOOR = 0.80
+#: Helpers that build the exception rather than being raised themselves:
+#: `raise _validation_error(stage, detail)`. The code lives in the builder,
+#: so eleven sites share one, which is better than eleven copies -- but it
+#: means this finder cannot see it at the raise, and counting them as
+#: uncoded understates the work by thirteen sites. Named explicitly rather
+#: than accepting any call, so an actual uncoded helper cannot hide here.
+BUILDERS = frozenset({"_validation_error", "_explain_unparameterized"})
+
+#: The floor. Raise it when the number rises; never lower it.
+#:
+#: At 1.0 now in practice, held at 0.99 so that adding one raise site in an
+#: unrelated change does not fail that branch on arithmetic. The migration
+#: is finished; this is what keeps it finished.
+CODED_FRACTION_FLOOR = 0.99
 
 
 def _raise_sites() -> list[tuple[pathlib.Path, int, str, bool]]:
@@ -81,10 +91,18 @@ def _raise_sites() -> list[tuple[pathlib.Path, int, str, bool]]:
                 call.func, "attr", None)
             if name is None or name in NOT_REFUSALS:
                 continue
-            coded = name in defaults
+            coded = name in defaults or name in BUILDERS
             for kw in call.keywords:
-                if kw.arg == "code" and isinstance(kw.value, ast.Constant):
-                    coded = coded or known(str(kw.value.value))
+                if kw.arg == "code":
+                    # A literal is checked against the registry. A computed
+                    # one -- `code=verdict.code` -- cannot be, and counting
+                    # it as uncoded would say a site that passes a code
+                    # does not. The literals are what
+                    # test_every_code_passed_at_a_raise_site_is_registered
+                    # holds; this only decides whether a code was passed.
+                    coded = coded or (
+                        known(str(kw.value.value))
+                        if isinstance(kw.value, ast.Constant) else True)
                 # `raise ConfigError(str(exc), **_rewrapped(exc))` carries
                 # the inner refusal's code outward. The literal is at the
                 # inner raise site, not here, so a forwarding helper counts
