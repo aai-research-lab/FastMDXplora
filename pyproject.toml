@@ -65,6 +65,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Driving the package from a program that writes configs. Deliberately
+# thin: the agent takes a completion function from its caller, so no model
+# client and no HTTP stack is required here. The extra exists so that
+# `fastmdxplora[agent]` is a documented thing to install rather than a
+# folder people find, and so it has somewhere to grow.
+agent = []
+
 # Rendering the report as a PDF. WeasyPrint needs Pango and Cairo as system
 # libraries on PyPI; the conda-forge package brings its own, which is why the
 # conda distribution is the easier route.

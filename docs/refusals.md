@@ -221,3 +221,53 @@ from fastmdxplora.refusals import CODES, codes_under
 for code in codes_under("analysis.sampling"):
     print(code.id, "--", code.summary)
 ```
+
+## Driving it from a program
+
+`fastmdxplora[agent]` adds a propose-validate-repair loop. A caller
+supplies a function taking a prompt and returning text; no model client is
+constructed here and no key is handled.
+
+```python
+from fastmdxplora.agent import propose_config
+
+result = propose_config("Simulate ubiquitin at pH 7.4 for 10 ns",
+                        complete=my_model, phases=["setup", "simulation"])
+
+result.accepted   # True
+result.cycles     # 2 — it took one repair
+result.config     # the validated study
+```
+
+The schema description it proposes from is generated, so it cannot name a
+setting validation would refuse. A config that comes back is one that
+passed `validate_config`, and a proposal that did not pass carries no
+config at all — not the last thing that nearly worked with a caveat
+attached.
+
+Three restraints are worth knowing about.
+
+**Structural refusals are retried; semantic ones are not.** A config that
+does not match the schema is answerable by reading it. A system that does
+not determine its own protonation is not, and a model that retries it is
+guessing at the question the software declined to guess at. The loop stops
+and returns the refusal.
+
+**Cycles are counted and capped.** The count is a measurement — how many
+attempts a model needs is a direct reading of its domain competence,
+comparable across models and free to collect. The cap is there because
+cheap validation invites thrashing, and a config that validates on the
+fortieth mutation validates for reasons nobody chose. Exhausting the cap
+is a refusal, not a fall-through.
+
+**The repair prompt withholds.** It names the offending setting and, where
+the registry permits, the legal set. It volunteers no remedy beyond that.
+A validator that hands over the fix turns every rejection into a
+well-specified task, which flatters the measurement and moves the domain
+reasoning out of the part being measured.
+
+Nothing in the core package imports `fastmdxplora.agent`, and a test
+asserts it. That direction is what makes the design's claim checkable: a
+caller bypassing the agent and calling `validate_config` directly is
+refused in exactly the same way, by the same code. The agent has no
+privileges.
