@@ -200,6 +200,38 @@ def _threads_for_each(n_workers: int) -> int:
     return max(1, cores // max(1, n_workers))
 
 
+#: Coordinates a standard-state binding free energy means anything along.
+#: A distance between two groups has a volume element; a torsion does not.
+COORDINATES_WITH_A_VOLUME = ("ligand_distance", "distance")
+
+
+def _the_coordinate_has_a_volume(plan: Any) -> bool:
+    """Whether a standard-state correction has anything to correct.
+
+    The correction is about the volume a ligand gives up on binding. Along a
+    torsion there is no volume and no concentration, so a number computed
+    there would be a category error rather than an inaccuracy.
+    """
+    return getattr(plan, "collective_variable", None) in \
+        COORDINATES_WITH_A_VOLUME
+
+
+def _a_binding_free_energy_belongs_here(payload: dict[str, Any],
+                                        plan: Any) -> bool:
+    """Whether this study is one the number can honestly be taken from.
+
+    There has to be a curve, and the overlap and sampling gates are what
+    decide that: a number integrated over a curve stitched across a gap would
+    be the most quotable thing the study produced and the least supported. And
+    the coordinate has to be one with a volume.
+
+    A predicate rather than a condition written inline, because it is the rule
+    itself and a rule that can only be checked by reading the source around
+    the call is a rule two tests broke on the day the call moved.
+    """
+    return bool(payload.get("pmf")) and _the_coordinate_has_a_volume(plan)
+
+
 def _a_prepared_system_is_there(setup_dir: Path) -> bool:
     """Whether the three files a simulation starts from are on disk.
 
@@ -1226,7 +1258,27 @@ class BatchExplorer:
             temperature = float(
                 ((self._raw or {}).get("simulation") or {})
                 .get("temperature_K", 300.0))
-            payload = compute_pmf(samples, plan, temperature_K=temperature)
+            # The binding free energy rides along on the recombination's own
+            # resamples. Without this it is the one headline number the study
+            # produces with no statistical uncertainty at all -- only a
+            # sensitivity to where the bound state is cut, which is a
+            # different quantity and reads as an error bar if it is the only
+            # bar there.
+            #
+            # Uncorrected on purpose: the cone correction and the
+            # standard-state term are constants, so they move the interval
+            # without widening it, and computing them per resample would mean
+            # resolving the cone thirty thousand times for no change in the
+            # spread.
+            def _binding_from(where, curve, _t=temperature):
+                from fastmdxplora.simulation.binding import binding_free_energy
+
+                return binding_free_energy(
+                    where, curve, temperature_K=_t).get("delta_g_kjmol")
+
+            wants_binding = _the_coordinate_has_a_volume(plan)
+            payload = compute_pmf(samples, plan, temperature_K=temperature,
+                                  also=_binding_from if wants_binding else None)
             payload["plan"] = plan.as_record()
 
             # What these windows say the study should have been. Every
@@ -1263,8 +1315,7 @@ class BatchExplorer:
             # supported. Attempted only for a ligand-distance coordinate,
             # since the standard-state correction is about the volume a
             # ligand gives up and means nothing along a torsion.
-            if payload.get("pmf") and plan.collective_variable in (
-                    "ligand_distance", "distance"):
+            if _a_binding_free_energy_belongs_here(payload, plan):
                 from fastmdxplora.simulation.binding import (
                     binding_free_energy)
 
@@ -1310,6 +1361,7 @@ class BatchExplorer:
                         payload["pmf"]["free_energy_kjmol"],
                         temperature_K=temperature,
                         cone=cone, wall_bias_kjmol=wall,
+                        resampled=payload.get("derived"),
                     )
 
         destination = Path(self.output_dir) / "pmf.json"

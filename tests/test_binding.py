@@ -161,17 +161,33 @@ class TestItSitsBehindTheOverlapGate:
     the PMF is what the overlap and sampling gates decide.
     """
 
-    def test_the_campaign_asks_for_it_only_after_a_pmf(self):
-        import inspect
+    def rule(self):
+        from fastmdxplora.batch.explorer import (
+            _a_binding_free_energy_belongs_here,
+        )
 
-        from fastmdxplora.batch import explorer
+        return _a_binding_free_energy_belongs_here
 
-        source = inspect.getsource(explorer)
-        call = source.index("binding_free_energy(")
-        guard = source.rindex('if payload.get("pmf")', 0, call)
-        # The guard is the nearest thing above the call, so no branch can
-        # reach it with a refused PMF.
-        assert "pmf" in source[guard:call]
+    def a_plan(self, coordinate):
+        from fastmdxplora.simulation.umbrella import UmbrellaPlan, Window
+
+        return UmbrellaPlan(
+            windows=(Window(index=0, centre=0.4, force_constant=3000.0),
+                     Window(index=1, centre=0.6, force_constant=3000.0)),
+            collective_variable=coordinate, equilibration_fraction=0.2,
+            minimum_overlap=0.03, minimum_samples=200)
+
+    def test_a_refused_study_gets_no_number(self):
+        """The overlap and sampling gates decide whether a curve exists, and
+        the number is taken from the curve."""
+        for refused in ({"pmf": None, "refused": "no overlap"}, {}):
+            assert not self.rule()(refused, self.a_plan("ligand_distance"))
+
+    def test_a_study_with_a_curve_gets_one(self):
+        assert self.rule()({"pmf": {"coordinate": [0.4]}},
+                           self.a_plan("ligand_distance"))
+        assert self.rule()({"pmf": {"coordinate": [0.4]}},
+                           self.a_plan("distance"))
 
     def test_it_is_not_attempted_along_a_torsion(self):
         """The standard state is about the volume a ligand gives up.
@@ -180,11 +196,20 @@ class TestItSitsBehindTheOverlapGate:
         correction has nothing to correct and the number would be a
         category error rather than an inaccuracy.
         """
+        for coordinate in ("torsion", "radius_of_gyration", "q", "angle"):
+            assert not self.rule()({"pmf": {"coordinate": [0.4]}},
+                                   self.a_plan(coordinate))
+
+    def test_the_campaign_uses_the_rule_rather_than_repeating_it(self):
+        """Both places the decision is made go through the one predicate, so
+        the gate and the error bar cannot come to disagree about which studies
+        get a binding free energy."""
         import inspect
 
         from fastmdxplora.batch import explorer
 
-        source = inspect.getsource(explorer)
-        window = source[source.index("binding_free_energy") - 900:
-                        source.index("binding_free_energy")]
-        assert "ligand_distance" in window
+        source = inspect.getsource(
+            explorer.BatchExplorer._maybe_build_pmf)
+        assert "_a_binding_free_energy_belongs_here(" in source
+        assert "_the_coordinate_has_a_volume(" in source
+        assert '"ligand_distance"' not in source

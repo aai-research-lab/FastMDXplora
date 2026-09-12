@@ -103,6 +103,44 @@ def _bulk_residual(radius: np.ndarray, energy: np.ndarray,
     return float(np.max(np.abs(flattened - np.mean(flattened))))
 
 
+def _what_the_resamples_said(resampled: "dict[str, Any] | None",
+                             correction: float) -> dict[str, Any]:
+    """The bootstrap's interval on this number, shifted by the corrections.
+
+    The resampled quantity is the uncorrected binding free energy, because
+    that is the part that varies: the cone correction and the standard-state
+    term are constants, and adding a constant moves an interval without
+    widening it. So the bounds shift and the standard error does not.
+
+    `correlation_resolved` travels with it. An interval whose block length is
+    a lower bound is optimistic by an unknown factor, and a number carrying
+    one should say so where it is read rather than where it was computed.
+    """
+    if not resampled or resampled.get("value") is None:
+        return {
+            "delta_g_standard_error_kjmol": None,
+            "delta_g_confidence_kjmol": None,
+            "delta_g_uncertainty_is_a_floor": None,
+        }
+    error = resampled.get("standard_error")
+    low = resampled.get("confidence_low")
+    high = resampled.get("confidence_high")
+    resolved = resampled.get("correlation_resolved")
+    return {
+        "delta_g_standard_error_kjmol": (
+            None if error is None else float(error)),
+        "delta_g_confidence_kjmol": (
+            None if low is None or high is None
+            else [float(low) + correction, float(high) + correction]),
+        # Said positively rather than left to be inferred from a flag called
+        # `correlation_resolved` two files away.
+        "delta_g_uncertainty_is_a_floor": (
+            None if resolved is None else not bool(resolved)),
+        "delta_g_uncertainty_note": resampled.get("note") or None,
+        "delta_g_resamples": resampled.get("resamples"),
+    }
+
+
 def binding_free_energy(
     coordinate: Any,
     free_energy_kjmol: Any,
@@ -112,6 +150,7 @@ def binding_free_energy(
     bulk_fraction: float = 0.25,
     cone: Any = None,
     wall_bias_kjmol: float | None = None,
+    resampled: "dict[str, Any] | None" = None,
 ) -> dict[str, Any]:
     """A standard-state binding free energy, or a refusal saying why not.
 
@@ -257,6 +296,14 @@ def binding_free_energy(
     return {
         "delta_g_kjmol": delta_g,
         "delta_g_kcalmol": delta_g / 4.184,
+        # The statistical uncertainty, where the caller measured one. It comes
+        # from resampling the windows and recomputing this whole quantity, so
+        # it is the spread of the measurement rather than a propagated
+        # derivative. `cutoff_sensitivity_kjmol` below is a different thing
+        # entirely -- how much the answer moves across defensible choices of
+        # where the bound state ends -- and reporting one in place of the
+        # other would be reporting a systematic as though it were noise.
+        **_what_the_resamples_said(resampled, correction),
         # Both, always, where a cone was used. The uncorrected number is what
         # the curve says and the corrected one is what it means, and a reader
         # checking the arithmetic needs to see the step rather than take it.

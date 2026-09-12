@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -1802,6 +1803,34 @@ WHAM_TOLERANCE_KJMOL = 1e-6
 WHAM_MAX_ITERATIONS = 100_000
 
 
+def _split_off_the_derived(
+    record: dict[str, Any],
+) -> "tuple[dict[str, Any], dict[str, Any]]":
+    """Separate the appended number from the curve it travelled with.
+
+    `also` rides along as one extra element of the statistic's array so that
+    one set of resamples serves both. Here the two go back to being what they
+    are: a curve with an error bar per bin, and a single number with one.
+    """
+    curve: dict[str, Any] = {}
+    one: dict[str, Any] = {}
+    for key, value in record.items():
+        if isinstance(value, list) and value:
+            curve[key] = value[:-1]
+            one[key] = value[-1]
+        else:
+            curve[key] = value
+            one[key] = value
+    # A statistic that could not be computed on the real data has no interval
+    # worth reporting, however well the resamples behaved.
+    if one.get("value") is None or (isinstance(one.get("value"), float)
+                                    and math.isnan(one["value"])):
+        return curve, {"value": None, "note": (
+            "The quantity could not be computed from this curve, so the "
+            "resamples have nothing to put an interval around.")}
+    return curve, one
+
+
 def compute_pmf(
     samples: dict[int, np.ndarray],
     plan: UmbrellaPlan,
@@ -1811,6 +1840,7 @@ def compute_pmf(
     minimum_overlap: float | None = None,
     bootstrap_resamples: int = DEFAULT_RESAMPLES,
     bootstrap_seed: int = 0,
+    also: "Callable[[list[float], list[Any]], float | None] | None" = None,
     _edges: np.ndarray | None = None,
     _resampling: bool = False,
 ) -> dict[str, Any]:
@@ -1823,6 +1853,14 @@ def compute_pmf(
     share ground, the free energy on one side cannot be placed relative to the
     other, and a curve drawn through the gap is interpolation presented as a
     measurement.
+
+    ``also`` is one number read off the curve -- a binding free energy, a
+    barrier height -- given as a function of ``(coordinate, free_energy)``. It
+    is evaluated on every resample beside the curve itself, so it comes back
+    with an interval from the same draws. That is the only affordable way to
+    put an error bar on it: each resample already costs a WHAM solve, and a
+    second bootstrap would double the analysis to measure something the first
+    pass had the material for. The result is under ``derived`` in the payload.
     """
     # The plan carries it, so a study's own threshold applies wherever the
     # recombination happens rather than only where somebody remembered to
@@ -2085,26 +2123,44 @@ def compute_pmf(
     # dipping below it has discovered nothing about the study, and refusing
     # there would abort the error bar rather than report it.
     uncertainty = None
+    derived = None
     if bootstrap_resamples:
         def _curve(drawn: dict[int, np.ndarray]) -> np.ndarray:
             inner = compute_pmf(
                 drawn, plan, temperature_K=temperature_K, bins=bins,
                 minimum_overlap=0.0, bootstrap_resamples=0, _edges=edges,
                 _resampling=True)
-            return np.array(
+            values = np.array(
                 [np.nan if v is None else v
                  for v in inner["pmf"]["free_energy_kjmol"]], dtype=float)
+            if also is None:
+                return values
+            # Carried as one more element of the same array, because
+            # `block_bootstrap` treats an array element-wise and this costs
+            # nothing beyond the WHAM solve already done for the curve. Split
+            # off again below.
+            try:
+                extra = also(inner["pmf"]["coordinate"],
+                             inner["pmf"]["free_energy_kjmol"])
+            except (ValueError, ZeroDivisionError, KeyError, TypeError):
+                extra = None
+            return np.append(values,
+                             np.nan if extra is None else float(extra))
 
         uncertainty = block_bootstrap(
             {w.index: samples[w.index] for w in ordered}, _curve,
             resamples=int(bootstrap_resamples), seed=bootstrap_seed,
         ).as_dict()
+        if also is not None:
+            uncertainty, derived = _split_off_the_derived(uncertainty)
         if uncertainty["note"]:
             logger.info("Free-energy uncertainty: %s", uncertainty["note"])
 
     return {
         "pmf": {"coordinate": centres.tolist(), "free_energy_kjmol": free_energy,
                 "uncertainty": uncertainty},
+        # The spread of whatever `also` measured, from the same resamples.
+        "derived": derived,
         "covered": [float(covered[0]), float(covered[1])],
         "summary": describe_pmf(centres, free_energy, covered,
                                 periodic=periodic),
