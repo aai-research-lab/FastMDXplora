@@ -37,6 +37,8 @@ md = pytest.importorskip("mdtraj")
 from fastmdxplora.simulation.seeding import (  # noqa: E402
     GROUP_SIZES,
     _name_the_group,
+    _refuse_seeds_outside_the_cone,
+    _the_cone_the_windows_will_have,
     _rotations_onto_the_first,
     angles_at_the_site,
     atoms_opposite,
@@ -705,11 +707,10 @@ class TestTheMeasurementIsWrittenDownBesideTheSeeds:
         """Written rather than returned: the analysis needs it days later, and
         reading the pull a second time to find it would mean loading tens of
         thousands of atoms twice."""
-        from fastmdxplora.simulation.seeding import _measure_the_cone_here
-
         trajectory, _, _, _ = pull
-        _measure_the_cone_here(trajectory, "BEN", SITE, tmp_path / "seeds",
-                               ConeToMeasure().as_asked())
+        _the_cone_the_windows_will_have(
+            trajectory, "BEN", SITE, tmp_path / "seeds",
+            ConeToMeasure().as_asked())
 
         record = json.loads(
             (tmp_path / "seeds" / "cone.json").read_text(encoding="utf-8"))
@@ -719,16 +720,159 @@ class TestTheMeasurementIsWrittenDownBesideTheSeeds:
         assert "Cone:" in capsys.readouterr().out
 
     def test_what_it_asks_for_is_what_it_measures(self, tmp_path, pull):
-        from fastmdxplora.simulation.seeding import _measure_the_cone_here
-
         trajectory, _, _, _ = pull
         asked = ConeToMeasure(force_constant=2000.0, keep=90.0,
                               margin=1.4).as_asked()
-        _measure_the_cone_here(trajectory, "BEN", SITE, tmp_path / "seeds",
-                               asked)
+        _the_cone_the_windows_will_have(
+            trajectory, "BEN", SITE, tmp_path / "seeds", asked)
 
         record = json.loads(
             (tmp_path / "seeds" / "cone.json").read_text(encoding="utf-8"))
         assert record["force_constant"] == 2000.0
         assert record["keep"] == 90.0
         assert record["margin"] == 1.4
+
+
+# ---------------------------------------------------------------------------
+class TestASeedStartsInsideItsOwnWall:
+    """A seed is chosen for its distance and inherits whatever angle it had.
+
+    Nothing connected the two. A window could begin where its cone excludes it
+    and spend equilibration being pushed back by 5000 kJ/mol/rad^2 -- which
+    does not crash, appears in no gate, and leaves the window settled
+    somewhere the seeding did not intend. Worse, a cone that excludes where
+    the ligand was is a cone cutting the state the binding free energy is
+    measured over, which is the one assumption the correction rests on.
+
+    Measured off the pull, a cone contains the path it was measured from and
+    this passes by construction. It is the other two ways of asking for one
+    that need checking: a half-angle written into a config can be narrower
+    than the path, and a hand-named axis need not point along it at all.
+    """
+
+    def seeds_at(self, trajectory, centres):
+        from fastmdxplora.simulation.seeding import frames_for_centres
+
+        return frames_for_centres(
+            measure_along(trajectory, "BEN", SITE), centres)
+
+    def concrete(self, trajectory, tmp_path, **asked):
+        return _the_cone_the_windows_will_have(
+            trajectory, "BEN", SITE, tmp_path / "seeds", asked)
+
+    def test_a_measured_cone_contains_its_own_seeds(self, pull, tmp_path,
+                                                    capsys):
+        trajectory, _, _, _ = pull
+        centres = [0.5, 0.8, 1.1, 1.4, 1.7, 1.9]
+        cone = self.concrete(trajectory, tmp_path)
+
+        _refuse_seeds_outside_the_cone(
+            trajectory, "BEN", SITE, self.seeds_at(trajectory, centres),
+            centres, cone)
+
+        said = capsys.readouterr().out
+        assert "every seed starts inside the cone" in said
+        assert "closest to the wall is window" in said
+
+    def test_a_half_angle_narrower_than_the_path_is_refused(self, pull,
+                                                            tmp_path):
+        trajectory, _, _, _ = pull
+        centres = [0.5, 0.8, 1.1, 1.4, 1.7, 1.9]
+        measured = self.concrete(trajectory, tmp_path)
+        narrow = dict(measured, half_angle_deg=5.0)
+
+        with pytest.raises(ValueError, match="would start outside a cone"):
+            _refuse_seeds_outside_the_cone(
+                trajectory, "BEN", SITE, self.seeds_at(trajectory, centres),
+                centres, narrow)
+
+    def test_the_refusal_names_the_windows_and_their_angles(self, pull,
+                                                            tmp_path):
+        trajectory, _, _, _ = pull
+        centres = [0.5, 1.9]
+        narrow = dict(self.concrete(trajectory, tmp_path), half_angle_deg=5.0)
+
+        with pytest.raises(ValueError) as raised:
+            _refuse_seeds_outside_the_cone(
+                trajectory, "BEN", SITE, self.seeds_at(trajectory, centres),
+                centres, narrow)
+
+        said = str(raised.value)
+        assert "window 0 at 0.500 nm starts" in said
+        assert "window 1 at 1.900 nm starts" in said
+        assert "degrees off axis" in said
+
+    def test_the_refusal_says_what_to_do_about_it(self, pull, tmp_path):
+        """Widen it, or stop choosing it -- both are one line in a config."""
+        trajectory, _, _, _ = pull
+        centres = [0.5, 1.9]
+        narrow = dict(self.concrete(trajectory, tmp_path), half_angle_deg=5.0)
+
+        with pytest.raises(ValueError) as raised:
+            _refuse_seeds_outside_the_cone(
+                trajectory, "BEN", SITE, self.seeds_at(trajectory, centres),
+                centres, narrow)
+
+        said = str(raised.value)
+        assert "Widen the cone" in said
+        assert "measured from this pull" in said
+
+    def test_a_long_list_is_summarized_rather_than_dumped(self, pull,
+                                                          tmp_path):
+        trajectory, _, _, _ = pull
+        centres = [0.5 + 0.1 * i for i in range(15)]
+        narrow = dict(self.concrete(trajectory, tmp_path), half_angle_deg=1.0)
+
+        with pytest.raises(ValueError) as raised:
+            _refuse_seeds_outside_the_cone(
+                trajectory, "BEN", SITE, self.seeds_at(trajectory, centres),
+                centres, narrow)
+
+        assert "and 9 more" in str(raised.value)
+
+    def test_a_stated_half_angle_is_not_overruled_by_a_measurement(
+            self, pull, tmp_path):
+        """The number is the user's. Measuring one and quietly using it
+        instead would make the setting a suggestion."""
+        trajectory, _, _, _ = pull
+        stated = self.concrete(trajectory, tmp_path, half_angle_deg=95.0,
+                               force_constant=5000.0,
+                               axis_selection="resSeq 300 to 311 and name CA")
+
+        assert stated["half_angle_deg"] == 95.0
+        assert stated["axis_atoms"] == sorted(
+            int(i) for i in
+            trajectory.topology.select("resSeq 300 to 311 and name CA"))
+        assert not (tmp_path / "seeds" / "cone.json").exists()
+
+    def test_a_stated_axis_that_matches_nothing_is_refused(self, pull,
+                                                           tmp_path):
+        trajectory, _, _, _ = pull
+        with pytest.raises(ValueError, match="matches no atom"):
+            self.concrete(trajectory, tmp_path, half_angle_deg=60.0,
+                          axis_selection="resSeq 99999 and name CA")
+
+    def test_the_angle_checked_is_the_one_plumed_will_restrain(self, pull,
+                                                               tmp_path):
+        """Not the angle to the ideal axis. The group is several degrees off
+        it, and several degrees is a tenth of a restraint."""
+        trajectory, _, _, _ = pull
+        cone = self.concrete(trajectory, tmp_path)
+        centres = [0.5, 1.9]
+        chosen = self.seeds_at(trajectory, centres)
+
+        ligand = trajectory.topology.select("resname BEN")
+        site = trajectory.topology.select(SITE)
+        through_the_group = angles_at_the_site(
+            trajectory, ligand, site, cone["axis_atoms"])
+        at_the_seeds = [through_the_group[frame] for frame, _ in chosen]
+
+        # A wall just inside the worst seed refuses; just outside it passes.
+        worst = max(at_the_seeds)
+        with pytest.raises(ValueError):
+            _refuse_seeds_outside_the_cone(
+                trajectory, "BEN", SITE, chosen, centres,
+                dict(cone, half_angle_deg=worst - 0.5))
+        _refuse_seeds_outside_the_cone(
+            trajectory, "BEN", SITE, chosen, centres,
+            dict(cone, half_angle_deg=worst + 0.5))

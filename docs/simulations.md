@@ -590,6 +590,36 @@ shaped like a restraint. So is a pull that leaves in no settled direction: a
 ligand taking several routes out needs a coordinate that follows one of them,
 not a wall around all of them.
 
+**The pull itself runs without a cone, on purpose.** The axis and the angle are
+*measured from* that pull, so restraining it would mean measuring the restraint
+rather than the ligand's way out — a cone needed before a cone could be found.
+A wall on an unverified axis would also be a wall on a ligand already being
+dragged by a moving anchor, which can force it along a route it would never
+take and finish without complaint. The pull's value here is that it is the one
+trajectory with nothing telling it which way to go.
+
+That freedom costs something, and the margin is what pays it. A steered pull is
+fast and does not explore angle the way equilibrium sampling does, so it
+*under-reports* the spread: on the trypsin study the pull put the bound end
+within 55°, and 30 ns of restrained sampling reached 62°. Opening the cone by a
+fifth is what covers the difference.
+
+**Every seed is checked against the wall it will run under.** A seed is chosen
+for its *distance* from the site and inherits whatever angle that frame
+happened to have, so the two have to be reconciled before a window starts. A
+window beginning outside its own cone is pushed by the wall from its first
+step: it does not crash, no later gate sees it, the window settles somewhere
+the seeding did not intend — and a cone excluding where the ligand was is a
+cone cutting the state the binding free energy is measured over.
+
+A measured cone contains the path it was measured from, so this passes by
+construction. It is the other two ways of asking that need it: a
+`half_angle_deg` written into a config can be narrower than the path, and a
+hand-named `axis_selection` need not point along the path at all. Either way
+the study is refused before it runs, naming the windows and how far outside
+they sit. When all of them pass, the seeder says how close the nearest one came
+to the wall, so the headroom is visible rather than assumed.
+
 **Flat-bottomed, not harmonic.** Inside the cone there is no bias at all, so
 what happens there is the system's own. A harmonic restraint on the angle would
 pull the ligand towards the axis everywhere, including in the bound state.

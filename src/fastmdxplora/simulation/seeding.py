@@ -788,12 +788,18 @@ def seed_windows(pull_directory: Path | str,
     `pull_directory` is a run's output: the trajectory and, where PLUMED
     wrote one, the COLVAR that checks the measurement.
 
-    `cone` asks for one to be measured while the pull is open -- the settings
-    of a `ConeToMeasure` as a plain dict. The measurement is written to
-    ``<destination>/cone.json`` rather than returned, because it is a fact
-    about the study that the analysis needs days later and a return value is
-    not. Reading the pull is the expensive part of both jobs and it happens
-    once.
+    `cone` is the cone the windows will run under, as a plain dict. Given a
+    half-angle it is taken as it is; without one it is measured while the pull
+    is open and written to ``<destination>/cone.json``, because a measurement
+    is a fact about the study that the analysis needs days later and a return
+    value is not. Reading the pull is the expensive part of both jobs and it
+    happens once.
+
+    Either way the seeds are then checked against it. A seed is chosen for its
+    distance and inherits whatever angle that frame happened to have, and a
+    window that starts outside its own wall spends its equilibration being
+    pushed by 5000 kJ/mol/rad^2 -- the angular form of the failure this module
+    exists to prevent.
     """
     import mdtraj as md  # noqa: PLC0415 -- heavy, and only needed here
 
@@ -815,21 +821,45 @@ def seed_windows(pull_directory: Path | str,
     measured = measure_along(whole, ligand_resname, site_selection)
     _check_against_colvar(pull, measured, whole)
 
-    if cone is not None:
-        _measure_the_cone_here(whole, ligand_resname, site_selection,
-                               Path(destination), dict(cone))
-
     chosen = frames_for_centres(measured, centres)
     _report(chosen, centres, measured)
+
+    if cone is not None:
+        settled = _the_cone_the_windows_will_have(
+            whole, ligand_resname, site_selection, Path(destination),
+            dict(cone))
+        _refuse_seeds_outside_the_cone(
+            whole, ligand_resname, site_selection, chosen, centres, settled)
+
     return write_seeds(prepared, whole, chosen, centres, destination,
                        temperature_K=temperature_K, random_seed=random_seed)
 
 
-def _measure_the_cone_here(trajectory: Any, ligand_resname: str,
-                           site_selection: str, destination: Path,
-                           asked: dict[str, Any]) -> None:
-    """Measure the cone off this pull and write it down beside the seeds."""
+def _the_cone_the_windows_will_have(trajectory: Any, ligand_resname: str,
+                                    site_selection: str, destination: Path,
+                                    asked: dict[str, Any]) -> dict[str, Any]:
+    """The cone as a concrete record: measured off this pull, or taken as given.
+
+    A study that states its own half-angle is not measured for one -- the
+    number is the user's and overruling it would make the setting a
+    suggestion. Its atoms still have to be resolved, because the check that
+    follows needs the group the angle will be measured against.
+    """
     import json  # noqa: PLC0415 -- only this branch writes a file
+
+    stated = asked.get("half_angle_deg")
+    if isinstance(stated, (int, float)):
+        record = dict(asked)
+        if not record.get("axis_atoms"):
+            selection = str(record.get("axis_selection") or "protein")
+            atoms = [int(i) for i in trajectory.topology.select(selection)]
+            if not atoms:
+                raise ValueError(
+                    f"The cone's axis selection {selection!r} matches no atom "
+                    "in the pull's topology, so the seeds cannot be checked "
+                    "against the wall the windows will run under.")
+            record["axis_atoms"] = atoms
+        return record
 
     record = measure_the_cone(
         trajectory, ligand_resname, site_selection,
@@ -851,6 +881,65 @@ def _measure_the_cone_here(trajectory: Any, ligand_resname: str,
         print(f"                bound end within "
               f"{record['bound_end_deg']:.0f} degrees, which is the half that "
               "decides whether the wall bites")
+    return record
+
+
+def _refuse_seeds_outside_the_cone(trajectory: Any, ligand_resname: str,
+                                   site_selection: str,
+                                   chosen: list[tuple[int, float]],
+                                   centres: list[float],
+                                   cone: dict[str, Any]) -> None:
+    """Refuse a study whose windows would start outside their own wall.
+
+    A seed is chosen for its distance from the site and inherits whatever
+    angle that frame happened to have. Nothing before this connected the two,
+    so a window could begin where the cone excludes it and spend its
+    equilibration being pushed back by 5000 kJ/mol/rad^2 -- which does not
+    crash, does not appear in any gate, and leaves the window settled
+    somewhere the seeding did not intend.
+
+    Measured off the pull, a cone contains the path it was measured from and
+    this passes by construction. It is the other two ways of asking for one
+    that need it: a half-angle written into a config can be narrower than the
+    path, and a hand-named `axis_selection` need not point along the path at
+    all.
+
+    Refused rather than warned. The window would run for days and the
+    correction it earns assumes the cone does not cut the bound state, which
+    is precisely what a seed outside the cone says it does.
+    """
+    half_angle = float(cone["half_angle_deg"])
+    ligand, site = the_two_groups(trajectory.topology, ligand_resname,
+                                  site_selection)
+    angle = angles_at_the_site(trajectory, ligand, site,
+                               [int(i) for i in cone["axis_atoms"]])
+
+    at_the_start = [(index, float(centres[index]), float(angle[frame]))
+                    for index, (frame, _) in enumerate(chosen)]
+    outside = [row for row in at_the_start if row[2] > half_angle]
+    worst = max(at_the_start, key=lambda row: row[2])
+
+    if not outside:
+        print(f"                every seed starts inside the cone; the "
+              f"closest to the wall is window {worst[0]} at "
+              f"{worst[2]:.1f} of {half_angle:.0f} degrees")
+        return
+
+    listed = "; ".join(
+        f"window {index} at {centre:.3f} nm starts {off:.1f} degrees off axis"
+        for index, centre, off in outside[:6])
+    more = ("" if len(outside) <= 6
+            else f", and {len(outside) - 6} more")
+    raise ValueError(
+        f"{len(outside)} of {len(chosen)} windows would start outside a cone "
+        f"of {half_angle:.0f} degrees: {listed}{more}. The wall would be "
+        "pushing from the first step, so those windows do not begin where "
+        "they were seeded to begin -- and a cone that excludes where the "
+        "ligand was is a cone that cuts the state the binding free energy is "
+        "measured over. Widen the cone, or leave the half-angle out and let "
+        "it be measured from this pull, which sizes it to contain the path "
+        "the seeds are taken from."
+    )
 
 
 def _pull_files(pull: Path) -> tuple[Path, Path]:

@@ -1156,8 +1156,15 @@ class BatchExplorer:
             # opened. The pull is the one continuous path from the site to
             # bulk, so it is where the way out is visible -- and reading it
             # twice would mean loading tens of thousands of atoms twice.
+            #
+            # A cone the study stated is handed over too, unmeasured. The
+            # seeder does not need it to build a seed; it needs it to check
+            # one, because a window seeded outside its own wall starts with
+            # the wall pushing and no later gate can see that it did.
             cone=(plan.cone.as_asked()
-                  if isinstance(plan.cone, ConeToMeasure) else None),
+                  if isinstance(plan.cone, ConeToMeasure)
+                  else plan.cone.as_record() if plan.cone is not None
+                  else None),
         )
         record = self.output_dir / "seeds" / "seeds.json"
         record.write_text(
