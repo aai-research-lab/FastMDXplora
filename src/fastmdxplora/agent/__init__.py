@@ -19,6 +19,7 @@ Installed with `pip install fastmdxplora[agent]`; the core package does
 not require it.
 """
 
+from fastmdxplora.agent.queue import Budget, Job, Queue
 from fastmdxplora.agent.propose import (
     Attempt,
     Completion,
@@ -30,6 +31,9 @@ from fastmdxplora.agent.propose import (
 
 __all__ = [
     "Attempt",
+    "Budget",
+    "Job",
+    "Queue",
     "Completion",
     "Proposal",
     "propose_config",

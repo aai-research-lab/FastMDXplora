@@ -271,3 +271,88 @@ asserts it. That direction is what makes the design's claim checkable: a
 caller bypassing the agent and calling `validate_config` directly is
 refused in exactly the same way, by the same code. The agent has no
 privileges.
+
+## Knowing how long, before committing the card
+
+The same study is an afternoon on one GPU and a fortnight on another, and
+that difference is larger than any difference between two studies. So the
+machine is measured once, and estimates come from the measurement.
+
+```python
+from fastmdxplora.cost import calibrate, estimate_study
+
+# After any short run: what it was, and what it took.
+calibrate(particles=30_000, steps=5_000, seconds=42.0,
+          platform_name="CUDA", precision="mixed")
+
+estimate_study(config, particles=62_000,
+               platform_name="CUDA", precision="mixed")
+# about 5.0 days for 25,000,000 steps on 62,000 particles
+```
+
+One number is measured: seconds per particle per integration step.
+Molecular dynamics is dominated by the nonbonded calculation, whose cost
+is close to linear in particle count, so cost over a run is close to
+`k x particles x steps`. `k` is a property of the hardware, the platform
+and the precision, not of the protein — which is why one calibration
+serves every study on a machine.
+
+It is an approximation and says so. It ignores the PME mesh term's mild
+superlinearity, the constraint solver's iteration count, and the fixed
+per-step overhead that dominates very small systems. Expect a few tens of
+per cent, which is what a scheduling decision needs and not what a paper
+would quote.
+
+Three refusals rather than three guesses: `environment.calibration.absent`
+where the machine has not been measured, `environment.calibration.stale`
+where the measurement came from different hardware or a different
+precision, and `setup.structure.undetermined` where the particle count is
+not yet known because the system has not been solvated.
+
+A default constant would be a number from somebody else's card, and the
+failure it produces is the quiet kind: the schedule looks reasonable and
+is wrong by an order of magnitude.
+
+## One card, one line
+
+`fastmdxplora.agent.Queue` is a waiting line backed by a SQLite file, so
+it survives the process.
+
+```python
+from fastmdxplora.agent import Queue
+
+with Queue("queue.db") as queue:
+    queue.set_budget("tau-scaffolds", hours=40)
+    queue.submit("tau-scaffolds", "simulate", {"system": "scaffold-3"},
+                 estimate_s=estimate.seconds, segments=10)
+
+    job = queue.claim("tau-scaffolds")     # None when the budget is spent
+    queue.finish(job.id, seconds=3 * 3600)
+```
+
+**Long runs are chained segments.** A hundred nanoseconds goes in as ten
+ten-nanosecond jobs, each blocked on the one before. A crash costs one
+segment. A caller gets a decision point every few hours. And a study that
+has already gone wrong can be abandoned at twenty nanoseconds instead of
+at a hundred:
+
+```python
+queue.abandon(job.id, "Interface RMSD past 1.5 nm by 30 ns.")
+# drops the remaining segments — on one card, those hours are another candidate
+```
+
+Abandoned rather than failed, because those segments never ran and nothing
+is wrong with them. Marking them failed would put seven failures in a
+report where there was one.
+
+**The budget is arithmetic.** A job whose estimate would take the campaign
+past its allowance does not start, and the queue records
+`environment.budget.exhausted` on the job so a caller reading it tomorrow
+sees why the campaign stopped. This is not a number in a prompt asking a
+model to be mindful of compute: a model that has been told that, and can
+submit jobs, will spend the allowance.
+
+A running job holds its estimate against the budget, so two jobs each
+fitting the remainder cannot both start. A campaign with no budget set has
+no ceiling — a default allowance would stop somebody's overnight run for a
+reason they never chose.

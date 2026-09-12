@@ -774,7 +774,144 @@ def _umbrella_windows_that_overlap() -> Any:
 
 #: Studies with one named thing wrong. The expected answer was written
 #: before any of them was run.
+
+# ---------------------------------------------------------------------------
+# Sampling: the cases where the study ran, produced numbers, and the
+# numbers do not support the claim being asked of them.
+#
+# These are the hardest guardrails to get right and the easiest to skip,
+# because nothing goes wrong. A trajectory completes, a mean comes out,
+# a plot looks like every other plot. The only thing distinguishing a
+# measurement from an accident of one run is how many independent
+# observations sit behind it, and that is invisible in the figure.
+#
+# Both halves matter here more than anywhere else. A guardrail that
+# refused every mean would score perfectly on detection and be useless,
+# because most trajectories are fine and a tool that says so about none
+# of them will be turned off.
+# ---------------------------------------------------------------------------
+
+def _correlated_series(n: int = 200, phi: float = 0.98, seed: int = 0) -> Any:
+    """An AR(1) series: stationary, with a known correlation time.
+
+    Stationary matters. A random walk is the obvious hard case and a poor
+    fixture, because it has no mean to converge to, so which refusal fires
+    depends on where the equilibration detector happens to cut and moves
+    with the seed. AR(1) has ``g ~ (1 + phi) / (1 - phi)``, so a chosen
+    phi fixes roughly what an independent sample costs -- about 99 frames
+    at 0.98.
+    """
+    np = _numpy()
+    noise = np.random.default_rng(seed).normal(size=n)
+    series = np.empty(n)
+    series[0] = noise[0]
+    for i in range(1, n):
+        series[i] = phi * series[i - 1] + noise[i]
+    return series
+
+
+def _mean_of_a_correlated_run() -> Any:
+    from fastmdxplora.statistics import summarise
+
+    equilibrated, why = summarise(_correlated_series())
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _mean_of_two_frames() -> Any:
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    equilibrated, why = summarise(np.array([1.0, 2.0]))
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _mean_of_an_independent_run() -> Any:
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    series = np.random.default_rng(11).normal(size=2000)
+    equilibrated, why = summarise(series)
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _mean_after_a_transient() -> Any:
+    """A run that settles, with the transient still in the series.
+
+    The ordinary case, and the one a false-refusal rate is really about.
+    Equilibration detection should discard the approach and report the
+    rest, not refuse the study for having started somewhere.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    rng = np.random.default_rng(5)
+    transient = 4.0 * np.exp(-np.arange(300) / 40.0)
+    series = transient + rng.normal(size=300) * 0.4
+    series = np.concatenate([series, rng.normal(size=1700) * 0.4])
+    equilibrated, why = summarise(series)
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _estimate_without_a_calibration() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import estimate_seconds
+
+    absent = _Path(tempfile.mkdtemp()) / "nothing.json"
+    return estimate_seconds(particles=50_000, steps=1_000, path=absent)
+
+
+def _estimate_from_another_machine() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate, estimate_seconds
+
+    where = _Path(tempfile.mkdtemp()) / "calibration.json"
+    calibrate(particles=30_000, steps=5_000, seconds=42.0,
+              platform_name="CUDA", precision="mixed", path=where)
+    return estimate_seconds(particles=30_000, steps=5_000,
+                            platform_name="CPU", precision="mixed", path=where)
+
+
+def _estimate_from_this_machine() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate, estimate_seconds
+
+    where = _Path(tempfile.mkdtemp()) / "calibration.json"
+    calibrate(particles=30_000, steps=5_000, seconds=42.0,
+              platform_name="CUDA", precision="mixed", path=where)
+    return estimate_seconds(particles=60_000, steps=5_000,
+                            platform_name="CUDA", precision="mixed",
+                            path=where).as_record()
+
+
 DEFECTS: list[Case] = [
+    Case("a mean from a run with too few independent samples",
+         _mean_of_a_correlated_run, "refused",
+         "the frames are correlated, so the run holds far fewer "
+         "observations than frames and a mean describes how this run "
+         "happened to go rather than the system",
+         mentioning="independent"),
+    Case("a mean from two frames",
+         _mean_of_two_frames, "refused",
+         "there is nothing to average and nothing to say about how it "
+         "varies",
+         mentioning="nothing to average"),
+    Case("a duration estimated on a machine that was never measured",
+         _estimate_without_a_calibration, "refused",
+         "a default constant would be a number from another card, and a "
+         "schedule built on it looks reasonable and is wrong by an order "
+         "of magnitude",
+         mentioning="not been measured"),
+    Case("a duration estimated from another machine's measurement",
+         _estimate_from_another_machine, "refused",
+         "the constant is a property of the hardware and the platform, so "
+         "it does not describe what this study would run on",
+         mentioning="different machine"),
     Case("binding free energy from a run that never reached bulk",
          _truncated_pmf, "refused",
          "the reference the well depth is measured against is not a "
@@ -842,6 +979,19 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("a mean from a run with independent samples",
+         _mean_of_an_independent_run, "proceeded",
+         "two thousand uncorrelated frames support a mean and an error, "
+         "and a guardrail that refused this one would be refusing most "
+         "of the trajectories anybody runs"),
+    Case("a mean from a run that settled, transient included",
+         _mean_after_a_transient, "proceeded",
+         "equilibration detection should discard the approach and report "
+         "the rest, not refuse a study for having started somewhere"),
+    Case("a duration estimated on the machine that was measured",
+         _estimate_from_this_machine, "proceeded",
+         "same platform, same precision, same processor, so the constant "
+         "describes what would run"),
     Case("binding free energy from a run that reached bulk",
          _complete_pmf, "proceeded",
          "the tail follows a free ligand's shape, so the reference is a "

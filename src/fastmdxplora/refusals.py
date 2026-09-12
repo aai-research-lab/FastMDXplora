@@ -283,6 +283,24 @@ CODES: tuple[Code, ...] = (
          "Writing here would overwrite something.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("path",)),
+    Code("environment.budget.exhausted",
+         "Starting this job would take the campaign past the allowance it "
+         "was given.",
+         Kind.ENVIRONMENTAL, Disclosure.FIELD_ONLY,
+         detail_keys=("estimate_hours", "remaining_hours")),
+    Code("simulation.run.abandoned",
+         "A segment that never ran, because an earlier one settled the "
+         "question it was part of.",
+         Kind.SEMANTIC, Disclosure.NOTHING),
+    Code("environment.calibration.absent",
+         "This machine has not been measured, so there is no basis for a "
+         "duration estimate.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.calibration.stale",
+         "The stored measurement was taken on different hardware or under "
+         "different settings than the study asks for.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION,
+         detail_keys=("measured_on", "asked_about")),
     Code("environment.platform.unavailable",
          "The requested compute platform did not load or did not run.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
@@ -678,6 +696,27 @@ class Refusal:
         """Whether this refusal is the given code or inside its family."""
         target = resolve(prefix)
         return self.code == target or self.code.startswith(target + ".")
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> "Refusal":
+        """Read back what :meth:`as_dict` wrote.
+
+        ``as_dict`` deliberately writes more than this takes: kind,
+        disclosure and retryable travel with the record so a reader a year
+        from now does not need this module's current registry to interpret
+        it. They are derived here, so reading them back would be reading
+        stale copies of facts the registry already holds.
+
+        So they are dropped rather than passed through. If the registry has
+        since reclassified a code, the reconstructed refusal reflects what
+        the code means now, and the record on disk still says what it meant
+        then. Both are correct answers to different questions.
+        """
+        return cls(
+            code=str(record.get("code", "unclassified")),
+            message=str(record.get("message", "")),
+            details=dict(record.get("details") or {}),
+        )
 
     def as_dict(self) -> dict[str, Any]:
         """The form written into a manifest.
