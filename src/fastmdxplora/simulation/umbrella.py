@@ -761,6 +761,7 @@ def design_from_a_pilot(
     coarsest: float | None = None,
     softest: float | None = None,
     gate_used: float = 0.8,
+    curve: tuple[Any, Any] | None = None,
 ) -> dict[str, Any]:
     """The windows a study needs, from a short run of the ones it has.
 
@@ -789,10 +790,25 @@ def design_from_a_pilot(
     0.8`` the arithmetic is also the easiest to carry: ``d = 2.5 kT / G`` and
     ``k = G^2 / kT``.
 
-    **A pilot can be short.** The displacement is a mean-like quantity and
-    converges like one: 1500 samples know the median to about 0.0005 nm, so
-    the gradient to within about 6 kJ/mol/nm. Three hundred picoseconds of
-    each window is enough to size a study that will run for a day.
+    **The gradient comes from the recombined curve where there is one.** A
+    window's displacement is the median of a correlated series, and the error
+    on it is set by how many *independent* samples the window took rather
+    than how many rows it wrote. On a real 36-window study whose windows ran
+    ten nanoseconds against a correlation time of two and a half, that is
+    about three independent samples each: the median is then good to about
+    0.01 nm and a window held at 13000 reports its gradient to within a
+    hundred kJ/mol. Designs built from those readings alternate between stiff
+    and soft on neighbouring windows -- noise, not surface. The recombination
+    pools every window's sampling into one curve, and ``dA/dr`` from it is
+    the same quantity measured far better, so `curve` is used when the study
+    produced one and the windows' own displacements when it refused. They are
+    kept either way, in `measured`, because a window that slid is direct
+    evidence about the ground it slid down.
+
+    **A pilot can be short, but not shorter than its own correlation time.**
+    Fifteen hundred *independent* samples know the median to about 0.0005 nm
+    and the gradient to about 6 kJ/mol/nm. What sets the length is decorrelation
+    of whatever the coordinate is coupled to, not the row count.
 
     Two things the caller must get right, both learned the hard way. The
     pilot has to hold each window from its first step, or it measures where
@@ -867,8 +883,30 @@ def design_from_a_pilot(
     # The slope where each window measured it, read back at any position.
     # Each reading belongs where the window came to rest, not at the centre
     # it was held at: the balance of forces is struck where the window sits.
-    at = np.array([m["sampled_at"] for m in measured])
-    slope = np.array([m["gradient_kjmol_per_unit"] for m in measured])
+    #
+    # Unless the study got as far as a curve, in which case the curve's own
+    # slope is the same quantity with every window's sampling behind it
+    # rather than one window's median. A restraint acting on the coordinate
+    # balances the gradient of the free energy in that coordinate, which is
+    # exactly what the recombination reconstructs, so the two are comparable
+    # -- on the study this came from they agree where the windows are well
+    # sampled (223 against 197 at the steepest point) and disagree by five
+    # times where a single window happened to sit still.
+    if curve is not None:
+        along = np.asarray(curve[0], dtype=float)
+        height = np.array([np.nan if v is None else float(v)
+                           for v in curve[1]], dtype=float)
+        known = ~np.isnan(height)
+        if int(known.sum()) < 3:
+            raise ValueError(
+                "A curve to read the gradient from needs at least three "
+                f"points with a free energy on them; {int(known.sum())} had "
+                "one.")
+        at = along[known]
+        slope = np.abs(np.gradient(height[known], at))
+    else:
+        at = np.array([m["sampled_at"] for m in measured])
+        slope = np.array([m["gradient_kjmol_per_unit"] for m in measured])
     order = np.argsort(at)
     at, slope = at[order], slope[order]
     # Windows that came to rest in the same place disagree about the slope
@@ -1009,6 +1047,10 @@ def design_from_a_pilot(
         # coordinate and the stretch beyond them is held at the last slope
         # measured rather than at one of its own.
         "measured_over": [round(float(at.min()), 4), round(float(at.max()), 4)],
+        # Which of the two readings the placing used, because they are not
+        # equally good and a reader of the design should not have to work out
+        # which one they are looking at.
+        "gradient_from": "curve" if curve is not None else "windows",
         "crossed": crossed,
         "gate_used": gate_used,
         "predicted": predicted,

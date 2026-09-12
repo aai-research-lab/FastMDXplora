@@ -391,6 +391,107 @@ class TestTheDesignChecksItselfBeforeItIsRun:
                                                    abs=0.02)
 
 
+class TestTheCurveIsTheBetterGradientWhereThereIsOne:
+    """A window's displacement is the median of a correlated series.
+
+    What it is worth is set by how many independent samples the window took,
+    not how many rows it wrote. On a real study -- ten nanoseconds a window
+    against a correlation time of two and a half -- that is about three, the
+    median is good to about 0.01 nm, and a window held at 13000 reports its
+    gradient to within a hundred kJ/mol. The design that came back alternated
+    between 19440 and 3000 on neighbouring windows.
+
+    The recombination pools every window's sampling into one curve, and its
+    slope is the same quantity measured far better.
+    """
+
+    def _a_climb(self, gradient=200.0, span=(0.40, 1.00)):
+        """A surface of known slope, as a curve and as windows on it."""
+        lo, hi = span
+        along = np.linspace(lo, hi, 60)
+        height = gradient * (along - lo)
+        centres = list(np.linspace(lo, hi, 6))
+        drawn, plan = a_pilot(centres=centres, force_constant=3000.0,
+                              gradient=gradient, spread=1e-6)
+        return drawn, plan, (along.tolist(), height.tolist())
+
+    def test_the_curve_gives_the_design_the_windows_do(self):
+        """Same surface, two ways of measuring it, one answer."""
+        drawn, plan, curve = self._a_climb()
+
+        from_windows = design_from_a_pilot(drawn, plan)
+        from_curve = design_from_a_pilot(drawn, plan, curve=curve)
+
+        assert from_curve["n_windows"] == pytest.approx(
+            from_windows["n_windows"], abs=1)
+        assert max(from_curve["force_constants"]) == pytest.approx(
+            max(from_windows["force_constants"]), rel=0.15)
+
+    def test_one_window_sitting_still_no_longer_moves_the_design(self):
+        """The failure this exists for: a window whose median happens to land
+        on its centre reports a gradient of nothing and asks for the softest
+        constant in the study, between two neighbours asking for five times
+        it. The curve does not have that in it."""
+        drawn, plan, curve = self._a_climb()
+        settled = plan.windows[3]
+        drawn[settled.index] = np.full(4000, settled.centre)
+
+        from_windows = design_from_a_pilot(drawn, plan)
+        from_curve = design_from_a_pilot(drawn, plan, curve=curve)
+
+        def softest_beside_it(design):
+            constants = np.asarray(design["force_constants"])
+            centres = np.asarray(design["centres"])
+            near = constants[np.abs(centres - settled.centre) < 0.05]
+            return float(near.min()) / float(constants.max())
+
+        # The premise: a dip to a quarter of the study's own stiffness,
+        # around a stretch of surface no flatter than any other.
+        assert softest_beside_it(from_windows) < 0.4
+        # And the curve, which has every window's sampling in it, has no
+        # such dip: the stiffness there is the stiffness either side.
+        assert softest_beside_it(from_curve) > 0.7
+
+    def test_the_design_says_which_reading_it_used(self):
+        drawn, plan, curve = self._a_climb()
+
+        assert design_from_a_pilot(
+            drawn, plan, curve=curve)["gradient_from"] == "curve"
+        assert design_from_a_pilot(drawn, plan)["gradient_from"] == "windows"
+
+    def test_the_windows_are_still_reported(self):
+        """They are evidence about the ground each window sat on, and a
+        reader comparing them against the curve is checking the study."""
+        drawn, plan, curve = self._a_climb()
+
+        design = design_from_a_pilot(drawn, plan, curve=curve)
+
+        assert [m["window"] for m in design["measured"]] == [0, 1, 2, 3, 4, 5]
+        assert all(m["gradient_kjmol_per_unit"] == pytest.approx(200.0, rel=0.1)
+                   for m in design["measured"])
+
+    def test_a_curve_with_nothing_on_it_is_refused(self):
+        """Bins nobody sampled come back as null, and a curve that is mostly
+        null is not a gradient profile."""
+        drawn, plan, curve = self._a_climb()
+        empty = (curve[0], [None] * len(curve[0]))
+
+        with pytest.raises(ValueError, match="at least three points"):
+            design_from_a_pilot(drawn, plan, curve=empty)
+
+    def test_unsampled_bins_are_skipped_rather_than_read_as_zero(self):
+        drawn, plan, curve = self._a_climb()
+        height = list(curve[1])
+        for index in (10, 11, 12):
+            height[index] = None
+
+        design = design_from_a_pilot(drawn, plan, curve=(curve[0], height))
+
+        assert design["n_windows"] > 2
+        assert max(design["force_constants"]) == pytest.approx(
+            200.0 ** 2 / KT, rel=0.2)
+
+
 class TestItSaysWhereItsEvidenceStops:
 
     def test_the_readings_stop_short_of_the_far_end(self):

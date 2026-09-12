@@ -1140,7 +1140,15 @@ class BatchExplorer:
             # the paragraph recommending the next study.
             try:
                 payload["next_study"] = design_from_a_pilot(
-                    samples, plan, temperature_K=temperature)
+                    samples, plan, temperature_K=temperature,
+                    # The curve where this study produced one: its slope is
+                    # the same gradient the windows measure, with every
+                    # window's sampling behind it instead of one window's
+                    # median. A study that refused has none, and then the
+                    # windows' own displacements are what there is.
+                    curve=((payload["pmf"]["coordinate"],
+                            payload["pmf"]["free_energy_kjmol"])
+                           if payload.get("pmf") else None))
             except (ValueError, ZeroDivisionError) as exc:
                 payload["next_study"] = {"not_designed": str(exc)}
 
