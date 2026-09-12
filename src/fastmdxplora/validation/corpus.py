@@ -1041,17 +1041,17 @@ def _a_mean_across_joins_read_naively() -> Any:
 
     rng = np.random.default_rng(3)
     joined = np.concatenate(
-        [rng.normal(loc=10.0 + 0.05 * i, scale=0.3, size=400)
-         for i in range(10)])
+        [rng.normal(loc=10.0 + offset, scale=0.3, size=400)
+         for offset in _JOIN_OFFSETS])
     equilibrated, why = summarise(joined)
     if why is not None:
         return {"refused": str(why)}
-    truth = 10.0 + 0.05 * 4.5
-    if abs(equilibrated.mean - truth) > 3 * equilibrated.standard_error:
+    if equilibrated.discard > joined.size // 2:
         return {"refused":
-                "This mean is many standard errors from the truth because "
-                "the equilibration detector read the joins as a transient "
-                "and discarded most of the run."}
+                "The equilibration detector read the joins as a transient "
+                "and discarded most of the run, so this error bar is "
+                "several times wider than the data supports and a real "
+                "difference would look unsupported."}
     return equilibrated.as_record()
 
 
@@ -1061,15 +1061,69 @@ def _a_mean_across_joins_read_as_joined() -> Any:
 
     rng = np.random.default_rng(3)
     joined = np.concatenate(
-        [rng.normal(loc=10.0 + 0.05 * i, scale=0.3, size=400)
-         for i in range(10)])
+        [rng.normal(loc=10.0 + offset, scale=0.3, size=400)
+         for offset in _JOIN_OFFSETS])
     pooled, why = summarise_segments(joined, [400 * i for i in range(1, 10)])
     if why is not None:
         return {"refused": str(why)}
     return pooled.as_record()
 
 
+
+#: Offsets at each join: unordered, which is what a re-adapting barostat
+#: gives. A monotone ramp is a different defect -- the run still drifting --
+#: and has its own case below.
+_JOIN_OFFSETS = (0.0, 0.09, -0.06, 0.11, -0.10, 0.04, -0.08, 0.07, -0.03,
+                 0.06)
+
+
+def _a_mean_from_a_run_that_never_settled() -> Any:
+    """Pooling segments of a system that was still moving.
+
+    The hazard pooling itself introduces. Combining estimates assumes they
+    estimate one thing; if the segments are watching a moving target, the
+    pooled mean is a confident number for a quantity that does not exist,
+    and it looks more like a measurement than either segment did.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise_segments
+
+    rng = np.random.default_rng(3)
+    ramped = np.concatenate(
+        [rng.normal(loc=10.0 + 0.05 * i, scale=0.3, size=400)
+         for i in range(10)])
+    pooled, why = summarise_segments(ramped, [400 * i for i in range(1, 10)])
+    if why is not None:
+        return {"refused": str(why)}
+    return pooled.as_record()
+
+
+def _a_mean_from_segments_that_scatter() -> Any:
+    """Segments that disagree in no particular order.
+
+    Not drift, and not grounds to withhold: it says the per-segment errors
+    are too small. Qualified, so the number is used and used knowingly.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise_segments
+
+    rng = np.random.default_rng(3)
+    scattered = np.concatenate(
+        [rng.normal(loc=where, scale=0.3, size=400)
+         for where in (10.0, 10.4, 9.6, 10.35, 9.65, 10.1, 9.9, 10.05)])
+    pooled, why = summarise_segments(scattered, [400 * i for i in range(1, 8)])
+    if why is not None:
+        return {"refused": str(why)}
+    record = pooled.as_record()
+    return record
+
+
 DEFECTS: list[Case] = [
+    Case("a mean pooled over segments of a run that never settled",
+         _a_mean_from_a_run_that_never_settled, "refused",
+         "the segment means move in order, so pooling would give a "
+         "confident number for a quantity that does not exist",
+         mentioning="moving target"),
     Case("a mean taken across joins without accounting for them",
          _a_mean_across_joins_read_naively, "refused",
          "the equilibration detector reads a join as a transient and "
@@ -1192,10 +1246,18 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("a mean pooled over segments that scatter without a trend",
+         _a_mean_from_segments_that_scatter, "qualified",
+         "disagreement in no order says the per-segment errors are too "
+         "small rather than that the system moved, so the mean stands with "
+         "its error read as a lower bound"),
     Case("a mean taken across joins with the joins declared",
-         _a_mean_across_joins_read_as_joined, "proceeded",
+         _a_mean_across_joins_read_as_joined, "qualified",
          "each segment is equilibrated on its own and the independent "
-         "samples add, because the segments are disjoint in time"),
+         "samples add, and the offsets at the joins are then visible as "
+         "scatter -- which is the honest outcome, because any offset large "
+         "enough to fool the equilibration detector is large enough to "
+         "exceed what the per-segment errors predict"),
     Case("a constant-pressure run split into segments",
          _constant_pressure_run_split_into_segments, "qualified",
          "the state is right and the barostat's move size is not carried, "

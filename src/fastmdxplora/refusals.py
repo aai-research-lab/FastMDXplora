@@ -568,6 +568,11 @@ CODES: tuple[Code, ...] = (
          "independent-sample count is an upper bound.",
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
          detail_keys=("frames", "independent", "statistical_inefficiency")),
+    Code("analysis.sampling.drifting",
+         "The segment means move in order across the run, so it had not "
+         "settled at the scale of the whole run.",
+         Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
+         detail_keys=("drift_p", "heterogeneity", "span", "segments")),
     Code("analysis.sampling.not_equilibrated",
          "No equilibrated region was detected, so there is nothing to "
          "average over.",

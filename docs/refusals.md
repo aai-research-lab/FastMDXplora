@@ -595,3 +595,44 @@ not branch on whether a run was segmented.
 
 `join_segments` records `joins` as frame indices into the joined file.
 That is the only thing the joined file cannot be asked for afterwards.
+
+## Drift and scatter are not the same thing
+
+Pooling combines estimates of one quantity. If the segments are not
+measuring one quantity — a system still moving across the whole run — the
+pooled mean is a confident number for a quantity that does not exist, and
+it looks more like a measurement than any single segment did. That is the
+hazard pooling itself introduces, so `summarise_segments` checks for it.
+
+Segment means that disagree **in no order** say the per-segment errors are
+too small, usually because the statistical inefficiency did not fully
+capture the correlation. That is a qualification: the mean stands, and its
+error should be read as a lower bound.
+
+Segment means that **climb or fall** say the system had not settled at the
+scale of the whole run. That is a refusal, `analysis.sampling.drifting`,
+and the remedy is a longer run rather than more pooling.
+
+```
+settled    mean=10.005 het=0.7   drift_p=0.30   qualified=False
+scattered  mean=10.012 het=376   drift_p=0.69   qualified=True
+drifting   REFUSED -> analysis.sampling.drifting  (+1.75 first to last)
+```
+
+The ordering is tested by permuting the segments rather than by assuming a
+distribution. The statistic is the weighted least-squares slope against
+segment index; the null is what that slope looks like when the same
+segment means are put in a random order. Exact for any number of segments,
+which matters because a run is often three or four and a t approximation
+on three points is a number rather than a test.
+
+Both conditions are required. An ordering of segments that agree is a
+trend of nothing, and without the second condition a settled eight-segment
+run would refuse one time in twenty on the p-value alone. Fewer than three
+segments is never called drifting: two points always lie on a line.
+
+One consequence worth knowing. Any join offset large enough to fool the
+equilibration detector is also large enough to exceed what the per-segment
+errors predict, so a genuinely segmented run will usually come back
+qualified rather than clean. That is the honest outcome, not a defect in
+the test.

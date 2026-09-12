@@ -46,6 +46,8 @@ __all__ = [
     "Equilibrated",
     "Withholding",
     "Pooled",
+    "drift_across_segments",
+    "heterogeneity_ratio",
     "Shortfall",
     "summarise_segments",
     "sampling_shortfall",
@@ -508,6 +510,15 @@ class Pooled:
     #: from one where all ten contributed, and a bare count does not say
     #: which.
     withheld: tuple[tuple[int, str], ...] = ()
+    #: Observed scatter of the segment means over what their own standard
+    #: errors predict. One means they agree.
+    heterogeneity: float = 1.0
+    #: How unusual the *ordering* of the segment means is. Low means they
+    #: climb or fall rather than scatter.
+    drift_p: float = 1.0
+    #: What is true of this mean that would not be true of one from a run
+    #: that stayed put. Empty where nothing is.
+    qualification: str = ""
 
     @property
     def contributing(self) -> int:
@@ -523,10 +534,14 @@ class Pooled:
                 {"segment": index, "reason": reason}
                 for index, reason in self.withheld
             ],
+            "heterogeneity": self.heterogeneity,
+            "drift_p": self.drift_p,
             # Said plainly, because a reader comparing this against a run
             # that went through in one piece should know they are not the
             # same kind of number.
             "pooled_across_joins": True,
+            **({"qualified": self.qualification} if self.qualification
+               else {}),
         }
 
 
@@ -619,10 +634,140 @@ def summarise_segments(
     mean = float((weights * means).sum() / total)
     variances = np.array([p.standard_deviation ** 2 for p in pieces])
     pooled_variance = float((weights * variances).sum() / total)
+    standard_error = float(np.sqrt(pooled_variance / total))
+
+    # Before reporting it: do these segments agree that they are measuring
+    # one thing? Pooling assumes they do, and pooling estimates of a moving
+    # target gives a confident number for a quantity that does not exist.
+    precisions = np.array(
+        [1.0 / max(p.standard_error ** 2, 1e-300) for p in pieces])
+    scatter = heterogeneity_ratio(means, precisions)
+    drifting = drift_across_segments(means, precisions)
+
+    if drifting < DRIFT_SIGNIFICANT_BELOW and scatter > 1.0:
+        # Both conditions, because either alone is not drift. A low p on
+        # segments that agree is a trend of nothing, and scatter with no
+        # order is underestimated error rather than movement.
+        span = float(means[-1] - means[0])
+        return None, Withholding(
+            f"The segment means move in order across the run, by {span:+.4g} "
+            f"from first to last, and an ordering this clean arises by "
+            f"chance about {drifting:.1%} of the time. The system had not "
+            "settled at the scale of the whole run, so a pooled mean would "
+            "be the mean of a moving target with a confident error bar on "
+            "it. The remedy is a longer run, not more pooling.",
+            code="analysis.sampling.drifting",
+            drift_p=float(drifting), heterogeneity=float(scatter),
+            span=span, segments=len(pieces),
+        )
+
+    qualification = ""
+    if scatter > HETEROGENEITY_QUALIFY_ABOVE:
+        qualification = (
+            f"The segment means scatter {scatter:.1f} times more than their "
+            "own standard errors predict, in no particular order. That is "
+            "not drift -- it says the per-segment errors are too small, "
+            "usually because the statistical inefficiency did not fully "
+            "capture the correlation. Treat the error on this mean as a "
+            "lower bound.")
+
     return Pooled(
         segments=tuple(pieces),
         mean=mean,
-        standard_error=float(np.sqrt(pooled_variance / total)),
+        standard_error=standard_error,
         effective_samples=total,
         withheld=tuple(withheld),
+        heterogeneity=float(scatter),
+        drift_p=float(drifting),
+        qualification=qualification,
     ), None
+
+
+#: Observed scatter of segment means over what their own standard errors
+#: predict. One means they agree. Above this they do not, which says the
+#: per-segment errors are too small -- the usual cause being correlation
+#: the inefficiency did not fully capture.
+HETEROGENEITY_QUALIFY_ABOVE = 2.0
+
+#: How unusual the ordering of the segment means has to look before it is
+#: called drift rather than scatter.
+DRIFT_SIGNIFICANT_BELOW = 0.05
+
+
+def _weighted_slope(means: np.ndarray, weights: np.ndarray,
+                    positions: np.ndarray) -> float:
+    """Weighted least-squares slope of segment mean against segment order."""
+    total = weights.sum()
+    mean_x = float((weights * positions).sum() / total)
+    mean_y = float((weights * means).sum() / total)
+    spread = float((weights * (positions - mean_x) ** 2).sum())
+    if spread <= 0:
+        return 0.0
+    return float((weights * (positions - mean_x) * (means - mean_y)).sum()
+                 / spread)
+
+
+def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
+                          permutations: int = 4999,
+                          seed: int = 0) -> float:
+    """How unusual the ordering of these segment means is, as a p-value.
+
+    Scatter and drift look the same in a list of numbers and mean
+    different things. Segment means that disagree but in no order are
+    saying the per-segment errors are too small. Segment means that climb
+    are saying the system was still moving, and then a pooled mean is the
+    mean of a moving target with a confident error bar on it -- the worst
+    of the three outcomes, because it is the one that looks most like a
+    measurement.
+
+    Tested by permuting the order of the segments rather than by assuming
+    a distribution. The observed statistic is the weighted least-squares
+    slope against segment index; the null is what that slope looks like
+    when the same segment means are put in a random order. Exact for any
+    number of segments, which matters because a run is often three or
+    four, and a t or normal approximation on three points is a number
+    rather than a test.
+
+    Returns 1.0 for fewer than three segments: two points always lie on a
+    line, and calling that a trend would refuse every two-segment run.
+    """
+    if means.size < 3:
+        return 1.0
+
+    positions = np.arange(means.size, dtype=float)
+    observed = abs(_weighted_slope(means, weights, positions))
+
+    rng = np.random.default_rng(seed)
+    order = np.arange(means.size)
+    at_least_as_extreme = 0
+    for _ in range(permutations):
+        shuffled = rng.permutation(order)
+        candidate = abs(_weighted_slope(means[shuffled], weights[shuffled],
+                                        positions))
+        if candidate >= observed:
+            at_least_as_extreme += 1
+    # The +1s are the standard correction: the observed ordering is itself
+    # one of the orderings, and leaving it out lets a p-value of exactly
+    # zero be reported, which no permutation test can support.
+    return (at_least_as_extreme + 1) / (permutations + 1)
+
+
+def heterogeneity_ratio(means: np.ndarray, weights: np.ndarray) -> float:
+    """Observed scatter of segment means over what their errors predict.
+
+    Cochran's Q divided by its degrees of freedom. One means the segments
+    agree as well as their own standard errors say they should. Much above
+    one means they do not, and the honest reading is that the per-segment
+    errors are too small rather than that the segments disagree about
+    physics.
+
+    Reported as a ratio rather than a p-value on purpose. A ratio of three
+    is plainly too much and needs no distribution to say so, and reaching
+    for a chi-squared here would import a dependency to dress up a number
+    that is already legible.
+    """
+    if means.size < 2:
+        return 1.0
+    pooled = float((weights * means).sum() / weights.sum())
+    q = float((weights * (means - pooled) ** 2).sum())
+    return q / (means.size - 1)
