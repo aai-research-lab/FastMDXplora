@@ -27,6 +27,7 @@ from fastmdxplora.agent.run import (
     submit_study,
 )
 from fastmdxplora.agent.worker import WorkerReport, work
+from fastmdxplora.agent.evaluate import REQUESTS, Report, measure
 from fastmdxplora.agent.propose import (
     Attempt,
     Completion,
@@ -38,6 +39,9 @@ from fastmdxplora.agent.propose import (
 
 __all__ = [
     "Attempt",
+    "REQUESTS",
+    "Report",
+    "measure",
     "Budget",
     "Job",
     "Queue",

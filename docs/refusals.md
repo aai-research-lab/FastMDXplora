@@ -696,3 +696,48 @@ study with an abandoned segment is not finished, so it is not offered at
 all. And a study whose join refuses is recorded with its refusal rather
 than stopping the rest, because one study's problem says nothing about the
 next one's.
+
+## Measuring the natural language interface
+
+`propose_config` has a cycle counter, and until now nothing had counted
+anything: it was tested against the mistakes its author imagined. What a
+real model does with `describe_schema()` decides whether the interface is
+worth having.
+
+```bash
+ANTHROPIC_API_KEY=... python scripts/measure_nli.py
+ANTHROPIC_API_KEY=... python scripts/measure_nli.py --terse   # no help text
+```
+
+```
+6/8 correct, 8/8 valid, 5 first time, 1.4 cycles on average
+  ok    plain          1 cycle(s)
+  valid salt           1 cycle(s)  setup.ion_concentration_M is 150, asked for 0.15
+  refusals seen: config.option.unknown x2
+```
+
+Two numbers, and the second matters more.
+
+**Valid** is cycles to a config the validator accepts. Cheap, comparable
+between models, and a direct reading of whether the generated schema
+description does its job.
+
+**Correct** is whether it meant what was asked. A config can validate and
+be the wrong study: 300 K when the sentence said 310, a setting simply
+omitted, or a concentration given in millimolar where the field is molar.
+Validation catches ill-formed, not wrong. A harness reporting only the
+first would score every model perfectly and measure the thing nobody cares
+about.
+
+Each request asserts only what its sentence specified. A request saying
+"at pH 6.5" checks the pH and leaves the box shape alone — marking a model
+wrong for choosing something it was never asked about would measure
+obedience rather than comprehension.
+
+The refusal tally is the most useful output. A code appearing in most runs
+is not a model being careless. It is the schema description failing to say
+something, and it says where to look.
+
+`--terse` drops the help text from the prompt. The help is most of those
+tokens, and whether it earns them is exactly the sort of thing this exists
+to settle rather than assume.
