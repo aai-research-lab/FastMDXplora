@@ -636,3 +636,30 @@ equilibration detector is also large enough to exceed what the per-segment
 errors predict, so a genuinely segmented run will usually come back
 qualified rather than clean. That is the honest outcome, not a defect in
 the test.
+
+## The report finds the joins itself
+
+`summarise_segments` existed and a caller had to know to use it, which
+meant the default path — an analysis reading a joined trajectory — still
+lost most of the run. A guardrail somebody has to remember is not a
+guardrail.
+
+```python
+from fastmdxplora.analysis.joining import joins_beside
+from fastmdxplora.report.convergence import assess_run
+
+assess_run(series, joins=joins_beside("scaffold-3.dcd"))
+```
+
+`joins_beside` reads the record `join_segments` leaves. It returns an
+empty list for a trajectory that went through in one piece, so the result
+goes straight into `assess_run` or `summarise_segments` without a caller
+branching on whether a run was segmented. An unreadable record is treated
+as absent rather than repaired: guessing where the joins were would put an
+invented number into the decision about how to read the run.
+
+Where the joined run supports no mean — drifting segments, or too few
+independent samples once the joins are accounted for — the assessment
+reports no mean rather than falling back to the naive reading. Falling
+back would report the very number the join-aware path had just refused,
+which is worse than never having asked.

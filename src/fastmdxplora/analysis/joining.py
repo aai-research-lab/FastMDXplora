@@ -37,7 +37,8 @@ from typing import Any
 
 from fastmdxplora.refusals import MissingResultError, StudyError
 
-__all__ = ["SegmentPiece", "survey_segments", "join_segments"]
+__all__ = ["SegmentPiece", "survey_segments", "join_segments",
+           "joins_beside"]
 
 
 @dataclass(frozen=True)
@@ -241,3 +242,30 @@ def join_segments(
     (out.with_suffix(out.suffix + ".join.json")).write_text(
         json.dumps(record, indent=2), encoding="utf-8")
     return record
+
+
+def joins_beside(trajectory: Path | str) -> list[int]:
+    """Where the segments of this trajectory begin, or an empty list.
+
+    :func:`join_segments` leaves a record beside its output. This reads it,
+    so a caller holding a trajectory path can find out whether it was
+    joined without having to have been told.
+
+    Empty for a trajectory that went through in one piece, which means a
+    caller can pass the result straight to
+    :func:`fastmdxplora.statistics.summarise_segments` without branching on
+    whether a run was segmented.
+    """
+    path = Path(trajectory)
+    record = path.with_suffix(path.suffix + ".join.json")
+    if not record.is_file():
+        return []
+    try:
+        return [int(frame)
+                for frame in json.loads(record.read_text(encoding="utf-8")
+                                        ).get("joins", [])]
+    except (ValueError, TypeError):
+        # An unreadable record is treated as absent rather than repaired.
+        # Guessing at where the joins were would put an invented number
+        # into the decision about how to read the run.
+        return []

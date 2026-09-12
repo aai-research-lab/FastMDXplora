@@ -258,3 +258,98 @@ class TestDriftAndScatterAreNotTheSameThing(unittest.TestCase):
         record = pooled.as_record()
         self.assertIn("heterogeneity", record)
         self.assertIn("drift_p", record)
+
+
+def _mean_of(assessment_record: dict, name: str) -> float:
+    """The mean for one observable, whatever key assess_run files it under."""
+    for value in assessment_record.values():
+        if isinstance(value, dict) and name in value:
+            entry = value[name]
+            if isinstance(entry, dict) and "mean" in entry:
+                return float(entry["mean"])
+            if hasattr(entry, "mean"):
+                return float(entry.mean)
+    raise AssertionError(f"no mean for {name} in {list(assessment_record)}")
+
+
+class TestTheReportReadsTheJoinsWithoutBeingTold(unittest.TestCase):
+    """The gap that made `summarise_segments` optional in practice.
+
+    It existed and a caller had to know to use it, which meant the default
+    path -- an analysis reading a joined trajectory -- still lost most of
+    the run. A guardrail somebody has to remember is not a guardrail.
+    """
+
+    def test_the_convergence_assessment_takes_joins(self):
+        from fastmdxplora.report.convergence import assess_series
+
+        joined, joins = _ten_segments()
+        naive = assess_series("rmsd", joined)
+        aware = assess_series("rmsd", joined, joins=joins)
+
+        truth = 10.0 + float(np.mean(_OFFSETS))
+        self.assertLess(abs(aware.mean - truth), abs(naive.mean - truth))
+
+    def test_a_run_that_went_through_is_unaffected(self):
+        # Most runs are not segmented, and the join-aware path must not
+        # change what they report.
+        from fastmdxplora.report.convergence import assess_series
+
+        series = np.random.default_rng(2).normal(size=2000)
+        self.assertEqual(assess_series("rmsd", series).mean,
+                         assess_series("rmsd", series, joins=[]).mean)
+
+    def test_assess_run_passes_them_through(self):
+        from fastmdxplora.report.convergence import assess_run
+
+        joined, joins = _ten_segments()
+        aware = assess_run({"rmsd": joined}, joins=joins)
+        naive = assess_run({"rmsd": joined})
+        truth = 10.0 + float(np.mean(_OFFSETS))
+        # assess_run's shape is its own business; what is asserted is that
+        # the joins reached the assessment underneath it.
+        self.assertLess(
+            abs(_mean_of(aware, "rmsd") - truth),
+            abs(_mean_of(naive, "rmsd") - truth))
+
+    def test_the_joins_can_be_found_from_the_trajectory_path(self):
+        # So a caller holding a path does not have to have been told.
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.analysis.joining import joins_beside
+
+        root = Path(tempfile.mkdtemp())
+        trajectory = root / "joined.dcd"
+        trajectory.write_bytes(b"")
+        (root / "joined.dcd.join.json").write_text(
+            json.dumps({"joins": [400, 800]}), encoding="utf-8")
+        self.assertEqual(joins_beside(trajectory), [400, 800])
+
+    def test_a_trajectory_that_was_never_joined_reports_no_joins(self):
+        # Empty rather than raising, so the result goes straight into
+        # summarise_segments without a caller branching on it.
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.analysis.joining import joins_beside
+
+        lone = Path(tempfile.mkdtemp()) / "production.dcd"
+        lone.write_bytes(b"")
+        self.assertEqual(joins_beside(lone), [])
+
+    def test_an_unreadable_record_is_treated_as_absent(self):
+        # Guessing at where the joins were would put an invented number
+        # into the decision about how to read the run.
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.analysis.joining import joins_beside
+
+        root = Path(tempfile.mkdtemp())
+        trajectory = root / "joined.dcd"
+        trajectory.write_bytes(b"")
+        (root / "joined.dcd.join.json").write_text("{not json",
+                                                   encoding="utf-8")
+        self.assertEqual(joins_beside(trajectory), [])

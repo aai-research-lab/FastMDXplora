@@ -184,7 +184,25 @@ def _drift_in_noise(values: Any) -> float:
     return float((last.mean() - first.mean()) / noise)
 
 
-def assess_series(name: str, values: Any) -> Assessment:
+
+def _replace_summary(equilibrated, **changes):
+    """A copy of an Equilibrated with some fields replaced.
+
+    Used to carry the pooled mean and error onto a record whose discard and
+    inefficiency came from one segment. Dataclasses.replace rather than
+    mutation because Equilibrated is frozen, and it is frozen so that a
+    record cannot be edited after the thing that computed it has gone.
+    """
+    import dataclasses
+
+    if equilibrated is None:
+        return None
+    return dataclasses.replace(equilibrated, **changes)
+
+
+def assess_series(name: str, values: Any,
+                  joins: "list[int] | tuple[int, ...] | None" = None
+                  ) -> Assessment:
     """What one series says about how well it was sampled."""
     series = np.asarray(values, dtype=np.float64)
     series = series[np.isfinite(series)]
@@ -203,7 +221,36 @@ def assess_series(name: str, values: Any) -> Assessment:
     # Drift is still measured over the whole series. It is the question of
     # whether the run was still relaxing, and discarding the equilibration
     # before asking would answer it by construction.
-    equilibrated, _reason = summarise(series)
+    if joins:
+        # A joined run read as a single series loses most of it: the
+        # equilibration detector finds a join, calls it a transient, and
+        # discards everything before. Measured at six of ten segments on a
+        # ten-segment run, with the surviving mean eighteen standard errors
+        # from the truth and a standard error saying otherwise.
+        from fastmdxplora.statistics import summarise_segments
+
+        pooled, _withheld = summarise_segments(series, joins)
+        if pooled is None:
+            # The joined run supports no mean -- drifting segments, or too
+            # few independent samples once the joins are accounted for.
+            # Falling back to the naive reading here would report the very
+            # number the join-aware path just refused, which is worse than
+            # having never asked.
+            equilibrated, _reason = summarise(series)
+            equilibrated = _replace_summary(
+                equilibrated, mean=float("nan"), standard_error=float("nan"))
+        else:
+            equilibrated = pooled.segments[0] if pooled.segments else None
+            # The pooled mean and error are what the run supports. The
+            # discard and inefficiency come from the first segment, since
+            # per-segment equilibration is what was actually done and there
+            # is no single discard for a joined run.
+            equilibrated = _replace_summary(
+                equilibrated, mean=pooled.mean,
+                standard_error=pooled.standard_error,
+                effective_samples=pooled.effective_samples)
+    else:
+        equilibrated, _reason = summarise(series)
     correlation = autocorrelation_time(series)
     # Whether the series can see how long its own memory is. A correlation
     # approaching what the sum can reach is a floor rather than a measurement,
@@ -241,6 +288,7 @@ def assess_series(name: str, values: Any) -> Assessment:
 def assess_run(
     series: dict[str, Any],
     *,
+    joins: "list[int] | tuple[int, ...] | None" = None,
     duration_ns: float | None = None,
     n_atoms: int | None = None,
     target_temperature_K: float | None = None,
@@ -250,8 +298,14 @@ def assess_run(
     ``series`` maps an observable's name to its values over the run: the
     potential energy and temperature from ``energy.csv``, and whichever
     structural measures were computed.
+
+    ``joins`` is where the segments of a joined run begin, in frames.
+    :func:`fastmdxplora.analysis.joining.joins_beside` reads it from the
+    record the joiner leaves, so a caller with a trajectory path does not
+    have to carry it separately. Absent for a run that went through in one
+    piece, which is most of them.
     """
-    assessments = {name: assess_series(name, values)
+    assessments = {name: assess_series(name, values, joins=joins)
                    for name, values in series.items() if values is not None}
 
     findings: list[str] = []
