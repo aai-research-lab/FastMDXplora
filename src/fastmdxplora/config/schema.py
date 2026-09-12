@@ -437,6 +437,17 @@ SIMULATION = PhaseSchema(
               "is what this package calls the automated first phase, so "
               "`setup_from` is what a directory that phase wrote is called.",
               example="runs/reference"),
+        Field("resume_from", str, None,
+              "Path to a checkpoint this run continues from. Set on every "
+              "segment after the first when a long run is split; leave it "
+              "out for a run that starts at the beginning. A checkpoint is "
+              "only valid for the exact system, platform and precision it "
+              "was written from, and loading refuses rather than "
+              "proceeding if it does not match. Not every study may be "
+              "split: a metadynamics or steered run refuses, because a "
+              "checkpoint does not carry the bias those methods are made "
+              "of.",
+              example="runs/segment-000/simulation/checkpoint.chk"),
         Field("minimize", bool, True,
               "Run energy minimization before equilibration."),
         Field("integrator", str, "langevin_middle",
@@ -819,9 +830,9 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("duration_ns", "nvt_duration_ns", "npt_duration_ns",
           "production_steps", "nvt_steps", "npt_steps")),
         ("Where it starts",
-         "A system prepared here or elsewhere, and how hard it is minimised "
-         "first.",
-         ("setup_from", "prepared_from", "minimize",
+         "A system prepared here or elsewhere, where the run picks up from "
+         "if it is continuing one, and how hard it is minimised first.",
+         ("setup_from", "prepared_from", "resume_from", "minimize",
           "minimize_tolerance_kjmol_per_nm",
           "minimize_max_iterations")),
         ("Conditions",

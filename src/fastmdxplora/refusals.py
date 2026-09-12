@@ -468,6 +468,11 @@ CODES: tuple[Code, ...] = (
          "measurement.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("path", "reason")),
+    Code("simulation.resume.checkpoint_rejected",
+         "A checkpoint that does not belong to this system, platform or "
+         "precision.",
+         Kind.SEMANTIC, Disclosure.NOTHING,
+         detail_keys=("path",)),
     Code("simulation.resume.bias_not_carried",
          "The run deposits bias that a checkpoint does not restore, so it "
          "cannot be split into segments.",

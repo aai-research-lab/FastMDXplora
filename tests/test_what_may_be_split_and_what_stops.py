@@ -245,3 +245,170 @@ class TestTheWorkerTakesWork(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestThePiecesAddUpToTheStudy(unittest.TestCase):
+    """Three ways a split silently produces a different experiment."""
+
+    def setUp(self):
+        from fastmdxplora.simulation.resume import plan_segments
+        self.plan = plan_segments
+        self.config = {
+            "systems": [{"id": "a", "system": "1UBQ"}],
+            "setup": {"ph": 7.4},
+            "simulation": {"duration_ns": 100, "timestep_fs": 4},
+        }
+
+    def test_the_steps_sum_to_the_whole_study(self):
+        # Integer division leaves a remainder, and dropping it quietly
+        # shortens the run: three segments of a million and one steps is
+        # not three lots of 333,333.
+        for segments in (1, 2, 3, 7, 10, 13):
+            with self.subTest(segments=segments):
+                pieces = self.plan(self.config, segments=segments)
+                self.assertEqual(sum(p.steps for p in pieces),
+                                 int(100 * 1e6 / 4))
+
+    def test_only_the_first_segment_equilibrates(self):
+        # A segment that re-equilibrated would throw away the production it
+        # was meant to continue, and the joined trajectory would hold a
+        # settling transient in the middle of a production run.
+        pieces = self.plan(self.config, segments=4)
+        self.assertNotIn("minimize", pieces[0].config["simulation"])
+        for piece in pieces[1:]:
+            self.assertIs(piece.config["simulation"]["minimize"], False)
+            self.assertEqual(piece.config["simulation"]["nvt_steps"], 0)
+            self.assertEqual(piece.config["simulation"]["npt_steps"], 0)
+
+    def test_every_segment_after_the_first_names_its_predecessor(self):
+        # Without this the pieces are not segments. They are ten
+        # independent runs of a tenth the length, which is a different and
+        # much worse experiment that no output would distinguish from the
+        # intended one.
+        pieces = self.plan(self.config, segments=3,
+                           output_dir_for=lambda i: f"seg{i}")
+        self.assertIsNone(pieces[0].resume_from)
+        self.assertEqual(pieces[1].resume_from, "seg0/checkpoint.chk")
+        self.assertEqual(pieces[2].resume_from, "seg1/checkpoint.chk")
+
+    def test_a_duration_is_replaced_by_the_count_it_decided(self):
+        # Leaving both would leave which one wins to the reader.
+        pieces = self.plan(self.config, segments=3)
+        for piece in pieces:
+            self.assertNotIn("duration_ns", piece.config["simulation"])
+            self.assertIn("production_steps", piece.config["simulation"])
+
+    def test_one_segment_is_the_study_unchanged(self):
+        [only] = self.plan(self.config, segments=1)
+        self.assertIsNone(only.resume_from)
+        self.assertEqual(only.steps, int(100 * 1e6 / 4))
+
+    def test_a_study_that_may_not_be_split_is_refused_here_too(self):
+        biased = dict(self.config)
+        biased["simulation"] = {"metadynamics": {"sigma": 0.1}}
+        with self.assertRaises(StudyError):
+            self.plan(biased, segments=4)
+
+    def test_the_segments_are_whole_configs(self):
+        # A segment goes through validate_config like any other study. It
+        # is an ordinary config that happens to start somewhere.
+        from fastmdxplora.config.loader import validate_config
+        for piece in self.plan(self.config, segments=3):
+            validate_config(piece.config)
+
+
+class TestASegmentedStudyRunsEndToEnd(unittest.TestCase):
+    """Queue to orchestrator, with the bookkeeping neither side can hold."""
+
+    def setUp(self):
+        from fastmdxplora.agent import study_runner, submit_study
+        self.root = Path(tempfile.mkdtemp())
+        self.queue = Queue(self.root / "queue.db")
+        self.submit, self.runner_for = submit_study, study_runner
+        self.config = {
+            "systems": [{"id": "a", "system": "1UBQ"}],
+            "simulation": {"duration_ns": 40, "timestep_fs": 4},
+        }
+        self.seen: list[dict] = []
+
+    def tearDown(self):
+        self.queue.close()
+
+    def explore(self, *, config, output_dir):
+        self.seen.append(dict(config["simulation"]))
+        return {"interface_rmsd_nm": 0.3}
+
+    def run_it(self, segments=4, watch=None):
+        self.submit(self.queue, "c", self.config, study="s", segments=segments)
+        return work(self.queue,
+                    self.runner_for(self.root / "runs", queue=self.queue,
+                                    explore=self.explore),
+                    campaign="c", watch=watch)
+
+    def test_each_segment_runs_once_and_in_order(self):
+        report = self.run_it(segments=4)
+        self.assertEqual(report.finished, 4)
+        self.assertEqual(len(self.seen), 4)
+
+    def test_only_the_first_minimises(self):
+        self.run_it(segments=4)
+        self.assertNotIn("minimize", self.seen[0])
+        self.assertTrue(all(s["minimize"] is False for s in self.seen[1:]))
+
+    def test_each_segment_points_at_the_one_before(self):
+        # Without this they are four independent runs of a quarter the
+        # length, and no output would distinguish that from the run that
+        # was asked for.
+        self.run_it(segments=4)
+        self.assertIsNone(self.seen[0].get("resume_from"))
+        for index, block in enumerate(self.seen[1:], start=1):
+            with self.subTest(segment=index):
+                self.assertIn(f"segment-{index - 1:03d}", block["resume_from"])
+                self.assertTrue(block["resume_from"].endswith("checkpoint.chk"))
+
+    def test_the_resume_path_is_absolute(self):
+        # The plan is written before anyone knows which directory the
+        # campaign lands in, and a relative path resolved against the
+        # working directory is a different file depending on where the
+        # worker was started.
+        self.run_it(segments=2)
+        self.assertTrue(Path(self.seen[1]["resume_from"]).is_absolute())
+
+    def test_the_joins_accumulate_across_segments(self):
+        # A job's payload is fixed when it is submitted, so segment four
+        # cannot be told at submission what segments one to three did.
+        # Without reading the one before, a finished run says it was
+        # joined once when it was joined three times.
+        self.run_it(segments=4)
+        done = list(self.queue.jobs("c", status="done"))
+        provenance = done[-1].result["provenance"]
+        self.assertEqual(len(provenance["joins"]), 3)
+        self.assertFalse(provenance["ran_through"])
+
+    def test_an_unsegmented_study_says_it_ran_through(self):
+        self.run_it(segments=1)
+        done = list(self.queue.jobs("c", status="done"))
+        self.assertTrue(done[-1].result["provenance"]["ran_through"])
+
+    def test_each_segment_writes_to_its_own_directory(self):
+        # Appending into one would leave a crashed segment's half-written
+        # trajectory in the middle of the run's own output, with no way to
+        # tell which frames were good.
+        self.run_it(segments=3)
+        dirs = {j.result["output_dir"] for j in self.queue.jobs("c", status="done")}
+        self.assertEqual(len(dirs), 3)
+
+    def test_the_study_s_own_numbers_reach_the_watcher(self):
+        got: list[dict] = []
+
+        def watch(job, result):
+            got.append(result)
+            return None
+
+        self.run_it(segments=2, watch=watch)
+        self.assertEqual(got[0]["interface_rmsd_nm"], 0.3)
+
+    def test_a_study_that_may_not_be_split_refuses_at_submission(self):
+        self.config["simulation"] = {"metadynamics": {"sigma": 0.1}}
+        with self.assertRaises(StudyError):
+            self.submit(self.queue, "c", self.config, study="s", segments=4)

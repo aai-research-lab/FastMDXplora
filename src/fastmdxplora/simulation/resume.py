@@ -43,12 +43,14 @@ it.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from fastmdxplora.refusals import Refusal, StudyError
 
 __all__ = [
+    "Segment",
     "Segmentability",
+    "plan_segments",
     "segmentability",
     "require_segmentable",
     "resume_provenance",
@@ -188,3 +190,120 @@ def refusal_for(verdict: Segmentability) -> Refusal | None:
         return None
     return Refusal(code=verdict.code, message=verdict.reason,
                    details={"method": verdict.method})
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One piece of a run, as a config and where it continues from.
+
+    ``config`` is a whole study config, not a fragment: it goes through
+    ``validate_config`` like any other and runs through the same
+    orchestrator. A segment is an ordinary study that happens to start
+    somewhere.
+    """
+
+    index: int
+    of_segments: int
+    config: dict[str, Any]
+    resume_from: str | None
+    steps: int
+
+    @property
+    def is_first(self) -> bool:
+        return self.index == 0
+
+    def as_record(self) -> dict[str, Any]:
+        return {"segment": self.index, "of_segments": self.of_segments,
+                "steps": self.steps, "resume_from": self.resume_from}
+
+
+def _production_steps(block: dict[str, Any]) -> int:
+    """How many production steps a config asks for, defaults included."""
+    if block.get("production_steps") is not None:
+        return int(block["production_steps"])
+    if block.get("duration_ns") is not None:
+        timestep = float(block.get("timestep_fs") or 2.0)
+        return int(float(block["duration_ns"]) * 1e6 / timestep)
+    return 1_000_000
+
+
+def plan_segments(
+    config: dict[str, Any],
+    *,
+    segments: int,
+    checkpoint_name: str = "checkpoint.chk",
+    output_dir_for: "Callable[[int], str] | None" = None,
+) -> list[Segment]:
+    """Split a study into pieces that add up to the study.
+
+    Three things are decided here rather than left to a caller, because
+    getting any of them wrong produces a run that looks finished and is
+    not.
+
+    **Equilibration happens once.** Only the first segment minimises and
+    equilibrates. The rest set ``simulation.minimize: false`` and zero the
+    NVT and NPT counts, because a segment that re-equilibrated would throw away
+    the production it was supposed to continue, and the joined trajectory
+    would hold a settling transient in the middle of what is meant to be
+    a production run.
+
+    **The production steps add up.** Integer division leaves a remainder,
+    and dropping it would quietly shorten the study: ten segments of a
+    million and one steps is not ten lots of a hundred thousand. The
+    remainder goes on the last segment.
+
+    **Every segment after the first names its predecessor's checkpoint.**
+    Without that the pieces are not segments at all -- they are ten
+    independent runs of a tenth the length, which is a different and much
+    worse experiment that no output would distinguish from the intended
+    one.
+
+    Raises
+    ------
+    StudyError
+        Where the study is one that may not be split at all. See
+        :func:`segmentability`.
+    """
+    require_segmentable(config, segments=segments)
+    if segments < 1:
+        raise StudyError(
+            f"A study runs in at least one segment; got {segments}.",
+            code="config.option.wrong_type",
+            option="segments", found_type="below one")
+
+    block = dict((config.get("simulation") or {}))
+    total = _production_steps(block)
+    base, remainder = divmod(total, segments)
+
+    planned: list[Segment] = []
+    for index in range(segments):
+        steps = base + (remainder if index == segments - 1 else 0)
+        simulation = dict(block)
+        simulation["production_steps"] = steps
+        # An explicit step count and a duration in the same block would
+        # leave which one wins to the reader. The count is what this
+        # decided, so the duration goes.
+        simulation.pop("duration_ns", None)
+
+        piece = dict(config)
+        if index > 0:
+            simulation["minimize"] = False
+            simulation["nvt_steps"] = 0
+            simulation["npt_steps"] = 0
+            simulation.pop("nvt_duration_ns", None)
+            simulation.pop("npt_duration_ns", None)
+        piece["simulation"] = simulation
+
+        previous = (None if index == 0 else
+                    f"{output_dir_for(index - 1)}/{checkpoint_name}"
+                    if output_dir_for else checkpoint_name)
+        if previous:
+            # Into the config, not beside it. A segment's config has to
+            # describe the segment completely, or the resolved config of a
+            # run that resumed would not say where it resumed from, and
+            # rerunning it from that file would silently start over.
+            simulation["resume_from"] = previous
+        planned.append(Segment(index=index, of_segments=segments,
+                               config=piece, resume_from=previous,
+                               steps=steps))
+    return planned

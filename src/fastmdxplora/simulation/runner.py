@@ -32,7 +32,11 @@ from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
-from fastmdxplora.refusals import BackendUnavailable, UnstableRun
+from fastmdxplora.refusals import (
+    BackendUnavailable,
+    MissingResultError,
+    UnstableRun,
+)
 from fastmdxplora.refusals import MissingResultError
 
 logger = get_logger("simulation.runner")
@@ -1234,6 +1238,7 @@ def run_simulation(
     trajectory_interval_steps: int | None = None,
     state_interval_steps: int = DEFAULT_STATE_INTERVAL_STEPS,
     checkpoint_interval_steps: int = DEFAULT_CHECKPOINT_INTERVAL_STEPS,
+    resume_from: str | Path | None = None,
     live_telemetry: bool = False,
     telemetry_interval: int = DEFAULT_STATE_INTERVAL_STEPS,
     # Hooks
@@ -1592,6 +1597,41 @@ def run_simulation(
     )
     simulation.context.setState(state)
     _validate_state_finite(omm, simulation, stage="loading state.xml")
+
+    if resume_from is not None:
+        # A checkpoint supersedes state.xml: it holds the positions and
+        # velocities this segment must continue from, and state.xml is
+        # whatever the study started at.
+        #
+        # It is loaded here rather than before `setState` because a
+        # checkpoint is only valid against the exact System and Platform it
+        # was written from, and both exist only now. OpenMM raises if they
+        # do not match, and that raise is the check -- there is no cheaper
+        # way to verify a checkpoint belongs to this system, and a wrong
+        # one must not be allowed to look like a successful load.
+        checkpoint = Path(resume_from)
+        if not checkpoint.is_file():
+            raise MissingResultError(
+                f"No checkpoint at {checkpoint}. A segment after the first "
+                "continues from the one before, so the previous segment "
+                "must have finished and written one.",
+                code="analysis.data.absent", path=str(checkpoint),
+            )
+        try:
+            with checkpoint.open("rb") as fh:
+                simulation.context.loadCheckpoint(fh.read())
+        except Exception as exc:  # noqa: BLE001 - reported with its cause
+            raise UnstableRun(
+                f"The checkpoint at {checkpoint} could not be loaded into "
+                f"this system: {exc}. A checkpoint is only valid for the "
+                "exact system, platform and precision it was written from, "
+                "so this usually means the segment was written by a "
+                "different study or on different hardware.",
+                code="simulation.resume.checkpoint_rejected",
+                path=str(checkpoint),
+            ) from exc
+        _validate_state_finite(omm, simulation, stage="loading the checkpoint")
+        logger.info("Resumed from %s", checkpoint.as_posix())
 
     # Output paths
     traj_path = output_dir / "production.dcd"
