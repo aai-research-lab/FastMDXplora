@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.agent.queue import Job, Queue
+from fastmdxplora.refusals import refusal_of
 from fastmdxplora.cost import Estimate
 from fastmdxplora.simulation.resume import (
     plan_segments,
@@ -35,7 +36,8 @@ from fastmdxplora.simulation.resume import (
     segmentability,
 )
 
-__all__ = ["study_runner", "submit_study", "segment_directory"]
+__all__ = ["study_runner", "submit_study", "segment_directory",
+           "finished_studies", "join_finished"]
 
 
 
@@ -185,3 +187,76 @@ def study_runner(
         return record
 
     return run
+
+
+def finished_studies(queue: Queue, campaign: str) -> list[tuple[str, int]]:
+    """Studies in this campaign whose every segment is done.
+
+    A caller coming back to a campaign wants to know what is ready, and
+    working that out means grouping jobs by study and checking that none
+    of the group is still waiting. Doing it here rather than in the queue
+    keeps the queue ignorant of what a study is, which is the only reason
+    it can hold anything else.
+
+    Returns pairs of study name and segment count. A study that ran in one
+    piece is included with a count of one -- it is finished, and whether
+    it needs joining is a separate question with an obvious answer.
+    """
+    from fastmdxplora.agent.queue import DONE
+
+    by_study: dict[str, list[Job]] = {}
+    for job in queue.jobs(campaign):
+        study = str(job.payload.get("study", "study"))
+        by_study.setdefault(study, []).append(job)
+
+    finished: list[tuple[str, int]] = []
+    for study, jobs in sorted(by_study.items()):
+        if jobs and all(job.status == DONE for job in jobs):
+            finished.append((study, jobs[0].of_segments))
+    return finished
+
+
+def join_finished(
+    queue: Queue,
+    campaign: str,
+    root: Path | str,
+    *,
+    trajectory_name: str = "production.dcd",
+) -> dict[str, Any]:
+    """Join every segmented study in this campaign that has finished.
+
+    The last step nobody remembers. A campaign leaves one directory per
+    segment, which is right for crash safety, and then the joining is a
+    separate command that has to be run -- so it is not, and six months
+    later somebody analyses segment zero and calls it the run.
+
+    Offering rather than doing it automatically at the end of the worker
+    loop, because joining reads every frame of every segment and a caller
+    who has just spent a week of GPU time may reasonably want to look
+    before that happens.
+
+    Studies that ran in one piece are skipped: their trajectory is already
+    whole. A study whose join refuses -- a gap, an unfinished segment,
+    segments from two studies -- is recorded with its refusal rather than
+    stopping the rest, because one study's problem says nothing about the
+    next one's.
+    """
+    from fastmdxplora.analysis.joining import join_segments
+
+    joined: dict[str, Any] = {}
+    refused: dict[str, Any] = {}
+    skipped: list[str] = []
+
+    for study, segments in finished_studies(queue, campaign):
+        if segments <= 1:
+            skipped.append(study)
+            continue
+        base = Path(root) / campaign / study
+        try:
+            joined[study] = join_segments(
+                base, base / f"{study}.dcd",
+                trajectory_name=trajectory_name)
+        except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
+            refused[study] = refusal_of(exc).as_dict()
+
+    return {"joined": joined, "refused": refused, "already_whole": skipped}

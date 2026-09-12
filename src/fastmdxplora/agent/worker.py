@@ -61,6 +61,12 @@ class WorkerReport:
     seconds: float = 0.0
     refusals: list[Refusal] = field(default_factory=list)
     stopped_because: str = ""
+    #: Segmented studies whose every segment finished while this worker
+    #: ran. Reported rather than joined, because joining reads every frame
+    #: of every segment and a caller who has just spent a week of GPU time
+    #: may want to look before that happens. Empty unless a campaign was
+    #: named -- "finished" is a question about one campaign.
+    ready_to_join: list[str] = field(default_factory=list)
 
     def as_record(self) -> dict[str, Any]:
         return {
@@ -70,6 +76,7 @@ class WorkerReport:
             "abandoned": self.abandoned,
             "hours": self.seconds / 3600,
             "stopped_because": self.stopped_because,
+            "ready_to_join": list(self.ready_to_join),
             "refusals": [r.as_dict() for r in self.refusals],
         }
 
@@ -129,6 +136,7 @@ def work(
                 time.sleep(poll_seconds)
                 continue
             report.stopped_because = _why_nothing(queue, campaign)
+            report.ready_to_join = _ready_to_join(queue, campaign)
             return report
 
         report.ran += 1
@@ -161,6 +169,7 @@ def work(
                 report.abandoned += queue.abandon(job.id, reason) - 1
 
     report.stopped_because = f"reached the cap of {max_jobs} jobs"
+    report.ready_to_join = _ready_to_join(queue, campaign)
     return report
 
 
@@ -209,3 +218,22 @@ def _why_nothing(queue: Queue, campaign: str | None) -> str:
             return ("nothing could start — the next job is estimated above "
                     "what the campaign has left")
     return "the line is empty"
+
+
+def _ready_to_join(queue: Queue, campaign: str | None) -> list[str]:
+    """Segmented studies in this campaign with every segment done.
+
+    Imported here rather than at the top because `run` imports `worker`'s
+    Job type, and importing back would be a cycle. The dependency is real
+    in one direction only: a worker runs anything, and only `run` knows
+    that some of those things are segments of a study.
+    """
+    if campaign is None:
+        return []
+    try:
+        from fastmdxplora.agent.run import finished_studies
+
+        return [study for study, segments in finished_studies(queue, campaign)
+                if segments > 1]
+    except Exception:  # noqa: BLE001 - a report is not worth a failed run
+        return []

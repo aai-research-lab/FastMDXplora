@@ -663,3 +663,36 @@ independent samples once the joins are accounted for — the assessment
 reports no mean rather than falling back to the naive reading. Falling
 back would report the very number the join-aware path had just refused,
 which is worse than never having asked.
+
+## Joining offers itself
+
+A campaign leaves one directory per segment, and joining is a separate
+step that has to be run. So it is not, and six months later somebody
+analyses segment zero and calls it the run.
+
+The worker reports what became ready while it ran:
+
+```python
+report = work(queue, study_runner("runs", queue=queue), campaign="tau")
+report.ready_to_join      # ['scaffold-3']
+```
+
+And joining a campaign is one call:
+
+```python
+from fastmdxplora.agent import join_finished
+
+join_finished(queue, "tau", "runs")
+# {'joined': {...}, 'refused': {...}, 'already_whole': ['scaffold-7']}
+```
+
+Offered rather than done automatically at the end of the worker loop,
+because joining reads every frame of every segment and a caller who has
+just spent a week of GPU time may reasonably want to look first.
+
+A study that ran in one piece is skipped — its trajectory is already
+whole, and offering to join it would teach a reader to ignore the offer. A
+study with an abandoned segment is not finished, so it is not offered at
+all. And a study whose join refuses is recorded with its refusal rather
+than stopping the rest, because one study's problem says nothing about the
+next one's.

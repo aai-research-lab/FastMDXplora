@@ -20,7 +20,12 @@ not require it.
 """
 
 from fastmdxplora.agent.queue import Budget, Job, Queue
-from fastmdxplora.agent.run import study_runner, submit_study
+from fastmdxplora.agent.run import (
+    finished_studies,
+    join_finished,
+    study_runner,
+    submit_study,
+)
 from fastmdxplora.agent.worker import WorkerReport, work
 from fastmdxplora.agent.propose import (
     Attempt,
@@ -37,6 +42,8 @@ __all__ = [
     "Job",
     "Queue",
     "WorkerReport",
+    "finished_studies",
+    "join_finished",
     "study_runner",
     "submit_study",
     "work",

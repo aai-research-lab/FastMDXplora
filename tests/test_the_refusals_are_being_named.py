@@ -48,12 +48,19 @@ FORWARDERS = frozenset({"_rewrapped"})
 #: than accepting any call, so an actual uncoded helper cannot hide here.
 BUILDERS = frozenset({"_validation_error", "_explain_unparameterized"})
 
-#: The floor. Raise it when the number rises; never lower it.
+#: Sites allowed to raise without saying which refusal they are. None.
 #:
-#: At 1.0 now in practice, held at 0.99 so that adding one raise site in an
-#: unrelated change does not fail that branch on arithmetic. The migration
-#: is finished; this is what keeps it finished.
-CODED_FRACTION_FLOOR = 0.99
+#: This was a fraction while the migration ran, which was the right shape
+#: for measuring progress and the wrong one for holding a finished job. A
+#: floor of 0.99 let exactly what it was meant to prevent through: one new
+#: raise site, added in an unrelated change, saying nothing about itself
+#: and passing. The number it protected was not the point -- every refusal
+#: being named was.
+#:
+#: So the assertion is the property rather than a proxy for it. A new raise
+#: site fails this until it is given a code, which is a minute of work and
+#: the whole of what this branch was for.
+UNCODED_SITES_ALLOWED = 0
 
 
 def _raise_sites() -> list[tuple[pathlib.Path, int, str, bool]]:
@@ -140,13 +147,19 @@ class TestTheMigrationHasAnInstrument(unittest.TestCase):
         # assertion here is passing vacuously.
         self.assertGreater(len(self.sites), 200)
 
-    def test_the_coded_fraction_is_above_the_floor(self):
-        coded = sum(1 for *_, ok in self.sites if ok)
-        fraction = coded / len(self.sites)
-        self.assertGreaterEqual(
-            fraction, CODED_FRACTION_FLOOR,
-            f"coded refusals fell to {fraction:.1%} ({coded}/{len(self.sites)}); "
-            f"floor is {CODED_FRACTION_FLOOR:.1%}",
+    def test_every_refusal_says_which_refusal_it_is(self):
+        uncoded = [f"{path}:{line} {name}"
+                   for path, line, name, ok in self.sites if not ok]
+        self.assertLessEqual(
+            len(uncoded), UNCODED_SITES_ALLOWED,
+            "these raise without saying which refusal they are:\n  "
+            + "\n  ".join(uncoded)
+            + "\n\nAdd `code=\"...\"` from fastmdxplora.refusals, or give "
+              "the exception class a `default_code` if every one of its "
+              "sites means the same thing. If none of the registered codes "
+              "fits, add one -- the taxonomy is meant to grow, and a code "
+              "invented for a real condition is worth more than one "
+              "guessed at in advance.",
         )
 
     def test_the_config_loader_is_finished(self):

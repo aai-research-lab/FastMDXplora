@@ -164,3 +164,95 @@ if __name__ == "__main__":  # pragma: no cover
         pooled, why = summarise_segments(series, record["joins"])
         self.assertIsNone(why)
         self.assertEqual(pooled.contributing, 4)
+
+
+class TestJoiningOffersItself(unittest.TestCase):
+    """The last step nobody remembers.
+
+    A campaign leaves one directory per segment, which is right for crash
+    safety, and then joining is a separate command that has to be run. So
+    it is not, and six months later somebody analyses segment zero and
+    calls it the run.
+    """
+
+    def setUp(self):
+        from fastmdxplora.agent import Queue
+
+        self.root = Path(tempfile.mkdtemp())
+        self.queue = Queue(self.root / "queue.db")
+        self.config = {
+            "systems": [{"id": "a", "system": "1UBQ"}],
+            "simulation": {"duration_ns": 40, "timestep_fs": 4},
+        }
+
+    def tearDown(self):
+        self.queue.close()
+
+    def run_campaign(self, **studies):
+        from fastmdxplora.agent import study_runner, submit_study, work
+
+        for study, segments in studies.items():
+            submit_study(self.queue, "c", self.config, study=study,
+                         segments=segments)
+        return work(self.queue,
+                    study_runner(self.root / "runs", queue=self.queue,
+                                 explore=lambda **kw: {"ok": True}),
+                    campaign="c")
+
+    def test_the_worker_says_what_is_ready(self):
+        report = self.run_campaign(segmented=4)
+        self.assertEqual(report.ready_to_join, ["segmented"])
+
+    def test_a_study_that_ran_whole_is_not_offered(self):
+        # Its trajectory is already whole, and offering to join it would
+        # teach a reader to ignore the offer.
+        report = self.run_campaign(whole=1)
+        self.assertEqual(report.ready_to_join, [])
+
+    def test_a_campaign_still_running_offers_nothing(self):
+        from fastmdxplora.agent import study_runner, submit_study, work
+
+        submit_study(self.queue, "c", self.config, study="s", segments=4)
+        report = work(self.queue,
+                      study_runner(self.root / "runs", queue=self.queue,
+                                   explore=lambda **kw: {"ok": True}),
+                      campaign="c", max_jobs=2)
+        self.assertEqual(report.ready_to_join, [])
+
+    def test_an_abandoned_chain_is_not_offered(self):
+        # Abandoned segments never ran, so the study is not finished and
+        # joining it would produce a trajectory that stops early with
+        # nothing saying so.
+        from fastmdxplora.agent import study_runner, submit_study, work
+
+        submit_study(self.queue, "c", self.config, study="s", segments=6)
+        work(self.queue,
+             study_runner(self.root / "runs", queue=self.queue,
+                          explore=lambda **kw: {"ok": True}),
+             campaign="c", max_jobs=2,
+             watch=lambda job, result: "gone wrong" if job.segment == 1
+             else None)
+        from fastmdxplora.agent import finished_studies
+
+        self.assertEqual(finished_studies(self.queue, "c"), [])
+
+    def test_joining_a_campaign_skips_what_is_already_whole(self):
+        from fastmdxplora.agent import join_finished
+
+        self.run_campaign(segmented=3, whole=1)
+        outcome = join_finished(self.queue, "c", self.root / "runs")
+        self.assertEqual(outcome["already_whole"], ["whole"])
+
+    def test_one_study_refusing_does_not_stop_the_others(self):
+        # One study's problem says nothing about the next one's, and a
+        # campaign of forty candidates should not become however many came
+        # before the first awkward one.
+        from fastmdxplora.agent import join_finished
+
+        self.run_campaign(a=3, b=3)
+        outcome = join_finished(self.queue, "c", self.root / "runs")
+        # The stub wrote no trajectories, so both refuse -- and both are
+        # reported, rather than the first ending the loop.
+        self.assertEqual(sorted(outcome["refused"]), ["a", "b"])
+        for record in outcome["refused"].values():
+            self.assertIn("code", record)
