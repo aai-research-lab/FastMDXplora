@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from fastmdxplora.refusals import Refusal, StudyError, refusal_of
+from fastmdxplora.simulation.resume import require_segmentable
 
 __all__ = [
     "Job",
@@ -219,6 +220,11 @@ class Queue:
         ``segments`` greater than one chains that many jobs, each blocked
         on the one before. The estimate is divided between them, since a
         segment is a fraction of the run and should be charged as one.
+
+        Where ``payload`` carries a ``config``, splitting is checked
+        against it first: a metadynamics or steered run refuses, because a
+        checkpoint does not carry the state those methods are made of.
+        See :mod:`fastmdxplora.simulation.resume`.
         """
         if segments < 1:
             raise StudyError(
@@ -226,6 +232,12 @@ class Queue:
                 code="config.option.wrong_type",
                 option="segments", found_type="below one",
             )
+        # Not every study may be split, and the ones that may not are the
+        # ones where splitting produces a wrong answer that looks right.
+        # Asked here rather than at the join, because by the join the first
+        # segment's hours are already spent.
+        if segments > 1 and "config" in payload:
+            require_segmentable(payload["config"], segments=segments)
         now = time.time()
         per_segment = estimate_s / segments
         ids: list[int] = []

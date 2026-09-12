@@ -356,3 +356,80 @@ A running job holds its estimate against the budget, so two jobs each
 fitting the remainder cannot both start. A campaign with no budget set has
 no ceiling — a default allowance would stop somebody's overnight run for a
 reason they never chose.
+
+## What may be split, and what may not
+
+Segmenting a long run is the difference, on one card, between finishing
+three candidates in a week and finishing one. For two methods it is also a
+way of producing a confidently wrong answer.
+
+```python
+from fastmdxplora.simulation.resume import segmentability
+
+segmentability({"simulation": {"duration_ns": 100}}).allowed        # True
+segmentability({"simulation": {"metadynamics": {...}}}).allowed     # False
+```
+
+A checkpoint restores positions and velocities. It does not restore the
+biasing state, and for two methods that is the whole calculation.
+
+**Metadynamics** — PLUMED does not re-read `HILLS` unless its script says
+`RESTART`. A split run begins the second piece from zero bias with the
+system in a well it has already filled, and produces a free energy surface
+that is wrong without looking wrong. Nothing downstream can tell: the
+surface is smooth, the plot is a plot, and the depth is wrong.
+
+**Steered dynamics** — the moving restraint is placed by absolute step
+number, so a resumed piece pulls from an anchor the protein is not at, and
+the work integral is taken along a path nothing walked.
+
+**A hand-written PLUMED script** — what state it keeps is not something
+this software can read, and guessing permissively is the expensive way to
+be wrong.
+
+Two are safe. An unbiased run carries nothing beyond positions and
+velocities. An umbrella window's restraint is a function of the collective
+variable and not of time, so a window that stops at 4 ns and continues is
+doing what it was doing before.
+
+`Queue.submit(..., segments=N)` consults this when the payload carries a
+config, so the refusal arrives before the first segment's hours are spent.
+Submitting the same study in one piece is always allowed — the refusal is
+about splitting, not about the method.
+
+Where a run does resume, `resume_provenance()` records the joins. A
+trajectory assembled from pieces is not the same object as one that ran
+through: the join is a place where reporters restarted, and an analysis
+reading equilibration or correlation across it is reading across a
+discontinuity. `ran_through` is stated rather than derived, because that
+is the thing an analysis wants to test.
+
+## Running the line
+
+```python
+from fastmdxplora.agent import Queue, work
+
+def watch(job, result):
+    if result["interface_rmsd_nm"] > 1.5:
+        return "the binder has left the epitope"
+    return None
+
+report = work(queue, run_one_job, campaign="tau-scaffolds", watch=watch)
+# 3 finished, 0 refused, 7 abandoned, 9.0 GPU-hours — the line is empty
+```
+
+The worker claims, runs, records and looks again. Its only real decisions
+are about stopping.
+
+A refusal from one job does not stop it. One study refusing says nothing
+about the next, and a worker that stopped on the first would turn a
+campaign of forty candidates into however many came before the first
+awkward structure.
+
+`watch` is a callback rather than a rule because what makes a run not
+worth continuing is a question about the science, not about queueing.
+
+`stopped_because` distinguishes an empty line from a spent budget from a
+job that would not fit — a campaign whose next job was estimated above its
+allowance has an empty line and a full budget, and being told the line is
+empty sends somebody looking for a job they already submitted.

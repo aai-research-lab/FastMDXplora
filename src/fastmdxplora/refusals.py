@@ -468,6 +468,16 @@ CODES: tuple[Code, ...] = (
          "measurement.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("path", "reason")),
+    Code("simulation.resume.bias_not_carried",
+         "The run deposits bias that a checkpoint does not restore, so it "
+         "cannot be split into segments.",
+         Kind.SEMANTIC, Disclosure.NOTHING,
+         detail_keys=("method", "segments")),
+    Code("simulation.resume.time_dependent_bias",
+         "The run's restraint is placed by step number, so a resumed piece "
+         "would pull from an anchor the system is not at.",
+         Kind.SEMANTIC, Disclosure.NOTHING,
+         detail_keys=("method", "segments")),
     Code("simulation.run.unstable",
          "The integration produced a non-finite state.",
          Kind.SEMANTIC, Disclosure.NOTHING,

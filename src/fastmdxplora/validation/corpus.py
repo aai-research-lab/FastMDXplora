@@ -889,7 +889,48 @@ def _estimate_from_this_machine() -> Any:
                             path=where).as_record()
 
 
+
+def _metadynamics_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"metadynamics": {"sigma": 0.1}}}, segments=10)
+
+
+def _steered_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"steered": {"to": 3.0}}}, segments=10)
+
+
+def _unbiased_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"duration_ns": 100}}, segments=10).as_record()
+
+
+def _umbrella_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"umbrella": {"centres": [1.0, 1.5]}}},
+        segments=10).as_record()
+
+
 DEFECTS: list[Case] = [
+    Case("a metadynamics run split into segments",
+         _metadynamics_split_into_segments, "refused",
+         "a checkpoint does not carry the deposited bias, so the second "
+         "piece would start from zero bias in a well the first had filled "
+         "and the surface would be wrong without looking wrong",
+         mentioning="zero bias"),
+    Case("a steered pull split into segments",
+         _steered_split_into_segments, "refused",
+         "the restraint is placed by absolute step number, so the work "
+         "integral would be taken along a path nothing walked",
+         mentioning="step number"),
     Case("a mean from a run with too few independent samples",
          _mean_of_a_correlated_run, "refused",
          "the frames are correlated, so the run holds far fewer "
@@ -979,6 +1020,14 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("an unbiased run split into segments",
+         _unbiased_split_into_segments, "proceeded",
+         "it carries no state beyond positions and velocities, which a "
+         "checkpoint restores"),
+    Case("an umbrella window split into segments",
+         _umbrella_split_into_segments, "proceeded",
+         "the restraint is a function of the collective variable and not "
+         "of time, so stopping and continuing changes nothing"),
     Case("a mean from a run with independent samples",
          _mean_of_an_independent_run, "proceeded",
          "two thousand uncorrelated frames support a mean and an error, "
