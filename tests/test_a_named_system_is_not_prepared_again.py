@@ -76,9 +76,22 @@ class TestANamedSystemIsNotPreparedAgain:
 
         study._maybe_prepare_once(None, None)     # does not raise
 
-    def test_a_study_that_names_nothing_still_prepares(self, tmp_path):
+    def test_a_study_that_names_nothing_still_prepares(self, tmp_path,
+                                                       monkeypatch):
         """The setting is what turns preparation off. Without it, a study
-        that asked for setup gets setup."""
+        that asked for setup gets setup.
+
+        Asserted by watching the preparation being asked for, not by watching
+        the study fail. The first version of this test wrote a config naming
+        `181L`, called the method, and asserted that *something* was raised --
+        taking a failure as evidence that it had tried. That passes on a
+        machine with no network, where the structure cannot be fetched, and
+        fails on one that can: given real internet the download succeeds, the
+        preparation finishes in eight seconds, and nothing is raised at all.
+        A test whose result depends on whether the network is up is not
+        testing the code.
+        """
+        from fastmdxplora.batch import explorer as explorer_module
         from fastmdxplora.batch.explorer import BatchExplorer
 
         config = tmp_path / "c.yml"
@@ -98,9 +111,32 @@ class TestANamedSystemIsNotPreparedAgain:
             encoding="utf-8")
         study = BatchExplorer(config=config, output_dir=str(tmp_path / "out"))
 
-        # It gets as far as preparing, which on a config with no real
-        # structure behind it is where it stops -- the point is that it tried
-        # rather than returning early.
-        with pytest.raises(Exception) as stopped:
+        asked_for: list = []
+
+        def watch(options, output, phases, *args, **kwargs):
+            asked_for.append(list(phases))
+            raise SystemExit("far enough")
+
+        monkeypatch.setattr(explorer_module, "_execute_run", watch)
+        with pytest.raises(SystemExit):
             study._maybe_prepare_once(None, None)
-        assert "no prepared system" not in str(stopped.value)
+
+        assert asked_for == [["setup"]], (
+            "A study that names no prepared system should have asked for one "
+            f"to be prepared; it asked for {asked_for}.")
+
+    def test_the_reuse_path_asks_for_no_preparation_at_all(self, tmp_path,
+                                                           monkeypatch):
+        """The other half of the same statement, checked the same way."""
+        from fastmdxplora.batch import explorer as explorer_module
+
+        prepared = _prepared_at(tmp_path / "earlier" / "setup")
+        study = _a_study(tmp_path, prepared)
+
+        asked_for: list = []
+        monkeypatch.setattr(
+            explorer_module, "_execute_run",
+            lambda *a, **k: asked_for.append(a[2]))
+        study._maybe_prepare_once(None, None)
+
+        assert asked_for == []
