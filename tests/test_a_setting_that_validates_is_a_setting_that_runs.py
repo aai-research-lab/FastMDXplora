@@ -1,0 +1,93 @@
+"""A config option the schema accepts and nothing acts on.
+
+`resume_from` was added to the schema, added to `run_simulation`'s
+signature, and never connected between the two. So a segment's config said
+where to continue from, validation accepted it, and the run started from
+the pre-equilibration state instead -- silently. The trajectories looked
+fine. What gave it away was a run going unstable, which is luck: at a
+sensible density it would have produced a plausible trajectory that was
+not the study anybody asked for.
+
+That is the failure this package exists to prevent, and it happened inside
+it. The loader refuses a setting it does not know; nothing was checking
+that a setting it does know reaches the code that would honour it.
+
+So: every option the simulation schema declares must appear in the phase
+that builds the runner's arguments, or be named here as something consumed
+elsewhere. The exemption list is short, explicit, and says where each one
+goes -- an exemption without a reason is how this bug would come back.
+"""
+
+from __future__ import annotations
+
+import inspect
+import re
+import unittest
+
+from fastmdxplora.config.schema import PHASE_SCHEMAS
+from fastmdxplora.simulation import pipeline
+from fastmdxplora.simulation.runner import run_simulation
+
+#: Settings the simulation phase declares and the runner never sees,
+#: because something else consumes them. Each needs a reason.
+CONSUMED_ELSEWHERE = {
+    "dashboard_binding_pocket_cutoff_A": "read by the dashboard, not the run",
+    "dashboard_ligand_resname": "read by the dashboard, not the run",
+    "dashboard_max_playback_frames": "read by the dashboard, not the run",
+}
+
+
+def _settings_the_phase_reads() -> set[str]:
+    """Names pulled out of `params` where the runner's arguments are built.
+
+    Read from the source rather than by calling it, because calling it
+    needs a prepared system and the question is structural. The pattern
+    allows capitals: `temperature_K` is passed, and a lowercase-only
+    pattern reported it as missing -- a false alarm that cost a minute and
+    is worth remembering, since a test that cries wolf gets muted.
+    """
+    source = inspect.getsource(pipeline)
+    return set(re.findall(r"""params(?:\.get\(|\[)["']([A-Za-z0-9_]+)""",
+                          source))
+
+
+class TestEverySettingReachesSomething(unittest.TestCase):
+
+    def test_no_simulation_setting_is_silently_ignored(self):
+        declared = {f.name for f in PHASE_SCHEMAS["simulation"].fields}
+        reached = _settings_the_phase_reads()
+        stranded = sorted(declared - reached - set(CONSUMED_ELSEWHERE))
+        self.assertEqual(
+            stranded, [],
+            f"these are declared in the simulation schema and never read "
+            f"where the runner's arguments are built: {stranded}. A setting "
+            "that validates and does nothing is worse than one that is "
+            "refused: the study runs, the output looks ordinary, and it is "
+            "not the study that was asked for. Pass it through, or add it "
+            "to CONSUMED_ELSEWHERE with a note saying what does read it.")
+
+    def test_resume_from_in_particular(self):
+        # Named on its own because it is the one that got through, and a
+        # general assertion that passes tells you nothing about the
+        # specific case that failed.
+        self.assertIn("resume_from", _settings_the_phase_reads())
+        self.assertIn("resume_from",
+                      inspect.signature(run_simulation).parameters)
+
+    def test_every_exemption_says_why(self):
+        for name, reason in CONSUMED_ELSEWHERE.items():
+            with self.subTest(setting=name):
+                self.assertTrue(reason and len(reason) > 10)
+
+    def test_no_exemption_outlives_its_setting(self):
+        # An exemption for a setting that no longer exists is a note about
+        # nothing, and it makes the list harder to read and so less likely
+        # to be read.
+        declared = {f.name for f in PHASE_SCHEMAS["simulation"].fields}
+        for name in CONSUMED_ELSEWHERE:
+            with self.subTest(setting=name):
+                self.assertIn(name, declared)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

@@ -10,7 +10,15 @@ run can establish:
     produced the time rather than plausible-looking numbers;
   - a segment after the first resumes from its predecessor's checkpoint
     and does not silently start over;
-  - `calibrate_from_runs` fits across real runs and agrees with itself.
+  - `calibrate_from_runs` fits across real runs and agrees with itself;
+  - a two-segment study resumes and the log says so.
+
+The last one was left out of the first version of this file, because the
+configuration that exercised it went unstable and a test that is sometimes
+right is worse than none. The instability turned out to be the bug: the
+config's `resume_from` never reached the runner, so the second segment
+started from the pre-equilibration state without minimising. With that
+fixed the run is stable and the check belongs here.
 
 Slow by the standards of this suite -- about a minute -- and skipped
 without OpenMM and PDBFixer. That cost buys the only evidence here that
@@ -65,7 +73,18 @@ class TestARealStudy(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import logging
+
         from fastmdxplora import FastMDXplora
+
+        # `explore()` turns propagation off on the `fastmdx` logger and
+        # does not turn it back on. The CLI restores it; the API does not,
+        # so anything that calls explore() in-process has its logging
+        # quietly changed for the rest of the session. Worth knowing about
+        # outside the tests, and worth restoring here regardless --
+        # TestInvokingTheCLILeavesTheSuiteAsItFoundIt guards this and
+        # caught it.
+        cls._propagate = logging.getLogger("fastmdx").propagate
 
         cls.root = pathlib.Path(tempfile.mkdtemp())
         cls.pdb = cls.root / "tri-ala.pdb"
@@ -87,6 +106,12 @@ class TestARealStudy(unittest.TestCase):
         cls.output = cls.root / "whole"
         FastMDXplora(config_data=cls.config,
                      output_dir=str(cls.output)).explore()
+
+    @classmethod
+    def tearDownClass(cls):
+        import logging
+
+        logging.getLogger("fastmdx").propagate = cls._propagate
 
     def cost_record(self, output):
         records = list(pathlib.Path(output).rglob("cost.json"))
@@ -144,6 +169,65 @@ class TestARealStudy(unittest.TestCase):
             path=self.root / "cal.json")
         self.assertAlmostEqual(estimate.seconds, cost["seconds"], places=4)
 
+
+    def test_a_second_segment_resumes_rather_than_starting_over(self):
+        # The check the first version of this file left out. A config
+        # option can validate and be ignored, and the only outward sign
+        # here was a run going unstable -- which was luck. At a sensible
+        # density it would have produced a plausible trajectory that was
+        # not the study anybody asked for.
+        import logging
+
+        from fastmdxplora import FastMDXplora
+        from fastmdxplora.simulation.resume import plan_segments
+
+        segments = plan_segments(self.config, segments=2)
+        directories = []
+        records = []
+
+        # The runner's own logger. It is "fastmdx.simulation.runner" --
+        # the package name, not the distribution name. A handler on root
+        # configures handlers of its own, and a handler on root saw
+        # nothing -- which cost a test run to discover.
+        watched = logging.getLogger("fastmdx.simulation.runner")
+        handler = logging.Handler()
+        handler.emit = lambda record: records.append(record.getMessage())
+        watched.addHandler(handler)
+        # Restored below. A test that raises a logger's level and leaves it
+        # raised changes what every later test sees, and
+        # TestInvokingTheCLILeavesTheSuiteAsItFoundIt exists to catch
+        # exactly that -- it caught this.
+        previous_level = watched.level
+        watched.setLevel(logging.INFO)
+        try:
+            for segment in segments:
+                config = dict(segment.config)
+                directory = self.root / f"seg{segment.index}"
+                if segment.index > 0:
+                    config["include"] = ["simulation"]
+                    config["simulation"] = dict(config["simulation"])
+                    config["simulation"]["resume_from"] = str(
+                        directories[-1] / "simulation" / "checkpoint.chk")
+                    config["simulation"]["setup_from"] = str(
+                        directories[0] / "setup")
+                FastMDXplora(config_data=config,
+                             output_dir=str(directory)).explore()
+                directories.append(directory)
+        finally:
+            watched.removeHandler(handler)
+            watched.setLevel(previous_level)
+            logging.getLogger("fastmdx").propagate = self._propagate
+
+        self.assertTrue(
+            any("Resumed from" in message for message in records),
+            "the second segment did not resume; `resume_from` validated "
+            "and was ignored")
+
+        # And it produced a run rather than a refusal.
+        for directory in directories:
+            with self.subTest(directory=directory.name):
+                self.assertTrue(
+                    (directory / "simulation" / "cost.json").is_file())
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

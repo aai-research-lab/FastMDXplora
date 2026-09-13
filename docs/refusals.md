@@ -825,3 +825,23 @@ Segment zero carries the equilibration and the other two do not, the
 production steps sum to what was asked for, and the four runs agree about
 the machine to within 9 per cent — the linear cost model holding on real
 systems rather than on argon.
+
+## A setting that validates is a setting that runs
+
+`resume_from` was added to the schema, added to `run_simulation`'s
+signature, and never connected between the two. A segment's config said
+where to continue from, validation accepted it, and the run started from
+the pre-equilibration state instead. Silently.
+
+That is this package's own failure mode, occurring inside it. The loader
+refuses a setting it does not know; nothing was checking that a setting it
+*does* know reaches the code that would honour it.
+
+What gave it away was a run going unstable, which was luck. At a sensible
+density it would have produced a plausible trajectory that was not the
+study anybody asked for, and nothing downstream could have told.
+
+So a test now holds the property: every option the simulation schema
+declares must be read where the runner's arguments are built, or be named
+in a short list with a reason saying what else consumes it. An exemption
+without a reason is how the bug comes back.
