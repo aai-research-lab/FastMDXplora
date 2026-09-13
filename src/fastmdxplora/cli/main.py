@@ -1681,9 +1681,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Initialize console logging on every CLI invocation. setup_console() is
     # idempotent (no duplicate handlers) and honors FASTMDX_LOG_STYLE /
     # FASTMDX_LOGLEVEL / NO_COLOR.
-    from fastmdxplora.utils.logging import setup_console
+    from fastmdxplora.utils.logging import own_the_console, setup_console
 
     setup_console()
+    # The CLI owns the terminal, so records are printed once by our handler
+    # rather than also by whatever the root logger has. This used to happen
+    # inside setup_console, which meant the library path did it too and
+    # left a caller's logging cut off from us for the rest of the session.
+    own_the_console()
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
 

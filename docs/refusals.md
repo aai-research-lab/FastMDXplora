@@ -845,3 +845,31 @@ So a test now holds the property: every option the simulation schema
 declares must be read where the runner's arguments are built, or be named
 in a short list with a reason saying what else consumes it. An exemption
 without a reason is how the bug comes back.
+
+## Running a study does not take over your logging
+
+`setup_console()` attaches a console handler. It used to also set
+`propagate = False` on the `fastmdx` logger, which stops records reaching
+anyone else's handlers.
+
+That is right for the command line, which owns the terminal and ends when
+the run does. It was wrong everywhere else: importing the package and
+running one study left the caller's own logging permanently unable to see
+anything from us, silently, for the rest of the session — and `caplog`
+stopped working in their tests.
+
+The decision now has a name and one caller:
+
+```python
+from fastmdxplora.utils.logging import own_the_console, release_the_console
+```
+
+`own_the_console()` stops propagation. The CLI calls it; nothing else
+does, and a test counts the call sites so a second one shows up in review
+rather than in somebody's logs.
+
+The trade is not free, and it is the better of the two available. A caller
+who has configured root handlers will now see this package's records
+twice: once through our handler, once through theirs. Doubled output is
+visible and they can turn our handler off. Silent swallowing is invisible
+and there is nothing they can do about what they cannot see.

@@ -1,41 +1,31 @@
-"""A known defect, written down where it cannot be forgotten.
+"""Running a study leaves the caller's logging as it found it.
 
-`explore()` turns propagation off on the `fastmdx` logger and does not turn
-it back on. Anything calling it in-process has its logging quietly changed
-for the rest of the session: records stop reaching root handlers, so a
-consumer's own logging configuration silently stops seeing anything from
-this package, and `caplog` in their tests stops working.
+This file used to document the opposite. `explore()` turned propagation
+off on the `fastmdx` logger and never turned it back on, so anything
+importing this package and running one study had its own logging silently
+cut off from ours for the rest of the session -- records stopped reaching
+its handlers, and `caplog` stopped working in its tests.
 
-The mechanism, traced rather than guessed:
+The cause was one line inside `setup_console`, which is a function for
+attaching a console handler and had no business deciding who owns the
+process. It ran on the command-line path and the library path alike.
 
-  - `FastMDXplora.__init__` has two paths. Given `system=`, it sets
-    `output_dir` and calls `_configure_logging()` there and then. Given
-    `config_data=` -- which is how a library caller passes a study, and
-    how the agent layer does -- it defers, storing
-    `_deferred_output_dir` and configuring nothing.
-  - On the deferred path `explore()` builds a `BatchExplorer`, and that
-    is where `setup_console()` runs. `setup_console` sets
-    `propagate = False` unconditionally.
-  - Nothing restores it. The CLI does not need to, because the process
-    ends.
+The decision now has a name and one caller. `own_the_console()` stops
+propagation, and the CLI is the only thing that calls it -- correct there,
+because the CLI owns the terminal and the process ends when the run does.
 
-That is why an earlier attempt to add `configure_logging=False` to the
-constructor did nothing: it governed the direct path, and every caller
-that hits this is on the deferred one. The attempt was reverted rather
-than shipped, and this file is what was learned instead.
-
-Fixing it means threading the choice through `BatchExplorer`, or having
-`setup_console` leave propagation alone and the CLI turn it off itself.
-The second is tidier and has the wider blast radius: anyone with a root
-handler starts seeing this package's records, possibly twice.
-
-Marked `xfail(strict=True)`, so it fails loudly when somebody fixes it and
-this file can be deleted rather than quietly outliving the bug.
+The trade is deliberate and worth stating, because it is not free. A
+library caller who has configured root handlers will now see this
+package's records twice: once through our handler, once through theirs.
+That is the better failure of the two available. Doubled output is visible
+and they can turn our handler off; silent swallowing is invisible and they
+cannot do anything about what they cannot see.
 """
 
 from __future__ import annotations
 
 import logging
+import pathlib
 import tempfile
 
 import pytest
@@ -49,44 +39,52 @@ def restored_propagation():
     logger.propagate = before
 
 
-def test_the_two_constructor_paths_differ(restored_propagation):
-    """Not the bug itself; the thing that makes it hard to see.
-
-    A caller passing `config_data` gets an object with no `output_dir`
-    and no logging configured. A caller passing `system` gets both. The
-    same class, the same call, two shapes -- and every attempt to reason
-    about when logging is configured has to start by knowing which.
-    """
-    from fastmdxplora import FastMDXplora
-
-    deferred = FastMDXplora(
-        config_data={"systems": [{"id": "a", "system": "x.pdb"}]},
-        output_dir=tempfile.mkdtemp())
-    assert not hasattr(deferred, "output_dir")
-    assert hasattr(deferred, "_deferred_output_dir")
-
-    direct = FastMDXplora(system="x.pdb", output_dir=tempfile.mkdtemp())
-    assert hasattr(direct, "output_dir")
-
-
-def test_setup_console_turns_propagation_off(restored_propagation):
-    """The unconditional line the leak comes from."""
+def test_attaching_a_console_does_not_claim_the_process(restored_propagation):
+    # The line this whole file was written about. `setup_console` attaches
+    # a handler; that is all it does now.
     from fastmdxplora.utils.logging import setup_console
 
     restored_propagation.propagate = True
     setup_console(level=logging.INFO)
+    assert restored_propagation.propagate is True
+
+
+def test_claiming_it_is_a_thing_you_say_out_loud(restored_propagation):
+    from fastmdxplora.utils.logging import own_the_console, release_the_console
+
+    restored_propagation.propagate = True
+    own_the_console()
     assert restored_propagation.propagate is False
+    release_the_console()
+    assert restored_propagation.propagate is True
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "explore() leaves propagation off on the fastmdx logger. Known, traced, "
-    "unfixed: the fix threads a choice through BatchExplorer or moves the "
-    "propagate=False out of setup_console and into the CLI. Delete this file "
-    "when it is done."))
+def test_only_the_cli_claims_it(restored_propagation):
+    # Asserted by counting call sites rather than by running everything.
+    # A second caller appearing is the thing that would bring the bug back,
+    # and it would appear in a diff long before it appeared in a run.
+    import fastmdxplora
+
+    root = pathlib.Path(fastmdxplora.__file__).parent
+    callers = sorted(
+        path.relative_to(root)
+        for path in root.rglob("*.py")
+        if "own_the_console()" in path.read_text(encoding="utf-8")
+        and path.name != "logging.py")
+    assert [str(p) for p in callers] == ["cli/main.py"], (
+        f"own_the_console() is called from {callers}. Only the CLI should "
+        "claim the process; anything else takes a library caller's logging "
+        "away from them.")
+
+
 @pytest.mark.slow
 def test_a_library_caller_keeps_its_own_logging(restored_propagation):
-    import pathlib
+    """The bug, now a passing test.
 
+    Ran as an xfail for one commit while the fix was thought through. It
+    passes now, which is what `xfail(strict=True)` is for: it failed the
+    moment the behaviour changed and said to come back here.
+    """
     from fastmdxplora import FastMDXplora
 
     pdb = pathlib.Path(tempfile.mkdtemp()) / "x.pdb"
@@ -103,3 +101,25 @@ def test_a_library_caller_keeps_its_own_logging(restored_propagation):
     assert restored_propagation.propagate is True, (
         "running a study changed this process's logging and did not change "
         "it back")
+
+
+def test_the_two_constructor_shapes_are_still_there(restored_propagation):
+    """Not this bug, and the reason it took three attempts to find.
+
+    `FastMDXplora.__init__` behaves differently depending on which argument
+    it is given. With `system=` it sets `output_dir` and configures logging
+    immediately; with `config_data=` it defers both. An attempted fix
+    landed on the first path while every affected caller was on the second.
+
+    Recorded rather than fixed. Unifying them is worth doing and is a
+    different change.
+    """
+    from fastmdxplora import FastMDXplora
+
+    deferred = FastMDXplora(
+        config_data={"systems": [{"id": "a", "system": "x.pdb"}]},
+        output_dir=tempfile.mkdtemp())
+    direct = FastMDXplora(system="x.pdb", output_dir=tempfile.mkdtemp())
+
+    assert not hasattr(deferred, "output_dir")
+    assert hasattr(direct, "output_dir")

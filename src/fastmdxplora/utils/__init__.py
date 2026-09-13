@@ -10,6 +10,8 @@ from fastmdxplora.utils.logging import (
     attach_file_logger,
     get_logger,
     set_level,
+    own_the_console,
+    release_the_console,
     setup_console,
 )
 from fastmdxplora.utils.native_output import suppress_native_output
@@ -26,6 +28,8 @@ __all__ = [
     "get_presenter",
     "reset_presenter",
     "set_level",
+    "own_the_console",
+    "release_the_console",
     "setup_console",
     "suppress_native_output",
 ]

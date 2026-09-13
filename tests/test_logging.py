@@ -151,7 +151,24 @@ class TestSetupConsole:
     def test_first_call_adds_handler(self, fresh_logger):
         log = setup_console()
         assert len(_owned_handlers_of_kind(log, "console")) == 1
-        assert log.propagate is False
+
+    def test_it_does_not_claim_the_process(self, fresh_logger):
+        # This used to assert `propagate is False`, because setup_console
+        # set it. That one line ran on the library path too, so importing
+        # the package and running a study left the caller's own logging
+        # permanently unable to see anything from us -- silently.
+        #
+        # Attaching a handler and deciding who owns the process are two
+        # decisions. own_the_console() is the second one, and the CLI is
+        # the only caller.
+        from fastmdxplora.utils.logging import own_the_console
+
+        fresh_logger.propagate = True
+        setup_console()
+        assert fresh_logger.propagate is True
+
+        own_the_console()
+        assert fresh_logger.propagate is False
 
     def test_idempotent_no_duplicate_handler(self, fresh_logger):
         setup_console()
