@@ -51,6 +51,33 @@ def _settings_the_phase_reads() -> set[str]:
                           source))
 
 
+def _settings_referenced_anywhere(phase: str) -> set[str]:
+    """Every schema name mentioned outside the declaration itself.
+
+    A weaker check than the simulation one, and the right one for phases
+    with no single place where arguments are assembled. `analysis` and
+    `report` settings are read where they are used rather than marshalled
+    in one function, so "is it read where the runner is built" has no
+    answer for them. "Is it read at all" does.
+    """
+    import pathlib
+
+    import fastmdxplora
+
+    root = pathlib.Path(fastmdxplora.__file__).parent
+    source = "\n".join(f.read_text(encoding="utf-8")
+                       for f in root.rglob("*.py"))
+    referenced = set()
+    for field in PHASE_SCHEMAS[phase].fields:
+        name = field.name
+        # The Field(...) declaration itself does not count as a reference,
+        # or every setting would look wired.
+        elsewhere = source.replace('Field("' + name + '"', "")
+        if ('"' + name + '"') in elsewhere or ("'" + name + "'") in elsewhere:
+            referenced.add(name)
+    return referenced
+
+
 class TestEverySettingReachesSomething(unittest.TestCase):
 
     def test_no_simulation_setting_is_silently_ignored(self):
@@ -73,6 +100,30 @@ class TestEverySettingReachesSomething(unittest.TestCase):
         self.assertIn("resume_from", _settings_the_phase_reads())
         self.assertIn("resume_from",
                       inspect.signature(run_simulation).parameters)
+
+    def test_no_setup_setting_is_silently_ignored(self):
+        # Checked the same way as simulation, because setup also builds its
+        # arguments in one place. It came back clean at 42 of 42, which is
+        # what made the simulation result worth trusting rather than
+        # dismissing as a quirk of how the check was written.
+        from fastmdxplora.setup import pipeline as setup_pipeline
+
+        declared = {f.name for f in PHASE_SCHEMAS["setup"].fields}
+        source = inspect.getsource(setup_pipeline)
+        reached = set(re.findall(
+            r"""params(?:\.get\(|\[)["']([A-Za-z0-9_]+)""", source))
+        self.assertEqual(sorted(declared - reached), [])
+
+    def test_no_analysis_or_report_setting_is_unreferenced(self):
+        for phase in ("analysis", "report"):
+            with self.subTest(phase=phase):
+                declared = {f.name for f in PHASE_SCHEMAS[phase].fields}
+                stranded = sorted(
+                    declared - _settings_referenced_anywhere(phase))
+                self.assertEqual(
+                    stranded, [],
+                    f"declared in the {phase} schema and mentioned nowhere "
+                    f"else in the package: {stranded}")
 
     def test_every_exemption_says_why(self):
         for name, reason in CONSUMED_ELSEWHERE.items():
