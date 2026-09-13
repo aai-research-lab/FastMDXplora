@@ -855,7 +855,7 @@ anyone else's handlers.
 That is right for the command line, which owns the terminal and ends when
 the run does. It was wrong everywhere else: importing the package and
 running one study left the caller's own logging permanently unable to see
-anything from us, silently, for the rest of the session — and `caplog`
+anything from FastMDXplora, silently, for the rest of the session — and `caplog`
 stopped working in their tests.
 
 The decision now has a name and one caller:
@@ -870,6 +870,7 @@ rather than in somebody's logs.
 
 The trade is not free, and it is the better of the two available. A caller
 who has configured root handlers will now see this package's records
-twice: once through our handler, once through theirs. Doubled output is
-visible and they can turn our handler off. Silent swallowing is invisible
+twice: once through FastMDXplora's handler, once through theirs. Doubled
+output is visible and the handler can be turned off. Silent swallowing is
+invisible
 and there is nothing they can do about what they cannot see.
