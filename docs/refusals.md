@@ -785,3 +785,43 @@ genuinely different constants, and a mean of the two describes neither.
 The median is used rather than the mean. A run that swapped, or shared the
 card, is slow by an arbitrary amount; nothing makes a run anomalously
 fast, so the distribution is one-sided.
+
+## What a real run showed
+
+Everything above was tested against stubs and synthetic series until a
+solvated tri-alanine peptide went through the actual pipeline on the CPU
+platform — PDBFixer, amber14, PME, HBonds constraints, a barostat.
+
+Three guardrails fired before a single step was integrated, on a config a
+person had written by hand:
+
+```
+Unknown setup option 'padding_nm' (did you mean 'solvent_padding_nm'?)
+
+Nonbonded cutoff (1.00 nm) exceeds half the smallest periodic box
+dimension (0.58 nm; box edge 1.15 nm). Increase solvent_padding_nm ...
+
+With no NPT stage the box keeps the density solvation gave it ... packs
+near 0.90 g/mL against water's 1.0. Only a barostat closes it.
+```
+
+The first is the loader. The second is minimum image, which would
+otherwise have produced a run whose long-range interactions were quietly
+wrong. The third is a warning rather than a refusal, and it was right: a
+segmented run configured that way did later become unstable.
+
+Then a three-segment study ran, each segment resuming from the last:
+
+```
+seg0   particles=1663  steps=400  seconds=2.82
+seg1   particles=1663  steps=200  seconds=1.54
+seg2   particles=1663  steps=200  seconds=1.47
+whole  particles=1797  steps=800  seconds=6.09
+
+fitted from 4 real runs: k=4.331e-06, spread=1.09
+```
+
+Segment zero carries the equilibration and the other two do not, the
+production steps sum to what was asked for, and the four runs agree about
+the machine to within 9 per cent — the linear cost model holding on real
+systems rather than on argon.
