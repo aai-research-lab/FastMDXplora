@@ -194,10 +194,26 @@ class TestTheRecordIsUsable(unittest.TestCase):
 
 class TestTheBoundaryHolds(unittest.TestCase):
 
-    def test_core_does_not_import_the_agent(self):
-        # The dependency runs one way. If it ever runs both, the claim that
-        # correctness lives below the model stops being checkable, because
-        # nobody can tell which layer is enforcing it.
+    def test_core_does_not_depend_on_the_agent(self):
+        """Core must run with the agent absent.
+
+        The rule this started as -- no file outside `agent/` mentions it --
+        was right until the CLI gained `fastmdx agent`, which has to
+        dispatch somewhere. The property it was protecting is narrower
+        than the rule was: core must not *depend* on the agent, so that
+        `fastmdxplora` installed without the extra is a complete
+        simulation package and the safety cannot be said to come from a
+        layer a caller could remove.
+
+        A module-level import creates that dependency. An import inside
+        the one function that handles `fastmdx agent` does not: nothing is
+        loaded until somebody asks for it, and asking without the extra
+        installed fails at that line with an ImportError naming what to
+        install.
+
+        So the rule is now about where the import sits, which is the thing
+        that was actually meant.
+        """
         import ast
         import pathlib
 
@@ -209,28 +225,94 @@ class TestTheBoundaryHolds(unittest.TestCase):
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
+                names = []
                 if isinstance(node, ast.ImportFrom) and node.module:
-                    if "fastmdxplora.agent" in node.module:
-                        offenders.append(f"{path.name}:{node.lineno}")
+                    names = [node.module]
                 elif isinstance(node, ast.Import):
-                    for alias in node.names:
-                        if "fastmdxplora.agent" in alias.name:
-                            offenders.append(f"{path.name}:{node.lineno}")
-        self.assertEqual(offenders, [], f"core imports the agent: {offenders}")
+                    names = [a.name for a in node.names]
+                if any("fastmdxplora.agent" in n for n in names):
+                    # col_offset 0 is module level; anything indented is
+                    # inside a function and only runs when called.
+                    if node.col_offset == 0:
+                        offenders.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(
+            offenders, [],
+            f"core imports the agent at module level: {offenders}. "
+            "Import it inside the function that needs it, so the package "
+            "still works when the extra is not installed.")
 
-    def test_the_agent_constructs_no_model_client(self):
-        # A caller supplies a completion function. This package should not
-        # know, and must not require, what is behind it.
+    def test_the_package_imports_without_the_agent(self):
+        # The property the rule above protects, asserted directly. If
+        # `agent` were unimportable, everything else must still work.
+        import importlib
+        import pkgutil
+
+        import fastmdxplora
+        failures = []
+        for info in pkgutil.walk_packages(fastmdxplora.__path__,
+                                          prefix="fastmdxplora."):
+            if ".agent" in info.name:
+                continue
+            try:
+                importlib.import_module(info.name)
+            except ImportError as exc:  # pragma: no cover
+                failures.append(f"{info.name}: {exc}")
+        self.assertEqual(failures, [])
+
+    def test_the_proposing_loop_knows_nothing_about_providers(self):
+        """The loop is provider-agnostic, and that has not changed.
+
+        This began as a ban on the strings `api_key` and `anthropic`
+        anywhere in `agent/`, which was right while the agent only ever
+        took a caller-supplied function. `fastmdx agent set` changed that:
+        somebody has to hold a key, and `models.py` is where.
+
+        The property worth keeping is narrower. `propose_config` and its
+        repair loop still take a callable and know nothing about what
+        answers it -- so a caller can plug in anything, and `models.py` is
+        one convenience built on the same hook rather than a dependency
+        baked into the loop.
+        """
+        import pathlib
+
+        import fastmdxplora.agent.propose as propose
+
+        source = pathlib.Path(propose.__file__).read_text(encoding="utf-8")
+        for banned in ("api_key", "API_KEY", "anthropic", "openai",
+                       "import requests", "import httpx"):
+            with self.subTest(banned=banned):
+                self.assertNotIn(banned, source)
+
+    def test_no_client_library_anywhere_in_the_agent(self):
+        # One HTTPS request through the standard library. A package that
+        # should not gain a dependency should not gain one for this.
         import pathlib
 
         import fastmdxplora.agent as agent
+
         root = pathlib.Path(agent.__file__).parent
         for path in root.rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             for banned in ("import openai", "import anthropic",
-                           "import langchain", "api_key", "API_KEY"):
+                           "import langchain", "import requests",
+                           "import httpx"):
                 with self.subTest(path=path.name, banned=banned):
                     self.assertNotIn(banned, text)
+
+    def test_the_key_never_reaches_a_study(self):
+        # The one that would actually hurt somebody. Configs and manifests
+        # get shared, pasted into issues and committed.
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.agent.models import ModelChoice, load_choice, save_choice
+
+        where = Path(tempfile.mkdtemp()) / "model.json"
+        save_choice(ModelChoice("openai", "gpt-5"), key="sk-secret",
+                    path=where)
+        record = load_choice(where).as_record()
+        self.assertNotIn("sk-secret", str(record))
+        self.assertNotIn("api_key", record)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -299,6 +299,13 @@ CODES: tuple[Code, ...] = (
          "A segment that never ran, because an earlier one settled the "
          "question it was part of.",
          Kind.SEMANTIC, Disclosure.NOTHING),
+    Code("environment.model.unset",
+         "No model has been chosen, so there is nothing to ask.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.credentials.absent",
+         "No API key for the chosen provider, in the environment or stored.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION,
+         detail_keys=("provider", "environment_variable")),
     Code("environment.calibration.absent",
          "This machine has not been measured, so there is no basis for a "
          "duration estimate.",

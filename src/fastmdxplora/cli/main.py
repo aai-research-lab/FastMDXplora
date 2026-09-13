@@ -921,6 +921,71 @@ def _build_parser() -> argparse.ArgumentParser:
                      metavar="ANGSTROM",
                      help="Binding-pocket cutoff used by the viewer.")
 
+
+    # ---------- agent: write a study from a sentence ------------------------
+    ag = sub.add_parser(
+        "agent",
+        help="Write a study from a sentence, using a model you choose.",
+        description=(
+            "Describe a study in plain language and get a config. The "
+            "config goes through the same validation as one written by "
+            "hand, so a refusal here is the refusal you would have got "
+            "anyway -- the agent cannot ask for something the software "
+            "will not do. Run `fastmdx agent set` once to choose a model; "
+            "nothing else in FastMDXplora needs one."
+        ),
+        formatter_class=_PercentSafeHelp,
+    )
+    ag.add_argument(
+        "request",
+        nargs="?",
+        metavar="REQUEST",
+        help=(
+            "What the study should do, in plain language. The word `set` "
+            "chooses a model instead. With neither, prints what is "
+            "currently set."
+        ),
+    )
+    ag.add_argument(
+        "-f", "-file", "--file",
+        dest="request_file",
+        metavar="FILE",
+        help=(
+            "Read the request from a file instead. For anything longer "
+            "than a shell quote comfortably holds."
+        ),
+    )
+    ag.add_argument(
+        "-o", "--output",
+        dest="agent_output",
+        metavar="FILE",
+        help=(
+            "Write the config here instead of printing it. The config is "
+            "printed either way; this also saves it."
+        ),
+    )
+    ag.add_argument(
+        "--phases",
+        metavar="PHASES",
+        default="setup,simulation",
+        help=(
+            "Which phases to describe to the model (default: "
+            "setup,simulation). Fewer is a cheaper call and a smaller "
+            "space to go wrong in."
+        ),
+    )
+    ag.add_argument(
+        "--attempts",
+        type=int,
+        metavar="N",
+        default=4,
+        help=(
+            "How many times it may correct itself before giving up "
+            "(default: 4). Each attempt is checked before anything runs, "
+            "so they cost seconds rather than GPU time."
+        ),
+    )
+
     ic = sub.add_parser(
         "init-config",
         help="Write a commented YAML config template to edit.",
@@ -1666,6 +1731,117 @@ def _cmd_dashboard_home() -> int:
     return 0
 
 
+def _run_agent(args: Any) -> int:
+    """`fastmdx agent` -- choose a model, or write a study from a sentence."""
+    from pathlib import Path as _Path
+
+    from fastmdxplora.agent import (
+        PROVIDERS, ModelChoice, completion_for, describe_choice, propose_config,
+        save_choice,
+    )
+    from fastmdxplora.refusals import StudyError, refusal_of
+
+    request = args.request
+
+    if request == "set":
+        return _choose_model()
+
+    if args.request_file:
+        try:
+            request = _Path(args.request_file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"Could not read {args.request_file}: {exc}")
+            return 1
+
+    if not request:
+        print(describe_choice())
+        return 0
+
+    try:
+        complete = completion_for()
+    except StudyError as exc:
+        print(refusal_of(exc).message)
+        return 1
+
+    print("Writing a config...")
+    try:
+        proposal = propose_config(
+            request, complete,
+            phases=[p.strip() for p in args.phases.split(",") if p.strip()],
+            max_cycles=int(args.attempts))
+    except StudyError as exc:
+        print(refusal_of(exc).message)
+        return 1
+
+    # The corrections, shown rather than hidden. They are the only visible
+    # sign that anything checked the config, and the count is worth seeing.
+    for attempt in proposal.attempts:
+        if attempt.refusal is not None:
+            print(f"  ✗ {attempt.refusal.message}")
+
+    if not proposal.accepted:
+        print(f"\nGave up after {proposal.cycles} attempt(s). The last "
+              "refusal is above.")
+        return 1
+
+    import yaml
+
+    text = yaml.safe_dump(proposal.config, sort_keys=False)
+    print(f"  ✓ Accepted after {proposal.cycles} attempt(s)\n")
+    print(text)
+    if args.agent_output:
+        _Path(args.agent_output).write_text(text, encoding="utf-8")
+        print(f"Written to {args.agent_output}")
+        print(f"Run it with: fastmdx explore -config {args.agent_output}")
+    else:
+        print("Save it with -o FILE, then run "
+              "`fastmdx explore -config FILE`.")
+    return 0
+
+
+def _choose_model() -> int:
+    """`fastmdx agent set` -- pick a provider and, optionally, store a key."""
+    from fastmdxplora.agent import PROVIDERS, ModelChoice, save_choice
+
+    names = list(PROVIDERS)
+    print("Model:")
+    for index, name in enumerate(names, 1):
+        print(f"  [{index}] {PROVIDERS[name]['label']}")
+    try:
+        picked = names[int(input("> ").strip()) - 1]
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        print("Nothing chosen.")
+        return 1
+
+    base_url = ""
+    if picked == "compatible":
+        base_url = input("Base URL (e.g. https://api.deepseek.com): ").strip()
+        if not base_url:
+            print("A base URL is needed for an OpenAI-compatible server.")
+            return 1
+
+    default_model = str(PROVIDERS[picked]["default_model"])
+    prompt = (f"Model [{default_model}]: " if default_model else "Model: ")
+    model = input(prompt).strip() or default_model
+    if not model:
+        print("A model name is needed.")
+        return 1
+
+    env_name = str(PROVIDERS[picked]["env"])
+    print(f"API key (leave blank to read {env_name} from the environment "
+          "instead):")
+    key = input("> ").strip()
+
+    where = save_choice(ModelChoice(picked, model, base_url), key=key)
+    print(f"\n  ✓ Saved to {where}")
+    if key:
+        print("  ✓ Key stored there, readable only by you. It is never "
+              "written into a study.")
+    else:
+        print(f"  ✓ No key stored; {env_name} will be read at call time.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     # Ensure the CLI can emit its Unicode output (box-drawing banner, "→",
     # "—") regardless of the platform's locale. On machines whose default
@@ -1731,6 +1907,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # removed. The decision is here, in one place, and nothing half-implements
     # its opposite. If the fail-fast policy is wanted instead, it is a change
     # to this comment and a call on the next line, not a resurrection.
+
+    if args.command == "agent":
+        return _run_agent(args)
 
     if args.command == "init-config":
         return _cmd_init_config(args)

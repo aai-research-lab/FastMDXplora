@@ -27,6 +27,14 @@ from fastmdxplora.agent.run import (
     submit_study,
 )
 from fastmdxplora.agent.worker import WorkerReport, work
+from fastmdxplora.agent.models import (
+    PROVIDERS,
+    ModelChoice,
+    completion_for,
+    describe_choice,
+    load_choice,
+    save_choice,
+)
 from fastmdxplora.agent.evaluate import REQUESTS, Report, measure
 from fastmdxplora.agent.propose import (
     Attempt,
@@ -39,6 +47,12 @@ from fastmdxplora.agent.propose import (
 
 __all__ = [
     "Attempt",
+    "ModelChoice",
+    "PROVIDERS",
+    "completion_for",
+    "describe_choice",
+    "load_choice",
+    "save_choice",
     "REQUESTS",
     "Report",
     "measure",

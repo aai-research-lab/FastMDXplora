@@ -874,3 +874,53 @@ twice: once through FastMDXplora's handler, once through theirs. Doubled
 output is visible and the handler can be turned off. Silent swallowing is
 invisible
 and there is nothing they can do about what they cannot see.
+
+## Connecting a model
+
+Nothing in FastMDXplora needs a model. The agent does, and it asks once.
+
+```
+$ fastmdx agent set
+  Model:
+    [1] Anthropic
+    [2] OpenAI
+    [3] Other (any OpenAI-compatible URL)
+  > 1
+  Model [claude-sonnet-4-6]:
+  API key (leave blank to read ANTHROPIC_API_KEY from the environment instead):
+  > sk-ant-...
+
+  ✓ Saved to ~/.config/fastmdxplora/model.json
+  ✓ Key stored there, readable only by you. It is never written into a study.
+```
+
+Then:
+
+```bash
+fastmdx agent "simulate ubiquitin at pH 6.5 for 50 ns"
+fastmdx agent -f study.txt -o ubiquitin.yml
+```
+
+The config prints, the repair attempts print with it, and `-o` also writes
+it. What comes out goes through `fastmdx explore -config` like anything
+else — the agent writes a config and stops there.
+
+Option 3 covers DeepSeek, vLLM, Ollama, OpenRouter and most local servers,
+because they speak the OpenAI chat shape. One entry rather than one per
+vendor: a list of vendors goes stale and a protocol does not.
+
+### Where the key lives
+
+In one file outside any study, readable only by its owner — or in the
+environment, which is checked first. `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `FASTMDX_MODEL_API_KEY` for a compatible server. That is
+how a cluster job or a CI run supplies one without anybody storing it.
+
+It never enters a config, a manifest, a log line or an error message.
+Those files get shared, pasted into issues and committed; a key in one is
+a key on the internet. A test asserts the manifest record carries the
+provider and the model and nothing else.
+
+Which model wrote a study *is* recorded, because it is provenance. Six
+months on, "why did this study pick 300 K" has a different answer
+depending on whether a frontier model or a 7B on a laptop proposed it.
