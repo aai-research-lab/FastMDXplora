@@ -1123,9 +1123,9 @@ def _ligands_payload(
     if info.get("valid"):
         explicit = [config.ligand_resname] if config.ligand_resname else None
         detected = detect_ligands(
-            # Reconstruct (chain, resname, resi) keys from info — we
+            # Reconstruct (chain, resname, resi) keys from info — a
             # already collected them in count_structure. To avoid a
-            # second PDB walk we accept that callers that want full
+            # second PDB walk is avoided, so callers that want full
             # ligand IDs receive them via /api/structure-info.
             (
                 (str(ins.get("chain", "A")), str(ins.get("resname", "")), str(ins.get("resi", "")))

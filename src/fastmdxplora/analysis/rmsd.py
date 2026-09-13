@@ -145,7 +145,7 @@ class RMSD(Analysis):
 
     # Helpers --------------------------------------------------------------
     # The base class doesn't pass the trajectory through to plot(), so
-    # we cache the trajectory and the resolved x-axis on the instance
+    # the trajectory and the resolved x-axis are cached on the instance
     # during run() via a small override.
     _traj_for_plot: md.Trajectory | None = None
     _resolved_ref: int = 0

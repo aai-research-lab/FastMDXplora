@@ -403,7 +403,7 @@ def load_trajectory(
             f"MDTraj failed to load trajectory: {exc}"
         ) from exc
 
-    # MDTraj returns a list for a single file, ensure we have a Trajectory.
+    # MDTraj returns a list for a single file; coerce to a Trajectory.
     if isinstance(trajectory, list):
         trajectory = md.join(trajectory)
 

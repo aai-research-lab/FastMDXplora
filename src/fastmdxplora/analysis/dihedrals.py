@@ -17,7 +17,7 @@ References
 ----------
 The phi/psi assignment follows the IUPAC convention. MDTraj's
 :func:`mdtraj.compute_phi` / :func:`mdtraj.compute_psi` are used; both
-return angles in radians, which we convert to degrees for the standard
+return angles in radians, converted here to degrees for the standard
 Ramachandran display range of (-180°, 180°).
 """
 

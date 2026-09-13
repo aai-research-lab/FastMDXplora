@@ -218,7 +218,7 @@ class FastMDXplora:
         self._deferred_verbose = verbose
 
         if n_config:
-            # Config-driven: defer everything to explore(). We don't create
+            # Config-driven: defer everything to explore(). Nothing creates
             # an output directory or banner here because the batch machinery
             # owns the layout (flat for one run, runs/<id>/ for many).
             self.system = None  # resolved per-run by the batch layer
@@ -227,6 +227,20 @@ class FastMDXplora:
             self._config_include = include
             self._config_exclude = exclude
             self.results = []
+            # Declared, not omitted. This branch used to return without
+            # setting it at all, so the same class had two shapes depending
+            # on which argument it was given -- and any code asking "where
+            # is the output" had to know which, or discover it through an
+            # AttributeError.
+            #
+            # That is not a hypothetical. An attempt to fix a logging leak
+            # landed on the other branch and did nothing, because every
+            # caller affected was on this one, and the difference was
+            # invisible until traced. None says the same thing the absence
+            # did -- the location is not settled yet -- in a way that can be
+            # read rather than caught. explore() fills it in from the batch
+            # layer, as it already did.
+            self.output_dir = None
             return
 
         # ---- Direct single-study path -----------------------------------
@@ -244,7 +258,7 @@ class FastMDXplora:
         self._config_exclude: list[str] | None = exclude
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        self.output_dir: Path = (
+        self.output_dir: Path | None = (
             Path(output_dir) if output_dir
             else Path(f"fastmdxplora_output_{timestamp}")
         )

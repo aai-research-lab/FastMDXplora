@@ -402,7 +402,7 @@ def _execute_run(
     class _QuietBanner:
         """Keep a worker's output out of the shared terminal.
 
-        Two sources. Ours obeys an environment variable. PLUMED's comes from
+        Two sources. FastMDXplora's obeys an environment variable. PLUMED's comes from
         C++ and writes to the file descriptor directly, so redirecting
         Python's ``sys.stdout`` does not reach it -- the same lesson as a
         Markdown renderer that printed its installation guide from a dynamic

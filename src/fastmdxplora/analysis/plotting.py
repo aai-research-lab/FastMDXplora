@@ -445,7 +445,7 @@ def _tick_budget(ax: Axes, axis: str) -> int:
 
 
 def _has_categorical_ticks(ax: Axes, axis: str) -> bool:
-    """True when the axis carries fixed or text labels we must not relocate.
+    """True when the axis carries fixed or text labels that must not be relocated.
 
     Matrices, dendrograms, and bar charts label specific positions; replacing
     their locator would silently mislabel the data.

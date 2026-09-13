@@ -181,7 +181,7 @@ class HBonds(Analysis):
             Columns ``frame, n_hbonds``. One row per frame.
         """
         # Restrict to the selected atoms (e.g. protein/solute) before H-bond
-        # detection, so on a solvated system we count the solute's hydrogen
+        # detection, so on a solvated system the count is of the solute's hydrogen
         # bonds rather than scanning thousands of waters.
         atom_idx = self.select_atoms(traj)
         if len(atom_idx) < traj.n_atoms:
@@ -214,7 +214,7 @@ class HBonds(Analysis):
             counts = np.array([len(bonds) for bonds in per_frame], dtype=int)
         else:
             # Baker-Hubbard returns aggregated bonds present above `freq`
-            # threshold. To produce a per-frame count we re-evaluate the
+            # threshold. To produce a per-frame count this re-evaluates the
             # bonds frame by frame using its definitions (an O(n_frames)
             # loop, but MDTraj's vectorized distance/angle is fast).
             bonds = md.baker_hubbard(
@@ -287,7 +287,7 @@ def _per_frame_baker_hubbard(
     """Recompute per-frame occupancy for an aggregated Baker-Hubbard set.
 
     ``bonds`` is the (n_bonds, 3) [donor_idx, H_idx, acceptor_idx] array
-    returned by ``md.baker_hubbard``. We evaluate each candidate bond at
+    returned by ``md.baker_hubbard``. Each candidate bond is evaluated at
     every frame against the standard Baker-Hubbard cutoffs (H-A distance
     < 0.25 nm AND D-H-A angle > 120°).
 

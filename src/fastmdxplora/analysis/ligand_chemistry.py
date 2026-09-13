@@ -1,4 +1,4 @@
-"""How the ligand's chemistry was known, and how confident that makes us.
+"""How the ligand's chemistry was known, and what that supports.
 
 Deciding whether a nitrogen donates a hydrogen bond, whether a ring is
 aromatic, whether a group carries a charge -- none of that is in a trajectory.

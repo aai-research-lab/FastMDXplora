@@ -1684,10 +1684,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     from fastmdxplora.utils.logging import own_the_console, setup_console
 
     setup_console()
-    # The CLI owns the terminal, so records are printed once by our handler
+    # The CLI owns the terminal, so records are printed once by FastMDXplora's handler
     # rather than also by whatever the root logger has. This used to happen
     # inside setup_console, which meant the library path did it too and
-    # left a caller's logging cut off from us for the rest of the session.
+    # cut a caller's logging off from FastMDXplora for the rest of the session.
     own_the_console()
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)

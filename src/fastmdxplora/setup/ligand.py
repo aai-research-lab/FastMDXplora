@@ -4,7 +4,7 @@ This module validates and loads small-molecule ligands for parameterization
 with the OpenFF small-molecule force fields (via ``openmmforcefields``'
 ``SystemGenerator``). It deliberately keeps the *loading/validation* concern
 separate from the *system build* concern (which lives in
-:mod:`fastmdxplora.setup.prepare`): here we turn a ligand file into a
+:mod:`fastmdxplora.setup.prepare`): here a ligand file becomes a
 validated OpenFF ``Molecule`` with a known net charge; the prepare step feeds
 that molecule to the ``SystemGenerator``.
 
@@ -210,7 +210,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
     indices = [atom.index for atom in residue.atoms]
 
     # Heavy atoms only: a crystal structure has no hydrogens, and the SDF
-    # has them. Matching on count is what tells us the two are the same
+    # has them. Matching on count is what establishes the two are the same
     # molecule rather than something that merely shares a residue name.
     heavy = [i for i, atom in enumerate(molecule.atoms)
              if atom.atomic_number > 1]
@@ -319,7 +319,7 @@ def load_ligand(
         , code="setup.ligand.unreadable", path=str(path)) from exc
 
     # Molecule.from_file may return a list when the file holds multiple
-    # molecules; we parameterize a single ligand for now (the config is
+    # molecules; a single ligand is parameterized for now (the config is
     # list-shaped so multi-ligand support can layer on later).
     if isinstance(molecule, list):
         if len(molecule) != 1:

@@ -542,7 +542,7 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
         )
 
     # A count is one number, not a sample: there is no standard deviation to
-    # report, which is a different thing from one we could not obtain. The
+    # report, which is a different thing from one that could not be obtained. The
     # column said "not available", which reads as a measurement that failed.
     n_frames = analysis_manifest.get("n_frames")
     if n_frames is not None:

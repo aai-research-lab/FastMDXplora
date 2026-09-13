@@ -823,7 +823,7 @@ class DashboardRuntime:
         except Exception:
             log_handle.close()
             raise
-        # Popen owns an inherited OS handle. Closing our copy avoids a
+        # Popen owns an inherited OS handle. Closing this copy avoids a
         # long-lived Python file object while the child continues writing.
         log_handle.close()
         self.active_root = output_dir

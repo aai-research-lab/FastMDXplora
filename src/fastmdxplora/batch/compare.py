@@ -65,7 +65,7 @@ def _load_series(dat_path: Path) -> np.ndarray | None:
     """Load a per-frame 1-D series from an analysis .dat file.
 
     Many analyses write a single column (rmsd, qvalue); some write a
-    leading index/extra columns (rg by_chain, sasa). We take the last
+    leading index/extra columns (rg by_chain, sasa). This takes the last
     column as the per-frame scalar of interest when 2-D, which matches
     the convention that the primary quantity is the rightmost series.
     Returns None if the file is missing or unreadable.
@@ -250,7 +250,7 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
         logger.info("No comparable analysis outputs found — skipping comparison.")
         return None
 
-    # We have something to compare — now create the report directory.
+    # There is something to compare — now create the report directory.
     cmp_dir.mkdir(parents=True, exist_ok=True)
 
     # Overlays + trends per present analysis.

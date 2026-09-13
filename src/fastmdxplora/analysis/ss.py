@@ -42,7 +42,7 @@ from fastmdxplora.refusals import StudyError
 _DSSP_TO_INT = {
     "C": 0,  # coil
     "T": 0,  # turn (mapped to coil in simplified mode it never appears,
-             #       but we keep this for the "full" mode below)
+             #       but this is kept for the "full" mode below)
     " ": 0,  # other / unassigned
     "S": 0,  # bend
     "E": 1,  # extended / beta-strand

@@ -307,7 +307,7 @@ def _rebind_console(handler: logging.Handler, style: str) -> None:
         try:
             handler.flush()
         except (ValueError, OSError):
-            # The stream we are leaving may already be closed, which is the
+            # The stream being left may already be closed, which is the
             # commonest reason to be here at all. Nothing to flush it to.
             pass
         # Assigned rather than `setStream`, which flushes the outgoing
@@ -425,9 +425,9 @@ def own_the_console() -> None:
     line, which owns the terminal and ends when the run does.
 
     Not correct for a library. A caller who imports this package has their
-    own logging, and silently cutting it off from ours is the worse of the
+    own logging, and silently cutting it off from this package is the worse of the
     two failures available here: the alternative, where a caller with a
-    root handler sees our records twice, is at least visible and something
+    root handler sees these records twice, is at least visible and something
     they can turn off.
 
     So this is not called from the library path, and a study run through

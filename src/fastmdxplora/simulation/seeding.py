@@ -524,8 +524,8 @@ def _check_against_colvar(pull: Path, measured: np.ndarray,
                     "recomputed and not cross-checked.")
         return
     _, cv = record
-    ours, theirs = float(np.median(measured)), float(np.median(cv))
-    if abs(ours - theirs) <= COLVAR_AGREEMENT_NM:
+    recomputed, biased = float(np.median(measured)), float(np.median(cv))
+    if abs(recomputed - biased) <= COLVAR_AGREEMENT_NM:
         return
 
     # A distance wider than the box is not a distance. Said first, because
@@ -543,7 +543,8 @@ def _check_against_colvar(pull: Path, measured: np.ndarray,
 
     raise StudyError(
         f"Over this run the collective variable recomputed here has median "
-        f"{ours:.3f} nm and the one PLUMED biased has median {theirs:.3f} nm "
+        f"{recomputed:.3f} nm and the one PLUMED biased has median "
+        f"{biased:.3f} nm "
         f"(spans {measured.min():.3f}-{measured.max():.3f} against "
         f"{cv.min():.3f}-{cv.max():.3f}).{impossible} Either the "
         "`ligand_resname` and `site_selection` used to seed are not the ones "

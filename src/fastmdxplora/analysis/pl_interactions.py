@@ -321,7 +321,7 @@ class ProteinLigandInteractions(Analysis):
         return written
 
     def _run_directory(self) -> Path | None:
-        """The run this analysis belongs to, if it is one of ours.
+        """The run this analysis belongs to, if FastMDXplora produced it.
 
         Its setup phase may already have resolved the ligand's chemistry, which
         beats inferring it from coordinates.

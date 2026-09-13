@@ -9,7 +9,7 @@ Validation is strict by design: unknown keys raise
 type doesn't match the schema raise with a clear message. A typo'd
 config that silently runs with defaults is the worst failure mode in
 science (you think you set ``ph: 7.4``, you actually ran the default,
-and your results are subtly wrong with no indication why) — so we never
+and your results are subtly wrong with no indication why) — so nothing is ever
 silently ignore.
 
 Override precedence (highest wins):
@@ -97,7 +97,7 @@ def _suggest(key: str, valid: set[str]) -> str:
 
     Case-insensitive: a pure case mismatch (``pH`` vs ``ph``) is one of
     the most common config typos and short keys fall below difflib's
-    default ratio when case differs, so we check case-folded matches
+    default ratio when case differs, so case-folded matches are checked
     first, then fall back to fuzzy matching.
     """
     # Exact case-insensitive match first (handles pH -> ph, PH -> ph, etc.)
@@ -170,7 +170,7 @@ def _check_type(value: Any, expected: type | tuple[type, ...]) -> bool:
 
     YAML parses ``1`` as int and ``1.0`` as float. A field declared
     ``float`` should accept an int (``temperature_K: 300`` is fine), so
-    we accept int wherever float is allowed. We also reject bool where
+    int is accepted wherever float is allowed. bool is rejected where
     int/float is expected (YAML ``true`` is a Python bool, which is an
     int subclass — without this guard ``ph: true`` would pass an int
     check).
@@ -209,7 +209,7 @@ def _check_choices(value: Any, fld: Any, *, key: str, context: str) -> None:
 
     Which is the failure this module's own docstring names: "a typo'd config
     that silently runs with defaults is the worst failure mode in science...
-    so we never silently ignore". It was true of unknown keys and not of
+    so nothing is silently ignored". It was true of unknown keys and not of
     known keys carrying unknown values.
 
     A list field is checked element by element -- `analysis.include` names

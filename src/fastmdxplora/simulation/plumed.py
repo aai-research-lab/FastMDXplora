@@ -71,7 +71,7 @@ def load_plumed_script(script: str | Path) -> str:
 def adjust_plumed_output_paths(script: str, output_dir: Path) -> str:
     """Redirect PLUMED ``FILE=`` outputs into the run's output directory.
 
-    PLUMED scripts write COLVAR/HILLS/etc. to whatever ``FILE=`` names; we
+    PLUMED scripts write COLVAR/HILLS/etc. to whatever ``FILE=`` names; this
     rewrite those to live under ``output_dir`` (keeping only the basename) so
     a run's PLUMED outputs land with its other artifacts, using forward
     slashes for cross-platform correctness.

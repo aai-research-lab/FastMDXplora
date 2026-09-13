@@ -92,7 +92,7 @@ def _worth_watching(output: str) -> str:
 
 
 def _ansi_supported(stream: IO) -> bool:
-    """Return True iff we should emit ANSI escapes on this stream."""
+    """Return True iff ANSI escapes should be emitted on this stream."""
     if os.getenv("NO_COLOR"):
         return False
     if not hasattr(stream, "isatty"):
@@ -139,7 +139,7 @@ def _visual_width(s: str) -> int:
     """Approximate displayed width (strip ANSI; count chars 1-wide).
 
     A full East-Asian width implementation is overkill for ASCII status
-    output; this approximation is correct for the characters we actually
+    output; this approximation is correct for the characters actually
     emit (box-drawing, arrows, status icons, latin-1).
     """
     return len(_strip_ansi(s))

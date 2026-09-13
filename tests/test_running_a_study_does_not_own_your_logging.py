@@ -103,16 +103,24 @@ def test_a_library_caller_keeps_its_own_logging(restored_propagation):
         "it back")
 
 
-def test_the_two_constructor_shapes_are_still_there(restored_propagation):
-    """Not this bug, and the reason it took three attempts to find.
+def test_both_constructor_paths_declare_where_output_goes(restored_propagation):
+    """The surprise behind the logging bug, now removed.
 
-    `FastMDXplora.__init__` behaves differently depending on which argument
-    it is given. With `system=` it sets `output_dir` and configures logging
-    immediately; with `config_data=` it defers both. An attempted fix
-    landed on the first path while every affected caller was on the second.
+    `FastMDXplora.__init__` still has two branches -- `system=` settles the
+    output directory immediately, `config_data=` leaves it to the batch
+    layer -- and that difference is real and worth keeping. What is gone is
+    the *shape* difference: the deferred branch used to return without
+    setting `output_dir` at all, so the same class had two attribute sets
+    and code asking where the output goes had to know which, or find out
+    through an AttributeError.
 
-    Recorded rather than fixed. Unifying them is worth doing and is a
-    different change.
+    It is now `None` on the deferred path, which says what the absence said
+    -- not settled yet -- in a form that can be read rather than caught.
+    `explore()` fills it in.
+
+    This is not bookkeeping. An attempt to fix the logging leak landed on
+    the immediate branch and did nothing, because every affected caller was
+    on the deferred one and nothing made the difference visible.
     """
     from fastmdxplora import FastMDXplora
 
@@ -121,5 +129,7 @@ def test_the_two_constructor_shapes_are_still_there(restored_propagation):
         output_dir=tempfile.mkdtemp())
     direct = FastMDXplora(system="x.pdb", output_dir=tempfile.mkdtemp())
 
-    assert not hasattr(deferred, "output_dir")
+    assert hasattr(deferred, "output_dir")
     assert hasattr(direct, "output_dir")
+    assert deferred.output_dir is None
+    assert direct.output_dir is not None

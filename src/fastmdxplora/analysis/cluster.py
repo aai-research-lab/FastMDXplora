@@ -353,7 +353,7 @@ class Cluster(Analysis):
                 finished_at=finished,
             )
 
-    # Required by the ABC but not used (we override run())
+    # Required by the ABC but not used (run() is overridden)
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:
         # Plot the first method on the supplied axes — used only by
         # external callers who instantiate the figure themselves.

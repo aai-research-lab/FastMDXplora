@@ -113,7 +113,7 @@ UNPARAMETERIZABLE = {
     "PQQ": "PQQ", "TPQ": "topaquinone",
 }
 
-# Residue codes that mean "we do not know what this is". No chemical
+# Residue codes that mean "this is not identified". No chemical
 # definition exists, so nothing downstream can parameterize them.
 UNKNOWN_NAMES = frozenset({"UNL", "UNK", "UNX", "LIG", "DRG"})
 

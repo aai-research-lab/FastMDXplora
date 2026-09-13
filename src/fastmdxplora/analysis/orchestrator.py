@@ -582,7 +582,7 @@ class AnalysisOrchestrator:
             return getattr(traj, "unitcell_lengths", None) is not None
 
         def _state_ok(name: str) -> bool:
-            """Thermodynamics needs the state record, which only our own
+            """Thermodynamics needs the state record, which only a FastMDXplora
             simulation phase writes. A trajectory imported from elsewhere
             brings coordinates and not the ensemble they came from, and
             that is a question it does not pose rather than one this fails

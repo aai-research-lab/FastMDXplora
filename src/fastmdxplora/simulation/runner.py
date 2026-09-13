@@ -57,7 +57,7 @@ DEFAULT_INTEGRATOR_ERROR_TOLERANCE = 0.001  # for the variable-step integrators
 # Atmospheres to bar (OpenMM's barostat takes bar). 1 atm = 1.01325 bar.
 ATM_TO_BAR = 1.01325
 
-# Integrators we can construct. langevin_middle is the modern default
+# Integrators this can construct. langevin_middle is the modern default
 # (better configurational sampling than the legacy LangevinIntegrator).
 SUPPORTED_INTEGRATORS = (
     "langevin",
@@ -305,7 +305,7 @@ def select_platform(
         # For auto-selection, verify the platform actually works before
         # committing to it — a registered OpenCL/CUDA platform with no
         # usable device otherwise fails later at Context construction with
-        # a confusing error. For an explicit request we honor it as-is so
+        # a confusing error. For an explicit request it is honored as-is so
         # the user sees the real error if their chosen platform is broken.
         if auto and not _probe_platform(omm, platform, name, props):
             continue
@@ -474,7 +474,7 @@ def _attach_state_reporter(
 ) -> Any:
     """Attach a CSV StateDataReporter with the standard observables."""
     # OpenMM's StateDataReporter writes a one-line header automatically.
-    # We open with newline="" so the line endings are consistent
+    # Opened with newline="" so the line endings are consistent
     # cross-platform and so the CSV opens cleanly in Excel.
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     reporter = omm["StateDataReporter"](
@@ -1544,7 +1544,7 @@ def run_simulation(
         # through equilibration too, and putting both in COLVAR left a file
         # that began at 500 ps, lost what NVT wrote, and ran its clock
         # backwards in the middle -- because production resets the counter.
-        # Every reader of that file, ours and the user's, had to know all
+        # Every reader of that file, FastMDXplora's and the user's, had to know all
         # three things. COLVAR is production and nothing else, as it has
         # always been; the settling has its own name.
         settling_path = Path(output_dir) / "umbrella_equilibration.plumed"
@@ -1823,7 +1823,7 @@ def run_simulation(
 
         # The anchor, from the state equilibration produced rather than the
         # one it started from. The force is attached here, so the script is
-        # still ours to rewrite, and this is the first moment the positions
+        # still FastMDXplora's to rewrite, and this is the first moment the positions
         # the pull will actually begin at exist. An umbrella window never
         # carries one: its centre is fixed by the plan, and a window
         # re-anchored to wherever it drifted is a different window.

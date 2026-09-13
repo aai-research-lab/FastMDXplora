@@ -1213,7 +1213,7 @@ def _add_ligand_to_modeller(omm, modeller, ligand_mol, ligand_name="LIG") -> Non
     # conformer loaded from the SDF/MOL2 file.
     positions = _to_openmm(ligand_mol.conformers[0])
 
-    # Record the residue count before adding so we can re-assert the ligand
+    # Record the residue count before adding so the ligand can be re-asserted
     # residue name on the MERGED topology — modeller.add() does not reliably
     # preserve the input topology's residue names across all OpenMM versions.
     n_residues_before = modeller.topology.getNumResidues()
@@ -1241,7 +1241,7 @@ def _check_ligand_clashes(
     coordinates in the SDF/MOL2 must already be a feasible bound pose (e.g.
     from a co-crystal structure or docking). If the supplied pose places
     ligand atoms on top of protein atoms, energy minimization cannot relieve
-    the overlap and the simulation diverges to NaN several steps later. We
+    the overlap and the simulation diverges to NaN several steps later. This
     detect that here and stop with an actionable message, rather than letting
     it surface as an opaque integration failure downstream.
 
@@ -1288,7 +1288,7 @@ def _check_ligand_clashes(
         elements = []
     if len(elements) != len(coords):
         # Without reliable element information every atom is treated as heavy.
-        # Excluding atoms we cannot identify would silently disable the check,
+        # Excluding unidentifiable atoms would silently disable the check,
         # which is the opposite of what it is for.
         elements = ["X"] * len(coords)
     protein = [

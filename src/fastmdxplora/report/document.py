@@ -479,7 +479,7 @@ def _last_numeric_column(path: Path) -> list[float]:
         try:
             values.append(float(fields[-1]))
         except (ValueError, IndexError):
-            # A header line, which tells us the file has one and that the
+            # A header line, which says the file has one and that the
             # numbers start below it.
             continue
     return values
