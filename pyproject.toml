@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fastmdanalysis"
-version = "1.1.0"
-description = "Software for automated MD trajectory analysis"
+version = "1.1.2"
+description = "Superseded by fastmdxplora. Software for automated molecular dynamics exploration."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
@@ -43,10 +43,11 @@ test = [
 ]
 
 [project.urls]
-Repository = "https://github.com/aai-research-lab/FastMDAnalysis"
+Successor = "https://pypi.org/project/fastmdxplora/"
+Repository = "https://github.com/aai-research-lab/FastMDXplora"
 Documentation = "https://fastmdanalysis.readthedocs.io"
-Issues = "https://github.com/aai-research-lab/FastMDAnalysis/issues"
-Changelog = "https://github.com/aai-research-lab/FastMDAnalysis/blob/main/CHANGELOG.md"
+Issues = "https://github.com/aai-research-lab/FastMDXplora/issues"
+Changelog = "https://github.com/aai-research-lab/FastMDXplora/blob/v1.1.2/CHANGELOG.md"
 Archive = "https://doi.org/10.5281/zenodo.17510591" 
 
 [project.scripts]

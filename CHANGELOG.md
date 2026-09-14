@@ -18,6 +18,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - Bug fixes and documentation corrections.
 
 
+## [1.1.2] - 2026-09-14
+### Changed
+- **Superseded by [FastMDXplora](https://pypi.org/project/fastmdxplora/).** This
+  is the final release of `fastmdanalysis`. The package description, README and
+  `fastmda --help` now name the successor, and importing the package raises a
+  `DeprecationWarning`.
+- No analysis code changed. Results from 1.1.2 are identical to 1.1.0, and
+  1.1.0 remains installable for reproducing published work.
+### Fixed
+- 1.1.1 was built from a local tag that had drifted from the one on the
+  remote and was missing `src/fastmdanalysis/data/trp_cage.dcd`, so
+  `datasets.trp_cage` could not load its trajectory. **1.1.1 is yanked on
+  PyPI.** 1.1.2 is built from `v1.1.0` as published and ships the file.
+
+
 ## [1.0.0] - <2025-11-02>
 ### Added
 - **First stable release of FastMDAnalysis**

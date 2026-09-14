@@ -1,3 +1,18 @@
+> ### Superseded by [`fastmdxplora`](https://pypi.org/project/fastmdxplora/)
+>
+> FastMDAnalysis is no longer developed. FastMDXplora has every analysis below,
+> and adds system setup, production MD, enhanced sampling and free energies
+> behind the same CLI and Python API.
+>
+> ```bash
+> pip install fastmdxplora
+> ```
+>
+> To reproduce published results, pin the last release: `pip install fastmdanalysis==1.1.0`.
+> Version 1.1.2 adds this notice and changes nothing else.
+
+---
+
 [![DOI](https://img.shields.io/badge/DOI-10.26434/chemrxiv--2025--x8xnq-blue)](https://doi.org/10.26434/chemrxiv-2025-x8xnq)
 [![Total PyPI downloads](https://pepy.tech/badge/fastmdanalysis)](https://pepy.tech/project/fastmdanalysis)
 
