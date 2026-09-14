@@ -21,7 +21,11 @@ def _build_parser() -> argparse.ArgumentParser:
     common = make_common_parser()
     parser = argparse.ArgumentParser(
         description="FastMDAnalysis: Fast Automated MD Trajectory Analysis",
-        epilog="Docs: https://fastmdanalysis.readthedocs.io/en/latest/",
+        epilog=(
+            "Superseded by FastMDXplora: pip install fastmdxplora\n"
+            "Docs: https://fastmdanalysis.readthedocs.io/en/latest/"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         parents=[common],
     )
     subparsers = parser.add_subparsers(dest="command", help="Analysis type", required=True)

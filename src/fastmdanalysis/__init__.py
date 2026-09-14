@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Optional, Tuple, Union, Sequence, Mapping, Any, Dict
 from pathlib import Path
 import logging
+import warnings
 
 # Optional dependency import to ensure availability at import time (not used directly here).
 import mdtraj as md  # noqa: F401
@@ -54,6 +55,22 @@ def _resolve_version() -> str:
 
 
 __version__ = _resolve_version()
+
+# -----------------------------------------------------------------------------
+# Succession notice.
+#
+# DeprecationWarning is silent unless the importer is `__main__` or the caller
+# asked for warnings, so a library that depends on this package is unaffected
+# while someone running a script or a notebook is told. Pin 1.1.0 to silence it
+# permanently; nothing else differs between the two releases.
+# -----------------------------------------------------------------------------
+warnings.warn(
+    "fastmdanalysis is superseded by fastmdxplora, which has every analysis "
+    "here plus system setup, production MD, enhanced sampling and free "
+    "energies: pip install fastmdxplora",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # -----------------------------------------------------------------------------
 # Package logging: install a NullHandler so library users don't get warnings.

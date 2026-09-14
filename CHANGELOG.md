@@ -18,6 +18,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - Bug fixes and documentation corrections.
 
 
+## [1.1.1] - 2026-09-14
+### Changed
+- **Superseded by [FastMDXplora](https://pypi.org/project/fastmdxplora/).** This
+  is the final release of `fastmdanalysis`. The package description, README and
+  `fastmda --help` now name the successor, and importing the package raises a
+  `DeprecationWarning`.
+- No analysis code changed. Results from 1.1.1 are identical to 1.1.0, and
+  1.1.0 remains installable for reproducing published work.
+
+
 ## [1.0.0] - <2025-11-02>
 ### Added
 - **First stable release of FastMDAnalysis**
