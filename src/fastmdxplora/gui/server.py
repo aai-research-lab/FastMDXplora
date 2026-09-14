@@ -842,6 +842,18 @@ def start_dashboard_session(
         except OSError as exc:
             last_error = exc
             continue
+        if not _is_loopback_host(host):
+            # Said out loud, because the alternative is that somebody
+            # discovers it afterwards. There is no login: `allow_control`
+            # turns off the endpoints that browse the filesystem, read a
+            # config or start a run, and what is left is still a live view
+            # of this run to anyone who can reach the port.
+            logger.warning(
+                "Serving on %s, which is not loopback. There is no login. "
+                "Browsing, config reading and run control are disabled, and "
+                "anyone who can reach this port can still watch this run. "
+                "Prefer an SSH tunnel: ssh -L %s:localhost:%s <this host>",
+                host, int(candidate) or "PORT", int(candidate) or "PORT")
         actual_port = int(server.server_address[1])
         thread = threading.Thread(
             target=server.serve_forever,

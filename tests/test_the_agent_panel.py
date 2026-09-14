@@ -228,19 +228,23 @@ class TestTheEndpointsNeedTheMachinesTrust(unittest.TestCase):
     """
 
     def serve(self, host):
+        """A dashboard that stops when the test does.
+
+        `serve_dashboard` serves until interrupted, so a test calling it in
+        a daemon thread leaves it running for the rest of the session. Four
+        of those accumulated and the suite stopped making progress
+        somewhere unrelated -- a hang rather than a failure, which says
+        nothing about what is wrong. `start_dashboard_session` hands back
+        something that can be shut down, and `addCleanup` does.
+        """
         import tempfile
-        import threading
-        import time
 
-        from fastmdxplora.gui.server import serve_dashboard
+        from fastmdxplora.gui.server import start_dashboard_session
 
-        port = 8794 + (0 if host == "127.0.0.1" else 1)
-        threading.Thread(
-            target=serve_dashboard,
-            kwargs={"output": tempfile.mkdtemp(), "host": host, "port": port},
-            daemon=True).start()
-        time.sleep(1.2)
-        return port
+        session = start_dashboard_session(
+            output=tempfile.mkdtemp(), host=host, port=0)
+        self.addCleanup(session.server.shutdown)
+        return session.port
 
     def post(self, port, path, body=None):
         import urllib.error
@@ -287,3 +291,71 @@ class TestTheEndpointsNeedTheMachinesTrust(unittest.TestCase):
         # The gate must not be a way of switching the feature off.
         port = self.serve("127.0.0.1")
         self.assertEqual(self.post(port, "/api/agent/model"), 200)
+
+
+class TestTheBindAddressIsSaidOutLoud(unittest.TestCase):
+    """A network door should announce itself.
+
+    There is no login, so the bind address is the whole trust model, and
+    `allow_control` already turns off browsing, config reading and run
+    control when it is not loopback. What that cannot do is tell anybody
+    it happened — and software that halts on an ambiguous protonation
+    state should not open a port in silence.
+    """
+
+    def warnings_when_binding(self, host, port):
+        import logging
+        import tempfile
+
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        said = []
+        # "fastmdxplora.gui.server", not "fastmdx.gui.server". Most of the
+        # package logs through `utils.logging.get_logger`, which namespaces
+        # under "fastmdx"; the GUI server uses a plain getLogger(__name__)
+        # and lands under the distribution name instead. Watching the wrong
+        # one shows an empty list while the warning prints beside it.
+        logger = logging.getLogger("fastmdxplora.gui.server")
+        handler = logging.Handler()
+        handler.emit = lambda record: said.append(record.getMessage())
+        level = logger.level
+        logger.addHandler(handler)
+        logger.setLevel(logging.WARNING)
+        try:
+            session = start_dashboard_session(
+                output=tempfile.mkdtemp(), host=host, port=0)
+            self.addCleanup(session.server.shutdown)
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(level)
+        return said
+
+    def test_a_non_loopback_bind_warns(self):
+        said = " ".join(self.warnings_when_binding("0.0.0.0", 8797))
+        self.assertIn("not loopback", said)
+        self.assertIn("no login", said)
+        # And says what to do instead, because a warning with no remedy is
+        # a warning people learn to scroll past.
+        self.assertIn("ssh -L", said)
+
+    def test_loopback_says_nothing(self):
+        # The ordinary case is silent. A warning that fires every time is
+        # a warning nobody reads when it matters.
+        said = " ".join(self.warnings_when_binding("127.0.0.1", 8798))
+        self.assertNotIn("not loopback", said)
+
+    def test_the_docs_say_the_thing_the_gate_cannot(self):
+        # On a shared host, loopback means every logged-in user, and
+        # allow_control is true because the bind address is loopback. That
+        # is the one exposure the code cannot detect, so it has to be
+        # written down.
+        import pathlib
+
+        import fastmdxplora
+        docs = (pathlib.Path(fastmdxplora.__file__).parents[2]
+                / "docs" / "gui.md")
+        if not docs.is_file():  # installed without the docs tree
+            self.skipTest("docs not present in this layout")
+        page = docs.read_text(encoding="utf-8")
+        self.assertIn("loopback is not private", page)
+        self.assertIn("login node", page)
