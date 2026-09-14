@@ -125,7 +125,7 @@ tests:
 
 about:
   homepage: https://github.com/aai-research-lab/FastMDXplora
-  summary: Fully Automated SysTem for Molecular Dynamics eXploration
+  summary: Software for Automated Molecular Dynamics Exploration
   description: |
     FastMDXplora runs a complete molecular dynamics study from a single
     command. Given a protein structure, or just a PDB identifier, it performs

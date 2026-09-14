@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fastmdxplora"
 dynamic = ["version"]
-description = "FastMDXplora: Fully Automated SysTem for Molecular Dynamics eXploration"
+description = "Software for Automated Molecular Dynamics Exploration"
 readme = "README.md"
 # 3.14 is held back by PROPKA, not by this tree: see the ceiling
 # comment in .github/workflows/tests.yml.
