@@ -36,6 +36,8 @@ import numpy as np
 
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
 
 #: B = (8 pi^2 / 3) <u^2>, so <u^2> = 3B / (8 pi^2), in the file's units of
 #: square Angstroms.
@@ -163,22 +165,22 @@ class BFactorComparison(Analysis):
     def compute(self, traj: md.Trajectory) -> np.ndarray:
         path = self._structure_path()
         if path is None:
-            raise FileNotFoundError(
+            raise MissingResultError(
                 "No deposited structure with B-factors was found beside this "
                 "run, so there is nothing to compare fluctuations against. "
                 "Give `structure` pointing at the file the study started "
                 "from. A prepared or minimised coordinate file will not do: "
                 "its B column is whatever the preparation wrote there."
-            )
+            , code="analysis.data.absent")
 
         crystal = bfactors_from_pdb(path)
         align_idx = traj.topology.select(self.align_selection)
         if len(align_idx) < 3:
-            raise ValueError(
+            raise StudyError(
                 f"The alignment selection {self.align_selection!r} matched "
                 f"{len(align_idx)} atoms, and removing rigid-body motion "
                 "needs at least three."
-            )
+            , code="analysis.selection.arity", expression=self.align_selection)
 
         aligned = superposed(traj, frame=0, atom_indices=align_idx)
         # Alpha carbons within the scope selection: comparing a chain the
@@ -190,10 +192,10 @@ class BFactorComparison(Analysis):
             if int(i) in scope
         ], dtype=int)
         if len(alpha) == 0:
-            raise ValueError(
+            raise StudyError(
                 "No alpha carbons in the selection, so there is no "
                 "per-residue fluctuation to compare."
-            )
+            , code="analysis.sampling.too_few_frames")
 
         xyz = aligned.xyz[:, alpha, :]
         rmsf = np.sqrt(np.mean(
@@ -214,13 +216,13 @@ class BFactorComparison(Analysis):
                          float(rmsf[position]), implied_nm))
 
         if len(rows) < 3:
-            raise ValueError(
+            raise StudyError(
                 f"Only {len(rows)} residues could be matched between the "
                 f"trajectory and {path.name}, which is too few to compare. "
                 "The usual cause is that the study renumbered or renamed "
                 "chains during preparation, so the residues no longer line "
                 "up with the deposited file."
-            )
+            , code="analysis.sampling.too_few_frames")
 
         table = np.array(rows, dtype=float)
         simulated, implied = table[:, 1], table[:, 2]

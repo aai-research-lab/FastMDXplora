@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
+from fastmdxplora.refusals import CodedError
 
 
 @dataclass(frozen=True)
@@ -54,9 +55,19 @@ def dependency_error_message(missing: list[MissingDependency]) -> str:
     )
 
 
-class MissingBackendError(RuntimeError):
+class MissingBackendError(CodedError, RuntimeError):
     """Raised when a requested phase cannot run without an optional backend."""
+
+    default_code = "environment.backend.missing"
 
     def __init__(self, missing: list[MissingDependency]) -> None:
         self.missing = tuple(missing)
-        super().__init__(dependency_error_message(missing))
+        # The install command is already computed for the message. Carrying
+        # it as a detail as well means a caller that can act on it does not
+        # have to find it inside a paragraph of prose written for a person.
+        packages = list(dict.fromkeys(dep.package for dep in missing))
+        super().__init__(
+            dependency_error_message(missing),
+            packages=packages,
+            install_command=install_command(missing),
+        )

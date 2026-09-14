@@ -138,6 +138,12 @@ def test_cli_xplore_is_alias(tmp_path: Path) -> None:
     assert rc == _chemistry_exit_code()
 
 
+# Fetches 1L2Y from RCSB, so it needs the network. It was unmarked and
+# passing, because without PDBFixer installed it exited before the fetch
+# and the assertion held for the wrong reason. Installing the backend
+# unmasked it. An accidental skip is the worst kind: the test is green and
+# is not testing what it says.
+@pytest.mark.network
 def test_cli_explore_with_pdb_id(tmp_path: Path) -> None:
     out = tmp_path / "run"
 

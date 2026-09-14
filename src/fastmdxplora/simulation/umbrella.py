@@ -36,6 +36,8 @@ from typing import Any
 import numpy as np
 
 from fastmdxplora.uncertainty import DEFAULT_RESAMPLES, block_bootstrap
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
 
 logger = logging.getLogger(__name__)
 
@@ -121,20 +123,20 @@ class Cone:
 
     def __post_init__(self) -> None:
         if not 0.0 < float(self.half_angle_deg) < 180.0:
-            raise ValueError(
+            raise StudyError(
                 "A cone's `half_angle_deg` is the angle from its axis to its "
                 f"edge, so it lies between 0 and 180; {self.half_angle_deg} "
-                "was given.")
+                "was given.", code="config.option.wrong_type")
         if float(self.force_constant) <= 0.0:
-            raise ValueError(
+            raise StudyError(
                 "A cone's wall needs a positive `force_constant` in "
-                f"kJ/mol/rad^2; {self.force_constant} was given.")
+                f"kJ/mol/rad^2; {self.force_constant} was given.", code="config.option.wrong_type")
         if self.axis_atoms is not None:
             atoms = tuple(int(i) for i in self.axis_atoms)
             if len(atoms) < 1:
-                raise ValueError(
+                raise StudyError(
                     "A cone's `axis_atoms` names the group the angle opens "
-                    "away from, so it cannot be empty.")
+                    "away from, so it cannot be empty.", code="simulation.cv.selection_empty")
             object.__setattr__(self, "axis_atoms", atoms)
 
     @property
@@ -180,11 +182,11 @@ class Cone:
         atoms = list(axis_atoms if axis_atoms is not None
                      else (self.axis_atoms or ()))
         if not atoms:
-            raise ValueError(
+            raise StudyError(
                 "A cone's angle is measured against a group of atoms, and "
                 f"none reached it. `axis_selection` is {self.axis_selection!r} "
                 "-- resolve it against the topology and pass the result, or "
-                "give the cone `axis_atoms`.")
+                "give the cone `axis_atoms`.", code="simulation.cv.selection_empty")
         return [
             f"cone_axis: COM ATOMS={_plumed_list(atoms)}",
             f"cone_angle: ANGLE ATOMS=cone_axis,{site},{ligand}",
@@ -260,17 +262,17 @@ class ConeToMeasure:
 
     def __post_init__(self) -> None:
         if not 0.0 < float(self.keep) <= 100.0:
-            raise ValueError(
+            raise StudyError(
                 "A cone's `keep` is the percentile of the path it must hold, "
-                f"so it lies in (0, 100]; {self.keep} was given.")
+                f"so it lies in (0, 100]; {self.keep} was given.", code="config.option.wrong_type")
         if float(self.margin) < 1.0:
-            raise ValueError(
+            raise StudyError(
                 "A cone's `margin` opens it wider than the path it holds, so "
-                f"it is at least 1; {self.margin} was given.")
+                f"it is at least 1; {self.margin} was given.", code="config.option.wrong_type")
         if float(self.force_constant) <= 0.0:
-            raise ValueError(
+            raise StudyError(
                 "A cone's wall needs a positive `force_constant` in "
-                f"kJ/mol/rad^2; {self.force_constant} was given.")
+                f"kJ/mol/rad^2; {self.force_constant} was given.", code="config.option.wrong_type")
 
     def as_asked(self) -> dict[str, Any]:
         """The settings, as the measurement wants them."""
@@ -310,13 +312,13 @@ def narrowest_cone(direction: Any, keep: float = 98.0,
     """
     direction = np.asarray(direction, dtype=float)
     if direction.ndim != 2 or direction.shape[1] != 3:
-        raise ValueError(
+        raise StudyError(
             "A path is an array of unit vectors with shape (frames, 3); "
-            f"{direction.shape} was given.")
+            f"{direction.shape} was given.", code="simulation.bias.dimension_mismatch")
     if direction.shape[0] < 3:
-        raise ValueError(
+        raise StudyError(
             "Measuring a cone needs a path to measure; "
-            f"{direction.shape[0]} frames were given.")
+            f"{direction.shape[0]} frames were given.", code="analysis.sampling.too_few_frames")
     lengths = np.linalg.norm(direction, axis=1)
     direction = direction / np.where(lengths == 0.0, 1.0, lengths)[:, None]
 
@@ -342,24 +344,24 @@ def cone_from_config(spec: "dict[str, Any] | None"
     # study already runs.
     if isinstance(spec, str):
         if spec.strip().lower() not in ("auto", "measured", "measure"):
-            raise ValueError(
+            raise StudyError(
                 f"`cone` is {spec!r}. It is either `auto` -- measured from "
                 "the pull that seeds the windows -- or a block with "
-                "`half_angle_deg`.")
+                "`half_angle_deg`.", code="config.option.not_permitted")
         return ConeToMeasure()
     if not isinstance(spec, dict):
-        raise ValueError(
+        raise StudyError(
             "`cone` takes `auto`, or a block with `half_angle_deg` and "
             f"optionally `force_constant` and `axis_selection`; {spec!r} was "
-            "given.")
+            "given.", code="config.option.not_permitted")
     unknown = set(spec) - {"half_angle_deg", "half_angle", "force_constant",
                            "axis_selection", "axis", "keep", "margin",
                            "axis_atoms"}
     if unknown:
-        raise ValueError(
+        raise StudyError(
             f"A cone takes `half_angle_deg`, `force_constant`, "
             f"`axis_selection`, `keep` and `margin`. It was also given "
-            f"{sorted(unknown)}.")
+            f"{sorted(unknown)}.", code="config.option.not_permitted")
     angle = spec.get("half_angle_deg", spec.get("half_angle"))
     measure = angle is None or (isinstance(angle, str)
                                 and angle.strip().lower() in
@@ -583,14 +585,14 @@ def check_umbrella_keys(spec: dict[str, Any]) -> None:
             "it discarded only the default fraction. Use "
             "`equilibration_fraction` instead -- a fraction of each window's "
             "production, which is what the discard is actually measured in."
-        )
+        , code="config.option.inapplicable")
     named = ", ".join(
         f"'{key}'{_suggest(key, set(accepted))}" for key in unknown)
     raise ConfigError(
         f"Unknown umbrella setting{'s' if len(unknown) > 1 else ''}: {named}. "
         "Accepted: " + ", ".join(_in_reading_order(
             accepted - {"centre", "index"})) + "."
-    )
+    , code="simulation.cv.unknown")
 
 
 def _checked_fraction(value: Any) -> float:
@@ -605,14 +607,14 @@ def _checked_fraction(value: Any) -> float:
     try:
         fraction = float(value)
     except (TypeError, ValueError):
-        raise ValueError(
-            f"equilibration_fraction must be a number, got {value!r}.") from None
+        raise StudyError(
+            f"equilibration_fraction must be a number, got {value!r}.", code="config.option.wrong_type") from None
     if not 0.0 < fraction < 1.0:
-        raise ValueError(
+        raise StudyError(
             f"equilibration_fraction is {fraction:g}; it must be above 0 and "
             "below 1. A window begins away from where it settles, so some of "
             "it has to be discarded, and discarding all of it leaves no "
-            "histogram to place.")
+            "histogram to place.", code="config.option.wrong_type")
     return fraction
 
 
@@ -627,37 +629,37 @@ def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
 
     variable = str(spec.get("collective_variable", "")).lower()
     if not variable:
-        raise ValueError(
+        raise StudyError(
             "Umbrella sampling needs a `collective_variable` -- the coordinate "
             "the free energy is a function of."
-        )
+        , code="simulation.bias.parameter_missing")
 
     force = spec.get("force_constant")
     if force is None:
-        raise ValueError(
+        raise StudyError(
             "Umbrella sampling needs a `force_constant`: how firmly each "
             "window is held, in kJ/mol per unit of the variable squared. It "
             "sets how far a window wanders, and therefore whether neighbours "
             "overlap -- too stiff and they do not, too soft and the system "
             "escapes towards the nearest minimum. There is no value that is "
             "right for an arbitrary coordinate."
-        )
+        , code="simulation.bias.parameter_missing")
 
     if "centres" in spec or "centers" in spec:
         centres = [float(c) for c in (spec.get("centres") or spec.get("centers"))]
         if len(centres) < 2:
-            raise ValueError("Umbrella sampling needs at least two windows.")
+            raise StudyError("Umbrella sampling needs at least two windows.", code="simulation.windows.too_few")
     else:
         for key in ("from", "to", "n_windows"):
             if spec.get(key) is None:
-                raise ValueError(
+                raise StudyError(
                     "Umbrella windows are given either as `centres`, or as "
                     "`from`, `to` and `n_windows`. "
                     f"`{key}` is missing."
-                )
+                , code="simulation.bias.parameter_missing")
         count = int(spec["n_windows"])
         if count < 2:
-            raise ValueError("Umbrella sampling needs at least two windows.")
+            raise StudyError("Umbrella sampling needs at least two windows.", code="simulation.windows.too_few")
         # Plain floats: numpy scalars serialise as "!!python/object" in YAML
         # and are not JSON, so a config written back out would not reload.
         centres = [float(c) for c in np.linspace(
@@ -696,31 +698,31 @@ def _a_force_for_every_window(force: Any, count: int) -> list[float]:
     window's bias from that window's own constant, and always has.
     """
     if isinstance(force, (str, bytes)):
-        raise ValueError(
+        raise StudyError(
             f"`force_constant` is {force!r}, which is text. It is a number "
             "in kJ/mol per unit of the collective variable squared, or a "
             "list of them, one per window."
-        )
+        , code="config.option.wrong_type")
     if isinstance(force, (list, tuple)):
         if len(force) != count:
-            raise ValueError(
+            raise StudyError(
                 f"`force_constant` was given as {len(force)} values for "
                 f"{count} windows. A list holds each window at its own "
                 "constant and has to have one for each; a single number "
                 "holds them all the same."
-            )
+            , code="config.option.wrong_type")
         values = [float(k) for k in force]
     else:
         values = [float(force)] * count
 
     for index, k in enumerate(values):
         if not k > 0:
-            raise ValueError(
+            raise StudyError(
                 f"Window {index} was given a force constant of {k:g}. A "
                 "restraint has to pull towards its centre: zero holds "
                 "nothing and a negative one pushes the system away from "
                 "the place the window exists to sample."
-            )
+            , code="config.option.wrong_type")
     return values
 
 
@@ -741,13 +743,13 @@ def expand_umbrella(config: dict[str, Any]) -> dict[str, Any]:
         return config
 
     if config.get("systems") and len(config["systems"]) > 1:
-        raise ValueError(
+        raise StudyError(
             "Umbrella sampling holds one system at many positions. This "
             f"config has {len(config['systems'])} systems, and a window set "
             "for each would be several separate free energies -- run them as "
             "separate studies so each has its own windows and its own "
             "overlap check."
-        )
+        , code="config.option.conflicting")
 
     plan = plan_windows(spec)
     base = dict(config.get("systems", [{}])[0]) if config.get("systems") else {}
@@ -891,11 +893,11 @@ def cone_the_windows_ran_under(directories: "dict[int, Any]") -> "Cone | None":
             f"windows {min(v)}-{max(v)} at "
             f"{records[k].get('half_angle_deg')} degrees"
             for k, v in sorted(seen.items(), key=lambda kv: min(kv[1])))
-        raise ValueError(
+        raise StudyError(
             "These windows did not all run under the same cone, so they are "
             f"not sampling one system: {described}. A free energy stitched "
             "across them would be stitched across two different reference "
-            "states.")
+            "states.", code="simulation.cone.windows_outside")
     return Cone.from_record(next(iter(records.values())))
 
 
@@ -1018,12 +1020,12 @@ def collect_samples(
         samples[index] = values[cut:]
 
     if missing:
-        raise FileNotFoundError(
+        raise MissingResultError(
             "These windows produced no sampling: " + "; ".join(missing) + ". "
             "A free energy cannot be computed from a partial set, because "
             "the windows either side of a missing one have nothing between "
             "them to stitch through."
-        )
+        , code="simulation.windows.no_sampling")
     return samples
 
 
@@ -1298,16 +1300,16 @@ def design_from_a_pilot(
     """
     kT = KB_KJ * float(temperature_K)
     if not 0.0 < float(gate_used) <= 1.0:
-        raise ValueError(
+        raise StudyError(
             "`gate_used` is the fraction of the drift gate a window is "
-            f"allowed to use, so it lies in (0, 1]; {gate_used} was given.")
+            f"allowed to use, so it lies in (0, 1]; {gate_used} was given.", code="config.option.wrong_type")
     gate_used = float(gate_used)
     ordered = [w for w in plan.windows if w.index in samples]
     if len(ordered) < 2:
-        raise ValueError(
+        raise StudyError(
             "Sizing a study from a pilot needs at least two windows with "
             f"sampling in them; {len(ordered)} were given."
-        )
+        , code="simulation.windows.too_few")
     periodic = getattr(plan, "collective_variable", None) in PERIODIC_VARIABLES
 
     measured = []
@@ -1364,10 +1366,10 @@ def design_from_a_pilot(
                            for v in curve[1]], dtype=float)
         known = ~np.isnan(height)
         if int(known.sum()) < 3:
-            raise ValueError(
+            raise StudyError(
                 "A curve to read the gradient from needs at least three "
                 f"points with a free energy on them; {int(known.sum())} had "
-                "one.")
+                "one.", code="analysis.sampling.too_few_frames")
         at = along[known]
         rise = np.abs(np.diff(height[known]))
         run = np.diff(at)
@@ -1870,10 +1872,10 @@ def compute_pmf(
 
     ordered = [w for w in plan.windows if w.index in samples]
     if len(ordered) < 2:
-        raise ValueError(
+        raise StudyError(
             "A potential of mean force needs at least two windows with "
             f"sampling in them; {len(ordered)} were given."
-        )
+        , code="simulation.windows.too_few")
 
     gaps = []
     overlaps = []
@@ -2056,11 +2058,11 @@ def compute_pmf(
         pmf = np.where(sampled, -kT * np.log(np.clip(probability, 1e-300, None)),
                        np.nan)
     if not sampled.any():
-        raise ValueError(
+        raise StudyError(
             "No window contributed a single sample, so there is no free "
             "energy to report. Check that the windows ran and that the "
             "coordinate they biased is the one being histogrammed."
-        )
+        , code="simulation.windows.no_sampling")
     pmf -= np.nanmin(pmf)
 
     # `null` rather than a number: the coordinate exists and the free energy

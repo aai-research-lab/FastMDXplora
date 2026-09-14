@@ -30,6 +30,7 @@ import numpy as np
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 class RMSD(Analysis):
@@ -107,10 +108,10 @@ class RMSD(Analysis):
         n = traj.n_frames
         ref = self.ref if self.ref >= 0 else n + self.ref
         if not (0 <= ref < n):
-            raise ValueError(
+            raise StudyError(
                 f"Reference frame {self.ref} is out of range for trajectory "
                 f"with {n} frames."
-            )
+            , code="analysis.option.out_of_range")
 
         if self.align:
             # MDTraj's rmsd() with atom_indices implicitly aligns before
@@ -144,7 +145,7 @@ class RMSD(Analysis):
 
     # Helpers --------------------------------------------------------------
     # The base class doesn't pass the trajectory through to plot(), so
-    # we cache the trajectory and the resolved x-axis on the instance
+    # the trajectory and the resolved x-axis are cached on the instance
     # during run() via a small override.
     _traj_for_plot: md.Trajectory | None = None
     _resolved_ref: int = 0

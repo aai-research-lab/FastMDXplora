@@ -3,7 +3,7 @@
 It was never GUI code: it reads a structure as text and returns counts, and
 the orchestrator needs it before any interface exists. Kept here as a
 re-export because the old path may be imported from outside this repository,
-where a rename is somebody else's breakage rather than ours.
+where a rename is somebody else's breakage rather than FastMDXplora's.
 """
 
 from __future__ import annotations

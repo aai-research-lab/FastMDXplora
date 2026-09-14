@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import numpy as np
+from fastmdxplora.refusals import StudyError
 
 __all__ = [
     "Hills",
@@ -186,11 +187,11 @@ def read_hills(path: str | Path) -> Hills:
         rows.append([float(value) for value in parts])
 
     if not rows:
-        raise ValueError(
+        raise StudyError(
             f"{path} holds no hills. A metadynamics run that deposited "
             "nothing has not biased anything, and there is no surface to "
             "build from it."
-        )
+        , code="simulation.bias.no_deposit")
 
     width = min(len(row) for row in rows)
     table = np.array([row[:width] for row in rows], dtype=float)
@@ -212,11 +213,11 @@ def read_hills(path: str | Path) -> Hills:
     first_sigma = sigma_at[0]
     centre_at = list(range(1, first_sigma))
     if len(centre_at) != n_dims:
-        raise ValueError(
+        raise StudyError(
             f"{path} names {len(centre_at)} value columns and {n_dims} "
             "sigma columns, which is not a layout this can read. PLUMED "
             "writes one sigma per biased variable."
-        )
+        , code="simulation.bias.dimension_mismatch")
     height_at = first_sigma + n_dims
     factor_at = height_at + 1
     factor = (float(table[0, factor_at])
@@ -277,10 +278,10 @@ def bias_from_hills_nd(
     """Gaussian bias at N-dimensional points, with per-axis periodicity."""
     coordinates = np.asarray(points, dtype=float)
     if coordinates.ndim != 2 or coordinates.shape[1] != hills.n_dims:
-        raise ValueError(
+        raise StudyError(
             f"The hills hold {hills.n_dims} variables and bias points have "
             f"shape {coordinates.shape}; expected one column per variable."
-        )
+        , code="simulation.bias.dimension_mismatch")
 
     first = max(0, int(start))
     stop = len(hills) if upto is None else min(len(hills), int(upto))
@@ -289,10 +290,10 @@ def bias_from_hills_nd(
 
     wrap = tuple(periodic or (False,) * hills.n_dims)
     if len(wrap) != hills.n_dims:
-        raise ValueError(
+        raise StudyError(
             f"The hills hold {hills.n_dims} variables but periodicity has "
             f"{len(wrap)} entries."
-        )
+        , code="simulation.bias.dimension_mismatch")
 
     centres = np.asarray(hills.centre, dtype=float)
     sigmas = np.asarray(hills.sigma, dtype=float)
@@ -667,10 +668,10 @@ def surface_from_hills_nd(
     stop = len(hills) if upto is None else int(upto)
     n_dims = hills.n_dims
     if len(axes) != n_dims:
-        raise ValueError(
+        raise StudyError(
             f"The hills hold {n_dims} variables and {len(axes)} axes were "
             "given. A surface needs one axis per biased variable."
-        )
+        , code="simulation.bias.dimension_mismatch")
     mesh = np.meshgrid(*axes, indexing="ij")
     shape = mesh[0].shape
     points = np.column_stack([m.ravel() for m in mesh])
@@ -1035,11 +1036,11 @@ def compute_surface_2d(
     """
     hills = read_hills(hills_path)
     if hills.n_dims != 2:
-        raise ValueError(
+        raise StudyError(
             f"{hills_path} holds {hills.n_dims} biased variable(s), and this "
             "builds a surface over exactly two. A one-variable run is "
             "`compute_surface`."
-        )
+        , code="simulation.bias.dimension_mismatch")
 
     axes: list[np.ndarray] = []
     for dim in range(2):
@@ -1078,10 +1079,10 @@ def compute_surface_2d(
     sampled = (None if colvar_values is None
                else np.asarray(colvar_values, dtype=float))
     if sampled is not None and sampled.ndim != 2:
-        raise ValueError(
+        raise StudyError(
             "colvar_values for a two-variable run is one column per "
             f"variable, and an array of shape {sampled.shape} is not that."
-        )
+        , code="simulation.bias.dimension_mismatch")
 
     per_dimension: list[dict[str, Any]] = []
     reasons: list[str] = []

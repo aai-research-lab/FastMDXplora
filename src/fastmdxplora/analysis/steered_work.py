@@ -33,6 +33,8 @@ import numpy as np
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
 
 
 class SteeredWork(Analysis):
@@ -62,20 +64,20 @@ class SteeredWork(Analysis):
     def compute(self, traj: Any) -> dict[str, Any]:
         path = self._record_path()
         if path is None:
-            raise FileNotFoundError(
+            raise MissingResultError(
                 "No steered_work.json beside this run, so there is no pull "
                 "to draw. This analysis reports what the simulation phase "
                 "recorded; it does not recompute it."
-            )
+            , code="analysis.data.absent")
         record = json.loads(path.read_text(encoding="utf-8"))
         trajectory = record.get("trajectory") or {}
         coordinate = np.asarray(trajectory.get("coordinate") or [], dtype=float)
         work = np.asarray(trajectory.get("work_kjmol") or [], dtype=float)
         if not len(coordinate) or len(coordinate) != len(work):
-            raise ValueError(
+            raise StudyError(
                 "The steered record holds no pull to draw: the coordinate "
                 "and the work do not line up."
-            )
+            , code="analysis.data.absent")
 
         self._total = float(record.get("work_kjmol") or work[-1])
         self._rate = record.get("pull_rate_per_ns")

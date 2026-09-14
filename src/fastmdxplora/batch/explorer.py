@@ -61,6 +61,9 @@ from fastmdxplora.batch.sweep import (
 )
 from fastmdxplora.config import load_config_file, validate_config
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
+from fastmdxplora.refusals import OutputExistsError
 
 if TYPE_CHECKING:
     from fastmdxplora.orchestrator import RunResult
@@ -342,11 +345,11 @@ def _check_selections_against(prepared: Path, spec: dict[str, Any]) -> None:
         for planner in planners:
             planner()
     except ValueError as exc:
-        raise ValueError(
+        raise StudyError(
             f"{exc}\n\nFound before any window ran, by resolving the "
             "selection against the prepared system. Nothing has been "
             "simulated."
-        ) from exc
+        , code="simulation.cv.selection_empty") from exc
     except Exception:  # noqa: BLE001 - anything else is not a verdict
         # Could not resolve it here, which is not the same as it being wrong.
         return
@@ -434,7 +437,7 @@ def _execute_run(
     class _QuietBanner:
         """Keep a worker's output out of the shared terminal.
 
-        Two sources. Ours obeys an environment variable. PLUMED's comes from
+        Two sources. FastMDXplora's obeys an environment variable. PLUMED's comes from
         C++ and writes to the file descriptor directly, so redirecting
         Python's ``sys.stdout`` does not reach it -- the same lesson as a
         Markdown renderer that printed its installation guide from a dynamic
@@ -663,7 +666,7 @@ class BatchExplorer:
         force: bool = False,
     ) -> None:
         if config is None and config_data is None:
-            raise ValueError("BatchExplorer requires `config` (path) or `config_data` (dict).")
+            raise StudyError("BatchExplorer requires `config` (path) or `config_data` (dict).", code="config.option.missing_companion")
 
         if config_data is not None:
             self.config_path = str(config) if config is not None else "<in-memory>"
@@ -760,12 +763,12 @@ class BatchExplorer:
                 clashes.append(f"{run_out} ({', '.join(occupied)})")
         if clashes:
             listed = "\n  ".join(clashes)
-            raise FileExistsError(
+            raise OutputExistsError(
                 f"{ALREADY_HOLD_RESULTS}\n  "
                 f"{listed}\n"
                 "Choose another output directory, delete these, or pass "
                 "--force-overwrite to overwrite them."
-            )
+            , code="environment.path.exists")
 
     def _run_output_dir(self, spec: RunSpec) -> Path:
         """Flat output for a single run; runs/<id>/ for many."""
@@ -922,7 +925,7 @@ class BatchExplorer:
                     or _a_prepared_system_is_there(where / "setup")
                     or _a_prepared_system_is_there(
                         where / "shared_setup" / "setup")):
-                raise FileNotFoundError(
+                raise MissingResultError(
                     f"`simulation.setup_from` names {named!r}, and there is "
                     "no prepared system there: a directory holding "
                     "`system.xml`, `state.xml` and `topology.pdb`, or one "
@@ -931,7 +934,7 @@ class BatchExplorer:
                     "box of water from the one that setting points at, and "
                     "anything taken from it -- seeds from a pull, a frame to "
                     "start from -- would not fit."
-                )
+                , code="analysis.data.absent")
             logger.info(
                 "Preparing nothing: `setup_from` names %s, and this study "
                 "uses that system. A second preparation would solvate a "
@@ -995,10 +998,10 @@ class BatchExplorer:
             if result.status == "error" or not _a_prepared_system_is_there(prepared):
                 # Every window would fail the same way, one after another,
                 # for hours. Say it once here instead.
-                raise RuntimeError(
+                raise MissingResultError(
                     "The system could not be prepared, so there is nothing "
                     f"for the windows to simulate: {result.message or prepared}"
-                )
+                , code="analysis.data.absent")
 
         # Outside the block that prepares, because the selections need
         # checking against whatever system the windows will use -- and a
@@ -1154,11 +1157,11 @@ class BatchExplorer:
                 self.verbose, None, quiet=False, force=self.force,
             )
             if result.status == "error":
-                raise RuntimeError(
+                raise MissingResultError(
                     "The pull that seeds the windows did not finish, so "
                     "there are no starting structures to take: "
                     f"{result.message or pull_output}"
-                )
+                , code="analysis.data.absent")
 
         centres = [w.centre for w in plan.windows]
         # The seeder has to read the same config the PLUMED builder reads.

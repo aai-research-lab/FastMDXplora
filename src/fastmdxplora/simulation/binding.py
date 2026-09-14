@@ -42,6 +42,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from fastmdxplora.refusals import StudyError
 
 __all__ = ["STANDARD_VOLUME_NM3", "binding_free_energy"]
 
@@ -75,13 +76,13 @@ def _what_the_cone_costs(cone: Any,
             temperature_K)
     if isinstance(cone, dict):
         if cone.get("correction_kjmol") is None:
-            raise ValueError(
+            raise StudyError(
                 "A cone record needs `correction_kjmol`: what the bulk state "
-                f"gave up by being confined to it. {sorted(cone)} was given.")
+                f"gave up by being confined to it. {sorted(cone)} was given.", code="simulation.bias.parameter_missing")
         return dict(cone), float(cone["correction_kjmol"])
-    raise ValueError(
+    raise StudyError(
         "`cone` is the angular wall the windows ran under -- an "
-        f"umbrella.Cone or the record one writes. {cone!r} was given.")
+        f"umbrella.Cone or the record one writes. {cone!r} was given.", code="simulation.bias.parameter_missing")
 
 
 #: How well the outer range must follow the bulk form before it counts as
@@ -182,10 +183,10 @@ def binding_free_energy(
     radius = np.asarray(coordinate, dtype=float)
     energy = np.asarray(free_energy_kjmol, dtype=float)
     if radius.ndim != 1 or radius.shape != energy.shape:
-        raise ValueError(
+        raise StudyError(
             "The coordinate and the free energy must be one-dimensional and "
             f"the same length; got {radius.shape} and {energy.shape}."
-        )
+        , code="simulation.bias.dimension_mismatch")
     order = np.argsort(radius)
     radius, energy = radius[order], energy[order]
 

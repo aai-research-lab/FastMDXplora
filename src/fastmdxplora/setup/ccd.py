@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("setup.ccd")
 
@@ -77,11 +78,13 @@ TITRATABLE_SMARTS: dict[str, str] = {
 }
 
 
-class ChemistryUnavailableError(RuntimeError):
+class ChemistryUnavailableError(CodedError, RuntimeError):
     """The chemistry needed to parameterize a component could not be obtained."""
 
+    default_code = "setup.chemistry.unavailable"
 
-class ProtonationUndeterminedError(RuntimeError):
+
+class ProtonationUndeterminedError(CodedError, RuntimeError):
     """The component's protonation at the requested pH is not determined.
 
     Raised rather than resolved. A ligand's pKa in a binding site is a
@@ -90,6 +93,8 @@ class ProtonationUndeterminedError(RuntimeError):
     ordinary. Any answer computed from the ligand alone would be a confident
     guess at a question the ligand cannot answer.
     """
+
+    default_code = "setup.chemistry.protonation_undetermined"
 
 
 @dataclass(frozen=True)
@@ -123,7 +128,7 @@ def _http_get(url: str, *, timeout: int = FETCH_TIMEOUT_S) -> str:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             return response.read().decode("utf-8", errors="replace")
     except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
-        raise ChemistryUnavailableError(f"could not reach {url}: {exc}") from exc
+        raise ChemistryUnavailableError(f"could not reach {url}: {exc}", code="environment.service.unreachable", url=url) from exc
 
 
 def _posed_url(entry: str, resname: str, chain: str, resseq: int) -> str:
@@ -146,11 +151,11 @@ def _sdf_atom_count(text: str) -> int:
     """Heavy plus hydrogen atom count from an SDF counts line."""
     lines = text.splitlines()
     if len(lines) < 4:
-        raise ChemistryUnavailableError("the fetched file is not a valid SDF")
+        raise ChemistryUnavailableError("the fetched file is not a valid SDF", code="environment.service.unusable_response")
     try:
         return int(lines[3][0:3])
     except ValueError as exc:
-        raise ChemistryUnavailableError("the SDF counts line is unreadable") from exc
+        raise ChemistryUnavailableError("the SDF counts line is unreadable", code="environment.service.unusable_response") from exc
 
 
 def fetch_chemistry(
@@ -188,12 +193,12 @@ def fetch_chemistry(
             raise ChemistryUnavailableError(
                 f"{resname} in {entry.upper()} could not be retrieved and is not "
                 f"cached ({exc}). Supply it as an SDF or MOL2 file instead."
-            ) from exc
+            , code="setup.chemistry.unavailable", resname=resname) from exc
         if not text.strip() or "$$$$" not in text:
             raise ChemistryUnavailableError(
                 f"RCSB returned no usable chemistry for {resname} "
                 f"{chain}{resseq} in {entry.upper()}."
-            )
+            , code="environment.service.unusable_response", resource=resname)
         source, from_cache = url, False
 
     _require_component(text, resname, chain, resseq, entry)
@@ -210,7 +215,7 @@ def fetch_chemistry(
                 f"atoms in the structure but {heavy} in its chemical "
                 "definition, so it is only partially resolved. Supply a "
                 "complete ligand explicitly, or exclude it."
-            )
+            , code="setup.chemistry.atom_count_mismatch")
 
     # ModelServer returns heavy atoms only. A force field needs every atom:
     # benzene delivered as a bare six-carbon ring with aromatic bonds is a
@@ -255,7 +260,7 @@ def _require_component(text: str, resname: str, chain: str, resseq: int, entry: 
         f"asked RCSB for {resname} at {chain}{resseq} in {entry.upper()} and "
         f"received a different component (header: {text.splitlines()[0].strip()!r}). "
         "Check that the chain and residue number identify the intended copy."
-    )
+    , code="setup.chemistry.atom_count_mismatch", resname=resname)
 
 
 
@@ -277,7 +282,7 @@ def _add_hydrogens(sdf_text: str, resname: str) -> str:
             f"RDKit is needed to add hydrogens to {resname} and is not "
             "installed. Install the ligand extra, or supply the ligand as a "
             "file that already carries them."
-        ) from exc
+        , code="environment.backend.missing", packages=["rdkit"]) from exc
 
     molecule = Chem.MolFromMolBlock(sdf_text, removeHs=False, sanitize=True)
     if molecule is None:
@@ -332,7 +337,7 @@ def _inspect(sdf_text: str, resname: str) -> tuple[int, list[str]]:
             f"{resname} and is not installed. Install the ligand extra "
             "(conda install -c conda-forge rdkit), or supply the ligand "
             "explicitly with its protonation already assigned."
-        ) from exc
+        , code="environment.backend.missing", packages=["rdkit"]) from exc
 
     molecule = Chem.MolFromMolBlock(sdf_text, removeHs=False, sanitize=True)
     if molecule is None:

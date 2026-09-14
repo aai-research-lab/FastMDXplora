@@ -100,9 +100,13 @@ def __getattr__(name: str):
     raise AttributeError(name)
 
 
+from fastmdxplora.refusals import Refusal, refusal_of
+
 __all__ = [
     "FastMDXplora",
     "AnalysisOrchestrator",
+    "Refusal",
+    "refusal_of",
     "MIN_PYTHON",
     "MAX_PYTHON",
     "python_range_string",

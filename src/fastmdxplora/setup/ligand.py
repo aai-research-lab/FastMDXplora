@@ -4,7 +4,7 @@ This module validates and loads small-molecule ligands for parameterization
 with the OpenFF small-molecule force fields (via ``openmmforcefields``'
 ``SystemGenerator``). It deliberately keeps the *loading/validation* concern
 separate from the *system build* concern (which lives in
-:mod:`fastmdxplora.setup.prepare`): here we turn a ligand file into a
+:mod:`fastmdxplora.setup.prepare`): here a ligand file becomes a
 validated OpenFF ``Molecule`` with a known net charge; the prepare step feeds
 that molecule to the ``SystemGenerator``.
 
@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
+from fastmdxplora.refusals import StudyError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     pass
@@ -33,7 +35,7 @@ logger = get_logger("setup.ligand")
 SUPPORTED_LIGAND_FORMATS = ("sdf", "mol2")
 
 
-class LigandError(Exception):
+class LigandError(CodedError, Exception):
     """Raised for ligand input problems (format, missing file, charge, deps)."""
 
 
@@ -52,7 +54,7 @@ def detect_ligand_format(ligand_file: str | Path) -> str:
             f"Unsupported ligand format {ext!r} for {ligand_file!r}. "
             f"Use one of: {supported}. (A ligand embedded in a PDB lacks the "
             f"bond/charge information OpenFF needs; export it to SDF/MOL2.)"
-        )
+        , code="setup.ligand.format_unsupported", given=ext, permitted=list(SUPPORTED_LIGAND_FORMATS))
     return ext
 
 
@@ -75,7 +77,7 @@ def _import_openff() -> Any:
             "openmmforcefields\n\n"
             "Or install FastMDXplora itself from conda-forge, which brings "
             "the whole ligand path with it."
-        ) from exc
+        , code="environment.backend.missing", packages=["openff-toolkit"]) from exc
     return Molecule
 
 
@@ -109,7 +111,7 @@ def pose_by_policy(molecule: Any, structure: str | Path, resname: str,
             f"ligand_pose: unknown policy {policy!r}; expected one of "
             f"{', '.join(POSE_POLICIES)}. `auto` takes the pose from the "
             "structure where it holds the residue and from the file where "
-            "it does not; `structure` and `file` insist on one side.")
+            "it does not; `structure` and `file` insist on one side.", code="setup.ligand.pose_unavailable", policy=policy)
     if chosen == "file":
         return molecule, (
             f"the supplied file's pose stands for {resname} by request "
@@ -167,7 +169,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
     def _stand(reason: str) -> tuple[Any, str]:
         if required:
             raise LigandError(
-                f"ligand_pose: structure was asked for, but {reason}.")
+                f"ligand_pose: structure was asked for, but {reason}.", code="setup.ligand.pose_unavailable")
         return molecule, reason
 
     import numpy as _np
@@ -196,7 +198,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
                 "there is no pose in the structure to take. Where the pose is "
                 "meant to come from the supplied file -- an apo protein and a "
                 "docked or deliberately unbound ligand -- say so with "
-                "ligand_pose: file.")
+                "ligand_pose: file.", code="setup.ligand.pose_unavailable")
         return molecule, None
     if copy >= len(matches):
         return _stand(
@@ -208,7 +210,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
     indices = [atom.index for atom in residue.atoms]
 
     # Heavy atoms only: a crystal structure has no hydrogens, and the SDF
-    # has them. Matching on count is what tells us the two are the same
+    # has them. Matching on count is what establishes the two are the same
     # molecule rather than something that merely shares a residue name.
     heavy = [i for i, atom in enumerate(molecule.atoms)
              if atom.atomic_number > 1]
@@ -303,8 +305,8 @@ def load_ligand(
                 "pass the path:\n\n"
                 f"    curl -O https://files.rcsb.org/ligands/download/"
                 f"{given.upper()}_ideal.sdf"
-            )
-        raise LigandError(f"Ligand file not found: {path}")
+            , code="setup.ligand.pose_unavailable")
+        raise LigandError(f"Ligand file not found: {path}", code="setup.ligand.unreadable", path=str(path))
     detect_ligand_format(path)
 
     Molecule = _import_openff()
@@ -314,10 +316,10 @@ def load_ligand(
         raise LigandError(
             f"Could not read ligand {path.name!r} as a valid molecule: {exc}. "
             f"Ensure the SDF/MOL2 has explicit hydrogens and bond orders."
-        ) from exc
+        , code="setup.ligand.unreadable", path=str(path)) from exc
 
     # Molecule.from_file may return a list when the file holds multiple
-    # molecules; we parameterize a single ligand for now (the config is
+    # molecules; a single ligand is parameterized for now (the config is
     # list-shaped so multi-ligand support can layer on later).
     if isinstance(molecule, list):
         if len(molecule) != 1:
@@ -325,7 +327,7 @@ def load_ligand(
                 f"Ligand file {path.name!r} contains {len(molecule)} "
                 f"molecules; provide a single-molecule SDF/MOL2 (multi-ligand "
                 f"support is not yet implemented)."
-            )
+            , code="setup.ligand.multiple_molecules", path=str(path), count=len(molecule))
         molecule = molecule[0]
 
     molecule.name = name
@@ -344,7 +346,7 @@ def load_ligand(
     # they were given.
     inferred = _infer_net_charge(molecule)
     if net_charge is not None and inferred is not None and net_charge != inferred:
-        raise ValueError(
+        raise StudyError(
             f"Ligand {name}: the study states a net charge of {net_charge:+d}, "
             f"and {path.name} carries formal charges summing to "
             f"{inferred:+d}. The file is the chemistry -- its protonation "
@@ -354,7 +356,7 @@ def load_ligand(
             "not the Chemical Component Dictionary's ideal form, which is "
             "drawn neutral), or drop `ligand_net_charge` and let the file "
             "speak for itself."
-        )
+        , code="setup.chemistry.charge_contradicted", resname=name, stated=net_charge)
     resolved_charge = net_charge if net_charge is not None else inferred
     logger.info(
         "Loaded ligand %s from %s (net charge=%s, taken from the file's own "

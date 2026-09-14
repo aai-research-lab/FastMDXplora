@@ -21,6 +21,7 @@ from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.rmsf import _atom_labels
+from fastmdxplora.refusals import StudyError
 
 
 class LigandRMSF(Analysis):
@@ -56,10 +57,10 @@ class LigandRMSF(Analysis):
     ) -> None:
         super().__init__(**kwargs)
         if not ligand_resname:
-            raise ValueError(
+            raise StudyError(
                 "LigandRMSF requires `ligand_resname`; it applies only to "
                 "protein-ligand complexes."
-            )
+            , code="analysis.option.missing_companion")
         self.ligand_resname = str(ligand_resname)
         self.align_selection = str(align_selection)
         self.ref = int(ref)
@@ -79,24 +80,24 @@ class LigandRMSF(Analysis):
         """
         ligand_idx = traj.topology.select(f"resname {self.ligand_resname}")
         if len(ligand_idx) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"No atoms matched ligand resname {self.ligand_resname!r}; "
                 f"cannot compute ligand RMSF."
-            )
+            , code="analysis.selection.empty")
         align_idx = traj.topology.select(self.align_selection)
         if len(align_idx) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"Alignment selection {self.align_selection!r} matched zero "
                 f"atoms; cannot align on the protein."
-            )
+            , code="analysis.selection.arity")
 
         n = traj.n_frames
         ref = self.ref if self.ref >= 0 else n + self.ref
         if not (0 <= ref < n):
-            raise ValueError(
+            raise StudyError(
                 f"Reference frame {self.ref} is out of range for trajectory "
                 f"with {n} frames."
-            )
+            , code="analysis.option.out_of_range")
 
         # Align on the protein, then measure ligand-atom fluctuations about
         # their mean position on the aligned coordinates.

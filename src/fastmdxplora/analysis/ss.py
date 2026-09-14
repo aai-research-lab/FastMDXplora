@@ -33,6 +33,7 @@ import pandas as pd
 
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 # Map DSSP letters to small integer codes for the heatmap.
@@ -41,7 +42,7 @@ from fastmdxplora.analysis.orchestrator import register_analysis
 _DSSP_TO_INT = {
     "C": 0,  # coil
     "T": 0,  # turn (mapped to coil in simplified mode it never appears,
-             #       but we keep this for the "full" mode below)
+             #       but this is kept for the "full" mode below)
     " ": 0,  # other / unassigned
     "S": 0,  # bend
     "E": 1,  # extended / beta-strand
@@ -119,13 +120,13 @@ class SS(Analysis):
         if codes.shape[1] == len(residues):
             keep = codes[0] != "NA"
             if not keep.any():
-                raise ValueError(
+                raise StudyError(
                     "Secondary structure is undefined here: no residue in this "
                     "selection has a protein backbone, so DSSP assigned every "
                     "one of them 'NA'. A nucleic acid, a lone ligand or a "
                     "coarse-grained model has no secondary structure to "
                     "assign. Exclude this analysis, or select the protein."
-                )
+                , code="analysis.sampling.too_few_frames")
             codes = codes[:, keep]
             residues = [r for r, k in zip(residues, keep) if k]
 

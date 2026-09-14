@@ -20,6 +20,16 @@ Public API
 """
 
 from fastmdxplora.config.generate import generate_template, write_resolved_config
+from fastmdxplora.config.agent_modes import (
+    AgentModes,
+    resolve_agent_modes,
+    unchecked_phases,
+)
+from fastmdxplora.config.describe import (
+    describe_field,
+    describe_schema,
+    schema_as_json,
+)
 from fastmdxplora.config.loader import (
     ConfigError,
     load_config_file,
@@ -29,6 +39,12 @@ from fastmdxplora.config.loader import (
 from fastmdxplora.config.schema import PHASE_SCHEMAS, PhaseSchema
 
 __all__ = [
+    "AgentModes",
+    "resolve_agent_modes",
+    "unchecked_phases",
+    "describe_schema",
+    "describe_field",
+    "schema_as_json",
     "ConfigError",
     "PHASE_SCHEMAS",
     "PhaseSchema",

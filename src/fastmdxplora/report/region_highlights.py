@@ -17,6 +17,7 @@ import numpy as np
 
 from fastmdxplora.analysis.plotting import apply_style, new_figure, save_figure
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
 
 logger = get_logger("report.region_highlights")
 
@@ -124,44 +125,44 @@ def validate_region_highlights(
 ) -> list[RegionHighlight]:
     """Validate user-supplied region highlight dictionaries."""
     if not isinstance(raw_regions, list) or not raw_regions:
-        raise ValueError("report.region_highlights must be a non-empty list.")
+        raise StudyError("report.region_highlights must be a non-empty list.", code="report.region.invalid")
 
     residues = np.asarray(residue_values, dtype=float)
     if residues.size == 0:
-        raise ValueError("RMSF data contains no residue values.")
+        raise StudyError("RMSF data contains no residue values.", code="analysis.data.absent")
     min_res = int(np.nanmin(residues))
     max_res = int(np.nanmax(residues))
 
     regions: list[RegionHighlight] = []
     for index, item in enumerate(raw_regions, start=1):
         if not isinstance(item, dict):
-            raise ValueError(f"region_highlights[{index}] must be a mapping.")
+            raise StudyError(f"region_highlights[{index}] must be a mapping.", code="report.region.invalid")
         try:
             start = int(item["start"])
             end = int(item["end"])
         except KeyError as exc:
-            raise ValueError(
+            raise StudyError(
                 f"region_highlights[{index}] is missing required key {exc.args[0]!r}."
-            ) from exc
+            , code="report.region.invalid") from exc
         except (TypeError, ValueError) as exc:
-            raise ValueError(
+            raise StudyError(
                 f"region_highlights[{index}] start/end must be integers."
-            ) from exc
+            , code="report.region.invalid") from exc
 
         if start < 1:
-            raise ValueError(
+            raise StudyError(
                 f"region_highlights[{index}] start must be >= 1; got {start}."
-            )
+            , code="report.region.invalid")
         if end < start:
-            raise ValueError(
+            raise StudyError(
                 f"region_highlights[{index}] end must be >= start; "
                 f"got start={start}, end={end}."
-            )
+            , code="report.region.invalid")
         if start < min_res or end > max_res:
-            raise ValueError(
+            raise StudyError(
                 f"region_highlights[{index}] range {start}-{end} is outside "
                 f"the RMSF residue range {min_res}-{max_res}."
-            )
+            , code="report.region.invalid")
 
         label = str(item.get("label") or f"Region {index}")
         color = str(item.get("color") or DEFAULT_COLORS[(index - 1) % len(DEFAULT_COLORS)])
@@ -171,10 +172,10 @@ def validate_region_highlights(
 
 def _load_rmsf(path: Path) -> np.ndarray:
     if not path.is_file():
-        raise ValueError(
+        raise StudyError(
             "region_highlights require existing RMSF output at "
             "analysis/rmsf/rmsf.dat. Run RMSF analysis first."
-        )
+        , code="analysis.data.absent")
     try:
         data = np.loadtxt(path)
     except ValueError:
@@ -186,7 +187,7 @@ def _load_rmsf(path: Path) -> np.ndarray:
     if data.ndim == 1:
         data = data.reshape(1, -1)
     if data.shape[1] < 2:
-        raise ValueError("RMSF data must have at least two columns.")
+        raise StudyError("RMSF data must have at least two columns.", code="analysis.data.absent")
     return data[:, :2]
 
 

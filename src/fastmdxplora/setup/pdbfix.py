@@ -37,6 +37,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
+from fastmdxplora.refusals import MissingPathError
 
 logger = get_logger("setup.pdbfix")
 
@@ -261,31 +264,31 @@ def parse_mutation(text: str) -> tuple[str, int, str]:
     if "-" in cleaned:
         parts = cleaned.split("-")
         if len(parts) != 3 or not parts[1].isdigit():
-            raise ValueError(
+            raise StudyError(
                 f"{text!r} is not a mutation. The long form is "
                 "ORIGINAL-NUMBER-NEW, as in LEU-99-ALA."
-            )
+            , code="setup.structure.mutation_unparseable", given=text, accepted_forms=["L99A", "LEU-99-ALA"])
         return parts[0], int(parts[1]), parts[2]
 
     if len(cleaned) < 3 or not cleaned[0].isalpha() \
             or not cleaned[-1].isalpha():
-        raise ValueError(
+        raise StudyError(
             f"{text!r} is not a mutation. The short form is a one-letter "
             "original, a residue number and a one-letter replacement, as in "
             "L99A."
-        )
+        , code="setup.structure.mutation_unparseable", given=text, accepted_forms=["L99A", "LEU-99-ALA"])
     digits = cleaned[1:-1]
     if not digits.isdigit():
-        raise ValueError(
+        raise StudyError(
             f"{text!r} is not a mutation: {digits!r} is not a residue number."
-        )
+        , code="setup.structure.mutation_unparseable", given=text, accepted_forms=["L99A", "LEU-99-ALA"])
     for letter in (cleaned[0], cleaned[-1]):
         if letter not in ONE_TO_THREE:
-            raise ValueError(
+            raise StudyError(
                 f"{text!r} names {letter!r}, which is not one of the twenty "
                 "amino acids. Write the three-letter form if the residue is "
                 "nonstandard."
-            )
+            , code="setup.structure.mutation_unparseable", given=text, accepted_forms=["L99A", "LEU-99-ALA"])
     return ONE_TO_THREE[cleaned[0]], int(digits), ONE_TO_THREE[cleaned[-1]]
 
 
@@ -306,23 +309,23 @@ def _check_mutation_matches(topology, chain_id: str,
         for residue in chain.residues():
             if int(residue.id) == number:
                 if residue.name.upper() != original:
-                    raise ValueError(
+                    raise StudyError(
                         f"{text} asks to replace {original} at {number} of "
                         f"chain {chain_id}, but that position holds "
                         f"{residue.name}. Either the numbering differs from "
                         "the one the mutation was written against, or the "
                         "mutation names the wrong residue; applying it "
                         "either way would simulate a protein nobody chose."
-                    )
+                    , code="setup.structure.mutation_mismatch", mutation=text, found=original, position=number)
                 return
-        raise ValueError(
+        raise StudyError(
             f"{text} names residue {number} of chain {chain_id}, which this "
             "structure does not contain."
-        )
-    raise ValueError(
+        , code="setup.structure.mutation_mismatch", mutation=text, position=number)
+    raise StudyError(
         f"{text} names chain {chain_id!r}, which this structure does not "
         "contain."
-    )
+    , code="setup.structure.chain_unknown", given=chain_id)
 
 
 def fix_pdb_with_pdbfixer(
@@ -381,18 +384,18 @@ def fix_pdb_with_pdbfixer(
         from openmm.app import PDBFile
         from pdbfixer import PDBFixer
     except ImportError as exc:
-        raise ImportError(
+        raise BackendUnavailable(
             "fix_pdb_with_pdbfixer requires pdbfixer and openmm. Install "
             "via conda (recommended): conda install -c conda-forge "
             "pdbfixer openmm — or via pip with the optional [setup] "
             "extras: pip install fastmdxplora[md]."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
     inp = Path(input_pdb)
     out = Path(output_pdb)
 
     if not inp.exists():
-        raise FileNotFoundError(f"Input PDB not found: {inp}")
+        raise MissingPathError(f"Input PDB not found: {inp}", code="environment.path.not_found")
 
     logger.info("Fixing PDB with PDBFixer: %s (pH=%s)", inp, ph)
 
@@ -407,10 +410,10 @@ def fix_pdb_with_pdbfixer(
         if chain_id is None:
             first = next(iter(fixer.topology.chains()), None)
             if first is None:
-                raise ValueError(
+                raise StudyError(
                     "A mutation was asked for and the structure has no "
                     "chains to apply it to."
-                )
+                , code="setup.structure.chain_unknown")
             chain_id = str(first.id)
 
         applied = []

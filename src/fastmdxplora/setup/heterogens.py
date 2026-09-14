@@ -28,6 +28,7 @@ from enum import Enum
 from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("setup.heterogens")
 
@@ -112,7 +113,7 @@ UNPARAMETERIZABLE = {
     "PQQ": "PQQ", "TPQ": "topaquinone",
 }
 
-# Residue codes that mean "we do not know what this is". No chemical
+# Residue codes that mean "this is not identified". No chemical
 # definition exists, so nothing downstream can parameterize them.
 UNKNOWN_NAMES = frozenset({"UNL", "UNK", "UNX", "LIG", "DRG"})
 
@@ -214,12 +215,14 @@ class Decision:
         return self.resname.strip().upper() in ION_NAMES
 
 
-class AmbiguousStructureError(RuntimeError):
+class AmbiguousStructureError(CodedError, RuntimeError):
     """The structure does not determine what should be simulated.
 
     Raised rather than resolved, so that no trajectory is ever produced from
     a guess about what the depositors meant.
     """
+
+    default_code = "setup.structure.undetermined"
 
 
 def _standard_residues() -> frozenset[str]:

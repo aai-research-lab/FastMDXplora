@@ -44,6 +44,8 @@ from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import new_figure, save_figure
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 
 VALID_METHODS = ("kmeans", "hierarchical", "dbscan")
@@ -153,16 +155,16 @@ class Cluster(Analysis):
         methods = [m.lower() for m in methods]
         unknown = [m for m in methods if m not in VALID_METHODS]
         if unknown:
-            raise ValueError(
+            raise StudyError(
                 f"Unknown clustering method(s): {unknown}. Valid: {VALID_METHODS}"
-            )
+            , code="analysis.option.not_permitted")
         self.methods: list[str] = methods
         features = str(features).lower()
         if features not in VALID_FEATURES:
-            raise ValueError(
+            raise StudyError(
                 f"Unknown clustering features {features!r}. "
                 f"Valid: {', '.join(VALID_FEATURES)}"
-            )
+            , code="analysis.option.not_permitted")
         self.features: str = features
         self.n_clusters: int = int(n_clusters)
         self.eps: float = float(eps)
@@ -203,12 +205,12 @@ class Cluster(Analysis):
         n_frames = traj.n_frames
         partitioning = [m for m in self.methods if m in ("kmeans", "hierarchical")]
         if partitioning and n_frames < self.n_clusters:
-            raise ValueError(
+            raise StudyError(
                 f"Clustering needs at least n_clusters={self.n_clusters} "
                 f"frames, but the trajectory has only {n_frames}. Use a longer "
                 f"trajectory, or set a smaller n_clusters (e.g. n_clusters="
                 f"{max(2, n_frames)} or fewer)."
-            )
+            , code="analysis.sampling.too_few_frames")
 
         results: dict[str, np.ndarray] = {}
         for method in self.methods:
@@ -351,7 +353,7 @@ class Cluster(Analysis):
                 finished_at=finished,
             )
 
-    # Required by the ABC but not used (we override run())
+    # Required by the ABC but not used (run() is overridden)
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:
         # Plot the first method on the supplied axes — used only by
         # external callers who instantiate the figure themselves.
@@ -543,10 +545,11 @@ def _hierarchical_linkage_matrix(
         from scipy.cluster.hierarchy import linkage
         from scipy.spatial.distance import squareform
     except ImportError as exc:  # pragma: no cover - environment dependent
-        raise RuntimeError("SciPy is required for dendrogram generation") from exc
+        raise BackendUnavailable("SciPy is required for dendrogram generation",
+                                 packages=["scipy"], code="environment.backend.missing") from exc
 
     if distances.shape[0] < 2:
-        raise ValueError("at least two frames are required for a dendrogram")
+        raise StudyError("at least two frames are required for a dendrogram", code="analysis.sampling.too_few_frames")
     condensed = squareform(distances, checks=False)
     method = "average" if linkage_method == "ward" else linkage_method
     return linkage(condensed, method=method)
@@ -559,7 +562,8 @@ def _plot_hierarchical_dendrogram_from_linkage(
     try:
         from scipy.cluster.hierarchy import dendrogram
     except ImportError as exc:  # pragma: no cover - environment dependent
-        raise RuntimeError("SciPy is required for dendrogram generation") from exc
+        raise BackendUnavailable("SciPy is required for dendrogram generation",
+                                 packages=["scipy"], code="environment.backend.missing") from exc
 
     dendrogram(linkage_matrix, ax=ax, no_labels=True, color_threshold=None)
     ax.set_xlabel("Frame")

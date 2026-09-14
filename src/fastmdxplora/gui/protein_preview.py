@@ -8,6 +8,7 @@ import subprocess
 from colorsys import hsv_to_rgb
 from pathlib import Path
 from typing import Any
+from fastmdxplora.refusals import BackendUnavailable
 
 
 PREVIEW_CANDIDATES = (
@@ -286,7 +287,7 @@ def _render_with_pymol(pymol: str, structure: Path, output_path: Path) -> None:
         except OSError:
             pass
     if not output_path.is_file():
-        raise RuntimeError("PyMOL did not write a preview image")
+        raise BackendUnavailable("PyMOL did not write a preview image", code="environment.platform.unavailable")
 
 
 def _residue_color_commands(structure: Path) -> list[str]:

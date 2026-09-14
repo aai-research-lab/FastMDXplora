@@ -44,6 +44,13 @@ import numpy as np
 
 __all__ = [
     "Equilibrated",
+    "Withholding",
+    "Pooled",
+    "drift_across_segments",
+    "heterogeneity_ratio",
+    "Shortfall",
+    "summarise_segments",
+    "sampling_shortfall",
     # The old name, kept importable so nothing outside has to move at once.
     "Settled",
     "statistical_inefficiency",
@@ -244,6 +251,37 @@ def detect_equilibration(
     return best
 
 
+class Withholding(str):
+    """The reason a mean was withheld, carrying its code.
+
+    A ``str`` subclass so that nothing which already reads this changes:
+    it prints, formats, compares and tests truthy exactly as the plain
+    string it replaces did, and ``summarise``'s signature is unaltered.
+
+    What it adds is ``.refusal`` -- the same fact in the form a program
+    can branch on. A caller that can extend a run wants to distinguish
+    "the correlation time is not resolved, run longer" from "there are
+    three frames here" without matching on prose, and the three
+    withholdings below are different conditions with different remedies.
+
+    Read it with :func:`fastmdxplora.refusals.refusal_of`, which takes
+    anything carrying a ``refusal`` attribute.
+    """
+
+    __slots__ = ("refusal",)
+
+    def __new__(cls, message: str, *, code: str, **details: Any):
+        from fastmdxplora.refusals import Refusal, known
+
+        obj = super().__new__(cls, message)
+        obj.refusal = Refusal(
+            code=code if known(code) else "unclassified",
+            message=message,
+            details={k: v for k, v in details.items() if v is not None},
+        )
+        return obj
+
+
 def summarise(
     series: np.ndarray,
     *,
@@ -259,9 +297,11 @@ def summarise(
     values = np.asarray(series, dtype=float)
     values = values[np.isfinite(values)]
     if values.size < 3:
-        return None, (
+        return None, Withholding(
             f"{values.size} usable frame(s): there is nothing to average, and "
-            "nothing to say about how it varies."
+            "nothing to say about how it varies.",
+            code="analysis.sampling.too_few_frames",
+            found=int(values.size), needed=3,
         )
 
     discard, g, effective = detect_equilibration(values)
@@ -287,7 +327,7 @@ def summarise(
     )
 
     if not resolved:
-        return equilibrated, (
+        return equilibrated, Withholding(
             f"This run is not long against its own correlation time: taking "
             f"half the frames away changes the estimate, so {kept.size} frames "
             "cannot measure how correlated they are. The independent-sample "
@@ -296,16 +336,438 @@ def summarise(
             "rather than one that is wrong in a knowable direction. On ten "
             "replicas of one system differing only by seed, errors of this "
             "kind were five to eight times smaller than the spread of the ten "
-            "means. The remedy is a longer run, or replicas."
+            "means. The remedy is a longer run, or replicas.",
+            code="analysis.sampling.correlation_unresolved",
+            frames=int(kept.size), independent=float(effective),
+            statistical_inefficiency=float(g),
         )
 
     if effective < minimum_effective_samples:
-        return equilibrated, (
+        return equilibrated, Withholding(
             f"{effective:.1f} independent samples in {kept.size} frames "
             f"(one every {g:.0f}). Below {minimum_effective_samples:g} a mean "
             "and its error describe how this particular run happened to go "
             "rather than the system it was run on. The frames are correlated, "
             "so recording them more often will not help -- the run has to be "
-            "longer."
+            "longer.",
+            code="analysis.sampling.too_few_independent",
+            independent=float(effective), frames=int(kept.size),
+            statistical_inefficiency=float(g),
+            needed=float(minimum_effective_samples),
         )
     return equilibrated, None
+
+
+@dataclass(frozen=True)
+class Shortfall:
+    """How much more of a run a claim would need.
+
+    A refusal for want of sampling is only half an answer. The other half
+    is the number that turns "not enough" into a decision: how much
+    longer, and is that an afternoon or a fortnight.
+
+    Both numbers here rest on the same ``g`` the refusal did. Frames are
+    worth ``1/g`` of an independent sample each, so reaching ``target``
+    of them takes ``target * g`` frames past equilibration -- and the
+    frames already in hand count, which is why this is a shortfall rather
+    than a total.
+
+    ``more_ns`` is ``None`` where the caller did not say how far apart the
+    frames are. It is not guessed: a frame interval is a fact about how
+    the run was written out, and inventing one would put a plausible
+    duration in front of somebody who would then plan around it.
+    """
+
+    #: Independent samples asked for.
+    target: float
+    #: Independent samples in hand.
+    have: float
+    #: Frames per independent sample, from the series itself.
+    inefficiency: float
+    #: Further frames needed. Zero where the target is already met.
+    more_frames: int
+    #: The same, in nanoseconds, where a frame interval was given.
+    more_ns: float | None = None
+
+    @property
+    def met(self) -> bool:
+        return self.more_frames == 0
+
+    def as_record(self) -> dict[str, Any]:
+        record = {
+            "target_independent": self.target,
+            "independent": self.have,
+            "statistical_inefficiency": self.inefficiency,
+            "more_frames": self.more_frames,
+        }
+        if self.more_ns is not None:
+            record["more_ns"] = self.more_ns
+        return record
+
+    def __str__(self) -> str:
+        if self.met:
+            return (f"{self.have:.1f} independent samples, which meets the "
+                    f"{self.target:g} asked for.")
+        duration = ("" if self.more_ns is None
+                    else f", about {self.more_ns:.3g} ns more")
+        return (
+            f"{self.have:.1f} independent samples of the {self.target:g} "
+            f"needed. At one every {self.inefficiency:.0f} frames, that is "
+            f"{self.more_frames} further frames{duration}."
+        )
+
+
+def sampling_shortfall(
+    series: np.ndarray,
+    *,
+    target_independent: float = MINIMUM_EFFECTIVE_SAMPLES,
+    frame_interval_ns: float | None = None,
+) -> Shortfall:
+    """What it would take to support a claim this run does not yet support.
+
+    The companion to :func:`summarise`'s refusal. Where that says a mean is
+    not worth reporting, this says how much further the run has to go
+    before it is.
+
+    Measured from the series rather than assumed, so it costs nothing to
+    ask and it answers for this system rather than for a typical one. A
+    system whose fluctuations decorrelate in 5 frames and one that takes
+    500 need very different amounts of further sampling for the same
+    claim, and the difference is not visible in the trajectory length.
+
+    Note what this does *not* do. It reads the correlation from the
+    frames in hand, so where those frames are too few to resolve it --
+    the condition ``correlation_is_resolved`` names -- ``g`` is an
+    underestimate and the shortfall is a lower bound. It is a planning
+    figure, not a guarantee, and the honest use of it is to run at least
+    that much and measure again.
+    """
+    values = np.asarray(series, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size < 3:
+        # Nothing to read a correlation time from. Reporting g = 1 here
+        # would say the frames are independent, which is the most
+        # optimistic possible answer at the moment there is least reason
+        # for optimism.
+        return Shortfall(
+            target=float(target_independent), have=0.0, inefficiency=float("nan"),
+            more_frames=0, more_ns=None,
+        )
+
+    discard, g, effective = detect_equilibration(values)
+    kept = int(values.size - discard)
+    wanted_frames = int(np.ceil(float(target_independent) * g))
+    more = max(0, wanted_frames - kept)
+    return Shortfall(
+        target=float(target_independent),
+        have=float(effective),
+        inefficiency=float(g),
+        more_frames=more,
+        more_ns=(None if frame_interval_ns is None
+                 else float(more * frame_interval_ns)),
+    )
+
+
+@dataclass(frozen=True)
+class Pooled:
+    """What a joined run supports, taking the joins into account.
+
+    A trajectory assembled from segments is contiguous in time and is not
+    a single sample path. Each join is a place where the reporters
+    restarted and, under a barostat, where the move size re-adapted. That
+    matters to two things.
+
+    **The correlation time.** An autocorrelation function computed across
+    a discontinuity reads the step as long-time correlation and inflates
+    ``g``, which understates the independent samples and makes a real
+    difference look unsupported. Conservative in direction, wrong in
+    magnitude, and the magnitude is what a caller is deciding on.
+
+    **The equilibration detection.** Chodera's method picks the discard
+    that maximises effective samples. A jump at a join is exactly what
+    that method is built to find, so on a joined series it will often
+    discard everything before the last join -- throwing away nine tenths
+    of a ten-segment run and reporting the remainder as if that had been
+    the study.
+
+    So each segment is analysed on its own and the results are pooled.
+    Effective samples add, because the segments are disjoint in time and
+    each is independent of the others by construction. The mean is
+    weighted by effective samples, which is the minimum-variance
+    combination of estimates with different precisions. The standard error
+    comes from the pooled effective count rather than from any one
+    segment.
+    """
+
+    #: Per-segment results, in order. A segment that supported nothing is
+    #: absent, so this can be shorter than the number of segments.
+    segments: tuple[Equilibrated, ...]
+    mean: float
+    standard_error: float
+    effective_samples: float
+    #: Segments that were dropped, and why. Kept rather than counted: a
+    #: run where four of ten segments said nothing is a different object
+    #: from one where all ten contributed, and a bare count does not say
+    #: which.
+    withheld: tuple[tuple[int, str], ...] = ()
+    #: Observed scatter of the segment means over what their own standard
+    #: errors predict. One means they agree.
+    heterogeneity: float = 1.0
+    #: How unusual the *ordering* of the segment means is. Low means they
+    #: climb or fall rather than scatter.
+    drift_p: float = 1.0
+    #: What is true of this mean that would not be true of one from a run
+    #: that stayed put. Empty where nothing is.
+    qualification: str = ""
+
+    @property
+    def contributing(self) -> int:
+        return len(self.segments)
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "mean": self.mean,
+            "standard_error": self.standard_error,
+            "effective_samples": self.effective_samples,
+            "segments_contributing": self.contributing,
+            "segments_withheld": [
+                {"segment": index, "reason": reason}
+                for index, reason in self.withheld
+            ],
+            "heterogeneity": self.heterogeneity,
+            "drift_p": self.drift_p,
+            # Said plainly, because a reader comparing this against a run
+            # that went through in one piece should know they are not the
+            # same kind of number.
+            "pooled_across_joins": True,
+            **({"qualified": self.qualification} if self.qualification
+               else {}),
+        }
+
+
+def summarise_segments(
+    series: np.ndarray,
+    joins: "list[int] | tuple[int, ...]",
+    *,
+    minimum_effective_samples: float = MINIMUM_EFFECTIVE_SAMPLES,
+) -> "tuple[Pooled | None, Withholding | None]":
+    """Summarise a joined series, analysing each segment on its own.
+
+    Parameters
+    ----------
+    series
+        The whole joined series, in order.
+    joins
+        Frame indices where a new segment begins. The first segment starts
+        at zero and is not listed. An empty list means the run went
+        through in one piece, and this falls through to
+        :func:`summarise` -- so a caller need not branch on whether a run
+        was segmented.
+
+    Returns
+    -------
+    (Pooled, None) or (None, Withholding)
+        Withheld where no segment supported a mean, or where the pooled
+        effective count falls short. Pooling does not rescue a run that
+        was too short: ten segments of two independent samples each is
+        twenty, and twenty is twenty however it was collected -- but ten
+        segments that each support nothing support nothing together.
+    """
+    values = np.asarray(series, dtype=float)
+    values = values[np.isfinite(values)]
+    boundaries = sorted({int(j) for j in joins if 0 < int(j) < values.size})
+
+    if not boundaries:
+        equilibrated, why = summarise(
+            values, minimum_effective_samples=minimum_effective_samples)
+        if equilibrated is None:
+            return None, why
+        return Pooled(segments=(equilibrated,), mean=equilibrated.mean,
+                      standard_error=equilibrated.standard_error,
+                      effective_samples=equilibrated.effective_samples), None
+
+    edges = [0, *boundaries, values.size]
+    pieces: list[Equilibrated] = []
+    withheld: list[tuple[int, str]] = []
+    for index, (start, stop) in enumerate(zip(edges, edges[1:])):
+        # Each segment is equilibrated on its own. A segment that begins
+        # after a join has its own approach to settle -- under a barostat
+        # the move size is re-adapting -- and detecting that per segment is
+        # the point, not an inconvenience.
+        piece, why = summarise(
+            values[start:stop],
+            minimum_effective_samples=0.0)
+        if piece is None:
+            withheld.append((index, str(why)))
+            continue
+        pieces.append(piece)
+
+    if not pieces:
+        return None, Withholding(
+            "No segment of this joined run supports a mean. Pooling does "
+            "not rescue a run that was too short: segments that each say "
+            "nothing say nothing together.",
+            code="analysis.sampling.too_few_independent",
+            independent=0.0, frames=int(values.size),
+            needed=float(minimum_effective_samples),
+        )
+
+    weights = np.array([p.effective_samples for p in pieces], dtype=float)
+    means = np.array([p.mean for p in pieces], dtype=float)
+    total = float(weights.sum())
+
+    if total < minimum_effective_samples:
+        return None, Withholding(
+            f"{total:.1f} independent samples across {len(pieces)} "
+            f"segment(s), against the {minimum_effective_samples:g} a mean "
+            "needs. The segments are disjoint in time so their independent "
+            "samples add, and they still do not reach it. The remedy is "
+            "longer segments or more of them.",
+            code="analysis.sampling.too_few_independent",
+            independent=total, frames=int(values.size),
+            needed=float(minimum_effective_samples),
+        )
+
+    # Weighting by effective samples is the minimum-variance combination of
+    # estimates whose variances differ, which is what segments of unequal
+    # usable length give.
+    mean = float((weights * means).sum() / total)
+    variances = np.array([p.standard_deviation ** 2 for p in pieces])
+    pooled_variance = float((weights * variances).sum() / total)
+    standard_error = float(np.sqrt(pooled_variance / total))
+
+    # Before reporting it: do these segments agree that they are measuring
+    # one thing? Pooling assumes they do, and pooling estimates of a moving
+    # target gives a confident number for a quantity that does not exist.
+    precisions = np.array(
+        [1.0 / max(p.standard_error ** 2, 1e-300) for p in pieces])
+    scatter = heterogeneity_ratio(means, precisions)
+    drifting = drift_across_segments(means, precisions)
+
+    if drifting < DRIFT_SIGNIFICANT_BELOW and scatter > 1.0:
+        # Both conditions, because either alone is not drift. A low p on
+        # segments that agree is a trend of nothing, and scatter with no
+        # order is underestimated error rather than movement.
+        span = float(means[-1] - means[0])
+        return None, Withholding(
+            f"The segment means move in order across the run, by {span:+.4g} "
+            f"from first to last, and an ordering this clean arises by "
+            f"chance about {drifting:.1%} of the time. The system had not "
+            "settled at the scale of the whole run, so a pooled mean would "
+            "be the mean of a moving target with a confident error bar on "
+            "it. The remedy is a longer run, not more pooling.",
+            code="analysis.sampling.drifting",
+            drift_p=float(drifting), heterogeneity=float(scatter),
+            span=span, segments=len(pieces),
+        )
+
+    qualification = ""
+    if scatter > HETEROGENEITY_QUALIFY_ABOVE:
+        qualification = (
+            f"The segment means scatter {scatter:.1f} times more than their "
+            "own standard errors predict, in no particular order. That is "
+            "not drift -- it says the per-segment errors are too small, "
+            "usually because the statistical inefficiency did not fully "
+            "capture the correlation. Treat the error on this mean as a "
+            "lower bound.")
+
+    return Pooled(
+        segments=tuple(pieces),
+        mean=mean,
+        standard_error=standard_error,
+        effective_samples=total,
+        withheld=tuple(withheld),
+        heterogeneity=float(scatter),
+        drift_p=float(drifting),
+        qualification=qualification,
+    ), None
+
+
+#: Observed scatter of segment means over what their own standard errors
+#: predict. One means they agree. Above this they do not, which says the
+#: per-segment errors are too small -- the usual cause being correlation
+#: the inefficiency did not fully capture.
+HETEROGENEITY_QUALIFY_ABOVE = 2.0
+
+#: How unusual the ordering of the segment means has to look before it is
+#: called drift rather than scatter.
+DRIFT_SIGNIFICANT_BELOW = 0.05
+
+
+def _weighted_slope(means: np.ndarray, weights: np.ndarray,
+                    positions: np.ndarray) -> float:
+    """Weighted least-squares slope of segment mean against segment order."""
+    total = weights.sum()
+    mean_x = float((weights * positions).sum() / total)
+    mean_y = float((weights * means).sum() / total)
+    spread = float((weights * (positions - mean_x) ** 2).sum())
+    if spread <= 0:
+        return 0.0
+    return float((weights * (positions - mean_x) * (means - mean_y)).sum()
+                 / spread)
+
+
+def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
+                          permutations: int = 4999,
+                          seed: int = 0) -> float:
+    """How unusual the ordering of these segment means is, as a p-value.
+
+    Scatter and drift look the same in a list of numbers and mean
+    different things. Segment means that disagree but in no order are
+    saying the per-segment errors are too small. Segment means that climb
+    are saying the system was still moving, and then a pooled mean is the
+    mean of a moving target with a confident error bar on it -- the worst
+    of the three outcomes, because it is the one that looks most like a
+    measurement.
+
+    Tested by permuting the order of the segments rather than by assuming
+    a distribution. The observed statistic is the weighted least-squares
+    slope against segment index; the null is what that slope looks like
+    when the same segment means are put in a random order. Exact for any
+    number of segments, which matters because a run is often three or
+    four, and a t or normal approximation on three points is a number
+    rather than a test.
+
+    Returns 1.0 for fewer than three segments: two points always lie on a
+    line, and calling that a trend would refuse every two-segment run.
+    """
+    if means.size < 3:
+        return 1.0
+
+    positions = np.arange(means.size, dtype=float)
+    observed = abs(_weighted_slope(means, weights, positions))
+
+    rng = np.random.default_rng(seed)
+    order = np.arange(means.size)
+    at_least_as_extreme = 0
+    for _ in range(permutations):
+        shuffled = rng.permutation(order)
+        candidate = abs(_weighted_slope(means[shuffled], weights[shuffled],
+                                        positions))
+        if candidate >= observed:
+            at_least_as_extreme += 1
+    # The +1s are the standard correction: the observed ordering is itself
+    # one of the orderings, and leaving it out lets a p-value of exactly
+    # zero be reported, which no permutation test can support.
+    return (at_least_as_extreme + 1) / (permutations + 1)
+
+
+def heterogeneity_ratio(means: np.ndarray, weights: np.ndarray) -> float:
+    """Observed scatter of segment means over what their errors predict.
+
+    Cochran's Q divided by its degrees of freedom. One means the segments
+    agree as well as their own standard errors say they should. Much above
+    one means they do not, and the honest reading is that the per-segment
+    errors are too small rather than that the segments disagree about
+    physics.
+
+    Reported as a ratio rather than a p-value on purpose. A ratio of three
+    is plainly too much and needs no distribution to say so, and reaching
+    for a chi-squared here would import a dependency to dress up a number
+    that is already legible.
+    """
+    if means.size < 2:
+        return 1.0
+    pooled = float((weights * means).sum() / weights.sum())
+    q = float((weights * (means - pooled) ** 2).sum())
+    return q / (means.size - 1)

@@ -27,6 +27,9 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import refusal_of
+from fastmdxplora.refusals import OutputExistsError
+from fastmdxplora.refusals import StudyError
 
 logger = get_logger("project")
 
@@ -48,6 +51,19 @@ class PhaseResult:
     finished_at: str = ""
     message: str = ""
     artifacts: list[str] = field(default_factory=list)
+    refusal: dict[str, Any] = field(default_factory=dict)
+    """What this phase refused, as a record rather than as a sentence.
+
+    Present on an errored phase, empty otherwise. ``message`` holds the
+    prose and always did; this holds the same fact in the form a program
+    can branch on -- the stable code, its kind, whether it is worth
+    retrying, and the particulars the sentence interpolated.
+
+    Written into the manifest, so a reader opening the run afterwards
+    sees what an in-process caller saw. A refusal is a result, and a
+    study that stopped should record why it stopped in the same place it
+    would have recorded what it found.
+    """
     produced_by: dict[str, Any] = field(default_factory=dict)
     """Version, host and package environment that produced *this* phase.
 
@@ -73,6 +89,8 @@ class PhaseResult:
             "message": self.message,
             "artifacts": self.artifacts,
         }
+        if self.refusal:
+            record["refusal"] = self.refusal
         if self.produced_by:
             record["produced_by"] = self.produced_by
         return record
@@ -187,10 +205,10 @@ class FastMDXplora:
         # config/config_data execution is deferred to explore().
         n_config = sum(x is not None for x in (config, config_data))
         if n_config and system is not None:
-            raise ValueError(
+            raise StudyError(
                 "Pass either `system=` (a single study) or a config "
                 "(`config=` / `config_data=`), not both."
-            )
+            , code="config.option.conflicting")
 
         self._config_path: str | None = (
             str(config) if config is not None else None
@@ -200,7 +218,7 @@ class FastMDXplora:
         self._deferred_verbose = verbose
 
         if n_config:
-            # Config-driven: defer everything to explore(). We don't create
+            # Config-driven: defer everything to explore(). Nothing creates
             # an output directory or banner here because the batch machinery
             # owns the layout (flat for one run, runs/<id>/ for many).
             self.system = None  # resolved per-run by the batch layer
@@ -209,15 +227,29 @@ class FastMDXplora:
             self._config_include = include
             self._config_exclude = exclude
             self.results = []
+            # Declared, not omitted. This branch used to return without
+            # setting it at all, so the same class had two shapes depending
+            # on which argument it was given -- and any code asking "where
+            # is the output" had to know which, or discover it through an
+            # AttributeError.
+            #
+            # That is not a hypothetical. An attempt to fix a logging leak
+            # landed on the other branch and did nothing, because every
+            # caller affected was on this one, and the difference was
+            # invisible until traced. None says the same thing the absence
+            # did -- the location is not settled yet -- in a way that can be
+            # read rather than caught. explore() fills it in from the batch
+            # layer, as it already did.
+            self.output_dir = None
             return
 
         # ---- Direct single-study path -----------------------------------
         if system is None:
-            raise ValueError(
+            raise StudyError(
                 "FastMDXplora requires either a `system` input (a PDB/CIF "
                 "file path, a 4-character PDB ID, or a one-letter sequence) "
                 "or a `config` file."
-            )
+            , code="config.option.missing_companion")
 
         self.system: str = str(system)
 
@@ -226,7 +258,7 @@ class FastMDXplora:
         self._config_exclude: list[str] | None = exclude
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        self.output_dir: Path = (
+        self.output_dir: Path | None = (
             Path(output_dir) if output_dir
             else Path(f"fastmdxplora_output_{timestamp}")
         )
@@ -522,10 +554,10 @@ class FastMDXplora:
             self, "output_dir", None
         )
         if target is None:
-            raise ValueError(
+            raise StudyError(
                 "compare() needs an output directory — pass output_dir=, or "
                 "call it after explore() so the run's output is known."
-            )
+            , code="config.option.missing_companion")
         return build_comparison_report(target)
 
     # ------------------------------------------------------------------
@@ -728,17 +760,17 @@ class FastMDXplora:
         want_report: bool,
     ) -> list[str]:
         if include is not None and exclude is not None:
-            raise ValueError("Specify either `include` or `exclude`, not both.")
+            raise StudyError("Specify either `include` or `exclude`, not both.", code="config.option.conflicting")
 
         if include is not None:
             unknown = set(include) - set(PHASES)
             if unknown:
-                raise ValueError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}")
+                raise StudyError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}", code="config.phase.unknown")
             plan = [p for p in PHASES if p in include]
         elif exclude is not None:
             unknown = set(exclude) - set(PHASES)
             if unknown:
-                raise ValueError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}")
+                raise StudyError(f"Unknown phase(s): {sorted(unknown)}. Valid: {PHASES}", code="config.phase.unknown")
             plan = [p for p in PHASES if p not in exclude]
         else:
             plan = list(PHASES)
@@ -775,11 +807,11 @@ class FastMDXplora:
         ]
         if not occupied:
             return
-        raise FileExistsError(
+        raise OutputExistsError(
             f"{self.output_dir} already holds output from "
             f"{', '.join(occupied)}. Choose another --output directory, "
             f"delete this one, or pass --force-overwrite to overwrite it."
-        )
+        , code="environment.path.exists")
 
     def _merge_options(
         self, override: dict[str, dict[str, Any]] | None
@@ -788,9 +820,9 @@ class FastMDXplora:
         if override:
             for phase, opts in override.items():
                 if phase not in PHASES:
-                    raise ValueError(
+                    raise StudyError(
                         f"Unknown phase '{phase}' in options. Valid: {PHASES}"
-                    )
+                    , code="config.phase.unknown")
                 merged[phase].update(opts)
         return merged
 
@@ -892,6 +924,12 @@ class FastMDXplora:
                 started_at=started,
                 finished_at=finished,
                 message=str(exc),
+                # Total by construction: an exception from a raise site that
+                # has not been coded yet, or from a dependency, comes back
+                # as `unclassified` carrying its own message. So the field
+                # is always there and its resolution improves as the
+                # migration proceeds, rather than appearing and disappearing.
+                refusal=refusal_of(exc).as_dict(),
                 produced_by=self._phase_provenance(),
             )
 
@@ -919,7 +957,7 @@ class FastMDXplora:
             from fastmdxplora.report import run
 
             return run
-        raise ValueError(f"Unknown phase: {phase}")
+        raise StudyError(f"Unknown phase: {phase}", code="config.phase.unknown")
 
     def _add_run_record_to_bundle(self) -> None:
         """Put the manifest and the resolved config into the bundle.
@@ -1032,6 +1070,19 @@ class FastMDXplora:
             "phases": [phase_records[name] for name in phase_order],
             "options": options,
         }
+        # How each phase was written. Per phase rather than one summary,
+        # because "partly unvalidated" tells a reader to distrust the whole
+        # study, and the point of the per-phase setting is that they need
+        # only distrust some of it. Omitted entirely for a study a person
+        # wrote, which is most of them and every one before this existed.
+        try:
+            from fastmdxplora.config.agent_modes import resolve_agent_modes
+
+            modes = resolve_agent_modes(options)
+            if modes.study is not None or modes.departures:
+                manifest["agent"] = modes.as_record()
+        except Exception:  # noqa: BLE001 - a manifest is worth writing anyway
+            logger.debug("Could not record how this study was written.")
         if len(versions_seen) > 1:
             manifest["versions_seen"] = versions_seen
             manifest["version_note"] = (

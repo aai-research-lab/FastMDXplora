@@ -41,6 +41,8 @@ from matplotlib.ticker import (  # noqa: E402
     MaxNLocator,
 )
 import numpy as np  # noqa: E402
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import CodedKeyError
 
 
 NumericSeq = Optional[Union[Sequence[float], np.ndarray]]
@@ -140,13 +142,13 @@ def settle_figure_colours(value: Any) -> str:
     key = str(value).strip().lower().replace("-", "").replace("_", "")
     settled = _COLOUR_SPELLINGS.get(key)
     if settled is None:
-        raise ValueError(
+        raise StudyError(
             f"figure_colours does not accept {value!r}. It accepts "
             f"{', '.join(FIGURE_COLOURS)} -- 'colour' draws the figure in "
             "colour, 'greyscale' draws it without hue, and 'both' writes the "
             "colour figure and a greyscale copy beside it. American "
             "spellings are accepted."
-        )
+        , code="analysis.option.not_permitted")
     return settled
 
 
@@ -192,10 +194,10 @@ def colour(role: str) -> str:
     try:
         return table[role]
     except KeyError:
-        raise KeyError(
+        raise CodedKeyError(
             f"No colour role named {role!r}. Roles are: "
             f"{', '.join(sorted(_ROLES_IN_COLOUR))}."
-        ) from None
+        , code="analysis.unknown") from None
 
 
 PAPER_TICK_SIZE = 9.0
@@ -443,7 +445,7 @@ def _tick_budget(ax: Axes, axis: str) -> int:
 
 
 def _has_categorical_ticks(ax: Axes, axis: str) -> bool:
-    """True when the axis carries fixed or text labels we must not relocate.
+    """True when the axis carries fixed or text labels that must not be relocated.
 
     Matrices, dendrograms, and bar charts label specific positions; replacing
     their locator would silently mislabel the data.

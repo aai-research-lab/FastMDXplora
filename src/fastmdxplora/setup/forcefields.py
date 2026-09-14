@@ -24,6 +24,7 @@ entry in :data:`_REGISTRY`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fastmdxplora.refusals import StudyError
 
 
 @dataclass(frozen=True)
@@ -181,11 +182,11 @@ def resolve_forcefield(name: str | None) -> ForceFieldChoice:
     choice = _REGISTRY.get(key)
     if choice is None:
         valid = ", ".join(available_forcefields())
-        raise ValueError(
+        raise StudyError(
             f"Unknown force field {name!r}. Valid choices: {valid}. "
             f"(For an unlisted combination, pass an explicit `force_field` "
             f"list of OpenMM XML filenames instead.)"
-        )
+        , code="setup.forcefield.unknown", given=name, permitted=sorted(_REGISTRY))
     return choice
 
 #: What the schema hands over when nobody chose. A value equal to this is

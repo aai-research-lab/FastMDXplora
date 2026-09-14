@@ -35,10 +35,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fastmdxplora.config.schema import PHASE_KEYS
+from fastmdxplora.refusals import CodedError
 
 
-class SweepError(ValueError):
+class SweepError(CodedError, ValueError):
     """Raised for malformed systems/sweep specifications."""
+
+    default_code = "batch.sweep.invalid"
 
 
 # A safe slug for run-directory names: keep alnum, dot, plus, minus.
@@ -139,7 +142,7 @@ def normalize_systems(raw: Any) -> list[dict[str, Any]]:
     seen_ids: set[str] = set()
     for i, entry in enumerate(raw):
         if not isinstance(entry, dict):
-            raise SweepError(f"`systems[{i}]` must be a mapping, got {type(entry).__name__}.")
+            raise SweepError(f"`systems[{i}]` must be a mapping, got {type(entry).__name__}.", code="batch.sweep.invalid")
         if "system" not in entry or not entry["system"]:
             raise SweepError(f"`systems[{i}]` is missing a `system` input.")
 
@@ -224,7 +227,7 @@ def expand_runs(
     elif base_system is not None:
         sys_entries = [{"id": "s1", "system": base_system, "options": {}}]
     else:
-        raise SweepError("expand_runs requires either `systems` or `base_system`.")
+        raise SweepError("expand_runs requires either `systems` or `base_system`.", code="config.option.missing_companion")
 
     # Build the sweep grid: list of (axis_key, value) tuples per point
     if sweep:

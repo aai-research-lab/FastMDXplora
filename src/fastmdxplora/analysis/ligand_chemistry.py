@@ -1,4 +1,4 @@
-"""How the ligand's chemistry was known, and how confident that makes us.
+"""How the ligand's chemistry was known, and what that supports.
 
 Deciding whether a nitrogen donates a hydrogen bond, whether a ring is
 aromatic, whether a group carries a charge -- none of that is in a trajectory.
@@ -25,6 +25,7 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from fastmdxplora.refusals import StudyError
 
 __all__ = ["ResolvedChemistry", "resolve_ligand_chemistry",
            "deposit_perceived_chemistry", "SOURCES"]
@@ -336,9 +337,9 @@ def resolve_ligand_chemistry(
             resname, mol.GetNumAtoms(), charge_was_ambiguous=len(balanced) > 1,
         )
 
-    raise ValueError(
+    raise StudyError(
         f"The chemistry of {resname!r} could not be established. Tried: "
         + "; ".join(tried)
         + ". Supply an SDF for it, or use a residue name the Chemical "
         "Component Dictionary knows."
-    )
+    , code="setup.chemistry.uninterpretable")

@@ -50,6 +50,9 @@ from fastmdxplora.setup.forcefields import (
 )
 from fastmdxplora.setup.ligand import load_ligand, pose_by_policy
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingResultError
+from fastmdxplora.refusals import BackendUnavailable
 
 logger = get_logger("setup.prepare")
 
@@ -103,7 +106,7 @@ def _refuse_an_implausible_structure(topology: Any, positions: Any, unit: Any) -
     if extent <= plausible:
         return
 
-    raise ValueError(
+    raise StudyError(
         f"The prepared structure is {extent:.0f} nm across for {residues} "
         f"residues, where a folded structure of that size would be under "
         f"{plausible:.0f} nm. Something in it is far from everything else.\n\n"
@@ -116,7 +119,7 @@ def _refuse_an_implausible_structure(topology: Any, positions: Any, unit: Any) -
         "a membrane means packing lipids across the whole face -- minutes of "
         "work to arrive at a structure nobody would recognise.\n\n"
         "Open setup/prepared.pdb and look at what is far from the rest."
-    )
+    , code="setup.structure.implausible_extent")
 
 
 #: How narrow each box shape is, as the ratio of its smallest periodic
@@ -311,12 +314,12 @@ def _import_openmm():
             "Ewald": Ewald,
         }
     except ImportError as exc:
-        raise ImportError(
+        raise BackendUnavailable(
             "Setup-phase system parameterization requires OpenMM. Install "
             "via conda (recommended): conda install -c conda-forge openmm "
             "pdbfixer — or via pip with the optional [md] extras: "
             "pip install fastmdxplora[md]."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
 
 #: Metals that sit in a protein site rather than in the solvent, and whose
@@ -503,7 +506,7 @@ def prepare_system(
 
     prepared_path = Path(prepared_pdb)
     if not prepared_path.exists():
-        raise FileNotFoundError(f"Prepared PDB not found: {prepared_path}")
+        raise MissingResultError(f"Prepared PDB not found: {prepared_path}", code="environment.path.not_found")
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -544,22 +547,22 @@ def prepare_system(
         # A ligand requires a ligand-capable force field. Raw XML lists can't
         # be introspected for ligand support, so require the named selector.
         if ff_choice is None:
-            raise ValueError(
+            raise StudyError(
                 "A ligand was supplied with a raw `force_field` XML list. "
                 "Protein-ligand parameterization needs the named "
                 "`forcefield` selector (use forcefield='amber-openff'), "
                 "which wires the OpenFF small-molecule generator."
-            )
+            , code="config.option.conflicting")
         if not ff_choice.supports_ligand:
             valid = ", ".join(
                 n for n in available_forcefields()
                 if resolve_forcefield(n).supports_ligand
             )
-            raise ValueError(
+            raise StudyError(
                 f"Force field {ff_choice.name!r} does not support ligands. "
                 f"For protein-ligand systems use a ligand-capable force "
                 f"field: {valid}."
-            )
+            , code="setup.forcefield.incompatible")
     constraints_obj = _resolve_constraints(omm, constraints)
 
     # ----- 1. Load topology + positions -----
@@ -671,10 +674,10 @@ def prepare_system(
 
         lipid = str(membrane).upper()
         if lipid not in LIPIDS:
-            raise ValueError(
+            raise StudyError(
                 f"{lipid} is not a lipid OpenMM can build a bilayer from. "
                 f"Available: {', '.join(sorted(LIPIDS))}."
-            )
+            , code="setup.membrane.lipid_unparameterized")
 
         if membrane_orient and not membrane_orientation_checked:
             # Whether the rotation can be trusted, before doing it. A protein
@@ -686,7 +689,7 @@ def prepare_system(
             problem = check_axis_is_well_defined(
                 modeller.topology, modeller.positions)
             if problem:
-                raise ValueError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
 
         if membrane_orient:
             # Asked for rather than done quietly: rotating by principal axes
@@ -708,7 +711,7 @@ def prepare_system(
         if not membrane_orientation_checked:
             problem = check_orientation(modeller.topology, modeller.positions)
             if problem:
-                raise ValueError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
 
             # And whether what came out looks like a membrane protein at all.
             # Rotating by principal axes is right for a transmembrane bundle
@@ -719,7 +722,7 @@ def prepare_system(
             problem = check_hydrophobic_belt(
                 modeller.topology, modeller.positions)
             if problem:
-                raise ValueError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
 
             # And whether the copies agree with each other. Each one passes
             # the checks above whichever way up it is; only together do they
@@ -729,7 +732,7 @@ def prepare_system(
             problem = check_chains_point_the_same_way(
                 modeller.topology, modeller.positions)
             if problem:
-                raise ValueError(problem)
+                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
             logger.info(
                 "Hydrophobic belt check passed: the hydrophobic residues sit "
                 "nearer the middle than the charged ones, as a bilayer-"
@@ -789,10 +792,10 @@ def prepare_system(
     }
     method_key = method_map.get(str(nonbonded_method).lower())
     if method_key is None:
-        raise ValueError(
+        raise StudyError(
             f"Unknown nonbonded_method {nonbonded_method!r}. Valid: "
             f"NoCutoff, CutoffNonPeriodic, CutoffPeriodic, PME, Ewald."
-        )
+        , code="config.option.not_permitted")
     nonbonded_method_obj = omm[method_key]
     is_cutoff_method = method_key in (
         "CutoffNonPeriodic", "CutoffPeriodic", "PME", "Ewald"
@@ -847,7 +850,7 @@ def prepare_system(
                 # OpenMM handle validation.
                 min_edge_nm = None
             if min_edge_nm is not None and nonbonded_cutoff_nm > 0.5 * min_edge_nm:
-                raise ValueError(
+                raise StudyError(
                     f"Nonbonded cutoff ({nonbonded_cutoff_nm:.2f} nm) exceeds "
                     f"half the smallest periodic box dimension "
                     f"({0.5 * min_edge_nm:.2f} nm; box edge {min_edge_nm:.2f} "
@@ -855,7 +858,7 @@ def prepare_system(
                     f"{solvent_padding_nm:.2f} nm) or decrease "
                     f"nonbonded_cutoff_nm so that the cutoff is at most half "
                     f"the box."
-                )
+                , code="config.option.wrong_type")
 
     try:
         system = ff.createSystem(modeller.topology, **create_system_kwargs)
@@ -981,20 +984,20 @@ def _resolve_ligand_names(ligands, ligand_name) -> list[str]:
     if isinstance(ligand_name, (list, tuple)):
         names = [str(n).strip().upper() for n in ligand_name]
         if len(names) != len(ligands):
-            raise ValueError(
+            raise StudyError(
                 f"{len(names)} ligand names given for {len(ligands)} ligands; "
                 "give one name per ligand, or none to use the file names."
-            )
+            , code="config.option.conflicting")
     elif len(ligands) == 1:
         names = [str(ligand_name or "LIG").strip().upper()]
     elif ligand_name:
         # One name cannot serve several ligands: they would be
         # indistinguishable in the topology and in every later selection.
-        raise ValueError(
+        raise StudyError(
             f"a single ligand name ({ligand_name!r}) was given for "
             f"{len(ligands)} ligands. Give one name per ligand, or none to "
             "take them from the file names."
-        )
+        , code="config.option.conflicting")
     else:
         # A single name across several ligands would make them
         # indistinguishable in the topology and in every later selection.
@@ -1015,13 +1018,13 @@ def _resolve_ligand_names(ligands, ligand_name) -> list[str]:
     clashes = {name: sorted(found)
                for name, found in components.items() if len(found) > 1}
     if clashes:
-        raise ValueError(
+        raise StudyError(
             f"different ligands were given the same residue name: {clashes}. "
             "Copies of one component may share a name -- they are told apart "
             "by chain and residue number -- but two different molecules "
             "cannot, in the topology or in any analysis that selects by "
             "residue."
-        )
+        , code="config.option.conflicting")
     return names
 
 
@@ -1030,10 +1033,10 @@ def _resolve_ligand_charges(ligands, ligand_net_charge) -> list:
     if isinstance(ligand_net_charge, (list, tuple)):
         charges = list(ligand_net_charge)
         if len(charges) != len(ligands):
-            raise ValueError(
+            raise StudyError(
                 f"{len(charges)} ligand charges given for {len(ligands)} "
                 "ligands; give one per ligand, or none to infer them."
-            )
+            , code="config.option.conflicting")
         return charges
     return [ligand_net_charge] * len(ligands)
 
@@ -1179,7 +1182,7 @@ def _build_ligand_forcefield(force_field, small_molecule_ff, ligand_mols):
             "installed. Install the ligand extra (pip install "
             "'fastmdxplora[ligand]') or via conda-forge "
             "(conda install -c conda-forge openmmforcefields)."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
     system_generator = SystemGenerator(
         forcefields=list(force_field),
@@ -1210,7 +1213,7 @@ def _add_ligand_to_modeller(omm, modeller, ligand_mol, ligand_name="LIG") -> Non
     # conformer loaded from the SDF/MOL2 file.
     positions = _to_openmm(ligand_mol.conformers[0])
 
-    # Record the residue count before adding so we can re-assert the ligand
+    # Record the residue count before adding so the ligand can be re-asserted
     # residue name on the MERGED topology — modeller.add() does not reliably
     # preserve the input topology's residue names across all OpenMM versions.
     n_residues_before = modeller.topology.getNumResidues()
@@ -1238,7 +1241,7 @@ def _check_ligand_clashes(
     coordinates in the SDF/MOL2 must already be a feasible bound pose (e.g.
     from a co-crystal structure or docking). If the supplied pose places
     ligand atoms on top of protein atoms, energy minimization cannot relieve
-    the overlap and the simulation diverges to NaN several steps later. We
+    the overlap and the simulation diverges to NaN several steps later. This
     detect that here and stop with an actionable message, rather than letting
     it surface as an opaque integration failure downstream.
 
@@ -1285,7 +1288,7 @@ def _check_ligand_clashes(
         elements = []
     if len(elements) != len(coords):
         # Without reliable element information every atom is treated as heavy.
-        # Excluding atoms we cannot identify would silently disable the check,
+        # Excluding unidentifiable atoms would silently disable the check,
         # which is the opposite of what it is for.
         elements = ["X"] * len(coords)
     protein = [
@@ -1324,7 +1327,7 @@ def _check_ligand_clashes(
 
     if n_clashes:
         min_dist_nm = math.sqrt(min_dist_sq)
-        raise ValueError(
+        raise StudyError(
             f"Ligand {ligand_name!r} clashes with the protein: {n_clashes} "
             f"ligand-protein atom pair(s) are closer than "
             f"{threshold_nm:.2f} nm (closest {min_dist_nm:.3f} nm). "
@@ -1335,7 +1338,7 @@ def _check_ligand_clashes(
             f"`ligand_clash_threshold_nm` or set `check_ligand_clashes=False`. "
             f"(Hydrogens are excluded from this check, so these are "
             f"heavy-atom overlaps.)"
-        )
+        , code="setup.ligand.clash")
     logger.info(
         "Ligand-protein clash check passed (closest contact %.3f nm).",
         math.sqrt(min_dist_sq) if min_dist_sq != math.inf else 0.0,
@@ -1360,8 +1363,8 @@ def _resolve_constraints(omm: dict, constraints: str):
 
     key = str(constraints).lower()
     if key not in mapping:
-        raise ValueError(
+        raise StudyError(
             f"Unknown constraints option {constraints!r}. Valid: "
             f"None, HBonds, AllBonds, HAngles."
-        )
+        , code="config.option.not_permitted")
     return mapping[key]

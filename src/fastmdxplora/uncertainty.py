@@ -52,6 +52,7 @@ from typing import Any, Callable, Mapping, Sequence
 import numpy as np
 
 from fastmdxplora.statistics import correlation_is_resolved, statistical_inefficiency
+from fastmdxplora.refusals import StudyError
 
 __all__ = [
     "Bootstrap",
@@ -190,7 +191,7 @@ def block_bootstrap(
         rebuild = list  # type: ignore[assignment]
 
     if not series or all(s.size == 0 for s in series):
-        raise ValueError("block_bootstrap needs at least one non-empty series")
+        raise StudyError("block_bootstrap needs at least one non-empty series", code="analysis.sampling.too_few_frames")
 
     blocks = [block_length or block_length_for(s) for s in series]
     resolved = all(correlation_is_resolved(s) for s in series if s.size > 1)
@@ -259,14 +260,14 @@ def paired_block_bootstrap(
     """
     series = [np.asarray(a, dtype=float).ravel() for a in arrays]
     if not series:
-        raise ValueError("paired_block_bootstrap needs at least one array")
+        raise StudyError("paired_block_bootstrap needs at least one array", code="analysis.sampling.too_few_frames")
     n = series[0].size
     if any(a.size != n for a in series):
-        raise ValueError(
+        raise StudyError(
             "paired arrays must be the same length; got "
-            + ", ".join(str(a.size) for a in series))
+            + ", ".join(str(a.size) for a in series), code="config.option.wrong_type")
     if n == 0:
-        raise ValueError("paired_block_bootstrap needs non-empty arrays")
+        raise StudyError("paired_block_bootstrap needs non-empty arrays", code="analysis.sampling.too_few_frames")
 
     rng = np.random.default_rng(seed)
     block = block_length or block_length_for(series[0])

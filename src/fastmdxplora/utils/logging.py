@@ -245,6 +245,16 @@ def setup_console(
     Safe to call multiple times; the second call updates the level on the
     existing handler instead of adding a duplicate.
 
+    This attaches a handler. It does not touch ``propagate``, and that is
+    deliberate: turning propagation off is a decision about who owns the
+    process, not part of setting up a console. It used to live here, and
+    the effect was that importing this package and running one study left
+    the caller's own logging permanently unable to see anything from it --
+    silently, for the rest of the session.
+
+    :func:`own_the_console` is where that decision is made now, and the
+    CLI is the only thing that makes it.
+
     Returns
     -------
     logging.Logger
@@ -252,7 +262,6 @@ def setup_console(
     """
     global _console_handler
     base = logging.getLogger("fastmdx")
-    base.propagate = False
 
     env_level = os.getenv("FASTMDX_LOGLEVEL")
     base.setLevel(_to_level(env_level) if env_level else _to_level(level))
@@ -298,7 +307,7 @@ def _rebind_console(handler: logging.Handler, style: str) -> None:
         try:
             handler.flush()
         except (ValueError, OSError):
-            # The stream we are leaving may already be closed, which is the
+            # The stream being left may already be closed, which is the
             # commonest reason to be here at all. Nothing to flush it to.
             pass
         # Assigned rather than `setStream`, which flushes the outgoing
@@ -405,6 +414,31 @@ def get_logger(name: str | None = None) -> logging.Logger:
     """
     base = logging.getLogger("fastmdx")
     return base if name is None else base.getChild(name)
+
+
+
+def own_the_console() -> None:
+    """Claim this process's console output for the package.
+
+    Stops records propagating to the root logger, so they are printed once
+    by this package's handler rather than twice. Correct for the command
+    line, which owns the terminal and ends when the run does.
+
+    Not correct for a library. A caller who imports this package has their
+    own logging, and silently cutting it off from this package is the worse of the
+    two failures available here: the alternative, where a caller with a
+    root handler sees these records twice, is at least visible and something
+    they can turn off.
+
+    So this is not called from the library path, and a study run through
+    the API leaves the caller's logging as it found it.
+    """
+    logging.getLogger("fastmdx").propagate = False
+
+
+def release_the_console() -> None:
+    """Undo :func:`own_the_console`. For tests and for embedding."""
+    logging.getLogger("fastmdx").propagate = True
 
 
 def set_level(level: int | str) -> None:

@@ -55,6 +55,8 @@ from fastmdxplora.gui.telemetry import (
     run_stages,
 )
 from fastmdxplora.gui.trajectory_playback import playback_info
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 logger = logging.getLogger("fastmdxplora.gui.server")
 
@@ -471,6 +473,14 @@ def make_handler(
                 # the endpoints that need the machine's trust.
                 "/api/load-config",
                 "/api/check-config",
+                # One stores an API key and the other spends it. Over a
+                # network, unauthenticated, that is somebody else setting
+                # where this machine's requests go, or burning the credit
+                # on the key already stored. Neither is a study, so neither
+                # reads as dangerous at a glance -- which is exactly why
+                # they belong on a list rather than in a judgement.
+                "/api/agent/model",
+                "/api/agent/propose",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -498,6 +508,24 @@ def make_handler(
                         dashboard_url=self.headers.get("Origin"),
                     )
                 )
+                return
+            if path == "/api/agent/model":
+                # Reading and setting which model to ask. The key is
+                # accepted here and stored by `save_choice`, which puts it
+                # in a file of its own; it is never echoed back, never put
+                # in a config, and never logged.
+                from fastmdxplora.gui.agent_panel import model_endpoint
+
+                self._send_json(model_endpoint(payload or {}))
+                return
+            if path == "/api/agent/propose":
+                # A sentence in, a config out -- through the same
+                # `propose_config` the CLI uses and the same validator a
+                # hand-written config goes through. Nothing here decides
+                # whether a config is acceptable.
+                from fastmdxplora.gui.agent_panel import propose_endpoint
+
+                self._send_json(propose_endpoint(payload or {}))
                 return
             if path == "/api/load-config":
                 # Bringing a config into the form so it can be changed. The
@@ -644,7 +672,8 @@ def make_handler(
                 self._body_was_read = True
                 return {}
             if length > MOST_A_BODY_MAY_BE:
-                raise ValueError("Request body is too large")
+                raise StudyError("Request body is too large",
+                                 code="config.option.wrong_type")
             # Marked before the read, not after: a read that fails partway
             # has still taken bytes off the socket, and a drain that then
             # asked for the whole length again would block on bytes that
@@ -653,7 +682,7 @@ def make_handler(
             raw = self.rfile.read(length)
             data = json.loads(raw.decode("utf-8"))
             if not isinstance(data, dict):
-                raise ValueError("JSON body must be an object")
+                raise StudyError("JSON body must be an object", code="config.option.wrong_type")
             return data
 
         def _send_json(self, payload: dict[str, Any], *, status: int = 200) -> None:
@@ -903,6 +932,18 @@ def start_dashboard_session(
         except OSError as exc:
             last_error = exc
             continue
+        if not _is_loopback_host(host):
+            # Said out loud, because the alternative is that somebody
+            # discovers it afterwards. There is no login: `allow_control`
+            # turns off the endpoints that browse the filesystem, read a
+            # config or start a run, and what is left is still a live view
+            # of this run to anyone who can reach the port.
+            logger.warning(
+                "Serving on %s, which is not loopback. There is no login. "
+                "Browsing, config reading and run control are disabled, and "
+                "anyone who can reach this port can still watch this run. "
+                "Prefer an SSH tunnel: ssh -L %s:localhost:%s <this host>",
+                host, int(candidate) or "PORT", int(candidate) or "PORT")
         actual_port = int(server.server_address[1])
         thread = threading.Thread(
             target=server.serve_forever,
@@ -922,7 +963,7 @@ def start_dashboard_session(
         )
     if last_error is not None:
         raise last_error
-    raise OSError("No dashboard ports were available")
+    raise BackendUnavailable("No dashboard ports were available", code="environment.platform.unavailable")
 
 
 def start_test_server(
@@ -1210,9 +1251,9 @@ def _ligands_payload(
     if info.get("valid"):
         explicit = [config.ligand_resname] if config.ligand_resname else None
         detected = detect_ligands(
-            # Reconstruct (chain, resname, resi) keys from info — we
+            # Reconstruct (chain, resname, resi) keys from info — a
             # already collected them in count_structure. To avoid a
-            # second PDB walk we accept that callers that want full
+            # second PDB walk is avoided, so callers that want full
             # ligand IDs receive them via /api/structure-info.
             (
                 (str(ins.get("chain", "A")), str(ins.get("resname", "")), str(ins.get("resi", "")))

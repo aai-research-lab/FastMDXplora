@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import shlex
 from typing import Any
+from fastmdxplora.refusals import CodedError
 
 __all__ = ["cli_command", "python_script", "UntranslatableSetting"]
 
@@ -41,7 +42,7 @@ _BLOCK_TO_VERB = {
 }
 
 
-class UntranslatableSetting(ValueError):
+class UntranslatableSetting(CodedError, ValueError):
     """A setting the command line cannot say.
 
     Raised rather than silently dropped: a command that omits a decided
@@ -49,6 +50,8 @@ class UntranslatableSetting(ValueError):
     looks identical doing it. The config file is the language everything
     translates from, so it is always the fallback.
     """
+
+    default_code = "config.untranslatable"
 
 
 def _explore_options() -> dict[str, tuple[str, Any]]:

@@ -227,7 +227,7 @@ def _build_pptx(orchestrator: "FastMDXplora", title: str, out_path: Path) -> Non
         avail_w = slide_w - 2 * margin
         avail_h = slide_h - top - margin
 
-        # python-pptx will auto-size when only one dimension is given; we'd
+        # python-pptx will auto-size when only one dimension is given; that would
         # rather scale ourselves to keep the figure inside the rectangle.
         from PIL import Image  # python-pptx already pulls Pillow in
 

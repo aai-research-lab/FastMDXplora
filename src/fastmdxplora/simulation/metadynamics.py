@@ -32,6 +32,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from typing import Any
+from fastmdxplora.refusals import StudyError
 
 __all__ = [
     "COLLECTIVE_VARIABLES",
@@ -366,17 +367,17 @@ def with_general_selection_names(spec: dict[str, Any],
     resolved.pop("select_atoms", None)
 
     if variable in _TWO_GROUPS:
-        raise ValueError(
+        raise StudyError(
             f"`{variable}` is measured between two groups, so `select_atoms` "
             "does not say which is which. Name them: `select_atoms_a` and "
             "`select_atoms_b` (or `selection_a` and `selection_b`)."
-        )
+        , code="simulation.cv.inapplicable_setting")
     role = _THE_ONE_SELECTION.get(variable)
     if role is None:
-        raise ValueError(
+        raise StudyError(
             f"`{variable}` does not take a selection, so `select_atoms` has "
             "nothing to name here."
-        )
+        , code="simulation.cv.inapplicable_setting")
     resolved.setdefault(role, general)
     return resolved
 
@@ -394,12 +395,12 @@ def plan_from_config(
     variable = str(spec.get("collective_variable", "")).lower()
     spec = with_general_selection_names(spec, variable)
     if variable not in COLLECTIVE_VARIABLES:
-        raise ValueError(
+        raise StudyError(
             f"Unknown collective variable {variable!r}. Available: "
             + ", ".join(sorted(COLLECTIVE_VARIABLES))
             + ". Anything else can be biased by writing PLUMED input directly "
             "and passing it as `plumed`."
-        )
+        , code="simulation.cv.unknown")
 
     mdtop = (topology if isinstance(topology, md.Topology)
              else md.Topology.from_openmm(topology))
@@ -407,10 +408,10 @@ def plan_from_config(
     def select(expression: str, label: str) -> list[int]:
         found = [int(i) for i in mdtop.select(expression)]
         if not found:
-            raise ValueError(
+            raise StudyError(
                 f"The {label} selection {expression!r} matched no atoms, so "
                 "there is nothing to bias."
-            )
+            , code="simulation.cv.selection_empty")
         return found
 
     atoms: dict[str, list[int]] = {}
@@ -421,46 +422,46 @@ def plan_from_config(
         resname = (spec.get("ligand_resname") or spec.get("ligand_name")
                    or ligand_resname or detect_ligand(topology))
         if not resname:
-            raise ValueError(
+            raise StudyError(
                 f"{variable} needs a ligand. None was given, and the system "
                 "contains either no residue that could be one or more than "
                 "one -- which is a question the topology cannot answer. Give "
                 "`ligand_resname`."
-            )
+            , code="simulation.cv.missing_companion")
         atoms["ligand"] = select(f"resname {resname}", "ligand")
         if variable == "ligand_distance":
             site = spec.get("site_selection")
             if not site:
-                raise ValueError(
+                raise StudyError(
                     "ligand_distance measures from the ligand to a site, and "
                     "`site_selection` says where the site is -- the pocket "
                     "residues, usually. Without it there is no second point."
-                )
+                , code="simulation.cv.missing_companion")
             atoms["site"] = select(str(site), "site")
     elif variable == "distance":
         for name in ("selection_a", "selection_b"):
             expression = spec.get(name)
             if not expression:
-                raise ValueError(f"`distance` needs `{name}`.")
+                raise StudyError(f"`distance` needs `{name}`.", code="simulation.cv.missing_companion")
             atoms[name] = select(str(expression), name)
     elif variable == "coordination":
         for name in ("selection_a", "selection_b"):
             expression = spec.get(name)
             if not expression:
-                raise ValueError(
+                raise StudyError(
                     f"`coordination` counts contacts between two groups and "
                     f"needs `{name}`."
-                )
+                , code="simulation.cv.missing_companion")
             atoms[name] = select(str(expression), name)
     elif variable == "membrane_depth":
         molecule = spec.get("selection") or (
             f"resname {spec.get('ligand_resname') or ligand_resname}"
             if (spec.get("ligand_resname") or ligand_resname) else None)
         if not molecule:
-            raise ValueError(
+            raise StudyError(
                 "`membrane_depth` needs a `selection` for the molecule whose "
                 "depth is measured, or a ligand for it to default to."
-            )
+            , code="simulation.cv.missing_companion")
         atoms["molecule"] = select(str(molecule), "molecule")
         # The bilayer centre is the reference, and it moves: a membrane
         # drifts in the box over a long run, so depth measured against a
@@ -470,28 +471,28 @@ def plan_from_config(
     elif variable == "angle":
         expression = spec.get("selection")
         if not expression:
-            raise ValueError(
+            raise StudyError(
                 "`angle` needs a `selection` matching exactly three atoms, "
                 "which are the angle."
-            )
+            , code="simulation.cv.missing_companion")
         found = select(str(expression), "angle")
         if len(found) != 3:
-            raise ValueError(
+            raise StudyError(
                 f"An angle is three atoms; {expression!r} matched {len(found)}."
-            )
+            , code="simulation.cv.selection_arity")
         atoms["angle"] = found
     elif variable == "torsion":
         expression = spec.get("selection")
         if not expression:
-            raise ValueError(
+            raise StudyError(
                 "`torsion` needs a `selection` matching exactly four atoms, "
                 "which are the dihedral."
-            )
+            , code="simulation.cv.missing_companion")
         found = select(str(expression), "torsion")
         if len(found) != 4:
-            raise ValueError(
+            raise StudyError(
                 f"A torsion is four atoms; {expression!r} matched {len(found)}."
-            )
+            , code="simulation.cv.selection_arity")
         atoms["torsion"] = found
     else:  # radius_of_gyration
         atoms["group"] = select(
@@ -499,7 +500,7 @@ def plan_from_config(
 
     sigma = spec.get("sigma")
     if sigma is None:
-        raise ValueError(
+        raise StudyError(
             "Metadynamics needs a `sigma`: the width of the hills, in the "
             "units of the variable being biased. It should be roughly the "
             "size of the fluctuations in that variable within a single state "
@@ -507,7 +508,7 @@ def plan_from_config(
             "a torsion. There is no default that is right for an arbitrary "
             "coordinate, and a wrong one either smears the surface flat or "
             "takes forever to fill."
-        )
+        , code="simulation.cv.missing_companion")
 
     walls = None
     wall_spec = spec.get("walls")
@@ -520,10 +521,10 @@ def plan_from_config(
             kappa=float(wall_spec.get("kappa", 1000.0)),
         )
         if walls.upper is None and walls.lower is None:
-            raise ValueError(
+            raise StudyError(
                 "A `walls` block needs an `upper`, a `lower`, or both. One "
                 "with neither is a wall nowhere."
-            )
+            , code="simulation.cv.missing_companion")
 
     funnel = None
     funnel_spec = spec.get("funnel")
@@ -532,18 +533,18 @@ def plan_from_config(
     # somebody who gave one without an axis.
     if funnel_spec is not None:
         if variable != "ligand_distance":
-            raise ValueError(
+            raise StudyError(
                 "A funnel bounds where a ligand goes as it leaves, so it "
                 f"applies to ligand_distance and not to {variable}."
-            )
+            , code="simulation.cv.missing_companion")
         axis = funnel_spec.get("axis_selection")
         if not axis:
-            raise ValueError(
+            raise StudyError(
                 "A funnel needs `axis_selection`: the direction the ligand "
                 "leaves by, given as atoms out towards solvent from the site. "
                 "Nothing here can work that out, and a funnel pointed the "
                 "wrong way blocks the exit instead of following it."
-            )
+            , code="simulation.cv.missing_companion")
         atoms["funnel_axis"] = select(str(axis), "funnel axis")
         funnel = Funnel(
             axis_selection=str(axis),
@@ -561,7 +562,7 @@ def plan_from_config(
     if (variable in ("ligand_distance", "ligand_rmsd")
             and not (walls or funnel)
             and not spec.get("unbounded")):
-        raise ValueError(
+        raise StudyError(
             f"{variable} without a wall or a funnel will push the ligand out "
             "into bulk solvent, where the landscape is flat and unbounded: "
             "the bias fills a basin that is effectively infinite and the run "
@@ -570,7 +571,7 @@ def plan_from_config(
             "well -- the second is what makes an absolute binding free energy "
             "recoverable. To proceed without one anyway, say "
             "`unbounded: true`."
-        )
+        , code="simulation.cv.unbounded")
 
     if variable == "q":
         atoms["group"] = select(str(spec.get("selection", "protein")), "Q")
@@ -625,13 +626,13 @@ def _q_contact_lines(plan: "MetadynamicsPlan",
         atom_indices=plan.atoms.get("group"),
     )
     if len(pairs) == 0:
-        raise ValueError(
+        raise StudyError(
             f"The reference structure {reference_pdb} has no native contacts "
             f"under the criteria in force (cutoff {plan.q_cutoff} nm, "
             f"sequence separation {plan.q_min_seq_separation}), so Q would "
             "be a fraction of nothing. An extended or unfolded reference "
             "does this, and so does a selection that matched one region."
-        )
+        , code="simulation.reference.unusable")
 
     weight = 1.0 / len(pairs)
     lines = [
@@ -676,10 +677,10 @@ def cv_lines(plan: "MetadynamicsPlan",
     cv = label("cv")
     if variable == "ligand_rmsd":
         if not reference_pdb:
-            raise ValueError(
+            raise StudyError(
                 "ligand_rmsd is measured against a reference structure, and "
                 "none was given."
-            )
+            , code="simulation.reference.unusable")
         lines.append(f"{cv}: RMSD REFERENCE={reference_pdb} TYPE=OPTIMAL")
     elif variable == "ligand_distance":
         lines.append(f"{label('lig')}: COM "
@@ -717,12 +718,12 @@ def cv_lines(plan: "MetadynamicsPlan",
                      "FUNC=z VAR=z PERIODIC=NO")
     elif variable == "q":
         if not reference_pdb:
-            raise ValueError(
+            raise StudyError(
                 "q is the fraction of a reference structure's native "
                 "contacts, and no reference structure was given. S is fixed "
                 "by that structure, so without one there is no set of "
                 "contacts and nothing to bias."
-            )
+            , code="simulation.cv.missing_companion")
         lines.extend(_q_contact_lines(plan, reference_pdb, label=cv))
     elif variable == "angle":
         lines.append(f"{cv}: ANGLE "
@@ -923,13 +924,13 @@ def plan_pair_from_config(
     """
     entries = spec.get("variables")
     if not isinstance(entries, list) or len(entries) != 2:
-        raise ValueError(
+        raise StudyError(
             "A two-variable metadynamics block needs `variables` holding "
             "exactly two entries, each shaped like a one-variable block. "
             f"This one has {0 if entries is None else len(entries)}. "
             "Three or more variables is a study whose surface cannot be "
             "read off a page, and this does not generate it."
-        )
+        , code="config.option.wrong_type")
 
     shared = {key: spec[key] for key in
               ("height_kjmol", "pace_steps", "bias_factor")
@@ -946,7 +947,7 @@ def plan_pair_from_config(
 
     for plan in plans:
         if plan.funnel:
-            raise ValueError(
+            raise StudyError(
                 "A funnel restraint is built around one ligand coordinate "
                 "and the axis it leaves along, and this generates it as a "
                 "wall on that one coordinate. Combining it with a second "
@@ -954,7 +955,7 @@ def plan_pair_from_config(
                 "explicitly rather than inferring, so it is refused here: "
                 "bias the funnel coordinate alone, or write the PLUMED "
                 "input directly."
-            )
+            , code="simulation.cv.missing_companion")
 
     return MetadynamicsPair(first=plans[0], second=plans[1])
 

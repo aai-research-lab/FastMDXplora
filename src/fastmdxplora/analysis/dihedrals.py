@@ -17,7 +17,7 @@ References
 ----------
 The phi/psi assignment follows the IUPAC convention. MDTraj's
 :func:`mdtraj.compute_phi` / :func:`mdtraj.compute_psi` are used; both
-return angles in radians, which we convert to degrees for the standard
+return angles in radians, converted here to degrees for the standard
 Ramachandran display range of (-180°, 180°).
 """
 
@@ -33,6 +33,7 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 #: Which backbone torsions can be measured. Named here so a form can offer
@@ -93,9 +94,9 @@ class Dihedrals(Analysis):
         chosen = tuple(str(a).lower() for a in angles)
         unknown = [a for a in chosen if a not in VALID_ANGLES]
         if unknown:
-            raise ValueError(
+            raise StudyError(
                 f"Unknown dihedral(s) {unknown}. Valid: {VALID_ANGLES}"
-            )
+            , code="analysis.option.not_permitted")
         self.angles: tuple[str, ...] = chosen
         self.bins: int = int(bins)
         self.options.update(density=self.density, bins=self.bins)
@@ -118,11 +119,11 @@ class Dihedrals(Analysis):
         )
 
         if phi_rad.size == 0 or psi_rad.size == 0:
-            raise ValueError(
+            raise StudyError(
                 "No backbone dihedrals could be computed. This usually "
                 "means the trajectory does not contain a protein, or only "
                 "contains residues without complete N-Cα-C backbones."
-            )
+            , code="analysis.sampling.too_few_frames")
 
         # Match phi and psi residues by the central Cα atom (index [2] in
         # MDTraj's 4-atom phi tuple, index [1] in psi). For ordinary proteins

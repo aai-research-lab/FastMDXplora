@@ -67,7 +67,7 @@ def _residue_sort_key(resi: str) -> tuple[int, str]:
 
     PDB residue IDs are integers with optional insertion-code suffixes
     (e.g. ``"10A"``). Sorting by raw strings produces ``"10" < "2"``,
-    so we coerce to int when possible and otherwise sort by the raw
+    so values are coerced to int when possible and otherwise sorted by the raw
     value to keep stable ordering for insertion-code variants.
     """
     try:

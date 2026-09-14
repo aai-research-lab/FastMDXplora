@@ -921,6 +921,113 @@ def _build_parser() -> argparse.ArgumentParser:
                      metavar="ANGSTROM",
                      help="Binding-pocket cutoff used by the viewer.")
 
+
+    # ---------- agent: write a study from a sentence ------------------------
+    ag = sub.add_parser(
+        "agent",
+        help="Write a study from a sentence, using a model you choose.",
+        description=(
+            "Describe a study in plain language and get a config. The "
+            "config goes through the same validation as one written by "
+            "hand, so a refusal here is the refusal you would have got "
+            "anyway -- the agent cannot ask for something the software "
+            "will not do. Run `fastmdx agent set` once to choose a model; "
+            "nothing else in FastMDXplora needs one."
+        ),
+        formatter_class=_PercentSafeHelp,
+    )
+    ag.add_argument(
+        "request",
+        nargs="?",
+        metavar="REQUEST",
+        help=(
+            "What the study should do, in plain language. The word `set` "
+            "chooses a model instead. With neither, prints what is "
+            "currently set."
+        ),
+    )
+    ag.add_argument(
+        "-f", "-file", "--file",
+        dest="request_file",
+        metavar="FILE",
+        help=(
+            "Read the request from a file instead. For anything longer "
+            "than a shell quote comfortably holds."
+        ),
+    )
+    ag.add_argument(
+        "-o", "--output",
+        dest="agent_output",
+        metavar="FILE",
+        help=(
+            "Write the config here instead of printing it. The config is "
+            "printed either way; this also saves it."
+        ),
+    )
+    ag.add_argument(
+        "--phases",
+        metavar="PHASES",
+        default="setup,simulation",
+        help=(
+            "Which phases to describe to the model (default: "
+            "setup,simulation). Fewer is a cheaper call and a smaller "
+            "space to go wrong in."
+        ),
+    )
+    mode = ag.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--assisted",
+        dest="agent_mode",
+        action="store_const",
+        const="assisted",
+        help=(
+            "Draft the study and stop, so you see it before it runs. The "
+            "default, and the only one that needs no further decision."
+        ),
+    )
+    mode.add_argument(
+        "--autonomous",
+        dest="agent_mode",
+        action="store_const",
+        const="autonomous",
+        help=(
+            "Draft the study and run it without showing it to you first. "
+            "Refused without a cost estimate: approving five days is a "
+            "decision, approving an unknown duration is not."
+        ),
+    )
+    mode.add_argument(
+        "--unvalidated",
+        dest="agent_mode",
+        action="store_const",
+        const="unvalidated",
+        help=(
+            "Work outside this schema, so nothing checks the result and "
+            "every file says so. Specified and not yet built."
+        ),
+    )
+    ag.set_defaults(agent_mode="assisted")
+    ag.add_argument("--host", default="127.0.0.1",
+                    help=("Bind address for the panel (default: 127.0.0.1). "
+                          "Anything else disables the endpoints that read "
+                          "the filesystem or spend an API key, because "
+                          "there is no login."))
+    ag.add_argument("--port", type=int, default=8765,
+                    help="Port to serve the panel on (default: 8765).")
+    ag.add_argument("--no-browser", action="store_true",
+                    help="Serve the panel without opening a browser.")
+    ag.add_argument(
+        "--attempts",
+        type=int,
+        metavar="N",
+        default=4,
+        help=(
+            "How many times it may correct itself before giving up "
+            "(default: 4). Each attempt is checked before anything runs, "
+            "so they cost seconds rather than GPU time."
+        ),
+    )
+
     ic = sub.add_parser(
         "init-config",
         help="Write a commented YAML config template to edit.",
@@ -1594,8 +1701,15 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_gui(args: argparse.Namespace) -> int:
-    """Serve the full GUI: study builder, exploration, telemetry, and viewer."""
+def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
+    """Serve the full GUI: study builder, exploration, telemetry, and viewer.
+
+    `panel` names where to land. `fastmdx agent` with no request passes
+    "agent" and gets the same server on the same port, opened at that
+    section -- a note in the URL fragment the page reads on load, not a
+    second application. Two commands that started two browsers would be two
+    things to learn for one thing to use.
+    """
     from fastmdxplora.gui.server import DashboardConfig, serve_dashboard
 
     # Without --output there is no run to watch: the working directory is
@@ -1612,7 +1726,9 @@ def _cmd_gui(args: argparse.Namespace) -> int:
     if not getattr(args, "no_browser", False):
         import webbrowser
         try:
-            webbrowser.open(f"http://{args.host}:{args.port}", new=2)
+            fragment = f"#{panel}" if panel else ""
+            webbrowser.open(
+                f"http://{args.host}:{args.port}{fragment}", new=2)
         except Exception:  # noqa: BLE001 - opening a browser is best effort
             pass
     serve_dashboard(
@@ -1666,6 +1782,158 @@ def _cmd_dashboard_home() -> int:
     return 0
 
 
+def _run_agent(args: Any) -> int:
+    """`fastmdx agent` -- choose a model, or write a study from a sentence."""
+    from pathlib import Path as _Path
+
+    from fastmdxplora.agent import (
+        completion_for, describe_choice, propose_config,
+    )
+    from fastmdxplora.refusals import StudyError, refusal_of
+
+    request = args.request
+
+    if request == "set":
+        return _choose_model()
+
+    if args.request_file:
+        try:
+            request = _Path(args.request_file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"Could not read {args.request_file}: {exc}")
+            return 1
+
+    if not request:
+        # No request is an invitation to converse, and conversing wants a
+        # window. The same server `fastmdx gui` starts, landing on the
+        # agent panel.
+        print(describe_choice())
+        print("\nOpening the agent panel. Ctrl-C to stop the server.")
+        gui_args = argparse.Namespace(
+            output=getattr(args, "agent_output", None),
+            host=args.host,
+            port=args.port,
+            no_browser=args.no_browser,
+            ligand_resname=None,
+            binding_pocket_cutoff_A=5.0,
+        )
+        # Through the module attribute rather than the local name, so a
+        # test can substitute it. `_cmd_gui` serves until interrupted, and
+        # a test that called it for real would hang rather than fail.
+        import sys as _sys
+
+        return _sys.modules[__name__]._cmd_gui(gui_args, panel="agent")
+
+    try:
+        complete = completion_for()
+    except StudyError as exc:
+        print(refusal_of(exc).message)
+        return 1
+
+    if args.agent_mode == "unvalidated":
+        print(
+            "`--unvalidated` is specified and not yet built. It would let "
+            "the agent work outside this schema, with every file it "
+            "produced marked as unchecked. Until that marking exists there "
+            "is no safe way to offer it, and a flag that quietly did "
+            "something else would be worse than one that refuses."
+        )
+        return 1
+
+    print("Writing a config...")
+    try:
+        proposal = propose_config(
+            request, complete,
+            phases=[p.strip() for p in args.phases.split(",") if p.strip()],
+            max_cycles=int(args.attempts))
+    except StudyError as exc:
+        print(refusal_of(exc).message)
+        return 1
+
+    # The corrections, shown rather than hidden. They are the only visible
+    # sign that anything checked the config, and the count is worth seeing.
+    for attempt in proposal.attempts:
+        if attempt.refusal is not None:
+            print(f"  ✗ {attempt.refusal.message}")
+
+    if not proposal.accepted:
+        print(f"\nGave up after {proposal.cycles} attempt(s). The last "
+              "refusal is above.")
+        return 1
+
+    import yaml
+
+    config = dict(proposal.config)
+    config["agent"] = args.agent_mode
+    text = yaml.safe_dump(config, sort_keys=False)
+    print(f"  ✓ Accepted after {proposal.cycles} attempt(s)\n")
+    print(text)
+    if args.agent_mode == "autonomous":
+        print(
+            "\n`--autonomous` would run this without showing it to you "
+            "first, and that needs a cost estimate so there is a ceiling "
+            "on what an unseen study may spend. The estimate needs a "
+            "particle count, which is settled when the system is "
+            "solvated -- so this waits on running setup first. Not built "
+            "yet; the config above is what it would have run."
+        )
+
+    if args.agent_output:
+        _Path(args.agent_output).write_text(text, encoding="utf-8")
+        print(f"Written to {args.agent_output}")
+        print(f"Run it with: fastmdx explore -config {args.agent_output}")
+    else:
+        print("Save it with -o FILE, then run "
+              "`fastmdx explore -config FILE`.")
+    return 0
+
+
+def _choose_model() -> int:
+    """`fastmdx agent set` -- pick a provider and, optionally, store a key."""
+    from fastmdxplora.agent import PROVIDERS, ModelChoice, save_choice
+
+    names = list(PROVIDERS)
+    print("Model:")
+    for index, name in enumerate(names, 1):
+        print(f"  [{index}] {PROVIDERS[name]['label']}")
+    try:
+        picked = names[int(input("> ").strip()) - 1]
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        print("Nothing chosen.")
+        return 1
+
+    base_url = ""
+    if picked == "compatible":
+        print("\nAnything speaking the OpenAI chat shape. For example:")
+        for label, url, model in PROVIDERS[picked].get("examples", ()):
+            print(f"  {label:<16} {url:<34} model: {model}")
+        base_url = input("\nBase URL: ").strip()
+        if not base_url:
+            print("A base URL is needed for an OpenAI-compatible server.")
+            return 1
+
+    default_model = str(PROVIDERS[picked]["default_model"])
+    prompt = (f"Model [{default_model}]: " if default_model else "Model: ")
+    model = input(prompt).strip() or default_model
+    if not model:
+        print("A model name is needed.")
+        return 1
+
+    env_name = str(PROVIDERS[picked]["env"])
+    print(f"API key (leave blank to read {env_name} from the environment "
+          "instead):")
+    key = input("> ").strip()
+
+    where = save_choice(ModelChoice(picked, model, base_url), key=key)
+    print(f"\n  ✓ Saved to {where}")
+    if key:
+        print("  ✓ Key stored there, readable only by you. It is never "
+              "written into a study.")
+    else:
+        print(f"  ✓ No key stored; {env_name} will be read at call time.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     # Ensure the CLI can emit its Unicode output (box-drawing banner, "→",
     # "—") regardless of the platform's locale. On machines whose default
@@ -1681,9 +1949,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Initialize console logging on every CLI invocation. setup_console() is
     # idempotent (no duplicate handlers) and honors FASTMDX_LOG_STYLE /
     # FASTMDX_LOGLEVEL / NO_COLOR.
-    from fastmdxplora.utils.logging import setup_console
+    from fastmdxplora.utils.logging import own_the_console, setup_console
 
     setup_console()
+    # The CLI owns the terminal, so records are printed once by FastMDXplora's handler
+    # rather than also by whatever the root logger has. This used to happen
+    # inside setup_console, which meant the library path did it too and
+    # cut a caller's logging off from FastMDXplora for the rest of the session.
+    own_the_console()
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -1726,6 +1999,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # removed. The decision is here, in one place, and nothing half-implements
     # its opposite. If the fail-fast policy is wanted instead, it is a change
     # to this comment and a call on the next line, not a resurrection.
+
+    if args.command == "agent":
+        return _run_agent(args)
 
     if args.command == "init-config":
         return _cmd_init_config(args)

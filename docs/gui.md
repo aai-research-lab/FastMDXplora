@@ -10,7 +10,7 @@ results.
 
 The GUI is not a cut-down version of the command line. It offers **every
 setting the software has** — all 263 analysis options across 23 analyses, and
-all 108 phase and top-level settings — because the form is generated from the
+all 114 phase and top-level settings — because the form is generated from the
 same declaration the CLI and the config file are built from, rather than
 written by hand. Adding a setting to the schema puts a control in the GUI;
 nothing has to be kept in step.
@@ -210,3 +210,68 @@ knowing if you want to drive it from a script:
 `/api/schema` is the one worth knowing about: it is the same declaration the
 CLI builds its flags from, so anything reading it stays in step with the
 software automatically.
+
+## Who can reach it
+
+`fastmdx gui` is a local web GUI, not a web app. The server runs on your
+machine, as you, and it has no login. Nothing is uploaded anywhere and
+nothing persists when you stop it.
+
+Because there is no login, **the bind address is the whole of the trust
+model.** By default that is `127.0.0.1` — the loopback interface — which
+means a browser tab on the same machine can reach it and nothing else on
+the network can.
+
+### Binding somewhere else
+
+`--host 0.0.0.0` opens it to the network, and FastMDXplora reduces what it
+will do:
+
+| Disabled off loopback | Why |
+|---|---|
+| `/api/browse`, `/api/inspect-directory` | They walk the filesystem for the folder picker |
+| `/api/load-config`, `/api/check-config` | They read a file the caller names and quote the line a parse error came from, which is a file-content oracle. A planted token and an AWS key were both recovered this way |
+| `/api/explore/start`, `/stop`, `/validate`, `/api/run`, `/api/run-config` | They start and stop work on this machine |
+| `/api/open-output` | It opens a folder on the machine running the server |
+| `/api/agent/model`, `/api/agent/propose` | One stores an API key, the other spends it |
+
+What remains is the live view of the run. That is still visible to anyone
+who can reach the port, and a warning says so at startup.
+
+**Prefer a tunnel.** It needs no flag and exposes nothing:
+
+```bash
+ssh -L 8765:localhost:8765 you@labbox
+```
+
+Then open `http://localhost:8765` at home. SSH carries the traffic, your
+SSH key is the authentication, and the GUI still believes it is serving a
+local browser tab. It chains through a jump host, which covers the
+cluster case.
+
+### On a shared machine, loopback is not private
+
+This is the case the gate above does not cover, and it is worth reading
+twice.
+
+On your own workstation, `127.0.0.1` means you. On a machine where other
+people hold shell accounts — a cluster login node, a shared server — it
+means *every logged-in user*. Any of them can `curl
+http://127.0.0.1:8765`, and `allow_control` is true because the bind
+address is loopback, so nothing is disabled. The interface runs as you: it
+reads what you can read and submits under your account.
+
+So: **do not run the GUI on a login node.** Take an interactive job, run
+it on the compute node, and tunnel through the login node to reach it —
+the same pattern as Jupyter on HPC, which your users likely already know:
+
+```bash
+salloc --gres=gpu:1 --time=4:00:00
+# on the compute node:
+fastmdx gui --output runs/my-study
+# from your laptop, through the login node:
+ssh -J you@login.cluster -L 8765:localhost:8765 you@gpu-node-07
+```
+
+A workstation you are the only user of has none of this problem. A machine
+where `who` lists other people does.

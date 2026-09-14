@@ -705,3 +705,54 @@ class TestTheInterfaceIsCalledTheGUI:
                 # literal thing and keep the word.
                 assert ("browser tab" in line or "--no-browser" in line), (
                     f"{page}: {line.strip()[:80]}")
+
+
+def test_the_source_names_the_software_too():
+    """The same rule the documentation is held to, in comments and docstrings.
+
+    `test_the_documentation_names_the_software` covers `docs/` and caught a
+    page saying "our handler". The habit is not confined to pages: source
+    comments said "we", "our" and "ours" in fifty-odd places, and a reader
+    opening one of those files has exactly the same question -- whose?
+
+    Worth a rule because the register is invisible to whoever is writing
+    in it. Worth a test because the rule is invisible to whoever writes
+    next.
+
+    Only comments and docstrings. Identifiers, string data and anything a
+    user typed are none of this test's business.
+    """
+    import ast
+    import pathlib
+    import re
+
+    import fastmdxplora
+
+    root = pathlib.Path(fastmdxplora.__file__).parent
+    speaking_as_we = re.compile(r"\b(we|our|ours|us)\b", re.IGNORECASE)
+    offenders: dict[str, list[str]] = {}
+
+    for path in sorted(root.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        found: list[str] = []
+
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+                doc = ast.get_docstring(node)
+                if doc:
+                    found += [m.group(0) for m in speaking_as_we.finditer(doc)]
+
+        for line in source.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                found += [m.group(0) for m in speaking_as_we.finditer(stripped)]
+
+        if found:
+            offenders[str(path.relative_to(root))] = sorted(set(found))
+
+    assert not offenders, (
+        "these speak as 'we' rather than naming FastMDXplora: "
+        f"{offenders}. A reader opening the file does not know who 'we' is, "
+        "and the docs are already held to this.")

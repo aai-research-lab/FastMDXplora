@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING, Any
 from fastmdxplora.dependencies import MissingBackendError, missing_dependencies
 from fastmdxplora.config.schema import SIMULATION
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import MissingResultError
 
 if TYPE_CHECKING:
     from fastmdxplora.orchestrator import FastMDXplora
@@ -412,13 +413,13 @@ def run(
         # Named explicitly, so this is a wrong path rather than a phase that
         # has not run yet, and saying "run setup first" would send somebody
         # to fix the wrong thing.
-        raise RuntimeError(
+        raise MissingResultError(
             f"{named_by} points at {setup_dir}, and neither it, nor "
             f"{setup_dir / 'setup'}, nor "
             f"{setup_dir / 'shared_setup' / 'setup'} holds a prepared "
             "system (system.xml, state.xml and topology.pdb). Name a study "
             "that finished its setup phase, or the setup directory itself."
-        )
+        , code="analysis.data.absent")
     if system_xml is None:
         notes.append(
             f"Setup outputs not found in {setup_dir} (system.xml / state.xml / "
@@ -435,10 +436,10 @@ def run(
         missing = missing_dependencies()
         if missing:
             raise MissingBackendError(missing)
-        raise RuntimeError(
+        raise MissingResultError(
             f"Simulation cannot start because setup outputs are missing in {setup_dir}. "
             "Run the setup phase first, or choose an analysis-only workflow."
-        )
+        , code="analysis.data.absent")
 
     # ---- Run the simulation --------------------------------------------
     try:
@@ -515,6 +516,7 @@ def run(
             save_selection=params.get("save_selection", "not water"),
             state_interval_steps=int(params["state_interval_steps"]),
             checkpoint_interval_steps=int(params["checkpoint_interval_steps"]),
+            resume_from=params.get("resume_from"),
             live_telemetry=bool(params["live_telemetry"]),
             telemetry_interval=int(params["telemetry_interval"]),
             on_progress=_progress,

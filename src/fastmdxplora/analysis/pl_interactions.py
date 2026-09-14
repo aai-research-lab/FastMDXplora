@@ -28,6 +28,7 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 __all__ = ["ProteinLigandInteractions", "ALL_KINDS"]
 
@@ -141,10 +142,10 @@ class ProteinLigandInteractions(Analysis):
     ) -> None:
         super().__init__(**kwargs)
         if not ligand_resname:
-            raise ValueError(
+            raise StudyError(
                 "ProteinLigandInteractions requires `ligand_resname`; it "
                 "applies only to protein-ligand complexes."
-            )
+            , code="analysis.option.missing_companion")
         self.ligand_resname = str(ligand_resname)
         self.protein_selection = str(protein_selection)
         self.ligand_chemistry = ligand_chemistry
@@ -153,10 +154,10 @@ class ProteinLigandInteractions(Analysis):
         chosen = tuple(kinds) if kinds else ALL_KINDS
         unknown = [k for k in chosen if k not in self.ALL_KINDS]
         if unknown:
-            raise ValueError(
+            raise StudyError(
                 f"Unknown interaction type(s) {unknown}. "
                 f"Valid: {', '.join(self.ALL_KINDS)}"
-            )
+            , code="analysis.option.not_permitted")
         self.kinds = list(chosen)
         self.minimum_occupancy = float(minimum_occupancy)
         self.periodic = bool(periodic)
@@ -179,13 +180,13 @@ class ProteinLigandInteractions(Analysis):
         ligand = traj.topology.select(f"resname {self.ligand_resname}")
         protein = traj.topology.select(self.protein_selection)
         if len(ligand) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"No atoms match resname {self.ligand_resname!r}."
-            )
+            , code="analysis.selection.empty")
         if len(protein) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"No atoms match {self.protein_selection!r}."
-            )
+            , code="analysis.selection.empty")
         water = traj.topology.select("water")
 
         chemistry = resolve_ligand_chemistry(
@@ -320,7 +321,7 @@ class ProteinLigandInteractions(Analysis):
         return written
 
     def _run_directory(self) -> Path | None:
-        """The run this analysis belongs to, if it is one of ours.
+        """The run this analysis belongs to, if FastMDXplora produced it.
 
         Its setup phase may already have resolved the ligand's chemistry, which
         beats inferring it from coordinates.

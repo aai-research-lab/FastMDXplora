@@ -46,6 +46,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
+from fastmdxplora.refusals import MissingResultError
 
 logger = logging.getLogger(__name__)
 
@@ -182,31 +185,31 @@ def the_two_groups(topology: Any, ligand_resname: str,
     expression at all fails earlier.
     """
     if not str(site_selection).strip():
-        raise ValueError(
+        raise StudyError(
             "No site selection reached the seeder, so there is nothing to "
             "measure the ligand against. The umbrella block needs "
             "`select_atoms` -- or the role name `site_selection` -- naming "
             'the site, for example `select_atoms: "resSeq 189 to 195 and '
             'name CA"`.'
-        )
+        , code="simulation.cv.selection_empty")
     if not str(ligand_resname).strip():
-        raise ValueError(
+        raise StudyError(
             "No ligand name reached the seeder, so there is nothing to "
             "measure from. Give the umbrella block `ligand_name` (or "
             "`ligand_resname`), for example `ligand_name: BEN`."
-        )
+        , code="simulation.cv.selection_empty")
     ligand = topology.select(f"resname {ligand_resname}")
     site = topology.select(site_selection)
     if ligand.size == 0:
-        raise ValueError(
+        raise StudyError(
             f"No atom matches `resname {ligand_resname}` in the pull's "
             "topology, so there is no ligand to measure from."
-        )
+        , code="simulation.cv.selection_empty")
     if site.size == 0:
-        raise ValueError(
+        raise StudyError(
             f"No atom matches `{site_selection}` in the pull's topology, so "
             "there is no site to measure to."
-        )
+        , code="simulation.cv.selection_empty")
     return ligand, site
 
 
@@ -347,12 +350,12 @@ def path_along(trajectory: Any, ligand_resname: str, site_selection: str, *,
     ligand, site = the_two_groups(topology, ligand_resname, site_selection)
     frame_atoms = topology.select(frame_selection)
     if frame_atoms.size < 3:
-        raise ValueError(
+        raise StudyError(
             f"`{frame_selection}` matched {frame_atoms.size} atom(s), and "
             "three are needed to fix a frame to rotate into. Without one, a "
             "direction from the site is measured in the laboratory's frame "
             "and carries the protein's tumbling with it."
-        )
+        , code="simulation.cv.selection_arity")
 
     away = separation(trajectory, ligand, site)
     rotation = _rotations_onto_the_first(trajectory.xyz[:, frame_atoms, :])
@@ -381,10 +384,10 @@ def atoms_opposite(trajectory: Any, site_selection: str, axis: np.ndarray, *,
     axis = axis / max(float(np.linalg.norm(axis)), 1e-12)
     alpha = topology.select("name CA")
     if alpha.size == 0:
-        raise ValueError(
+        raise StudyError(
             "No alpha carbon in this topology, so there is no backbone to "
             "anchor a cone's axis to. Name the group yourself with the "
-            "cone's `axis_selection`.")
+            "cone's `axis_selection`.", code="simulation.cv.selection_empty")
 
     site = topology.select(site_selection)
     one = trajectory.slice(int(frame), copy=True)
@@ -398,11 +401,11 @@ def atoms_opposite(trajectory: Any, site_selection: str, axis: np.ndarray, *,
     near, far = float(band_nm[0]), float(band_nm[1])
     within = (length >= near) & (length <= far)
     if int(within.sum()) < 3:
-        raise ValueError(
+        raise StudyError(
             f"Only {int(within.sum())} alpha carbon(s) lie between {near} and "
             f"{far} nm of `{site_selection}`, and three are needed to fix an "
             "axis. Either the site selection is not on the protein, or the "
-            "band wants widening.")
+            "band wants widening.", code="simulation.cv.selection_empty")
 
     behind = -(towards[within] @ axis) / np.maximum(length[within], 1e-12)
     order = np.argsort(-behind)
@@ -471,12 +474,12 @@ def measure_the_cone(trajectory: Any, ligand_resname: str,
                                      site_selection)
     usable = distance >= MINIMUM_FOR_A_DIRECTION_NM
     if int(usable.sum()) < 10:
-        raise ValueError(
+        raise StudyError(
             f"Only {int(usable.sum())} frame(s) of this pull have the ligand "
             f"more than {MINIMUM_FOR_A_DIRECTION_NM} nm from the site, so "
             "there is no path to read a direction from. It spans "
             f"{distance.min():.2f}-{distance.max():.2f} nm."
-        )
+        , code="analysis.sampling.too_few_frames")
 
     if axis_selection:
         # The study named the group, so only the angle is measured. Worth
@@ -485,9 +488,9 @@ def measure_the_cone(trajectory: Any, ligand_resname: str,
         axis_atoms = [int(i) for i in
                       trajectory.topology.select(str(axis_selection))]
         if not axis_atoms:
-            raise ValueError(
+            raise StudyError(
                 f"The cone's `axis_selection` {axis_selection!r} matched no "
-                "atoms, so there is no group to open the angle away from.")
+                "atoms, so there is no group to open the angle away from.", code="simulation.cv.selection_empty")
         ideal = -np.asarray(separation(
             trajectory, np.asarray(axis_atoms, dtype=int), site)[0],
             dtype=float)
@@ -510,7 +513,7 @@ def measure_the_cone(trajectory: Any, ligand_resname: str,
 
     half_angle = float(math.ceil(held_within * float(margin)))
     if half_angle > WIDEST_A_CONE_IS_WORTH_DEG:
-        raise ValueError(
+        raise StudyError(
             f"The path only fits in a cone of {half_angle:.0f} degrees, which "
             "leaves the ligand free in most directions -- the wall would cost "
             "the study its stiffness and buy it nothing. "
@@ -523,7 +526,7 @@ def measure_the_cone(trajectory: Any, ligand_resname: str,
                "to put round it. A ligand that leaves by several routes needs "
                "a coordinate that follows one of them rather than a wall "
                "around all of them.")
-        )
+        , code="simulation.cone.too_narrow")
     measured = angles_at_the_site(trajectory, ligand, site, axis_atoms)
 
     # What the group of atoms actually points along, against the direction the
@@ -609,7 +612,7 @@ def _prepared_files(prepared: Path) -> tuple[Path, Path]:
                 str(Path(prepared) / s) if s else str(prepared)
                 for s in PREPARED_SYSTEM_LAYOUTS
             )
-            raise FileNotFoundError(
+            raise MissingResultError(
                 f"{path} is not there, so the seeds cannot be built from the "
                 "same system the windows will simulate. Seeds written "
                 "against a different preparation place the waters "
@@ -665,10 +668,10 @@ def write_seeds(prepared: Path | str,
             "bound-state solvent where the ligand has since moved. Re-run "
             "the pull with `save_selection: all`."
         ) if missing > 0 else ""
-        raise ValueError(
+        raise StudyError(
             f"The prepared system has {system.getNumParticles()} particles "
             f"and the pull's trajectory has {trajectory.n_atoms}.{likely}"
-        )
+        , code="simulation.seed.unusable")
 
     # One context for every window. Building a Reference context over tens of
     # thousands of particles takes seconds, and thirty of them takes minutes
@@ -713,9 +716,9 @@ def write_seeds(prepared: Path | str,
         # exists to avoid.
         for name in ("system.xml", "state.xml", "topology.pdb"):
             if not (out / name).is_file():
-                raise RuntimeError(
+                raise BackendUnavailable(
                     f"{out / name} was not written, so window {index} has no "
-                    "starting system.")
+                    "starting system.", code="simulation.seed.unusable")
 
         seeds.append(Seed(index=index, centre=float(centre), frame=int(frame),
                           measured=float(measured), directory=str(out)))
@@ -750,24 +753,24 @@ def _refuse_an_impossible_seed(potential: float, reference: float | None,
                                measured: float) -> None:
     if reference is None or not np.isfinite(potential):
         if not np.isfinite(potential):
-            raise ValueError(
+            raise StudyError(
                 f"Window {index}'s seed has a potential energy of "
                 f"{potential}, which is what a frame with a molecule split "
                 "across the periodic boundary gives. The frame was imaged "
                 "before it was used, so this is more likely a topology that "
                 "does not match the system."
-            )
+            , code="simulation.seed.unusable")
         return
     excess = (potential - reference) / max(particles, 1)
     if excess > ENERGY_TOLERANCE_KJMOL_PER_ATOM:
-        raise ValueError(
+        raise StudyError(
             f"Window {index}, seeded at {measured:.3f} nm, has a potential "
             f"energy {excess:.1f} kJ/mol per atom above the prepared system "
             f"({potential:.3g} against {reference:.3g}). A pulled frame is "
             "strained, but not by this much: something is wrong with the "
             "frame or with the topology it was read against, and a window "
             "started here would fail on its first step."
-        )
+        , code="simulation.seed.unusable")
 
 
 # ---------------------------------------------------------------------------
@@ -807,10 +810,10 @@ def seed_windows(pull_directory: Path | str,
     trajectory_file, topology_file = _pull_files(pull)
     trajectory = md.load(str(trajectory_file), top=str(topology_file))
     if trajectory.n_frames < 2:
-        raise ValueError(
+        raise StudyError(
             f"The pull at {pull} has {trajectory.n_frames} frame(s). Seeds "
             "are frames along a pull, so there is nothing to take."
-        )
+        , code="simulation.seed.unusable")
 
     # Imaged before anything is measured, not only before positions are
     # taken. A ligand split across the boundary has a centre of mass halfway
@@ -854,10 +857,10 @@ def _the_cone_the_windows_will_have(trajectory: Any, ligand_resname: str,
             selection = str(record.get("axis_selection") or "protein")
             atoms = [int(i) for i in trajectory.topology.select(selection)]
             if not atoms:
-                raise ValueError(
+                raise StudyError(
                     f"The cone's axis selection {selection!r} matches no atom "
                     "in the pull's topology, so the seeds cannot be checked "
-                    "against the wall the windows will run under.")
+                    "against the wall the windows will run under.", code="simulation.cv.selection_empty")
             record["axis_atoms"] = atoms
         return record
 
@@ -930,7 +933,7 @@ def _refuse_seeds_outside_the_cone(trajectory: Any, ligand_resname: str,
         for index, centre, off in outside[:6])
     more = ("" if len(outside) <= 6
             else f", and {len(outside) - 6} more")
-    raise ValueError(
+    raise StudyError(
         f"{len(outside)} of {len(chosen)} windows would start outside a cone "
         f"of {half_angle:.0f} degrees: {listed}{more}. The wall would be "
         "pushing from the first step, so those windows do not begin where "
@@ -939,7 +942,7 @@ def _refuse_seeds_outside_the_cone(trajectory: Any, ligand_resname: str,
         "measured over. Widen the cone, or leave the half-angle out and let "
         "it be measured from this pull, which sizes it to contain the path "
         "the seeds are taken from."
-    )
+    , code="simulation.cone.windows_outside")
 
 
 def _pull_files(pull: Path) -> tuple[Path, Path]:
@@ -950,16 +953,16 @@ def _pull_files(pull: Path) -> tuple[Path, Path]:
         [p for p in root.glob("*.dcd")] + [p for p in root.glob("*.xtc")],
         key=lambda p: p.stat().st_size, reverse=True)
     if not trajectories:
-        raise FileNotFoundError(
+        raise MissingResultError(
             f"No trajectory under {root}. A pull that wrote no frames cannot "
             "seed anything -- check that the run finished.")
     for name in ("trajectory_topology.pdb", "topology.pdb"):
         candidate = root / name
         if candidate.is_file():
             return trajectories[0], candidate
-    raise FileNotFoundError(
+    raise MissingResultError(
         f"No topology beside {trajectories[0]}, so its frames cannot be "
-        "read.")
+        "read.", code="analysis.data.absent")
 
 
 def _check_against_colvar(pull: Path, measured: np.ndarray,
@@ -986,8 +989,8 @@ def _check_against_colvar(pull: Path, measured: np.ndarray,
                     "recomputed and not cross-checked.")
         return
     _, cv = record
-    ours, theirs = float(np.median(measured)), float(np.median(cv))
-    if abs(ours - theirs) <= COLVAR_AGREEMENT_NM:
+    recomputed, biased = float(np.median(measured)), float(np.median(cv))
+    if abs(recomputed - biased) <= COLVAR_AGREEMENT_NM:
         return
 
     # A distance wider than the box is not a distance. Said first, because
@@ -1003,16 +1006,17 @@ def _check_against_colvar(pull: Path, measured: np.ndarray,
                 f"allows ({widest:.3f} nm), so these are not minimum-image "
                 "distances at all.")
 
-    raise ValueError(
+    raise StudyError(
         f"Over this run the collective variable recomputed here has median "
-        f"{ours:.3f} nm and the one PLUMED biased has median {theirs:.3f} nm "
+        f"{recomputed:.3f} nm and the one PLUMED biased has median "
+        f"{biased:.3f} nm "
         f"(spans {measured.min():.3f}-{measured.max():.3f} against "
         f"{cv.min():.3f}-{cv.max():.3f}).{impossible} Either the "
         "`ligand_resname` and `site_selection` used to seed are not the ones "
         "that were biased, or the coordinates were read without the "
         "periodicity PLUMED applied. Seeds taken from these frames would sit "
         "at distances nobody asked for."
-    )
+    , code="simulation.seed.unusable")
 
 
 def _widest_a_distance_can_be(cell: np.ndarray, samples: int = 4096) -> float:

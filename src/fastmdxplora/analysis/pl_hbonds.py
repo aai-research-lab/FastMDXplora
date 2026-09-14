@@ -24,6 +24,7 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 class ProteinLigandHBonds(Analysis):
@@ -62,10 +63,10 @@ class ProteinLigandHBonds(Analysis):
     ) -> None:
         super().__init__(**kwargs)
         if not ligand_resname:
-            raise ValueError(
+            raise StudyError(
                 "ProteinLigandHBonds requires `ligand_resname`; it applies "
                 "only to protein-ligand complexes."
-            )
+            , code="analysis.option.missing_companion")
         self.ligand_resname = str(ligand_resname)
         self.protein_selection = str(protein_selection)
         self.options.update(
@@ -85,16 +86,16 @@ class ProteinLigandHBonds(Analysis):
             int(i) for i in traj.topology.select(f"resname {self.ligand_resname}")
         )
         if not ligand_idx:
-            raise ValueError(
+            raise StudyError(
                 f"No atoms matched ligand resname {self.ligand_resname!r}; "
                 f"cannot compute protein-ligand hydrogen bonds."
-            )
+            , code="analysis.selection.empty")
         protein_idx = set(int(i) for i in traj.topology.select(self.protein_selection))
         if not protein_idx:
-            raise ValueError(
+            raise StudyError(
                 f"Protein selection {self.protein_selection!r} matched zero "
                 f"atoms; cannot compute protein-ligand hydrogen bonds."
-            )
+            , code="analysis.selection.arity")
 
         # H-bond detection needs bond connectivity: a donor is found as a
         # nitrogen or oxygen with a hydrogen bonded to it. create_standard_bonds
@@ -119,7 +120,7 @@ class ProteinLigandHBonds(Analysis):
                 for atom in bond
             }
             if not (ligand_hydrogens & bonded):
-                raise ValueError(
+                raise StudyError(
                     f"The ligand {self.ligand_resname!r} has "
                     f"{len(ligand_hydrogens)} hydrogen(s) and no bonds to "
                     "them, so it cannot be seen to donate a hydrogen bond -- "
@@ -128,7 +129,7 @@ class ProteinLigandHBonds(Analysis):
                     "a topology that carries the ligand's connectivity: a PDB "
                     "with CONECT records for it, or the topology written by "
                     "the setup phase."
-                )
+                , code="analysis.selection.arity", expression=self.ligand_resname)
 
         # Wernet-Nilsson returns, per frame, an array of (donor, H, acceptor)
         # atom-index triplets. Keep a triplet only if the donor and acceptor

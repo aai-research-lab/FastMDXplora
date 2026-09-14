@@ -34,6 +34,7 @@ import numpy as np
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 #: Pairs beyond this many are subsampled before the histogram. A protein
 #: against every water oxygen is tens of millions of pairs per frame, which
@@ -196,12 +197,12 @@ class RadialDistribution(Analysis):
 
     def compute(self, traj: md.Trajectory) -> np.ndarray:
         if traj.unitcell_lengths is None:
-            raise ValueError(
+            raise StudyError(
                 "This trajectory carries no unit cell, so there is no volume "
                 "to take a bulk density from and no g(r) to normalise "
                 "against it. A trajectory stripped of its box, or one built "
                 "in vacuum, does this."
-            )
+            , code="analysis.system.inapplicable")
 
         a = traj.topology.select(self.selection_a)
         b = traj.topology.select(self.selection_b)
@@ -209,11 +210,11 @@ class RadialDistribution(Analysis):
                 ("selection_a", self.selection_a, a),
                 ("selection_b", self.selection_b, b)):
             if len(found) == 0:
-                raise ValueError(
+                raise StudyError(
                     f"{name} {selection!r} matched no atoms, so there is no "
                     "distribution between the two groups to report."
                     + _what_would_fix_it(selection, traj)
-                )
+                , code="analysis.selection.empty")
 
         half_box = float(np.min(traj.unitcell_lengths)) / 2.0
         requested = self.r_max if self.r_max is not None else half_box

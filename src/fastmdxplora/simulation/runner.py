@@ -31,6 +31,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import (
+    BackendUnavailable,
+    MissingResultError,
+    StudyError,
+    UnstableRun,
+)
 
 logger = get_logger("simulation.runner")
 
@@ -50,7 +56,7 @@ DEFAULT_INTEGRATOR_ERROR_TOLERANCE = 0.001  # for the variable-step integrators
 # Atmospheres to bar (OpenMM's barostat takes bar). 1 atm = 1.01325 bar.
 ATM_TO_BAR = 1.01325
 
-# Integrators we can construct. langevin_middle is the modern default
+# Integrators this can construct. langevin_middle is the modern default
 # (better configurational sampling than the legacy LangevinIntegrator).
 SUPPORTED_INTEGRATORS = (
     "langevin",
@@ -118,12 +124,12 @@ def _import_openmm() -> dict:
             StateDataReporter,
         )
     except ImportError as exc:
-        raise ImportError(
+        raise BackendUnavailable(
             "Simulation phase requires OpenMM. Install via conda "
             "(recommended): conda install -c conda-forge openmm — or via "
             "pip with the optional [md] extras: "
             "pip install fastmdxplora[md]."
-        ) from exc
+        , code="environment.backend.missing") from exc
 
     return {
         "openmm": openmm,
@@ -298,7 +304,7 @@ def select_platform(
         # For auto-selection, verify the platform actually works before
         # committing to it — a registered OpenCL/CUDA platform with no
         # usable device otherwise fails later at Context construction with
-        # a confusing error. For an explicit request we honor it as-is so
+        # a confusing error. For an explicit request it is honored as-is so
         # the user sees the real error if their chosen platform is broken.
         if auto and not _probe_platform(omm, platform, name, props):
             continue
@@ -321,10 +327,10 @@ def select_platform(
         )
         return platform, props, name
 
-    raise RuntimeError(
+    raise BackendUnavailable(
         f"No usable OpenMM platform among {candidates}. "
         f"Install GPU drivers + a matching OpenMM build, or pass platform='CPU'."
-    )
+    , code="environment.platform.unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -378,10 +384,10 @@ def _make_integrator(
     elif key == "variable_verlet":
         integ = openmm.VariableVerletIntegrator(float(error_tolerance))
     else:
-        raise ValueError(
+        raise StudyError(
             f"Unknown integrator {name!r}. Supported: "
             f"{', '.join(SUPPORTED_INTEGRATORS)}."
-        )
+        , code="simulation.cv.unknown")
 
     if random_seed is not None and hasattr(integ, "setRandomNumberSeed"):
         integ.setRandomNumberSeed(int(random_seed))
@@ -467,7 +473,7 @@ def _attach_state_reporter(
 ) -> Any:
     """Attach a CSV StateDataReporter with the standard observables."""
     # OpenMM's StateDataReporter writes a one-line header automatically.
-    # We open with newline="" so the line endings are consistent
+    # Opened with newline="" so the line endings are consistent
     # cross-platform and so the CSV opens cleanly in Excel.
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     reporter = omm["StateDataReporter"](
@@ -590,12 +596,12 @@ def resolve_save_selection(topology: Any, selection: str | None
         # not a fact about the system, and it is fixable in one edit. That
         # is worth stopping for, where a valid selection matching nothing
         # is not.
-        raise ValueError(
+        raise StudyError(
             f"`save_selection` {selection!r} is not a selection this can "
             f"read: {exc}. It is written in MDTraj's language -- `not "
             "water`, `protein`, `all` -- and a run will not start on one "
             "that cannot be parsed, because every frame would be affected."
-        ) from exc
+        , code="simulation.cv.selection_empty") from exc
     if not kept:
         # Everything, rather than nothing or a refusal. A box of pure water
         # is a legitimate study -- it is how a water model's density is
@@ -786,7 +792,7 @@ def _value_in_unit(quantity: Any, unit_value: Any) -> Any:
 
 def _validation_error(stage: str, detail: str, *, topology: Any = None,
                       positions: Any = None, platform: str | None = None
-                      ) -> RuntimeError:
+                      ) -> "UnstableRun":
     """Say what failed, reading the state where one is available.
 
     The remedies this used to list -- lower the timestep, lower the
@@ -803,19 +809,21 @@ def _validation_error(stage: str, detail: str, *, topology: Any = None,
             # replaced by it. They say what the integrator noticed, which is
             # searchable and links to its FAQ; the diagnosis says which atoms
             # it happened to. Neither substitutes for the other.
-            return RuntimeError(
+            return UnstableRun(
                 f"{diagnose_failure(topology, positions, stage=stage, platform=platform).as_text()}"
-                f"\n\nOpenMM reported: {detail}.")
+                f"\n\nOpenMM reported: {detail}.",
+                stage=stage, diagnosis=detail)
         except Exception:  # noqa: BLE001 - a diagnosis that fails is not the
             # failure worth reporting; fall through to the general message.
             pass
 
-    return RuntimeError(
+    return UnstableRun(
         f"Invalid simulation state after {stage}: {detail}. "
         "Try safer settings: lower --simulate-timestep-fs, lower "
         "--simulate-temperature-K, increase --simulate-friction-per-ps, use "
         "--simulate-precision double, or disable NPT for the first smoke test "
-        "with --simulate-npt-steps 0."
+        "with --simulate-npt-steps 0.",
+        stage=stage, diagnosis=detail,
     )
 
 
@@ -1194,6 +1202,140 @@ def trajectory_interval_for(
 # ---------------------------------------------------------------------------
 # Top-level runner
 # ---------------------------------------------------------------------------
+
+CHECKPOINT_DIGEST_SUFFIX = ".sha256"
+
+
+def seal_checkpoint(path: str | Path) -> Path:
+    """Record a finished checkpoint's size and digest beside it.
+
+    Written after a run completes, which makes the sidecar two things at
+    once: a way to detect a truncated file, and a marker that the segment
+    which produced it got to the end. A segment killed mid-write leaves a
+    checkpoint and no seal, and the next segment refuses rather than
+    continuing from a partial one.
+
+    Necessary because OpenMM will not catch this. A checkpoint truncated
+    to half its length loads without complaint and yields the right
+    positions; truncated to a tenth it loads without complaint and yields
+    wrong ones. Measured, not assumed -- see
+    ``tests/test_a_resumed_run_continues_the_one_before.py``. There is no
+    length or checksum in the format, so the only way to know a checkpoint
+    is whole is to have written down what whole meant.
+    """
+    import hashlib
+
+    checkpoint = Path(path)
+    payload = checkpoint.read_bytes()
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    seal.write_text(
+        f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
+        encoding="utf-8")
+    return seal
+
+
+def verify_checkpoint(path: str | Path, *, require_seal: bool = False) -> bool:
+    """Whether a checkpoint is the whole file that was written.
+
+    Returns True when a seal exists and matches. Raises when a seal exists
+    and does not, or when one is required and absent.
+
+    ``require_seal`` is on for segments and off for anything else. A
+    segment's predecessor was written by this software and always sealed,
+    so a missing seal there means the run was killed mid-write. A
+    checkpoint a person produced by hand has no seal and no reason to,
+    and refusing it would be refusing a legitimate use over a convention
+    they never agreed to.
+    """
+    import hashlib
+
+    checkpoint = Path(path)
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    if not seal.is_file():
+        if require_seal:
+            raise MissingResultError(
+                f"The checkpoint at {checkpoint} has no seal beside it, so "
+                "the segment that wrote it did not finish. Continuing from "
+                "a partially written checkpoint is not something this can "
+                "detect afterwards -- OpenMM loads a truncated one without "
+                "complaint. Rerun that segment.",
+                code="simulation.resume.unsealed", path=str(checkpoint),
+            )
+        return False
+
+    try:
+        size_text, digest = seal.read_text(encoding="utf-8").split()
+        expected_size = int(size_text)
+    except ValueError as exc:
+        raise UnstableRun(
+            f"The seal beside {checkpoint} is not readable, so whether the "
+            "checkpoint is whole cannot be established.",
+            code="simulation.resume.checkpoint_rejected",
+            path=str(checkpoint),
+        ) from exc
+
+    payload = checkpoint.read_bytes()
+    if len(payload) != expected_size or hashlib.sha256(
+            payload).hexdigest() != digest:
+        raise UnstableRun(
+            f"The checkpoint at {checkpoint} is {len(payload)} bytes and "
+            f"its seal says {expected_size}. It was truncated or altered "
+            "after it was written. OpenMM would load it without "
+            "complaint and, past a point, give the wrong positions.",
+            code="simulation.resume.checkpoint_truncated",
+            path=str(checkpoint), found=len(payload), expected=expected_size,
+        )
+    return True
+
+
+def load_checkpoint(omm: dict, simulation: Any, path: str | Path, *,
+                    require_seal: bool = False) -> Path:
+    """Continue this run from a checkpoint, or refuse.
+
+    A checkpoint supersedes ``state.xml``: it holds the positions and
+    velocities this segment continues from, while ``state.xml`` is
+    whatever the study started at.
+
+    Loaded after the System and Platform exist rather than before, because
+    a checkpoint is only valid against the exact pair it was written from.
+    OpenMM raises when they do not match -- "Checkpoint contains the wrong
+    number of particles" and the like -- and that raise is the only check
+    available. There is no cheaper way to ask whether a checkpoint belongs
+    to this system, so it is turned into a refusal and never swallowed. A
+    mismatched checkpoint that loaded quietly would continue somebody's
+    run from another system's coordinates, and nothing downstream would
+    look wrong.
+
+    Separated from :func:`run_simulation` so it can be exercised on a real
+    System without a two-thousand-line function around it. The claim that
+    a resumed run continues the one before is worth testing rather than
+    reading.
+    """
+    checkpoint = Path(path)
+    if not checkpoint.is_file():
+        raise MissingResultError(
+            f"No checkpoint at {checkpoint}. A segment after the first "
+            "continues from the one before, so the previous segment must "
+            "have finished and written one.",
+            code="analysis.data.absent", path=str(checkpoint),
+        )
+    verify_checkpoint(checkpoint, require_seal=require_seal)
+    try:
+        with checkpoint.open("rb") as fh:
+            simulation.context.loadCheckpoint(fh.read())
+    except Exception as exc:  # noqa: BLE001 - reported with its cause
+        raise UnstableRun(
+            f"The checkpoint at {checkpoint} could not be loaded into this "
+            f"system: {exc}. A checkpoint is only valid for the exact "
+            "system, platform and precision it was written from, so this "
+            "usually means it was written by a different study or on "
+            "different hardware.",
+            code="simulation.resume.checkpoint_rejected",
+            path=str(checkpoint),
+        ) from exc
+    return checkpoint
+
+
 def run_simulation(
     *,
     system_xml: str | Path,
@@ -1229,6 +1371,7 @@ def run_simulation(
     trajectory_interval_steps: int | None = None,
     state_interval_steps: int = DEFAULT_STATE_INTERVAL_STEPS,
     checkpoint_interval_steps: int = DEFAULT_CHECKPOINT_INTERVAL_STEPS,
+    resume_from: str | Path | None = None,
     live_telemetry: bool = False,
     telemetry_interval: int = DEFAULT_STATE_INTERVAL_STEPS,
     # Hooks
@@ -1302,7 +1445,7 @@ def run_simulation(
     for label, path in [("system_xml", system_xml_path), ("state_xml", state_xml_path),
                         ("topology_pdb", topology_path)]:
         if not path.exists():
-            raise FileNotFoundError(f"{label} not found: {path}")
+            raise MissingResultError(f"{label} not found: {path}", code="analysis.data.absent")
 
     with system_xml_path.open(encoding="utf-8") as fh:
         system = omm["openmm"].XmlSerializer.deserialize(fh.read())
@@ -1368,15 +1511,15 @@ def run_simulation(
 
         centre = umbrella.get("centre")
         if centre is None:
-            raise ValueError(
+            raise StudyError(
                 "An umbrella run needs a `centre`: the value of the "
                 "collective variable this window holds. A block describing a "
                 "whole set of windows is expanded into runs before it reaches "
                 "here."
-            )
+            , code="simulation.bias.parameter_missing")
         force = umbrella.get("force_constant")
         if force is None:
-            raise ValueError("An umbrella window needs a `force_constant`.")
+            raise StudyError("An umbrella window needs a `force_constant`.", code="simulation.bias.parameter_missing")
 
         # Both spellings. This listed `centres` and not `centers`, so a
         # study written the American way carried a key with no meaning into
@@ -1410,19 +1553,19 @@ def run_simulation(
         if cone is not None:
             if cv_plan.collective_variable not in ("ligand_distance",
                                                    "distance"):
-                raise ValueError(
+                raise StudyError(
                     "A cone restrains the angle between an axis and the "
                     "line from the site to the ligand, which needs a "
                     "coordinate that is a distance between two groups. This "
-                    f"study biases {cv_plan.collective_variable!r}.")
+                    f"study biases {cv_plan.collective_variable!r}.", code="simulation.bias.parameter_missing")
             if isinstance(cone, ConeToMeasure):
-                raise ValueError(
+                raise StudyError(
                     "This window's cone was never measured. `cone: auto` is "
                     "read off the pull that seeds the windows, so it needs a "
                     "study that pulls -- a `steered` block beside the "
                     "`umbrella` one, or `seed_from` naming a finished pull. "
                     "Without one, give the cone a `half_angle_deg` and an "
-                    "`axis_selection` outright.")
+                    "`axis_selection` outright.", code="simulation.cone.unmeasured")
             # The atoms a measurement chose, where there was one. Otherwise
             # the selection, resolved here rather than carried as text: a
             # selection matching nothing has to fail before a window runs for
@@ -1434,10 +1577,10 @@ def run_simulation(
                 mdtop = _md.load(str(topology_path)).topology
                 axis_atoms = [int(i) for i in mdtop.select(cone.axis_selection)]
             if not axis_atoms:
-                raise ValueError(
+                raise StudyError(
                     f"The cone's axis selection {cone.axis_selection!r} "
                     "matched no atoms, so there is no direction for the cone "
-                    "to point away from.")
+                    "to point away from.", code="simulation.cv.selection_empty")
             site, ligand = (("site", "lig")
                             if cv_plan.collective_variable == "ligand_distance"
                             else ("b", "a"))
@@ -1460,7 +1603,7 @@ def run_simulation(
         # through equilibration too, and putting both in COLVAR left a file
         # that began at 500 ps, lost what NVT wrote, and ran its clock
         # backwards in the middle -- because production resets the counter.
-        # Every reader of that file, ours and the user's, had to know all
+        # Every reader of that file, FastMDXplora's and the user's, had to know all
         # three things. COLVAR is production and nothing else, as it has
         # always been; the settling has its own name.
         settling_path = Path(output_dir) / "umbrella_equilibration.plumed"
@@ -1495,18 +1638,18 @@ def run_simulation(
                   "production_script": str(script_path)}
 
     if len([x for x in (steered, metadynamics, umbrella) if x]) > 1:
-        raise ValueError(
+        raise StudyError(
             "A run can be steered, biased with metadynamics, or held in an "
             "umbrella window -- not more than one. They are different ways "
             "of moving the same coordinate and their forces would add."
-        )
+        , code="config.option.conflicting")
 
     if steered and metadynamics:
-        raise ValueError(
+        raise StudyError(
             "A run can be steered or biased with metadynamics, not both: "
             "they are two ways of moving the same coordinate and their "
             "forces would add. Pick one."
-        )
+        , code="config.option.conflicting")
 
     if steered:
         from fastmdxplora.simulation.steered import (
@@ -1648,6 +1791,14 @@ def run_simulation(
     simulation.context.setState(state)
     _validate_state_finite(omm, simulation, stage="loading state.xml")
 
+    if resume_from is not None:
+        # require_seal: the predecessor was written by this software and is
+        # always sealed on a clean finish, so a missing seal means it was
+        # killed mid-write.
+        load_checkpoint(omm, simulation, resume_from, require_seal=True)
+        _validate_state_finite(omm, simulation, stage="loading the checkpoint")
+        logger.info("Resumed from %s", Path(resume_from).as_posix())
+
     # Output paths
     traj_path = output_dir / "production.dcd"
     minimized_state_path = output_dir / "state_minimized.xml"
@@ -1731,7 +1882,7 @@ def run_simulation(
 
         # The anchor, from the state equilibration produced rather than the
         # one it started from. The force is attached here, so the script is
-        # still ours to rewrite, and this is the first moment the positions
+        # still FastMDXplora's to rewrite, and this is the first moment the positions
         # the pull will actually begin at exist. An umbrella window never
         # carries one: its centre is fixed by the plan, and a window
         # re-anchored to wherever it drifted is a different window.
@@ -1886,6 +2037,11 @@ def run_simulation(
             total_steps=plan["nvt_steps"] + plan["npt_steps"],
         )
         current_step = 0
+        # The clock for what this run cost. Started after the system is
+        # built and before the first step, so it times integration rather
+        # than setup -- setup does not scale with step count and charging
+        # it to the constant would overstate short runs badly.
+        run_started = datetime.now(timezone.utc)
         if telemetry is not None:
             if plan["nvt_steps"] > 0:
                 telemetry.mark_stage("nvt", "current", status="running", current_step=current_step)
@@ -2190,6 +2346,49 @@ def run_simulation(
         )
         with final_state_path.open("w", encoding="utf-8") as fh:
             fh.write(omm["openmm"].XmlSerializer.serialize(final_state))
+
+        # The run reached the end, so write a final checkpoint and seal it.
+        # Sealing here rather than in the reporter is what makes the seal
+        # mean "this segment finished": a run killed partway leaves a
+        # checkpoint from the last reporter interval and no seal, and the
+        # next segment refuses rather than continuing from a file that may
+        # have been half written when the process died.
+        # What this run cost, in the three numbers an estimate is built
+        # from. Written because the cost model can otherwise only be
+        # calibrated from a synthetic benchmark, and a machine that has run
+        # real studies knows more about itself than argon does.
+        #
+        # Beside the run rather than in the manifest's phase record because
+        # it belongs to the simulation and not to the orchestration: a study
+        # run through the API without an orchestrator should leave one too.
+        try:
+            wall_seconds = (datetime.now(timezone.utc)
+                            - run_started).total_seconds()
+            (output_dir / "cost.json").write_text(json.dumps({
+                "particles": int(system.getNumParticles()),
+                # Steps integrated in this run. For a resumed segment that
+                # is the segment's own steps, which is what it cost -- the
+                # earlier ones were paid for by an earlier run and are in
+                # its own record.
+                "steps": int(current_step),
+                "seconds": float(wall_seconds),
+                "platform": platform_name,
+                "precision": str(precision),
+                "timestep_fs": float(timestep_fs),
+            }, indent=2), encoding="utf-8")
+        except Exception:  # noqa: BLE001 - a run that finished still finished
+            logger.debug("Could not record what this run cost.")
+
+        checkpoint_path = output_dir / "checkpoint.chk"
+        try:
+            with checkpoint_path.open("wb") as fh:
+                fh.write(simulation.context.createCheckpoint())
+            seal_checkpoint(checkpoint_path)
+        except Exception:  # noqa: BLE001 - a run that finished still finished
+            logger.warning(
+                "Could not write a sealed checkpoint to %s; this run is "
+                "complete but cannot be continued from.",
+                checkpoint_path.as_posix())
         if telemetry is not None:
             n_frames = _frames_written(
                 current_step - production_start_step, trajectory_interval_steps

@@ -31,6 +31,7 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 class Contacts(Analysis):
@@ -82,10 +83,10 @@ class Contacts(Analysis):
     ) -> None:
         super().__init__(**kwargs)
         if not ligand_resname:
-            raise ValueError(
+            raise StudyError(
                 "Contacts requires `ligand_resname`; it applies only to "
                 "protein-ligand complexes."
-            )
+            , code="analysis.option.missing_companion")
         self.ligand_resname = str(ligand_resname)
         self.cutoff = float(cutoff)
         self.protein_selection = str(protein_selection)
@@ -108,16 +109,16 @@ class Contacts(Analysis):
         """
         ligand_idx = traj.topology.select(f"resname {self.ligand_resname}")
         if len(ligand_idx) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"No atoms matched ligand resname {self.ligand_resname!r}; "
                 f"cannot compute protein-ligand contacts."
-            )
+            , code="analysis.selection.empty")
         protein_idx = traj.topology.select(self.protein_selection)
         if len(protein_idx) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"Protein selection {self.protein_selection!r} matched zero "
                 f"atoms; cannot compute protein-ligand contacts."
-            )
+            , code="analysis.selection.arity")
 
         # Per-frame: protein atoms within cutoff of any ligand atom.
         # compute_neighbors returns a list (one array per frame) of haystack

@@ -56,6 +56,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import BackendUnavailable
 
 HARMONIZED_OCCUPANCY_TOL_PP = 5.0
 OBSERVABLE_TOL_NM = 1e-3
@@ -80,7 +82,7 @@ PROLIF_TO_FAMILY = {
     "MetalAcceptor": "metal",
 }
 
-# Our kind strings normalized into the same families by substring, so the
+# FastMDXplora's kind strings normalized into the same families by substring, so the
 # comparison does not depend on exact spelling of e.g.
 # pi_stacking_face_to_face vs pi_stacking.
 
@@ -97,13 +99,13 @@ def _reference_tools():
         import MDAnalysis as mda
         import prolif as plf
     except ImportError as exc:  # pragma: no cover - depends on the env
-        raise ImportError(
+        raise BackendUnavailable(
             "The cross-tool comparison needs MDAnalysis and ProLIF, which "
             "are not dependencies of FastMDXplora: they are the independent "
             "implementations it measures agreement against. Install them "
             "with `pip install \"fastmdxplora[validation]\"` or `conda "
             "install -c conda-forge mdanalysis prolif`."
-        ) from exc
+        , code="environment.backend.missing") from exc
     return mda, plf
 
 def our_kind_family(kind: str) -> str | None:
@@ -117,7 +119,7 @@ def our_kind_family(kind: str) -> str | None:
     return None  # water bridges and anything novel: excluded, listed once
 
 
-# Harmonized geometric criteria. The source of truth for OUR criteria is
+# Harmonized geometric criteria. The source of truth for FastMDXplora's criteria is
 # tests/test_what_holds_the_ligand_is_measured.py, where every published
 # threshold is pinned as a test. CONFIRM these against that file before
 # trusting a harmonized run; they are parameters to ProLIF's classes.
@@ -435,7 +437,7 @@ def _occupancy_from_residue_table(path: Path) -> dict[tuple[str, str], float]:
             except (KeyError, TypeError, ValueError):
                 continue
     if out:
-        print(f"[ours] exact residue table: {len(out)} residue-family "
+        print(f"[fastmdx] exact residue table: {len(out)} residue-family "
               "occupancies, taken as the union of each residue's pairs")
     return out
 
@@ -467,7 +469,7 @@ def _occupancy_from_records(data) -> dict[tuple[str, str], float]:
     n = len(frames)
     if n == 0:
         return {}
-    print(f"[ours] {n} frames with recorded contacts")
+    print(f"[fastmdx] {n} frames with recorded contacts")
     return {k: 100.0 * len(v) / n for k, v in hits.items()}
 
 
@@ -491,7 +493,7 @@ def _occupancy_from_csv(path: Path) -> dict[tuple[str, str], float]:
             # and occupancy. Reading it as per-frame records collapsed
             # everything onto one phantom frame and printed 100.0 for
             # every pair that existed at all -- the first deltas table's
-            # entire ours-side column. Per residue and family we take the
+            # entire fastmdx-side column. Per residue and family this takes the
             # MAX over atom pairs: the union of pair frame-sets is not
             # recoverable from this table, so this is a lower bound on
             # the residue-level occupancy, exact wherever one pair
@@ -518,7 +520,7 @@ def _occupancy_from_csv(path: Path) -> dict[tuple[str, str], float]:
                     g[pa] = max(g.get(pa, 0.0), pct)
             occ = {k: (lo[k], min(100.0, sum(by_patom[k].values())))
                    for k in lo}
-            print(f"[ours] aggregated table: {len(rows)} pair rows -> "
+            print(f"[fastmdx] aggregated table: {len(rows)} pair rows -> "
                   f"{len(occ)} residue-family brackets "
                   f"[max-over-pairs, capped-sum]")
             return occ
@@ -534,7 +536,7 @@ def _occupancy_from_csv(path: Path) -> dict[tuple[str, str], float]:
     if n == 0:
         sys.exit(f"{path.name}: no frames parsed")
     occ = {k: 100.0 * len(v) / n for k, v in hits.items()}
-    print(f"[ours] {n} frames, {len(occ)} residue-family pairs; "
+    print(f"[fastmdx] {n} frames, {len(occ)} residue-family pairs; "
           f"sample keys: {sorted(occ)[:4]}")
     return occ
 
@@ -646,7 +648,7 @@ def _numeric_column(path: Path, prefer: str):
     # that must never contain a comma is a trap for whoever edits it next.
     body_lines = [l for l in lines if not l.lstrip().startswith("#")]
     if not body_lines:
-        raise ValueError(f"{path} holds no data rows")
+        raise StudyError(f"{path} holds no data rows", code="analysis.data.absent")
     delim = "," if "," in body_lines[0] else None
 
     # A `#` line describes the file; it is not the column header. Where one
@@ -710,19 +712,19 @@ def cmd_negative(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a fini
     traj = healed_trajectory(run_dir, traj, top)
     ref = prolif_occupancy(traj, top, resname, harmonized=True)
     bad = []
-    # Ours is judged on the FLOOR: the measured max-pair occupancy. The
+    # FastMDXplora is judged on the FLOOR: the measured max-pair occupancy. The
     # ceiling once convicted a passing control on the summed flicker of
     # correlated ring-carbon grazes; a graze-union artifact must not
     # fail a negative. Both bounds and both tools are printed either way.
-    print("cavity report (ours [lo, hi] | prolif):")
+    print("cavity report (fastmdx [lo, hi] | prolif):")
     for resnum in sorted(cavity, key=int):
         for (res, fam), v in sorted(ours.items()):
             if "".join(c for c in res if c.isdigit()) == resnum:
                 a_lo, a_hi = v if isinstance(v, tuple) else (v, v)
                 b = ref.get((res, fam), 0.0)
-                print(f"  {res:>7} {fam:<12} ours [{a_lo:4.1f}, "
+                print(f"  {res:>7} {fam:<12} fastmdx [{a_lo:4.1f}, "
                       f"{a_hi:5.1f}] | prolif {b:4.1f}")
-    judged = [(res, fam, (v[0] if isinstance(v, tuple) else v), "ours")
+    judged = [(res, fam, (v[0] if isinstance(v, tuple) else v), "fastmdx")
               for (res, fam), v in ours.items()]
     judged += [(res, fam, v, "prolif") for (res, fam), v in ref.items()]
     for res, fam, pct, tool in judged:
@@ -741,13 +743,13 @@ def cmd_negative(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a fini
 
 
 def cmd_probe(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a finished run
-    """Dump both tools' evidence for one residue: our pair rows from the
+    """Dump both tools' evidence for one residue: FastMDXplora's pair rows from the
     aggregated table, and ProLIF's per-frame detections over a sample of
     frames. Built for VAL213, useful for any row that escapes its bracket."""
     run_dir = Path(args.run_dir)
     manifest = load_manifest(run_dir)
     target = residue_label(args.residue)
-    print(f"=== ours: pair rows for {target} ===")
+    print(f"=== fastmdx: pair rows for {target} ===")
     dat = run_dir / "analysis" / "pl_interactions" / "pl_interactions.dat"
     pair = None
     for line in open(dat):
@@ -797,7 +799,7 @@ def cmd_probe(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a finishe
     except Exception as e:
         print(f"  ERROR {type(e).__name__}: {e}")
     if not seen:
-        print("  none in ProLIF's trajectory run. Geometry of our top pair:")
+        print("  none in ProLIF's trajectory run. Geometry of the FastMDXplora top pair:")
     if pair:
         import numpy as np
         from MDAnalysis.lib.distances import calc_bonds
@@ -806,7 +808,7 @@ def cmd_probe(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a finishe
         raw = float(np.linalg.norm(a.position - b.position))
         mi = float(calc_bonds(a.position[None, :], b.position[None, :],
                               box=u.dimensions)[0])
-        print(f"  our pair: lig atom {pair[0]} ({a.name} "
+        print(f"  fastmdx pair: lig atom {pair[0]} ({a.name} "
               f"{a.resname}{a.resid}) -- prot atom {pair[1]} "
               f"({b.name} {b.resname}{b.resid})")
         print(f"  frame 0: raw distance {raw:.2f} A | "
@@ -814,7 +816,7 @@ def cmd_probe(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a finishe
               f"box {u.dimensions[:3].round(1)}")
         if raw > 2 * mi:
             print("  VERDICT: the pair is split across the periodic "
-                  "boundary in the stored coordinates. Our analysis "
+                  "boundary in the stored coordinates. The FastMDXplora analysis "
                   "measures minimum-image; a tool reading raw Cartesian "
                   "positions sees a different neighbourhood.")
 

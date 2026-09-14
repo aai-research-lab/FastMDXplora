@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from fastmdxplora.refusals import StudyError
 
 __all__ = [
     "Restraint",
@@ -174,25 +175,25 @@ def parse_restraints(spec: Any) -> list[Restraint]:
             continue
         kind = str(entry.get("kind", "position")).lower()
         if kind not in classes:
-            raise ValueError(
+            raise StudyError(
                 f"Unknown restraint kind {kind!r}. "
                 f"Valid: {', '.join(sorted(classes))}."
-            )
+            , code="simulation.cv.unknown")
         selection = entry.get("selection")
         if not selection:
-            raise ValueError(
+            raise StudyError(
                 f"A {kind} restraint needs a `selection` saying what it holds."
-            )
+            , code="simulation.cv.missing_companion")
         default_force = (DEFAULT_POSITION_FORCE if kind == "position"
                          else None)
         force = entry.get("force_constant", default_force)
         if force is None:
-            raise ValueError(
+            raise StudyError(
                 f"A {kind} restraint needs a `force_constant`. There is no "
                 "conventional default for it the way there is for position "
                 "restraints, and guessing one would be inventing the strength "
                 "of a bias."
-            )
+            , code="simulation.bias.parameter_missing")
         found.append(classes[kind](
             selection=str(selection),
             force_constant=float(force),
@@ -225,16 +226,16 @@ def build_restraint_forces(
         try:
             atoms = mdtop.select(restraint.selection)
         except Exception as exc:  # noqa: BLE001 - a bad selection is the user's
-            raise ValueError(
+            raise StudyError(
                 f"The restraint selection {restraint.selection!r} could not be "
                 f"read: {exc}"
-            ) from exc
+            , code="simulation.cv.selection_empty") from exc
         if len(atoms) == 0:
-            raise ValueError(
+            raise StudyError(
                 f"The restraint selection {restraint.selection!r} matched no "
                 "atoms. A restraint on nothing holds nothing, and a run that "
                 "silently applied it would look restrained and not be."
-            )
+            , code="simulation.cv.selection_empty")
 
         parameter = f"restraint_k_{index}"
 
@@ -252,10 +253,10 @@ def build_restraint_forces(
                                               reference[2]])
         elif restraint.kind == "distance":
             if len(atoms) != 2:
-                raise ValueError(
+                raise StudyError(
                     f"A distance restraint holds two atoms; "
                     f"{restraint.selection!r} matched {len(atoms)}."
-                )
+                , code="simulation.restraint.selection_arity")
             force = omm.CustomBondForce(f"{parameter}*(r - r0)^2")
             force.addGlobalParameter(parameter, restraint.force_constant)
             force.addPerBondParameter("r0")
@@ -264,10 +265,10 @@ def build_restraint_forces(
                            else 0.0])
         elif restraint.kind == "angle":
             if len(atoms) != 3:
-                raise ValueError(
+                raise StudyError(
                     f"An angle restraint holds three atoms; "
                     f"{restraint.selection!r} matched {len(atoms)}."
-                )
+                , code="simulation.restraint.selection_arity")
             force = omm.CustomAngleForce(f"{parameter}*(theta - theta0)^2")
             force.addGlobalParameter(parameter, restraint.force_constant)
             force.addPerAngleParameter("theta0")
@@ -275,10 +276,10 @@ def build_restraint_forces(
                            [restraint.target or 0.0])
         else:  # torsion
             if len(atoms) != 4:
-                raise ValueError(
+                raise StudyError(
                     f"A torsion restraint holds four atoms; "
                     f"{restraint.selection!r} matched {len(atoms)}."
-                )
+                , code="simulation.restraint.selection_arity")
             # Written through cos so the penalty is continuous across the
             # wrap at pi: a plain (theta - theta0)^2 jumps by 4*pi^2 there and
             # kicks the atoms apart.

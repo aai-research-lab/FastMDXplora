@@ -25,11 +25,12 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("simulation.plumed")
 
 
-class PlumedError(RuntimeError):
+class PlumedError(CodedError, RuntimeError):
     """Raised for PLUMED configuration or environment problems."""
 
 
@@ -43,7 +44,7 @@ def _import_plumed():
             "which is not installed. Install it with:\n"
             "    conda install -c conda-forge openmm-plumed\n"
             "or disable PLUMED (simulation.plumed.enabled = false)."
-        ) from exc
+        , code="environment.backend.missing") from exc
     return PlumedForce
 
 
@@ -63,14 +64,14 @@ def load_plumed_script(script: str | Path) -> str:
                                   or "/" in text or "\\" in text):
         # Looked like a path but doesn't exist — fail clearly rather than
         # silently treating a typo'd path as an (invalid) inline script.
-        raise PlumedError(f"PLUMED script file not found: {candidate}")
+        raise PlumedError(f"PLUMED script file not found: {candidate}", code="environment.path.not_found")
     return text
 
 
 def adjust_plumed_output_paths(script: str, output_dir: Path) -> str:
     """Redirect PLUMED ``FILE=`` outputs into the run's output directory.
 
-    PLUMED scripts write COLVAR/HILLS/etc. to whatever ``FILE=`` names; we
+    PLUMED scripts write COLVAR/HILLS/etc. to whatever ``FILE=`` names; this
     rewrite those to live under ``output_dir`` (keeping only the basename) so
     a run's PLUMED outputs land with its other artifacts, using forward
     slashes for cross-platform correctness.
@@ -133,7 +134,7 @@ def add_plumed_force(
         raise PlumedError(
             "simulation.plumed.enabled is true but no 'script' was provided. "
             "Supply a PLUMED script (inline text or a path to a .dat file)."
-        )
+        , code="simulation.bias.parameter_missing")
 
     PlumedForce = _import_plumed()
 

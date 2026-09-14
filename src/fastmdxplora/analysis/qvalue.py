@@ -55,6 +55,7 @@ from scipy.special import expit
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 
 def native_contact_pairs(
@@ -89,11 +90,11 @@ def native_contact_pairs(
     # be told apart: returning nothing for both would answer "there is no
     # fold here" to a question that was never asked properly.
     if traj.n_residues <= min_seq_separation:
-        raise ValueError(
+        raise StudyError(
             f"No residue pairs satisfy min_seq_separation="
             f"{min_seq_separation} in a trajectory with "
             f"{traj.n_residues} residues."
-        )
+        , code="analysis.sampling.too_few_frames")
 
     eligible = (set(int(i) for i in atom_indices)
                 if atom_indices is not None else None)
@@ -232,9 +233,9 @@ class QValue(Analysis):
     ) -> None:
         super().__init__(**kwargs)
         if scheme not in self.SCHEMES:
-            raise ValueError(
+            raise StudyError(
                 f"scheme must be one of {self.SCHEMES}, not {scheme!r}."
-            )
+            , code="analysis.option.not_permitted")
         self.ref: int = int(ref)
         self.cutoff: float = float(cutoff)
         self.beta: float = float(beta)
@@ -283,10 +284,10 @@ class QValue(Analysis):
         n_frames = traj.n_frames
         ref = self.ref if self.ref >= 0 else n_frames + self.ref
         if not (0 <= ref < n_frames):
-            raise ValueError(
+            raise StudyError(
                 f"Reference frame {self.ref} is out of range for trajectory "
                 f"with {n_frames} frames."
-            )
+            , code="analysis.option.out_of_range")
 
         if self.scheme == "heavy-atom-pairs":
             pair_idx, r0 = self._native_atom_pairs(traj, ref)
@@ -298,11 +299,11 @@ class QValue(Analysis):
             n_res = traj.n_residues
             ii, jj = np.triu_indices(n_res, k=self.min_seq_separation)
             if len(ii) == 0:
-                raise ValueError(
+                raise StudyError(
                     f"No residue pairs satisfy "
                     f"min_seq_separation={self.min_seq_separation} in a "
                     f"trajectory with {n_res} residues."
-                )
+                , code="analysis.sampling.too_few_frames")
             distances, _ = md.compute_contacts(
                 traj, contacts=np.column_stack([ii, jj]),
                 scheme="closest-heavy")

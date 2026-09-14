@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("setup.protonation")
 
@@ -69,7 +70,7 @@ class _CapturingHandler(logging.Handler):
         self.messages.append(record.getMessage())
 
 
-class ProtonationError(RuntimeError):
+class ProtonationError(CodedError, RuntimeError):
     """The ligand's protonation at the requested pH could not be settled."""
 
 
@@ -208,7 +209,7 @@ def _rdkit():
             "in the complex, and is not installed. Install it (conda install -c "
             "conda-forge rdkit), or supply the ligand with --setup-ligand "
             "already in the state you intend."
-        ) from exc
+        , code="environment.backend.missing", packages=["rdkit"]) from exc
 
 
 def _add_proton(Chem, mol, index):
@@ -299,7 +300,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
             "which site holds its proton is not determined.\nSupply the ligand "
             "with --setup-ligand as an SDF or MOL2 already in the state you "
             "intend, with explicit hydrogens and its net charge set."
-        )
+        , code="setup.chemistry.protonation_undetermined", resname=chemistry.resname, groups=undecided)
 
     unplaceable = [label for label in labels
                    if decisions[label] != WRITTEN_PROTONATED.get(label)
@@ -310,7 +311,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
             "protonation site is not one this pipeline can place: the pattern "
             "matches either charge state and names no particular atom. Supply "
             "the ligand with --setup-ligand already in the state you intend."
-        )
+        , code="setup.chemistry.protonation_undetermined", resname=chemistry.resname, groups=unplaceable)
 
     changes = [label for label in labels
                if decisions[label] != WRITTEN_PROTONATED.get(label)]
@@ -323,7 +324,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
         raise ProtonationError(
             f"The reference chemistry for {chemistry.resname} could not be read "
             "as a molecule, so its protonation cannot be adjusted."
-        )
+        , code="setup.chemistry.uninterpretable", resname=chemistry.resname)
 
     expected = chemistry.formal_charge
     for label in changes:
@@ -345,7 +346,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
                 f"but {allowed} were accounted for, so the settled protonation "
                 "cannot be placed. Supply the ligand with --setup-ligand "
                 "already in the state you intend."
-            )
+            , code="setup.chemistry.uninterpretable", resname=chemistry.resname)
 
         protonating = decisions[label]
         change = _add_proton if protonating else _remove_proton
@@ -372,7 +373,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
             f"{charge:+d} where {expected:+d} was intended, so the reference "
             "chemistry is not what this pipeline assumed. Supply the ligand "
             "with --setup-ligand already in the state you intend."
-        )
+        , code="setup.chemistry.charge_undetermined", resname=chemistry.resname)
     logger.info("%s: net charge %+d.", chemistry.resname, charge)
     return Chem.MolToMolBlock(mol), charge
 
@@ -388,7 +389,7 @@ def _propka():
             "complex and is not installed. Install it (conda install -c "
             "conda-forge propka), or supply the ligand with the protonation "
             "you intend already assigned."
-        ) from exc
+        , code="environment.backend.missing", packages=["propka"]) from exc
 
 
 def ligand_pka(
@@ -422,7 +423,7 @@ def ligand_pka(
     except Exception as exc:  # noqa: BLE001 - any failure means "cannot settle"
         raise ProtonationError(
             f"PROPKA could not analyse the complex containing {resname}: {exc}"
-        ) from exc
+        , code="setup.chemistry.uninterpretable", resname=resname) from exc
     finally:
         propka_logger.removeHandler(captured)
         propka_logger.setLevel(previous_level)
@@ -439,7 +440,7 @@ def ligand_pka(
         )
 
     if not molecule.conformation_names:
-        raise ProtonationError("PROPKA returned no conformation to read.")
+        raise ProtonationError("PROPKA returned no conformation to read.", code="setup.chemistry.uninterpretable")
     conformation = molecule.conformations[molecule.conformation_names[0]]
 
     found: list[GroupPka] = []
@@ -536,7 +537,7 @@ def decide(
                 "undetermined. Empirical prediction does not succeed on every "
                 "ligand.\nSupply the ligand with the protonation you intend, as "
                 "an SDF or MOL2 file, and set its net charge."
-            )
+            , code="setup.chemistry.protonation_undetermined", resname=resname)
         return ProtonationState(
             resname=resname,
             protonated=False,
@@ -568,7 +569,7 @@ def decide(
             "  --setup-heterogens drop     leave the component out entirely\n"
             "A shift of more than a pH unit from the model value is the pocket "
             "speaking, not the solvent, and is worth reading before overriding."
-        )
+        , code="setup.chemistry.protonation_undetermined", resname=resname, margin=margin)
 
     # Every group is decisively on one side of the pH.
     protonated_groups = [g for g in groups if g.pka > ph]

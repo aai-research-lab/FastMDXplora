@@ -39,6 +39,7 @@ from fastmdxplora.simulation.metadynamics import (
     MetadynamicsPlan,
     plan_from_config,
 )
+from fastmdxplora.refusals import StudyError
 
 logger = logging.getLogger(__name__)
 
@@ -105,11 +106,11 @@ def plan_steered(
 ) -> SteeredPlan:
     """Read a steered-MD block, reusing the collective-variable machinery."""
     if "to" not in spec:
-        raise ValueError(
+        raise StudyError(
             "Steered MD needs a `to`: the value of the collective variable "
             "to pull towards. Without it there is no destination and nothing "
             "to steer."
-        )
+        , code="simulation.bias.parameter_missing")
 
     # The same eight variables metadynamics offers, resolved the same way,
     # with the same refusals. A steered run does not need a hill width, so
@@ -126,7 +127,7 @@ def plan_steered(
 
     steps = int(spec.get("steps", 500000))
     if steps <= 0:
-        raise ValueError("Steered MD needs a positive number of `steps`.")
+        raise StudyError("Steered MD needs a positive number of `steps`.", code="simulation.bias.parameter_missing")
 
     # Where the pull starts. Zero is not a default: it is a real position
     # for most coordinates, and anchoring there drags the system towards it
@@ -155,14 +156,14 @@ def plan_steered(
                 getattr(structure, "__class__", type(structure)).__name__
                 if not isinstance(structure, str) else structure)
     if from_value is None:
-        raise ValueError(
+        raise StudyError(
             "A steered pull needs `from`: the value of the collective "
             f"variable ({cv.collective_variable}) where the run starts. "
             "It would ordinarily be read from the structure being "
             "simulated, and could not be here -- either no structure was "
             "available yet, or this variable is not one that can be "
             f"measured from coordinates alone ({cv.collective_variable} is "
-            "not). Measure it and set `from`.")
+            "not). Measure it and set `from`.", code="simulation.bias.parameter_missing")
 
     return SteeredPlan(
         cv=cv,
@@ -285,14 +286,14 @@ def build_steered_script(plan: SteeredPlan,
     # the protein towards a collapsed state and the work came out negative.
     # Refused rather than guessed, because the guess was silent.
     if plan.from_value is None:
-        raise ValueError(
+        raise StudyError(
             "A steered pull needs `from`: the value of the collective "
             "variable where the run starts. PLUMED's moving restraint has to "
             "be given a starting anchor, and there is no sensible default -- "
             "zero is a real position for most coordinates, and anchoring "
             "there drags the system towards it before the pull begins. "
             "Measure the variable in the structure being simulated and set "
-            "`from` to it.")
+            "`from` to it.", code="simulation.bias.parameter_missing")
     lines.append(
         "pull: MOVINGRESTRAINT ARG=cv "
         f"AT0={plan.from_value:g} STEP0={first_step:d} "

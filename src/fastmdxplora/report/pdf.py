@@ -20,12 +20,15 @@ four formats should not fail because a fifth could not be produced.
 from __future__ import annotations
 
 from pathlib import Path
+from fastmdxplora.refusals import CodedError
 
 __all__ = ["render_pdf", "PdfUnavailable", "STYLESHEET"]
 
 
-class PdfUnavailable(RuntimeError):
+class PdfUnavailable(CodedError, RuntimeError):
     """Raised when the PDF cannot be produced, saying what would fix it."""
+
+    default_code = "report.format.unavailable"
 
 
 #: Print styling. Deliberately plain: a report is read for its numbers, and a
@@ -112,7 +115,7 @@ def render_pdf(
     """
     markdown_path = Path(markdown_path)
     if not markdown_path.is_file():
-        raise PdfUnavailable(f"No report to convert at {markdown_path}.")
+        raise PdfUnavailable(f"No report to convert at {markdown_path}.", code="analysis.data.absent")
 
     target = Path(pdf_path) if pdf_path else markdown_path.with_suffix(".pdf")
 

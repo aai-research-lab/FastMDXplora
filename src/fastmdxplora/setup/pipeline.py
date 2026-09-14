@@ -35,6 +35,8 @@ from fastmdxplora.dependencies import dependency_error_message, missing_dependen
 from fastmdxplora.config.schema import SETUP
 from fastmdxplora.provenance import structure_provenance
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import MissingPathError
 
 if TYPE_CHECKING:
     from fastmdxplora.orchestrator import FastMDXplora
@@ -61,7 +63,7 @@ def _classify_input(system: str | None) -> str:
       - longer alphabetic-only string -> sequence
     """
     if system is None:
-        raise ValueError("setup phase requires a system input")
+        raise StudyError("setup phase requires a system input", code="config.option.conflicting")
 
     p = Path(system)
     structure_suffixes = {".pdb", ".cif", ".pdbx"}
@@ -74,16 +76,16 @@ def _classify_input(system: str | None) -> str:
         # complaint about the file type. The path is relative to where the
         # command was run, not to the config that names it, and saying so is
         # most of the fix.
-        raise FileNotFoundError(
+        raise MissingPathError(
             f"No structure at {system!r}. The path is read from where "
             f"fastmdx was run ({Path.cwd()}), not from the config file that "
             "names it, so a config beside a structure still needs the path "
-            "written from the working directory.")
+            "written from the working directory.", code="environment.path.not_found")
     if len(system) == 4 and system.isalnum():
         return "pdb_id"
     if system.isalpha():
         return "sequence"
-    raise ValueError(
+    raise StudyError(
         f"Could not classify system input {system!r}. Expected the path to a "
         ".pdb, .cif or .pdbx file, or a 4-character PDB ID.\n\n"
         # A one-letter sequence is recognised below and then refused, because
@@ -93,7 +95,7 @@ def _classify_input(system: str | None) -> str:
         # into a manuscript describing the software.
         "A one-letter amino-acid sequence is recognised but cannot yet be "
         "built into a structure; predict one first and pass the file."
-    )
+    , code="setup.input.unrecognised")
 
 
 def _fetch_pdb_from_rcsb(pdb_id: str, dest: Path) -> Path:
@@ -111,7 +113,7 @@ def _fetch_pdb_from_rcsb(pdb_id: str, dest: Path) -> Path:
         # situation the reader can act on and cannot act on from that
         # sentence. Clusters are commonly airgapped and this is the first
         # thing a run does there, so it is worth saying plainly.
-        raise ValueError(
+        raise StudyError(
             f"Could not fetch {pdb_id.upper()} from RCSB: {exc}.\n\n"
             "Where the machine has no route to the internet -- a cluster "
             "compute node, commonly -- fetch the structure somewhere that "
@@ -119,7 +121,7 @@ def _fetch_pdb_from_rcsb(pdb_id: str, dest: Path) -> Path:
             f"    curl -O {url}\n\n"
             "then name it in place of the identifier. The path is read from "
             "where fastmdx was run."
-        ) from exc
+        , code="environment.service.unreachable") from exc
     return dest
 
 
@@ -198,15 +200,15 @@ def _select_chains(
 
     missing = sorted(wanted - present)
     if missing:
-        raise ValueError(
+        raise StudyError(
             f"No chain named {', '.join(missing)} in this structure. It has "
             f"{', '.join(sorted(c for c in present if c))}."
-        )
+        , code="setup.structure.chain_unknown")
     if not kept_chain_atoms:
-        raise ValueError(
+        raise StudyError(
             f"Chains {', '.join(sorted(wanted))} hold no polymer atoms, so "
             "there would be nothing to simulate."
-        )
+        , code="setup.structure.chain_unknown")
 
     anchors = np.asarray(kept_chain_atoms, dtype=float)
 
@@ -301,7 +303,7 @@ def _resolve_input(
             "ID for a deposited structure."
         )
     else:
-        raise ValueError(f"Unknown input_form {input_form!r}")
+        raise StudyError(f"Unknown input_form {input_form!r}", code="setup.input.unrecognised")
     return target
 
 
@@ -328,9 +330,9 @@ def _keep_heterogens(params: dict, input_pdb) -> bool:
         return False
 
     if policy != "drop":
-        raise ValueError(
+        raise StudyError(
             f"heterogens: unknown policy {policy!r}; expected drop, keep, or auto"
-        )
+        , code="config.option.not_permitted")
     return False
 
 
@@ -374,21 +376,21 @@ def _validate_ligand_forcefield(params: dict) -> None:
     )
 
     if params["force_field"]:
-        raise ValueError(
+        raise StudyError(
             "A ligand was supplied with a raw `force_field` XML list. "
             "Protein-ligand parameterization needs the named `forcefield` "
             "selector (use forcefield='amber-openff'), which wires the OpenFF "
             "small-molecule generator."
-        )
+        , code="config.option.conflicting")
     choice = resolve_forcefield(params["forcefield"])
     if not choice.supports_ligand:
         valid = ", ".join(
             n for n in available_forcefields() if resolve_forcefield(n).supports_ligand
         )
-        raise ValueError(
+        raise StudyError(
             f"Force field {choice.name!r} does not support ligands. For "
             f"protein-ligand systems use a ligand-capable force field: {valid}."
-        )
+        , code="setup.forcefield.incompatible")
 
 
 
@@ -595,7 +597,7 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
     )
 
     if entry_id is None:
-        raise ValueError(
+        raise StudyError(
             f"heterogens: auto identified components to simulate ({names}), but "
             "their chemistry can only be retrieved for a structure given by PDB "
             "identifier: a local file carries no entry to look them up in. "
@@ -605,7 +607,7 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
             "\n\n"
             "with XXX the component code. Its coordinates are idealised and "
             "do not matter: the ligand is placed where this structure has it."
-        )
+        , code="setup.structure.undetermined")
 
     # A ligand needs a force field that can parameterize small molecules. The
     # protein force field is a scientific choice, so it is not changed here on
@@ -615,12 +617,12 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
         capable = ", ".join(
             n for n in available_forcefields() if resolve_forcefield(n).supports_ligand
         )
-        raise ValueError(
+        raise StudyError(
             f"heterogens: auto identified components to simulate ({names}), but "
             f"force field {choice.name!r} cannot parameterize small molecules. "
             f"Choose a ligand-capable force field ({capable}), or set the "
             "heterogens policy to 'drop' to exclude them."
-        )
+        , code="setup.structure.undetermined")
 
     # Monatomic ions are kept in the structure rather than extracted. The
     # protein force field already carries validated ion parameters, and the
@@ -768,12 +770,12 @@ def run(
     # not both. Check the user-supplied options (not merged defaults), since
     # `forcefield` always has a default.
     if options.get("forcefield") is not None and options.get("force_field"):
-        raise ValueError(
+        raise StudyError(
             "Specify either `forcefield` (a named force field) or "
             "`force_field` (a raw list of OpenMM XML files), not both. "
             "The named selector is recommended; the raw list is an escape "
             "hatch for combinations the named registry does not cover."
-        )
+        , code="config.option.conflicting")
     # Surface an unknown named force field early with a clear message
     # (only when a raw list is not overriding it).
     if not params["force_field"]:

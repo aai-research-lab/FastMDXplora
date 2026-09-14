@@ -32,6 +32,7 @@ import numpy as np
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import MissingResultError
 
 
 class PMF(Analysis):
@@ -73,12 +74,12 @@ class PMF(Analysis):
         """
         path = self._pmf_path()
         if path is None:
-            raise FileNotFoundError(
+            raise MissingResultError(
                 "No pmf.json beside this run, so there is no umbrella result "
                 "to draw. This analysis reports what the umbrella phase "
                 "computed; it does not recompute it, because stitching the "
                 "windows twice would invite two answers to one question."
-            )
+            , code="analysis.data.absent")
         record = json.loads(path.read_text(encoding="utf-8"))
         curve = record.get("pmf") or {}
         coordinate = np.asarray(curve.get("coordinate", []), dtype=float)

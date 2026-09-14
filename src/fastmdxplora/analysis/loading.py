@@ -24,6 +24,7 @@ import mdtraj as md
 import numpy as np
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import CodedError
 
 logger = get_logger("analysis.loading")
 
@@ -63,8 +64,10 @@ PathLike = Union[str, Path]
 TrajectoryInput = Union[PathLike, Sequence[PathLike]]
 
 
-class TrajectoryLoadError(ValueError):
+class TrajectoryLoadError(CodedError, ValueError):
     """Raised when a trajectory cannot be located, opened, or parsed."""
+
+    default_code = "analysis.trajectory.unreadable"
 
 
 def _resolve_paths(traj: TrajectoryInput) -> list[Path]:
@@ -400,7 +403,7 @@ def load_trajectory(
             f"MDTraj failed to load trajectory: {exc}"
         ) from exc
 
-    # MDTraj returns a list for a single file, ensure we have a Trajectory.
+    # MDTraj returns a list for a single file; coerce to a Trajectory.
     if isinstance(trajectory, list):
         trajectory = md.join(trajectory)
 
@@ -419,7 +422,7 @@ def load_trajectory(
         if not (0 <= f <= l <= n):
             raise TrajectoryLoadError(
                 f"Invalid frame slice [{f}:{l}] for trajectory with {n} frames."
-            )
+            , code="analysis.option.out_of_range")
         trajectory = trajectory[f:l]
 
     logger.debug(

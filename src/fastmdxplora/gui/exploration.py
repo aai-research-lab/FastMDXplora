@@ -23,6 +23,7 @@ from typing import Any, Mapping
 
 from fastmdxplora.batch.explorer import ALREADY_HOLD_RESULTS
 from fastmdxplora.dependencies import dependency_error_message, missing_dependencies
+from fastmdxplora.refusals import StudyError
 
 
 _FORCEFIELDS = ("auto", "charmm36", "amber14", "amber-fb15", "amber-openff")
@@ -82,9 +83,9 @@ def _number(
     try:
         value = int(raw) if integer else float(raw)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{key} must be a number") from exc
+        raise StudyError(f"{key} must be a number", code="config.option.wrong_type") from exc
     if value < minimum or value > maximum:
-        raise ValueError(f"{key} must be between {minimum:g} and {maximum:g}")
+        raise StudyError(f"{key} must be between {minimum:g} and {maximum:g}", code="config.option.wrong_type")
     return value
 
 
@@ -822,7 +823,7 @@ class DashboardRuntime:
         except Exception:
             log_handle.close()
             raise
-        # Popen owns an inherited OS handle. Closing our copy avoids a
+        # Popen owns an inherited OS handle. Closing this copy avoids a
         # long-lived Python file object while the child continues writing.
         log_handle.close()
         self.active_root = output_dir

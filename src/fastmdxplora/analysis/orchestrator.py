@@ -42,6 +42,8 @@ from fastmdxplora.analysis.loading import (
     load_trajectory,
 )
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import CodedKeyError
 
 logger = get_logger("analysis.orchestrator")
 
@@ -72,19 +74,19 @@ def _resolve_scope(scope: str, ligand_resname: str | None) -> str | None:
     """
     key = (scope or _SCOPE_DEFAULT).strip().lower()
     if key not in VALID_SCOPES:
-        raise ValueError(
+        raise StudyError(
             f"Unknown analysis scope {scope!r}. Valid: {', '.join(VALID_SCOPES)}."
-        )
+        , code="analysis.option.not_permitted")
     if key == "all":
         return None
     if key == "protein":
         return "protein"
     if key == "ligand":
         if not ligand_resname:
-            raise ValueError(
+            raise StudyError(
                 "scope='ligand' requires a ligand to be present, but no "
                 "ligand residue name is known for this run."
-            )
+            , code="analysis.option.missing_companion")
         return f"resname {ligand_resname}"
     # solute: protein + ligand if present, else protein.
     if ligand_resname:
@@ -116,10 +118,10 @@ def register_analysis(name: str, cls: type[Analysis]) -> None:
     """
     existing = _REGISTRY.get(name)
     if existing is not None and existing is not cls:
-        raise ValueError(
+        raise StudyError(
             f"Analysis name {name!r} is already registered to "
             f"{existing.__name__}; cannot rebind to {cls.__name__}."
-        )
+        , code="analysis.option.not_permitted")
     _REGISTRY[name] = cls
 
 
@@ -131,8 +133,10 @@ def available_analyses() -> tuple[str, ...]:
 def get_analysis_class(name: str) -> type[Analysis]:
     """Look up a registered analysis class by name."""
     if name not in _REGISTRY:
-        raise KeyError(
-            f"Unknown analysis: {name!r}. Available: {list(_REGISTRY)}"
+        raise CodedKeyError(
+            f"Unknown analysis: {name!r}. Available: {list(_REGISTRY)}",
+            code="analysis.unknown",
+            given=name, permitted=sorted(_REGISTRY),
         )
     return _REGISTRY[name]
 
@@ -578,7 +582,7 @@ class AnalysisOrchestrator:
             return getattr(traj, "unitcell_lengths", None) is not None
 
         def _state_ok(name: str) -> bool:
-            """Thermodynamics needs the state record, which only our own
+            """Thermodynamics needs the state record, which only a FastMDXplora
             simulation phase writes. A trajectory imported from elsewhere
             brings coordinates and not the ensemble they came from, and
             that is a question it does not pose rather than one this fails
@@ -632,15 +636,15 @@ class AnalysisOrchestrator:
             return has_water or not getattr(cls, "requires_water", False)
 
         if include is not None and exclude is not None:
-            raise ValueError("Specify either `include` or `exclude`, not both.")
+            raise StudyError("Specify either `include` or `exclude`, not both.", code="analysis.option.inapplicable")
 
         if include is not None:
             unknown = [n for n in include if n not in _REGISTRY]
             if unknown:
-                raise ValueError(
+                raise StudyError(
                     f"Unknown analyses in include: {unknown}. "
                     f"Available: {all_names}"
-                )
+                , code="analysis.unknown")
             # Explicit include is honored as-is (even ligand analyses — they
             # will raise a clear error if no ligand is actually present).
             return [n for n in all_names if n in include]
@@ -648,10 +652,10 @@ class AnalysisOrchestrator:
         if exclude is not None:
             unknown = [n for n in exclude if n not in _REGISTRY]
             if unknown:
-                raise ValueError(
+                raise StudyError(
                     f"Unknown analyses in exclude: {unknown}. "
                     f"Available: {all_names}"
-                )
+                , code="analysis.unknown")
             return [
                 n for n in all_names
                 if n not in exclude and _ligand_ok(n) and _water_ok(n)
@@ -683,9 +687,9 @@ class AnalysisOrchestrator:
                 if name not in merged:
                     continue  # ignore options targeting excluded analyses
                 if not isinstance(opts, dict):
-                    raise ValueError(
+                    raise StudyError(
                         f"options[{name!r}] must be a dict, got {type(opts).__name__}"
-                    )
+                    , code="analysis.option.wrong_type")
                 self._reject_unknown_options(name, opts)
                 merged[name].update(opts)
         return merged
@@ -724,11 +728,11 @@ class AnalysisOrchestrator:
         unknown = sorted(set(opts) - accepted)
         if not unknown:
             return
-        raise ValueError(
+        raise StudyError(
             f"options[{name!r}] has no setting called "
             f"{', '.join(repr(u) for u in unknown)}. "
             f"{name} accepts: {', '.join(sorted(accepted))}."
-        )
+        , code="analysis.option.inapplicable")
 
     @staticmethod
     def _filter_kwargs(

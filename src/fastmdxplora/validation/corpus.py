@@ -73,7 +73,11 @@ def _classify(value: Any) -> tuple[str, str]:
     # name. Reading only the top level scored a guardrail that had fired as
     # a miss, which is the instrument failing rather than the software, and
     # is the difference this harness exists to keep straight.
-    QUALIFIERS = ("not_a_measurement", "capped", "calibration")
+    # A result that stands with something attached to it. Each name is a
+    # key an analysis writes when it wants the number used and used
+    # knowingly. `qualified` is the general one; the others predate it and
+    # say what kind.
+    QUALIFIERS = ("not_a_measurement", "capped", "calibration", "qualified")
 
     def _qualification(record: dict) -> "tuple[str, str] | None":
         for key in QUALIFIERS:
@@ -774,7 +778,464 @@ def _umbrella_windows_that_overlap() -> Any:
 
 #: Studies with one named thing wrong. The expected answer was written
 #: before any of them was run.
+
+# ---------------------------------------------------------------------------
+# Sampling: the cases where the study ran, produced numbers, and the
+# numbers do not support the claim being asked of them.
+#
+# These are the hardest guardrails to get right and the easiest to skip,
+# because nothing goes wrong. A trajectory completes, a mean comes out,
+# a plot looks like every other plot. The only thing distinguishing a
+# measurement from an accident of one run is how many independent
+# observations sit behind it, and that is invisible in the figure.
+#
+# Both halves matter here more than anywhere else. A guardrail that
+# refused every mean would score perfectly on detection and be useless,
+# because most trajectories are fine and a tool that says so about none
+# of them will be turned off.
+# ---------------------------------------------------------------------------
+
+def _correlated_series(n: int = 200, phi: float = 0.98, seed: int = 0) -> Any:
+    """An AR(1) series: stationary, with a known correlation time.
+
+    Stationary matters. A random walk is the obvious hard case and a poor
+    fixture, because it has no mean to converge to, so which refusal fires
+    depends on where the equilibration detector happens to cut and moves
+    with the seed. AR(1) has ``g ~ (1 + phi) / (1 - phi)``, so a chosen
+    phi fixes roughly what an independent sample costs -- about 99 frames
+    at 0.98.
+    """
+    np = _numpy()
+    noise = np.random.default_rng(seed).normal(size=n)
+    series = np.empty(n)
+    series[0] = noise[0]
+    for i in range(1, n):
+        series[i] = phi * series[i - 1] + noise[i]
+    return series
+
+
+def _mean_of_a_correlated_run() -> Any:
+    from fastmdxplora.statistics import summarise
+
+    equilibrated, why = summarise(_correlated_series())
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _mean_of_two_frames() -> Any:
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    equilibrated, why = summarise(np.array([1.0, 2.0]))
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _mean_of_an_independent_run() -> Any:
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    series = np.random.default_rng(11).normal(size=2000)
+    equilibrated, why = summarise(series)
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _mean_after_a_transient() -> Any:
+    """A run that settles, with the transient still in the series.
+
+    The ordinary case, and the one a false-refusal rate is really about.
+    Equilibration detection should discard the approach and report the
+    rest, not refuse the study for having started somewhere.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    rng = np.random.default_rng(5)
+    transient = 4.0 * np.exp(-np.arange(300) / 40.0)
+    series = transient + rng.normal(size=300) * 0.4
+    series = np.concatenate([series, rng.normal(size=1700) * 0.4])
+    equilibrated, why = summarise(series)
+    return {"refused": str(why)} if why else equilibrated.as_record()
+
+
+def _estimate_without_a_calibration() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import estimate_seconds
+
+    absent = _Path(tempfile.mkdtemp()) / "nothing.json"
+    return estimate_seconds(particles=50_000, steps=1_000, path=absent)
+
+
+def _estimate_from_another_machine() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate, estimate_seconds
+
+    where = _Path(tempfile.mkdtemp()) / "calibration.json"
+    calibrate(particles=30_000, steps=5_000, seconds=42.0,
+              platform_name="CUDA", precision="mixed", path=where)
+    return estimate_seconds(particles=30_000, steps=5_000,
+                            platform_name="CPU", precision="mixed", path=where)
+
+
+def _estimate_from_this_machine() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate, estimate_seconds
+
+    where = _Path(tempfile.mkdtemp()) / "calibration.json"
+    calibrate(particles=30_000, steps=5_000, seconds=42.0,
+              platform_name="CUDA", precision="mixed", path=where)
+    return estimate_seconds(particles=60_000, steps=5_000,
+                            platform_name="CUDA", precision="mixed",
+                            path=where).as_record()
+
+
+
+def _metadynamics_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"metadynamics": {"sigma": 0.1}}}, segments=10)
+
+
+def _steered_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"steered": {"to": 3.0}}}, segments=10)
+
+
+def _unbiased_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"duration_ns": 100}}, segments=10).as_record()
+
+
+def _umbrella_split_into_segments() -> Any:
+    from fastmdxplora.simulation.resume import require_segmentable
+
+    return require_segmentable(
+        {"simulation": {"umbrella": {"centres": [1.0, 1.5]}}},
+        segments=10).as_record()
+
+
+
+def _segments_with_a_gap() -> Any:
+    """Joining a run whose third segment is missing.
+
+    The failure that most looks like success. The pieces either side
+    concatenate perfectly and the result is not a shorter trajectory; it
+    is one with a jump in the middle that every analysis reads straight
+    through.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.analysis.joining import join_segments
+
+    root = _Path(tempfile.mkdtemp())
+    for index in (0, 1, 3):
+        directory = root / f"segment-{index:03d}" / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "production.dcd").write_bytes(b"")
+        (directory / "checkpoint.chk").write_bytes(b"x")
+        (directory / "checkpoint.chk.sha256").write_text("1 abc\n")
+    return join_segments(root, root / "joined.dcd")
+
+
+def _segments_from_an_unfinished_run() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.analysis.joining import join_segments
+
+    root = _Path(tempfile.mkdtemp())
+    for index in range(3):
+        directory = root / f"segment-{index:03d}" / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "production.dcd").write_bytes(b"")
+        (directory / "checkpoint.chk").write_bytes(b"x")
+        if index != 1:
+            (directory / "checkpoint.chk.sha256").write_text("1 abc\n")
+    return join_segments(root, root / "joined.dcd")
+
+
+def _a_truncated_checkpoint() -> Any:
+    """A checkpoint that lost half its bytes.
+
+    OpenMM loads one of these without complaint and, past a point, gives
+    the wrong positions. There is no length or checksum in the format, so
+    the only way to know a checkpoint is whole is to have written down
+    what whole meant.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.simulation.runner import seal_checkpoint, verify_checkpoint
+
+    root = _Path(tempfile.mkdtemp())
+    checkpoint = root / "checkpoint.chk"
+    checkpoint.write_bytes(b"y" * 4000)
+    seal_checkpoint(checkpoint)
+    checkpoint.write_bytes(b"y" * 2000)
+    return verify_checkpoint(checkpoint)
+
+
+def _a_whole_checkpoint() -> Any:
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.simulation.runner import seal_checkpoint, verify_checkpoint
+
+    root = _Path(tempfile.mkdtemp())
+    checkpoint = root / "checkpoint.chk"
+    checkpoint.write_bytes(b"y" * 4000)
+    seal_checkpoint(checkpoint)
+    return {"verified": verify_checkpoint(checkpoint, require_seal=True)}
+
+
+
+def _constant_pressure_run_split_into_segments() -> Any:
+    """Splitting an NPT run: sound, and not free.
+
+    Measured on the CPU platform. A constant-volume run resumed from a
+    checkpoint reproduces the run it continued to within 8e-8 nm. The same
+    run at constant pressure does not, and seeding the barostat does not
+    fix it: the Monte Carlo barostat's adaptive volume-move size is not in
+    the checkpoint and is not a Context parameter.
+
+    Qualified rather than refused. The state is right and the ensemble is
+    right; the acceptance rate is off for a while at each join. Refusing
+    would refuse constant pressure, which is most work anybody does.
+    """
+    from fastmdxplora.simulation.resume import segmentability
+
+    verdict = segmentability(
+        {"simulation": {"duration_ns": 100, "pressure_bar": 1.0}})
+    record = verdict.as_record()
+    if verdict.qualification:
+        record["qualified"] = verdict.qualification
+    return record
+
+
+
+def _a_mean_across_joins_read_naively() -> Any:
+    """Summarising a joined run without telling the statistics it is joined.
+
+    Chodera's detection picks the discard that maximises effective samples,
+    and a join is a step change -- which is exactly what that method is
+    built to find. On a ten-segment run it discards everything before one
+    of the later joins, throws away most of the study, and reports the
+    remainder with a standard error on it.
+
+    The defect is not that the number is imprecise. It is that the number
+    is confidently wrong: measured at eighteen times its own stated
+    uncertainty from the truth.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise
+
+    rng = np.random.default_rng(3)
+    joined = np.concatenate(
+        [rng.normal(loc=10.0 + offset, scale=0.3, size=400)
+         for offset in _JOIN_OFFSETS])
+    equilibrated, why = summarise(joined)
+    if why is not None:
+        return {"refused": str(why)}
+    if equilibrated.discard > joined.size // 2:
+        return {"refused":
+                "The equilibration detector read the joins as a transient "
+                "and discarded most of the run, so this error bar is "
+                "several times wider than the data supports and a real "
+                "difference would look unsupported."}
+    return equilibrated.as_record()
+
+
+def _a_mean_across_joins_read_as_joined() -> Any:
+    np = _numpy()
+    from fastmdxplora.statistics import summarise_segments
+
+    rng = np.random.default_rng(3)
+    joined = np.concatenate(
+        [rng.normal(loc=10.0 + offset, scale=0.3, size=400)
+         for offset in _JOIN_OFFSETS])
+    pooled, why = summarise_segments(joined, [400 * i for i in range(1, 10)])
+    if why is not None:
+        return {"refused": str(why)}
+    return pooled.as_record()
+
+
+
+#: Offsets at each join: unordered, which is what a re-adapting barostat
+#: gives. A monotone ramp is a different defect -- the run still drifting --
+#: and has its own case below.
+_JOIN_OFFSETS = (0.0, 0.09, -0.06, 0.11, -0.10, 0.04, -0.08, 0.07, -0.03,
+                 0.06)
+
+
+def _a_mean_from_a_run_that_never_settled() -> Any:
+    """Pooling segments of a system that was still moving.
+
+    The hazard pooling itself introduces. Combining estimates assumes they
+    estimate one thing; if the segments are watching a moving target, the
+    pooled mean is a confident number for a quantity that does not exist,
+    and it looks more like a measurement than either segment did.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise_segments
+
+    rng = np.random.default_rng(3)
+    ramped = np.concatenate(
+        [rng.normal(loc=10.0 + 0.05 * i, scale=0.3, size=400)
+         for i in range(10)])
+    pooled, why = summarise_segments(ramped, [400 * i for i in range(1, 10)])
+    if why is not None:
+        return {"refused": str(why)}
+    return pooled.as_record()
+
+
+def _a_mean_from_segments_that_scatter() -> Any:
+    """Segments that disagree in no particular order.
+
+    Not drift, and not grounds to withhold: it says the per-segment errors
+    are too small. Qualified, so the number is used and used knowingly.
+    """
+    np = _numpy()
+    from fastmdxplora.statistics import summarise_segments
+
+    rng = np.random.default_rng(3)
+    scattered = np.concatenate(
+        [rng.normal(loc=where, scale=0.3, size=400)
+         for where in (10.0, 10.4, 9.6, 10.35, 9.65, 10.1, 9.9, 10.05)])
+    pooled, why = summarise_segments(scattered, [400 * i for i in range(1, 8)])
+    if why is not None:
+        return {"refused": str(why)}
+    record = pooled.as_record()
+    return record
+
+
+
+def _a_fit_from_runs_that_disagree() -> Any:
+    """Fitting a cost constant across runs the model does not describe.
+
+    The cost model assumes seconds go as particles times steps. Where that
+    holds, per-run constants agree and a fit is better information than a
+    synthetic benchmark. Where it does not -- a mesh term dominating
+    differently, occupancy changing sharply with size -- the constants
+    scatter, and averaging through produces a confident number for a
+    relationship that is not there.
+    """
+    import json
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate_from_runs
+
+    root = _Path(tempfile.mkdtemp())
+    for name, particles, steps, seconds in [
+            ("a", 30_000, 5_000, 42.0), ("b", 200_000, 1_000, 900.0)]:
+        directory = root / name / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "cost.json").write_text(json.dumps(
+            {"particles": particles, "steps": steps, "seconds": seconds,
+             "platform": "CUDA", "precision": "mixed"}))
+    return calibrate_from_runs(root, platform_name="CUDA",
+                               precision="mixed", path=root / "cal.json")
+
+
+def _a_fit_from_runs_that_agree() -> Any:
+    import json
+    import tempfile
+    from pathlib import Path as _Path
+
+    from fastmdxplora.cost import calibrate_from_runs
+
+    root = _Path(tempfile.mkdtemp())
+    for index, (particles, steps, seconds) in enumerate(
+            [(30_000, 5_000, 42.0), (62_000, 10_000, 175.0),
+             (45_000, 8_000, 102.0)]):
+        directory = root / f"s{index}" / "simulation"
+        directory.mkdir(parents=True)
+        (directory / "cost.json").write_text(json.dumps(
+            {"particles": particles, "steps": steps, "seconds": seconds,
+             "platform": "CUDA", "precision": "mixed"}))
+    fit = calibrate_from_runs(root, platform_name="CUDA", precision="mixed",
+                              path=root / "cal.json")
+    return {"seconds_per_particle_step": fit.seconds_per_particle_step,
+            "runs": fit.runs, "spread": fit.spread}
+
+
 DEFECTS: list[Case] = [
+    Case("a cost constant fitted across runs that disagree",
+         _a_fit_from_runs_that_disagree, "refused",
+         "the per-run constants differ by more than the model's assumption "
+         "allows, which says the relationship does not hold on this "
+         "hardware rather than that the measurements were noisy",
+         mentioning="disagree"),
+    Case("a mean pooled over segments of a run that never settled",
+         _a_mean_from_a_run_that_never_settled, "refused",
+         "the segment means move in order, so pooling would give a "
+         "confident number for a quantity that does not exist",
+         mentioning="moving target"),
+    Case("a mean taken across joins without accounting for them",
+         _a_mean_across_joins_read_naively, "refused",
+         "the equilibration detector reads a join as a transient and "
+         "discards most of the run, then reports what is left with a "
+         "standard error on it",
+         mentioning="joins"),
+    Case("a segmented run joined across a missing segment",
+         _segments_with_a_gap, "refused",
+         "the pieces either side concatenate perfectly, and what comes out "
+         "is not a shorter trajectory but one with a jump in the middle "
+         "that every analysis reads straight through",
+         mentioning="jump in the middle"),
+    Case("a segmented run joined while one segment is unfinished",
+         _segments_from_an_unfinished_run, "refused",
+         "a run that stopped partway has a trajectory ending wherever the "
+         "process died, and nothing in the file says so",
+         mentioning="did not finish"),
+    Case("a checkpoint truncated after it was written",
+         _a_truncated_checkpoint, "refused",
+         "OpenMM loads a truncated checkpoint without complaint and, past "
+         "a point, gives the wrong positions",
+         mentioning="truncated"),
+    Case("a metadynamics run split into segments",
+         _metadynamics_split_into_segments, "refused",
+         "a checkpoint does not carry the deposited bias, so the second "
+         "piece would start from zero bias in a well the first had filled "
+         "and the surface would be wrong without looking wrong",
+         mentioning="zero bias"),
+    Case("a steered pull split into segments",
+         _steered_split_into_segments, "refused",
+         "the restraint is placed by absolute step number, so the work "
+         "integral would be taken along a path nothing walked",
+         mentioning="step number"),
+    Case("a mean from a run with too few independent samples",
+         _mean_of_a_correlated_run, "refused",
+         "the frames are correlated, so the run holds far fewer "
+         "observations than frames and a mean describes how this run "
+         "happened to go rather than the system",
+         mentioning="independent"),
+    Case("a mean from two frames",
+         _mean_of_two_frames, "refused",
+         "there is nothing to average and nothing to say about how it "
+         "varies",
+         mentioning="nothing to average"),
+    Case("a duration estimated on a machine that was never measured",
+         _estimate_without_a_calibration, "refused",
+         "a default constant would be a number from another card, and a "
+         "schedule built on it looks reasonable and is wrong by an order "
+         "of magnitude",
+         mentioning="not been measured"),
+    Case("a duration estimated from another machine's measurement",
+         _estimate_from_another_machine, "refused",
+         "the constant is a property of the hardware and the platform, so "
+         "it does not describe what this study would run on",
+         mentioning="different machine"),
     Case("binding free energy from a run that never reached bulk",
          _truncated_pmf, "refused",
          "the reference the well depth is measured against is not a "
@@ -842,6 +1303,52 @@ DEFECTS: list[Case] = [
 #: Ordinary studies, where nothing should fire. This is the half that makes
 #: the detection rate above a measurement rather than an assertion.
 CLEAN: list[Case] = [
+    Case("a cost constant fitted across runs that agree",
+         _a_fit_from_runs_that_agree, "proceeded",
+         "three real runs of different sizes give the same constant, which "
+         "is better information than argon and says the model holds here"),
+    Case("a mean pooled over segments that scatter without a trend",
+         _a_mean_from_segments_that_scatter, "qualified",
+         "disagreement in no order says the per-segment errors are too "
+         "small rather than that the system moved, so the mean stands with "
+         "its error read as a lower bound"),
+    Case("a mean taken across joins with the joins declared",
+         _a_mean_across_joins_read_as_joined, "qualified",
+         "each segment is equilibrated on its own and the independent "
+         "samples add, and the offsets at the joins are then visible as "
+         "scatter -- which is the honest outcome, because any offset large "
+         "enough to fool the equilibration detector is large enough to "
+         "exceed what the per-segment errors predict"),
+    Case("a constant-pressure run split into segments",
+         _constant_pressure_run_split_into_segments, "qualified",
+         "the state is right and the barostat's move size is not carried, "
+         "so the acceptance rate re-adapts at each join and volume "
+         "averaged across one holds that transient"),
+    Case("a checkpoint that is the whole file that was written",
+         _a_whole_checkpoint, "proceeded",
+         "size and digest match the seal, so it is the file that was "
+         "written and resuming from it continues the run"),
+    Case("an unbiased run split into segments",
+         _unbiased_split_into_segments, "proceeded",
+         "it carries no state beyond positions and velocities, which a "
+         "checkpoint restores"),
+    Case("an umbrella window split into segments",
+         _umbrella_split_into_segments, "proceeded",
+         "the restraint is a function of the collective variable and not "
+         "of time, so stopping and continuing changes nothing"),
+    Case("a mean from a run with independent samples",
+         _mean_of_an_independent_run, "proceeded",
+         "two thousand uncorrelated frames support a mean and an error, "
+         "and a guardrail that refused this one would be refusing most "
+         "of the trajectories anybody runs"),
+    Case("a mean from a run that settled, transient included",
+         _mean_after_a_transient, "proceeded",
+         "equilibration detection should discard the approach and report "
+         "the rest, not refuse a study for having started somewhere"),
+    Case("a duration estimated on the machine that was measured",
+         _estimate_from_this_machine, "proceeded",
+         "same platform, same precision, same processor, so the constant "
+         "describes what would run"),
     Case("binding free energy from a run that reached bulk",
          _complete_pmf, "proceeded",
          "the tail follows a free ligand's shape, so the reference is a "

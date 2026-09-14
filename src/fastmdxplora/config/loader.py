@@ -9,7 +9,7 @@ Validation is strict by design: unknown keys raise
 type doesn't match the schema raise with a clear message. A typo'd
 config that silently runs with defaults is the worst failure mode in
 science (you think you set ``ph: 7.4``, you actually ran the default,
-and your results are subtly wrong with no indication why) — so we never
+and your results are subtly wrong with no indication why) — so nothing is ever
 silently ignore.
 
 Override precedence (highest wins):
@@ -35,11 +35,12 @@ from fastmdxplora.config.schema import (
     TOP_LEVEL_KEYS,
     PhaseSchema,
 )
+from fastmdxplora.refusals import CodedError
 
 VALID_PHASES = set(PHASE_KEYS)
 
 
-class ConfigError(ValueError):
+class ConfigError(CodedError, ValueError):
     """Raised for any problem loading or validating a config file."""
 
 
@@ -59,12 +60,14 @@ def load_config_file(path: str | Path) -> dict[str, Any]:
 
     p = Path(path)
     if not p.exists():
-        raise ConfigError(f"Config file not found: {p}")
+        raise ConfigError(f"Config file not found: {p}",
+                          code="config.file.missing", path=str(p))
     try:
         with p.open(encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
     except yaml.YAMLError as exc:
-        raise ConfigError(f"Failed to parse YAML in {p}: {exc}") from exc
+        raise ConfigError(f"Failed to parse YAML in {p}: {exc}",
+                          code="config.file.unparseable", path=str(p)) from exc
 
     if data is None:
         # Empty file — treat as empty config (valid; everything defaults)
@@ -72,7 +75,9 @@ def load_config_file(path: str | Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ConfigError(
             f"Config file {p} must contain a YAML mapping at the top level, "
-            f"got {type(data).__name__}."
+            f"got {type(data).__name__}.",
+            code="config.file.not_a_mapping",
+            path=str(p), found_type=type(data).__name__,
         )
 
     # Settled here as well as in `validate_config`, so a caller that loads a
@@ -92,7 +97,7 @@ def _suggest(key: str, valid: set[str]) -> str:
 
     Case-insensitive: a pure case mismatch (``pH`` vs ``ph``) is one of
     the most common config typos and short keys fall below difflib's
-    default ratio when case differs, so we check case-folded matches
+    default ratio when case differs, so case-folded matches are checked
     first, then fall back to fuzzy matching.
     """
     # Exact case-insensitive match first (handles pH -> ph, PH -> ph, etc.)
@@ -106,6 +111,41 @@ def _suggest(key: str, valid: set[str]) -> str:
     if matches:
         return f" (did you mean '{lower_map[matches[0]]}'?)"
     return ""
+
+
+def _rewrapped(exc: Exception) -> dict[str, Any]:
+    """Keyword arguments that carry an inner refusal's identity outward.
+
+    Four places here catch a more specific error -- from the umbrella
+    expansion, the alias settling -- and re-raise it as a ``ConfigError``
+    so a caller has one thing to catch. The message survives that;
+    without this the code would not, and the outer refusal would say only
+    that something in the config was wrong.
+
+    Where the inner exception carries no code, the result is empty and the
+    outer refusal falls to its own default, which is what it did before.
+    """
+    from fastmdxplora.refusals import Refusal
+
+    inner = getattr(exc, "refusal", None)
+    if not isinstance(inner, Refusal) or inner.code == "unclassified":
+        return {}
+    return {"code": inner.code, **inner.details}
+
+
+def _suggestion_only(key: str, valid: set[str]) -> str | None:
+    """The nearest valid name, without the sentence `_suggest` wraps it in.
+
+    `_suggest` returns " (did you mean 'ph'?)" because that is what belongs
+    in the middle of a message. A caller reading the refusal's details wants
+    the name alone: it is going to put it in a config file, not in a
+    sentence. Both read the same matcher, so they cannot disagree about
+    what the nearest name is.
+    """
+    suffix = _suggest(key, valid)
+    if not suffix:
+        return None
+    return suffix.split("'")[1]
 
 
 def _type_name(t: type | tuple[type, ...]) -> str:
@@ -130,7 +170,7 @@ def _check_type(value: Any, expected: type | tuple[type, ...]) -> bool:
 
     YAML parses ``1`` as int and ``1.0`` as float. A field declared
     ``float`` should accept an int (``temperature_K: 300`` is fine), so
-    we accept int wherever float is allowed. We also reject bool where
+    int is accepted wherever float is allowed. bool is rejected where
     int/float is expected (YAML ``true`` is a Python bool, which is an
     int subclass — without this guard ``ph: true`` would pass an int
     check).
@@ -169,7 +209,7 @@ def _check_choices(value: Any, fld: Any, *, key: str, context: str) -> None:
 
     Which is the failure this module's own docstring names: "a typo'd config
     that silently runs with defaults is the worst failure mode in science...
-    so we never silently ignore". It was true of unknown keys and not of
+    so nothing is silently ignored". It was true of unknown keys and not of
     known keys carrying unknown values.
 
     A list field is checked element by element -- `analysis.include` names
@@ -193,7 +233,11 @@ def _check_choices(value: Any, fld: Any, *, key: str, context: str) -> None:
         raise ConfigError(
             f"{where} does not accept {item!r}"
             f"{_suggest(str(item), offered)}. "
-            f"Accepted values: {', '.join(str(c) for c in fld.choices)}."
+            f"Accepted values: {', '.join(str(c) for c in fld.choices)}.",
+            code="config.option.not_permitted",
+            option=key, context=context, given=item,
+            permitted=list(fld.choices),
+            suggestion=_suggestion_only(str(item), offered),
         )
 
 
@@ -209,7 +253,10 @@ def _validate_block(
         if key not in valid:
             raise ConfigError(
                 f"Unknown {context} option '{key}'{_suggest(key, valid)}. "
-                f"Valid options: {', '.join(sorted(valid))}."
+                f"Valid options: {', '.join(sorted(valid))}.",
+                code="config.option.unknown",
+                option=key, context=context, permitted=sorted(valid),
+                suggestion=_suggestion_only(key, valid),
             )
         fld = schema.get(key)
         assert fld is not None  # guaranteed by the membership check
@@ -219,7 +266,11 @@ def _validate_block(
         if not _check_type(value, fld.type):
             raise ConfigError(
                 f"{context} option '{key}' should be {_type_name(fld.type)}, "
-                f"got {type(value).__name__} ({value!r})."
+                f"got {type(value).__name__} ({value!r}).",
+                code="config.option.wrong_type",
+                option=key, context=context,
+                expected_type=_type_name(fld.type),
+                found_type=type(value).__name__,
             )
         _check_choices(value, fld, key=key, context=context)
 
@@ -233,7 +284,9 @@ def _validate_phase_list(value: Any, *, field_name: str) -> None:
         valid = ", ".join(PHASE_KEYS)
         raise ConfigError(
             f"Top-level '{field_name}' contains unknown phase(s): "
-            f"{', '.join(repr(p) for p in unknown)}. Valid phases: {valid}."
+            f"{', '.join(repr(p) for p in unknown)}. Valid phases: {valid}.",
+            code="config.phase.unknown",
+            option=field_name, given=list(unknown), permitted=list(PHASE_KEYS),
         )
 
 
@@ -379,7 +432,7 @@ def _settle_the_words_that_mean_one_thing(data: dict[str, Any]) -> None:
             # variable that takes no selection at all. Both are real
             # mistakes, and refusing them while reading the file is far
             # better than refusing them after a preparation has run.
-            raise ConfigError(str(exc)) from exc
+            raise ConfigError(str(exc), **_rewrapped(exc)) from exc
         block.update(resolved)
         # And back the other way, so the general word carries the value that
         # won rather than the one it lost with. Given both spellings the
@@ -443,7 +496,7 @@ def normalise_config(data: dict[str, Any]) -> dict[str, Any]:
     try:
         expanded = expand_umbrella(data)
     except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
+        raise ConfigError(str(exc), **_rewrapped(exc)) from exc
     if expanded is not data:
         data.clear()
         data.update(expanded)
@@ -479,7 +532,11 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
         if key not in TOP_LEVEL_KEYS:
             raise ConfigError(
                 f"Unknown top-level key '{key}'{_suggest(key, TOP_LEVEL_KEYS)}. "
-                f"Valid: {', '.join(sorted(TOP_LEVEL_KEYS))}."
+                f"Valid: {', '.join(sorted(TOP_LEVEL_KEYS))}.",
+                code="config.option.unknown",
+                option=key, context="top-level",
+                permitted=sorted(TOP_LEVEL_KEYS),
+                suggestion=_suggestion_only(key, set(TOP_LEVEL_KEYS)),
             )
 
     # Validate the top-level scalar fields (output, verbose, include,
@@ -497,7 +554,9 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
     if data.get("include") and data.get("exclude"):
         raise ConfigError(
             "Config sets both 'include' and 'exclude' at the top level; "
-            "they are mutually exclusive."
+            "they are mutually exclusive.",
+            code="config.option.conflicting",
+            options=["include", "exclude"], context="top-level",
         )
     _validate_phase_list(data.get("include"), field_name="include")
     _validate_phase_list(data.get("exclude"), field_name="exclude")
@@ -508,7 +567,9 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
             "Config must define a `systems:` list (the canonical way to "
             "specify input). Even a single system goes in the list, e.g.\n"
             "  systems:\n"
-            "    - {id: protein1, system: protein.pdb}"
+            "    - {id: protein1, system: protein.pdb}",
+            code="config.option.missing_companion",
+            option="systems", requires=["systems"],
         )
 
     # Validate batch keys (systems / sweep) via the batch layer.
@@ -520,7 +581,7 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
         try:
             normalize_summary_for_validation(data)
         except SweepError as exc:
-            raise ConfigError(str(exc)) from exc
+            raise ConfigError(str(exc), **_rewrapped(exc)) from exc
 
     # Validate the execution block (parallelism settings)
     if data.get("execution") is not None:
@@ -528,7 +589,10 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
         if not isinstance(execution, dict):
             raise ConfigError(
                 f"The 'execution' block must be a mapping, "
-                f"got {type(execution).__name__}."
+                f"got {type(execution).__name__}.",
+                code="config.option.wrong_type",
+                option="execution", context="top-level",
+                expected_type="mapping", found_type=type(execution).__name__,
             )
         # `mode` used to be checked against a hand-written pair here, beside
         # a schema that named the same pair in prose and declared no
@@ -545,7 +609,10 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
         if not isinstance(block, dict):
             raise ConfigError(
                 f"The '{phase}' block must be a mapping of options, "
-                f"got {type(block).__name__}."
+                f"got {type(block).__name__}.",
+                code="config.option.wrong_type",
+                option=phase, context="top-level",
+                expected_type="mapping", found_type=type(block).__name__,
             )
         _validate_block(block, PHASE_SCHEMAS[phase], context=f"{phase}")
 
@@ -564,7 +631,9 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
     if isinstance(analysis, dict) and analysis.get("include") and analysis.get("exclude"):
         raise ConfigError(
             "The 'analysis' block sets both 'include' and 'exclude'; "
-            "they are mutually exclusive."
+            "they are mutually exclusive.",
+            code="config.option.conflicting",
+            options=["include", "exclude"], context="analysis",
         )
     if isinstance(analysis, dict):
         _check_analysis_names(analysis)
@@ -600,7 +669,11 @@ def _check_analysis_names(analysis: dict[str, Any]) -> None:
             raise ConfigError(
                 f"No analysis is called {str(name)!r}, so "
                 f"analysis.{key} asks for something that cannot run."
-                f"{suggestion} The full list is: {', '.join(sorted(known))}."
+                f"{suggestion} The full list is: {', '.join(sorted(known))}.",
+                code="analysis.unknown",
+                option=f"analysis.{key}", given=name,
+                permitted=sorted(known),
+                suggestion=_suggestion_only(str(name), set(known)),
             )
 
 

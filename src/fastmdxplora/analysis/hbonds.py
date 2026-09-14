@@ -36,6 +36,7 @@ import pandas as pd
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.refusals import StudyError
 
 logger = get_logger("analysis.hbonds")
 
@@ -124,10 +125,10 @@ class HBonds(Analysis):
         super().__init__(**kwargs)
         method = str(method).lower()
         if method not in ("baker_hubbard", "wernet_nilsson"):
-            raise ValueError(
+            raise StudyError(
                 f"HBonds method must be 'baker_hubbard' or 'wernet_nilsson'; "
                 f"got {method!r}"
-            )
+            , code="analysis.option.not_permitted")
         self.method: str = method
         self.freq: float = float(freq)
         # Every bond that occurs is evaluated at every frame. Proposing only
@@ -153,7 +154,7 @@ class HBonds(Analysis):
         self.exclude_water: bool = bool(exclude_water)
         self.count_multiplier: int = int(count_multiplier)
         if self.count_multiplier < 1:
-            raise ValueError("count_multiplier must be at least 1")
+            raise StudyError("count_multiplier must be at least 1", code="analysis.option.wrong_type")
         if self.count_multiplier != 1:
             logger.warning(
                 "hbonds: multiplying the per-frame count by %d. MDTraj lists "
@@ -180,7 +181,7 @@ class HBonds(Analysis):
             Columns ``frame, n_hbonds``. One row per frame.
         """
         # Restrict to the selected atoms (e.g. protein/solute) before H-bond
-        # detection, so on a solvated system we count the solute's hydrogen
+        # detection, so on a solvated system the count is of the solute's hydrogen
         # bonds rather than scanning thousands of waters.
         atom_idx = self.select_atoms(traj)
         if len(atom_idx) < traj.n_atoms:
@@ -200,12 +201,12 @@ class HBonds(Analysis):
             # ignoring them would let somebody set a distance and believe it
             # was used.
             if self._cutoffs_were_chosen:
-                raise ValueError(
+                raise StudyError(
                     "distance_cutoff and angle_cutoff apply to "
                     "baker_hubbard only. Wernet-Nilsson uses an "
                     "angle-dependent distance of its own, so setting them "
                     "here would have no effect on what is counted."
-                )
+                , code="analysis.option.inapplicable")
             per_frame = md.wernet_nilsson(
                 traj, periodic=self.periodic,
                 exclude_water=self.exclude_water,
@@ -213,7 +214,7 @@ class HBonds(Analysis):
             counts = np.array([len(bonds) for bonds in per_frame], dtype=int)
         else:
             # Baker-Hubbard returns aggregated bonds present above `freq`
-            # threshold. To produce a per-frame count we re-evaluate the
+            # threshold. To produce a per-frame count this re-evaluates the
             # bonds frame by frame using its definitions (an O(n_frames)
             # loop, but MDTraj's vectorized distance/angle is fast).
             bonds = md.baker_hubbard(
@@ -286,7 +287,7 @@ def _per_frame_baker_hubbard(
     """Recompute per-frame occupancy for an aggregated Baker-Hubbard set.
 
     ``bonds`` is the (n_bonds, 3) [donor_idx, H_idx, acceptor_idx] array
-    returned by ``md.baker_hubbard``. We evaluate each candidate bond at
+    returned by ``md.baker_hubbard``. Each candidate bond is evaluated at
     every frame against the standard Baker-Hubbard cutoffs (H-A distance
     < 0.25 nm AND D-H-A angle > 120°).
 

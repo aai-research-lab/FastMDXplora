@@ -29,7 +29,7 @@ from typing import Any
 
 __all__ = ["methods_paragraphs", "missing_from_methods", "CHECKLIST"]
 
-#: What each integrator is called in the literature. The identifiers are ours
+#: What each integrator is called in the literature. The identifiers are FastMDXplora's
 #: and a reader looking one up needs the published name.
 _INTEGRATOR_NAMES = {
     "langevin_middle": "Langevin middle-scheme",
@@ -235,7 +235,7 @@ def methods_paragraphs(
 
         resolved = setup.get("resolved_forcefield")
         resolved = resolved if isinstance(resolved, dict) else {}
-        # The XML files are what was actually used; the name is our label for
+        # The XML files are what was actually used; the name is FastMDXplora's label for
         # a choice, and a reader cannot look up "amber-openff".
         xmls = resolved.get("xmls")
         force_field = (
