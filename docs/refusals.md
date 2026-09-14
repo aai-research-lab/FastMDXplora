@@ -1039,3 +1039,75 @@ Two other ways it stops. A setup that records no particle count refuses,
 because running on would spend an unknown amount — the one thing an
 unattended run must not do. And an unmeasured machine refuses, because no
 calibration means no ceiling, which is what the budget exists to provide.
+
+## Numbers the world does not have
+
+`choices` refuses a name the software does not know. Numeric settings now
+refuse a value the quantity cannot be.
+
+```
+pH 25             REFUSED   above the largest value it can have (14.0)
+salt 150 M        REFUSED   pure water is about 55 M
+salt 4 M          accepted  saturated NaCl is near 6
+timestep 10 fs    accepted  unstable, and not impossible
+```
+
+The line is between a fact and a view. A pH of 25 is not a strict reading
+of pH, it is not a pH. A 10 fs timestep is unstable for almost every
+system and somebody's coarse-grained run may want it, so it has no
+ceiling here — and the runner already refuses an integration that blows
+up, which is where a judgement about stability belongs.
+
+The salt ceiling is the one that would have caught somebody. Writing 150
+when the field is molar and the sentence said millimolar is a
+thousandfold error that parsed, ran, and produced an ordinary-looking
+trajectory. It is now a refusal.
+
+Bounds are declared on the `Field`, beside `choices`, so the GUI, CLI,
+`describe_schema` and validation all read the same declaration.
+
+## Measuring the interface
+
+```bash
+ANTHROPIC_API_KEY=... python scripts/measure_nli.py
+ANTHROPIC_API_KEY=... python scripts/measure_nli.py --terse
+```
+
+Fourteen requests across three tiers, reported apart — one number over
+three difficulties hides where a model stops rather than whether it
+succeeds.
+
+**Easy** states the value outright. **Medium** makes the model supply
+what the sentence did not: the number behind "physiological", a
+microsecond in nanoseconds, four settings at once. **Hard** is where a
+plausible answer is wrong.
+
+Measured with `claude-sonnet-4-6` on the original eight:
+
+| | first time | mean cycles | refusals |
+|---|---|---|---|
+| with help text | 7 / 8 | 1.1 | 1 |
+| `--terse` | 3 / 8 | 2.0 | 8 |
+
+Both reached 8/8. The help does not change whether the model succeeds; it
+changes how much work that takes. And a model working from bare field
+names still got every study right — the validator is carrying the weight,
+which is the architecture's claim and now a measurement rather than an
+argument.
+
+`--attempts` defaults to 3 on that evidence: at most two with the help
+text, at most three without.
+
+## Which model wrote it
+
+```yaml
+agent: assisted
+agent_model: anthropic/claude-sonnet-4-5-20250929
+```
+
+`agent: assisted` says a model was involved, not which one, and six months
+on that is the difference between a record and a note.
+
+An alias is not a version. `claude-sonnet-4-6` names different software at
+different times, because it moves when a new snapshot lands. Pin the dated
+string where the record needs to identify what ran.

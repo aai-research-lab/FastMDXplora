@@ -125,6 +125,14 @@ def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     # resolved_config.yml and the manifest like any other setting.
     config = dict(proposal.config)
     config["agent"] = mode
+    # And which model, not only that one was used. `agent: assisted` says a
+    # model was involved; this says which, so the record identifies the
+    # software rather than the category.
+    from fastmdxplora.agent import load_choice
+
+    chosen = load_choice()
+    if chosen is not None:
+        config["agent_model"] = f"{chosen.provider}/{chosen.model}"
     return {
         "ok": True,
         "cycles": proposal.cycles,
