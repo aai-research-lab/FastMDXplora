@@ -75,7 +75,18 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         # DeepSeek, vLLM, Ollama, OpenRouter, and anything else speaking
         # the OpenAI chat shape. One entry rather than one per vendor,
         # because a list of vendors goes stale and a protocol does not.
-        "label": "Other (any OpenAI-compatible URL)",
+        "label": "Other (any OpenAI-compatible server)",
+        #: Shown when this option is picked, because somebody choosing it
+        #: knows they want DeepSeek or a local model and does not know the
+        #: URL. Examples rather than a list of supported vendors: the
+        #: protocol is what is supported, and a vendor list goes stale.
+        "examples": (
+            ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
+            ("OpenRouter", "https://openrouter.ai/api/v1",
+             "anthropic/claude-sonnet-4-6"),
+            ("Ollama (local)", "http://localhost:11434/v1", "llama3.1"),
+            ("vLLM (local)", "http://localhost:8000/v1", "<your model>"),
+        ),
         "url": "",
         "default_model": "",
         "env": "FASTMDX_MODEL_API_KEY",

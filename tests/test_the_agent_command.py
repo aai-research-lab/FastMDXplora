@@ -214,3 +214,112 @@ class TestTheCommand(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheThreeModes(unittest.TestCase):
+    """`--assisted`, `--autonomous`, `--unvalidated`.
+
+    The flag names are the config values, so there is one vocabulary across
+    the CLI, the config, the manifest and the schema description a model
+    reads. A mode that lived only in a flag would vanish the moment the
+    config was shared, and then a reader could not tell how the study was
+    made -- which is the one thing config-is-the-study exists for.
+    """
+
+    def setUp(self):
+        import os
+
+        self.root = Path(tempfile.mkdtemp())
+        self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(self.root)
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
+
+    def tearDown(self):
+        import os
+
+        if self.before is None:
+            os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)
+        else:
+            os.environ["FASTMDXPLORA_CONFIG_DIR"] = self.before
+
+    def run_command(self, argv):
+        import io
+        from contextlib import redirect_stdout
+
+        import fastmdxplora.agent as agent
+        from fastmdxplora.cli.main import main
+
+        original = agent.completion_for
+        agent.completion_for = lambda *a, **k: (lambda prompt: VALID)
+        buffer = io.StringIO()
+        try:
+            with redirect_stdout(buffer):
+                code = main(argv)
+        finally:
+            agent.completion_for = original
+        return code, buffer.getvalue()
+
+    def test_the_mode_reaches_the_config(self):
+        import yaml
+
+        written = self.root / "study.yml"
+        code, _ = self.run_command(
+            ["agent", "simulate ubiquitin", "-o", str(written)])
+        self.assertEqual(code, 0)
+        config = yaml.safe_load(written.read_text(encoding="utf-8"))
+        self.assertEqual(config["agent"], "assisted")
+
+    def test_assisted_is_the_default(self):
+        # Invoking `fastmdx agent` at all is asking for an agent, so the
+        # default is the mode that shows its work rather than no mode.
+        import yaml
+
+        written = self.root / "study.yml"
+        self.run_command(["agent", "x", "-o", str(written), "--assisted"])
+        explicit = yaml.safe_load(written.read_text(encoding="utf-8"))
+        self.run_command(["agent", "x", "-o", str(written)])
+        implied = yaml.safe_load(written.read_text(encoding="utf-8"))
+        self.assertEqual(explicit["agent"], implied["agent"])
+
+    def test_the_modes_are_mutually_exclusive(self):
+        from fastmdxplora.cli.main import main
+
+        with self.assertRaises(SystemExit):
+            main(["agent", "x", "--assisted", "--autonomous"])
+
+    def test_the_config_with_a_mode_still_validates(self):
+        # `agent` is a schema field like any other, so a config carrying it
+        # goes through the same door.
+        import yaml
+
+        from fastmdxplora.config.loader import validate_config
+
+        written = self.root / "study.yml"
+        self.run_command(["agent", "x", "-o", str(written)])
+        validate_config(yaml.safe_load(written.read_text(encoding="utf-8")))
+
+    def test_unvalidated_refuses_rather_than_doing_something_else(self):
+        # A flag for a mode that does not exist is the stranded-setting bug
+        # again. Refusing at the door is the honest version until the
+        # marking that makes it safe is built.
+        code, out = self.run_command(["agent", "x", "--unvalidated"])
+        self.assertEqual(code, 1)
+        self.assertIn("not yet built", out)
+
+    def test_autonomous_says_what_it_is_waiting_on(self):
+        # It would run the study unseen, which needs a cost estimate, which
+        # needs a particle count, which is settled when the system is
+        # solvated. Said plainly rather than failing later.
+        code, out = self.run_command(["agent", "x", "--autonomous"])
+        self.assertEqual(code, 0)
+        self.assertIn("cost estimate", out)
+
+    def test_the_schema_offers_exactly_these_three(self):
+        from fastmdxplora.config.schema import TOP_LEVEL
+
+        field = next(f for f in TOP_LEVEL.fields if f.name == "agent")
+        self.assertEqual(set(field.choices),
+                         {"assisted", "autonomous", "unvalidated"})
+        # Absent means a person wrote it, which is why there is no fourth
+        # choice for "off": off is the absence of the key.
+        self.assertIsNone(field.default)

@@ -974,6 +974,39 @@ def _build_parser() -> argparse.ArgumentParser:
             "space to go wrong in."
         ),
     )
+    mode = ag.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--assisted",
+        dest="agent_mode",
+        action="store_const",
+        const="assisted",
+        help=(
+            "Draft the study and stop, so you see it before it runs. The "
+            "default, and the only one that needs no further decision."
+        ),
+    )
+    mode.add_argument(
+        "--autonomous",
+        dest="agent_mode",
+        action="store_const",
+        const="autonomous",
+        help=(
+            "Draft the study and run it without showing it to you first. "
+            "Refused without a cost estimate: approving five days is a "
+            "decision, approving an unknown duration is not."
+        ),
+    )
+    mode.add_argument(
+        "--unvalidated",
+        dest="agent_mode",
+        action="store_const",
+        const="unvalidated",
+        help=(
+            "Work outside this schema, so nothing checks the result and "
+            "every file says so. Specified and not yet built."
+        ),
+    )
+    ag.set_defaults(agent_mode="assisted")
     ag.add_argument(
         "--attempts",
         type=int,
@@ -1763,6 +1796,16 @@ def _run_agent(args: Any) -> int:
         print(refusal_of(exc).message)
         return 1
 
+    if args.agent_mode == "unvalidated":
+        print(
+            "`--unvalidated` is specified and not yet built. It would let "
+            "the agent work outside this schema, with every file it "
+            "produced marked as unchecked. Until that marking exists there "
+            "is no safe way to offer it, and a flag that quietly did "
+            "something else would be worse than one that refuses."
+        )
+        return 1
+
     print("Writing a config...")
     try:
         proposal = propose_config(
@@ -1786,9 +1829,21 @@ def _run_agent(args: Any) -> int:
 
     import yaml
 
-    text = yaml.safe_dump(proposal.config, sort_keys=False)
+    config = dict(proposal.config)
+    config["agent"] = args.agent_mode
+    text = yaml.safe_dump(config, sort_keys=False)
     print(f"  ✓ Accepted after {proposal.cycles} attempt(s)\n")
     print(text)
+    if args.agent_mode == "autonomous":
+        print(
+            "\n`--autonomous` would run this without showing it to you "
+            "first, and that needs a cost estimate so there is a ceiling "
+            "on what an unseen study may spend. The estimate needs a "
+            "particle count, which is settled when the system is "
+            "solvated -- so this waits on running setup first. Not built "
+            "yet; the config above is what it would have run."
+        )
+
     if args.agent_output:
         _Path(args.agent_output).write_text(text, encoding="utf-8")
         print(f"Written to {args.agent_output}")
@@ -1815,7 +1870,10 @@ def _choose_model() -> int:
 
     base_url = ""
     if picked == "compatible":
-        base_url = input("Base URL (e.g. https://api.deepseek.com): ").strip()
+        print("\nAnything speaking the OpenAI chat shape. For example:")
+        for label, url, model in PROVIDERS[picked].get("examples", ()):
+            print(f"  {label:<16} {url:<34} model: {model}")
+        base_url = input("\nBase URL: ").strip()
         if not base_url:
             print("A base URL is needed for an OpenAI-compatible server.")
             return 1

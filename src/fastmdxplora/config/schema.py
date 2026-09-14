@@ -158,6 +158,21 @@ TOP_LEVEL = PhaseSchema(
               "Output directory for all artifacts. "
               "Default: ./fastmdxplora_output_<UTC-timestamp>.",
               example="./my_study"),
+        Field("agent", str, None,
+              "How this study was written. Absent means a person wrote it, "
+              "by hand or through the CLI, the API or the GUI, and that is "
+              "the default: nothing here needs a model unless you ask for "
+              "one. 'assisted' means a model drafted it and you approved "
+              "it before it ran. 'autonomous' means a model drafted it and "
+              "it ran without being shown to you, which needs a cost "
+              "estimate so there is a ceiling on what an unseen study may "
+              "spend. 'unvalidated' means the work went outside this "
+              "schema, so nothing checked it and every file it produced "
+              "says so. Recorded rather than inferred, because a reader "
+              "a year from now wants to know how a study was produced and "
+              "not only what it contained.",
+              choices=("assisted", "autonomous", "unvalidated"),
+              example="assisted"),
         Field("explain", bool, True,
               "Say why each step happens as it happens, with a reference "
               "where there is one worth reading. On, because a pipeline that "
