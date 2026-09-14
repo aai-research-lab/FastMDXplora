@@ -18,6 +18,12 @@ takes it away from everything that would otherwise explain it.
 Three decisions worth stating, because each could reasonably have gone the
 other way.
 
+Beside `refusals.py` and `cost.py` rather than under `analysis/`, because
+it is not an analysis concern: `unchecked_phases` covers every phase, and
+a setup or simulation artifact from an unchecked phase needs the same
+mark. It lived under `analysis/` first only because `save_figure` does,
+which is a fact about where the mark is applied and not about what it is.
+
 **Only the unchecked phases.** A trajectory from a validated simulation is
 sound even when the analysis over it was not, and marking it anyway is
 crying wolf. A mark that appears on everything stops being read, and then

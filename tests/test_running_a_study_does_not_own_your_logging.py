@@ -66,12 +66,16 @@ def test_only_the_cli_claims_it(restored_propagation):
     import fastmdxplora
 
     root = pathlib.Path(fastmdxplora.__file__).parent
+    # as_posix, not str. On Windows a relative Path renders with
+    # backslashes, so `str(p) == "cli/main.py"` fails on a file that is
+    # exactly where it should be -- which is a test reporting a platform
+    # instead of a property.
     callers = sorted(
-        path.relative_to(root)
+        path.relative_to(root).as_posix()
         for path in root.rglob("*.py")
         if "own_the_console()" in path.read_text(encoding="utf-8")
         and path.name != "logging.py")
-    assert [str(p) for p in callers] == ["cli/main.py"], (
+    assert callers == ["cli/main.py"], (
         f"own_the_console() is called from {callers}. Only the CLI should "
         "claim the process; anything else takes a library caller's logging "
         "away from them.")

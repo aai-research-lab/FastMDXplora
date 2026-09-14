@@ -13,6 +13,7 @@ never carries it, and what the command prints when something is missing.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,10 +53,32 @@ class TestWhereTheKeyLives(unittest.TestCase):
         self.assertNotIn("api_key", record)
         self.assertNotIn("sk-secret", json.dumps(record))
 
+    @unittest.skipIf(os.name == "nt",
+                     "POSIX permission bits do not govern access on Windows")
     def test_the_stored_file_is_readable_only_by_its_owner(self):
         save_choice(ModelChoice("openai", "gpt-5"), key="sk-secret",
                     path=self.path)
         self.assertEqual(self.path.stat().st_mode & 0o077, 0)
+
+    def test_the_key_file_is_outside_any_study_on_every_platform(self):
+        """The protection that does not depend on POSIX bits.
+
+        `chmod(0o600)` is the protection on Unix and is meaningless on
+        Windows, where access is governed by ACLs that Python's chmod does
+        not set -- the mode bits come back as 0o666 and the test above
+        asserted otherwise, which was a test reporting a platform rather
+        than a property.
+
+        What holds everywhere is that the key never enters a study: not the
+        config, not the manifest, not a log line. That is asserted
+        elsewhere in this file; here, that the file itself lives outside
+        any study directory, so sharing a run never shares a key.
+        """
+        from fastmdxplora.agent.models import model_path
+
+        where = model_path()
+        self.assertNotIn("output", where.parts)
+        self.assertIn("fastmdxplora", where.parts)
 
     def test_the_environment_wins_over_the_file(self):
         # So a cluster job or a CI run can supply one per session without

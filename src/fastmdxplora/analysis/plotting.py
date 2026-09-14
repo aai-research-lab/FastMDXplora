@@ -659,7 +659,7 @@ def save_figure(
     worked outside the schema. It goes on here rather than at each call
     site because this is the one place every figure passes through, and a
     mark applied in twenty places is a mark missing from one of them.
-    See :mod:`fastmdxplora.analysis.marking`.
+    See :mod:`fastmdxplora.marking`.
 
     Returns the resolved Path that was written.
     """
@@ -670,7 +670,7 @@ def save_figure(
     if mark:
         # After tight_layout, so the stamp is not counted as content and
         # squeezed into the plot area.
-        from fastmdxplora.analysis.marking import stamp_figure
+        from fastmdxplora.marking import stamp_figure
 
         stamp_figure(fig, mark)
     fig.patch.set_facecolor("white")

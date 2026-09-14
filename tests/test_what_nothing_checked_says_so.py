@@ -25,7 +25,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from fastmdxplora.analysis.marking import (  # noqa: E402
+from fastmdxplora.marking import (  # noqa: E402
     MARK_TEXT,
     mark_for,
     sidecar_for,

@@ -750,7 +750,7 @@ def test_the_source_names_the_software_too():
                 found += [m.group(0) for m in speaking_as_we.finditer(stripped)]
 
         if found:
-            offenders[str(path.relative_to(root))] = sorted(set(found))
+            offenders[path.relative_to(root).as_posix()] = sorted(set(found))
 
     assert not offenders, (
         "these speak as 'we' rather than naming FastMDXplora: "
