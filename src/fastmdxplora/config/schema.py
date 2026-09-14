@@ -199,6 +199,19 @@ SETUP = PhaseSchema(
     name="setup",
     description="System preparation: fix structure, solvate, ionize, parameterize.",
     fields=(
+        Field("agent", str, None,
+              "How this phase was written, where it differs from the "
+              "study's `agent`. Absent means it follows the top-level "
+              "value, and absent everywhere means a person wrote it. "
+              "Set per phase so a study can say what is actually true of "
+              "it: a simulation written by hand and an analysis explored "
+              "outside the schema is a realistic study and a different "
+              "object from one where nothing was checked, and only the "
+              "second should have its trajectory treated with suspicion. "
+              "Choices are the same at both levels: assisted, autonomous, "
+              "unvalidated.",
+              choices=("assisted", "autonomous", "unvalidated"),
+              example="unvalidated"),
         Field("ph", float, 7.4,
               "pH for hydrogen placement, which sets protonation states. The "
               "default is physiological: blood is 7.4, and a protein studied "
@@ -416,6 +429,19 @@ SIMULATION = PhaseSchema(
     name="simulation",
     description="Molecular dynamics: minimize, equilibrate (NVT, NPT), produce.",
     fields=(
+        Field("agent", str, None,
+              "How this phase was written, where it differs from the "
+              "study's `agent`. Absent means it follows the top-level "
+              "value, and absent everywhere means a person wrote it. "
+              "Set per phase so a study can say what is actually true of "
+              "it: a simulation written by hand and an analysis explored "
+              "outside the schema is a realistic study and a different "
+              "object from one where nothing was checked, and only the "
+              "second should have its trajectory treated with suspicion. "
+              "Choices are the same at both levels: assisted, autonomous, "
+              "unvalidated.",
+              choices=("assisted", "autonomous", "unvalidated"),
+              example="unvalidated"),
         Field("duration_ns", (int, float), None,
               "Production length in ns (standard MD convention — "
               "equilibration is independent). Default: 2 ns.",
@@ -650,6 +676,19 @@ ANALYSIS = PhaseSchema(
     name="analysis",
     description="Trajectory analysis: RMSD, RMSF, Rg, H-bonds, SS, SASA, etc.",
     fields=(
+        Field("agent", str, None,
+              "How this phase was written, where it differs from the "
+              "study's `agent`. Absent means it follows the top-level "
+              "value, and absent everywhere means a person wrote it. "
+              "Set per phase so a study can say what is actually true of "
+              "it: a simulation written by hand and an analysis explored "
+              "outside the schema is a realistic study and a different "
+              "object from one where nothing was checked, and only the "
+              "second should have its trajectory treated with suspicion. "
+              "Choices are the same at both levels: assisted, autonomous, "
+              "unvalidated.",
+              choices=("assisted", "autonomous", "unvalidated"),
+              example="unvalidated"),
         Field("trajectory", str, None,
               "Trajectory file. Default: simulation/production.dcd.",
               example="simulation/production.dcd"),
@@ -727,6 +766,19 @@ REPORT = PhaseSchema(
     name="report",
     description="Generate the Markdown report, PPTX slides, and project bundle.",
     fields=(
+        Field("agent", str, None,
+              "How this phase was written, where it differs from the "
+              "study's `agent`. Absent means it follows the top-level "
+              "value, and absent everywhere means a person wrote it. "
+              "Set per phase so a study can say what is actually true of "
+              "it: a simulation written by hand and an analysis explored "
+              "outside the schema is a realistic study and a different "
+              "object from one where nothing was checked, and only the "
+              "second should have its trajectory treated with suspicion. "
+              "Choices are the same at both levels: assisted, autonomous, "
+              "unvalidated.",
+              choices=("assisted", "autonomous", "unvalidated"),
+              example="unvalidated"),
         Field("title", str, None,
               "Report title. Default: auto-generated from the system name.",
               example="My MD Study"),
@@ -809,6 +861,10 @@ EXECUTION = PhaseSchema(
 #: somebody noticing it missing from the page.
 SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
     "setup": (
+        ("How this phase was written",
+         "Whether a person wrote it, a model drafted it, or it went "
+         "outside this schema and nothing checked it.",
+         ("agent",)),
         ("The structure",
          "What is kept, what is repaired, and how it is protonated.",
          ("ph", "protonation_margin", "heterogens", "keep_heterogens",
@@ -840,6 +896,10 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
           "dispersion_correction", "remove_cm_motion")),
     ),
     "simulation": (
+        ("How this phase was written",
+         "Whether a person wrote it, a model drafted it, or it went "
+         "outside this schema and nothing checked it.",
+         ("agent",)),
         ("How long it runs",
          "Production length, and the equilibration before it.",
          ("duration_ns", "nvt_duration_ns", "npt_duration_ns",
@@ -880,6 +940,10 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
           "dashboard_max_playback_frames")),
     ),
     "analysis": (
+        ("How this phase was written",
+         "Whether a person wrote it, a model drafted it, or it went "
+         "outside this schema and nothing checked it.",
+         ("agent",)),
         ("What to measure",
          "Which analyses run, and how each is configured.",
          ("include", "exclude", "options")),
@@ -894,6 +958,10 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("figure_colours",)),
     ),
     "report": (
+        ("How this phase was written",
+         "Whether a person wrote it, a model drafted it, or it went "
+         "outside this schema and nothing checked it.",
+         ("agent",)),
         ("What it says",
          "Who it is by, and which sections it carries.",
          ("title", "author", "include_methods", "include_reproducibility",

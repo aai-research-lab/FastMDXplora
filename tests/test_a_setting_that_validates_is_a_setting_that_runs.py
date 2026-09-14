@@ -31,6 +31,11 @@ from fastmdxplora.simulation.runner import run_simulation
 #: Settings the simulation phase declares and the runner never sees,
 #: because something else consumes them. Each needs a reason.
 CONSUMED_ELSEWHERE = {
+    # Not a setting about the science. It says how the phase was written,
+    # and `config.agent_modes` reads it to decide which artifacts carry the
+    # unchecked mark. The runner does not need it and should not: a phase
+    # runs the same way whoever wrote it, which is the point.
+    "agent": "read by config.agent_modes for the record and the marking",
     "dashboard_binding_pocket_cutoff_A": "read by the dashboard, not the run",
     "dashboard_ligand_resname": "read by the dashboard, not the run",
     "dashboard_max_playback_frames": "read by the dashboard, not the run",
@@ -112,7 +117,8 @@ class TestEverySettingReachesSomething(unittest.TestCase):
         source = inspect.getsource(setup_pipeline)
         reached = set(re.findall(
             r"""params(?:\.get\(|\[)["']([A-Za-z0-9_]+)""", source))
-        self.assertEqual(sorted(declared - reached), [])
+        stranded = sorted(declared - reached - set(CONSUMED_ELSEWHERE))
+        self.assertEqual(stranded, [], f"stranded in setup: {stranded}")
 
     def test_no_analysis_or_report_setting_is_unreferenced(self):
         for phase in ("analysis", "report"):
@@ -124,6 +130,18 @@ class TestEverySettingReachesSomething(unittest.TestCase):
                     stranded, [],
                     f"declared in the {phase} schema and mentioned nowhere "
                     f"else in the package: {stranded}")
+
+    def test_the_agent_exemption_is_real(self):
+        # An exemption is a promise that something else reads the setting.
+        # Worth checking for this one, because it was added by the person
+        # who also added the setting, and an exemption nobody verifies is
+        # how a stranded setting hides.
+        from fastmdxplora.config.agent_modes import resolve_agent_modes
+
+        modes = resolve_agent_modes(
+            {"agent": "assisted", "analysis": {"agent": "unvalidated"}})
+        self.assertEqual(modes.of("analysis"), "unvalidated")
+        self.assertFalse(modes.is_checked("analysis"))
 
     def test_every_exemption_says_why(self):
         for name, reason in CONSUMED_ELSEWHERE.items():

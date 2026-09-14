@@ -1070,6 +1070,19 @@ class FastMDXplora:
             "phases": [phase_records[name] for name in phase_order],
             "options": options,
         }
+        # How each phase was written. Per phase rather than one summary,
+        # because "partly unvalidated" tells a reader to distrust the whole
+        # study, and the point of the per-phase setting is that they need
+        # only distrust some of it. Omitted entirely for a study a person
+        # wrote, which is most of them and every one before this existed.
+        try:
+            from fastmdxplora.config.agent_modes import resolve_agent_modes
+
+            modes = resolve_agent_modes(options)
+            if modes.study is not None or modes.departures:
+                manifest["agent"] = modes.as_record()
+        except Exception:  # noqa: BLE001 - a manifest is worth writing anyway
+            logger.debug("Could not record how this study was written.")
         if len(versions_seen) > 1:
             manifest["versions_seen"] = versions_seen
             manifest["version_note"] = (

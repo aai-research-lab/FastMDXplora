@@ -924,3 +924,44 @@ provider and the model and nothing else.
 Which model wrote a study *is* recorded, because it is provenance. Six
 months on, "why did this study pick 300 K" has a different answer
 depending on whether a frontier model or a 7B on a laptop proposed it.
+
+## Which phases were checked
+
+`agent` sits at the study level and in every phase. The study level is the
+answer for the whole thing; a phase sets its own where it differs.
+
+```yaml
+agent: assisted          # a model drafted the study
+analysis:
+  agent: unvalidated     # and the analysis went outside the schema
+```
+
+Two levels rather than one because a single value cannot say what is true
+of a real study. A simulation written by hand because the protocol
+matters, an analysis explored outside the schema, a setup a model drafted
+— that is one study, and flattening it to a word loses the only thing a
+reader needs: which part to be suspicious of.
+
+The consequence is concrete. A trajectory from a validated simulation is
+fine even when the analysis over it was not. Marking it anyway is crying
+wolf, and a mark that appears on everything stops being read.
+
+The manifest records it per phase, and keeps the departures rather than
+resolving them away:
+
+```json
+{
+  "study": "assisted",
+  "phases": {"setup": "assisted", "analysis": "unvalidated"},
+  "checked": {"setup": true, "analysis": false},
+  "departures": {"analysis": "unvalidated"}
+}
+```
+
+A study that claims `assisted` at the top and lets one phase go
+unvalidated has made a claim it does not keep throughout. Resolving to a
+tidy value would hide that; naming the departure does not.
+
+`unchecked_phases(config)` is what the artifact marking reads — the list,
+not a summary. Absent everywhere means a person wrote it, so every study
+run before this existed stays truthful without being rewritten.
