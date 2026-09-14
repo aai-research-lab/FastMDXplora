@@ -378,13 +378,36 @@ class TestTheThreeModes(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("Accepted", out)
 
-    def test_autonomous_says_what_it_is_waiting_on(self):
-        # It would run the study unseen, which needs a cost estimate, which
-        # needs a particle count, which is settled when the system is
-        # solvated. Said plainly rather than failing later.
+    def test_autonomous_refuses_without_a_budget(self):
+        """It was waiting on the staging. The staging exists.
+
+        `--autonomous` runs the study without showing it to you, so a
+        budget is the only thing left that can stop it. Refusing is the
+        honest answer to being asked to run something unattended with no
+        ceiling -- a default allowance would be a number nobody chose
+        deciding how much of somebody's card to spend.
+        """
         code, out = self.run_command(["agent", "x", "--autonomous"])
-        self.assertEqual(code, 0)
-        self.assertIn("cost estimate", out)
+        self.assertEqual(code, 1)
+        self.assertIn("--budget-hours", out)
+
+    def test_the_budget_flag_exists_and_takes_hours(self):
+        import io
+        from contextlib import redirect_stdout
+
+        from fastmdxplora.cli.main import _build_parser
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            try:
+                _build_parser().parse_args(["agent", "--help"])
+            except SystemExit:
+                pass
+        help_text = buffer.getvalue()
+        self.assertIn("--budget-hours", help_text)
+        # And says where the check happens, because "after setup" is the
+        # surprising part and the place somebody would otherwise ask.
+        self.assertIn("after setup", help_text)
 
     def test_the_schema_offers_exactly_these_three(self):
         from fastmdxplora.config.schema import TOP_LEVEL

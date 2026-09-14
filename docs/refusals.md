@@ -996,3 +996,46 @@ a secret: anything the page keeps is readable by anything else the page
 runs. It is never sent back — the endpoint reports which provider and
 model are set and never the secret, so a page that never receives a key
 cannot leak one to a screenshot, an extension or a bug report.
+
+## Pricing a study the agent wrote
+
+`--assisted` hands you a config and stops, because you are there to read
+it. `--autonomous` does not, so something else has to stop it, and that is
+a budget.
+
+```bash
+fastmdx agent "simulate ubiquitin for 50 ns" --autonomous --budget-hours 40
+```
+
+Without `--budget-hours` it refuses. A default allowance would be a number
+nobody chose deciding how much of somebody's card to spend.
+
+The budget needs a figure, and the figure does not exist when the agent
+finishes writing. Cost scales with the *solvated* particle count, which
+depends on box shape, padding and ion concentration — decisions setup
+makes. A protein of 2,000 atoms is 60,000 solvated, and guessing from the
+residue count would be inventing the water.
+
+So the run goes in two parts:
+
+```
+setup                 cheap, minutes, and it settles the count
+estimate              from that count, on this machine
+simulation onwards    the expensive part, if it fits
+```
+
+The gate sits where the information first exists and before the cost is
+incurred. Earlier it would be guessing; later there would be nothing left
+to stop.
+
+When it refuses, **setup's output is kept**. It cost minutes and it is
+worth having — a shorter study reuses it through
+`simulation.setup_from`, and the particle count is what made the refusal
+possible. The message names the estimate and the budget, because "too
+expensive" is usually answered by a shorter run rather than a larger
+allowance, and a caller cannot choose without the number.
+
+Two other ways it stops. A setup that records no particle count refuses,
+because running on would spend an unknown amount — the one thing an
+unattended run must not do. And an unmeasured machine refuses, because no
+calibration means no ceiling, which is what the budget exists to provide.
