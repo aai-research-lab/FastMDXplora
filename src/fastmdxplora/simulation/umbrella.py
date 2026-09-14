@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -41,6 +42,11 @@ from fastmdxplora.refusals import MissingResultError
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "Cone",
+    "ConeToMeasure",
+    "narrowest_cone",
+    "cone_from_config",
+    "cone_the_windows_ran_under",
     "Window",
     "expand_umbrella",
     "plan_from_expanded",
@@ -48,12 +54,342 @@ __all__ = [
     "plan_windows",
     "windows_as_sweep",
     "collect_samples",
+    "wall_bias_where_the_bound_state_is",
     "overlap_between",
     "compute_pmf",
+    "design_from_a_pilot",
+    "as_a_config_block",
 ]
 
 #: Boltzmann's constant in kJ/mol/K, so a PMF comes out in kJ/mol.
 KB_KJ = 0.008314462618
+
+
+@dataclass(frozen=True)
+class Cone:
+    """A wall on the angle, so the shell around the site stops needing to be
+    sampled.
+
+    A window on a distance holds the ligand at a radius and leaves it free on
+    the sphere of that radius. The recombination's reference assumes the whole
+    sphere is available and that the ligand visits all of it, because the room
+    at radius r is ``4 pi r^2`` and that is where the ``-2kT ln r`` in bulk
+    comes from. Neither assumption survives contact with a real site: on a
+    real study the shell 1 nm from a pocket was 12% outside the protein and
+    50% at 2 nm, and one window's ligand visited between a twentieth and a
+    third of what was open to it in ten nanoseconds.
+
+    A flat-bottomed wall on the angle between the site-to-ligand vector and an
+    axis fixed in the protein confines the ligand to a cap of solid angle
+    ``Omega = 2 pi (1 - cos theta)``. The cap's area is ``Omega r^2``, still
+    exactly proportional to ``r^2``, so the reference is right again by
+    construction -- and at 30 degrees the cap is a fifteenth of a sphere,
+    which the ligand covers in a fraction of the time.
+
+    **Flat-bottomed, not harmonic.** Inside the cone there is no bias at all,
+    so the sampling there is the system's own. A harmonic restraint on the
+    angle pulls the ligand towards the axis everywhere, including in the bound
+    state where it has no business being pushed.
+
+    **What it costs.** The bulk state under a cone is smaller than a free
+    ligand's by ``4 pi / Omega``, and the bound state is not -- a bound pose
+    that fits inside the cone loses nothing. So a binding free energy from a
+    cone run is too negative by ``kT ln(4 pi / Omega)`` until that is added
+    back. `correction_kjmol` is that number, and it is exact rather than
+    nominal: the wall is soft, the ligand leaks past it, and `solid_angle`
+    integrates the wall's own Boltzmann factor instead of assuming a hard
+    edge.
+
+    **What has to be checked.** The correction assumes the cone does not cut
+    the bound state. That is measurable -- the wall's bias in the bound
+    windows must be nothing -- and it is checked rather than assumed.
+    """
+
+    #: Half-angle of the cone, in degrees.
+    half_angle_deg: float
+    #: Stiffness of the wall, in kJ/mol/rad^2. PLUMED's walls have no half in
+    #: them: the penalty is ``KAPPA * (theta - theta_max)^2``.
+    force_constant: float = 5000.0
+    #: What the axis points away from. The direction from this group's centre
+    #: to the site is "straight out", so the default puts the whole protein
+    #: behind the site and the cone in front of it.
+    axis_selection: str = "protein"
+    #: The atoms themselves, where a measurement chose them. Then
+    #: `axis_selection` is documentation and this is what the restraint uses:
+    #: a measured group is a set of atoms, and turning it into a selection
+    #: string and back can pick up a different set -- 3PTB numbers two
+    #: residues 184 and 184A, and `resSeq 184` matches both.
+    axis_atoms: "tuple[int, ...] | None" = None
+
+    def __post_init__(self) -> None:
+        if not 0.0 < float(self.half_angle_deg) < 180.0:
+            raise StudyError(
+                "A cone's `half_angle_deg` is the angle from its axis to its "
+                f"edge, so it lies between 0 and 180; {self.half_angle_deg} "
+                "was given.", code="config.option.wrong_type")
+        if float(self.force_constant) <= 0.0:
+            raise StudyError(
+                "A cone's wall needs a positive `force_constant` in "
+                f"kJ/mol/rad^2; {self.force_constant} was given.", code="config.option.wrong_type")
+        if self.axis_atoms is not None:
+            atoms = tuple(int(i) for i in self.axis_atoms)
+            if len(atoms) < 1:
+                raise StudyError(
+                    "A cone's `axis_atoms` names the group the angle opens "
+                    "away from, so it cannot be empty.", code="simulation.cv.selection_empty")
+            object.__setattr__(self, "axis_atoms", atoms)
+
+    @property
+    def half_angle_rad(self) -> float:
+        return math.radians(float(self.half_angle_deg))
+
+    def solid_angle(self, temperature_K: float = 300.0) -> float:
+        """The solid angle the ligand actually has, wall softness included.
+
+        A hard cone would give ``2 pi (1 - cos theta)``. The wall is a
+        quadratic penalty rather than a cliff, so the ligand spends some of
+        its time past the edge -- at 5000 kJ/mol/rad^2 about three degrees of
+        it -- and the cap is that much bigger than nominal. Integrating the
+        wall's Boltzmann factor over the sphere costs nothing and removes the
+        approximation, which matters because this number goes into the answer
+        as a logarithm.
+        """
+        kT = KB_KJ * float(temperature_K)
+        angle = np.linspace(0.0, math.pi, 20001)
+        past = np.clip(angle - self.half_angle_rad, 0.0, None)
+        weight = np.exp(-float(self.force_constant) * past ** 2 / kT)
+        integrand = weight * np.sin(angle)
+        step = float(angle[1] - angle[0])
+        return float(2.0 * math.pi * 0.5 * step
+                     * np.sum(integrand[:-1] + integrand[1:]))
+
+    def correction_kjmol(self, temperature_K: float = 300.0) -> float:
+        """What to add to a binding free energy measured under this cone."""
+        kT = KB_KJ * float(temperature_K)
+        return float(kT * math.log(4.0 * math.pi
+                                   / self.solid_angle(temperature_K)))
+
+    def plumed_lines(self, axis_atoms: "list[int] | None" = None, *,
+                     site: str = "site", ligand: str = "lig") -> list[str]:
+        """The angle this restrains, defined from the atoms that fix it.
+
+        `ANGLE` at the site between the axis group and the ligand is pi when
+        the ligand is straight out, so the cone is a *lower* wall: the angle
+        must stay above ``pi - theta``.
+        """
+        from fastmdxplora.simulation.metadynamics import _plumed_list
+
+        atoms = list(axis_atoms if axis_atoms is not None
+                     else (self.axis_atoms or ()))
+        if not atoms:
+            raise StudyError(
+                "A cone's angle is measured against a group of atoms, and "
+                f"none reached it. `axis_selection` is {self.axis_selection!r} "
+                "-- resolve it against the topology and pass the result, or "
+                "give the cone `axis_atoms`.", code="simulation.cv.selection_empty")
+        return [
+            f"cone_axis: COM ATOMS={_plumed_list(atoms)}",
+            f"cone_angle: ANGLE ATOMS=cone_axis,{site},{ligand}",
+        ]
+
+    def as_record(self, temperature_K: float = 300.0) -> dict[str, Any]:
+        return {
+            "half_angle_deg": float(self.half_angle_deg),
+            "force_constant": float(self.force_constant),
+            "axis_selection": self.axis_selection,
+            "axis_atoms": (list(self.axis_atoms)
+                           if self.axis_atoms is not None else None),
+            "solid_angle_sr": round(self.solid_angle(temperature_K), 6),
+            "share_of_a_sphere": round(
+                self.solid_angle(temperature_K) / (4.0 * math.pi), 6),
+            "correction_kjmol": round(self.correction_kjmol(temperature_K), 4),
+        }
+
+    @classmethod
+    def from_record(cls, record: "dict[str, Any] | None") -> "Cone | None":
+        """The cone a record describes, or nothing where it describes none.
+
+        The counterpart of `as_record`, so that a study's own account of what
+        it ran can be read back. That matters for the correction: it is worth
+        `kT ln(4 pi / Omega)` on the answer, and taking it from a config that
+        may have been edited since the windows ran would be taking it from the
+        wrong cone.
+        """
+        if not record:
+            return None
+        angle = record.get("half_angle_deg")
+        if angle is None or isinstance(angle, str):
+            return None
+        atoms = record.get("axis_atoms")
+        return cls(
+            half_angle_deg=float(angle),
+            force_constant=float(record.get("force_constant", 5000.0)),
+            axis_selection=str(record.get("axis_selection") or "protein"),
+            axis_atoms=tuple(int(i) for i in atoms) if atoms else None,
+        )
+
+
+@dataclass(frozen=True)
+class ConeToMeasure:
+    """A cone the study has been asked for and has not measured yet.
+
+    The axis and the half-angle are properties of how the ligand leaves, and
+    the study already runs the trajectory that shows it: the pull that seeds
+    the windows is one continuous path from the site to bulk. Reading them off
+    it is a measurement, so it does not belong in a config any more than a
+    force constant does.
+
+    Held as its own type rather than as a `Cone` with holes in it, so that an
+    unmeasured cone cannot reach PLUMED: what a window needs is an angle and a
+    group of atoms, and there is no sensible default for either.
+    """
+
+    #: The wall's stiffness, which is not measured -- it only has to be firm
+    #: enough that the cap is the cap. Its effect on the answer is integrated
+    #: rather than assumed either way.
+    force_constant: float = 5000.0
+    #: Where the cone points away from, if the study already knows. Left out,
+    #: the axis is measured too.
+    axis_selection: str | None = None
+    #: How much of the path the cone must hold. The 98th percentile rather
+    #: than all of it: a handful of frames at a turn should not set the width
+    #: of a restraint that has to hold a study.
+    keep: float = 98.0
+    #: How much wider than that to open it. A cone sized exactly to the path
+    #: it holds has its wall against the sampling everywhere, and a wall that
+    #: is touched biases the run in a way the recombination cannot see.
+    margin: float = 1.2
+
+    def __post_init__(self) -> None:
+        if not 0.0 < float(self.keep) <= 100.0:
+            raise StudyError(
+                "A cone's `keep` is the percentile of the path it must hold, "
+                f"so it lies in (0, 100]; {self.keep} was given.", code="config.option.wrong_type")
+        if float(self.margin) < 1.0:
+            raise StudyError(
+                "A cone's `margin` opens it wider than the path it holds, so "
+                f"it is at least 1; {self.margin} was given.", code="config.option.wrong_type")
+        if float(self.force_constant) <= 0.0:
+            raise StudyError(
+                "A cone's wall needs a positive `force_constant` in "
+                f"kJ/mol/rad^2; {self.force_constant} was given.", code="config.option.wrong_type")
+
+    def as_asked(self) -> dict[str, Any]:
+        """The settings, as the measurement wants them."""
+        return {
+            "force_constant": float(self.force_constant),
+            "axis_selection": self.axis_selection,
+            "keep": float(self.keep),
+            "margin": float(self.margin),
+        }
+
+    def as_record(self, temperature_K: float = 300.0) -> dict[str, Any]:
+        return {
+            "half_angle_deg": "measured from the pull",
+            "force_constant": float(self.force_constant),
+            "axis_selection": self.axis_selection or "measured from the pull",
+            "keep": float(self.keep),
+            "margin": float(self.margin),
+        }
+
+
+def narrowest_cone(direction: Any, keep: float = 98.0,
+                   candidates: int = 4000) -> "tuple[np.ndarray, float]":
+    """The axis that holds a path in the smallest cone, and how wide that is.
+
+    The mean direction is the wrong axis for a path that turns. A ligand
+    leaving a pocket sideways and then swinging into bulk has a mean somewhere
+    in the middle of the bend, far from both of its ends: on the study this
+    was written from, the mean gave a cone of 107 degrees where the right axis
+    gives 61. What a cone has to do is contain the path, so the axis is the
+    one that minimises the angle it must open to -- a search over directions
+    rather than an average of them.
+
+    Searched on a grid rather than optimised, because the objective is a
+    percentile and has flat spots and kinks, and four thousand directions on a
+    sphere are two degrees apart -- finer than the margin the answer is
+    widened by.
+    """
+    direction = np.asarray(direction, dtype=float)
+    if direction.ndim != 2 or direction.shape[1] != 3:
+        raise StudyError(
+            "A path is an array of unit vectors with shape (frames, 3); "
+            f"{direction.shape} was given.", code="simulation.bias.dimension_mismatch")
+    if direction.shape[0] < 3:
+        raise StudyError(
+            "Measuring a cone needs a path to measure; "
+            f"{direction.shape[0]} frames were given.", code="analysis.sampling.too_few_frames")
+    lengths = np.linalg.norm(direction, axis=1)
+    direction = direction / np.where(lengths == 0.0, 1.0, lengths)[:, None]
+
+    index = np.arange(candidates) + 0.5
+    z = 1.0 - 2.0 * index / candidates
+    ring = np.sqrt(np.maximum(0.0, 1.0 - z * z))
+    turn = np.pi * (1.0 + 5.0 ** 0.5) * index
+    axes = np.column_stack([ring * np.cos(turn), ring * np.sin(turn), z])
+
+    angles = np.degrees(np.arccos(np.clip(direction @ axes.T, -1.0, 1.0)))
+    spread = np.percentile(angles, float(keep), axis=0)
+    best = int(np.argmin(spread))
+    return axes[best], float(spread[best])
+
+
+def cone_from_config(spec: "dict[str, Any] | None"
+                     ) -> "Cone | ConeToMeasure | None":
+    """A cone from what a config says, or nothing where it says nothing."""
+    if not spec:
+        return None
+    # `cone: auto` is the usual way to ask for one: the axis and the angle are
+    # measurements, and the trajectory that supplies them is the pull the
+    # study already runs.
+    if isinstance(spec, str):
+        if spec.strip().lower() not in ("auto", "measured", "measure"):
+            raise StudyError(
+                f"`cone` is {spec!r}. It is either `auto` -- measured from "
+                "the pull that seeds the windows -- or a block with "
+                "`half_angle_deg`.", code="config.option.not_permitted")
+        return ConeToMeasure()
+    if not isinstance(spec, dict):
+        raise StudyError(
+            "`cone` takes `auto`, or a block with `half_angle_deg` and "
+            f"optionally `force_constant` and `axis_selection`; {spec!r} was "
+            "given.", code="config.option.not_permitted")
+    unknown = set(spec) - {"half_angle_deg", "half_angle", "force_constant",
+                           "axis_selection", "axis", "keep", "margin",
+                           "axis_atoms"}
+    if unknown:
+        raise StudyError(
+            f"A cone takes `half_angle_deg`, `force_constant`, "
+            f"`axis_selection`, `keep` and `margin`. It was also given "
+            f"{sorted(unknown)}.", code="config.option.not_permitted")
+    angle = spec.get("half_angle_deg", spec.get("half_angle"))
+    measure = angle is None or (isinstance(angle, str)
+                                and angle.strip().lower() in
+                                ("auto", "measured", "measure"))
+    if measure:
+        # An angle left out is an angle to be measured. There is no default
+        # worth having: a cone too narrow cuts the bound state and a cone too
+        # wide restrains nothing, and which is which depends on the path.
+        return ConeToMeasure(
+            force_constant=float(spec.get("force_constant", 5000.0)),
+            axis_selection=(str(spec["axis_selection"])
+                            if spec.get("axis_selection") else
+                            str(spec["axis"]) if spec.get("axis") else None),
+            keep=float(spec.get("keep", 98.0)),
+            margin=float(spec.get("margin", 1.2)),
+        )
+    atoms = spec.get("axis_atoms")
+    return Cone(
+        half_angle_deg=float(angle),
+        force_constant=float(spec.get("force_constant", 5000.0)),
+        axis_selection=str(spec.get("axis_selection")
+                           or spec.get("axis") or "protein"),
+        # Not something a person writes. It is how a measured cone travels
+        # from the pull to the window that runs under it, and the atoms are
+        # the measurement -- a selection string rebuilt from them can match a
+        # different set.
+        axis_atoms=tuple(int(i) for i in atoms) if atoms else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -65,7 +401,8 @@ class Window:
     force_constant: float
 
     def plumed_lines(self, cv_lines: list[str], *,
-                     colvar: str = "COLVAR", restart: bool = False) -> str:
+                     colvar: str = "COLVAR", restart: bool = False,
+                     cone: "Cone | None" = None) -> str:
         """The window's PLUMED input, writing its trace to `colvar`.
 
         The file is named rather than fixed because a held window runs the
@@ -78,13 +415,30 @@ class Window:
         needs it: adding the barostat reinitialises the context, PLUMED is
         rebuilt, and without it the reopened file loses everything NVT wrote.
         """
-        return "\n".join((["RESTART", ""] if restart else []) + cv_lines + [
+        held = [
             "",
             f"restraint: RESTRAINT ARG=cv AT={self.centre:g} "
             f"KAPPA={self.force_constant:g}",
-            "",
-            f"PRINT ARG=cv,restraint.bias STRIDE=100 FILE={colvar}",
-        ]) + "\n"
+        ]
+        printed = "cv,restraint.bias"
+        if cone is not None:
+            # A lower wall, because the angle at the site between the axis
+            # group and the ligand is pi when the ligand is straight out: the
+            # cone is "stay above pi minus theta". The angle and the wall's
+            # own bias are both printed, because the correction that follows
+            # from a cone is only valid if the wall never bit in the bound
+            # state, and that is read off this column rather than assumed.
+            held += [
+                f"cone: LOWER_WALLS ARG=cone_angle "
+                f"AT={math.pi - cone.half_angle_rad:.6f} "
+                f"KAPPA={cone.force_constant:g}",
+            ]
+            printed += ",cone_angle,cone.bias"
+        return "\n".join((["RESTART", ""] if restart else []) + cv_lines
+                         + held + [
+                             "",
+                             f"PRINT ARG={printed} STRIDE=100 FILE={colvar}",
+                         ]) + "\n"
 
 
 @dataclass(frozen=True)
@@ -116,6 +470,11 @@ class UmbrellaPlan:
     #: than evidence. Like the overlap threshold, it is a judgement, so a
     #: study can set its own.
     minimum_samples: int = 200
+    #: A wall on the angle, where the study asked for one. Without it a window
+    #: leaves the ligand free on the whole sphere at its radius, and the
+    #: recombination's bulk reference assumes the ligand visits all of that
+    #: sphere -- which a run of any affordable length does not.
+    cone: "Cone | None" = None
 
     def as_record(self) -> dict[str, Any]:
         forces = [w.force_constant for w in self.windows]
@@ -139,6 +498,7 @@ class UmbrellaPlan:
             "equilibration_fraction": self.equilibration_fraction,
             "minimum_overlap": self.minimum_overlap,
             "minimum_samples": self.minimum_samples,
+            "cone": self.cone.as_record() if self.cone else None,
         }
 
 
@@ -154,6 +514,9 @@ _UMBRELLA_OWN_KEYS: frozenset[str] = frozenset({
     # is a config error waiting for the first person to follow the
     # documentation.
     "seed_from",
+    # A wall on the angle, so the shell at each radius stops needing to be
+    # sampled and the bulk reference means what it says.
+    "cone",
     # Written by the expansion onto each window, and read back from it.
     "centre", "index",
 })
@@ -312,6 +675,7 @@ def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
             spec.get("equilibration_fraction", 0.2)),
         minimum_overlap=float(spec.get("minimum_overlap", 0.03)),
         minimum_samples=int(spec.get("minimum_samples", 200)),
+        cone=cone_from_config(spec.get("cone")),
     )
 
 
@@ -441,6 +805,7 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
     fraction = 0.2
     minimum = 0.03
     fewest = 200
+    cone: "Cone | None" = None
     for entry in systems:
         block = ((entry.get("simulation") or {}).get("umbrella")
                  if isinstance(entry, dict) else None)
@@ -451,6 +816,8 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
             block.get("equilibration_fraction", fraction))
         minimum = float(block.get("minimum_overlap", minimum))
         fewest = int(block.get("minimum_samples", fewest))
+        if block.get("cone"):
+            cone = cone_from_config(block["cone"])
         windows.append(Window(
             index=int(block.get("index", len(windows))),
             centre=float(block["centre"]),
@@ -464,6 +831,7 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
         equilibration_fraction=fraction,
         minimum_overlap=minimum,
         minimum_samples=fewest,
+        cone=cone,
     )
 
 
@@ -482,6 +850,106 @@ def windows_as_sweep(plan: UmbrellaPlan) -> list[dict[str, Any]]:
         }
         for w in plan.windows
     ]
+
+
+def cone_the_windows_ran_under(directories: "dict[int, Any]") -> "Cone | None":
+    """The cone the runs actually had, read back from what each window wrote.
+
+    Not the one the config asks for. The correction is worth several kJ/mol on
+    a binding free energy, and a study whose cone was measured from its pull
+    never had the angle in its config at all -- while a study whose config was
+    edited between running and analysing would take the correction from a cone
+    that did not run.
+
+    Every window records its own, so they are compared: windows that ran under
+    different cones cannot be recombined, and saying so is more useful than
+    quietly using the first one.
+    """
+    import json
+    from pathlib import Path
+
+    seen: dict[str, list[int]] = {}
+    records: dict[str, dict[str, Any]] = {}
+    for index, directory in sorted(directories.items()):
+        written = Path(directory) / "umbrella_window.json"
+        if not written.is_file():
+            continue
+        try:
+            record = json.loads(written.read_text(encoding="utf-8")).get("cone")
+        except (OSError, ValueError):
+            continue
+        if not record:
+            continue
+        key = json.dumps({k: record.get(k) for k in
+                          ("half_angle_deg", "force_constant", "axis_atoms",
+                           "axis_selection")}, sort_keys=True)
+        seen.setdefault(key, []).append(int(index))
+        records[key] = record
+
+    if not seen:
+        return None
+    if len(seen) > 1:
+        described = "; ".join(
+            f"windows {min(v)}-{max(v)} at "
+            f"{records[k].get('half_angle_deg')} degrees"
+            for k, v in sorted(seen.items(), key=lambda kv: min(kv[1])))
+        raise StudyError(
+            "These windows did not all run under the same cone, so they are "
+            f"not sampling one system: {described}. A free energy stitched "
+            "across them would be stitched across two different reference "
+            "states.", code="simulation.cone.windows_outside")
+    return Cone.from_record(next(iter(records.values())))
+
+
+def wall_bias_where_the_bound_state_is(
+    directories: "dict[int, Any]", plan: "UmbrellaPlan",
+    bound_below: float, *, equilibration_fraction: float | None = None,
+) -> float | None:
+    """How hard the cone's wall pushed where the bound state is.
+
+    The correction for running inside a cone assumes the bound pose fits
+    within it: the bulk state gives up ``4 pi / Omega`` of room and the bound
+    state gives up nothing. A wall that bites in the bound windows has taken
+    part of the population the binding integral is over, and no analytic term
+    puts that back -- so the assumption is measured here, from the column the
+    run writes for it, rather than assumed.
+
+    Returns None where no window recorded one, which is every study that ran
+    without a cone and every study that ran before the column existed.
+    """
+    from pathlib import Path
+
+    fraction = (plan.equilibration_fraction if equilibration_fraction is None
+                else float(equilibration_fraction))
+    inside = {w.index for w in plan.windows if w.centre <= bound_below}
+    carried: list[float] = []
+    for index, directory in sorted(directories.items()):
+        if index not in inside:
+            continue
+        colvar = Path(directory) / "simulation" / "COLVAR"
+        if not colvar.is_file():
+            continue
+        names: list[str] = []
+        rows: list[float] = []
+        for line in colvar.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#"):
+                if "FIELDS" in line and not names:
+                    names = line.split("FIELDS")[1].split()
+                continue
+            if not line.strip() or "cone.bias" not in names:
+                continue
+            parts = line.split()
+            column = names.index("cone.bias")
+            if len(parts) > column:
+                try:
+                    rows.append(float(parts[column]))
+                except ValueError:
+                    continue
+        if rows:
+            kept = np.asarray(rows)[int(len(rows) * fraction):]
+            if kept.size:
+                carried.append(float(np.mean(kept)))
+    return max(carried) if carried else None
 
 
 def collect_samples(
@@ -674,7 +1142,7 @@ def windows_that_drifted(
                 "away_by": away,
                 "force_constant": window.force_constant,
                 **_what_would_hold_it(window.force_constant, away,
-                                      temperature_K),
+                                      allowed, temperature_K),
             })
     return drifted
 
@@ -710,10 +1178,13 @@ def _how_hard_they_needed_holding(drifted: list[dict[str, Any]]) -> str:
         "`needs k` is a larger `force_constant` than this study used, and it "
         "comes from where each window came to rest: a window stops where the "
         "restraint's pull matches the surface's, so its displacement times "
-        "its force constant is the gradient it lost to, and a restraint "
-        "holds within two sigma of a gradient of 2*sqrt(k*kT). A softer one "
-        "will make this worse -- it is the remedy for windows that never "
-        "reach each other, and these have gone somewhere else.\n\n"
+        "its force constant is the gradient it lost to, and the constant "
+        "that holds it against that gradient inside the gate above is that "
+        "gradient divided by the gate. A softer one will make this worse -- "
+        "it is the remedy for windows that never reach each other, and these "
+        "have gone somewhere else. Both columns are upper bounds where the "
+        "surface steepens inward, because the gradient is measured where the "
+        "window stopped rather than at its centre.\n\n"
         "`at spacing` is not optional. Sigma falls as sqrt(kT/k), so a "
         "stiffer window is a narrower one -- raising the constant and "
         "leaving the windows where they are trades this refusal for a gap "
@@ -728,7 +1199,370 @@ def _how_hard_they_needed_holding(drifted: list[dict[str, Any]]) -> str:
     )
 
 
+def _ideal_overlap(centre_a: float, force_a: float,
+                   centre_b: float, force_b: float, kT: float) -> float:
+    """The area two windows would share if each sampled its own restraint.
+
+    The same quantity `overlap_between` measures from histograms, computed
+    from the distributions a plan implies -- so a design can be checked
+    against the gate that will judge it before any of it runs. A window
+    under a harmonic restraint of `k` at temperature T samples a Gaussian of
+    width ``sqrt(kT/k)`` about its centre, wherever the surface is flat
+    enough over that width.
+    """
+    sigma_a = math.sqrt(kT / float(force_a))
+    sigma_b = math.sqrt(kT / float(force_b))
+    lo = min(centre_a - 6 * sigma_a, centre_b - 6 * sigma_b)
+    hi = max(centre_a + 6 * sigma_a, centre_b + 6 * sigma_b)
+    x = np.linspace(lo, hi, 4001)
+    root = math.sqrt(2.0 * math.pi)
+    pa = np.exp(-0.5 * ((x - centre_a) / sigma_a) ** 2) / (sigma_a * root)
+    pb = np.exp(-0.5 * ((x - centre_b) / sigma_b) ** 2) / (sigma_b * root)
+    return float(np.minimum(pa, pb).sum() * (x[1] - x[0]))
+
+
+def design_from_a_pilot(
+    samples: dict[int, np.ndarray],
+    plan: "UmbrellaPlan",
+    *,
+    temperature_K: float = 300.0,
+    coarsest: float | None = None,
+    softest: float | None = None,
+    gate_used: float = 0.8,
+    curve: tuple[Any, Any] | None = None,
+) -> dict[str, Any]:
+    """The windows a study needs, from a short run of the ones it has.
+
+    Every window is a measurement of the free energy's slope wherever it came
+    to rest: it settles where the restraint's pull matches the surface's, so
+    ``k`` times its displacement is the gradient there. That is true of a
+    window that held its centre as much as one that did not -- the drift gate
+    decides whether to complain, not whether the number exists.
+
+    From a gradient, two requirements fix the design together. A window has
+    to stay within half the distance to its neighbour or it samples where
+    another window belongs, which bounds the constant from below; and
+    neighbours have to overlap, ``d <= 2.5 sigma``, which bounds it from
+    above. Asking a window to use only `gate_used` of the room it is allowed
+    and solving both at once:
+
+        d = 3.125 f kT / G        k = 0.64 G^2 / (f^2 kT)
+
+    At ``f = 1`` -- a window sized to come to rest exactly on the gate -- a
+    gradient of 223 kJ/mol/nm gives 0.0350 nm at 12760, and the study this
+    was written from arrived at 0.0344 nm at 13000 for that stretch over
+    three runs and two days. The default leaves a fifth of the gate unused,
+    because that study's window at 13000 was flagged for drift anyway and the
+    pair beside it came back with the thinnest overlap in the study: a design
+    that lands exactly on a threshold crosses it half the time. At ``f =
+    0.8`` the arithmetic is also the easiest to carry: ``d = 2.5 kT / G`` and
+    ``k = G^2 / kT``.
+
+    **The gradient comes from the recombined curve where there is one.** A
+    window's displacement is the median of a correlated series, and the error
+    on it is set by how many *independent* samples the window took rather
+    than how many rows it wrote. On a real 36-window study whose windows ran
+    ten nanoseconds against a correlation time of two and a half, that is
+    about three independent samples each: the median is then good to about
+    0.01 nm and a window held at 13000 reports its gradient to within a
+    hundred kJ/mol. Designs built from those readings alternate between stiff
+    and soft on neighbouring windows -- noise, not surface. The recombination
+    pools every window's sampling into one curve, and ``dA/dr`` from it is
+    the same quantity measured far better, so `curve` is used when the study
+    produced one and the windows' own displacements when it refused. They are
+    kept either way, in `measured`, because a window that slid is direct
+    evidence about the ground it slid down.
+
+    **A pilot can be short, but not shorter than its own correlation time.**
+    Fifteen hundred *independent* samples know the median to about 0.0005 nm
+    and the gradient to about 6 kJ/mol/nm. What sets the length is decorrelation
+    of whatever the coordinate is coupled to, not the row count.
+
+    Two things the caller must get right, both learned the hard way. The
+    pilot has to hold each window from its first step, or it measures where
+    the seeds relaxed to rather than the surface. And the arrival has to be
+    discarded before the median is taken, or a window still settling reports
+    its starting position as a gradient.
+
+    `coarsest` and `softest` bound the answer to what was already tried, so
+    a recommendation is only ever finer and stiffer than the pilot. Where a
+    window sat at its centre the measured gradient is near zero, and without
+    a bound that asks for infinitely wide, infinitely soft windows.
+
+    The design checks itself before returning: `predicted` carries, for every
+    window it proposes, where that window would come to rest, how much of its
+    gate that uses, and the area it would share with its neighbour. Two
+    rules in the placing exist to keep that last number near the 0.21 the
+    design aims at, both because a window is held for whatever is steepest
+    around it while a pair overlaps at the narrower of the two: the spacing
+    widens by only a quarter at a time, and each step is sized by the ground
+    on both sides of it rather than by what lies ahead alone.
+    """
+    kT = KB_KJ * float(temperature_K)
+    if not 0.0 < float(gate_used) <= 1.0:
+        raise StudyError(
+            "`gate_used` is the fraction of the drift gate a window is "
+            f"allowed to use, so it lies in (0, 1]; {gate_used} was given.", code="config.option.wrong_type")
+    gate_used = float(gate_used)
+    ordered = [w for w in plan.windows if w.index in samples]
+    if len(ordered) < 2:
+        raise StudyError(
+            "Sizing a study from a pilot needs at least two windows with "
+            f"sampling in them; {len(ordered)} were given."
+        , code="simulation.windows.too_few")
+    periodic = getattr(plan, "collective_variable", None) in PERIODIC_VARIABLES
+
+    measured = []
+    for window in ordered:
+        held = samples[window.index]
+        # The circular mean where the coordinate wraps, for the reason
+        # `windows_that_drifted` uses it: the median of values either side of
+        # the join lands opposite where they are, and here that would be read
+        # as an enormous gradient.
+        if periodic:
+            sat_at = float(np.arctan2(np.mean(np.sin(held)),
+                                      np.mean(np.cos(held))))
+        else:
+            sat_at = float(np.median(held))
+        away = float(np.abs(displacement(
+            np.array([sat_at]), window.centre, periodic)[0]))
+        measured.append({
+            "window": window.index,
+            "centre": window.centre,
+            "force_constant": window.force_constant,
+            "sampled_at": sat_at,
+            "away_by": away,
+            "gradient_kjmol_per_unit": window.force_constant * away,
+        })
+
+    spacings = [abs(b.centre - a.centre) for a, b in zip(ordered, ordered[1:])]
+    if coarsest is None:
+        coarsest = max(spacings) if spacings else 0.1
+    if softest is None:
+        softest = min(w.force_constant for w in ordered)
+    softest, coarsest = float(softest), float(coarsest)
+    # Where the gradient is flat the constant falls to `softest` and the
+    # spacing is whatever `coarsest` allows -- a pair the pilot need never
+    # have run together. Two and a half sigma at the softest constant is the
+    # widest those two can be and still overlap, so the walk cannot step
+    # past it.
+    coarsest = min(coarsest, 2.5 * math.sqrt(kT / softest))
+
+    # The slope where each window measured it, read back at any position.
+    # Each reading belongs where the window came to rest, not at the centre
+    # it was held at: the balance of forces is struck where the window sits.
+    #
+    # Unless the study got as far as a curve, in which case the curve's own
+    # slope is the same quantity with every window's sampling behind it
+    # rather than one window's median. A restraint acting on the coordinate
+    # balances the gradient of the free energy in that coordinate, which is
+    # exactly what the recombination reconstructs, so the two are comparable
+    # -- on the study this came from they agree where the windows are well
+    # sampled (223 against 197 at the steepest point) and disagree by five
+    # times where a single window happened to sit still.
+    if curve is not None:
+        along = np.asarray(curve[0], dtype=float)
+        height = np.array([np.nan if v is None else float(v)
+                           for v in curve[1]], dtype=float)
+        known = ~np.isnan(height)
+        if int(known.sum()) < 3:
+            raise StudyError(
+                "A curve to read the gradient from needs at least three "
+                f"points with a free energy on them; {int(known.sum())} had "
+                "one.", code="analysis.sampling.too_few_frames")
+        at = along[known]
+        rise = np.abs(np.diff(height[known]))
+        run = np.diff(at)
+        each = rise / np.where(run == 0.0, np.inf, run)
+        # The steeper of the two intervals meeting at a point, rather than
+        # the slope through both of them. A central difference spans two bins
+        # and averages the face of a barrier with the ground beyond it: on
+        # the study this came from it read 136 kJ/mol/nm where consecutive
+        # bins rise at 197, and a window sized from 136 comes to rest outside
+        # its share of the spacing -- which is what the window held there
+        # measured, asking for 13013 where the smoothed reading would have
+        # given it 7400.
+        slope = np.empty(at.size)
+        slope[0], slope[-1] = each[0], each[-1]
+        slope[1:-1] = np.maximum(each[:-1], each[1:])
+    else:
+        at = np.array([m["sampled_at"] for m in measured])
+        slope = np.array([m["gradient_kjmol_per_unit"] for m in measured])
+    order = np.argsort(at)
+    at, slope = at[order], slope[order]
+    # Windows that came to rest in the same place disagree about the slope
+    # there, and one of them is a window that slid to get there. The steeper
+    # reading is kept, which makes the design that follows finer and stiffer
+    # -- the safe direction to be wrong in.
+    kept_at: list[float] = []
+    kept_slope: list[float] = []
+    for position, value in zip(at, slope):
+        if kept_at and position - kept_at[-1] < 1e-6:
+            kept_slope[-1] = max(kept_slope[-1], float(value))
+        else:
+            kept_at.append(float(position))
+            kept_slope.append(float(value))
+    at, slope = np.array(kept_at), np.array(kept_slope)
+
+    def gradient_at(x: float) -> float:
+        return float(np.interp(x, at, slope))
+
+    # Windows in a different order than their centres have slid past each
+    # other, and the profile through that stretch is two readings of the same
+    # ground that cannot both be right. The design is still the conservative
+    # one -- the steeper reading wins -- but the pilot was too soft to resolve
+    # there, and running it again at what this recommends would resolve it.
+    crossed = [
+        after["window"]
+        for before, after in zip(measured, measured[1:])
+        if after["sampled_at"] <= before["sampled_at"]
+    ]
+
+    def steepest_over(lo: float, hi: float) -> float:
+        if hi <= lo:
+            return gradient_at(lo)
+        return max(gradient_at(float(p)) for p in np.linspace(lo, hi, 17))
+
+    start = min(w.centre for w in ordered)
+    finish = max(w.centre for w in ordered)
+    positions = [start]
+    x = start
+    # The ceiling is generous; reaching it means the gradient asked for
+    # windows so close together that the answer is a different coordinate,
+    # not a finer grid.
+    last_step = None
+    while positions[-1] < finish - 1e-9 and len(positions) < 2000:
+        step = coarsest
+        # A step has to answer the steepest ground it crosses, not the slope
+        # at the point it starts from -- and shortening it changes the ground
+        # it crosses, so the two are settled together.
+        for _ in range(4):
+            # Behind as well as ahead. Overlap is a property of a pair, and
+            # the window now being placed was itself sized by the ground it
+            # sits on -- so coming down off a barrier, where the slope ahead
+            # is gentle and the window behind is stiff and narrow, a step
+            # sized only by what is in front leaves the pair sharing the
+            # narrow one's width.
+            behind = last_step if last_step is not None else step
+            shorter = min(coarsest, 3.125 * gate_used * kT
+                          / max(steepest_over(max(x - behind, start),
+                                              x + 1.5 * step), 1e-9))
+            if shorter >= step - 1e-12:
+                break
+            step = shorter
+        # The spacing widens gradually rather than in one move. A window is
+        # held for the nearer of its two neighbours, so one beside a much
+        # finer stretch is held much harder than its far neighbour, comes out
+        # much narrower, and the pair between them overlaps at the narrow
+        # one's width. Growing the spacing by a quarter at a time keeps
+        # neighbours comparable; it can still tighten as fast as the surface
+        # steepens, since that direction is answered at once.
+        if last_step is not None:
+            step = min(step, 1.25 * last_step)
+        last_step = step
+        x += step
+        positions.append(x)
+    # The last step overshoots the end of the coordinate. Everything is then
+    # drawn in a little so the final window lands on it: every spacing
+    # shrinks, and a grid that overlaps at a given spacing still overlaps at
+    # a smaller one. Leaving the overshoot in instead, or appending the end
+    # as one more window, puts a sliver of a window at the far end.
+    walked = positions[-1] - start
+    if walked > 0:
+        squeeze = (finish - start) / walked
+        positions = [start + (p - start) * squeeze for p in positions]
+
+    def hold_them(places: list[float]
+                  ) -> tuple[list[float], list[dict[str, float]]]:
+        """How hard each window in a grid has to be held, and what it would do.
+
+        The constant comes from the spacing the window actually got rather
+        than from the one the walk asked for, so a grid that was drawn in --
+        or split -- is still held hard enough to keep every window inside its
+        share of it.
+        """
+        forces: list[float] = []
+        predicted: list[dict[str, float]] = []
+        for index, place in enumerate(places):
+            neighbours = [abs(places[index + offset] - place)
+                          for offset in (-1, 1)
+                          if 0 <= index + offset < len(places)]
+            # The same definition the drift gate uses, so the design is sized
+            # against the test it will be judged by.
+            allowed = 0.5 * min(neighbours) if neighbours else coarsest / 2.0
+            gradient = steepest_over(max(place - allowed, start),
+                                     min(place + allowed, finish))
+            force = max(softest, gradient / (gate_used * allowed))
+            # Rounded up rather than to nearest: a constant reported one step
+            # below the one just computed is a window advertised as inside
+            # its gate and held just outside it.
+            forces.append(float(10 * math.ceil(force / 10.0)))
+            predicted.append({
+                "window": index,
+                "centre": round(float(place), 4),
+                "force_constant": forces[-1],
+                "gradient_kjmol_per_unit": round(gradient, 1),
+                "would_sit_at": round(place - gradient / forces[-1], 4),
+                "gate": round(allowed, 4),
+                "gate_it_would_use": round(gradient / forces[-1] / allowed, 3),
+            })
+        return forces, predicted
+
+    forces, predicted = hold_them(positions)
+
+    centres = [round(float(p), 4) for p in positions]
+    for index in range(len(positions) - 1):
+        predicted[index]["overlap_with_next"] = round(_ideal_overlap(
+            centres[index], forces[index],
+            centres[index + 1], forces[index + 1], kT), 4)
+
+    shared = [p["overlap_with_next"] for p in predicted[:-1]]
+    return {
+        "measured": measured,
+        "centres": centres,
+        "force_constants": forces,
+        "n_windows": len(centres),
+        "covers": [round(start, 4), round(finish, 4)],
+        # Where the evidence is. A window on a rising surface comes to rest
+        # below its centre, so the readings stop short of the far end of the
+        # coordinate and the stretch beyond them is held at the last slope
+        # measured rather than at one of its own.
+        "measured_over": [round(float(at.min()), 4), round(float(at.max()), 4)],
+        # Which of the two readings the placing used, because they are not
+        # equally good and a reader of the design should not have to work out
+        # which one they are looking at.
+        "gradient_from": "curve" if curve is not None else "windows",
+        "crossed": crossed,
+        "gate_used": gate_used,
+        "predicted": predicted,
+        "worst_predicted_overlap": round(min(shared), 4) if shared else None,
+        "was": {"n_windows": len(ordered),
+                "spacing": round(max(spacings), 4) if spacings else None,
+                "force_constants": sorted({w.force_constant for w in ordered})},
+    }
+
+
+def as_a_config_block(design: dict[str, Any], width: int = 66) -> str:
+    """The design as the `centres` and `force_constant` a study would carry."""
+    import textwrap
+
+    def listed(values, fmt):
+        body = ", ".join(fmt.format(v) for v in values)
+        return "\n".join("      " + line
+                         for line in textwrap.wrap(body, width))
+
+    return (
+        "    centres: [\n"
+        + listed(design["centres"], "{:.4f}") + "\n"
+        + "    ]\n"
+        + "    force_constant: [\n"
+        + listed(design["force_constants"], "{:.0f}") + "\n"
+        + "    ]\n"
+    )
+
+
 def _what_would_hold_it(force_constant: float, away_by: float,
+                        allowed: float,
                         temperature_K: float = 300.0) -> dict[str, float]:
     """How stiff this window needed to be, and how close its neighbours.
 
@@ -738,27 +1572,42 @@ def _what_would_hold_it(force_constant: float, away_by: float,
     guess: it is the only thing in an umbrella study that reports the slope
     of the surface directly.
 
-    A restraint holds within two sigma of its centre against a gradient of
-    ``2*sqrt(k*kT)``, so the constant that would have held this window is
-    that inverted -- ``(k * away_by)^2 / (4 kT)``. On C1d's window at 0.9517,
-    3000 kJ/mol/nm^2 and a displacement of 0.1199 nm gave 360 kJ/mol/nm and
-    asked for 13000; run at 13000 the same window sat 0.06 sigma from its
-    centre.
+    The constant is then sized against the test the window actually failed.
+    A window is flagged for sampling further from its centre than `allowed`
+    -- half the distance to its nearest neighbour, because beyond that it is
+    sampling where another window was supposed to be -- so the constant that
+    would have held it is ``k * away_by / allowed``, the one whose pull
+    balances the same gradient at the edge of the gate rather than beyond it.
+
+    The first version of this sized against two sigma instead, which is a
+    different and looser test wherever windows sit closer together than four
+    sigma. On a study whose windows were 0.06 nm apart at 3000 kJ/mol/nm^2 it
+    returned 1584 -- *softer* than the constant that had just failed, printed
+    under advice to hold the windows harder. Sizing against the gate gives
+    13033 on the study that went on to run at 13000 and hold every window
+    inside 0.3 sigma, so the number it returns is the one that worked.
 
     The spacing matters as much and is easier to forget. Sigma falls as
     ``sqrt(kT/k)``, so a stiffer window is a narrower one: raising the
     constant without closing the gaps trades a study that refuses for drift
-    for a study that refuses for a gap the stiffening opened. Two sigma at
-    the new constant is what keeps roughly a third of two neighbours' area
-    shared, which is what a spacing of two sigma gives.
+    for a study that refuses for a gap the stiffening opened. Two and a half
+    sigma at the new constant leaves neighbours sharing about a fifth of
+    their area.
+
+    Both numbers are upper bounds where the surface steepens inward, because
+    the gradient is measured where the window came to rest rather than at its
+    centre, and a window that slid inward slid towards the steeper part.
     """
     kT = KB_KJ * float(temperature_K)
     gradient = float(force_constant) * float(away_by)
-    needed = gradient ** 2 / (4.0 * kT)
+    # `away_by > allowed` is what being in this list means, so this is always
+    # stiffer than the constant that failed. Guarded anyway: advice to hold a
+    # window harder must never carry a smaller number than the one in use.
+    needed = max(float(force_constant), gradient / float(allowed))
     return {
         "gradient_kjmol_per_unit": gradient,
         "force_constant_that_would_hold_it": needed,
-        "spacing_it_would_need": 2.0 * math.sqrt(kT / needed),
+        "spacing_it_would_need": 2.5 * math.sqrt(kT / needed),
     }
 
 
@@ -941,8 +1790,47 @@ def displacement(values: Any, centre: float, periodic: bool) -> np.ndarray:
 #: finished at is reported rather than assumed.
 WHAM_TOLERANCE_KJMOL = 1e-6
 
-#: Iterations before the loop gives up and says so.
-WHAM_MAX_ITERATIONS = 2000
+#: How many self-consistent passes the recombination may take before it
+#: gives up. Direct WHAM iteration converges linearly, and how many passes
+#: that needs grows with the number of windows and the range they span: a
+#: thirty-six window study of a ligand leaving a pocket reaches 1e-4 in 1640
+#: passes, 1e-5 in 3238, and the 1e-6 above in 4838.
+#:
+#: This was 2000, which stopped that study at a residual of about 1e-3 and
+#: recorded `converged: false` on a free energy whose remaining movement was
+#: five ten-thousandths of a kT. The whole solve takes under a second, so the
+#: ceiling was buying nothing and costing the one field that says whether the
+#: answer is finished. It is now high enough that reaching it means the
+#: iteration is not converging rather than that it ran out of room.
+WHAM_MAX_ITERATIONS = 100_000
+
+
+def _split_off_the_derived(
+    record: dict[str, Any],
+) -> "tuple[dict[str, Any], dict[str, Any]]":
+    """Separate the appended number from the curve it travelled with.
+
+    `also` rides along as one extra element of the statistic's array so that
+    one set of resamples serves both. Here the two go back to being what they
+    are: a curve with an error bar per bin, and a single number with one.
+    """
+    curve: dict[str, Any] = {}
+    one: dict[str, Any] = {}
+    for key, value in record.items():
+        if isinstance(value, list) and value:
+            curve[key] = value[:-1]
+            one[key] = value[-1]
+        else:
+            curve[key] = value
+            one[key] = value
+    # A statistic that could not be computed on the real data has no interval
+    # worth reporting, however well the resamples behaved.
+    if one.get("value") is None or (isinstance(one.get("value"), float)
+                                    and math.isnan(one["value"])):
+        return curve, {"value": None, "note": (
+            "The quantity could not be computed from this curve, so the "
+            "resamples have nothing to put an interval around.")}
+    return curve, one
 
 
 def compute_pmf(
@@ -954,7 +1842,9 @@ def compute_pmf(
     minimum_overlap: float | None = None,
     bootstrap_resamples: int = DEFAULT_RESAMPLES,
     bootstrap_seed: int = 0,
+    also: "Callable[[list[float], list[Any]], float | None] | None" = None,
     _edges: np.ndarray | None = None,
+    _resampling: bool = False,
 ) -> dict[str, Any]:
     """A potential of mean force, or a refusal saying why not.
 
@@ -965,6 +1855,14 @@ def compute_pmf(
     share ground, the free energy on one side cannot be placed relative to the
     other, and a curve drawn through the gap is interpolation presented as a
     measurement.
+
+    ``also`` is one number read off the curve -- a binding free energy, a
+    barrier height -- given as a function of ``(coordinate, free_energy)``. It
+    is evaluated on every resample beside the curve itself, so it comes back
+    with an interval from the same draws. That is the only affordable way to
+    put an error bar on it: each resample already costs a WHAM solve, and a
+    second bootstrap would double the analysis to measure something the first
+    pass had the material for. The result is under ``derived`` in the payload.
     """
     # The plan carries it, so a study's own threshold applies wherever the
     # recombination happens rather than only where somebody remembered to
@@ -1130,7 +2028,9 @@ def compute_pmf(
     # and nothing said which this was.
     residual = float("inf")
     converged = False
+    passes = 0
     for _ in range(WHAM_MAX_ITERATIONS):
+        passes += 1
         weights = np.exp((free_energies[:, None] - bias) / kT)
         denominator = (n_per_window[:, None] * weights).sum(axis=0)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -1171,7 +2071,7 @@ def compute_pmf(
     # know to look for it.
     free_energy = [None if np.isnan(value) else float(value) for value in pmf]
     unsampled = int(np.count_nonzero(~sampled))
-    if unsampled:
+    if unsampled and not _resampling:
         logger.info(
             "%d of %d bins hold no samples and are reported as unknown rather "
             "than given a value. Windows further apart than their restraints "
@@ -1196,7 +2096,14 @@ def compute_pmf(
     # confident measurement of a stretch of coordinate none of them was asked
     # to sample, with `covered` naming the centres rather than where the
     # sampling went.
-    if drifted:
+    # Once, from the study -- not once per bootstrap resample. The error bar
+    # recombines the study a couple of hundred times over resampled data, and
+    # each of those runs found the same windows off their centres and said
+    # so: a real 36-window campaign finished by printing this paragraph about
+    # two hundred times, with the count flickering between four and six as
+    # the marginal windows fell either side of the gate in each resample. The
+    # finding is the one from the data, which is computed and reported here.
+    if drifted and not _resampling:
         logger.warning(
             "%d of %d windows sampled away from their centres, and the "
             "overlaps still passed -- windows that drift together keep "
@@ -1218,25 +2125,44 @@ def compute_pmf(
     # dipping below it has discovered nothing about the study, and refusing
     # there would abort the error bar rather than report it.
     uncertainty = None
+    derived = None
     if bootstrap_resamples:
         def _curve(drawn: dict[int, np.ndarray]) -> np.ndarray:
             inner = compute_pmf(
                 drawn, plan, temperature_K=temperature_K, bins=bins,
-                minimum_overlap=0.0, bootstrap_resamples=0, _edges=edges)
-            return np.array(
+                minimum_overlap=0.0, bootstrap_resamples=0, _edges=edges,
+                _resampling=True)
+            values = np.array(
                 [np.nan if v is None else v
                  for v in inner["pmf"]["free_energy_kjmol"]], dtype=float)
+            if also is None:
+                return values
+            # Carried as one more element of the same array, because
+            # `block_bootstrap` treats an array element-wise and this costs
+            # nothing beyond the WHAM solve already done for the curve. Split
+            # off again below.
+            try:
+                extra = also(inner["pmf"]["coordinate"],
+                             inner["pmf"]["free_energy_kjmol"])
+            except (ValueError, ZeroDivisionError, KeyError, TypeError):
+                extra = None
+            return np.append(values,
+                             np.nan if extra is None else float(extra))
 
         uncertainty = block_bootstrap(
             {w.index: samples[w.index] for w in ordered}, _curve,
             resamples=int(bootstrap_resamples), seed=bootstrap_seed,
         ).as_dict()
+        if also is not None:
+            uncertainty, derived = _split_off_the_derived(uncertainty)
         if uncertainty["note"]:
             logger.info("Free-energy uncertainty: %s", uncertainty["note"])
 
     return {
         "pmf": {"coordinate": centres.tolist(), "free_energy_kjmol": free_energy,
                 "uncertainty": uncertainty},
+        # The spread of whatever `also` measured, from the same resamples.
+        "derived": derived,
         "covered": [float(covered[0]), float(covered[1])],
         "summary": describe_pmf(centres, free_energy, covered,
                                 periodic=periodic),
@@ -1255,4 +2181,8 @@ def compute_pmf(
         "converged": converged,
         "final_residual_kjmol": None if residual == float("inf") else residual,
         "wham_tolerance_kjmol": WHAM_TOLERANCE_KJMOL,
+        # How hard it was, not only whether it finished. A study needing tens
+        # of thousands of passes is saying something about its conditioning
+        # that a bare `converged: true` hides.
+        "wham_iterations": int(passes),
     }

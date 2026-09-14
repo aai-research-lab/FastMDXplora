@@ -4,6 +4,15 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
+  jobs:
+    post_checkout:
+      # Read the Docs clones shallow and without tags. setuptools-scm then
+      # cannot find `v2.5.5`, guesses from `fallback_version`, and stamps
+      # `0.1.1.dev50+g<sha>` into the title of every built page -- so the
+      # documentation a prospective user reads first says the software is at
+      # version 0.1 while it ships 2.5.5.
+      - git fetch --unshallow || true
+      - git fetch --tags --force
 
 sphinx:
   configuration: docs/conf.py

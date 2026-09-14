@@ -72,9 +72,19 @@ all, which has no PyPI distribution -- so a clone set up this way has the whole
 stack.
 
 It carries rdkit, propka and openff-toolkit for ligand chemistry and pKa
-assignment, openmm-plumed for enhanced sampling, weasyprint for the PDF
-report, and scipy, pillow and netcdf4. A test checks this file against the
-declared dependencies, so an environment built from it runs every phase.
+assignment, openmm-plumed for enhanced sampling, weasyprint and markdown for
+the PDF report, umap-learn for the dimensionality-reduction analysis that
+offers it, and scipy, pillow and netcdf4.
+
+What it does not carry is MDAnalysis and ProLIF, the `validation` extra. That
+is deliberate: they exist here to compare against, and a comparison between
+two stacks means less when one environment holds both. Install them
+separately when you want to run that comparison.
+
+`tests/test_the_conda_file_installs_what_it_claims.py` holds this file to
+that paragraph — every requirement named, at a floor no lower than
+`pyproject.toml`'s — so a conda environment and a pip install are the same
+software rather than two stacks wearing one name.
 
 ---
 

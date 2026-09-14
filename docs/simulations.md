@@ -424,6 +424,233 @@ seeded from a pull near their own centres, fix that first — a constant sized
 from a window's starting position is sized from the wrong thing. The refusal
 says so before it shows the table.
 
+### Sizing a study from a short pilot
+
+The gradient is what fixes both settings, and every window measures the
+gradient where it sits. So a handful of windows, run briefly, size the study
+that follows: spread six or so over the range and give each a few hundred
+picoseconds.
+
+```yaml
+simulation:
+  production_steps: 150000        # 300 ps a window
+  umbrella:
+    collective_variable: ligand_distance
+    select_atoms: "resSeq 189 to 195 and name CA"
+    from: 0.40
+    to: 2.00
+    n_windows: 6
+    force_constant: 3000
+```
+
+Every umbrella study writes the design its own windows imply into `pmf.json`
+under `next_study`, and prints it when the study refused or when a window
+drifted:
+
+```
+Next study:     34 windows from these windows' own gradients, 0.4 to 2,
+                worst overlap 0.18 predicted
+    centres: [
+      0.4000, 0.4565, 0.5059, 0.5486, 0.5844, 0.6153, 0.6431, 0.6710,
+      ...
+    ]
+    force_constant: [
+      4870, 5530, 7320, 9840, 12750, 16140, 18050, 19960, 20000, 20000,
+      ...
+    ]
+```
+
+Those two lists go into the config as they are.
+
+**The arithmetic.** A window comes to rest where the restraint's pull matches
+the free energy's, so `k` times its displacement is the gradient `G` there.
+Two requirements then fix the design together: a window has to stay within
+half the distance to its neighbour, which sets the constant from below, and
+neighbours have to overlap — `d <= 2.5 sigma` — which sets it from above.
+Asking a window to use four fifths of the room it is allowed and solving both
+at once leaves
+
+    d = 2.5 kT / G        k = G² / kT
+
+with `kT = 2.494 kJ/mol` at 300 K. A stretch measuring 223 kJ/mol/nm gets
+windows 0.028 nm apart held at 20,000; a flat stretch measuring 10 gets the
+widest spacing the pilot's own softest constant still overlaps at. Neither
+setting is ever loosened past what the pilot ran, since a window sitting on
+its centre measures nothing and, unbounded, would ask for infinitely wide
+windows.
+
+Three things worth reading beside the answer, all in `next_study`:
+
+- `predicted` says, for every window it proposes, where that window would come
+  to rest, how much of its allowance that uses, and the area it would share
+  with its neighbour. The design is checked against the gates it will be
+  judged by before it runs.
+- `measured_over` is where the readings are. A window on a rising surface
+  comes to rest below its centre, so the readings stop short of the far end of
+  the range, and the stretch beyond them is held at the last slope measured.
+- `crossed` names windows that came to rest past one another. That stretch was
+  too steep for the pilot's constant to resolve; the design takes the steeper
+  reading, and running it again at what it recommends resolves it.
+
+A pilot has to be held from its first step and seeded near its centres, which
+is what the umbrella phase does — the point is that nothing else is required
+of a pilot. Three hundred picoseconds is enough: a displacement converges like
+a mean, and 1,500 samples fix the gradient to about 6 kJ/mol/nm.
+
+### The sphere a distance coordinate leaves open
+
+A window on a distance holds the ligand at a radius and leaves it free to be
+anywhere on the sphere of that radius. That is what the `-2kT ln r` in the bulk
+reference is about: the room at radius r is `4πr²`, so a free ligand is more
+likely to be found at 2 nm than at 1 nm for no energetic reason at all.
+
+Two things have to be true for that reference to mean anything, and on a real
+site neither is:
+
+- **The sphere has to be open.** A coordinate measured to a group of backbone
+  atoms has its origin inside the protein. On trypsin's S1 site, 12% of the
+  sphere at 1.0 nm is outside the protein and 50% at 2.0 — so the room grows as
+  `r^4.3`, not `r²`, and no length of run makes `-2kT ln r` the right shape.
+- **The ligand has to visit it.** A sphere of radius 2 nm has 50 nm² of
+  surface. A ligand held there crosses a few nm² in ten nanoseconds, so one
+  window sees a patch.
+
+`cone` answers both. It puts a flat-bottomed wall on the angle between the
+site-to-ligand line and an axis fixed in the protein, so the ligand is confined
+to a cap:
+
+```yaml
+  umbrella:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    select_atoms: "resSeq 189 to 195 and name CA"
+    centres: [...]
+    force_constant: [...]
+    cone: auto
+    seed_from: runs/earlier-study/seed_pull
+```
+
+The cap's area is `Ω r²` with `Ω = 2π(1 − cos θ)`, still exactly proportional
+to `r²` — so the reference is right by construction — and at 30° the cap is
+7% of a sphere, which a ligand covers in a fraction of the time.
+
+#### Where the axis and the angle come from
+
+`auto` measures both off the pull that seeds the windows. That pull is the one
+continuous trajectory the study has from the site to bulk, and every window
+starts on it, so a cone measured there is a cone every window begins inside.
+
+Both numbers are results rather than preferences:
+
+- **The axis** is the direction the ligand leaves by, which is rarely the line
+  out of the protein's centre — on trypsin's S1 site the two are 42–61° apart.
+  It is found by searching four thousand directions for the one that holds the
+  path in the smallest cone, *not* by averaging the path: a route that leaves a
+  pocket sideways and then swings into bulk has a mean far from both of its
+  ends, and on that study the mean gave 107° where the search gave 61°.
+- **The group** is the backbone alpha carbons lying opposite that direction,
+  within 0.4–2.0 nm of the site. Several group sizes are tried and the one that
+  holds the path in the smallest angle is kept, so the size is a result too.
+- **The half-angle** is measured through that group — frame by frame, exactly
+  the angle PLUMED will restrain — at the 98th percentile of the path, widened
+  by a fifth. Taking it from the group rather than from the ideal direction
+  means the difference between them needs no allowance.
+
+The measurement is written to `seeds/cone.json`, which carries what the wall
+was sized against: `held_within_deg` is how far the path strays from the axis,
+`bound_end_deg` the same for the bound end — the half that decides whether the
+wall bites — and `worst_deg` the single worst frame.
+
+`keep` and `margin` adjust the last step, and `axis_selection` names the group
+yourself and leaves only the angle to be measured:
+
+```yaml
+    cone:
+      keep: 98            # percentile of the path the cone must hold
+      margin: 1.2         # how much wider than that to open it
+      force_constant: 5000  # kJ/mol/rad², the wall
+```
+
+A study can also state the angle outright, and then nothing is measured:
+
+```yaml
+    cone:
+      half_angle_deg: 30
+      axis_selection: protein   # what the cone points away from
+```
+
+The axis is the direction from `axis_selection`'s centre to the site, so
+"straight out" is away from the protein and the cone turns with the molecule
+rather than pointing at a fixed corner of the box.
+
+Two refusals rather than a number that looks like one. A named group sitting
+where the ligand goes, instead of behind the site, asks for a cone of most of a
+sphere — that is refused, naming the group, rather than clipped to something
+shaped like a restraint. So is a pull that leaves in no settled direction: a
+ligand taking several routes out needs a coordinate that follows one of them,
+not a wall around all of them.
+
+**The pull itself runs without a cone, on purpose.** The axis and the angle are
+*measured from* that pull, so restraining it would mean measuring the restraint
+rather than the ligand's way out — a cone needed before a cone could be found.
+A wall on an unverified axis would also be a wall on a ligand already being
+dragged by a moving anchor, which can force it along a route it would never
+take and finish without complaint. The pull's value here is that it is the one
+trajectory with nothing telling it which way to go.
+
+That freedom costs something, and the margin is what pays it. A steered pull is
+fast and does not explore angle the way equilibrium sampling does, so it
+*under-reports* the spread: on the trypsin study the pull put the bound end
+within 55°, and 30 ns of restrained sampling reached 62°. Opening the cone by a
+fifth is what covers the difference.
+
+**Every seed is checked against the wall it will run under.** A seed is chosen
+for its *distance* from the site and inherits whatever angle that frame
+happened to have, so the two have to be reconciled before a window starts. A
+window beginning outside its own cone is pushed by the wall from its first
+step: it does not crash, no later gate sees it, the window settles somewhere
+the seeding did not intend — and a cone excluding where the ligand was is a
+cone cutting the state the binding free energy is measured over.
+
+A measured cone contains the path it was measured from, so this passes by
+construction. It is the other two ways of asking that need it: a
+`half_angle_deg` written into a config can be narrower than the path, and a
+hand-named `axis_selection` need not point along the path at all. Either way
+the study is refused before it runs, naming the windows and how far outside
+they sit. When all of them pass, the seeder says how close the nearest one came
+to the wall, so the headroom is visible rather than assumed.
+
+**Flat-bottomed, not harmonic.** Inside the cone there is no bias at all, so
+what happens there is the system's own. A harmonic restraint on the angle would
+pull the ligand towards the axis everywhere, including in the bound state.
+
+**What it costs.** The bulk state under a cone is `4π/Ω` smaller than a free
+ligand's, while a bound pose that fits inside the cone loses nothing — so a
+binding free energy measured this way is too negative by `kT ln(4π/Ω)` until
+that is added back. The study records the number: the plan's `cone` block
+carries `share_of_a_sphere` and `correction_kjmol`, computed by integrating the
+wall's own Boltzmann factor rather than assuming a hard edge, because the wall
+is soft and the ligand leans on it.
+
+**What the correction rests on, and how that is checked.** The bulk state
+gives up room; the bound state gives up none — *provided the bound pose fits
+inside the cone*. A cone too narrow for it has removed part of the population
+the binding integral is taken over, and no analytic term puts that back. So
+every window writes the wall's bias beside its coordinate, and the binding free
+energy is refused where the wall carried more than 0.25 kJ/mol in the windows
+holding the bound state, naming the number and asking for a wider angle. Where
+no such column exists the result says `cone_wall_checked: false` rather than
+implying the check passed.
+
+`pmf.json` carries both numbers: `delta_g_before_the_cone_kjmol` is what the
+curve says, `delta_g_kjmol` is what it means, and `cone_correction_kjmol` is
+the step between them.
+
+**The check that comes with it.** The correction depends on the angle and the
+answer must not. Run two cone angles and compare: 20° and 45° differ by
+3.8 kJ/mol in the correction, so if the corrected binding free energies agree
+the correction is being applied properly, and if they do not, it is not.
+
 ### One system, many windows
 
 The windows are the same molecule held at different points along the
@@ -447,8 +674,18 @@ simulation:
   prepared_from: runs/reference/setup
 ```
 
-It names the `setup` directory of a run that completed — the one holding
-`system.xml`, `state.xml` and `topology.pdb` — not the run directory above it.
+It names a run that completed: the `setup` directory holding `system.xml`,
+`state.xml` and `topology.pdb`, or a directory with `setup/` or
+`shared_setup/setup/` under it.
+
+**Naming one turns preparation off.** Solvation does not place water the same
+way twice, so preparing a second system gives a second set of atoms — and
+anything taken from the named one, a frame to start from or the seeds from a
+pull run in it, then belongs to a different molecule. A study that said
+`setup_from` and prepared anyway stopped ten seconds later with *"the prepared
+system has 36075 particles and the pull's trajectory has 36087"*. The refusal
+was right; ignoring the setting beforehand was not. A `setup_from` that points
+at no prepared system is refused rather than quietly prepared around.
 
 ### Where the windows start
 

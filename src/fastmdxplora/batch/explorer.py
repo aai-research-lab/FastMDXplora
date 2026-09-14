@@ -203,6 +203,38 @@ def _threads_for_each(n_workers: int) -> int:
     return max(1, cores // max(1, n_workers))
 
 
+#: Coordinates a standard-state binding free energy means anything along.
+#: A distance between two groups has a volume element; a torsion does not.
+COORDINATES_WITH_A_VOLUME = ("ligand_distance", "distance")
+
+
+def _the_coordinate_has_a_volume(plan: Any) -> bool:
+    """Whether a standard-state correction has anything to correct.
+
+    The correction is about the volume a ligand gives up on binding. Along a
+    torsion there is no volume and no concentration, so a number computed
+    there would be a category error rather than an inaccuracy.
+    """
+    return getattr(plan, "collective_variable", None) in \
+        COORDINATES_WITH_A_VOLUME
+
+
+def _a_binding_free_energy_belongs_here(payload: dict[str, Any],
+                                        plan: Any) -> bool:
+    """Whether this study is one the number can honestly be taken from.
+
+    There has to be a curve, and the overlap and sampling gates are what
+    decide that: a number integrated over a curve stitched across a gap would
+    be the most quotable thing the study produced and the least supported. And
+    the coordinate has to be one with a volume.
+
+    A predicate rather than a condition written inline, because it is the rule
+    itself and a rule that can only be checked by reading the source around
+    the call is a rule two tests broke on the day the call moved.
+    """
+    return bool(payload.get("pmf")) and _the_coordinate_has_a_volume(plan)
+
+
 def _a_prepared_system_is_there(setup_dir: Path) -> bool:
     """Whether the three files a simulation starts from are on disk.
 
@@ -227,6 +259,9 @@ def _first_error_phase_message(phases: list[Any]) -> str:
 _UMBRELLA_ONLY = frozenset({
     "centres", "centers", "centre", "from", "to", "n_windows",
     "force_constant", "minimum_overlap", "minimum_samples",
+    # The wall on the angle is umbrella's own: the coordinate layer biases a
+    # distance and knows nothing about the cone around it.
+    "cone",
     "index",
 })
 
@@ -873,6 +908,40 @@ class BatchExplorer:
 
         wanted = set(include) if include else {"setup", "simulation",
                                                "analysis", "report"}
+        # A study that names a prepared system is not asking to prepare
+        # another one. Preparing anyway solvates a second box, and solvation
+        # does not place water the same way twice: the named system's frames
+        # -- the seeds a study takes from a pull run in it -- then belong to
+        # a different set of atoms. A real study said `setup_from`, ran with
+        # the setup phase in its list, and stopped ten seconds later with
+        # "the prepared system has 36075 particles and the pull's trajectory
+        # has 36087". The refusal was right and the silence before it was
+        # not: the setting had been ignored rather than obeyed.
+        named = ((self._raw or {}).get("simulation") or {})
+        named = named.get("setup_from") or named.get("prepared_from")
+        if named and "setup" in wanted and "setup" not in set(exclude or []):
+            where = Path(named)
+            if not (_a_prepared_system_is_there(where)
+                    or _a_prepared_system_is_there(where / "setup")
+                    or _a_prepared_system_is_there(
+                        where / "shared_setup" / "setup")):
+                raise MissingResultError(
+                    f"`simulation.setup_from` names {named!r}, and there is "
+                    "no prepared system there: a directory holding "
+                    "`system.xml`, `state.xml` and `topology.pdb`, or one "
+                    "with `setup/` or `shared_setup/setup/` under it. "
+                    "Preparing one instead would give this study a different "
+                    "box of water from the one that setting points at, and "
+                    "anything taken from it -- seeds from a pull, a frame to "
+                    "start from -- would not fit."
+                , code="analysis.data.absent")
+            logger.info(
+                "Preparing nothing: `setup_from` names %s, and this study "
+                "uses that system. A second preparation would solvate a "
+                "second box, and water is not placed the same way twice -- "
+                "so frames from the named system would belong to a different "
+                "set of atoms than the one being simulated.", named)
+            exclude = list(exclude or []) + ["setup"]
         if "setup" not in wanted or "setup" in set(exclude or []):
             # Nothing is being prepared here -- the windows are simulating
             # from something that already exists. They may still need
@@ -956,6 +1025,7 @@ class BatchExplorer:
         silently turned seeding off.
         """
         seeds = self._maybe_seed_the_windows(prepared)
+        self._give_each_window_its_cone()
         for spec in self.run_specs:
             simulation = dict(spec.options.get("simulation") or {})
             index = (simulation.get("umbrella") or {}).get("index")
@@ -966,6 +1036,55 @@ class BatchExplorer:
             # would have every one of them drag the ligand out again while
             # restrained at a fixed point.
             simulation.pop("steered", None)
+            spec.options["simulation"] = simulation
+
+    # ------------------------------------------------------------------
+    def _give_each_window_its_cone(self) -> None:
+        """Hand the measured cone to every window, and to the analysis.
+
+        A study that writes `cone: auto` has asked for an angle and an axis it
+        does not know yet. The pull that seeds the windows supplies both, and
+        `_maybe_seed_the_windows` has just written the measurement down. Here
+        it stops being a file and becomes the restraint: the concrete angle
+        and the atoms it opens away from, on every window's block.
+
+        Written onto the expanded systems as well as onto the run specs,
+        because that is where the analysis rebuilds the plan from -- and the
+        correction the cone costs is several kJ/mol on the answer, so a
+        recombination that read `auto` would have nothing to correct by.
+        """
+        from fastmdxplora.simulation.umbrella import (
+            ConeToMeasure,
+            plan_from_expanded,
+        )
+
+        plan = plan_from_expanded(self._raw or {})
+        if plan is None or not isinstance(plan.cone, ConeToMeasure):
+            return
+
+        measured = self.output_dir / "seeds" / "cone.json"
+        if not measured.is_file():
+            # Nothing to hand over. Left to the window to refuse, where the
+            # message can say what a measured cone needs -- a pull -- instead
+            # of this one saying a file is missing.
+            return
+        record = json.loads(measured.read_text(encoding="utf-8"))
+        block = {key: record[key] for key in
+                 ("half_angle_deg", "force_constant", "axis_selection",
+                  "axis_atoms") if key in record}
+
+        for entry in (self._raw or {}).get("systems") or []:
+            window = ((entry.get("simulation") or {}).get("umbrella")
+                      if isinstance(entry, dict) else None)
+            if window and window.get("cone"):
+                window["cone"] = dict(block)
+        for spec in self.run_specs:
+            simulation = dict(spec.options.get("simulation") or {})
+            window = dict(simulation.get("umbrella") or {})
+            if not window.get("cone"):
+                continue
+            window["cone"] = dict(block)
+            simulation["umbrella"] = window
             spec.options["simulation"] = simulation
 
     # ------------------------------------------------------------------
@@ -990,7 +1109,10 @@ class BatchExplorer:
             with_general_selection_names,
         )
         from fastmdxplora.simulation.seeding import seed_windows
-        from fastmdxplora.simulation.umbrella import plan_from_expanded
+        from fastmdxplora.simulation.umbrella import (
+            ConeToMeasure,
+            plan_from_expanded,
+        )
 
         raw = self._raw or {}
         simulation = raw.get("simulation") or {}
@@ -1065,6 +1187,19 @@ class BatchExplorer:
             site_selection=str(window.get("site_selection") or ""),
             temperature_K=float(simulation.get("temperature_K", 300.0)),
             random_seed=int(simulation.get("random_seed") or 0),
+            # Measured here, off the trajectory the seeder has already
+            # opened. The pull is the one continuous path from the site to
+            # bulk, so it is where the way out is visible -- and reading it
+            # twice would mean loading tens of thousands of atoms twice.
+            #
+            # A cone the study stated is handed over too, unmeasured. The
+            # seeder does not need it to build a seed; it needs it to check
+            # one, because a window seeded outside its own wall starts with
+            # the wall pushing and no later gate can see that it did.
+            cone=(plan.cone.as_asked()
+                  if isinstance(plan.cone, ConeToMeasure)
+                  else plan.cone.as_record() if plan.cone is not None
+                  else None),
         )
         record = self.output_dir / "seeds" / "seeds.json"
         record.write_text(
@@ -1085,8 +1220,10 @@ class BatchExplorer:
         import json
 
         from fastmdxplora.simulation.umbrella import (
+            as_a_config_block,
             collect_samples,
             compute_pmf,
+            design_from_a_pilot,
             plan_from_expanded,
         )
 
@@ -1124,8 +1261,54 @@ class BatchExplorer:
             temperature = float(
                 ((self._raw or {}).get("simulation") or {})
                 .get("temperature_K", 300.0))
-            payload = compute_pmf(samples, plan, temperature_K=temperature)
+            # The binding free energy rides along on the recombination's own
+            # resamples. Without this it is the one headline number the study
+            # produces with no statistical uncertainty at all -- only a
+            # sensitivity to where the bound state is cut, which is a
+            # different quantity and reads as an error bar if it is the only
+            # bar there.
+            #
+            # Uncorrected on purpose: the cone correction and the
+            # standard-state term are constants, so they move the interval
+            # without widening it, and computing them per resample would mean
+            # resolving the cone thirty thousand times for no change in the
+            # spread.
+            def _binding_from(where, curve, _t=temperature):
+                from fastmdxplora.simulation.binding import binding_free_energy
+
+                return binding_free_energy(
+                    where, curve, temperature_K=_t).get("delta_g_kjmol")
+
+            wants_binding = _the_coordinate_has_a_volume(plan)
+            payload = compute_pmf(samples, plan, temperature_K=temperature,
+                                  also=_binding_from if wants_binding else None)
             payload["plan"] = plan.as_record()
+
+            # What these windows say the study should have been. Every
+            # window measures the gradient where it came to rest, and the
+            # gradient fixes both settings a study has to choose, so a run
+            # that has just finished can size the next one -- a short set of
+            # windows run deliberately as a pilot, or this one.
+            #
+            # Computed whether the study passed or refused, and especially
+            # when it refused: a refusal that says which windows slid is
+            # worth less than one that comes with the design that holds
+            # them. It sits in a `try` because it is advice, and a study
+            # that produced a free energy must not lose it to a failure in
+            # the paragraph recommending the next study.
+            try:
+                payload["next_study"] = design_from_a_pilot(
+                    samples, plan, temperature_K=temperature,
+                    # The curve where this study produced one: its slope is
+                    # the same gradient the windows measure, with every
+                    # window's sampling behind it instead of one window's
+                    # median. A study that refused has none, and then the
+                    # windows' own displacements are what there is.
+                    curve=((payload["pmf"]["coordinate"],
+                            payload["pmf"]["free_energy_kjmol"])
+                           if payload.get("pmf") else None))
+            except (ValueError, ZeroDivisionError) as exc:
+                payload["next_study"] = {"not_designed": str(exc)}
 
             # A binding free energy only where there is a free energy to
             # take it from. The overlap and sampling gates decide that, and
@@ -1135,16 +1318,54 @@ class BatchExplorer:
             # supported. Attempted only for a ligand-distance coordinate,
             # since the standard-state correction is about the volume a
             # ligand gives up and means nothing along a torsion.
-            if payload.get("pmf") and plan.collective_variable in (
-                    "ligand_distance", "distance"):
+            if _a_binding_free_energy_belongs_here(payload, plan):
                 from fastmdxplora.simulation.binding import (
                     binding_free_energy)
 
-                payload["binding"] = binding_free_energy(
-                    payload["pmf"]["coordinate"],
-                    payload["pmf"]["free_energy_kjmol"],
-                    temperature_K=temperature,
+                # The cone the windows ran under, and the measurement the
+                # correction for it rests on. A wall that bit where the bound
+                # state is has removed part of the population the integral is
+                # over, so the number it pushed is read off the runs rather
+                # than assumed to be zero.
+                from fastmdxplora.simulation.umbrella import (
+                    cone_the_windows_ran_under,
+                    wall_bias_where_the_bound_state_is,
                 )
+
+                # What the windows ran under, not what the config asked for.
+                # A cone measured from the pull was never written in the
+                # config at all, and a config edited since the windows
+                # finished would correct by a cone that did not run.
+                cone = cone_the_windows_ran_under(directories)
+                wall = None
+                if cone is not None:
+                    minimum = min(
+                        (point for point in zip(
+                            payload["pmf"]["coordinate"],
+                            payload["pmf"]["free_energy_kjmol"])
+                         if point[1] is not None),
+                        key=lambda point: point[1], default=(0.0, 0.0))[0]
+                    wall = wall_bias_where_the_bound_state_is(
+                        directories, plan, bound_below=float(minimum) * 1.25)
+                if plan.cone is not None and cone is None:
+                    # Asked for a cone and no window recorded one. The
+                    # correction is worth several kJ/mol, so a number without
+                    # it is not the same number -- said, rather than quietly
+                    # produced.
+                    payload["binding"] = {"refused": (
+                        "This study asked for a cone and no window recorded "
+                        "one, so how much room the bulk state gave up is not "
+                        "known. Without it a binding free energy would be too "
+                        "negative by kT ln(4 pi / Omega) and there is nothing "
+                        "here to say what Omega was.")}
+                else:
+                    payload["binding"] = binding_free_energy(
+                        payload["pmf"]["coordinate"],
+                        payload["pmf"]["free_energy_kjmol"],
+                        temperature_K=temperature,
+                        cone=cone, wall_bias_kjmol=wall,
+                        resampled=payload.get("derived"),
+                    )
 
         destination = Path(self.output_dir) / "pmf.json"
         destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -1170,6 +1391,20 @@ class BatchExplorer:
         else:
             drawn_note = f", drawn in {drawn.parent.name}/" if drawn else ""
             print(f"Free energy:    {destination}{drawn_note}")
+
+        # Printed when the study refused, or when it passed with windows off
+        # their centres -- the two cases where the person is about to choose
+        # settings for another run. A study where everything held prints
+        # nothing and leaves the design in `pmf.json`.
+        design = payload.get("next_study") or {}
+        if design.get("centres") and (payload.get("refused")
+                                      or payload.get("drifted")):
+            print(f"Next study:     {design['n_windows']} windows from these "
+                  f"windows' own gradients, "
+                  f"{design['covers'][0]:g} to {design['covers'][1]:g}, "
+                  f"worst overlap {design['worst_predicted_overlap']:.2f} "
+                  "predicted")
+            print(as_a_config_block(design), end="")
 
     def _clear_previous_drawing(self) -> None:
         """Remove a figure from an earlier study of this directory.

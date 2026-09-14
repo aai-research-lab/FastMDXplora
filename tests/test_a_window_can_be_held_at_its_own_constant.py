@@ -220,34 +220,69 @@ class TestADriftedWindowSaysWhatWouldHaveHeldIt:
 
     def test_it_reports_the_constant_that_would_have_held_it(self):
         """The number this study then ran at, and at which the same window
-        sat 0.06 sigma from its centre."""
+        sat 0.06 sigma from its centre.
+
+        The windows here are 0.0552 nm apart, so the gate is 0.0276, and
+        3000 x 0.1199 / 0.0276 is 13030 -- which is the 13000 the next study
+        used. The recommendation is checked against the run that took it.
+        """
         drifted = self._drifted([0.896552, 0.8318, 1.006897])
 
         assert drifted[0]["force_constant_that_would_hold_it"] == pytest.approx(
             13000.0, rel=0.02)
 
-    def test_the_recommendation_is_self_consistent(self):
+    def test_the_recommendation_is_sized_against_the_gate_that_failed(self):
         """A window at the recommended constant, against the same gradient,
-        sits exactly two sigma out -- which is what "holds it" was defined
-        as. If these two ever disagree the arithmetic has drifted.
+        comes to rest exactly at the gate it broke. That is the definition
+        the flag uses, so it is the one the remedy has to answer.
 
-        The spacing is the same number, and that is not a coincidence worth
-        worrying about: a gradient displaces every window in a stretch by the
-        same amount, so the distance between where they actually sit is the
-        distance between their centres. Two sigma apart leaves neighbours
-        sharing about a third of their area.
+        The first version sized to two sigma instead. Two sigma is a looser
+        test wherever windows sit closer than four sigma apart, and on a
+        study 0.06 nm apart at 3000 it returned 1584 -- softer than the
+        constant that had just failed, printed under advice to hold the
+        windows harder.
         """
-        import math
-
-        from fastmdxplora.simulation.umbrella import KB_KJ
+        centres = [0.896552, 0.951724, 1.006897]
+        allowed = 0.5 * (centres[1] - centres[0])
 
         drifted = self._drifted([0.896552, 0.8318, 1.006897])[0]
         needed = drifted["force_constant_that_would_hold_it"]
         would_sit = drifted["gradient_kjmol_per_unit"] / needed
-        two_sigma = 2 * math.sqrt(KB_KJ * 300.0 / needed)
 
-        assert would_sit == pytest.approx(two_sigma, rel=1e-6)
-        assert drifted["spacing_it_would_need"] == pytest.approx(two_sigma)
+        assert would_sit == pytest.approx(allowed, rel=1e-6)
+
+    def test_it_never_recommends_a_softer_constant(self):
+        """The whole point of the advice is to hold the window harder.
+
+        A window 0.042 nm off centre at 3000, with windows 0.06 nm apart,
+        is inside two sigma and outside the gate -- the case the old
+        arithmetic answered with 1584.
+        """
+        from fastmdxplora.simulation.umbrella import _what_would_hold_it
+
+        answer = _what_would_hold_it(3000.0, 0.0419, 0.030)
+
+        assert answer["force_constant_that_would_hold_it"] > 3000.0
+        assert answer["force_constant_that_would_hold_it"] == pytest.approx(
+            4190.0, rel=0.01)
+
+    def test_the_spacing_keeps_the_neighbours_overlapping(self):
+        """Two and a half sigma at the new constant, which leaves about a
+        fifth of two histograms shared. Recommending a stiffer window without
+        closing the gaps trades this refusal for a gap the stiffening made."""
+        import math
+
+        from fastmdxplora.simulation.umbrella import (
+            KB_KJ, _what_would_hold_it)
+
+        answer = _what_would_hold_it(3000.0, 0.1199, 0.0276)
+        needed = answer["force_constant_that_would_hold_it"]
+
+        assert answer["spacing_it_would_need"] == pytest.approx(
+            2.5 * math.sqrt(KB_KJ * 300.0 / needed))
+        # The design the next study actually ran.
+        assert answer["spacing_it_would_need"] == pytest.approx(0.0346,
+                                                                abs=5e-4)
 
     def test_a_window_at_its_centre_is_not_in_the_list(self):
         assert self._drifted([0.896552, 0.951724, 1.006897]) == []
@@ -357,7 +392,104 @@ class TestAStudyThatPassesStillSaysWhatItsWindowsDid:
         assert "sampled away from their centres" in said
         assert "overlaps still passed" in said
 
+    def test_it_says_it_once_and_not_once_per_resample(self, caplog):
+        """The error bar recombines the study a couple of hundred times over
+        resampled data, and every one of those runs finds the same windows
+        off their centres.
+
+        A real 36-window campaign ended by printing this paragraph about two
+        hundred times, the count flickering between four and six windows as
+        the marginal ones fell either side of the gate in each resample --
+        burying the free energy it had spent a day computing. The finding
+        belongs to the study's own sampling, which is where it is computed.
+        """
+        import logging
+
+        from fastmdxplora.simulation.umbrella import compute_pmf
+
+        plan = plan_windows({"collective_variable": "distance",
+                             "centres": [0.896552, 0.951724, 1.006897],
+                             "force_constant": 3000.0,
+                             "minimum_samples": 100})
+        rng = np.random.default_rng(0)
+        samples = {i: s + 0.0288 * rng.standard_normal(9000)
+                   for i, s in enumerate([0.828, 0.832, 0.836])}
+
+        with caplog.at_level(logging.WARNING):
+            result = compute_pmf(samples, plan, temperature_K=300.0,
+                                 bootstrap_resamples=25)
+
+        said = [record.getMessage() for record in caplog.records
+                if "sampled away from their centres" in record.getMessage()]
+
+        assert len(said) == 1
+        assert result["pmf"]["uncertainty"] is not None, (
+            "the error bar still has to be computed -- quietening the "
+            "resamples must not have skipped them")
+
     def test_thin_is_carried_on_a_passing_study_too(self):
         result = self._all_slid_to_the_same_place()
 
         assert "thin" in result
+
+
+class TestTheRecombinationIsGivenRoomToFinish:
+    """The iteration ceiling was 2000, and a real study needed 4838.
+
+    Direct WHAM converges linearly and how many passes that takes grows with
+    the number of windows and the range they span. A thirty-six window study
+    of a ligand leaving a pocket stopped at a residual of about 1e-3 and
+    recorded `converged: false` -- on a free energy whose remaining movement
+    was five ten-thousandths of a kT, in a solve that takes under a second.
+    The ceiling was buying nothing and costing the one field that says
+    whether the answer is finished.
+    """
+
+    def _a_study_of(self, n_windows):
+        from fastmdxplora.simulation.umbrella import KB_KJ, compute_pmf
+
+        kT = KB_KJ * 300.0
+        centres = list(np.linspace(0.40, 2.00, n_windows))
+        forces = [3000.0] * n_windows
+        plan = plan_windows({"collective_variable": "distance",
+                             "centres": centres, "force_constant": forces,
+                             "minimum_samples": 100})
+        rng = np.random.default_rng(4)
+
+        def surface(x):
+            return (-28 * np.exp(-((x - 0.45) / 0.13) ** 2)
+                    + 9 * np.exp(-((x - 0.93) / 0.09) ** 2)
+                    - 2 * kT * np.log(np.clip(x, 0.05, None)))
+
+        samples = {}
+        for index, (centre, k) in enumerate(zip(centres, forces)):
+            grid = np.linspace(centre - 0.14, centre + 0.14, 3001)
+            weight = np.exp(-(surface(grid) + 0.5 * k * (grid - centre) ** 2)
+                            / kT)
+            samples[index] = rng.choice(grid, size=8000,
+                                        p=weight / weight.sum())
+        return compute_pmf(samples, plan, temperature_K=300.0,
+                           bootstrap_resamples=0)
+
+    def test_a_study_with_many_windows_converges(self):
+        """The case that did not, at the old ceiling."""
+        result = self._a_study_of(36)
+
+        assert result["refused"] is None, result["refused"]
+        assert result["converged"] is True
+        assert result["final_residual_kjmol"] < 1e-6
+
+    def test_it_reports_how_many_passes_it_took(self):
+        """A study needing tens of thousands is saying something about its
+        conditioning that a bare `converged: true` hides."""
+        result = self._a_study_of(36)
+
+        assert result["wham_iterations"] > 1
+        assert result["wham_iterations"] < 100_000
+
+    def test_the_ceiling_is_well_clear_of_what_a_real_study_needs(self):
+        """So that reaching it means the iteration is not converging, rather
+        than that it ran out of room."""
+        from fastmdxplora.simulation.umbrella import WHAM_MAX_ITERATIONS
+
+        assert WHAM_MAX_ITERATIONS >= 20 * 4838

@@ -265,6 +265,36 @@ FAMILIES: list[tuple[str, str, str]] = [
     ("batch", r"ALREADY_HOLD_RESULTS", "environment.path.exists"),
     ("validation", r"holds no data rows", "analysis.data.absent"),
     ("validation", r"needs MDAnalysis and ProLIF", "environment.backend.missing"),
+
+    # -- the cone work that landed on main while this branch was open ------
+    ("simulation", r"cone was never measured", "simulation.cone.unmeasured"),
+    ("simulation", r"only fits in a cone of", "simulation.cone.too_narrow"),
+    ("simulation", r"would start outside a cone", "simulation.cone.windows_outside"),
+    ("simulation", r"cone's axis selection .* matched no|"
+     r"cone's axis selection .* matches no|"
+     r"cone's `axis_selection` .* matched no|"
+     r"No alpha carbon in this topology|"
+     r"alpha carbon\(s\) lie between", "simulation.cv.selection_empty"),
+    ("simulation", r"matched \{frame_atoms.size\} atom", "simulation.cv.selection_arity"),
+    ("simulation", r"frame\(s\) of this pull have the ligand",
+     "analysis.sampling.too_few_frames"),
+    ("simulation", r"`cone` is the angular wall|A cone record needs|"
+     r"A cone restrains the angle", "simulation.bias.parameter_missing"),
+    ("batch", r"names \{named!r\}, and there is", "analysis.data.absent"),
+
+    # -- the cone's own settings, which are config rather than science -----
+    ("simulation", r"`half_angle_deg` is the angle|needs a positive `force_constant`|"
+     r"`keep` is the percentile|`margin` opens it wider|"
+     r"`gate_used` is the fraction", "config.option.wrong_type"),
+    ("simulation", r"`cone` takes `auto`|A cone takes `half_angle_deg`|"
+     r"`cone` is \{spec!r\}", "config.option.not_permitted"),
+    ("simulation", r"`axis_atoms` names the group|"
+     r"angle is measured against a group of atoms, and", "simulation.cv.selection_empty"),
+    ("simulation", r"axis selection \{cone.axis_selection!r\}", "simulation.cv.selection_empty"),
+    ("simulation", r"A path is an array of unit vectors", "simulation.bias.dimension_mismatch"),
+    ("simulation", r"needs a path to measure|needs at least three",
+     "analysis.sampling.too_few_frames"),
+    ("simulation", r"did not all run under the same cone", "simulation.cone.windows_outside"),
 ]
 
 SKIP_TYPES = frozenset({

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from urllib.parse import urlparse
+
 import pytest
 import yaml
 
@@ -92,6 +94,186 @@ class TestARemoteDashboardWillNotWalkTheDisk:
         text = (ROOT / "docs" / "gui.md").read_text(encoding="utf-8")
         assert "There is no authentication because there is no network" not in text
         assert "--dashboard-host" in text
+
+
+class TestARefusalReachesTheCallerItRefuses:
+    """A 403 nobody receives is indistinguishable from a broken server.
+
+    These endpoints answer a remote caller with a sentence saying why they
+    are closed. The handler sent that sentence and returned without reading
+    the request body -- and closing a socket with unread data in its receive
+    buffer sends RST rather than FIN, which discards the response already on
+    the wire.
+
+    Windows CI found it first, and intermittently, which is how a race
+    presents: `ConnectionAbortedError: [WinError 10053]` on a twenty-byte
+    body, on one of the three tests that post one. On Linux the same request
+    is refused cleanly until the body outgrows the socket buffer, so the
+    reproduction here sets a small send buffer and posts enough to fill it.
+    Without the drain this raises `BrokenPipeError` at 200 kB; with it the
+    refusal arrives at every size the server would have parsed.
+    """
+
+    @pytest.fixture()
+    def address(self, tmp_path, monkeypatch):
+        from fastmdxplora.gui import server
+
+        monkeypatch.setattr(server, "_is_loopback_host", lambda host: False)
+        session = server.start_dashboard_session(
+            output=tmp_path, host="127.0.0.1", port=0)
+        parsed = urlparse(session.url)
+        try:
+            yield parsed.hostname, parsed.port
+        finally:
+            session.server.shutdown()
+            session.server.server_close()
+
+    def post(self, address, path: str, size: int) -> str:
+        """The first line of the reply, over a socket too small to hold the
+        body -- so an undrained body shows up as a broken pipe rather than
+        as nothing at all."""
+        import json
+        import socket
+
+        body = json.dumps({"system": "1UBQ",
+                           "pad": "x" * max(0, size - 30)}).encode()
+        head = (f"POST {path} HTTP/1.0\r\nHost: x\r\n"
+                f"Content-Type: application/json\r\n"
+                f"Content-Length: {len(body)}\r\n\r\n").encode()
+        connection = socket.create_connection(address, timeout=20)
+        connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+        try:
+            connection.sendall(head + body)
+            return connection.recv(400).decode(errors="replace").splitlines()[0]
+        finally:
+            connection.close()
+
+    @pytest.mark.parametrize("path", [
+        "/api/run", "/api/run-config", "/api/load-config", "/api/check-config",
+        "/api/explore/validate", "/api/explore/start", "/api/explore/stop",
+    ])
+    def test_every_refused_endpoint_answers_a_body_it_will_not_read(
+            self, address, path: str) -> None:
+        assert "403" in self.post(address, path, 200_000), (
+            f"{path} did not get its refusal back to a caller that sent a "
+            "body. The handler answered without reading it, so the close "
+            "was an RST and took the response with it.")
+
+    @pytest.mark.parametrize("size", [20, 200_000, 900_000])
+    def test_it_holds_at_every_size_the_server_would_parse(
+            self, address, size: int) -> None:
+        """Twenty bytes is the case Windows failed on; 900 kB is the largest
+        body the parser accepts, and the drain is bounded by that same
+        limit so the two cannot disagree."""
+        assert "403" in self.post(address, "/api/run", size)
+
+    def raw(self, address, head: bytes, body: bytes = b"",
+            then: str = "close") -> str:
+        """Send exactly these bytes and report the first line of the reply.
+
+        `then` decides how the caller leaves: `close` is an ordinary close,
+        `half` shuts only the writing half so the server reads EOF where it
+        expected more, and `reset` sets SO_LINGER to zero so the close is an
+        RST -- a caller that vanishes mid-body, which a server on a network
+        meets whether or not anyone means it to.
+        """
+        import socket
+        import struct
+
+        connection = socket.create_connection(address, timeout=20)
+        try:
+            if then == "reset":
+                connection.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_LINGER,
+                    struct.pack("ii", 1, 0))
+            connection.sendall(head + body)
+            if then == "half":
+                connection.shutdown(socket.SHUT_WR)
+            if then == "reset":
+                return ""
+            return connection.recv(400).decode(errors="replace").splitlines()[0]
+        except OSError as gone:
+            return f"{type(gone).__name__}"
+        finally:
+            connection.close()
+
+    def test_a_length_that_is_not_a_number_is_not_waited_on(
+            self, address) -> None:
+        """`int("banana")` raises where the length is read, and a handler that
+        let that escape would answer nothing at all."""
+        head = (b"POST /api/run HTTP/1.0\r\nHost: x\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: banana\r\n\r\n")
+        assert "403" in self.raw(address, head)
+
+    def test_a_body_shorter_than_it_claims_does_not_hang_the_handler(
+            self, address) -> None:
+        """The guard that matters. `rfile.read(n)` blocks until it has `n`
+        bytes or the peer closes, so a caller declaring fifty thousand and
+        sending a hundred would hold the handler open indefinitely without
+        the check for an empty read."""
+        body = b'{"system": "1UBQ"}'
+        head = (b"POST /api/run HTTP/1.0\r\nHost: x\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: 50000\r\n\r\n")
+        assert "403" in self.raw(address, head, body, then="half")
+
+    def test_a_caller_that_vanishes_mid_body_does_not_take_the_server(
+            self, address, capfd) -> None:
+        """It cannot be answered -- there is nothing left to answer -- but the
+        next caller still has to be, and the going away is not an incident.
+
+        A browser tab closed mid-request raises `BrokenPipeError` inside the
+        handler, and `socketserver` prints a traceback for anything a handler
+        lets escape. On a machine of one's own that is a curiosity; on a
+        dashboard bound to a network it is every reload, and it buries the
+        faults that are faults.
+        """
+        body = b'{"system": "1UBQ"}'
+        head = (b"POST /api/run HTTP/1.0\r\nHost: x\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: 50000\r\n\r\n")
+        capfd.readouterr()
+        self.raw(address, head, body, then="reset")
+
+        assert "403" in self.post(address, "/api/run", 200_000), (
+            "the server stopped answering after a caller reset mid-body")
+        said = capfd.readouterr()
+        assert "Traceback" not in (said.err + said.out), (
+            "a caller hanging up printed a traceback:\n" + said.err[-800:])
+
+    def test_a_permitted_post_with_no_body_still_works(self, tmp_path) -> None:
+        """The other side of the same bookkeeping.
+
+        `_read_json_body` marks the body read even when there is none, so
+        that a later drain does not go looking for bytes that were never
+        coming. On a loopback bind nothing is refused, so this is the path
+        that reaches it -- and a flag set wrongly here would hang a handler
+        rather than fail a test.
+        """
+        import urllib.error
+        import urllib.request
+
+        from fastmdxplora.gui import server
+
+        session = server.start_dashboard_session(
+            output=tmp_path, host="127.0.0.1", port=0)
+        try:
+            request = urllib.request.Request(
+                f"{session.url.rstrip('/')}/api/explore/stop", data=b"",
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(request, timeout=20) as reply:
+                assert reply.status == 200
+        finally:
+            session.server.shutdown()
+            session.server.server_close()
+
+    def test_the_drain_is_bounded_by_what_the_parser_accepts(self) -> None:
+        """Reading an unbounded body to be polite about refusing it would be
+        reading an unbounded amount from a caller already being told no."""
+        from fastmdxplora.gui.server import MOST_A_BODY_MAY_BE
+
+        assert MOST_A_BODY_MAY_BE == 1_000_000
 
 
 class TestTheEnvironmentFileCarriesWhatThePageClaims:

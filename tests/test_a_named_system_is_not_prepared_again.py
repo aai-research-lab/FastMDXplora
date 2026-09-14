@@ -1,0 +1,142 @@
+"""A study that names a prepared system does not prepare a second one.
+
+Solvation does not place water the same way twice, so a second preparation
+is a second set of atoms. A study that says `setup_from` and prepares anyway
+gets frames from one system and a topology from another, and the failure --
+if it fails at all -- is a particle count mismatch ten seconds later. A real
+umbrella study stopped with "the prepared system has 36075 particles and the
+pull's trajectory has 36087", having ignored the setting that would have
+prevented it.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+
+def _a_study(tmp_path, prepared):
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    config = tmp_path / "c.yml"
+    config.write_text(
+        "output: out\n"
+        "systems:\n"
+        "  - system: 181L\n"
+        "simulation:\n"
+        f"  setup_from: {prepared}\n"
+        "  umbrella:\n"
+        "    collective_variable: distance\n"
+        '    selection_a: "name CA"\n'
+        '    selection_b: "name CB"\n'
+        "    from: 0.4\n"
+        "    to: 1.0\n"
+        "    n_windows: 4\n"
+        "    force_constant: 3000\n",
+        encoding="utf-8")
+    return BatchExplorer(config=config, output_dir=str(tmp_path / "out"))
+
+
+def _prepared_at(where):
+    where.mkdir(parents=True, exist_ok=True)
+    for name in ("system.xml", "state.xml", "topology.pdb"):
+        where.joinpath(name).write_text("<x/>", encoding="utf-8")
+    return where
+
+
+class TestANamedSystemIsNotPreparedAgain:
+
+    def test_the_setup_phase_is_skipped_rather_than_run(self, tmp_path, caplog):
+        import logging
+
+        prepared = _prepared_at(tmp_path / "earlier" / "setup")
+        study = _a_study(tmp_path, prepared)
+
+        with caplog.at_level(logging.INFO):
+            # Nothing is prepared: the early return is the reuse path, which
+            # is the one that seeds from what is already there.
+            study._maybe_prepare_once(None, None)
+
+        said = " ".join(record.getMessage() for record in caplog.records)
+        assert "Preparing nothing" in said
+        assert "water is not placed the same way twice" in said
+
+    def test_a_name_pointing_at_nothing_is_refused(self, tmp_path):
+        study = _a_study(tmp_path, tmp_path / "not-here")
+
+        with pytest.raises(FileNotFoundError, match="no prepared system"):
+            study._maybe_prepare_once(None, None)
+
+    @pytest.mark.parametrize("shape", ["setup", "shared_setup/setup", ""])
+    def test_the_three_shapes_a_finished_study_leaves(self, tmp_path, shape):
+        """A run directory, a study's shared preparation, or the setup
+        directory itself: a person points at what they have."""
+        root = tmp_path / "earlier"
+        _prepared_at(root / shape if shape else root)
+        study = _a_study(tmp_path, root)
+
+        study._maybe_prepare_once(None, None)     # does not raise
+
+    def test_a_study_that_names_nothing_still_prepares(self, tmp_path,
+                                                       monkeypatch):
+        """The setting is what turns preparation off. Without it, a study
+        that asked for setup gets setup.
+
+        Asserted by watching the preparation being asked for, not by watching
+        the study fail. The first version of this test wrote a config naming
+        `181L`, called the method, and asserted that *something* was raised --
+        taking a failure as evidence that it had tried. That passes on a
+        machine with no network, where the structure cannot be fetched, and
+        fails on one that can: given real internet the download succeeds, the
+        preparation finishes in eight seconds, and nothing is raised at all.
+        A test whose result depends on whether the network is up is not
+        testing the code.
+        """
+        from fastmdxplora.batch import explorer as explorer_module
+        from fastmdxplora.batch.explorer import BatchExplorer
+
+        config = tmp_path / "c.yml"
+        config.write_text(
+            "output: out\n"
+            "systems:\n"
+            "  - system: 181L\n"
+            "simulation:\n"
+            "  umbrella:\n"
+            "    collective_variable: distance\n"
+            '    selection_a: "name CA"\n'
+            '    selection_b: "name CB"\n'
+            "    from: 0.4\n"
+            "    to: 1.0\n"
+            "    n_windows: 4\n"
+            "    force_constant: 3000\n",
+            encoding="utf-8")
+        study = BatchExplorer(config=config, output_dir=str(tmp_path / "out"))
+
+        asked_for: list = []
+
+        def watch(options, output, phases, *args, **kwargs):
+            asked_for.append(list(phases))
+            raise SystemExit("far enough")
+
+        monkeypatch.setattr(explorer_module, "_execute_run", watch)
+        with pytest.raises(SystemExit):
+            study._maybe_prepare_once(None, None)
+
+        assert asked_for == [["setup"]], (
+            "A study that names no prepared system should have asked for one "
+            f"to be prepared; it asked for {asked_for}.")
+
+    def test_the_reuse_path_asks_for_no_preparation_at_all(self, tmp_path,
+                                                           monkeypatch):
+        """The other half of the same statement, checked the same way."""
+        from fastmdxplora.batch import explorer as explorer_module
+
+        prepared = _prepared_at(tmp_path / "earlier" / "setup")
+        study = _a_study(tmp_path, prepared)
+
+        asked_for: list = []
+        monkeypatch.setattr(
+            explorer_module, "_execute_run",
+            lambda *a, **k: asked_for.append(a[2]))
+        study._maybe_prepare_once(None, None)
+
+        assert asked_for == []

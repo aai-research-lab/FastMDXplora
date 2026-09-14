@@ -60,6 +60,35 @@ from fastmdxplora.refusals import BackendUnavailable
 
 logger = logging.getLogger("fastmdxplora.gui.server")
 
+class _DashboardServer(ThreadingHTTPServer):
+    """A server that does not shout when a caller hangs up.
+
+    `socketserver` prints a traceback for any exception a handler lets
+    escape, and a caller that goes away mid-request -- a browser tab closed,
+    a page reloaded, a `curl` interrupted -- makes the handler's next write
+    raise `BrokenPipeError`, or `ConnectionResetError`, or on Windows
+    `ConnectionAbortedError`. On a network that is weather, not a fault, and
+    a traceback for each one buries the faults that are.
+
+    It is the same lesson as the refusal that never arrived: this server is
+    reachable from somewhere else now, so the ordinary behaviour of somebody
+    else's socket has to be ordinary here too.
+    """
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        raised = sys.exc_info()[0]
+        if raised is not None and issubclass(raised, ConnectionError):
+            logger.debug("dashboard caller %s hung up mid-request",
+                         client_address)
+            return
+        super().handle_error(request, client_address)
+
+
+#: The largest request body this server will read, whether to parse it or to
+#: discard it before a refusal. One number for both, so a body small enough to
+#: be answered is always small enough to be drained first.
+MOST_A_BODY_MAY_BE = 1_000_000
+
 PLOT_TITLE_ALIASES = {
     "rmsd": "RMSD",
     "rmsf": "RMSF",
@@ -244,6 +273,9 @@ def make_handler(
                 self._dispatch_post()
             except Exception as exc:  # noqa: BLE001 - exploration errors stay local
                 logger.warning("dashboard POST route failed: %s", exc)
+                # Whatever went wrong, the body may not have been read -- and
+                # an unread body costs the caller this message.
+                self._drain_request_body()
                 self._send_json(
                     {"ok": False, "error": "Dashboard request failed."},
                     status=500,
@@ -450,6 +482,10 @@ def make_handler(
                 "/api/agent/model",
                 "/api/agent/propose",
             }:
+                # Before the refusal, not after: an unread body turns the
+                # close into an RST and the caller loses the 403 it explains
+                # itself with. See `_drain_request_body`.
+                self._drain_request_body()
                 self._send_json(
                     {
                         "ok": False,
@@ -580,15 +616,69 @@ def make_handler(
             return
 
         # ---- Generic response helpers ----
+        def _drain_request_body(self) -> None:
+            """Read and discard what the caller sent, before refusing it.
+
+            A handler that answers without reading the request body leaves
+            that body in the socket's receive buffer, and closing a socket
+            with unread data sends RST rather than FIN. The peer then loses
+            the response that was already on the wire.
+
+            That is not a theoretical tidiness. These refusals answer 403
+            with a sentence saying *why* the endpoint is closed, and a
+            refusal nobody receives is indistinguishable from a broken
+            server. On Windows the client raises `ConnectionAbortedError:
+            [WinError 10053]` for a twenty-byte body and never sees the
+            explanation; on Linux the same request is refused cleanly until
+            the body outgrows the socket buffer, at which point it becomes
+            `BrokenPipeError` there too. The Windows CI run found it first,
+            intermittently, which is how a race presents.
+
+            Bounded by the same limit the parser enforces. Past that the
+            body is one this server would refuse to parse in any case, so
+            reading it to be polite about the refusal would be reading an
+            unbounded amount from a caller already being told no.
+
+            Idempotent, and that is not a nicety. `rfile.read(n)` blocks
+            until it has `n` bytes or the peer closes, so draining a body
+            that was already read waits for bytes nobody is going to send --
+            the whole server stops answering. The first version of this
+            hung the dashboard tests that way, from the error path, where
+            the body had usually been read before the error.
+            """
+            if getattr(self, "_body_was_read", False):
+                return
+            self._body_was_read = True
+            try:
+                length = int(self.headers.get("Content-Length", "0") or 0)
+            except ValueError:
+                return
+            remaining = min(max(length, 0), MOST_A_BODY_MAY_BE)
+            while remaining > 0:
+                try:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                except OSError:
+                    return
+                if not chunk:
+                    return
+                remaining -= len(chunk)
+
         def _read_json_body(self) -> dict[str, Any]:
             try:
                 length = int(self.headers.get("Content-Length", "0") or 0)
             except ValueError:
                 length = 0
             if length <= 0:
+                self._body_was_read = True
                 return {}
-            if length > 1_000_000:
-                raise StudyError("Request body is too large", code="config.option.wrong_type")
+            if length > MOST_A_BODY_MAY_BE:
+                raise StudyError("Request body is too large",
+                                 code="config.option.wrong_type")
+            # Marked before the read, not after: a read that fails partway
+            # has still taken bytes off the socket, and a drain that then
+            # asked for the whole length again would block on bytes that
+            # are gone.
+            self._body_was_read = True
             raw = self.rfile.read(length)
             data = json.loads(raw.decode("utf-8"))
             if not isinstance(data, dict):
@@ -838,7 +928,7 @@ def start_dashboard_session(
                 runtime=runtime,
                 allow_control=_is_loopback_host(host),
             )
-            server = ThreadingHTTPServer((host, int(candidate)), handler)
+            server = _DashboardServer((host, int(candidate)), handler)
         except OSError as exc:
             last_error = exc
             continue
@@ -889,7 +979,7 @@ def start_test_server(
         active_root=None if home_mode else root,
     )
     handler = make_handler(root, config=config, runtime=runtime)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server = _DashboardServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"

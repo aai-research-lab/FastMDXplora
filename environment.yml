@@ -14,6 +14,20 @@
 # The OpenMM/PDBFixer packages are what make conda the recommended route;
 # the rest of the stack is pip-installable, so analysis + report also work
 # from a plain `pip install fastmdxplora` without this environment.
+#
+# What "full" means here, exactly: the core requirements and the `md`,
+# `ligand`, `amber`, `umap` and `pdf` extras of pyproject.toml -- which is
+# `all` plus `pdf` -- together with the two conda-only packages
+# (`openmm-plumed`, `openff-toolkit`) that no extra can express. The
+# `validation` extra is deliberately not here: MDAnalysis and ProLIF are
+# installed for the cross-tool comparison, where the point is that the two
+# stacks are separate.
+#
+# `test_the_conda_file_installs_what_it_claims` holds this file to that
+# sentence. It is not a formality: `markdown` and `umap-learn` were both
+# missing from a file whose first paragraph said "full dependency stack", so
+# anyone who set up from it got a PDF report that refused to render and a
+# UMAP analysis that could not run.
 name: fastmdxplora
 channels:
   - conda-forge
@@ -34,18 +48,25 @@ dependencies:
   # Molecular-dynamics chemistry stack (setup + simulation phases)
   - openmm>=8.2
   - pdbfixer
-  - openmmforcefields
   # Ligand chemistry and protonation. Absent, `resolve_ligand_chemistry`
   # cannot perceive a ligand and pKa assignment cannot run -- so a developer
   # set up from this file had no ligand path at all while the page describing
-  # it said they had the whole stack.
-  - rdkit
-  - propka
+  # it said they had the whole stack. The floors match pyproject.toml's, so
+  # that a conda environment and a pip install are the same software.
+  - openmmforcefields>=0.12
+  - rdkit>=2023.3
+  - propka>=3.5
   - openff-toolkit
   # Enhanced sampling. conda-only, which is the reason this file exists:
   # there is deliberately no `plumed` pip extra, so a clone set up any other
   # way has no umbrella, metadynamics or steered support.
   - openmm-plumed
-  # Reading Amber NetCDF trajectories, and rendering the report as a PDF.
-  - netcdf4
+  # Reading Amber NetCDF trajectories.
+  - netcdf4>=1.6
+  # Rendering the report as a PDF. Both halves: WeasyPrint lays the page out
+  # and `markdown` is what turns the report into the HTML it lays out, so a
+  # file carrying only the first produces a PDF phase that refuses.
   - weasyprint>=60
+  - markdown>=3.4
+  # UMAP, for the dimensionality-reduction analysis that offers it.
+  - umap-learn>=0.5

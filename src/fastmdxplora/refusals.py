@@ -424,6 +424,20 @@ CODES: tuple[Code, ...] = (
          detail_keys=("lipid",)),
 
     # -- simulation: collective variables -----------------------------------
+    Code("simulation.cone.unmeasured",
+         "A window's angular wall was never measured, so there is nothing "
+         "to restrain the angle against.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("window",)),
+    Code("simulation.cone.too_narrow",
+         "The path fits only in a cone that leaves the ligand too little "
+         "room to be a bulk state.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("half_angle_deg",)),
+    Code("simulation.cone.windows_outside",
+         "Windows that would start outside the cone they are to run under.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("outside", "windows", "half_angle_deg")),
     Code("simulation.cv.unknown",
          "A collective variable outside the registry.",
          Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,
