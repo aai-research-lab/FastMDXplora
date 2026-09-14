@@ -203,7 +203,12 @@ fastmdxplora = [
 
 [tool.setuptools_scm]
 write_to = "src/fastmdxplora/_version.py"
-fallback_version = "0.1.0"
+# Not a plausible version number, on purpose. This is only reached where
+# there is no tag and no written `_version.py` -- a build that cannot know
+# what it is -- and a fallback that looks like a real release makes that
+# build indistinguishable from a real one. `0.1.0` sat here while the
+# project shipped 2.5.5, and Read the Docs published it.
+fallback_version = "0.0.0+unknown-version"
 
 [tool.ruff]
 line-length = 100
