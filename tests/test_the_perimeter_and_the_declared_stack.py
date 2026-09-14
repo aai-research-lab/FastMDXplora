@@ -167,6 +167,107 @@ class TestARefusalReachesTheCallerItRefuses:
         limit so the two cannot disagree."""
         assert "403" in self.post(address, "/api/run", size)
 
+    def raw(self, address, head: bytes, body: bytes = b"",
+            then: str = "close") -> str:
+        """Send exactly these bytes and report the first line of the reply.
+
+        `then` decides how the caller leaves: `close` is an ordinary close,
+        `half` shuts only the writing half so the server reads EOF where it
+        expected more, and `reset` sets SO_LINGER to zero so the close is an
+        RST -- a caller that vanishes mid-body, which a server on a network
+        meets whether or not anyone means it to.
+        """
+        import socket
+        import struct
+
+        connection = socket.create_connection(address, timeout=20)
+        try:
+            if then == "reset":
+                connection.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_LINGER,
+                    struct.pack("ii", 1, 0))
+            connection.sendall(head + body)
+            if then == "half":
+                connection.shutdown(socket.SHUT_WR)
+            if then == "reset":
+                return ""
+            return connection.recv(400).decode(errors="replace").splitlines()[0]
+        except OSError as gone:
+            return f"{type(gone).__name__}"
+        finally:
+            connection.close()
+
+    def test_a_length_that_is_not_a_number_is_not_waited_on(
+            self, address) -> None:
+        """`int("banana")` raises where the length is read, and a handler that
+        let that escape would answer nothing at all."""
+        head = (b"POST /api/run HTTP/1.0\r\nHost: x\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: banana\r\n\r\n")
+        assert "403" in self.raw(address, head)
+
+    def test_a_body_shorter_than_it_claims_does_not_hang_the_handler(
+            self, address) -> None:
+        """The guard that matters. `rfile.read(n)` blocks until it has `n`
+        bytes or the peer closes, so a caller declaring fifty thousand and
+        sending a hundred would hold the handler open indefinitely without
+        the check for an empty read."""
+        body = b'{"system": "1UBQ"}'
+        head = (b"POST /api/run HTTP/1.0\r\nHost: x\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: 50000\r\n\r\n")
+        assert "403" in self.raw(address, head, body, then="half")
+
+    def test_a_caller_that_vanishes_mid_body_does_not_take_the_server(
+            self, address, capfd) -> None:
+        """It cannot be answered -- there is nothing left to answer -- but the
+        next caller still has to be, and the going away is not an incident.
+
+        A browser tab closed mid-request raises `BrokenPipeError` inside the
+        handler, and `socketserver` prints a traceback for anything a handler
+        lets escape. On a machine of one's own that is a curiosity; on a
+        dashboard bound to a network it is every reload, and it buries the
+        faults that are faults.
+        """
+        body = b'{"system": "1UBQ"}'
+        head = (b"POST /api/run HTTP/1.0\r\nHost: x\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: 50000\r\n\r\n")
+        capfd.readouterr()
+        self.raw(address, head, body, then="reset")
+
+        assert "403" in self.post(address, "/api/run", 200_000), (
+            "the server stopped answering after a caller reset mid-body")
+        said = capfd.readouterr()
+        assert "Traceback" not in (said.err + said.out), (
+            "a caller hanging up printed a traceback:\n" + said.err[-800:])
+
+    def test_a_permitted_post_with_no_body_still_works(self, tmp_path) -> None:
+        """The other side of the same bookkeeping.
+
+        `_read_json_body` marks the body read even when there is none, so
+        that a later drain does not go looking for bytes that were never
+        coming. On a loopback bind nothing is refused, so this is the path
+        that reaches it -- and a flag set wrongly here would hang a handler
+        rather than fail a test.
+        """
+        import urllib.error
+        import urllib.request
+
+        from fastmdxplora.gui import server
+
+        session = server.start_dashboard_session(
+            output=tmp_path, host="127.0.0.1", port=0)
+        try:
+            request = urllib.request.Request(
+                f"{session.url.rstrip('/')}/api/explore/stop", data=b"",
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(request, timeout=20) as reply:
+                assert reply.status == 200
+        finally:
+            session.server.shutdown()
+            session.server.server_close()
+
     def test_the_drain_is_bounded_by_what_the_parser_accepts(self) -> None:
         """Reading an unbounded body to be polite about refusing it would be
         reading an unbounded amount from a caller already being told no."""
