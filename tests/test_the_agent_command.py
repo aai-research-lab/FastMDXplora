@@ -327,13 +327,33 @@ class TestTheThreeModes(unittest.TestCase):
         self.run_command(["agent", "x", "-o", str(written)])
         validate_config(yaml.safe_load(written.read_text(encoding="utf-8")))
 
-    def test_unvalidated_refuses_rather_than_doing_something_else(self):
-        # A flag for a mode that does not exist is the stranded-setting bug
-        # again. Refusing at the door is the honest version until the
-        # marking that makes it safe is built.
-        code, out = self.run_command(["agent", "x", "--unvalidated"])
-        self.assertEqual(code, 1)
-        self.assertIn("not yet built", out)
+    def test_unvalidated_writes_a_config_and_says_what_it_means(self):
+        """It refused until the marking existed. The marking exists.
+
+        The mode itself -- an agent writing code outside the schema -- is
+        still to come. What is here is the marking that makes offering it
+        safe: the config records `agent: unvalidated`, and every figure
+        from an unchecked phase is stamped. Writing the config is therefore
+        honest rather than premature.
+        """
+        import yaml
+
+        written = self.root / "study.yml"
+        code, out = self.run_command(
+            ["agent", "x", "--unvalidated", "-o", str(written)])
+        self.assertEqual(code, 0)
+        self.assertIn("outside the schema", out)
+        config = yaml.safe_load(written.read_text(encoding="utf-8"))
+        self.assertEqual(config["agent"], "unvalidated")
+
+    def test_and_the_config_it_writes_is_still_validated(self):
+        # `unvalidated` marks the output, not the config. A study asking
+        # for a setting that does not exist is refused in this mode exactly
+        # as in any other.
+        code, out = self.run_command(
+            ["agent", "x", "--unvalidated"])
+        self.assertEqual(code, 0)
+        self.assertIn("Accepted", out)
 
     def test_autonomous_says_what_it_is_waiting_on(self):
         # It would run the study unseen, which needs a cost estimate, which

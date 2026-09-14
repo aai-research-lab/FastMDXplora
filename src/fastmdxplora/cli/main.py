@@ -1831,14 +1831,19 @@ def _run_agent(args: Any) -> int:
         return 1
 
     if args.agent_mode == "unvalidated":
+        # The mode itself -- an agent writing code outside the schema --
+        # is still to come. What exists now is the marking that makes it
+        # safe to offer, so the config records it and every figure from an
+        # unchecked phase carries it. Writing a config in this mode is
+        # therefore honest: it says what the study will be, and the
+        # marking will hold whatever produces the output.
         print(
-            "`--unvalidated` is specified and not yet built. It would let "
-            "the agent work outside this schema, with every file it "
-            "produced marked as unchecked. Until that marking exists there "
-            "is no safe way to offer it, and a flag that quietly did "
-            "something else would be worse than one that refuses."
+            "Writing a config marked `unvalidated`. Work in this mode goes "
+            "outside the schema, so nothing checks the method and every "
+            "figure from an unchecked phase is stamped. The agent cannot "
+            "yet write code itself; the mode is recorded, and the marking "
+            "holds for anything run under it."
         )
-        return 1
 
     print("Writing a config...")
     try:
