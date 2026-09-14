@@ -465,6 +465,24 @@ def make_handler(
                     )
                 )
                 return
+            if path == "/api/agent/model":
+                # Reading and setting which model to ask. The key is
+                # accepted here and stored by `save_choice`, which puts it
+                # in a file of its own; it is never echoed back, never put
+                # in a config, and never logged.
+                from fastmdxplora.gui.agent_panel import model_endpoint
+
+                self._send_json(model_endpoint(payload or {}))
+                return
+            if path == "/api/agent/propose":
+                # A sentence in, a config out -- through the same
+                # `propose_config` the CLI uses and the same validator a
+                # hand-written config goes through. Nothing here decides
+                # whether a config is acceptable.
+                from fastmdxplora.gui.agent_panel import propose_endpoint
+
+                self._send_json(propose_endpoint(payload or {}))
+                return
             if path == "/api/load-config":
                 # Bringing a config into the form so it can be changed. The
                 # file is read and never written: anything altered is saved as

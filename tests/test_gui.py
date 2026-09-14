@@ -3339,13 +3339,44 @@ class TestEveryPathFieldCanBeBrowsed:
             r'<input[^>]*id="([^"]+)"[^>]*placeholder="([^"]*)"[^>]*>', page)
         wants_path = [
             (element_id, hint) for element_id, hint in asking
-            if "/" in hint or hint.endswith(("_output", "_run"))
+            if ("/" in hint or hint.endswith(("_output", "_run")))
+            # A URL has slashes and is not a path. The server cannot walk
+            # to http://localhost:11434/v1, so offering a picker for it
+            # would be offering a control that could not work. Added when
+            # the agent panel's base-URL field tripped this: the rule was
+            # right about the shape and "contains a slash" is a proxy for
+            # "is a path" that a URL breaks.
+            and not hint.startswith(("http://", "https://"))
         ]
         assert wants_path, "no path fields found; check this test"
         marked = set(re.findall(r'id="([^"]+)"[^>]*data-picks=', page)) | set(
             re.findall(r'data-picks="[^"]*"[^>]*id="([^"]+)"', page))
         missing = [i for i, _ in wants_path if i not in marked]
         assert not missing, f"these ask for a path and offer no picker: {missing}"
+
+    def test_a_url_is_not_a_path(self) -> None:
+        """The exclusion above, asserted rather than trusted.
+
+        It would be an easy place to hide a real path field: give it a
+        placeholder starting with http:// and the rule stops looking. So
+        check that a field asking for an ordinary path is still caught
+        whatever else is in the page.
+        """
+        import re
+
+        page, _ = self._files()
+        made_up = (
+            '<input id="made-up-path" placeholder="/home/you/study.pdb">')
+        asking = re.findall(
+            r'<input[^>]*id="([^"]+)"[^>]*placeholder="([^"]*)"[^>]*>',
+            page + made_up)
+        caught = [
+            element_id for element_id, hint in asking
+            if ("/" in hint or hint.endswith(("_output", "_run")))
+            and not hint.startswith(("http://", "https://"))
+        ]
+        assert "made-up-path" in caught
+        assert "agent-base-url" not in caught
 
     def test_a_new_field_needs_no_wiring(self) -> None:
         """data-picks is the whole of it, so the next one cannot be forgotten

@@ -1,0 +1,212 @@
+"""The agent in the GUI: two endpoints and a panel.
+
+The GUI is one more door onto `propose_config` — the same function the CLI
+calls and a notebook imports. Nothing in this layer decides whether a
+config is acceptable; the validator does that, as it does for a config
+somebody typed by hand. So what is worth testing here is the door, not the
+decision.
+
+The key is the part that needs care. It is typed in the browser, sent
+once, and stored server-side, because a browser cannot hold a secret —
+anything the page keeps is readable by anything else the page runs. It is
+never sent back, which is the property asserted below: a page that never
+receives a key cannot leak one.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+from fastmdxplora.gui.agent_panel import model_endpoint, propose_endpoint
+
+
+class TestChoosingAModel(unittest.TestCase):
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(self.root)
+
+    def tearDown(self):
+        if self.before is None:
+            os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)
+        else:
+            os.environ["FASTMDXPLORA_CONFIG_DIR"] = self.before
+
+    def test_it_offers_the_same_providers_the_cli_does(self):
+        from fastmdxplora.agent.models import PROVIDERS
+
+        answer = model_endpoint({})
+        self.assertEqual([p["id"] for p in answer["providers"]],
+                         list(PROVIDERS))
+
+    def test_nothing_chosen_says_so_rather_than_guessing(self):
+        self.assertIsNone(model_endpoint({})["current"])
+
+    def test_a_choice_is_stored_and_reported_back(self):
+        model_endpoint({"provider": "anthropic", "model": "claude-sonnet-4-6"})
+        self.assertEqual(model_endpoint({})["current"]["provider"],
+                         "anthropic")
+
+    def test_the_key_never_comes_back(self):
+        # The property that matters. A page that never receives a key
+        # cannot leak one, to a screenshot, an extension or a bug report.
+        model_endpoint({"provider": "openai", "model": "gpt-5",
+                        "api_key": "sk-secret"})
+        self.assertNotIn("sk-secret", json.dumps(model_endpoint({})))
+
+    def test_a_compatible_server_without_a_url_is_refused(self):
+        # Somebody picking it wants DeepSeek or a local model, and the
+        # refusal should say which kind of thing is missing.
+        answer = model_endpoint({"provider": "compatible", "model": "x"})
+        self.assertFalse(answer["ok"])
+        self.assertIn("base URL", answer["error"])
+        self.assertIn("Ollama", answer["error"])
+
+    def test_it_shows_what_the_compatible_option_is_for(self):
+        # A list of servers rather than a list of vendors: the protocol is
+        # what is supported, and a vendor list goes stale.
+        compatible = next(p for p in model_endpoint({})["providers"]
+                          if p["id"] == "compatible")
+        labels = {e["label"] for e in compatible["examples"]}
+        self.assertIn("Ollama (local)", labels)
+        self.assertTrue(compatible["needs_url"])
+
+    def test_an_unknown_provider_is_refused(self):
+        answer = model_endpoint({"provider": "gemini"})
+        self.assertFalse(answer["ok"])
+        self.assertEqual(answer["code"], "config.option.not_permitted")
+
+
+class TestProposing(unittest.TestCase):
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(self.root)
+        model_endpoint({"provider": "anthropic",
+                        "model": "claude-sonnet-4-6", "api_key": "x"})
+
+    def tearDown(self):
+        if self.before is None:
+            os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)
+        else:
+            os.environ["FASTMDXPLORA_CONFIG_DIR"] = self.before
+
+    def answering(self, reply):
+        import fastmdxplora.agent as agent
+
+        original = agent.completion_for
+        agent.completion_for = lambda *a, **k: (lambda prompt: reply)
+        return original
+
+    def test_an_empty_request_is_refused(self):
+        self.assertFalse(propose_endpoint({})["ok"])
+
+    def test_a_sentence_becomes_a_config(self):
+        import fastmdxplora.agent as agent
+
+        original = self.answering(
+            "systems:\n  - {id: a, system: 1UBQ}\n"
+            "setup:\n  ph: 6.5\nsimulation:\n  duration_ns: 50\n")
+        try:
+            answer = propose_endpoint({"request": "ubiquitin at pH 6.5"})
+        finally:
+            agent.completion_for = original
+        self.assertTrue(answer["ok"])
+        self.assertEqual(answer["config"]["setup"]["ph"], 6.5)
+        self.assertIn("duration_ns: 50", answer["yaml"])
+
+    def test_the_mode_travels_with_the_config(self):
+        # Beside it would vanish the moment the config was shared. In it,
+        # the mode reaches resolved_config.yml and the manifest.
+        import fastmdxplora.agent as agent
+
+        original = self.answering("systems:\n  - {id: a, system: 1UBQ}\n")
+        try:
+            answer = propose_endpoint({"request": "x", "agent": "assisted"})
+        finally:
+            agent.completion_for = original
+        self.assertEqual(answer["config"]["agent"], "assisted")
+
+    def test_the_attempts_come_back_whole_rather_than_counted(self):
+        # They are the only visible sign that anything checked the config,
+        # and somebody watching a model correct itself learns the config
+        # language while they wait.
+        import fastmdxplora.agent as agent
+
+        original = self.answering(
+            "setup:\n  pH: 6.5\nsystems:\n  - {id: a, system: 1UBQ}\n")
+        try:
+            answer = propose_endpoint({"request": "x", "attempts": 2})
+        finally:
+            agent.completion_for = original
+        self.assertFalse(answer["ok"])
+        refusals = [a["refusal"] for a in answer["attempts"] if a["refusal"]]
+        self.assertTrue(refusals)
+        self.assertEqual(refusals[0]["code"], "config.option.unknown")
+        self.assertIn("pH", refusals[0]["message"])
+
+    def test_unvalidated_is_refused_here_too(self):
+        # Same answer as the CLI gives. A mode that existed in one door and
+        # not the other would be two pieces of software wearing one name.
+        answer = propose_endpoint({"request": "x", "agent": "unvalidated"})
+        self.assertFalse(answer["ok"])
+        self.assertIn("not yet built", answer["error"])
+
+    def test_with_no_model_chosen_it_says_what_to_do(self):
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(Path(tempfile.mkdtemp()))
+        answer = propose_endpoint({"request": "x"})
+        self.assertFalse(answer["ok"])
+        self.assertEqual(answer["code"], "environment.model.unset")
+
+
+class TestThePageCarriesIt(unittest.TestCase):
+
+    def page(self) -> str:
+        import fastmdxplora.gui as gui
+
+        return (Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def test_the_panel_and_its_nav_link_are_there(self):
+        page = self.page()
+        self.assertIn('data-page="agent"', page)
+        self.assertIn('data-view-link="agent"', page)
+
+    def test_the_script_is_included_and_shipped(self):
+        import fastmdxplora.gui as gui
+
+        self.assertIn("agent-panel.js", self.page())
+        script = (Path(gui.__file__).parent / "static" / "agent-panel.js")
+        self.assertTrue(script.is_file())
+
+    def test_the_script_calls_the_endpoints_that_exist(self):
+        import fastmdxplora.gui as gui
+
+        script = (Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        server = (Path(gui.__file__).parent
+                  / "server.py").read_text(encoding="utf-8")
+        for path in ("/api/agent/model", "/api/agent/propose"):
+            with self.subTest(path=path):
+                self.assertIn(path, script)
+                self.assertIn(f'"{path}"', server)
+
+    def test_the_panel_lands_by_url_fragment(self):
+        # One browser and one server: `fastmdx agent` with no request opens
+        # the same page at #agent rather than starting a second app.
+        import inspect
+
+        from fastmdxplora.cli.main import _cmd_gui
+
+        self.assertIn("panel", inspect.signature(_cmd_gui).parameters)
+        self.assertIn("fragment", inspect.getsource(_cmd_gui))
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

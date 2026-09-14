@@ -965,3 +965,34 @@ tidy value would hide that; naming the departure does not.
 `unchecked_phases(config)` is what the artifact marking reads — the list,
 not a summary. Absent everywhere means a person wrote it, so every study
 run before this existed stays truthful without being rewritten.
+
+## The agent in the GUI
+
+```bash
+fastmdx gui        # the workbench, with an Agent section
+fastmdx agent      # the same server, opened at that section
+```
+
+One browser and one codebase. `fastmdx agent` with no request passes
+`#agent` in the URL fragment, which the page reads on load to decide where
+to start. Two commands that started two servers would be two things to
+learn for one thing to use.
+
+The panel is two calls. `/api/agent/model` reads and sets which model to
+ask; `/api/agent/propose` turns a sentence into a config through the same
+`propose_config` the CLI uses. Nothing in the GUI layer decides whether a
+config is acceptable — the validator does that, as it does for a config
+written by hand.
+
+The attempts are shown rather than summarised. They are the only visible
+sign that anything checked the config, and somebody watching a model
+correct itself learns the config language while they wait, which is the
+path off the panel and onto the form.
+
+### The key
+
+Typed in the browser, sent once, stored server-side. A browser cannot hold
+a secret: anything the page keeps is readable by anything else the page
+runs. It is never sent back — the endpoint reports which provider and
+model are set and never the secret, so a page that never receives a key
+cannot leak one to a screenshot, an extension or a bug report.

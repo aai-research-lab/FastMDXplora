@@ -1692,8 +1692,15 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_gui(args: argparse.Namespace) -> int:
-    """Serve the full GUI: study builder, exploration, telemetry, and viewer."""
+def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
+    """Serve the full GUI: study builder, exploration, telemetry, and viewer.
+
+    `panel` names where to land. `fastmdx agent` with no request passes
+    "agent" and gets the same server on the same port, opened at that
+    section -- a note in the URL fragment the page reads on load, not a
+    second application. Two commands that started two browsers would be two
+    things to learn for one thing to use.
+    """
     from fastmdxplora.gui.server import DashboardConfig, serve_dashboard
 
     # Without --output there is no run to watch: the working directory is
@@ -1710,7 +1717,9 @@ def _cmd_gui(args: argparse.Namespace) -> int:
     if not getattr(args, "no_browser", False):
         import webbrowser
         try:
-            webbrowser.open(f"http://{args.host}:{args.port}", new=2)
+            fragment = f"#{panel}" if panel else ""
+            webbrowser.open(
+                f"http://{args.host}:{args.port}{fragment}", new=2)
         except Exception:  # noqa: BLE001 - opening a browser is best effort
             pass
     serve_dashboard(
@@ -1787,8 +1796,25 @@ def _run_agent(args: Any) -> int:
             return 1
 
     if not request:
+        # No request is an invitation to converse, and conversing wants a
+        # window. The same server `fastmdx gui` starts, landing on the
+        # agent panel.
         print(describe_choice())
-        return 0
+        print("\nOpening the agent panel. Ctrl-C to stop the server.")
+        gui_args = argparse.Namespace(
+            output=getattr(args, "agent_output", None),
+            host="127.0.0.1",
+            port=8765,
+            no_browser=False,
+            ligand_resname=None,
+            binding_pocket_cutoff_A=5.0,
+        )
+        # Through the module attribute rather than the local name, so a
+        # test can substitute it. `_cmd_gui` serves until interrupted, and
+        # a test that called it for real would hang rather than fail.
+        import sys as _sys
+
+        return _sys.modules[__name__]._cmd_gui(gui_args, panel="agent")
 
     try:
         complete = completion_for()

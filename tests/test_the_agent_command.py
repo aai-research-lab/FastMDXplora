@@ -152,10 +152,39 @@ class TestTheCommand(unittest.TestCase):
             agent.completion_for = original
         return code, buffer.getvalue()
 
-    def test_with_nothing_set_it_says_what_to_run(self):
-        code, out = self.run_command(["agent"])
+    def test_with_no_request_it_opens_the_panel(self):
+        """No request is an invitation to converse, and that wants a window.
+
+        Patched rather than run: `_cmd_gui` serves until interrupted, and a
+        test that called it would not fail, it would hang -- which is worse,
+        because a hung suite says nothing about what is wrong. Found by
+        hanging.
+        """
+        import io
+        from contextlib import redirect_stdout
+
+        # `import fastmdxplora.cli.main as cli` gets the *function*, not
+        # the module: cli/__init__.py re-exports `main`, so the attribute
+        # shadows the submodule. sys.modules is unambiguous.
+        import sys
+
+        import fastmdxplora.cli.main  # noqa: F401 - registers the module
+
+        cli = sys.modules["fastmdxplora.cli.main"]
+        seen = {}
+        original = cli._cmd_gui
+        cli._cmd_gui = lambda args, panel="": seen.update(
+            {"panel": panel, "port": args.port}) or 0
+        buffer = io.StringIO()
+        try:
+            with redirect_stdout(buffer):
+                code = cli.main(["agent"])
+        finally:
+            cli._cmd_gui = original
+
         self.assertEqual(code, 0)
-        self.assertIn("fastmdx agent set", out)
+        self.assertEqual(seen["panel"], "agent")
+        self.assertIn("Opening the agent panel", buffer.getvalue())
 
     def test_asking_without_a_model_refuses_and_explains(self):
         code, out = self.run_command(["agent", "simulate ubiquitin"])

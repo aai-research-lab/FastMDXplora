@@ -64,6 +64,10 @@
           <span>Report</span>
         </a>
         <div class="nav-heading">Tools</div>
+        <a href="#" class="nav-link" data-view-link="agent">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Agent</span>
+        </a>
         <a href="#" class="nav-link" data-view-link="settings">
           <span class="nav-icon" aria-hidden="true"></span>
           <span>Settings</span>
@@ -807,6 +811,64 @@
           </div>
         </section>
 
+        <section class="page" data-page="agent" hidden>
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Agent</h1>
+              <div class="page-subtitle">Describe a study and a model will
+                draft it. What comes back goes through the same validation
+                as a config written by hand, so the agent cannot ask for
+                something FastMDXplora will not do.</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title">Model</h2>
+            <p class="card-note" id="agent-model-current">Loading…</p>
+            <label class="field">
+              <span class="field-label">Provider</span>
+              <select id="agent-provider"></select>
+            </label>
+            <label class="field" id="agent-url-field" hidden>
+              <span class="field-label">Base URL</span>
+              <input id="agent-base-url" type="text"
+                     placeholder="http://localhost:11434/v1">
+              <span class="field-help" id="agent-url-examples"></span>
+            </label>
+            <label class="field">
+              <span class="field-label">Model</span>
+              <input id="agent-model" type="text">
+            </label>
+            <label class="field">
+              <span class="field-label">API key</span>
+              <input id="agent-key" type="password"
+                     placeholder="leave blank to read it from the environment">
+              <span class="field-help">Stored in a file of its own, readable
+                only by you. Never written into a config, a manifest or a
+                log.</span>
+            </label>
+            <button id="agent-save-model" class="button">Save</button>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title">Describe the study</h2>
+            <textarea id="agent-request" rows="3"
+              placeholder="simulate ubiquitin from 1UBQ at pH 6.5 for 50 ns"></textarea>
+            <label class="field">
+              <span class="field-label">Mode</span>
+              <select id="agent-mode">
+                <option value="assisted">assisted — draft it and stop</option>
+                <option value="autonomous">autonomous — draft it and run it</option>
+                <option value="unvalidated">unvalidated — outside this schema</option>
+              </select>
+            </label>
+            <button id="agent-propose" class="button primary">Write a config</button>
+            <div id="agent-attempts" class="agent-attempts"></div>
+            <pre id="agent-result" class="agent-result" hidden></pre>
+            <button id="agent-load" class="button" hidden>Load into the form</button>
+          </div>
+        </section>
+
         <section class="page" data-page="settings" hidden>
           <div class="page-header">
             <div>
@@ -899,7 +961,8 @@
   <div class="sr-only" aria-live="polite" id="sr-live"></div>
 
   <script src="/static/3Dmol-min.js"></script>
-  <script src="/static/dashboard.js"></script>
+  <script src="/static/agent-panel.js"></script>
+    <script src="/static/dashboard.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>
   <script src="/static/charts.js"></script>
