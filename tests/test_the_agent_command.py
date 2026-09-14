@@ -13,6 +13,7 @@ never carries it, and what the command prints when something is missing.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,10 +53,32 @@ class TestWhereTheKeyLives(unittest.TestCase):
         self.assertNotIn("api_key", record)
         self.assertNotIn("sk-secret", json.dumps(record))
 
+    @unittest.skipIf(os.name == "nt",
+                     "POSIX permission bits do not govern access on Windows")
     def test_the_stored_file_is_readable_only_by_its_owner(self):
         save_choice(ModelChoice("openai", "gpt-5"), key="sk-secret",
                     path=self.path)
         self.assertEqual(self.path.stat().st_mode & 0o077, 0)
+
+    def test_the_key_file_is_outside_any_study_on_every_platform(self):
+        """The protection that does not depend on POSIX bits.
+
+        `chmod(0o600)` is the protection on Unix and is meaningless on
+        Windows, where access is governed by ACLs that Python's chmod does
+        not set -- the mode bits come back as 0o666 and the test above
+        asserted otherwise, which was a test reporting a platform rather
+        than a property.
+
+        What holds everywhere is that the key never enters a study: not the
+        config, not the manifest, not a log line. That is asserted
+        elsewhere in this file; here, that the file itself lives outside
+        any study directory, so sharing a run never shares a key.
+        """
+        from fastmdxplora.agent.models import model_path
+
+        where = model_path()
+        self.assertNotIn("output", where.parts)
+        self.assertIn("fastmdxplora", where.parts)
 
     def test_the_environment_wins_over_the_file(self):
         # So a cluster job or a CI run can supply one per session without
@@ -327,21 +350,64 @@ class TestTheThreeModes(unittest.TestCase):
         self.run_command(["agent", "x", "-o", str(written)])
         validate_config(yaml.safe_load(written.read_text(encoding="utf-8")))
 
-    def test_unvalidated_refuses_rather_than_doing_something_else(self):
-        # A flag for a mode that does not exist is the stranded-setting bug
-        # again. Refusing at the door is the honest version until the
-        # marking that makes it safe is built.
-        code, out = self.run_command(["agent", "x", "--unvalidated"])
-        self.assertEqual(code, 1)
-        self.assertIn("not yet built", out)
+    def test_unvalidated_writes_a_config_and_says_what_it_means(self):
+        """It refused until the marking existed. The marking exists.
 
-    def test_autonomous_says_what_it_is_waiting_on(self):
-        # It would run the study unseen, which needs a cost estimate, which
-        # needs a particle count, which is settled when the system is
-        # solvated. Said plainly rather than failing later.
-        code, out = self.run_command(["agent", "x", "--autonomous"])
+        The mode itself -- an agent writing code outside the schema -- is
+        still to come. What is here is the marking that makes offering it
+        safe: the config records `agent: unvalidated`, and every figure
+        from an unchecked phase is stamped. Writing the config is therefore
+        honest rather than premature.
+        """
+        import yaml
+
+        written = self.root / "study.yml"
+        code, out = self.run_command(
+            ["agent", "x", "--unvalidated", "-o", str(written)])
         self.assertEqual(code, 0)
-        self.assertIn("cost estimate", out)
+        self.assertIn("outside the schema", out)
+        config = yaml.safe_load(written.read_text(encoding="utf-8"))
+        self.assertEqual(config["agent"], "unvalidated")
+
+    def test_and_the_config_it_writes_is_still_validated(self):
+        # `unvalidated` marks the output, not the config. A study asking
+        # for a setting that does not exist is refused in this mode exactly
+        # as in any other.
+        code, out = self.run_command(
+            ["agent", "x", "--unvalidated"])
+        self.assertEqual(code, 0)
+        self.assertIn("Accepted", out)
+
+    def test_autonomous_refuses_without_a_budget(self):
+        """It was waiting on the staging. The staging exists.
+
+        `--autonomous` runs the study without showing it to you, so a
+        budget is the only thing left that can stop it. Refusing is the
+        honest answer to being asked to run something unattended with no
+        ceiling -- a default allowance would be a number nobody chose
+        deciding how much of somebody's card to spend.
+        """
+        code, out = self.run_command(["agent", "x", "--autonomous"])
+        self.assertEqual(code, 1)
+        self.assertIn("--budget-hours", out)
+
+    def test_the_budget_flag_exists_and_takes_hours(self):
+        import io
+        from contextlib import redirect_stdout
+
+        from fastmdxplora.cli.main import _build_parser
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            try:
+                _build_parser().parse_args(["agent", "--help"])
+            except SystemExit:
+                pass
+        help_text = buffer.getvalue()
+        self.assertIn("--budget-hours", help_text)
+        # And says where the check happens, because "after setup" is the
+        # surprising part and the place somebody would otherwise ask.
+        self.assertIn("after setup", help_text)
 
     def test_the_schema_offers_exactly_these_three(self):
         from fastmdxplora.config.schema import TOP_LEVEL

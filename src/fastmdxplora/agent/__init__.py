@@ -20,6 +20,11 @@ not require it.
 """
 
 from fastmdxplora.agent.queue import Budget, Job, Queue
+from fastmdxplora.agent.staged import (
+    StagedRun,
+    particles_after_setup,
+    run_in_stages,
+)
 from fastmdxplora.agent.run import (
     finished_studies,
     join_finished,
@@ -62,6 +67,9 @@ __all__ = [
     "WorkerReport",
     "finished_studies",
     "join_finished",
+    "StagedRun",
+    "particles_after_setup",
+    "run_in_stages",
     "study_runner",
     "submit_study",
     "work",

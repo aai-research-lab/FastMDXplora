@@ -167,7 +167,10 @@ class TestTheMigrationHasAnInstrument(unittest.TestCase):
         # partially done would be worse than not having started: an agent
         # that gets a code for three of four config mistakes cannot tell
         # the fourth from a crash.
-        loader = [s for s in self.sites if str(s[0]) == "config/loader.py"]
+        # as_posix, so this finds the file on Windows too, where str()
+        # on a relative Path gives "config\\loader.py".
+        loader = [s for s in self.sites
+                  if s[0].as_posix() == "config/loader.py"]
         self.assertTrue(loader)
         uncoded = [(str(p), ln, name) for p, ln, name, ok in loader if not ok]
         self.assertEqual(uncoded, [], f"uncoded refusals in the loader: {uncoded}")

@@ -1007,6 +1007,18 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     ag.set_defaults(agent_mode="assisted")
+    ag.add_argument(
+        "--budget-hours",
+        type=float,
+        metavar="HOURS",
+        help=(
+            "The most GPU time an unattended study may spend. Required by "
+            "--autonomous, which runs without showing you the config: a "
+            "budget is the only thing left that can stop it. Checked after "
+            "setup, which is when the solvated particle count -- and so "
+            "the cost -- is first known."
+        ),
+    )
     ag.add_argument("--host", default="127.0.0.1",
                     help=("Bind address for the panel (default: 127.0.0.1). "
                           "Anything else disables the endpoints that read "
@@ -1831,14 +1843,19 @@ def _run_agent(args: Any) -> int:
         return 1
 
     if args.agent_mode == "unvalidated":
+        # The mode itself -- an agent writing code outside the schema --
+        # is still to come. What exists now is the marking that makes it
+        # safe to offer, so the config records it and every figure from an
+        # unchecked phase carries it. Writing a config in this mode is
+        # therefore honest: it says what the study will be, and the
+        # marking will hold whatever produces the output.
         print(
-            "`--unvalidated` is specified and not yet built. It would let "
-            "the agent work outside this schema, with every file it "
-            "produced marked as unchecked. Until that marking exists there "
-            "is no safe way to offer it, and a flag that quietly did "
-            "something else would be worse than one that refuses."
+            "Writing a config marked `unvalidated`. Work in this mode goes "
+            "outside the schema, so nothing checks the method and every "
+            "figure from an unchecked phase is stamped. The agent cannot "
+            "yet write code itself; the mode is recorded, and the marking "
+            "holds for anything run under it."
         )
-        return 1
 
     print("Writing a config...")
     try:
@@ -1869,14 +1886,14 @@ def _run_agent(args: Any) -> int:
     print(f"  ✓ Accepted after {proposal.cycles} attempt(s)\n")
     print(text)
     if args.agent_mode == "autonomous":
-        print(
-            "\n`--autonomous` would run this without showing it to you "
-            "first, and that needs a cost estimate so there is a ceiling "
-            "on what an unseen study may spend. The estimate needs a "
-            "particle count, which is settled when the system is "
-            "solvated -- so this waits on running setup first. Not built "
-            "yet; the config above is what it would have run."
-        )
+        if args.budget_hours is None:
+            print(
+                "\n`--autonomous` runs the study without showing it to "
+                "you, so a budget is the only thing left that can stop "
+                "it. Give one with --budget-hours."
+            )
+            return 1
+        return _run_staged(args, config)
 
     if args.agent_output:
         _Path(args.agent_output).write_text(text, encoding="utf-8")
@@ -1885,6 +1902,33 @@ def _run_agent(args: Any) -> int:
     else:
         print("Save it with -o FILE, then run "
               "`fastmdx explore -config FILE`.")
+    return 0
+
+
+
+def _run_staged(args: Any, config: dict) -> int:
+    """`--autonomous`: setup, price it, then the rest if it fits."""
+    from pathlib import Path as _Path
+
+    from fastmdxplora.agent import run_in_stages
+
+    output = _Path(args.agent_output or "fastmdxplora_output")
+    print(f"\nRunning setup, which settles the particle count "
+          f"({output})...")
+    staged = run_in_stages(config, output,
+                           budget_hours=float(args.budget_hours))
+
+    for note in staged.notes:
+        print(f"  {note}")
+
+    if staged.refusal is not None:
+        print(f"\n  ✗ {staged.refusal.message}")
+        if staged.setup_done:
+            print("\nSetup's output is kept, so a shorter study can reuse "
+                  "it with `setup_from`.")
+        return 1
+
+    print("\n  ✓ Ran within the budget.")
     return 0
 
 

@@ -648,11 +648,18 @@ def save_figure(
     dpi: int = 300,
     close: bool = True,
     write_svg: bool = True,
+    mark: str = "",
 ) -> Path:
     """Save a figure to disk and (by default) close it.
 
     Closing is the safe default: leaving figures open eventually exhausts
     matplotlib's figure manager when many analyses run in sequence.
+
+    `mark` stamps the figure, and is set when the phase that produced it
+    worked outside the schema. It goes on here rather than at each call
+    site because this is the one place every figure passes through, and a
+    mark applied in twenty places is a mark missing from one of them.
+    See :mod:`fastmdxplora.marking`.
 
     Returns the resolved Path that was written.
     """
@@ -660,6 +667,12 @@ def save_figure(
     out.parent.mkdir(parents=True, exist_ok=True)
     _style_all_axes(fig)
     fig.tight_layout()
+    if mark:
+        # After tight_layout, so the stamp is not counted as content and
+        # squeezed into the plot area.
+        from fastmdxplora.marking import stamp_figure
+
+        stamp_figure(fig, mark)
     fig.patch.set_facecolor("white")
     for ax in fig.axes:
         ax.set_facecolor("white")

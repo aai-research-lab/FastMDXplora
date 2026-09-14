@@ -95,17 +95,6 @@ def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
                 "code": "config.option.missing_companion"}
 
     mode = str(payload.get("agent") or "assisted")
-    if mode == "unvalidated":
-        return {
-            "ok": False,
-            "code": "config.option.not_permitted",
-            "error": ("`unvalidated` is specified and not yet built. It "
-                      "would let the agent work outside this schema, with "
-                      "every file it produced marked as unchecked; until "
-                      "that marking exists there is no safe way to offer "
-                      "it."),
-        }
-
     phases = payload.get("phases") or ["setup", "simulation"]
     try:
         complete = completion_for()

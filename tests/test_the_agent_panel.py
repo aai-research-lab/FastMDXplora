@@ -151,12 +151,22 @@ class TestProposing(unittest.TestCase):
         self.assertEqual(refusals[0]["code"], "config.option.unknown")
         self.assertIn("pH", refusals[0]["message"])
 
-    def test_unvalidated_is_refused_here_too(self):
-        # Same answer as the CLI gives. A mode that existed in one door and
-        # not the other would be two pieces of software wearing one name.
-        answer = propose_endpoint({"request": "x", "agent": "unvalidated"})
-        self.assertFalse(answer["ok"])
-        self.assertIn("not yet built", answer["error"])
+    def test_unvalidated_is_accepted_here_too(self):
+        # Same answer as the CLI gives. A mode that behaved differently in
+        # one door than the other would be two pieces of software wearing
+        # one name.
+        import fastmdxplora.agent as agent
+
+        original = self.answering(
+            "systems:\n  - {id: a, system: 1UBQ}\n"
+            "setup:\n  ph: 6.5\nsimulation:\n  duration_ns: 50\n")
+        try:
+            answer = propose_endpoint({"request": "x",
+                                       "agent": "unvalidated"})
+        finally:
+            agent.completion_for = original
+        self.assertTrue(answer["ok"])
+        self.assertEqual(answer["config"]["agent"], "unvalidated")
 
     def test_with_no_model_chosen_it_says_what_to_do(self):
         os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(Path(tempfile.mkdtemp()))
