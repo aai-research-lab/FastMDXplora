@@ -441,6 +441,14 @@ def make_handler(
                 # the endpoints that need the machine's trust.
                 "/api/load-config",
                 "/api/check-config",
+                # One stores an API key and the other spends it. Over a
+                # network, unauthenticated, that is somebody else setting
+                # where this machine's requests go, or burning the credit
+                # on the key already stored. Neither is a study, so neither
+                # reads as dangerous at a glance -- which is exactly why
+                # they belong on a list rather than in a judgement.
+                "/api/agent/model",
+                "/api/agent/propose",
             }:
                 self._send_json(
                     {

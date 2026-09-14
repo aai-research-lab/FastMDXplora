@@ -210,3 +210,80 @@ class TestThePageCarriesIt(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheEndpointsNeedTheMachinesTrust(unittest.TestCase):
+    """Bound beyond loopback, the agent endpoints refuse.
+
+    The GUI already gates the endpoints that read the filesystem or start a
+    run behind `allow_control`, which is true only for a loopback bind —
+    there is no login, so the bind address is the whole of the trust model.
+
+    I added two endpoints and did not put them on that list. One stores an
+    API key and the other spends it. Over a network, unauthenticated, that
+    is somebody else deciding where this machine's requests go, or burning
+    the credit on the key already stored. Neither is a study, so neither
+    reads as dangerous at a glance — which is why they belong on a list
+    rather than in somebody's judgement.
+    """
+
+    def serve(self, host):
+        import tempfile
+        import threading
+        import time
+
+        from fastmdxplora.gui.server import serve_dashboard
+
+        port = 8794 + (0 if host == "127.0.0.1" else 1)
+        threading.Thread(
+            target=serve_dashboard,
+            kwargs={"output": tempfile.mkdtemp(), "host": host, "port": port},
+            daemon=True).start()
+        time.sleep(1.2)
+        return port
+
+    def post(self, port, path, body=None):
+        import urllib.error
+        import urllib.request
+
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}{path}", method="POST",
+            data=json.dumps(body or {}).encode(),
+            headers={"content-type": "application/json"})
+        try:
+            return urllib.request.urlopen(request).getcode()
+        except urllib.error.HTTPError as exc:
+            return exc.code
+
+    def test_they_are_on_the_same_list_as_the_rest(self):
+        # Asserted from the source as well as by serving, because the list
+        # is the thing somebody adding the next endpoint will read.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        source = (pathlib.Path(gui.__file__).parent
+                  / "server.py").read_text(encoding="utf-8")
+        gated = source[source.index("if not allow_control and path in {"):]
+        gated = gated[:gated.index("}:")]
+        for path in ("/api/agent/model", "/api/agent/propose"):
+            with self.subTest(path=path):
+                self.assertIn(path, gated)
+
+    def test_bound_beyond_loopback_they_refuse(self):
+        port = self.serve("0.0.0.0")
+        for path in ("/api/agent/model", "/api/agent/propose"):
+            with self.subTest(path=path):
+                self.assertEqual(self.post(port, path), 403)
+
+    def test_and_so_do_the_endpoints_that_were_already_gated(self):
+        # The comparison that makes the first assertion mean something: if
+        # these stopped being gated, the agent ones passing would prove
+        # nothing.
+        port = self.serve("0.0.0.0")
+        self.assertEqual(self.post(port, "/api/explore/start"), 403)
+
+    def test_on_loopback_they_work(self):
+        # The gate must not be a way of switching the feature off.
+        port = self.serve("127.0.0.1")
+        self.assertEqual(self.post(port, "/api/agent/model"), 200)

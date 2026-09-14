@@ -1007,6 +1007,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     ag.set_defaults(agent_mode="assisted")
+    ag.add_argument("--host", default="127.0.0.1",
+                    help=("Bind address for the panel (default: 127.0.0.1). "
+                          "Anything else disables the endpoints that read "
+                          "the filesystem or spend an API key, because "
+                          "there is no login."))
+    ag.add_argument("--port", type=int, default=8765,
+                    help="Port to serve the panel on (default: 8765).")
+    ag.add_argument("--no-browser", action="store_true",
+                    help="Serve the panel without opening a browser.")
     ag.add_argument(
         "--attempts",
         type=int,
@@ -1803,9 +1812,9 @@ def _run_agent(args: Any) -> int:
         print("\nOpening the agent panel. Ctrl-C to stop the server.")
         gui_args = argparse.Namespace(
             output=getattr(args, "agent_output", None),
-            host="127.0.0.1",
-            port=8765,
-            no_browser=False,
+            host=args.host,
+            port=args.port,
+            no_browser=args.no_browser,
             ligand_resname=None,
             binding_pocket_cutoff_A=5.0,
         )
