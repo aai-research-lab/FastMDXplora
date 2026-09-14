@@ -1787,8 +1787,7 @@ def _run_agent(args: Any) -> int:
     from pathlib import Path as _Path
 
     from fastmdxplora.agent import (
-        PROVIDERS, ModelChoice, completion_for, describe_choice, propose_config,
-        save_choice,
+        completion_for, describe_choice, propose_config,
     )
     from fastmdxplora.refusals import StudyError, refusal_of
 

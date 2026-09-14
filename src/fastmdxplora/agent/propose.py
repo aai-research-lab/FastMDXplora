@@ -42,8 +42,8 @@ none of this package's business.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 from fastmdxplora.config.describe import describe_schema
 from fastmdxplora.config.loader import ConfigError, validate_config

@@ -27,7 +27,6 @@ except ImportError:  # pragma: no cover
 
 from fastmdxplora.agent import Queue
 from fastmdxplora.cost import (
-    Calibration,
     calibrate,
     estimate_seconds,
     estimate_study,

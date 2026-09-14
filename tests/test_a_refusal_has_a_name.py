@@ -27,7 +27,6 @@ from fastmdxplora.config.loader import ConfigError, validate_config
 from fastmdxplora.refusals import (
     CODES,
     SUPERSEDED,
-    Code,
     CodedError,
     Disclosure,
     Kind,

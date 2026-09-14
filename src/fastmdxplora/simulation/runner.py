@@ -31,14 +31,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
-from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import (
     BackendUnavailable,
     MissingResultError,
+    StudyError,
     UnstableRun,
 )
-from fastmdxplora.refusals import MissingResultError
-from fastmdxplora.refusals import BackendUnavailable
 
 logger = get_logger("simulation.runner")
 

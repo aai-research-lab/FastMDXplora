@@ -28,11 +28,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from fastmdxplora.config.schema import (
-    ANALYSIS,
     PHASE_SCHEMAS,
-    REPORT,
-    SETUP,
-    SIMULATION,
     TOP_LEVEL,
     Field,
     PhaseSchema,

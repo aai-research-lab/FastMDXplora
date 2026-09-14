@@ -42,7 +42,7 @@ a statement of what the interface is expected to handle.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from fastmdxplora.agent.propose import Completion, propose_config
 

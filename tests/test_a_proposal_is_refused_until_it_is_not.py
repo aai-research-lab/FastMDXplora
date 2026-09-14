@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import unittest
 
-from fastmdxplora.agent import Proposal, propose_config, repair_prompt_for
+from fastmdxplora.agent import propose_config, repair_prompt_for
 from fastmdxplora.refusals import Kind, Refusal
 
 

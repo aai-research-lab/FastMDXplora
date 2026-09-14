@@ -30,7 +30,7 @@ from fastmdxplora.config.describe import (
     schema_as_json,
 )
 from fastmdxplora.config.loader import ConfigError, validate_config
-from fastmdxplora.config.schema import PHASE_SCHEMAS, TOP_LEVEL
+from fastmdxplora.config.schema import PHASE_SCHEMAS
 from fastmdxplora.refusals import refusal_of
 
 
@@ -121,7 +121,7 @@ class TestTheDescriptionIsUsable(unittest.TestCase):
         full = describe_schema()
         terse = describe_schema(verbose=False)
         self.assertLess(len(terse), len(full) / 2)
-        for phase, schema in PHASE_SCHEMAS.items():
+        for schema in PHASE_SCHEMAS.values():
             for field in schema.fields:
                 with self.subTest(setting=field.name):
                     self.assertIn(field.name, terse)
