@@ -122,12 +122,12 @@ class TestItIsBuiltWhereItCanBe:
 
 class TestTheDocumentationSaysWhyItExists:
     def test_it_names_the_reason(self) -> None:
-        page = (ROOT / "docs" / "remote.md").read_text(encoding="utf-8")
+        page = (ROOT / "docs" / "clusters.md").read_text(encoding="utf-8")
         assert "conda-forge only" in page
         assert "not on PyPI" in page
 
     def test_it_says_to_pass_the_gpu_through(self) -> None:
-        page = (ROOT / "docs" / "remote.md").read_text(encoding="utf-8")
+        page = (ROOT / "docs" / "clusters.md").read_text(encoding="utf-8")
         assert "--nv" in page
 
 

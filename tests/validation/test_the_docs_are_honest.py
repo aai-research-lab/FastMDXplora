@@ -29,9 +29,14 @@ METHOD_GATED = ("pmf", "metad_surface", "steered_work")
 
 
 def _analysis_section() -> str:
-    text = (DOCS / "phases.md").read_text(encoding="utf-8")
-    start = text.index("## analysis")
-    return text[start:text.index("## report", start)]
+    """The catalogue, from the top of the page down to the detail section.
+
+    It moved out of `phases.md` when the documentation was reorganised around
+    the Config and the Manifest: the four phases are an overview page now, and
+    the per-analysis catalogue is a reference of its own.
+    """
+    text = (DOCS / "analyses.md").read_text(encoding="utf-8")
+    return text[:text.index("## What the measures actually compute")]
 
 
 class TestEveryAnalysisIsDocumented:
@@ -39,7 +44,7 @@ class TestEveryAnalysisIsDocumented:
         documented = set(re.findall(r"^\| `([a-z_]+)` \|", _analysis_section(),
                                     re.M))
         assert documented == set(_REGISTRY), (
-            "docs/phases.md and the analysis registry disagree; "
+            "docs/analyses.md and the analysis registry disagree; "
             f"undocumented={sorted(set(_REGISTRY) - documented)}, "
             f"documented but absent={sorted(documented - set(_REGISTRY))}")
 
@@ -82,8 +87,8 @@ class TestTheEnhancedSamplingThreeAreNotLigandAnalyses:
 
     def test_they_sit_under_their_own_heading(self) -> None:
         section = _analysis_section()
-        heading = section.index("**Enhanced sampling**")
-        ligand = section.index("**Protein and ligand together**")
+        heading = section.index("### Enhanced sampling")
+        ligand = section.index("### Protein and ligand together")
         for name in METHOD_GATED:
             assert section.index(f"| `{name}` |") > heading, (
                 f"{name} is documented above the Enhanced sampling heading")
@@ -94,14 +99,14 @@ class TestTheCollectiveVariablesAreAllNamed:
     """The count was wrong in three places at once, and the README disagreed
     with the page it links to."""
 
-    @pytest.mark.parametrize("document", ["simulations.md", "phases.md"])
+    @pytest.mark.parametrize("document", ["studies.md", "examples.md"])
     def test_no_document_understates_them(self, document: str) -> None:
         text = (DOCS / document).read_text(encoding="utf-8")
         assert "five variables" not in text
         assert "on five variables" not in text
 
     def test_every_variable_is_named_where_they_are_listed(self) -> None:
-        text = (DOCS / "simulations.md").read_text(encoding="utf-8")
+        text = (DOCS / "studies.md").read_text(encoding="utf-8")
         missing = [c for c in COLLECTIVE_VARIABLES if f"`{c}`" not in text]
         assert not missing, f"collective variables never named in docs: {missing}"
 
@@ -111,7 +116,7 @@ class TestTheCollectiveVariablesAreAllNamed:
                  10: "ten"}
         word = words[len(COLLECTIVE_VARIABLES)]
         assert word in readme.lower()
-        assert word in (DOCS / "simulations.md").read_text(
+        assert word in (DOCS / "studies.md").read_text(
             encoding="utf-8").lower()
 
 
@@ -119,7 +124,7 @@ class TestTheCountsInTheReadmeHold:
     def test_the_bilayers(self) -> None:
         from fastmdxplora.setup.membrane import LIPIDS
         assert len(LIPIDS) == 7, "the README says seven bilayers"
-        text = (DOCS / "simulations.md").read_text(encoding="utf-8")
+        text = (DOCS / "studies.md").read_text(encoding="utf-8")
         for lipid in LIPIDS:
             assert lipid in text, f"{lipid} is offered and never documented"
 
@@ -136,9 +141,10 @@ class TestTheReweightingIsDescribedAsBuilt:
         a newline. A test that fails when a paragraph is rewrapped is a test
         that gets deleted rather than fixed."""
         import re
-        text = (DOCS / "phases.md").read_text(encoding="utf-8")
-        start = text.index("### Averages on a biased run")
-        return re.sub(r"\s+", " ", text[start:text.index("## report", start)])
+        text = (DOCS / "analyses.md").read_text(encoding="utf-8")
+        start = text.index("## Averages on a biased run")
+        return re.sub(r"\s+", " ", text[start:text.index("## Adding your own",
+                                                         start)])
 
     def test_the_estimator_is_named_with_its_offset(self) -> None:
         """Without c(t) the weights rank frames by when they were written.
@@ -169,7 +175,7 @@ class TestTheReweightingIsDescribedAsBuilt:
         assert "potential of mean force" in section
 
     def test_the_output_directory_is_documented(self) -> None:
-        text = (DOCS / "phases.md").read_text(encoding="utf-8")
+        text = (DOCS / "analyses.md").read_text(encoding="utf-8")
         assert "analysis/reweighted/" in text
         assert "reweighted_averages.json" in text
 
@@ -252,7 +258,7 @@ class TestEveryMethodIsShownAndNotJustOne:
 
     @staticmethod
     def _examples() -> str:
-        return (DOCS / "usage_examples.md").read_text(encoding="utf-8")
+        return (DOCS / "examples.md").read_text(encoding="utf-8")
 
     def test_each_of_the_three_has_a_section(self) -> None:
         page = self._examples()
@@ -281,11 +287,11 @@ class TestThereIsSomewhereElseToRun:
 
     @staticmethod
     def _page() -> str:
-        return (DOCS / "remote.md").read_text(encoding="utf-8")
+        return (DOCS / "clusters.md").read_text(encoding="utf-8")
 
     def test_the_page_exists_and_is_in_the_index(self) -> None:
         assert self._page()
-        assert "remote" in (DOCS / "index.md").read_text(encoding="utf-8")
+        assert "clusters" in (DOCS / "index.md").read_text(encoding="utf-8")
 
     def test_it_covers_installing_without_a_network(self) -> None:
         page = self._page()
@@ -326,22 +332,52 @@ class TestTheDocumentationIsShapedLikeTheSoftware:
         assert "## The short version" not in page
 
     def test_the_config_has_its_own_section(self) -> None:
-        assert ":caption: The Config" in self._index()
+        assert ":caption: The FastMDXplora Config" in self._index()
 
-    def test_the_three_interfaces_are_listed_together(self) -> None:
-        """None of them is primary, so none is filed apart from the others."""
+    def test_the_interfaces_are_listed_together(self) -> None:
+        """None of them is primary, so none is filed apart from the others.
+
+        The Agent is the fourth: it writes a Config in place of a person, and
+        it is reachable through all three of the others.
+        """
         index = self._index()
-        rest = index[index.index(":caption: Interfaces"):]
+        rest = index[index.index(":caption: Writing a Config"):]
         block = rest[:rest.index(chr(96) * 3)]
-        for page in ("gui", "cli_reference", "api"):
+        for page in ("gui", "cli", "api", "agent"):
             assert page in block
 
     def test_the_config_page_is_titled_as_the_thing(self) -> None:
         """Not "Configuration", and not a YAML file: YAML is the format it is
         written in, which is not what it is."""
-        page = (DOCS / "configuration.md").read_text(encoding="utf-8")
-        assert page.startswith("# The Config")
+        page = (DOCS / "config.md").read_text(encoding="utf-8")
+        assert page.startswith("# The FastMDXplora Config")
         assert "format rather than the thing" in page
+
+    def test_the_manifest_has_a_page_of_its_own(self) -> None:
+        """The other half of the pair. A Config specifies a study; a Manifest
+        records the result of one, and it had no page at all."""
+        page = (DOCS / "manifest.md").read_text(encoding="utf-8")
+        assert page.startswith("# The FastMDXplora Manifest")
+        assert "manifest" in self._index().lower()
+
+    def test_the_agent_has_a_page_of_its_own(self) -> None:
+        """It was documented inside the refusals page, under headings nobody
+        would search for."""
+        page = (DOCS / "agent.md").read_text(encoding="utf-8")
+        assert page.startswith("# The FastMDXplora Agent")
+        assert "agent" in self._index().lower()
+
+    def test_the_agent_page_says_it_has_no_privileges(self) -> None:
+        """The load-bearing claim: what the Agent writes is validated by the
+        same code as anything a person writes."""
+        page = (DOCS / "agent.md").read_text(encoding="utf-8")
+        assert "validate_config" in page
+        assert "no privileges" in page.lower()
+
+    def test_developer_material_is_filed_apart(self) -> None:
+        """A user-facing page should not carry a post-mortem of a fixed bug."""
+        assert ":caption: For developers" in self._index()
+        assert (DOCS / "developers.md").is_file()
 
     def test_nothing_calls_it_a_yaml_file(self) -> None:
         pages = [ROOT / "README.md"] + sorted(DOCS.glob("*.md"))
@@ -363,7 +399,10 @@ class TestTheApiReferenceIsComplete:
         import re
         from pathlib import Path
 
-        text = Path("docs/api.md").read_text(encoding="utf-8")
+        docs = Path(__file__).resolve().parents[2] / "docs"
+        text = "".join(
+            (docs / page).read_text(encoding="utf-8")
+            for page in ("api.md", "analyses.md"))
         return set(re.findall(r"\.\. auto(?:module|class):: ([\w\.]+)", text))
 
     def test_every_registered_analysis_is_documented(self) -> None:
@@ -376,8 +415,8 @@ class TestTheApiReferenceIsComplete:
             if cls.__module__ not in documented
         )
         assert not missing, (
-            f"these analyses are registered but absent from the API "
-            f"reference: {missing}")
+            f"these analyses are registered but absent from the generated "
+            f"reference in docs/api.md or docs/analyses.md: {missing}")
 
     def test_every_directive_resolves(self) -> None:
         """A misspelled target builds an empty section without failing."""

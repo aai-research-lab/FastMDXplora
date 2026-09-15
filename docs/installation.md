@@ -1,4 +1,4 @@
-# Installation
+# Installing FastMDXplora
 
 ## Recommended: conda-forge
 
@@ -203,7 +203,7 @@ whatever is already there is usually slower than starting clean.
 
 ## Where to go next
 
-- [Your first run](getting_started.md)
+- [Your first FastMDXplora study](first_study.md)
 - [The FastMDXplora GUI](gui.md)
-- [Running somewhere else](remote.md) — clusters, containers, and machines
+- [Running FastMDXplora elsewhere](clusters.md) — clusters, containers, and machines
   with no network

@@ -93,6 +93,9 @@ class TestARemoteDashboardWillNotWalkTheDisk:
     def test_the_documentation_no_longer_claims_immunity(self) -> None:
         text = (ROOT / "docs" / "gui.md").read_text(encoding="utf-8")
         assert "There is no authentication because there is no network" not in text
+        # The flag that opens `fastmdx gui` to the network is `--host`; the
+        # `--dashboard-*` family does the same for a run-attached dashboard.
+        assert "--host 0.0.0.0" in text
         assert "--dashboard-host" in text
 
 

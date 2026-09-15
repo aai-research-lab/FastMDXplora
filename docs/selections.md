@@ -1,7 +1,7 @@
-# Selections
+# Selections in a Config
 
-A selection says *which atoms*. FastMDXplora asks for one in four places, and
-they all speak the same language.
+A selection says *which atoms*. A FastMDXplora [Config](config.md) asks for one
+in four places, and they all speak the same language.
 
 ```yaml
 analysis:

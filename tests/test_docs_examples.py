@@ -106,7 +106,7 @@ def test_documented_configuration_shape_validates() -> None:
 def test_the_metadynamics_examples_in_the_docs_actually_plan() -> None:
     """A documented example the software refuses is worse than none.
 
-    `docs/simulations.md` was written before walls existed and showed a
+    `docs/studies.md` was written before walls existed and showed a
     ligand_distance block with no bound -- which the software then began
     refusing, correctly, leaving the page telling people to run something that
     stops. The examples are parsed and planned here so that cannot happen
@@ -123,7 +123,7 @@ def test_the_metadynamics_examples_in_the_docs_actually_plan() -> None:
 
     from fastmdxplora.simulation.metadynamics import plan_from_config
 
-    page = Path(__file__).resolve().parents[1] / "docs" / "simulations.md"
+    page = Path(__file__).resolve().parents[1] / "docs" / "studies.md"
     if not page.is_file():  # pragma: no cover - the page is optional
         return
 
@@ -190,8 +190,8 @@ def test_the_readme_points_at_every_important_page() -> None:
 
     repo = Path(__file__).resolve().parents[1]
     readme = (repo / "README.md").read_text(encoding="utf-8")
-    for page in ("installation", "getting_started", "phases", "simulations",
-                 "interactions", "cli_reference", "configuration", "gui"):
+    for page in ("installation", "first_study", "how_it_works", "studies",
+                 "interactions", "cli", "config", "gui", "manifest", "agent"):
         assert f"{page}.html" in readme, f"the README does not link {page}"
 
 
@@ -313,13 +313,13 @@ def test_the_phases_page_lists_every_analysis() -> None:
     import fastmdxplora.analysis  # noqa: F401
     from fastmdxplora.analysis.describe import describe_all
 
-    page = Path(__file__).resolve().parents[1] / "docs" / "phases.md"
+    page = Path(__file__).resolve().parents[1] / "docs" / "analyses.md"
     if not page.is_file():  # pragma: no cover
         return
     text = page.read_text(encoding="utf-8")
 
     missing = sorted(name for name in describe_all() if f"`{name}`" not in text)
-    assert not missing, f"these analyses are not in the phases page: {missing}"
+    assert not missing, f"these analyses are not in the analyses page: {missing}"
 
 
 def test_an_analysis_describes_what_it_currently_does() -> None:
@@ -359,7 +359,7 @@ def test_region_highlights_are_documented_where_they_are_produced() -> None:
     """
     from pathlib import Path
 
-    page = Path(__file__).resolve().parents[1] / "docs" / "phases.md"
+    page = Path(__file__).resolve().parents[1] / "docs" / "how_it_works.md"
     text = page.read_text(encoding="utf-8")
 
     for artifact in ("rmsf_region_highlights.png",
@@ -591,7 +591,7 @@ class TestTheDocumentationQuotesWhatTheSoftwareSays:
         from fastmdxplora.explain import EXPLANATIONS
 
         page = (pathlib.Path(__file__).resolve().parents[1]
-                / "docs" / "getting_started.md").read_text(encoding="utf-8")
+                / "docs" / "first_study.md").read_text(encoding="utf-8")
         block = page[page.index("▸ Minimizing energy"):]
         quoted = block[:block.index("```")]
         # The page wraps and uses an em dash where the terminal writes two
@@ -607,7 +607,7 @@ class TestTheDocumentationQuotesWhatTheSoftwareSays:
         from fastmdxplora.explain import EXPLANATIONS
 
         page = (pathlib.Path(__file__).resolve().parents[1]
-                / "docs" / "getting_started.md").read_text(encoding="utf-8")
+                / "docs" / "first_study.md").read_text(encoding="utf-8")
         words = {14: "Fourteen", 15: "Fifteen", 16: "Sixteen",
                  17: "Seventeen", 18: "Eighteen"}
         assert words[len(EXPLANATIONS)] in page, (
@@ -624,7 +624,7 @@ class TestTheDocumentationQuotesWhatTheSoftwareSays:
         from fastmdxplora.simulation.metadynamics import COLLECTIVE_VARIABLES
 
         page = (pathlib.Path(__file__).resolve().parents[1]
-                / "docs" / "simulations.md").read_text(encoding="utf-8")
+                / "docs" / "studies.md").read_text(encoding="utf-8")
         for variable in COLLECTIVE_VARIABLES:
             assert f"`{variable}`" in page, variable
 
@@ -696,7 +696,7 @@ class TestTheInterfaceIsCalledTheGUI:
         import pathlib
 
         root = pathlib.Path(__file__).resolve().parents[1]
-        for page in ("docs/gui.md", "docs/simulations.md", "README.md"):
+        for page in ("docs/gui.md", "docs/studies.md", "README.md"):
             text = (root / page).read_text(encoding="utf-8")
             for line in text.splitlines():
                 if "browser" not in line:

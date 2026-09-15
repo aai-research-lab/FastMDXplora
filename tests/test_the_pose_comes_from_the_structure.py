@@ -161,7 +161,7 @@ class TestBothSituationsAreDocumented:
     @staticmethod
     def _page() -> str:
         return (Path(__file__).resolve().parents[1] / "docs" /
-                "usage_examples.md").read_text(encoding="utf-8")
+                "examples.md").read_text(encoding="utf-8")
 
     def test_the_complex_case_says_the_structure_wins(self) -> None:
         page = self._page()
