@@ -462,3 +462,110 @@ def test_a_manifest_that_is_not_an_object_is_ignored(tmp_path: Path) -> None:
     manifest = json.loads((tmp_path / "manifest.json").read_text())
 
     assert [p["name"] for p in manifest["phases"]] == ["analysis"]
+
+
+# ---------------------------------------------------------------------------
+# Study-level provenance reaching the records it exists for
+# ---------------------------------------------------------------------------
+def test_a_study_level_agent_reaches_the_manifest(tmp_path: Path) -> None:
+    """`agent:` at the top of a config has to survive to `manifest.json`.
+
+    It did not. `phase_options` keeps the four phase blocks and nothing
+    else, so the value had no channel from the config to a run, and
+    `_write_manifest` asked `resolve_agent_modes` about a dict of phase
+    blocks. `study` came back None every time, and the writer is guarded on
+    there being something to say -- so a study that named how it was
+    written recorded nothing about how it was written.
+    """
+    pdb = _make_pdb_stub(tmp_path)
+    config = {
+        "systems": [{"id": "s1", "system": str(pdb)}],
+        "agent": "assisted",
+        "agent_model": "anthropic/claude-sonnet-4-5-20250929",
+        **FAST_SIM,
+    }
+    fmdx = FastMDXplora(config_data=config, output_dir=tmp_path / "run")
+    fmdx.explore()
+
+    manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
+    assert manifest["agent"]["study"] == "assisted"
+    assert manifest["agent"]["checked"] == {phase: True for phase in PHASES}
+
+
+def test_a_phase_agreeing_with_the_study_is_not_a_departure(
+    tmp_path: Path,
+) -> None:
+    """The second half of the same bug, and the more misleading half.
+
+    With `study` forced to None, a phase that repeated the study's own
+    value differed from it, so the manifest reported a departure the config
+    does not contain -- in the record whose entire purpose is to say which
+    part of a study to distrust.
+    """
+    pdb = _make_pdb_stub(tmp_path)
+    config = {
+        "systems": [{"id": "s1", "system": str(pdb)}],
+        "agent": "assisted",
+        "setup": {"agent": "assisted"},
+        **FAST_SIM,
+    }
+    fmdx = FastMDXplora(config_data=config, output_dir=tmp_path / "run")
+    fmdx.explore()
+
+    manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
+    assert "departures" not in manifest["agent"]
+
+
+def test_a_real_departure_is_still_named(tmp_path: Path) -> None:
+    pdb = _make_pdb_stub(tmp_path)
+    config = {
+        "systems": [{"id": "s1", "system": str(pdb)}],
+        "agent": "assisted",
+        "analysis": {"agent": "unvalidated"},
+        **FAST_SIM,
+    }
+    fmdx = FastMDXplora(config_data=config, output_dir=tmp_path / "run")
+    fmdx.explore()
+
+    manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
+    assert manifest["agent"]["departures"] == {"analysis": "unvalidated"}
+    assert manifest["agent"]["checked"]["analysis"] is False
+    assert manifest["agent"]["checked"]["simulation"] is True
+
+
+def test_the_resolved_config_says_how_the_study_was_written(
+    tmp_path: Path,
+) -> None:
+    """Otherwise re-running an agent-written study produces a record
+    claiming a person wrote it."""
+    import yaml
+
+    pdb = _make_pdb_stub(tmp_path)
+    config = {
+        "systems": [{"id": "s1", "system": str(pdb)}],
+        "agent": "unvalidated",
+        "agent_model": "anthropic/claude-sonnet-4-5-20250929",
+        **FAST_SIM,
+    }
+    fmdx = FastMDXplora(config_data=config, output_dir=tmp_path / "run")
+    fmdx.explore()
+
+    resolved = yaml.safe_load(
+        (fmdx.output_dir / "resolved_config.yml").read_text())
+    assert resolved["agent"] == "unvalidated"
+    assert resolved["agent_model"] == "anthropic/claude-sonnet-4-5-20250929"
+
+    # And it is still a config the validator accepts.
+    from fastmdxplora.config import validate_config
+    validate_config(resolved, require_systems=True)
+
+
+def test_a_hand_written_study_records_no_agent_block(tmp_path: Path) -> None:
+    """Absent, not "none". Every study run before the field existed stays
+    truthful without being rewritten."""
+    pdb = _make_pdb_stub(tmp_path)
+    fmdx = FastMDXplora(system=str(pdb), output_dir=tmp_path / "run")
+    fmdx.explore(options=FAST_SIM)
+
+    manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
+    assert "agent" not in manifest

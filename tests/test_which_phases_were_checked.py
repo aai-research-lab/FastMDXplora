@@ -218,3 +218,78 @@ class TestTheRecordSaysWhichModel(unittest.TestCase):
         from fastmdxplora.config.loader import validate_config
 
         validate_config({"systems": [{"id": "a", "system": "x.pdb"}]})
+
+
+class TestTheStudyLevelValueSurvivesTheRun(unittest.TestCase):
+    """It has to reach the manifest, and it did not.
+
+    `phase_options` keeps the four phase blocks and drops everything else,
+    which is right -- it is named for what it does. The study-level value
+    then had no channel to a run, and `_write_manifest` asked
+    `resolve_agent_modes` about a dict of phase blocks.
+
+    So `study` was permanently None, and two things followed. A config
+    saying `agent: assisted` and nothing per phase recorded no `agent`
+    block at all, because the writer is guarded on there being something to
+    say. And one that also said `setup: {agent: assisted}` recorded that
+    phase as *departing* from the study -- a disagreement the config does
+    not contain, in the record whose whole purpose is to say which part of
+    a study to distrust.
+    """
+
+    def test_phase_options_still_drops_them(self):
+        # Not a regression to fix there: the function is named for the
+        # phase blocks, and the batch layer reads both.
+        from fastmdxplora.config import phase_options
+
+        options = phase_options({
+            "agent": "assisted",
+            "agent_model": "anthropic/x",
+            "setup": {"ph": 7.0},
+        })
+        self.assertEqual(options, {"setup": {"ph": 7.0}})
+
+    def test_study_options_picks_them_up(self):
+        from fastmdxplora.config import study_options
+
+        self.assertEqual(
+            study_options({
+                "agent": "assisted",
+                "agent_model": "anthropic/x",
+                "setup": {"ph": 7.0},
+            }),
+            {"agent": "assisted", "agent_model": "anthropic/x"},
+        )
+
+    def test_a_hand_written_study_carries_nothing(self):
+        from fastmdxplora.config import study_options
+
+        self.assertEqual(study_options({"setup": {"ph": 7.0}}), {})
+
+    def test_a_run_spec_carries_them_to_the_worker(self):
+        # The parallel path pickles this dict into a subprocess, so the
+        # channel has to be on `to_dict()` rather than on the object.
+        from fastmdxplora.batch.sweep import RunSpec
+
+        spec = RunSpec(run_id="s1", system="x.pdb",
+                       study={"agent": "unvalidated"})
+        self.assertEqual(spec.to_dict()["study"], {"agent": "unvalidated"})
+
+    def test_the_resolver_sees_the_study_beside_the_phases(self):
+        # The shape `_write_manifest` now builds: phase blocks merged with
+        # the study-level settings, which is what a config looks like.
+        options = {"setup": {"agent": "assisted"}, "simulation": {}}
+        study = {"agent": "assisted"}
+
+        modes = resolve_agent_modes({**options, **study})
+
+        self.assertEqual(modes.study, "assisted")
+        self.assertEqual(modes.departures, {},
+                         "a phase agreeing with the study is not a departure")
+
+    def test_without_it_the_agreement_reads_as_a_departure(self):
+        # The bug, kept as a test so the fix cannot be undone quietly.
+        modes = resolve_agent_modes({"setup": {"agent": "assisted"}})
+
+        self.assertIsNone(modes.study)
+        self.assertEqual(modes.departures, {"setup": "assisted"})

@@ -736,3 +736,30 @@ def phase_options(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
             if block:
                 options[phase] = block
     return options
+
+
+#: Top-level settings that describe the study rather than a phase, and so
+#: have to travel beside :func:`phase_options` rather than inside it.
+#:
+#: Both are provenance. `agent` at the top level is the study's answer to
+#: "who wrote this", and each phase may differ from it -- which is the
+#: whole point of having two levels, and is why the study value cannot be
+#: folded into the phase blocks: `resolve_agent_modes` compares the two to
+#: find the departures, and a phase that agreed with a study value it could
+#: not see was reported as departing from it.
+STUDY_LEVEL_KEYS = ("agent", "agent_model")
+
+
+def study_options(data: dict[str, Any]) -> dict[str, Any]:
+    """Extract the study-level settings from a validated config.
+
+    The companion to :func:`phase_options`, which keeps only the four phase
+    blocks and therefore drops these. They reach a run through
+    :class:`~fastmdxplora.batch.sweep.RunSpec` and are recorded in the
+    manifest and the resolved config.
+    """
+    return {
+        key: data[key]
+        for key in STUDY_LEVEL_KEYS
+        if data.get(key) is not None
+    }
