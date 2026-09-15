@@ -96,7 +96,7 @@ method exists to produce, as `metadynamics_surface.json`, `pmf.json` or
 
 ## analysis
 
-Measures the trajectory. Twenty analyses of the system, each writing its
+Measures the trajectory. Twenty-four analyses of the system, each writing its
 data, its figure, and the settings it used, and three more that read the
 result of a biased run where there was one.
 
@@ -118,7 +118,16 @@ result of a biased run where there was one.
 | `bfactor_comparison` | per-residue fluctuation against the deposited structure's B-factors |
 | `thermodynamics` | density, energies and temperature, from the state record the run wrote |
 | `rdf` | the radial distribution between two selections, stopped at half the box |
+| `coordination_number` | how many of one selection sit within a shell of the other. The cutoff is asked for, or read from this run's own first minimum in g(r) — never assumed, because the radius decides the number |
 | `dihedrals` | backbone phi, psi and omega, with the Ramachandran plot |
+
+**Geometry**
+
+| | |
+|---|---|
+| `pair_distance` | the separation of two selections, by centre of mass or closest approach, folded into the periodic cell |
+| `end_to_end` | the distance between the two ends of a chain, the coarsest description of extension there is |
+| `moments_of_inertia` | the three principal moments, which separate a rod from a disc where the radius of gyration cannot |
 
 **Conformations**
 
@@ -283,8 +292,9 @@ frames whose weight sits in five of them is a mean over five, and there is no
 arrangement of a document in which that should be readable without the five.
 
 Analyses reporting one value per frame are corrected -- RMSD, radius of
-gyration, hydrogen bonds, SASA, the fraction of native contacts, ligand RMSD
--- along with cluster populations, which are weighted counts. What reweighting does not fix is
+gyration, hydrogen bonds, SASA, the fraction of native contacts, ligand RMSD,
+the coordination number, the end-to-end distance and the distance between two
+selections -- along with cluster populations, which are weighted counts. What reweighting does not fix is
 which clusters exist: the clustering ran on the biased frames, so the states
 themselves are shaped by where the bias sent the system. The dimensionality
 reduction is not corrected at all, because a projection is not an average.

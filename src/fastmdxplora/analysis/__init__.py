@@ -84,6 +84,19 @@ from fastmdxplora.analysis import (  # noqa: F401, E402
     thermodynamics as _thermodynamics,
 )
 from fastmdxplora.analysis import rdf as _rdf  # noqa: F401, E402
+# Geometry measured straight off the coordinates. The first counts within a
+# shell and so carries the same box requirement as `rdf`; the other three
+# need only atoms and masses.
+from fastmdxplora.analysis import (  # noqa: F401, E402
+    coordination_number as _coordination_number,
+)
+from fastmdxplora.analysis import end_to_end as _end_to_end  # noqa: F401, E402
+from fastmdxplora.analysis import (  # noqa: F401, E402
+    moments_of_inertia as _moments_of_inertia,
+)
+from fastmdxplora.analysis import (  # noqa: F401, E402
+    pair_distance as _pair_distance,
+)
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water
