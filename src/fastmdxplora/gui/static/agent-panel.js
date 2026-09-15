@@ -146,9 +146,27 @@
         // Into the form the GUI already has, which is the only thing it
         // does with a config. The agent is one more way to fill it in, not
         // a second path through the software.
-        if (window.FastMDX && window.FastMDX.loadConfigObject) {
-          window.FastMDX.loadConfigObject(data.config);
-        }
+        //
+        // This reached for a `FastMDX` global and a `loadConfigObject`
+        // on it, and neither has ever existed -- the truthiness guard
+        // turned that into a silent no-op, which is why the button looked
+        // like it worked. The mapping from a config to form state lives on
+        // the server, so the config goes there and comes back as state.
+        post("/api/load-config", { config: data.config }).then(function (m) {
+          if (!m || !m.ok) {
+            var failed = document.createElement("div");
+            failed.className = "agent-attempt";
+            failed.textContent = (m && m.error) || "Could not load it.";
+            el("agent-attempts").appendChild(failed);
+            return;
+          }
+          var run = window.FastMDXRun;
+          if (!run || !run.applyLoadedState) return;
+          run.applyLoadedState(m.state, {
+            note: "Loaded the agent's config. Nothing is written until you run it.",
+          });
+          window.location.hash = "#run";
+        });
       };
     });
   }

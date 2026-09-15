@@ -30,7 +30,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastmdxplora.config.loader import ConfigError, validate_config
+from fastmdxplora.config.loader import (
+    STUDY_LEVEL_KEYS,
+    ConfigError,
+    validate_config,
+)
 from fastmdxplora.config.schema import PHASE_SCHEMAS, TOP_LEVEL
 
 __all__ = ["build_config", "config_yaml"]
@@ -401,6 +405,18 @@ def check_config_file(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"ok": False, "error": "A config is a mapping of settings."}
 
+    return {**check_config(data), "path": str(target)}
+
+
+def check_config(data: dict[str, Any]) -> dict[str, Any]:
+    """The same verdict, for a config that is not on disk.
+
+    Split out of :func:`check_config_file` so a config that never had a
+    path -- one the agent has just written, held in the browser -- can be
+    checked and opened in the form by the same code that checks one from a
+    file. The alternative was a second implementation in JavaScript of the
+    mapping below, which is where the two would drift.
+    """
     try:
         validate_config(data)
     except ConfigError as exc:
@@ -413,7 +429,6 @@ def check_config_file(path: str) -> dict[str, Any]:
     return {
         "ok": True,
         "error": None,
-        "path": str(target),
         "phases": [str(p) for p in phases],
         "systems": len(systems) if isinstance(systems, list) else 0,
         "settings_named": sum(
@@ -440,6 +455,24 @@ def load_config_into_state(path: str) -> dict[str, Any]:
         return checked
 
     data = yaml.safe_load(Path(path).expanduser().read_text(encoding="utf-8"))
+    return state_from_config(data, checked)
+
+
+def state_from_config(
+    data: dict[str, Any],
+    checked: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The same mapping, for a config that is not on disk.
+
+    This is what the agent panel's *Load into the form* needs: it holds a
+    config as a mapping, never as a path, and the button that was meant to
+    do this called a global that does not exist, so it silently did
+    nothing.
+    """
+    if checked is None:
+        checked = check_config(data)
+        if not checked["ok"]:
+            return checked
 
     systems = data.get("systems") or []
     first = systems[0] if isinstance(systems, list) and systems else {}
@@ -459,6 +492,15 @@ def load_config_into_state(path: str) -> dict[str, Any]:
         "phases": {},
         "analyses": [],
         "analysis_options": {},
+        # How the study was written. Dropped before, because only the phase
+        # blocks were copied -- so opening an agent-written config in the
+        # form and saving it produced a config claiming a person wrote it,
+        # which is the one thing this field exists to record.
+        "study": {
+            key: str(data[key])
+            for key in STUDY_LEVEL_KEYS
+            if data.get(key) is not None
+        },
     }
 
     for phase in PHASE_SCHEMAS:

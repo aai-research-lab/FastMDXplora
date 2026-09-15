@@ -4656,3 +4656,64 @@ class TestAPageWatchingARunSaysWhatIsHappening:
         row = markup[markup.index('<div class="chart-row">'):][:400]
         assert row.index("chart-title") < row.index("chart-canvas"), (
             "the title must come before the canvas to sit above it")
+
+
+class TestTheSectionsThatAreNotPhasesReachTheConfig:
+    """Two whole sections of the form collected settings and dropped them.
+
+    "This run" and "How the runs are scheduled" are drawn from the schema
+    and stored under sentinel keys, like every other section. But
+    `currentState()` walked `PHASES` to assemble the payload, and neither
+    key is a phase -- so everything set in them stayed in the browser.
+
+    The server has read both keys all along, which is why it went
+    unnoticed: `build_config` handles them correctly and was never given
+    them. The execution section's own note says it exists because a study
+    wanting two GPUs had to be written by hand; it still did.
+    """
+
+    @staticmethod
+    def _builder() -> str:
+        from pathlib import Path
+
+        import fastmdxplora.gui as gui
+
+        return (Path(gui.__file__).parent / "static" / "run-builder.js"
+                ).read_text(encoding="utf-8")
+
+    def test_the_payload_carries_the_run_options_key(self):
+        source = self._builder()
+        assert "RUN_OPTIONS_KEY" in source
+        # Emitted, not merely drawn: the sentinel has to appear where the
+        # payload is assembled, not only where the controls are.
+        _, _, after = source.partition("function currentState()")
+        emitted, _, _ = after.partition("function ready()")
+        assert "RUN_OPTIONS_KEY" in emitted
+        assert "EXECUTION_KEY" in emitted
+
+    def test_the_server_turns_them_into_a_config(self):
+        from fastmdxplora.gui.config_builder import build_config
+
+        config = build_config({
+            "system": "1UBQ",
+            "include": ["setup"],
+            "__run__": {"verbose": True},
+            "__execution__": {"workers": 4, "mode": "parallel"},
+        })
+
+        assert config["verbose"] is True
+        assert config["execution"] == {"workers": 4, "mode": "parallel"}
+
+    def test_a_config_built_that_way_still_validates(self):
+        from fastmdxplora.config import validate_config
+        from fastmdxplora.gui.config_builder import build_config
+
+        validate_config(
+            build_config({
+                "system": "1UBQ",
+                "include": ["setup", "simulation"],
+                "__run__": {"agent": "assisted"},
+                "__execution__": {"devices": [0, 1]},
+            }),
+            require_systems=True,
+        )
