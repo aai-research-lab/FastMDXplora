@@ -230,13 +230,45 @@ def trajectory_and_topology(run_dir: Path, manifest: dict) -> tuple[Path, Path]:
 
 
 def _configured_ligand_resname(run_dir: Path) -> str | None:
+    """The ligand this run actually prepared, or None.
+
+    The setup record is asked first, and it is the only one that answers
+    the question being asked. `setup.ligand_name` has a default -- "LIG" --
+    so once `resolved_config.yml` names every setting the run used, every
+    apo protein's config carries it too. Reading the config alone would
+    hand back "LIG" for a run with no ligand in it, and the comparison
+    would go looking for a residue that is not there.
+
+    `setup_parameters.json` records a ligand only where one was
+    parameterised, which is exactly the distinction the config cannot make
+    between a value chosen and a value defaulted.
+    """
+    import json
+
+    setup = run_dir / "setup" / "setup_parameters.json"
+    try:
+        data = json.loads(setup.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    ligand = (data.get("resolved_forcefield") or {}).get("ligand")
+    if ligand and ligand.get("name"):
+        return str(ligand["name"])
+
+    # Older runs, and runs whose setup phase did not write a record, fall
+    # back to the config -- but only where it says something a default
+    # would not have said.
     cfg = run_dir / "resolved_config.yml"
     if cfg.exists():
         import yaml
-        data = yaml.safe_load(cfg.read_text())
-        name = (data.get("setup") or {}).get("ligand_name")
-        if name:
-            return name
+
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        config = yaml.safe_load(cfg.read_text()) or {}
+        name = (config.get("setup") or {}).get("ligand_name")
+        field = PHASE_SCHEMAS["setup"].get("ligand_name")
+        defaulted = field is not None and name == field.default
+        if name and not defaulted:
+            return str(name)
 
     return None
 

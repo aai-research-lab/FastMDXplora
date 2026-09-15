@@ -338,11 +338,16 @@ def run_phases(project_root: str | Path) -> list[str]:
             names = {str(phase) for phase in excluded}
             return [phase for phase in PHASE_STAGES if phase not in names]
         # Nothing further to go on. A phase block is not a statement about
-        # what runs: `write_resolved_config` writes only phases with non-empty
-        # options, so analysis and report -- which run on defaults -- leave no
-        # trace in it. Reading that as "these phases were not included" hid two
-        # stages that had just finished, and only once the run ended, because
-        # the config is written into the output directory at the end.
+        # what runs, and reading it as one hid two stages that had just
+        # finished -- and only once the run ended, because the config is
+        # written into the output directory at the end.
+        #
+        # That used to be because `write_resolved_config` wrote only phases
+        # with non-empty options, so analysis and report, which run on
+        # defaults, left no trace in it. It now names every setting every
+        # phase used, so the blocks are always all four and say even less
+        # about what ran. Either way `include` and `exclude` are the only
+        # keys that answer this question.
     return []
 
 

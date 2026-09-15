@@ -324,14 +324,87 @@ class TestReadingPerFrameRecords:
 
 
 class TestFindingTheLigand:
-    def test_it_reads_the_resolved_configuration(self, tmp_path):
+    """Which run had a ligand in it, asked of a finished run.
+
+    The setup record answers it and the configuration cannot, because
+    `setup.ligand_name` has a default. Once `resolved_config.yml` names
+    every setting the run used -- which is the point of that file -- the
+    default is in every config, apo runs included, and a comparison that
+    reads it goes looking for a residue that was never prepared.
+    """
+
+    @staticmethod
+    def _setup_record(run_dir, ligand):
+        setup = run_dir / "setup"
+        setup.mkdir(parents=True, exist_ok=True)
+        record = {"resolved_forcefield": {"name": "amber14-all"}}
+        if ligand is not None:
+            record["resolved_forcefield"]["ligand"] = {"name": ligand}
+        (setup / "setup_parameters.json").write_text(
+            json.dumps(record), encoding="utf-8")
+
+    @staticmethod
+    def _config(run_dir, **setup_block):
         import yaml
 
+        (run_dir / "resolved_config.yml").write_text(
+            yaml.safe_dump({"setup": setup_block}), encoding="utf-8")
+
+    def test_it_reads_the_setup_record(self, tmp_path):
         from fastmdxplora.validation.cross_tool import ligand_resname
 
-        (tmp_path / "resolved_config.yml").write_text(
-            yaml.safe_dump({"setup": {"ligand_name": "BEN"}}),
-            encoding="utf-8")
+        self._setup_record(tmp_path, "BEN")
+        assert ligand_resname(tmp_path) == "BEN"
+
+    def test_the_setup_record_beats_the_configuration(self, tmp_path):
+        """One says what was asked for, the other what was prepared."""
+        from fastmdxplora.validation.cross_tool import ligand_resname
+
+        self._setup_record(tmp_path, "BEN")
+        self._config(tmp_path, ligand_name="LIG")
+        assert ligand_resname(tmp_path) == "BEN"
+
+    def test_a_run_with_no_ligand_has_none(self, tmp_path):
+        """Even though its configuration names the default one.
+
+        This is the case that a full resolved config creates and a sparse
+        one did not: `ligand_name: LIG` sits in an apo run's config
+        because it sits in every run's config.
+        """
+        from fastmdxplora.validation.cross_tool import ligand_resname
+
+        self._setup_record(tmp_path, None)
+        self._config(tmp_path, ligand_name="LIG")
+        with pytest.raises(SystemExit, match="--ligand"):
+            ligand_resname(tmp_path)
+
+    def test_a_default_alone_is_not_a_ligand(self, tmp_path):
+        """With no setup record either -- a config that says nothing.
+
+        A value equal to the declared default is what the file says about
+        every run, so it distinguishes none of them.
+        """
+        from fastmdxplora.validation.cross_tool import ligand_resname
+
+        self._config(tmp_path, ligand_name="LIG")
+        with pytest.raises(SystemExit, match="--ligand"):
+            ligand_resname(tmp_path)
+
+    def test_an_older_run_still_reads_from_its_configuration(self, tmp_path):
+        """Runs finished before setup wrote a record, and runs whose setup
+        phase was skipped, have only the config to go on."""
+        from fastmdxplora.validation.cross_tool import ligand_resname
+
+        self._config(tmp_path, ligand_name="BEN")
+        assert ligand_resname(tmp_path) == "BEN"
+
+    def test_an_unreadable_setup_record_falls_back(self, tmp_path):
+        from fastmdxplora.validation.cross_tool import ligand_resname
+
+        (tmp_path / "setup").mkdir()
+        (tmp_path / "setup" / "setup_parameters.json").write_text(
+            "{not json", encoding="utf-8")
+        self._config(tmp_path, ligand_name="BEN")
         assert ligand_resname(tmp_path) == "BEN"
 
     def test_without_one_it_says_what_to_pass(self, tmp_path):
