@@ -54,6 +54,49 @@ class UntranslatableSetting(CodedError, ValueError):
     default_code = "config.untranslatable"
 
 
+def _settled_defaults() -> dict[str, dict[str, Any]]:
+    """Per phase, the value each setting takes when nothing asks for one.
+
+    The schema's own defaults put through the loader's normalisation,
+    because normalisation is part of what "nothing asks for one" means.
+    `setup.ligand_resname` declares no default and is nonetheless "LIG" in
+    every config that does not set it, mirrored from `ligand_name`, which
+    does declare one -- so comparing against the raw schema default says a
+    value was chosen when it was only settled.
+
+    It reads as a detail until a resolved config, which names every
+    setting, is translated: the command then carries
+    `--setup-ligand-resname LIG` for a protein with no ligand in it.
+    """
+    global _SETTLED
+    if _SETTLED is None:
+        from fastmdxplora.config.loader import normalise_config
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        bare = {phase: schema.defaults()
+                for phase, schema in PHASE_SCHEMAS.items()}
+        settled = normalise_config(bare)
+        _SETTLED = {phase: dict(settled.get(phase) or {}) for phase in bare}
+    return _SETTLED
+
+
+#: Filled on first use; the schema does not change within a process.
+_SETTLED: dict[str, dict[str, Any]] | None = None
+
+
+def _worth_saying(phase: str, name: str, value: Any) -> bool:
+    """Whether a setting needs stating, or the run would take it anyway.
+
+    What lets a *full* config -- which restates every default on purpose,
+    so the file is complete -- translate to a short command and a readable
+    script rather than to every setting there is.
+    """
+    if value is None:
+        return False
+    settled = _settled_defaults().get(phase) or {}
+    return not (name in settled and value == settled[name])
+
+
 def _explore_options() -> dict[str, tuple[str, Any]]:
     """dest -> (canonical option string, the action), from the real parser."""
     from fastmdxplora.cli.main import _build_parser
@@ -137,22 +180,15 @@ def cli_command(config: dict[str, Any]) -> str:
         if names:
             parts += [f"--{key}", *(shlex.quote(str(n)) for n in names)]
 
-    from fastmdxplora.config.schema import PHASE_SCHEMAS
-
     for block, verb in _BLOCK_TO_VERB.items():
         settings = config.get(block)
         if not isinstance(settings, dict):
             continue
-        defaults = PHASE_SCHEMAS[block].defaults()
         for name, value in settings.items():
-            if value is None:
-                continue
             # A value the run would take anyway needs no saying: the
-            # command's own defaults supply it. This is what lets a *full*
-            # config -- which restates every default on purpose, so the file
-            # is complete -- translate to a short command instead of failing
-            # on the first default the CLI only knows how to negate.
-            if name in defaults and value == defaults[name]:
+            # command's own defaults supply it, and saying it would fail on
+            # the first default the CLI only knows how to negate.
+            if not _worth_saying(block, name, value):
                 continue
             flag, rendered_value = _flag_for(
                 options, f"{verb}__{name}", value)
@@ -177,11 +213,23 @@ def _literal(value: Any, indent: int = 8) -> str:
 
 
 def python_script(config: dict[str, Any]) -> str:
-    """The study as the documented Python API, ``docs/api.md``'s shape."""
-    blocks = {
-        name: settings for name, settings in config.items()
-        if name in _BLOCK_TO_VERB and isinstance(settings, dict) and settings
-    }
+    """The study as the documented Python API, ``docs/api.md``'s shape.
+
+    Only the settings that were decided. A script is read, and a resolved
+    config names every setting the run used -- rendered whole, the same
+    study becomes a hundred lines of which four were chosen, and which
+    four is the one thing a reader is looking for. The rest are the API's
+    own defaults and passing them explicitly says nothing the call does
+    not already do.
+    """
+    blocks = {}
+    for name, settings in config.items():
+        if name not in _BLOCK_TO_VERB or not isinstance(settings, dict):
+            continue
+        decided = {key: value for key, value in settings.items()
+                   if _worth_saying(name, key, value)}
+        if decided:
+            blocks[name] = decided
     system = config.get("system")
     if system is None:
         entries = config.get("systems") or []

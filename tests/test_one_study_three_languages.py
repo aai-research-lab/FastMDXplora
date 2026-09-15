@@ -142,6 +142,104 @@ class TestAFullConfigTranslates:
         assert "no-replace-nonstandard-residues" in command
 
 
+class TestAResolvedConfigTranslatesToWhatWasChosen:
+    """The file a finished run leaves, put back through the other two.
+
+    It names every setting the run used -- a hundred and eight of them for
+    a study that decided three -- and both renderers are asked for the
+    three. The command was carrying a ligand for a protein with none, and
+    the script was a hundred lines of which four were chosen, with which
+    four being the only thing a reader wants from it.
+    """
+
+    @staticmethod
+    def _resolved(tmp_path, **options):
+        from fastmdxplora.config import write_resolved_config
+        from fastmdxplora.config.loader import (
+            load_config_file, normalise_config,
+        )
+
+        path = write_resolved_config(
+            {"system": "1UBQ", "options": options}, tmp_path)
+        return normalise_config(load_config_file(path))
+
+    def test_the_command_says_only_what_was_chosen(self, tmp_path) -> None:
+        from fastmdxplora.config.languages import cli_command
+
+        command = cli_command(self._resolved(
+            tmp_path, setup={"ph": 6.5},
+            simulation={"duration_ns": 50, "pressure_atm": 1.2}))
+        assert "--setup-ph 6.5" in command
+        assert "--simulate-duration-ns 50" in command
+        assert "--simulate-pressure-atm 1.2" in command
+        assert command.count(" --") == 4, f"too much said: {command}"
+
+    def test_no_ligand_is_named_for_a_protein_without_one(
+        self, tmp_path
+    ) -> None:
+        """`ligand_resname` declares no default and is nonetheless "LIG"
+        in every normalised config, mirrored from `ligand_name`, which
+        does. Compared against the raw schema default it looks chosen."""
+        from fastmdxplora.config.languages import cli_command, python_script
+
+        config = self._resolved(tmp_path, setup={"ph": 6.5})
+        assert "ligand" not in cli_command(config)
+        assert "ligand" not in python_script(config)
+
+    def test_the_script_carries_the_decisions_and_not_the_defaults(
+        self, tmp_path
+    ) -> None:
+        from fastmdxplora.config.languages import python_script
+
+        script = python_script(self._resolved(
+            tmp_path, setup={"ph": 6.5}, simulation={"duration_ns": 50}))
+        assert "'ph': 6.5" in script
+        assert "'duration_ns': 50" in script
+        assert "None" not in script
+        assert "'report'" not in script, "a phase that decided nothing"
+
+    def test_the_script_still_runs_the_same_study(self, tmp_path) -> None:
+        """Dropping a setting is safe exactly when the run settles on the
+        same value without it. That is the rule both renderers apply, and
+        this is it stated over a whole config rather than trusted.
+        """
+        import ast
+
+        from fastmdxplora.config.languages import (
+            _settled_defaults, python_script,
+        )
+
+        config = self._resolved(
+            tmp_path, setup={"ph": 6.5, "box_shape": "cube"})
+        script = python_script(config)
+        tree = ast.parse(script)
+        call = next(node for node in ast.walk(tree)
+                    if isinstance(node, ast.Call)
+                    and getattr(node.func, "attr", "") == "FastMDXplora")
+        passed = next(ast.literal_eval(kw.value) for kw in call.keywords
+                      if kw.arg == "options")
+
+        settled = _settled_defaults()["setup"]
+        assert {**settled, **passed["setup"]} == config["setup"]
+        assert passed["setup"] == {"ph": 6.5, "box_shape": "cube"}
+
+    def test_the_one_setting_dropped_by_the_mirror_is_reached_anyway(
+        self
+    ) -> None:
+        """`ligand_resname` is left out of both renderings, so what reads
+        it must fall back to `ligand_name` -- which carries the same value
+        and is the spelling setup has always used."""
+        import inspect
+
+        from fastmdxplora.setup.pipeline import _explicit_ligand_resnames
+
+        source = inspect.getsource(_explicit_ligand_resnames)
+        assert 'params.get("ligand_name") or params.get("ligand_resname")' \
+            in source
+        assert _explicit_ligand_resnames({"ligand_name": "LIG"}) == ("LIG",)
+        assert _explicit_ligand_resnames({"ligand_resname": "LIG"}) == ("LIG",)
+
+
 class TestWhatCannotBeSaid:
     def test_many_systems_refuse_with_the_reason(self) -> None:
         with pytest.raises(UntranslatableSetting, match="config-file"):
