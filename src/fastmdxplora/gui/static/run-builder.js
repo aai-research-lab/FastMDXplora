@@ -892,6 +892,18 @@
       }
     });
 
+    // The two sections that are not phases. They are drawn from the schema
+    // and stored under sentinel keys like everything else, and this loop
+    // walks PHASES -- so every setting in "This run" and "How the runs are
+    // scheduled" was collected by the form and then left in the browser.
+    // The server has read both keys all along; nothing was sending them.
+    // The execution section's own note says it exists because a study
+    // wanting two GPUs had to be written by hand, and it still did.
+    [RUN_OPTIONS_KEY, EXECUTION_KEY].forEach((key) => {
+      const chosen = state.values[key];
+      if (chosen && Object.keys(chosen).length) config[key] = chosen;
+    });
+
     if (state.phases.has("analysis")) {
       const analysis = config.analysis || {};
       if (state.analyses.size) {
@@ -1050,13 +1062,38 @@
       return;
     }
 
-    const from = loaded.state;
+    applyLoadedState(loaded.state, {
+      from: path,
+      note:
+        `Opened ${path}. Changes here are saved as a new file; that one is ` +
+        "left as it is.",
+    });
+  }
+
+  /* Fill the form in from a config the server has already mapped to form
+     state. Factored out of loadConfigIntoForm so the agent panel can use
+     it: the agent holds a config as an object and never as a path, and
+     the mapping from one to the other is server-side and not trivial.
+     Duplicating it in JavaScript would be a second place for it to drift. */
+  function applyLoadedState(from, { from: origin, note } = {}) {
+    if (!from) return;
     state.start = from.start;
     state.phases = new Set(from.include);
     state.values = from.phases || {};
     state.analyses = new Set(from.analyses || []);
     state.analysisOptions = from.analysis_options || {};
-    state.loadedFrom = path;
+    // How the study was written belongs to the run rather than a phase, so
+    // it goes where the "This run" controls read from. Dropped before, so
+    // an agent-written config opened here came back claiming a person
+    // wrote it.
+    if (from.study && Object.keys(from.study).length) {
+      state.values[RUN_OPTIONS_KEY] = Object.assign(
+        {}, state.values[RUN_OPTIONS_KEY] || {}, from.study
+      );
+    }
+    // Only set where there is a file behind it. A config that was never on
+    // disk has nothing to be "left as it is".
+    if (origin) state.loadedFrom = origin;
 
     renderAll();
     // The fields the form owns rather than the settings tables.
@@ -1065,11 +1102,7 @@
     if (el("run-topology")) el("run-topology").value = from.topology || "";
     if (el("run-output")) el("run-output").value = from.output || "";
     updateSummary();
-    text(
-      el("run-note"),
-      `Opened ${path}. Changes here are saved as a new file; that one is ` +
-      "left as it is."
-    );
+    if (note) text(el("run-note"), note);
   }
 
   async function runAsItStands() {
@@ -1313,5 +1346,7 @@
     attach();
   }
 
-  window.FastMDXRun = { state, currentState, PHASES, STARTING_POINTS };
+  window.FastMDXRun = {
+    state, currentState, PHASES, STARTING_POINTS, applyLoadedState,
+  };
 })();

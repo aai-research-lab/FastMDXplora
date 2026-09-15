@@ -369,3 +369,110 @@ class TestTheBindAddressIsSaidOutLoud(unittest.TestCase):
         page = docs.read_text(encoding="utf-8")
         self.assertIn("loopback is not private", page)
         self.assertIn("login node", page)
+
+
+class TestLoadIntoTheFormActuallyLoads(unittest.TestCase):
+    """The button called a global that has never existed.
+
+    `agent-panel.js` asked for `window.FastMDX.loadConfigObject`. The
+    globals this package defines are `FastMDXDashboard`, `FastMDXRun`,
+    `FastMDXPicker`, `FastMDXCharts` and `FastMDXMoleculeViewer` -- there is
+    no `FastMDX`. The truthiness guard around it turned a TypeError into a
+    silent no-op, which is why the button looked like it worked.
+    """
+
+    @staticmethod
+    def _static(name: str) -> str:
+        from pathlib import Path
+
+        import fastmdxplora.gui as gui
+
+        return (Path(gui.__file__).parent / "static" / name).read_text(
+            encoding="utf-8")
+
+    def test_every_global_a_script_uses_is_one_a_script_defines(self):
+        # The test that would have caught it, and catches the next one.
+        import re
+        from pathlib import Path
+
+        import fastmdxplora.gui as gui
+
+        static = Path(gui.__file__).parent / "static"
+        defined, used = set(), set()
+        for path in sorted(static.glob("*.js")):
+            text = path.read_text(encoding="utf-8")
+            defined |= set(re.findall(r"window\.(FastMDX\w*)\s*=", text))
+            used |= set(re.findall(r"window\.(FastMDX\w*)\b", text))
+        self.assertTrue(
+            used <= defined,
+            f"these globals are used and never defined: {sorted(used - defined)}")
+
+    def test_the_panel_reaches_the_run_builder_by_its_real_name(self):
+        panel = self._static("agent-panel.js")
+        self.assertIn("window.FastMDXRun", panel)
+        self.assertNotIn("window.FastMDX.", panel)
+
+    def test_the_run_builder_exports_what_the_panel_calls(self):
+        self.assertIn("applyLoadedState", self._static("run-builder.js"))
+        self.assertIn("applyLoadedState", self._static("agent-panel.js"))
+
+    def test_the_panel_sends_the_config_to_an_endpoint_that_takes_one(self):
+        # It holds a mapping, never a path, so the endpoint had to learn to
+        # take one rather than the browser learning the mapping.
+        self.assertIn("/api/load-config", self._static("agent-panel.js"))
+
+
+class TestAConfigThatWasNeverOnDiskCanBeOpened(unittest.TestCase):
+
+    def test_state_comes_back_for_a_mapping(self):
+        from fastmdxplora.gui.config_builder import state_from_config
+
+        loaded = state_from_config({
+            "systems": [{"id": "wt", "system": "1UBQ"}],
+            "setup": {"ph": 6.5},
+            "analysis": {"include": ["rmsd", "rg"]},
+        })
+
+        self.assertTrue(loaded["ok"])
+        self.assertEqual(loaded["state"]["system"], "1UBQ")
+        self.assertEqual(loaded["state"]["analyses"], ["rmsd", "rg"])
+        self.assertEqual(loaded["state"]["phases"]["setup"], {"ph": 6.5})
+
+    def test_an_invalid_config_comes_back_refused(self):
+        from fastmdxplora.gui.config_builder import state_from_config
+
+        loaded = state_from_config({
+            "systems": [{"id": "wt", "system": "1UBQ"}],
+            "setup": {"pH": 6.5},
+        })
+        self.assertFalse(loaded["ok"])
+        self.assertIn("pH", loaded["error"])
+
+    def test_how_the_study_was_written_survives_the_round_trip(self):
+        """Dropped before: only the phase blocks were copied, so opening an
+        agent-written config in the form and saving it produced one claiming
+        a person wrote it."""
+        from fastmdxplora.gui.config_builder import (
+            build_config,
+            state_from_config,
+        )
+
+        loaded = state_from_config({
+            "systems": [{"id": "wt", "system": "1UBQ"}],
+            "agent": "unvalidated",
+            "agent_model": "anthropic/x",
+            "setup": {"ph": 6.5},
+        })
+        self.assertEqual(
+            loaded["state"]["study"],
+            {"agent": "unvalidated", "agent_model": "anthropic/x"})
+
+        # And back out again, the way the form sends it.
+        rebuilt = build_config({
+            "system": loaded["state"]["system"],
+            "include": loaded["state"]["include"],
+            "__run__": loaded["state"]["study"],
+            **{"setup": loaded["state"]["phases"]["setup"]},
+        })
+        self.assertEqual(rebuilt["agent"], "unvalidated")
+        self.assertEqual(rebuilt["agent_model"], "anthropic/x")

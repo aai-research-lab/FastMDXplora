@@ -531,11 +531,27 @@ def make_handler(
                 # Bringing a config into the form so it can be changed. The
                 # file is read and never written: anything altered is saved as
                 # a new one.
-                from fastmdxplora.gui.config_builder import load_config_into_state
-
-                self._send_json(
-                    load_config_into_state(str((payload or {}).get("path") or ""))
+                #
+                # Either a path or the config itself. The agent panel holds
+                # one as a mapping and never as a path, and the mapping from
+                # a config to form state is here rather than in the browser
+                # -- it decides the starting point from whether an analysis
+                # names a trajectory, strips the keys the form owns, and
+                # splits a comma-joined analysis list. A second copy of that
+                # in JavaScript is where the two would drift.
+                from fastmdxplora.gui.config_builder import (
+                    load_config_into_state,
+                    state_from_config,
                 )
+
+                request = payload or {}
+                given = request.get("config")
+                if isinstance(given, dict):
+                    self._send_json(state_from_config(given))
+                else:
+                    self._send_json(
+                        load_config_into_state(str(request.get("path") or ""))
+                    )
                 return
             if path == "/api/run-config":
                 # Running a config exactly as it stands, which is a different
