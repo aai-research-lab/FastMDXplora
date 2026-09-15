@@ -456,6 +456,7 @@ read before comparing a result against another tool.
 
 .. automodule:: fastmdxplora.cost
    :members:
+   :no-undoc-members:
 
 .. automodule:: fastmdxplora.provenance
    :members:
