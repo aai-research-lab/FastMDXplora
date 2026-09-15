@@ -2246,9 +2246,18 @@ class TestASettingShowsWhatItWillDo:
             # to nothing, because a residue set silently applied is the
             # thing that makes such a comparison unreadable. Both belong to
             # a comparison that is off unless a study asks for it.
+            # `pair_distance` measures between two groups somebody chose to
+            # compare, and there is no pair a literal could name: unlike
+            # every other selection in this package, its subject is not in
+            # the trajectory. The analysis is left out of the automatic plan
+            # for the same reason (`requires_naming`), so the absent default
+            # is never silently filled in -- a study that wants it says
+            # which two things.
             and o.name not in {"ligand_resname", "ligand_net_charge",
                                "ligand_chemistry", "structure", "state_csv",
                                "r_max", "reference", "reference_exclude"}
+            and f"{name}.{o.name}" not in {"pair_distance.selection_a",
+                                           "pair_distance.selection_b"}
         }
         assert not silent, f"these cannot say what they would do: {sorted(silent)}"
 
