@@ -349,6 +349,14 @@ def _plot_region_summary(
         )
 
     fig.tight_layout(pad=0.6)
+    # This one composes its own panels and saves with `bbox_inches="tight"`,
+    # so it does not pass through `save_figure` and would otherwise be the
+    # figure in the report that carries no mark while the analyses behind it
+    # all do. Stamped after tight_layout, as save_figure does, so the mark is
+    # not counted as content and squeezed into the plot area.
+    from fastmdxplora.analysis.plotting import stamp_current
+
+    stamp_current(fig)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(
         output_path,

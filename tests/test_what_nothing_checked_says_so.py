@@ -193,3 +193,107 @@ class TestItCannotBeTurnedOff(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheMarkReachesTheFigures(unittest.TestCase):
+    """The wiring, which was the part that did not exist.
+
+    `marking.py` was complete and had no callers. `save_figure` grew a
+    `mark` parameter and nothing in the package ever passed it, so the
+    stamp was written, tested in isolation, and applied to nothing --
+    while `fastmdx agent --unvalidated` printed that "every figure from an
+    unchecked phase is stamped".
+    """
+
+    def test_the_ambient_mark_defaults_to_nothing(self):
+        from fastmdxplora.analysis.plotting import current_mark
+
+        self.assertEqual(current_mark(), "")
+
+    def test_it_is_restored_after_the_block(self):
+        from fastmdxplora.analysis.plotting import current_mark, marked_as
+
+        with marked_as("unvalidated · 2026-01-01"):
+            self.assertEqual(current_mark(), "unvalidated · 2026-01-01")
+        self.assertEqual(current_mark(), "")
+
+    def test_it_is_restored_even_when_the_block_raises(self):
+        # The reason it is a context manager: a mark left set would stamp
+        # every later figure, and a mark on a checked figure is a false
+        # warning -- which is the kind people learn to ignore.
+        from fastmdxplora.analysis.plotting import current_mark, marked_as
+
+        with self.assertRaises(ValueError):
+            with marked_as("unvalidated · 2026-01-01"):
+                raise ValueError("the phase failed")
+        self.assertEqual(current_mark(), "")
+
+    def test_save_figure_takes_the_ambient_mark(self):
+        import tempfile
+        from pathlib import Path
+
+        import matplotlib.pyplot as plt
+
+        from fastmdxplora.analysis.plotting import marked_as, save_figure
+
+        def ink(**kwargs):
+            fig, ax = plt.subplots()
+            ax.plot([0, 1], [0, 1])
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "f.png"
+                save_figure(fig, path, write_svg=False, **kwargs)
+                return len(path.read_bytes())
+
+        plain = ink()
+        with marked_as("unvalidated · 2026-01-01"):
+            stamped = ink()
+        self.assertGreater(
+            stamped, plain,
+            "a stamped figure should carry more ink than an unstamped one")
+
+    def test_an_explicit_mark_still_wins(self):
+        # The parameter is not removed; the ambient value is the fallback.
+        import inspect
+
+        from fastmdxplora.analysis.plotting import save_figure
+
+        self.assertIn("mark", inspect.signature(save_figure).parameters)
+
+    def test_the_orchestrator_opens_the_block_for_an_unchecked_phase(self):
+        from fastmdxplora.analysis.plotting import current_mark
+        from fastmdxplora.orchestrator import FastMDXplora
+
+        study = FastMDXplora.__new__(FastMDXplora)
+        study.options = {"analysis": {"agent": "unvalidated"}}
+        study.study_options = {}
+
+        with study._marking("analysis"):
+            self.assertTrue(current_mark().startswith("unvalidated"))
+        with study._marking("simulation"):
+            self.assertEqual(current_mark(), "")
+
+    def test_a_study_level_mode_marks_every_phase(self):
+        # Which is why defect 2 had to be fixed first: `mark_for` reads the
+        # study value, and until it could see one it stamped nothing.
+        from fastmdxplora.analysis.plotting import current_mark
+        from fastmdxplora.orchestrator import FastMDXplora
+
+        study = FastMDXplora.__new__(FastMDXplora)
+        study.options = {}
+        study.study_options = {"agent": "unvalidated"}
+
+        for phase in ("setup", "simulation", "analysis", "report"):
+            with study._marking(phase):
+                self.assertTrue(current_mark().startswith("unvalidated"), phase)
+
+    def test_a_checked_study_marks_nothing(self):
+        from fastmdxplora.analysis.plotting import current_mark
+        from fastmdxplora.orchestrator import FastMDXplora
+
+        study = FastMDXplora.__new__(FastMDXplora)
+        study.options = {}
+        study.study_options = {"agent": "assisted"}
+
+        for phase in ("setup", "simulation", "analysis", "report"):
+            with study._marking(phase):
+                self.assertEqual(current_mark(), "", phase)

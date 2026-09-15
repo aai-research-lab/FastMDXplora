@@ -184,6 +184,65 @@ def greyscale_is_on() -> bool:
     return _GREYSCALE
 
 
+#: The mark every figure drawn right now carries, or "".
+#:
+#: Ambient for the same reason the greyscale mode is: `save_figure` is the
+#: one place every figure passes through, and its own docstring says why
+#: that matters -- "a mark applied in twenty places is a mark missing from
+#: one of them". There are ten call sites, four of them inside analyses
+#: that draw supplementary figures of their own, and threading a parameter
+#: to all ten is the arrangement that docstring warns against.
+_MARK = ""
+
+
+@contextmanager
+def marked_as(mark: str):
+    """Stamp every figure drawn inside this block, then restore.
+
+    A context manager rather than two calls, for the reason given on
+    :func:`drawn_in`: this is process-wide state, and an exception between
+    setting and restoring it would leave every later figure carrying a mark
+    that does not belong to it -- which is worse than the reverse, because
+    a mark on a checked figure is a false warning and they are the ones
+    people learn to ignore.
+
+    Phases run sequentially, so process-wide is safe; were that to change
+    this is the thing that would break, and it is the one place to fix.
+    """
+    global _MARK
+    previous = _MARK
+    _MARK = mark or ""
+    try:
+        yield
+    finally:
+        _MARK = previous
+
+
+def current_mark() -> str:
+    """The mark in force, for a figure that does not go through
+    :func:`save_figure`."""
+    return _MARK
+
+
+def stamp_current(fig) -> None:
+    """Stamp a figure that saves itself.
+
+    Two report figures compose their own panels and call `fig.savefig`
+    directly, because they need `bbox_inches="tight"` and `save_figure`
+    does not offer it. Without this they would be the figures in the
+    report carrying no mark while every analysis panel inside them does.
+
+    Call after `tight_layout`, for the reason `save_figure` gives: before
+    it, the stamp counts as content and is squeezed into the plot area.
+    """
+    mark = current_mark()
+    if not mark:
+        return
+    from fastmdxplora.marking import stamp_figure
+
+    stamp_figure(fig, mark)
+
+
 def colour(role: str) -> str:
     """The colour for a role, in whichever mode is in force.
 
@@ -661,12 +720,18 @@ def save_figure(
     mark applied in twenty places is a mark missing from one of them.
     See :mod:`fastmdxplora.marking`.
 
+    Left unset it is taken from :func:`marked_as`, which the orchestrator
+    opens around each phase. That is what makes the sentence above true
+    rather than aspirational: the parameter existed and no caller in the
+    package ever passed it, so nothing was stamped.
+
     Returns the resolved Path that was written.
     """
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     _style_all_axes(fig)
     fig.tight_layout()
+    mark = mark or _MARK
     if mark:
         # After tight_layout, so the stamp is not counted as content and
         # squeezed into the plot area.

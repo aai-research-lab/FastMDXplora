@@ -125,6 +125,12 @@ def build_analysis_summary_figure(
         ax.axis("off")
 
     fig.tight_layout(pad=0.6)
+    # Composed from the analyses' own panels and saved directly, so the
+    # ambient mark has to be applied by hand here -- see the note in
+    # `report/region_highlights.py`.
+    from fastmdxplora.analysis.plotting import stamp_current
+
+    stamp_current(fig)
     figure_path = output_dir / "analysis_summary.png"
     fig.savefig(
         figure_path,
