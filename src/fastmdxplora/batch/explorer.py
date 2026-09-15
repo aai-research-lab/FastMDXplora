@@ -1457,6 +1457,32 @@ class BatchExplorer:
                 pmf_json.name, exc)
             return None
 
+    @contextmanager
+    def _marking_for_comparison(self):
+        """Mark the comparison figures if nothing checked the analyses.
+
+        Best-effort on both counts: a config that cannot be read for a mode,
+        and an environment with no matplotlib, both leave the figures
+        unmarked rather than stopping a campaign that has already run.
+        """
+        mark = ""
+        try:
+            from fastmdxplora.marking import mark_for
+
+            mark = mark_for(self._raw, "analysis")
+        except Exception:  # noqa: BLE001 -- never break the batch
+            logger.debug("Could not work out the mark for the comparison.")
+        if not mark:
+            yield
+            return
+        try:
+            from fastmdxplora.analysis.plotting import marked_as
+        except Exception:  # noqa: BLE001 -- no matplotlib, no figures
+            yield
+            return
+        with marked_as(mark):
+            yield
+
     def _maybe_build_comparison(self) -> None:
         """Build the cross-run comparison report (best-effort).
 
@@ -1471,7 +1497,15 @@ class BatchExplorer:
         try:
             from fastmdxplora.batch.compare import build_comparison_report
 
-            path = build_comparison_report(self.output_dir)
+            # Drawn by the batch layer rather than inside a phase, so the
+            # orchestrator's per-phase marking does not reach it. It
+            # overlays the members' analyses, so the analysis phase's mode
+            # is the one that applies -- and every run of one config shares
+            # it, which is what makes a single answer the right one here.
+            # Left unmarked, a campaign whose analyses nothing checked
+            # would produce one figure, the summary, carrying no mark.
+            with self._marking_for_comparison():
+                path = build_comparison_report(self.output_dir)
             if path is not None:
                 print(f"Comparison:     {path / 'comparison_report.md'}")
         except Exception as exc:  # noqa: BLE001 -- never break the batch

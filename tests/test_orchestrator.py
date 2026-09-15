@@ -569,3 +569,94 @@ def test_a_hand_written_study_records_no_agent_block(tmp_path: Path) -> None:
 
     manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
     assert "agent" not in manifest
+
+
+def _ink(path: Path) -> int:
+    """Non-white pixels in a figure, as a proxy for what is drawn on it."""
+    import numpy as np
+    from PIL import Image
+
+    pixels = np.asarray(Image.open(path).convert("L"))
+    return int((pixels < 250).sum())
+
+
+def test_an_unvalidated_phase_stamps_the_figures_it_draws(
+    tmp_path: Path,
+) -> None:
+    """The claim `fastmdx agent --unvalidated` has been printing all along.
+
+    `marking.py` was complete and had no production callers, and
+    `save_figure`'s `mark` parameter had no caller passing it, so nothing
+    was stamped. The lower-left corner is where `stamp_figure` puts the
+    mark, so that is where the difference shows.
+    """
+    pdb = _make_pdb_stub(tmp_path)
+    shared = {
+        "systems": [{"id": "s1", "system": str(pdb)}],
+        "analysis": {"include": ["rmsd"]},
+        **FAST_SIM,
+    }
+
+    plain_dir = tmp_path / "plain"
+    FastMDXplora(config_data=dict(shared), output_dir=plain_dir).explore()
+
+    marked_dir = tmp_path / "marked"
+    FastMDXplora(
+        config_data={**shared, "agent": "unvalidated"},
+        output_dir=marked_dir,
+    ).explore()
+
+    plain = plain_dir / "analysis" / "rmsd" / "rmsd.png"
+    marked = marked_dir / "analysis" / "rmsd" / "rmsd.png"
+    assert plain.is_file() and marked.is_file()
+    assert _ink(marked) > _ink(plain), (
+        "an unvalidated phase's figure should carry the mark")
+
+
+def test_a_checked_study_leaves_its_figures_alone(tmp_path: Path) -> None:
+    """A mark that appears on everything stops being read, so `assisted`
+    -- which did go through the validator -- must not stamp."""
+    pdb = _make_pdb_stub(tmp_path)
+    shared = {
+        "systems": [{"id": "s1", "system": str(pdb)}],
+        "analysis": {"include": ["rmsd"]},
+        **FAST_SIM,
+    }
+
+    plain_dir = tmp_path / "plain"
+    FastMDXplora(config_data=dict(shared), output_dir=plain_dir).explore()
+
+    assisted_dir = tmp_path / "assisted"
+    FastMDXplora(
+        config_data={**shared, "agent": "assisted"},
+        output_dir=assisted_dir,
+    ).explore()
+
+    plain = plain_dir / "analysis" / "rmsd" / "rmsd.png"
+    assisted = assisted_dir / "analysis" / "rmsd" / "rmsd.png"
+    assert _ink(assisted) == _ink(plain)
+
+
+def test_only_the_unchecked_phase_is_marked(tmp_path: Path) -> None:
+    """The point of the per-phase setting: a trajectory from a validated
+    simulation is fine even when the analysis over it was not."""
+    from fastmdxplora.analysis.plotting import current_mark
+
+    pdb = _make_pdb_stub(tmp_path)
+    fmdx = FastMDXplora(
+        config_data={
+            "systems": [{"id": "s1", "system": str(pdb)}],
+            "agent": "assisted",
+            "analysis": {"agent": "unvalidated", "include": ["rmsd"]},
+            **FAST_SIM,
+        },
+        output_dir=tmp_path / "run",
+    )
+    fmdx.explore()
+
+    # Nothing is left set once the phases are done.
+    assert current_mark() == ""
+    manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
+    assert manifest["agent"]["checked"] == {
+        "setup": True, "simulation": True, "analysis": False, "report": True,
+    }

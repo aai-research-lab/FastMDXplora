@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -891,6 +892,41 @@ class FastMDXplora:
             "environment": environment_record(),
         }
 
+    @contextmanager
+    def _marking(self, phase: str):
+        """Stamp this phase's figures if nothing checked its method.
+
+        One place rather than four, because the mark is a property of the
+        phase and not of any figure inside it. The alternative -- a `mark`
+        argument carried from here through `analyze.run`, the analysis
+        orchestrator, each `Analysis`, and on to every `save_figure` call
+        -- is five layers and ten call sites, and the parameter it would
+        arrive at has been there all along with nothing passing it.
+
+        Wrapped so a phase that cannot draw at all still runs. Matplotlib
+        is an analysis dependency, and the setup phase must not start
+        failing on an import it never needed.
+        """
+        mark = ""
+        try:
+            from fastmdxplora.marking import mark_for
+
+            mark = mark_for(
+                {**self.options, **getattr(self, "study_options", {})}, phase
+            )
+        except Exception:  # noqa: BLE001 -- a run is worth more than a stamp
+            logger.debug("Could not work out the mark for phase %s.", phase)
+        if not mark:
+            yield
+            return
+        try:
+            from fastmdxplora.analysis.plotting import marked_as
+        except Exception:  # noqa: BLE001 -- no matplotlib, no figures
+            yield
+            return
+        with marked_as(mark):
+            yield
+
     def _run_phase(self, phase: str, kwargs: dict[str, Any]) -> PhaseResult:
         phase_dir = self._phase_dirs[phase]
         phase_dir.mkdir(parents=True, exist_ok=True)
@@ -900,11 +936,12 @@ class FastMDXplora:
 
         try:
             run_fn = self._resolve_phase_runner(phase)
-            artifacts = run_fn(
-                orchestrator=self,
-                output_dir=phase_dir,
-                **kwargs,
-            )
+            with self._marking(phase):
+                artifacts = run_fn(
+                    orchestrator=self,
+                    output_dir=phase_dir,
+                    **kwargs,
+                )
             finished = datetime.now(timezone.utc).isoformat()
             return PhaseResult(
                 name=phase,
