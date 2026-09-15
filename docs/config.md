@@ -343,21 +343,40 @@ fastmdx explore --config study.yml --setup-ph 6.0
 
 leaves a `resolved_config.yml` saying `ph: 6.0`, not the `7.0` the file said.
 
-**It is meant to carry every setting the run used, defaults included.** That is
-what the file is for: a study you can repeat from what the run left behind
-rather than from what somebody remembers typing, and independent of which
-version of the software was current.
+**It carries every setting the run used, defaults included.** That is what the
+file is for: a study you can repeat from what the run left behind rather than
+from what somebody remembers typing. Every phase gets a block whether or not
+you touched it, and every option in that block is named — 108 settings for a
+study that set two. The block is exactly the dictionary the phase was handed,
+not a reconstruction of it.
 
-> **Known defect.** It does not do that yet. Today it records only what was
-> explicitly set — by the file, a flag, or an API argument — and a phase that
-> ran entirely on its defaults leaves no block in `resolved_config.yml` at all.
-> Re-running the file still reproduces the study **on the same version**,
-> because the missing settings take the same defaults; it will not reproduce it
-> on a version whose defaults have moved, which is the case the file exists to
-> cover. Until it is fixed, what each phase actually used is in that phase's
-> own record: `setup/setup_parameters.json`,
-> `simulation/simulation_parameters.json`, `analysis/<name>/options.json`. See
-> [The FastMDXplora Manifest](manifest.md).
+A setting whose value the run works out for itself is written as `null` rather
+than as the value it worked out, because `null` is what the Config reader takes
+as "decide this again" and a substituted value would not round-trip. Two cases
+where that difference is the whole point:
+
+- `simulation.pressure_bar` is `null` in a run configured with `pressure_atm`.
+  Writing its declared `1.0` there would replay a 1.2 atm run at 1.0 bar.
+- `simulation.nvt_steps` is `null` in a run configured with `nvt_duration_ns`.
+  A step count written beside the duration it was derived from would override
+  that duration on replay.
+
+```{note}
+**What this does and does not pin down across versions.** The 57 settings with
+a fixed default are written as values, so a default that moves in a later
+release cannot quietly change what the file means. The rest are written as
+`null`, and for most that is the value — you did not ask for a membrane, a
+ligand or a mutation. But a handful are deferred decisions: `setup.water_model`
+follows the force field, `analysis.include` is the default set of measures,
+`simulation.trajectory_interval_steps` is computed from the run length. If one
+of *those* changes between versions, the file replays under the new rule. What
+the run actually chose is in the phase's own record.
+```
+
+What each phase actually did — as opposed to what it was asked to do — is
+therefore still worth reading: `setup/setup_parameters.json`,
+`simulation/simulation_parameters.json`, `analysis/<name>/options.json`. See
+[The FastMDXplora Manifest](manifest.md).
 
 ### What "reproduces" means
 

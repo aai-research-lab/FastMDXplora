@@ -24,7 +24,7 @@ apart:
 
 | | |
 |---|---|
-| `resolved_config.yml` | **What was asked for.** A valid Config. Give it back to `fastmdx explore --config` to run the study again. It is meant to carry every setting the run used, defaults included; today it carries only what was explicitly set — see [Reproducing a run](config.md#reproducing-a-run) |
+| `resolved_config.yml` | **What was asked for.** A valid Config carrying every setting the run used, defaults included. Give it back to `fastmdx explore --config` to run the study again — see [Reproducing a run](config.md#reproducing-a-run) |
 | `manifest.json` | **What happened.** Every phase, artifact and refusal, plus the exact software stack the run used — [The FastMDXplora Manifest](manifest.md) |
 | `analysis/<name>/options.json` | **What one measure did.** Its selection, every option including the defaults, the findings, and the format of the file beside it |
 

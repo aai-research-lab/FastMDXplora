@@ -251,6 +251,79 @@ class TestTheConfigIsPresentedAsTheStudy:
         assert "resolved_config.yml" in self._readme()
 
 
+class TestTheResolvedConfigIsDescribedAsItIs:
+    """Two numbers and one distinction, all of which decay silently.
+
+    The page claims the file names every setting the run used, gives the
+    size of a dumped file, and separates the settings it pins across
+    versions from the ones it defers. Each is checkable, and the last is
+    the one worth checking: a claim to reproduce a study independently of
+    the version would be too strong, and softening it to nothing would
+    lose the point of the file.
+    """
+
+    @staticmethod
+    def _page() -> str:
+        """As one line, because prose wraps and a claim should not depend
+        on where it happened to break."""
+        import re
+
+        return re.sub(
+            r"\s+", " ", (DOCS / "config.md").read_text(encoding="utf-8"))
+
+    def test_the_dumped_size_is_the_real_one(self) -> None:
+        import tempfile
+        from pathlib import Path as _Path
+
+        import yaml
+
+        from fastmdxplora.config import write_resolved_config
+
+        out = _Path(tempfile.mkdtemp())
+        path = write_resolved_config(
+            {"system": "1UBQ", "output": str(out),
+             "options": {"setup": {"ph": 6.5},
+                         "simulation": {"pressure_atm": 1.2}}},
+            out)
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        total = sum(len(doc[phase])
+                    for phase in ("setup", "simulation", "analysis", "report"))
+        assert f"{total} settings for a study that set two" in self._page()
+
+    def test_the_count_it_pins_across_versions_is_the_real_one(self) -> None:
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        fixed = sum(1 for group in PHASE_SCHEMAS.values()
+                    for field in group.fields if field.phase_value is not None)
+        assert f"The {fixed} settings with" in self._page()
+
+    @pytest.mark.parametrize("deferred", [
+        "setup.water_model", "analysis.include",
+        "simulation.trajectory_interval_steps",
+    ])
+    def test_each_deferred_setting_named_really_is_deferred(
+        self, deferred: str
+    ) -> None:
+        """Named as the exception to what the file pins down. A field that
+        acquired a fixed default would make the caveat wrong in the
+        direction that undersells the file."""
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        phase, name = deferred.split(".")
+        field = PHASE_SCHEMAS[phase].get(name)
+        assert field is not None, f"{deferred} is named in config.md"
+        assert field.phase_value is None, (
+            f"{deferred} now has a default and is no longer deferred")
+        assert f"`{deferred}`" in self._page()
+
+    def test_the_two_round_trip_traps_are_both_named(self) -> None:
+        """`null` rather than the declared default, for the two fields
+        where writing the default would replay a different study."""
+        page = self._page()
+        for field in ("`simulation.pressure_bar`", "`simulation.nvt_steps`"):
+            assert field in page
+
+
 class TestEveryMethodIsShownAndNotJustOne:
     """Metadynamics had a worked example and umbrella sampling and steered
     dynamics did not, so two of the three things this software exists for

@@ -200,13 +200,12 @@ does not have is anything that checked the science.
 The Config is validated exactly as in any other mode. A study asking for a
 setting that does not exist is refused here too.
 
-> **What it does today.** The mode is recorded in the Config and travels into
-> the run's records. The behaviour it is meant to unlock — the Agent writing
-> code of its own, outside the schema — is **specified and not yet built**, and
-> `fastmdx agent --unvalidated` says so when you run it. The figure-stamping
-> that is meant to go with the mode is **also not yet applied**, and the
-> command's own message currently claims otherwise. Use `unvalidated` to record
-> intent; do not rely on it to mark anything for you.
+> **What it does today.** The mode is recorded in the Config, travels into the
+> run's records, and stamps every figure the marked phase draws. The behaviour
+> it is meant to unlock — the Agent writing code of its own, outside the schema
+> — is **specified and not yet built**, and `fastmdx agent --unvalidated` says
+> so when you run it. So the marking works; what it currently marks is a study
+> that stayed inside the schema anyway.
 
 ---
 
@@ -420,12 +419,16 @@ fastmdx.FastMDXplora(config_data=proposal.config, output_dir="runs/study").explo
 Two things are specified and incomplete, and it is better to know than to find
 out:
 
-- **`unvalidated` is recorded, not enforced.** The Agent cannot yet write code
-  of its own, and figures from an unchecked phase are not yet stamped.
-- **The GUI's "autonomous" option drafts but does not run.** The panel has no
-  budget field, and running an Agent-written study without a person reading it
-  first is a command-line workflow today:
-  `fastmdx agent "…" --autonomous --budget-hours N`.
+- **`unvalidated` is recorded and marked, not enforced.** The mode reaches the
+  Config, the Manifest and every figure the marked phase draws. What it is
+  meant to unlock — the Agent writing code of its own, outside the schema — is
+  not built, so there is currently nothing outside the schema for it to mark.
+- **The GUI panel drafts in every mode and starts nothing.** The mode is
+  recorded on the study and travels into the Config and the Manifest; the run
+  is yours to start from the form. Running one unattended needs a GPU-time
+  budget, which the panel has no field for, so that stays a command-line
+  workflow: `fastmdx agent "…" --autonomous --budget-hours N`. The panel says
+  so beside the mode selector.
 
 ---
 
