@@ -18,7 +18,7 @@
 [![OpenMM](https://img.shields.io/badge/engine-OpenMM-orange)](https://openmm.org)
 
 [**Documentation**](https://fastmdxplora.readthedocs.io) ·
-[**Quick start**](https://fastmdxplora.readthedocs.io/en/latest/getting_started.html) ·
+[**Quick start**](https://fastmdxplora.readthedocs.io/en/latest/first_study.html) ·
 [**GUI**](https://fastmdxplora.readthedocs.io/en/latest/gui.html) ·
 [**Cite**](#citation)
 
@@ -91,14 +91,15 @@ simulation:
 ```
 
 That is a complete study. Everything unnamed takes a documented default, and
-every run writes `resolved_config.yml` with defaults, file and command line
-merged, so the exact study can be run again by anyone holding that one file.
+every run writes `resolved_config.yml` — the file, the command line and the
+API arguments merged — so the exact study can be run again by anyone holding
+that one file.
 
 **Three ways to build a config**, and each of them also runs all four phases:
 
 | | |
 |---|---|
-| **The GUI** | `fastmdx gui`. A form generated from the schema, so every system and every setting is reachable. Worth using even for a command-line or Python workflow: build the study where the options are visible and explained, then take the file away. |
+| **The GUI** | `fastmdx gui`. A form generated from the schema, so every setting is reachable. Worth using even for a command-line or Python workflow: build the study where the options are visible and explained, then take the file away. |
 | **The CLI** | `fastmdx explore --config study.yml`, or `fastmdx init-config` for a commented template, or a flag for any setting. |
 | **The Python API** | `FastMDXplora(config="study.yml").explore()`, or the same blocks passed as options. |
 
@@ -107,21 +108,52 @@ form, flags and API are generated from one declaration — and a study designed
 in the GUI on a laptop runs unchanged on a cluster, because what travels is
 the config.
 
+**And a fourth, in place of a person.** The FastMDXplora Agent writes a config
+from a sentence, and is reachable through all three of the above:
+
+```bash
+fastmdx agent "simulate trypsin with benzamidine bound at pH 6.5 for 100 ns"
+```
+
+It gets no special treatment. What it writes goes through exactly the same
+validator, by the same code, with the same refusals, as a config typed by hand
+— and a proposal that did not validate carries no config at all.
+
+## The manifest is the result
+
+What a config is to a study, `manifest.json` is to its result: every phase that
+ran, every artifact it produced, every setting it used, and the exact software
+stack it ran on — including which package versions were loaded, because those
+decide numbers. A run directory is readable by somebody who was not there.
+
 ## Documentation
 
 **Start here** — [Install](https://fastmdxplora.readthedocs.io/en/latest/installation.html) ·
-[Your first run](https://fastmdxplora.readthedocs.io/en/latest/getting_started.html) ·
-[The GUI](https://fastmdxplora.readthedocs.io/en/latest/gui.html) ·
-[The four phases](https://fastmdxplora.readthedocs.io/en/latest/phases.html)
+[Your first study](https://fastmdxplora.readthedocs.io/en/latest/first_study.html) ·
+[How FastMDXplora works](https://fastmdxplora.readthedocs.io/en/latest/how_it_works.html)
 
-**Going further** — [Restraints, membranes, enhanced sampling](https://fastmdxplora.readthedocs.io/en/latest/simulations.html) ·
+**The Config** — [The FastMDXplora Config](https://fastmdxplora.readthedocs.io/en/latest/config.html) ·
+[Config reference](https://fastmdxplora.readthedocs.io/en/latest/config_reference.html) ·
+[Selections](https://fastmdxplora.readthedocs.io/en/latest/selections.html) ·
+[Examples](https://fastmdxplora.readthedocs.io/en/latest/examples.html)
+
+**Writing a Config** — [GUI](https://fastmdxplora.readthedocs.io/en/latest/gui.html) ·
+[CLI](https://fastmdxplora.readthedocs.io/en/latest/cli.html) ·
+[API](https://fastmdxplora.readthedocs.io/en/latest/api.html) ·
+[Agent](https://fastmdxplora.readthedocs.io/en/latest/agent.html)
+
+**Going further** — [Restraints, membranes, enhanced sampling](https://fastmdxplora.readthedocs.io/en/latest/studies.html) ·
 [Production and GPUs](https://fastmdxplora.readthedocs.io/en/latest/production.html) ·
-[Protein-ligand interactions](https://fastmdxplora.readthedocs.io/en/latest/interactions.html)
+[Running elsewhere](https://fastmdxplora.readthedocs.io/en/latest/clusters.html)
 
-**Reference** — [CLI](https://fastmdxplora.readthedocs.io/en/latest/cli_reference.html) ·
-[Configuration](https://fastmdxplora.readthedocs.io/en/latest/configuration.html) ·
-[Examples](https://fastmdxplora.readthedocs.io/en/latest/usage_examples.html) ·
-[Python API](https://fastmdxplora.readthedocs.io/en/latest/api.html)
+**Results** — [The FastMDXplora Manifest](https://fastmdxplora.readthedocs.io/en/latest/manifest.html) ·
+[Reading the results](https://fastmdxplora.readthedocs.io/en/latest/results.html) ·
+[The analyses](https://fastmdxplora.readthedocs.io/en/latest/analyses.html) ·
+[Protein-ligand interactions](https://fastmdxplora.readthedocs.io/en/latest/interactions.html) ·
+[Refusals](https://fastmdxplora.readthedocs.io/en/latest/refusals.html)
+
+**For developers** — [Developing FastMDXplora](https://fastmdxplora.readthedocs.io/en/latest/developers.html) ·
+[How it is validated](https://fastmdxplora.readthedocs.io/en/latest/validation.html)
 
 ## Citation
 

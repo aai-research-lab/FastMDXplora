@@ -1,4 +1,4 @@
-# Implementation note: protein-ligand interactions
+# Protein-ligand interactions: implementation
 
 *How FastMDXplora's interaction analysis is built, why it is built that way,
 and what it was checked against. For what it measures and how to use it, see

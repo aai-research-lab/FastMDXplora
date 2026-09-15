@@ -162,7 +162,7 @@ reference measurement for the same reason it disqualifies it as a dependency.
 it requires MDAnalysis: a second trajectory library beside MDTraj, with its own
 file handling and its own selection language.
 
-What the checking found is recorded in `interactions_design.md`. Against
+What the checking found is recorded in [Protein-ligand interactions: implementation](interactions_design.md). Against
 ProLIF the partners agree exactly, and the counts agree once the threshold and
 counting differences are accounted for; MDTraj's `baker_hubbard` agrees on the
 protein-internal hydrogen bonds. Neither difference from ProLIF is a defect;

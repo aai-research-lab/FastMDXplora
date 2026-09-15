@@ -1,7 +1,7 @@
 """An explanation nobody can see is not an explanation.
 
 The README says "Every step explains itself and cites the paper worth
-reading", and `docs/phases.md` and the manuscript both state a count of
+reading", and `docs/how_it_works.md` and the manuscript both state a count of
 sixteen. Sixteen is the size of the table; it is not how many can reach a
 user. An entry is only ever printed if some call site names its key --
 `presenter.step(..., explain="protonation")`, or `on_explain("minimize")`

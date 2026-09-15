@@ -1,7 +1,9 @@
-# Your first run
+# Your first FastMDXplora study
 
-This page gets you from nothing to a finished study of a real protein. It
-takes about ten minutes, most of which is the install.
+From nothing to a finished study of a real protein. About ten minutes, most of
+which is the install.
+
+---
 
 ## Install
 
@@ -17,19 +19,15 @@ fastmdx info
 ```
 
 That lists every backend, grouped by what it is for, and gives the command for
-anything missing. If the simulation backends are present you can run
-everything on this page.
+anything missing. If the simulation backends are present you can run everything
+on this page.
 
 Other routes, Windows and WSL2, and what to do about a partial install are in
-the [installation guide](installation.md).
+[Installing FastMDXplora](installation.md).
 
 ---
 
 ## The quickest route: the GUI
-
-The GUI is a full interface, not a viewer: it builds any system
-FastMDXplora supports and writes any config file the command line accepts,
-from a form generated out of the same schema the CLI validates against.
 
 ```bash
 fastmdx gui
@@ -39,17 +37,17 @@ A tab opens. Type `1L2Y` as the structure — that is Trp-cage, a 20-residue
 protein that folds in microseconds and simulates in minutes — leave everything
 else alone, and press **Run**.
 
-You will watch the setup phase clean up the structure and solvate it, the
+You will watch the setup phase clean the structure up and solvate it, the
 simulation heat and equilibrate it, and then the molecule itself moving in the
 viewer while the energy and temperature plot alongside. When it finishes, the
 figures and the report are on the same page.
 
-That is the whole loop, and the [GUI page](gui.md) covers what else it can do
-— including opening a run that happened on a cluster.
+That is the whole loop. [The FastMDXplora GUI](gui.md) covers what else it can
+do, including opening a run that happened on a cluster.
 
 ---
 
-## The same thing from the command line
+## The same study from the command line
 
 ```bash
 fastmdx explore --system 1L2Y --output runs/trpcage
@@ -57,7 +55,7 @@ fastmdx explore --system 1L2Y --output runs/trpcage
 
 One command: it fetches 1L2Y from the PDB, prepares it, simulates it, analyses
 the trajectory, and writes a report. The default is a real simulation, so this
-takes a while — for something that finishes in a minute, ask for less of it:
+takes a while. For something that finishes in a minute, ask for less of it:
 
 ```bash
 fastmdx explore --system 1L2Y --output runs/smoke \
@@ -72,16 +70,31 @@ tell you so, in as many words. It is for checking the machinery works.
 
 ---
 
+## Or describe it in a sentence
+
+```bash
+fastmdx agent set                              # choose a model, once
+fastmdx agent "simulate Trp-cage for 50 ns" -o trpcage.yml
+fastmdx explore --config trpcage.yml
+```
+
+The [FastMDXplora Agent](agent.md) writes a Config; what comes out goes through
+exactly the same validation as anything you type by hand, and runs the same
+way.
+
+---
+
 ## What you get
 
 ```
 runs/trpcage/
-├── setup/          prepared.pdb, solvated.pdb, system.xml, and what was decided
-├── simulation/     production.dcd, energy.csv, and the settings used
-├── analysis/       one directory per measure: data, figure, and its options
-├── report/         report.md, report.pdf, slides.pptx, dashboard.html
-├── resolved_config.yml   every setting this run used, defaults included
-└── manifest.json   every phase, every artifact, every parameter
+├── setup/                  prepared.pdb, solvated.pdb, system.xml, and what was decided
+├── simulation/             production.dcd, energy.csv, and the settings used
+├── analysis/               one directory per measure: data, figure, and its options
+├── report/                 report.md, report.pdf, slides.pptx, dashboard.html
+├── manifest.json           what happened: every phase, artifact and parameter
+├── resolved_config.yml     what was asked for: a Config that runs this again
+└── fastmdxplora.log        the full audit trail
 ```
 
 Three things are worth opening first.
@@ -109,12 +122,8 @@ question, and how a measure says whether its number is one.
 
 ## It says why, while it happens
 
-Molecular dynamics has a lot of steps that are obvious once you know them and
-opaque before that. A pipeline that does all of it silently is quicker to use
-and teaches nothing: you end up with a trajectory you cannot defend.
-
-So each step says why it is happening as it happens, with a citation where
-there is one worth following:
+Each step explains itself as it runs, with a citation where there is one worth
+following:
 
 ```
 ▸ Minimizing energy
@@ -126,18 +135,8 @@ there is one worth following:
   before anything moves.
 ```
 
-Sixteen of them, covering protonation, heterogens, ligand chemistry and
-parameters, solvation, minimisation, NVT, NPT, which ensemble production runs
-in, restraints, membranes and their barostat, metadynamics, interactions and
-convergence. Each
-says *why* rather than repeating what the step already said, and a reference
-carries authors and a year, or is absent.
-
-On by default. To turn them off:
-
-```bash
-fastmdx explore --system 1L2Y --no-explain
-```
+Sixteen of them. On by default; `--no-explain` turns them off. See
+[How FastMDXplora works](how_it_works.md#explanations-while-it-happens).
 
 ---
 
@@ -152,7 +151,7 @@ fastmdx explore --system 181L --setup-forcefield amber-openff --output runs/lyso
 181L is T4 lysozyme with benzene bound. The setup phase finds the benzene,
 looks its chemistry up, settles its protonation in the binding site,
 parameterises it with OpenFF, and discards the crystallisation additives that
-are not part of the question. The analysis phase then adds the protein-ligand
+are not part of the question. The analysis phase then adds the protein–ligand
 measures, including what is holding the ligand there rather than just how much
 of the protein it touches.
 
@@ -166,10 +165,10 @@ See [Protein-ligand interactions](interactions.md) for what the measures mean.
 
 ## Doing it repeatedly
 
-For anything beyond a single run, put it in a file:
+For anything beyond a single run, put it in a [Config](config.md):
 
 ```bash
-fastmdx init-config study.yml     # a commented template
+fastmdx init-config -o study.yml     # a commented template with every setting
 fastmdx explore --config study.yml
 ```
 
@@ -190,8 +189,8 @@ print(runs[0].output_dir)
 ## When something goes wrong
 
 **The run stops during setup.** Read the message — the setup phase refuses
-rather than guesses, and it says what it could not decide and what would
-settle it.
+rather than guesses, and it says what it could not decide and what would settle
+it.
 
 **The simulation becomes unstable.** The message names which atoms went wrong
 and what that points at: a ligand alone usually means its parameters, lipids
@@ -201,16 +200,18 @@ differ, and it gives the ones that apply.
 **A backend is missing.** `fastmdx info` says which and how to get it.
 
 **The numbers look odd.** Read the convergence section of the report before
-anything else. A short run has almost no independent information in it, and
-the report says how much.
+anything else. A short run has almost no independent information in it, and the
+report says how much.
+
+Every refusal carries an identifier as well as a sentence — see
+[FastMDXplora refusals](refusals.md).
 
 ---
 
 ## Where next
 
-- [The FastMDXplora GUI](gui.md) — everything it can do
-- [Reading the results](results.md) — what a run leaves, and what each number
-  is worth
-- [The four phases](phases.md) — what each phase does and what every measure computes
-- [Beyond a box of water](simulations.md) — restraints, membranes, metadynamics
-- [Worked examples](usage_examples.md) — recipes for common studies
+- **[How FastMDXplora works](how_it_works.md)** — what each phase decides
+- **[The FastMDXplora Config](config.md)** — writing a study down
+- **[Worked examples](examples.md)** — recipes for common studies
+- **[Studies beyond a box of water](studies.md)** — restraints, membranes, enhanced sampling
+- **[Reading the results](results.md)** — what each number is worth
