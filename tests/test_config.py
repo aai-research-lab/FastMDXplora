@@ -612,3 +612,123 @@ class TestSettingsAreGrouped:
                     and group.title != "simulate: other"]
 
         assert terminal == page
+
+
+class TestTheResolvedConfigNamesEverySettingTheRunUsed:
+    """The point of the file, and what it did not do.
+
+    It recorded only what was explicitly set, so a phase that ran entirely
+    on its defaults left no block at all. That reproduces a study on the
+    version that wrote it and on no other: a default moving in a later
+    release silently changes what the file meant, which is the failure the
+    file exists to prevent.
+    """
+
+    @staticmethod
+    def _written(options, tmp_path):
+        import yaml
+
+        from fastmdxplora.config import write_resolved_config
+
+        path = write_resolved_config(
+            {"system": "1UBQ", "output": str(tmp_path), "options": options},
+            tmp_path,
+        )
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    def test_every_field_of_every_phase_is_named(self, tmp_path):
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        doc = self._written({"setup": {"ph": 6.5}}, tmp_path)
+
+        for phase, schema in PHASE_SCHEMAS.items():
+            assert set(doc[phase]) == schema.field_names(), phase
+
+    def test_a_phase_that_ran_on_defaults_still_appears(self, tmp_path):
+        doc = self._written({"setup": {"ph": 6.5}}, tmp_path)
+
+        assert doc["report"]["title"] is None
+        assert doc["analysis"]["scope"] == "solute"
+
+    def test_what_was_set_still_wins_over_the_default(self, tmp_path):
+        doc = self._written({"setup": {"ph": 6.5}}, tmp_path)
+
+        assert doc["setup"]["ph"] == 6.5
+
+    def test_the_values_are_phase_values_not_declared_defaults(self, tmp_path):
+        """`simulation.pressure_bar` declares 1.0 and starts a phase at None,
+        so that `pressure_atm` stays detectable. Writing the declared default
+        would make bar always present, and bar wins."""
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        doc = self._written({}, tmp_path)
+
+        for phase, schema in PHASE_SCHEMAS.items():
+            for field in schema.fields:
+                assert doc[phase][field.name] == field.phase_value, (
+                    f"{phase}.{field.name}")
+
+    def test_a_pressure_in_atm_survives_the_round_trip(self, tmp_path):
+        """The regression writing `Field.default` would have caused: a run
+        at 1.2 atm replaying at 1.0 bar, silently."""
+        from fastmdxplora.config import load_config_file, phase_options
+
+        doc = self._written({"simulation": {"pressure_atm": 1.2}}, tmp_path)
+        assert doc["simulation"]["pressure_bar"] is None
+
+        replayed = phase_options(
+            load_config_file(tmp_path / "resolved_config.yml"))["simulation"]
+        assert replayed["pressure_atm"] == 1.2
+        assert "pressure_bar" not in replayed
+
+    def test_a_duration_is_not_overridden_by_a_step_count(self, tmp_path):
+        """Step counts override durations, so a step count written beside
+        the duration it was derived from would change the run on replay.
+        A field resolved at run time is written null, which the loader
+        reads as "use the default"."""
+        from fastmdxplora.config import load_config_file, phase_options
+
+        doc = self._written({"simulation": {"nvt_duration_ns": 2}}, tmp_path)
+        assert doc["simulation"]["nvt_steps"] is None
+
+        replayed = phase_options(
+            load_config_file(tmp_path / "resolved_config.yml"))["simulation"]
+        assert replayed["nvt_duration_ns"] == 2
+        assert "nvt_steps" not in replayed
+
+    def test_it_round_trips_to_the_same_run(self, tmp_path):
+        """The whole claim: what a phase gets from the written file is what
+        it got from the config that produced it."""
+        from fastmdxplora.config import load_config_file, phase_options
+
+        original = {"setup": {"ph": 6.5, "forcefield": "amber14"},
+                    "simulation": {"duration_ns": 10}}
+        self._written(original, tmp_path)
+
+        replayed = phase_options(
+            load_config_file(tmp_path / "resolved_config.yml"))
+        for phase, block in original.items():
+            for key, value in block.items():
+                assert replayed[phase][key] == value
+
+    def test_the_written_file_still_validates(self, tmp_path):
+        from fastmdxplora.config import load_config_file, validate_config
+
+        self._written({"setup": {"ph": 6.5}}, tmp_path)
+        validate_config(
+            load_config_file(tmp_path / "resolved_config.yml"),
+            require_systems=True,
+        )
+
+    def test_the_short_form_is_still_available(self, tmp_path):
+        import yaml
+
+        from fastmdxplora.config import write_resolved_config
+
+        path = write_resolved_config(
+            {"system": "1UBQ", "options": {"setup": {"ph": 6.5}}},
+            tmp_path, full=False,
+        )
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert doc["setup"] == {"ph": 6.5}
+        assert "report" not in doc

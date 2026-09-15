@@ -225,6 +225,7 @@ def write_resolved_config(
     output_dir: str | Path,
     *,
     filename: str = "resolved_config.yml",
+    full: bool = True,
 ) -> Path:
     """Write the fully-merged configuration to ``output_dir/resolved_config.yml``.
 
@@ -239,6 +240,10 @@ def write_resolved_config(
         Directory to write into.
     filename : str
         Output file name.
+    full : bool
+        Name every setting each phase used, defaults included. This is the
+        point of the file and the default. ``False`` writes only what was
+        explicitly set, which is shorter and answers a different question.
 
     Returns
     -------
@@ -249,8 +254,23 @@ def write_resolved_config(
     -----
     The dump is a valid FastMDXplora config file — feed it straight back
     to ``--config`` to reproduce the run. The single system is written as
-    the canonical one-element ``systems:`` list. Only set (non-None)
-    values are written so the file stays readable.
+    the canonical one-element ``systems:`` list.
+
+    The defaults come from ``PhaseSchema.defaults()``, which reads
+    ``Field.phase_value`` and not ``Field.default``. The two differ where a
+    field declares a ``phase_sentinel``, and writing the wrong one is not a
+    cosmetic error: ``simulation.pressure_bar`` declares ``1.0`` and starts
+    a phase at ``None`` precisely so that ``pressure_atm`` stays
+    detectable. Write ``1.0`` into the file and a run configured at 1.2 atm
+    replays at 1.0 bar — a silent change of pressure, in the file whose
+    whole purpose is to reproduce the run.
+
+    For the same reason a field whose effective value is worked out at run
+    time is written as ``null`` rather than as the value its help text
+    describes. ``null`` is what the loader reads as "use the default", so
+    it round-trips to the same run; a substituted number would not. A step
+    count written beside the duration it was derived from would override
+    that duration on replay.
     """
     import yaml
 
@@ -282,9 +302,21 @@ def write_resolved_config(
             doc[key] = str(merged[key])
 
     options = merged.get("options") or {}
-    for phase, block in options.items():
-        if block:
-            doc[phase] = dict(block)
+    if full:
+        # Every setting the run used, defaults included -- which is what the
+        # file is for. It carried only what was explicitly set, so a phase
+        # that ran entirely on its defaults left no block at all, and the
+        # file reproduced a study on the version that wrote it and no other.
+        # A default that moves in a later release silently changed what the
+        # file meant, which is the failure it exists to prevent.
+        for phase, schema in PHASE_SCHEMAS.items():
+            block = schema.defaults()
+            block.update(options.get(phase) or {})
+            doc[phase] = block
+    else:
+        for phase, block in options.items():
+            if block:
+                doc[phase] = dict(block)
 
     header = (
         "# FastMDXplora resolved configuration\n"
