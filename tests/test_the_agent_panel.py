@@ -217,6 +217,40 @@ class TestThePageCarriesIt(unittest.TestCase):
         self.assertIn("panel", inspect.signature(_cmd_gui).parameters)
         self.assertIn("fragment", inspect.getsource(_cmd_gui))
 
+    def test_no_mode_promises_a_run_the_panel_does_not_start(self):
+        """`autonomous` offered "draft it and run it" and drafted.
+
+        `propose_endpoint` returns a config in every mode and starts
+        nothing, and the panel has no budget field -- which is the one
+        thing `--autonomous` refuses to run without, because approving an
+        unknown duration is not a decision. A dropdown promising a run is
+        the interface saying something the code does not do.
+        """
+        import inspect
+
+        from fastmdxplora.gui import agent_panel
+
+        source = inspect.getsource(agent_panel.propose_endpoint)
+        self.assertNotIn("explore", source)
+        self.assertNotIn("FastMDXplora(", source)
+
+        page = self.page()
+        start = page.index('<select id="agent-mode">')
+        options = page[start:page.index("</select>", start)]
+        self.assertNotIn("run it", options)
+        for mode in ("assisted", "autonomous", "unvalidated"):
+            with self.subTest(mode=mode):
+                self.assertIn(f'value="{mode}"', options)
+
+    def test_the_panel_says_a_run_is_started_by_hand(self):
+        """Removing the false promise leaves the reader needing the true
+        one, or the mode names alone imply it."""
+        page = self.page()
+        start = page.index('<select id="agent-mode">')
+        help_text = page[start:page.index("</label>", start)]
+        self.assertIn("never starts a run", help_text)
+        self.assertIn("--budget-hours", help_text)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

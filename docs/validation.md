@@ -108,6 +108,15 @@ different atom counts and the trajectories differ. **Saying so is part of the
 comparison** — an environment check that demanded identical results would either
 fail always or be measuring something other than what it claims.
 
+The first row is exact because [`resolved_config.yml` names every setting the
+run used](config.md#reproducing-a-run), defaults included. A default that
+resolves differently on another machine is what this check exists to catch, and
+it can only be caught in a file that writes the defaults down. Keys that say
+where a run happened rather than what it was — output paths, platform, device
+index, thread count — are reported separately and are not a difference in the
+study. Comparing runs from two **versions** is a real comparison, not a false
+alarm: if a default moved between them, the studies differ.
+
 See [Reproducing a run](config.md#reproducing-a-run) for what that means when
 you repeat a study yourself.
 

@@ -2862,12 +2862,16 @@ class TestATimelineShowsOnlyWhatCanHappen:
         self, tmp_path
     ) -> None:
         """Phase blocks used to be read as the plan. But a block means the
-        phase was configured, not that it was included: `write_resolved_config`
-        writes only phases with non-empty options, so a run whose analysis and
-        report took defaults left no trace of them in the file -- and since
-        that file lands in the output directory when the run ends, the
-        timeline showed seven stages throughout and dropped to five the moment
-        it finished. The test below gives the rule this now follows.
+        phase was configured, not that it was included -- and since the file
+        lands in the output directory when the run ends, the timeline showed
+        seven stages throughout and dropped to five the moment it finished.
+
+        That happened because `write_resolved_config` wrote only phases with
+        non-empty options, so a run whose analysis and report took defaults
+        left no trace of them. It now names every setting every phase used,
+        so the blocks are always all four and say even less about what ran.
+        `include` and `exclude` are the only keys that answer this, which is
+        the rule the test below gives.
         """
         from fastmdxplora.gui.telemetry import run_phases, run_stages
 

@@ -732,3 +732,38 @@ class TestTheResolvedConfigNamesEverySettingTheRunUsed:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert doc["setup"] == {"ph": 6.5}
         assert "report" not in doc
+
+    def test_each_block_is_the_dict_the_phase_was_handed(self, tmp_path):
+        """The tightest statement of what the file is, and the one that
+        catches drift.
+
+        Every phase begins `{**DEFAULTS, **options}` with its own
+        module-level DEFAULTS, itself `PhaseSchema.defaults()`. Writing
+        that same merge means the file is not a reconstruction of the run
+        -- it is the dict the phase received. Anything that makes the two
+        diverge, on either side, shows up here rather than as a study that
+        replays differently.
+        """
+        import yaml
+
+        from fastmdxplora.config import write_resolved_config
+        from fastmdxplora.report.run import DEFAULTS as REPORT_DEFAULTS
+        from fastmdxplora.setup.pipeline import DEFAULTS as SETUP_DEFAULTS
+        from fastmdxplora.simulation.pipeline import (
+            DEFAULTS as SIMULATION_DEFAULTS,
+        )
+
+        options = {
+            "setup": {"ph": 6.5},
+            "simulation": {"pressure_atm": 1.2, "nvt_duration_ns": 2},
+            "report": {"title": "A study"},
+        }
+        path = write_resolved_config(
+            {"system": "1UBQ", "options": options}, tmp_path)
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+        for phase, defaults in (("setup", SETUP_DEFAULTS),
+                                ("simulation", SIMULATION_DEFAULTS),
+                                ("report", REPORT_DEFAULTS)):
+            assert doc[phase] == {**defaults, **options.get(phase, {})}, (
+                f"the {phase} block is not what the {phase} phase is handed")

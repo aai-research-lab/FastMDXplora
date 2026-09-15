@@ -857,10 +857,16 @@
             <label class="field">
               <span class="field-label">Mode</span>
               <select id="agent-mode">
-                <option value="assisted">assisted — draft it and stop</option>
-                <option value="autonomous">autonomous — draft it and run it</option>
+                <option value="assisted">assisted — a model drafted it</option>
+                <option value="autonomous">autonomous — drafted without review</option>
                 <option value="unvalidated">unvalidated — outside this schema</option>
               </select>
+              <span class="field-help">Recorded on the study, and it travels
+                into the config and the manifest. The panel drafts in every
+                mode and never starts a run: read the config, load it into
+                the form, and start it yourself. Running unattended needs a
+                GPU-time budget, which is a command-line workflow today —
+                <code>fastmdx agent "…" --autonomous --budget-hours N</code>.</span>
             </label>
             <button id="agent-propose" class="button primary">Write a config</button>
             <div id="agent-attempts" class="agent-attempts"></div>

@@ -795,10 +795,13 @@ class TestTheTopBarNamesTheRunFromItsFirstMinute:
 
 class TestTheTimelineShowsTheStagesThatRan:
     """A phase block in a config is not a statement about what runs.
-    `write_resolved_config` writes only phases with non-empty options, and it
-    writes them into the output directory when the run ends -- so a run whose
-    analysis and report used defaults showed seven stages while running and
-    five the moment it finished."""
+
+    `write_resolved_config` used to write only phases with non-empty options,
+    and it writes into the output directory when the run ends -- so a run
+    whose analysis and report used defaults showed seven stages while running
+    and five the moment it finished. It now names every setting every phase
+    used, so the blocks are always all four and say even less about what ran;
+    either way `include` and `exclude` are what answer this."""
 
     def _config(self, root: Path, text: str) -> None:
         root.mkdir(parents=True, exist_ok=True)

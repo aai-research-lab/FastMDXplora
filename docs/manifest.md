@@ -149,9 +149,11 @@ the failure are not lost with it.
 ## The other records
 
 `manifest.json` is the index. Four other files record what one phase or one
-measure actually did, including the defaults it took — which is also what
-`resolved_config.yml` is meant to carry and
-[does not carry yet](config.md#reproducing-a-run).
+measure actually did. They answer a different question from
+[`resolved_config.yml`](config.md#reproducing-a-run): that file says what the
+run was asked for, down to every default; these say what each phase resolved
+that request to — the force field actually chosen, the platform actually used,
+the pressure actually applied, the frames actually written.
 
 | File | What it records |
 |---|---|
