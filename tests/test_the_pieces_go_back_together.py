@@ -138,6 +138,98 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
         self.assertFalse(pieces[1].usable)
 
 
+@unittest.skipUnless(HAVE_MDTRAJ, "MDTraj is not installed")
+class TestTheRefusalSeesWhereARunPutsItsConfig(unittest.TestCase):
+    """The two-studies check against the layout a run actually leaves.
+
+    Every other test here hand-writes a config into the segment's
+    simulation subdirectory. A run does not put it there: the orchestrator
+    writes `resolved_config.yml` at the root of its output directory, and
+    a segment's output directory is `segment-NNN/`. Looking only in
+    `segment-NNN/simulation/` found nothing on every real run, every
+    digest came back empty, and the refusal that stops two studies being
+    concatenated -- the failure this module exists to prevent, and the one
+    that most looks like success -- could not fire.
+
+    It could not be caught by the fixtures above because they put the file
+    where the reader was looking.
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+
+    def segment(self, index, *, ph=7.0, frames=10):
+        """A segment laid out the way a run leaves one.
+
+        Complete enough to join, so that when the join is refused the
+        refusal is the reason and not a missing file.
+        """
+        from fastmdxplora.config import write_resolved_config
+
+        directory = self.root / f"segment-{index:03d}"
+        simulation = directory / "simulation"
+        simulation.mkdir(parents=True)
+        topology = mdtraj.Topology()
+        chain = topology.add_chain()
+        residue = topology.add_residue("AR", chain)
+        for atom in range(5):
+            topology.add_atom(f"AR{atom}", mdtraj.element.argon, residue)
+        xyz = np.random.default_rng(index).random(
+            (frames, 5, 3)).astype(np.float32)
+        trace = mdtraj.Trajectory(xyz, topology)
+        trace[0].save_pdb(str(simulation / "topology.pdb"))
+        trace.save_dcd(str(simulation / "production.dcd"))
+        (simulation / "checkpoint.chk").write_bytes(b"x" * 10)
+        (simulation / "checkpoint.chk.sha256").write_text("10 abc\n")
+        options = {"setup": {"ph": ph},
+                   "simulation": {"production_steps": 1000 * (index + 1)}}
+        if index:
+            options["simulation"].update(
+                minimize=False, nvt_steps=0, npt_steps=0,
+                resume_from=f"../segment-{index - 1:03d}/checkpoint.chk")
+        write_resolved_config(
+            {"system": "p.pdb", "output": str(directory), "options": options},
+            directory)
+        return directory
+
+    def test_a_segment_is_recognised_as_a_study(self):
+        self.segment(0)
+        self.assertTrue(survey_segments(self.root)[0].config_digest)
+
+    def test_segments_of_one_study_agree(self):
+        """Steps, minimize, the NVT and NPT counts and resume_from all
+        differ between segments by design, and a full resolved config
+        names every one of them rather than leaving them out."""
+        for index in range(3):
+            self.segment(index)
+        pieces = survey_segments(self.root)
+        self.assertEqual(len({p.config_digest for p in pieces}), 1)
+
+    def test_segments_of_one_study_join(self):
+        """The other half of the claim: nothing here blocks a good join,
+        so a refusal below is the digest and not a missing file."""
+        for index in range(3):
+            self.segment(index)
+        record = join_segments(self.root, self.root / "joined.dcd")
+        self.assertEqual(record["frames"], 30)
+
+    def test_a_segment_from_another_study_refuses(self):
+        for index in range(3):
+            self.segment(index, ph=(7.0 if index < 2 else 6.0))
+        with self.assertRaises(StudyError) as caught:
+            join_segments(self.root, self.root / "joined.dcd")
+        self.assertIn("same study", refusal_of(caught.exception).message)
+
+    def test_a_config_in_the_simulation_directory_is_still_read(self):
+        """A hand-assembled campaign tends to put it there."""
+        directory = self.segment(0)
+        (directory / "simulation" / "resolved_config.yml").write_text(
+            (directory / "resolved_config.yml").read_text(encoding="utf-8"),
+            encoding="utf-8")
+        (directory / "resolved_config.yml").unlink()
+        self.assertTrue(survey_segments(self.root)[0].config_digest)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 
