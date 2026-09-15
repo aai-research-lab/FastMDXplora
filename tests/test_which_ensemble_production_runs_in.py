@@ -230,3 +230,78 @@ class TestTheWarningSaysWhatHappened(unittest.TestCase):
         self.assertIn(
             'if not plan["npt_steps"] > 0 and not wants_npt_production:',
             source)
+
+
+class TestEveryPlaceThatAsksAsksTheSameWay(unittest.TestCase):
+    """Three places asked whether there was a barostat, and by the end all
+    three had to be corrected separately.
+
+    The runner's barostat gate, the runner's density warning, and the
+    advisory shown before a run starts. While `npt_steps > 0` answered both
+    questions, asking it was right everywhere. Separating them left each
+    one wrong until it was found, and they were found one rehearsal at a
+    time: the gate first, then the warning, then this.
+
+    The advisory was the worst of the three to find, because it lives in a
+    different module and fires before the simulation phase, so fixing the
+    runner did nothing to it and the output looked half-mended.
+    """
+
+    def advises(self, simulation) -> bool:
+        from fastmdxplora.advisories import _a_density_never_equilibrated
+
+        return bool(_a_density_never_equilibrated({}, simulation))
+
+    def test_a_run_that_never_equilibrates_is_advised(self):
+        self.assertTrue(self.advises({"npt_steps": 0}))
+
+    def test_a_resumed_segment_is_not(self):
+        self.assertFalse(self.advises({"npt_steps": 0, "ensemble": "npt"}))
+
+    def test_npt_equilibration_then_nvt_is_not(self):
+        self.assertFalse(
+            self.advises({"npt_steps": 50_000, "ensemble": "nvt"}))
+
+    def test_an_ordinary_run_is_not(self):
+        self.assertFalse(self.advises({"npt_steps": 50_000}))
+        self.assertFalse(self.advises({}))
+
+    def test_the_advisory_and_the_warning_agree(self):
+        # They describe the same fact to the same reader, before and during
+        # the run. Disagreeing would be worse than either being wrong.
+        from fastmdxplora.simulation.ensembles import resolve_ensemble
+
+        for simulation in ({"npt_steps": 0},
+                           {"npt_steps": 0, "ensemble": "npt"},
+                           {"npt_steps": 50_000},
+                           {"npt_steps": 50_000, "ensemble": "nvt"}):
+            with self.subTest(simulation=simulation):
+                never = int(simulation.get("npt_steps") or 0) <= 0
+                warns = never and resolve_ensemble(simulation) != "npt"
+                self.assertEqual(self.advises(simulation), warns)
+
+    def test_no_other_module_infers_the_ensemble_from_the_stage(self):
+        """The guard that would have found all three at once.
+
+        Any `npt_steps` comparison outside the places that legitimately ask
+        how long the stage runs is a place deciding the ensemble from the
+        wrong question.
+        """
+        import re
+        from pathlib import Path
+
+        import fastmdxplora
+
+        root = Path(fastmdxplora.__file__).parent
+        allowed = {"ensembles.py", "resume.py", "schema.py", "runner.py",
+                   "advisories.py"}
+        offenders = []
+        for path in root.rglob("*.py"):
+            if path.name in allowed:
+                continue
+            text = path.read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if re.search(r'npt_steps.*(> 0|== 0|<= 0)', line):
+                    offenders.append(f"{path.relative_to(root).as_posix()}: "
+                                     f"{line.strip()[:60]}")
+        self.assertEqual(offenders, [])

@@ -217,6 +217,7 @@ def _report_the_join(root, directories, findings) -> None:
     this whole campaign exists to get.
     """
     import csv
+    import statistics
 
     def volumes(directory):
         energy = directory / "simulation" / "energy.csv"
@@ -231,66 +232,66 @@ def _report_the_join(root, directories, findings) -> None:
             return []
         return [float(r[key]) for r in rows if r.get(key)]
 
-    # Both runs must be in the same ensemble or the comparison is
-    # meaningless -- which is how the plan_segments bug showed itself: an
-    # NPT whole run against NVT segments, and a volume "difference" that
-    # was just one run having a barostat.
-    def has_a_barostat(directory):
-        record = directory / "simulation" / "simulation_parameters.json"
-        try:
-            return int(json.loads(record.read_text())
-                       .get("npt_steps") or 0) > 0
-        except (OSError, ValueError, TypeError):
-            return None
+    def particles(directory):
+        import json as _json
 
-    whole_npt = has_a_barostat(root / "whole")
-    segment_npt = (has_a_barostat(directories[1])
-                   if len(directories) > 1 else None)
-    if whole_npt is not None and whole_npt != segment_npt:
-        print(f"   The runs are in different ensembles -- whole "
-              f"barostat={whole_npt}, segment barostat={segment_npt}. "
-              "Nothing here is comparable; this is a bug, not a result.")
-        findings["ensembles_differ"] = True
-        return
+        record = directory / "setup" / "setup_parameters.json"
+        try:
+            return int(_json.loads(record.read_text())["n_atoms_solvated"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
 
     before = volumes(directories[0])
     after = volumes(directories[1]) if len(directories) > 1 else []
-    whole = volumes(root / "whole")
-    if not (before and after and whole):
+    if not (before and after):
         print("   No volume column found -- constant volume, or the "
               "reporter did not write one. Nothing to measure here.")
         return
     if len(after) < 5:
-        # The rehearsal reported "1 of 1 frames", which is not a
-        # measurement of anything. A segment has to be long enough to
-        # write several frames before the settling after a join is
-        # distinguishable from the first frame happening to be high.
         print(f"   Only {len(after)} frame(s) after the join. Too few to "
-              "say anything; give the segments more production steps or "
-              "a shorter trajectory interval.")
+              "say anything; give the segments more production steps or a "
+              "shorter state interval.")
         findings["frames_after_the_join"] = len(after)
         return
 
-    import statistics
+    # Against segment 0, not against the unsplit run.
+    #
+    # The first version compared the segment after the join with the
+    # unsplit run, and the two are independently solvated: 13,241 atoms
+    # against 13,406 in one rehearsal, about 1.2% more water, which at
+    # 132 nm^3 is three standard deviations of volume before any barostat
+    # has done anything. It reported nine frames of settling that were
+    # mostly a different amount of water.
+    #
+    # Segment 0 and segment 1 are the same system -- one solvation, one
+    # topology, a checkpoint between them -- so the only thing that can
+    # move the volume across the join is the barostat re-adapting. That is
+    # the measurement this section claims to make.
+    same_system = particles(directories[0]) == particles(directories[1]) \
+        if len(directories) > 1 and particles(directories[0]) else None
+    if same_system is False:
+        print("   The segments do not share a solvation, so a volume "
+              "difference across the join is not a transient. Nothing "
+              "comparable here.")
+        findings["segments_share_a_solvation"] = False
+        return
 
-    settled = statistics.fmean(whole[len(whole) // 2:])
-    spread = statistics.pstdev(whole[len(whole) // 2:]) or 1.0
-    # How many frames after the join sit outside the band the unsplit run
-    # settled into. Zero means the join cost nothing measurable.
+    settled = statistics.fmean(before[len(before) // 2:])
+    spread = statistics.pstdev(before[len(before) // 2:]) or 1.0
     outside = 0
     for value in after:
         if abs(value - settled) > 2 * spread:
             outside += 1
         else:
             break
-    print(f"   unsplit run settles at {settled:.0f} nm^3 (sd {spread:.1f})")
-    print(f"   after the join, {outside} of {len(after)} frames sit outside "
-          f"2 sd of that")
+    print(f"   segment 0 settles at {settled:.1f} nm^3 (sd {spread:.2f})")
+    print(f"   after the join, the first {outside} of {len(after)} frames "
+          f"sit outside 2 sd of that")
     if outside == 0:
         print("   -> the join cost nothing measurable at this size")
     else:
         print(f"   -> about {outside} frames of settling; discard that much "
-              "either side when averaging volume across a join")
+              "after a join when averaging volume across one")
     findings["frames_settling_after_the_join"] = outside
     findings["frames_in_the_segment"] = len(after)
 
