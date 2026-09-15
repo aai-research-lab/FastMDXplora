@@ -864,6 +864,14 @@ def cone_the_windows_ran_under(directories: "dict[int, Any]") -> "Cone | None":
     Every window records its own, so they are compared: windows that ran under
     different cones cannot be recombined, and saying so is more useful than
     quietly using the first one.
+
+    The record sits beside the COLVAR, under the window's `simulation`
+    directory, because that is where the runner's output directory points.
+    Looking for it one level up finds nothing at all, and finding nothing is
+    indistinguishable here from a study that ran without a cone -- so the
+    binding free energy is refused for want of a file that is on disk. The
+    bare path is still tried second, for a layout that keeps the record beside
+    the window.
     """
     import json
     from pathlib import Path
@@ -871,8 +879,11 @@ def cone_the_windows_ran_under(directories: "dict[int, Any]") -> "Cone | None":
     seen: dict[str, list[int]] = {}
     records: dict[str, dict[str, Any]] = {}
     for index, directory in sorted(directories.items()):
-        written = Path(directory) / "umbrella_window.json"
-        if not written.is_file():
+        for written in (Path(directory) / "simulation" / "umbrella_window.json",
+                        Path(directory) / "umbrella_window.json"):
+            if written.is_file():
+                break
+        else:
             continue
         try:
             record = json.loads(written.read_text(encoding="utf-8")).get("cone")

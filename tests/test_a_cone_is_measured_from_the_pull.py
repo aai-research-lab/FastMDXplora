@@ -527,6 +527,23 @@ class TestTheRecordSaysWhatRan:
 class TestTheAnalysisTakesTheConeTheRunsHad:
 
     def write_window(self, directory, cone):
+        """As the runner writes it: the record goes in the window's
+        `simulation` directory, beside the COLVAR, because that is what the
+        runner's output directory points at.
+
+        This fixture used to write it one level up, matching the reader
+        rather than the writer, and both were wrong together -- so a study
+        whose windows all recorded their cone was told none of them had.
+        """
+        beside_the_colvar = directory / "simulation"
+        beside_the_colvar.mkdir(parents=True, exist_ok=True)
+        (beside_the_colvar / "umbrella_window.json").write_text(
+            json.dumps({"cone": cone}), encoding="utf-8")
+        return directory
+
+    def write_window_beside_itself(self, directory, cone):
+        """The other layout, kept working so nothing that reads a flat
+        directory stops."""
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "umbrella_window.json").write_text(
             json.dumps({"cone": cone}), encoding="utf-8")
@@ -559,6 +576,49 @@ class TestTheAnalysisTakesTheConeTheRunsHad:
         }
         with pytest.raises(ValueError, match="not all run under the same"):
             cone_the_windows_ran_under(directories)
+
+    def test_a_record_beside_the_window_is_still_read(self, tmp_path):
+        """The flat layout keeps working, so the fix cannot break a caller
+        that puts the record next to the window."""
+        record = Cone(half_angle_deg=51.0, axis_atoms=(1, 2, 3)).as_record()
+        directories = {0: self.write_window_beside_itself(
+            tmp_path / "flat", record)}
+        assert cone_the_windows_ran_under(directories).half_angle_deg == 51.0
+
+    def test_the_two_readers_of_a_window_look_in_the_same_place(
+            self, tmp_path):
+        """The defect this guards is not that either function was wrong on
+        its own. `collect_samples` reads `<window>/simulation/COLVAR` and
+        `cone_the_windows_ran_under` read `<window>/umbrella_window.json`,
+        one level up, so on a real study the samples were found and the cone
+        was not -- and a missing cone is indistinguishable from a study that
+        never asked for one. The binding free energy was refused for want of
+        a file that was on disk in all thirty-five windows.
+
+        So the two are asserted together, against one directory built the way
+        the runner builds it. Either reader drifting from the other fails
+        here rather than in a three-day study.
+        """
+        from fastmdxplora.simulation.umbrella import collect_samples
+
+        window = tmp_path / "runs" / "window-00"
+        self.write_window(
+            window, Cone(half_angle_deg=73.0, axis_atoms=(7, 8, 9)).as_record())
+        rows = "\n".join(f" {0.2 * (i + 1):.6f} {0.40 + 0.001 * i:.6f} "
+                          f"0.000000 2.515956 0.000000" for i in range(50))
+        (window / "simulation" / "COLVAR").write_text(
+            "#! FIELDS time cv restraint.bias cone_angle cone.bias\n"
+            + rows + "\n", encoding="utf-8")
+
+        directories = {0: window}
+        samples = collect_samples(directories, equilibration_fraction=0.2)
+        cone = cone_the_windows_ran_under(directories)
+
+        assert len(samples[0]) > 0, "the COLVAR reader lost the window"
+        assert cone is not None, (
+            "the samples were found and the cone was not, from the same "
+            "directory -- which is the shape of the defect this guards")
+        assert cone.half_angle_deg == 73.0
 
     def test_an_unmeasured_cone_has_no_way_to_reach_plumed(self):
         """Held as its own type rather than as a `Cone` with holes in it: what
