@@ -231,12 +231,44 @@ def _report_the_join(root, directories, findings) -> None:
             return []
         return [float(r[key]) for r in rows if r.get(key)]
 
+    # Both runs must be in the same ensemble or the comparison is
+    # meaningless -- which is how the plan_segments bug showed itself: an
+    # NPT whole run against NVT segments, and a volume "difference" that
+    # was just one run having a barostat.
+    def has_a_barostat(directory):
+        record = directory / "simulation" / "simulation_parameters.json"
+        try:
+            return int(json.loads(record.read_text())
+                       .get("npt_steps") or 0) > 0
+        except (OSError, ValueError, TypeError):
+            return None
+
+    whole_npt = has_a_barostat(root / "whole")
+    segment_npt = (has_a_barostat(directories[1])
+                   if len(directories) > 1 else None)
+    if whole_npt is not None and whole_npt != segment_npt:
+        print(f"   The runs are in different ensembles -- whole "
+              f"barostat={whole_npt}, segment barostat={segment_npt}. "
+              "Nothing here is comparable; this is a bug, not a result.")
+        findings["ensembles_differ"] = True
+        return
+
     before = volumes(directories[0])
     after = volumes(directories[1]) if len(directories) > 1 else []
     whole = volumes(root / "whole")
     if not (before and after and whole):
         print("   No volume column found -- constant volume, or the "
               "reporter did not write one. Nothing to measure here.")
+        return
+    if len(after) < 5:
+        # The rehearsal reported "1 of 1 frames", which is not a
+        # measurement of anything. A segment has to be long enough to
+        # write several frames before the settling after a join is
+        # distinguishable from the first frame happening to be high.
+        print(f"   Only {len(after)} frame(s) after the join. Too few to "
+              "say anything; give the segments more production steps or "
+              "a shorter trajectory interval.")
+        findings["frames_after_the_join"] = len(after)
         return
 
     import statistics

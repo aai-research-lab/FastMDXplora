@@ -233,6 +233,26 @@ def refusal_for(verdict: Segmentability) -> Refusal | None:
                    details={"method": verdict.method})
 
 
+
+def _wants_a_barostat(simulation: dict[str, Any]) -> bool:
+    """Whether this study runs at constant pressure.
+
+    Read the same way the runner reads it: a positive `npt_steps` means a
+    barostat, because that is the gate the runner uses. `pressure_bar`
+    alone does not, since it has a default and setting it does not by
+    itself turn the barostat on.
+    """
+    steps = simulation.get("npt_steps")
+    if steps is not None:
+        return int(steps) > 0
+    duration = simulation.get("npt_duration_ns")
+    if duration is not None:
+        return float(duration) > 0
+    # Neither given: the runner's default NPT stage is 500,000 steps, so
+    # an unstated study is a constant-pressure one.
+    return True
+
+
 @dataclass(frozen=True)
 class Segment:
     """One piece of a run, as a config and where it continues from.
@@ -330,7 +350,29 @@ def plan_segments(
         if index > 0:
             simulation["minimize"] = False
             simulation["nvt_steps"] = 0
-            simulation["npt_steps"] = 0
+            # Not zero, where the study runs at constant pressure. The
+            # runner gates the barostat on `npt_steps > 0`, so zeroing it
+            # does not skip equilibration -- it removes the barostat from
+            # production as well, and every segment after the first runs
+            # NVT while the first ran NPT.
+            #
+            # Found on a real system: segment 0 reported a barostat and
+            # segments 1 to 3 warned that the density was whatever
+            # solvation produced. Two ensembles in one trajectory, and
+            # nothing downstream could have told -- which is the failure
+            # this package exists to prevent, in its own segmentation.
+            #
+            # One step is enough to re-establish the barostat. On a resumed
+            # segment an NPT step is not equilibration in any meaningful
+            # sense: the system settled during the first segment, and this
+            # step is physically production that is not written to the
+            # trajectory. It costs one step per join.
+            #
+            # The conflation underneath is worth fixing on its own --
+            # "how long to equilibrate" and "which ensemble" are different
+            # questions sharing a setting -- but that changes the runner's
+            # contract for every existing study, and this does not.
+            simulation["npt_steps"] = 1 if _wants_a_barostat(block) else 0
             simulation.pop("nvt_duration_ns", None)
             simulation.pop("npt_duration_ns", None)
         piece["simulation"] = simulation
