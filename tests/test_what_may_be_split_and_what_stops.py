@@ -278,13 +278,10 @@ class TestThePiecesAddUpToTheStudy(unittest.TestCase):
         for piece in pieces[1:]:
             self.assertIs(piece.config["simulation"]["minimize"], False)
             self.assertEqual(piece.config["simulation"]["nvt_steps"], 0)
-            # Not zero. This asserted `npt_steps == 0` and was the
-            # assumption behind a real bug: the runner gates the barostat
-            # on `npt_steps > 0`, so zeroing it does not skip
-            # equilibration, it takes the barostat out of production. A
-            # token step keeps the ensemble; what must not happen is a
-            # repeat of the full stage.
-            self.assertLess(piece.config["simulation"]["npt_steps"], 100)
+            # Zero again, and safely so: the barostat no longer rides on
+            # this number. `ensemble` carries it, which is what
+            # TestASegmentRunsTheSameStudy checks.
+            self.assertEqual(piece.config["simulation"]["npt_steps"], 0)
 
     def test_every_segment_after_the_first_names_its_predecessor(self):
         # Without this the pieces are not segments. They are ten
@@ -421,24 +418,20 @@ class TestASegmentedStudyRunsEndToEnd(unittest.TestCase):
 
 
 class TestASegmentRunsTheSameStudy(unittest.TestCase):
-    """The ensemble must survive the split.
+    """The ensemble must survive the split, and now it is stated.
 
-    `npt_steps` does two jobs in the runner: how long to equilibrate at
-    constant pressure, and whether a barostat exists at all — the gate is
-    `plan["npt_steps"] > 0`. Zeroing it for a resumed segment therefore
-    does not skip equilibration. It removes the barostat from production,
-    and every segment after the first runs NVT while the first ran NPT.
+    `npt_steps` used to answer two questions: how long to equilibrate, and
+    whether a barostat existed at all. Zeroing it for a resumed segment
+    therefore removed the barostat from production, so segment 0 ran NPT
+    and the rest ran NVT — found on ubiquitin, by a warning that fired on
+    segments 1 to 3 and not on segment 0.
 
-    Found on a real system during a rehearsal on ubiquitin: segment 0
-    reported a barostat, segments 1 to 3 warned that the density was
-    whatever solvation produced. Two ensembles in one trajectory, and
-    nothing downstream could have told — which is the failure this package
-    exists to prevent, occurring in its own segmentation.
-
-    One step is enough to re-establish it. On a resumed segment an NPT step
-    is not equilibration in any meaningful sense: the system settled during
-    the first segment, and that step is physically production which is not
-    written to the trajectory.
+    The first fix kept one token NPT step to re-establish the barostat,
+    which worked and left the conflation in place. The two questions are
+    separate settings now, so a segment can say `ensemble` outright and
+    zero both stages: no equilibration, and the ensemble the study runs in.
+    These assertions moved with it — they were written against the token
+    step, which was the workaround rather than the answer.
     """
 
     def setUp(self):
@@ -457,10 +450,9 @@ class TestASegmentRunsTheSameStudy(unittest.TestCase):
                 ("explicit", {"duration_ns": 4, "npt_steps": 50_000}),
                 ("by duration", {"duration_ns": 4, "npt_duration_ns": 1})):
             with self.subTest(study=label):
-                after = self.segments(block)[1:]
-                for piece in after:
-                    self.assertGreater(
-                        piece.config["simulation"]["npt_steps"], 0,
+                for piece in self.segments(block)[1:]:
+                    self.assertEqual(
+                        piece.config["simulation"]["ensemble"], "npt",
                         "a resumed segment lost the barostat")
 
     def test_a_constant_volume_study_stays_at_constant_volume(self):
@@ -468,21 +460,25 @@ class TestASegmentRunsTheSameStudy(unittest.TestCase):
         # that deliberately had none would also be two ensembles in one
         # trajectory.
         for piece in self.segments({"duration_ns": 4, "npt_steps": 0})[1:]:
-            self.assertEqual(piece.config["simulation"]["npt_steps"], 0)
+            self.assertEqual(piece.config["simulation"]["ensemble"], "nvt")
 
-    def test_equilibration_still_happens_once(self):
-        # The point of zeroing them in the first place. A resumed segment
-        # must not re-equilibrate from temperature, or the joined
-        # trajectory holds a settling transient mid-production.
+    def test_equilibration_happens_once_and_costs_nothing_after(self):
+        # Both stages zero, because the ensemble no longer rides on them.
+        # The token step the first fix needed is gone.
         pieces = self.segments({"duration_ns": 4, "npt_steps": 50_000})
         self.assertNotIn("nvt_steps", pieces[0].config["simulation"])
         for piece in pieces[1:]:
             self.assertEqual(piece.config["simulation"]["nvt_steps"], 0)
-            # And the NPT stage is a token rather than a repeat.
-            self.assertLess(piece.config["simulation"]["npt_steps"], 100)
+            self.assertEqual(piece.config["simulation"]["npt_steps"], 0)
+
+    def test_an_npt_equilibration_then_nvt_study_splits_faithfully(self):
+        # The combination that could not be expressed at all before.
+        for piece in self.segments(
+                {"duration_ns": 4, "npt_steps": 50_000,
+                 "ensemble": "nvt"})[1:]:
+            self.assertEqual(piece.config["simulation"]["ensemble"], "nvt")
 
     def test_the_production_steps_still_sum(self):
-        # Adding a step per join must not come out of the study.
         pieces = self.segments({"production_steps": 1_000_000}, count=4)
         self.assertEqual(
             sum(p.config["simulation"]["production_steps"] for p in pieces),

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.simulation.ensembles import resolve_ensemble
 from fastmdxplora.refusals import (
     BackendUnavailable,
     MissingResultError,
@@ -1381,6 +1382,7 @@ def run_simulation(
     state_interval_steps: int = DEFAULT_STATE_INTERVAL_STEPS,
     checkpoint_interval_steps: int = DEFAULT_CHECKPOINT_INTERVAL_STEPS,
     resume_from: str | Path | None = None,
+    ensemble: str | None = None,
     live_telemetry: bool = False,
     telemetry_interval: int = DEFAULT_STATE_INTERVAL_STEPS,
     # Hooks
@@ -2126,15 +2128,29 @@ def run_simulation(
             if on_explain:
                 on_explain("ensemble_choice")
 
-        if plan["npt_steps"] > 0:
-            _add_barostat(
+        # Two questions, asked separately now. `npt_steps` says how long to
+        # equilibrate at constant pressure; `ensemble` says what production
+        # runs in. They used to be one number, which made the useful
+        # combination -- equilibrate NPT, then produce NVT at the density a
+        # barostat found -- impossible to ask for, and made a resumed
+        # segment silently drop the barostat along with the equilibration.
+        wants_npt_production = (
+            resolve_ensemble(dict(plan, **{
+                "ensemble": ensemble,
+                "npt_steps": plan["npt_steps"],
+            })) == "npt"
+        )
+        barostat_index = None
+        if plan["npt_steps"] > 0 or wants_npt_production:
+            barostat_index = _add_barostat(
                 omm, system,
                 temperature_K=temperature_K,
                 pressure_bar=resolved_pressure_bar,
-            membrane=is_membrane_system(topology),
+                membrane=is_membrane_system(topology),
                 frequency=barostat_frequency,
             )
             simulation.context.reinitialize(preserveState=True)
+        if plan["npt_steps"] > 0:
             if telemetry is not None:
                 telemetry.mark_stage("npt", "current", status="running", current_step=current_step)
                 telemetry.event("NPT started")
@@ -2182,6 +2198,28 @@ def run_simulation(
         elif telemetry is not None:
             telemetry.mark_stage("npt", "skipped", status="running", current_step=current_step)
             telemetry.event("NPT skipped (0 steps)")
+
+        # The barostat comes off before production for an NVT run, the same
+        # way restraints do below and for the same reason: production must
+        # be in the ensemble the study asked for, not whatever
+        # equilibration happened to leave behind.
+        #
+        # This is the combination that could not be expressed while one
+        # setting answered both questions -- equilibrate at constant
+        # pressure so the density is one a barostat found, then fix the box
+        # there and produce at constant volume. Asking for NVT without the
+        # first half fixes the box at whatever solvation produced, which
+        # this package's own explain text calls the option nobody intends.
+        if barostat_index is not None and not wants_npt_production:
+            _remove_force(system, barostat_index)
+            simulation.context.reinitialize(preserveState=True)
+            logger.info(
+                "Barostat removed before production: NVT at the density "
+                "NPT equilibration settled on, rather than the one "
+                "solvation produced."
+            )
+            if on_explain:
+                on_explain("ensemble_choice")
 
         # Restraints come off before production, because a biased production
         # run measures the bias. Keeping them is possible and has to be asked
