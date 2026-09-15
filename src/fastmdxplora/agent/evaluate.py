@@ -73,6 +73,17 @@ class Request:
     name: str
     text: str
     must: dict[str, Any] = field(default_factory=dict)
+    #: easy, medium or hard. Easy states the value outright. Medium makes
+    #: the model supply something the sentence did not -- a number behind a
+    #: phrase, a unit conversion, a setting in a block a person would not
+    #: guess. Hard is where a plausible answer is wrong: the sentence
+    #: contains a trap, or asks for something the schema will refuse.
+    tier: str = "easy"
+    #: Settings the answer must NOT carry, mapped to why. For a request
+    #: where the failure is inventing something rather than omitting it --
+    #: a model that reads "a microsecond" and writes a timestep has not
+    #: misunderstood the units, it has answered a different question.
+    must_not: dict[str, str] = field(default_factory=dict)
     #: Phases to describe. Fewer is a cheaper call and a smaller space for
     #: a model to go wrong in, and a request about setup has no business
     #: being shown the report options.
@@ -80,6 +91,9 @@ class Request:
 
     def failures(self, config: dict[str, Any]) -> list[str]:
         wrong: list[str] = []
+        for path, why in self.must_not.items():
+            if _at(config, path) is not None:
+                wrong.append(f"{path} is set, and should not be: {why}")
         for path, expected in self.must.items():
             found = _at(config, path)
             if isinstance(expected, (int, float)) and isinstance(
@@ -119,6 +133,43 @@ REQUESTS: tuple[Request, ...] = (
     Request("no_minimise",
             "Run 1UBQ for 10 ns without minimising first.",
             {"simulation.minimize": False}),
+    # -- medium: the sentence does not hand over the value ----------------
+    Request("physiological",
+            "Simulate 1UBQ in physiological salt at body temperature for "
+            "20 ns.",
+            {"setup.ion_concentration_M": 0.15,
+             "simulation.temperature_K": 310},
+            tier="medium"),
+    Request("microsecond",
+            "Run 1UBQ for one microsecond.",
+            {"simulation.duration_ns": 1000},
+            tier="medium",
+            must_not={"simulation.timestep_fs":
+                      "the sentence gave a duration, not a timestep"}),
+    Request("npt_combination",
+            "Simulate 1UBQ at 1 bar and 310 K for 100 ns with a 4 fs "
+            "timestep and hydrogen mass repartitioning.",
+            {"simulation.pressure_bar": 1.0,
+             "simulation.temperature_K": 310,
+             "simulation.duration_ns": 100,
+             "simulation.timestep_fs": 4},
+            tier="medium"),
+
+    # -- hard: a plausible answer is wrong --------------------------------
+    Request("millimolar",
+            "Simulate 1UBQ in 150 millimolar salt for 10 ns.",
+            {"setup.ion_concentration_M": 0.15},
+            tier="hard",
+            must_not={}),
+    Request("picoseconds",
+            "Run 1UBQ for 500 picoseconds.",
+            {"simulation.duration_ns": 0.5},
+            tier="hard"),
+    Request("acidic",
+            "Simulate 1UBQ in acid, around pH 2, for 10 ns.",
+            {"setup.ph": 2},
+            tier="hard"),
+
     Request("membrane",
             "Simulate a membrane protein from 1UBQ in a POPC bilayer for "
             "20 ns. The orientation has already been checked.",
@@ -133,6 +184,7 @@ class Outcome:
     """What happened for one request."""
 
     request: str
+    tier: str
     accepted: bool
     cycles: int
     codes: tuple[str, ...]
@@ -165,6 +217,23 @@ class Report:
     def first_time(self) -> int:
         return sum(1 for o in self.outcomes if o.accepted and o.cycles == 1)
 
+    def by_tier(self) -> dict[str, tuple[int, int]]:
+        """Correct and total, per tier.
+
+        One number over three difficulties hides which is failing, and the
+        interesting question is not whether a model succeeds but where it
+        stops succeeding.
+        """
+        tally: dict[str, list[int]] = {}
+        for outcome in self.outcomes:
+            seen = tally.setdefault(outcome.tier, [0, 0])
+            seen[1] += 1
+            if outcome.correct:
+                seen[0] += 1
+        order = {"easy": 0, "medium": 1, "hard": 2}
+        return {tier: (got, total) for tier, (got, total)
+                in sorted(tally.items(), key=lambda kv: order.get(kv[0], 9))}
+
     def recurring_codes(self) -> dict[str, int]:
         """Which refusals came up, most often first.
 
@@ -186,8 +255,11 @@ class Report:
             "first_time": self.first_time,
             "mean_cycles": self.mean_cycles,
             "codes": self.recurring_codes(),
+            "by_tier": {t: {"correct": c, "total": n}
+                        for t, (c, n) in self.by_tier().items()},
             "outcomes": [
-                {"request": o.request, "accepted": o.accepted,
+                {"request": o.request, "tier": o.tier,
+                 "accepted": o.accepted,
                  "correct": o.correct, "cycles": o.cycles,
                  "codes": list(o.codes), "wrong": list(o.wrong)}
                 for o in self.outcomes
@@ -201,6 +273,9 @@ class Report:
             f"{self.first_time} first time, "
             f"{self.mean_cycles:.1f} cycles on average",
         ]
+        lines.append("  " + "  ".join(
+            f"{tier}: {got}/{total}"
+            for tier, (got, total) in self.by_tier().items()))
         for outcome in self.outcomes:
             mark = "ok " if outcome.correct else ("valid" if outcome.accepted
                                                   else "  - ")
@@ -237,6 +312,7 @@ def measure(
         wrong = tuple(request.failures(proposal.config)
                       if proposal.config else ())
         outcomes.append(Outcome(
-            request=request.name, accepted=proposal.accepted,
+            request=request.name, tier=request.tier,
+            accepted=proposal.accepted,
             cycles=proposal.cycles, codes=codes, wrong=wrong))
     return Report(tuple(outcomes))

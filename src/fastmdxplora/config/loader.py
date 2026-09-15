@@ -197,6 +197,47 @@ _CHECKED_MORE_FULLY_LATER = frozenset({
 })
 
 
+
+def _check_bounds(value: Any, fld: Any, *, key: str, context: str) -> None:
+    """Refuse a number the world does not have.
+
+    `choices` refuses a name the software does not know. This refuses a
+    value outside what the quantity can be: a pH of 25, a negative
+    duration, a concentration below zero. Those are not strict readings of
+    a setting, they are readings of nothing.
+
+    Only where the bound is a fact. A 10 fs timestep is unstable for almost
+    every system and is not impossible, so it has no upper bound -- a
+    guessed one would refuse somebody's legitimate coarse-grained run, and
+    the runner already refuses an integration that blows up, which is the
+    honest place for that judgement.
+
+    The message says what the bound is and why, because "out of range" with
+    no range is a refusal a caller cannot act on.
+    """
+    low = getattr(fld, "minimum", None)
+    high = getattr(fld, "maximum", None)
+    if low is None and high is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return
+
+    if low is not None and value < low:
+        raise ConfigError(
+            f"{context} option '{key}' is {value}, below the smallest value "
+            f"it can have ({low}).",
+            code="config.option.out_of_range",
+            option=key, given=value, minimum=low, maximum=high,
+        )
+    if high is not None and value > high:
+        raise ConfigError(
+            f"{context} option '{key}' is {value}, above the largest value "
+            f"it can have ({high}).",
+            code="config.option.out_of_range",
+            option=key, given=value, minimum=low, maximum=high,
+        )
+
+
 def _check_choices(value: Any, fld: Any, *, key: str, context: str) -> None:
     """Refuse a value the schema does not list, the way the parser does.
 
@@ -273,6 +314,7 @@ def _validate_block(
                 found_type=type(value).__name__,
             )
         _check_choices(value, fld, key=key, context=context)
+        _check_bounds(value, fld, key=key, context=context)
 
 
 def _validate_phase_list(value: Any, *, field_name: str) -> None:

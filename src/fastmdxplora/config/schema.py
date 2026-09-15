@@ -112,6 +112,18 @@ class Field:
     help: str
     example: Any = None
     choices: tuple[str, ...] | None = None
+    #: Inclusive bounds for a numeric setting, where a bound is a fact
+    #: rather than a preference. `choices` refuses a name the software does
+    #: not know; these refuse a number the quantity cannot be. A pH of 25 is
+    #: not a strict pH, it is not a pH.
+    #:
+    #: Only where the limit is genuinely knowable. A 10 fs timestep is
+    #: unstable for almost every system and is not impossible, so it has no
+    #: upper bound -- a guessed one would refuse somebody's legitimate
+    #: coarse-grained run, and the runner already refuses an integration
+    #: that blows up, which is the honest place for that judgement.
+    minimum: float | None = None
+    maximum: float | None = None
     phase_sentinel: Any = _UNSET
 
     @property
@@ -158,6 +170,17 @@ TOP_LEVEL = PhaseSchema(
               "Output directory for all artifacts. "
               "Default: ./fastmdxplora_output_<UTC-timestamp>.",
               example="./my_study"),
+        Field("agent_model", str, None,
+              "Which model wrote this study, as provider/model. Written by "
+              "`fastmdx agent`; absent when a person wrote the config. "
+              "Recorded because `agent: assisted` says a model was "
+              "involved and not which one, and six months on that is the "
+              "difference between a record and a note. Pin a dated version "
+              "rather than an alias if it matters: an alias moves when a "
+              "new snapshot lands, so `claude-sonnet-4-6` names different "
+              "software at different times while "
+              "`claude-sonnet-4-5-20250929` does not.",
+              example="anthropic/claude-sonnet-4-5-20250929"),
         Field("agent", str, None,
               "How this study was written. Absent means a person wrote it, "
               "by hand or through the CLI, the API or the GUI, and that is "
@@ -218,7 +241,8 @@ SETUP = PhaseSchema(
               "without a stated reason otherwise is studied there. Cytosol "
               "sits near 7.2, a lysosome near 4.7, so a compartment-specific "
               "study should say so.",
-              example=7.0),
+              example=7.0,
+                    minimum=0.0, maximum=14.0),
         Field("heterogens", str, "auto",
               "How to treat non-standard residues: 'auto' (the default) "
               "decides per component, prepares any ligand it can, and stops "
@@ -370,7 +394,8 @@ SETUP = PhaseSchema(
               "protein sideways. Set this where you have oriented it "
               "yourself, or taken it from OPM."),
         Field("solvent_padding_nm", float, 1.0,
-              "Minimum distance (nm) between solute and the box wall."),
+              "Minimum distance (nm) between solute and the box wall.",
+                    minimum=0.0),
         Field("box_shape", str, "dodecahedron",
               "Periodic box geometry: cube, dodecahedron, or octahedron. "
               "A dodecahedron holds the same clearance around the solute in "
@@ -385,7 +410,8 @@ SETUP = PhaseSchema(
         Field("ion_negative", str, "Cl-",
               "Counter-ion anion."),
         Field("ion_concentration_M", float, 0.15,
-              "Target ionic strength in molar (physiological is 0.15)."),
+              "Target ionic strength in molar (physiological is 0.15).",
+                    minimum=0.0, maximum=20.0),
         Field("neutralize", bool, True,
               "Add ions to neutralize the net solute charge."),
         Field("nonbonded_method", str, "PME",
@@ -394,7 +420,8 @@ SETUP = PhaseSchema(
               choices=("NoCutoff", "CutoffNonPeriodic", "CutoffPeriodic",
                        "PME", "Ewald")),
         Field("nonbonded_cutoff_nm", float, 1.0,
-              "Real-space nonbonded cutoff in nm (cutoff/PME/Ewald methods)."),
+              "Real-space nonbonded cutoff in nm (cutoff/PME/Ewald methods).",
+                    minimum=0.0),
         Field("ewald_error_tolerance", float, 0.0005,
               "Ewald/PME error tolerance."),
         Field("use_switching_function", bool, True,
@@ -417,7 +444,8 @@ SETUP = PhaseSchema(
               "timesteps). Default: off.",
               example=4.0),
         Field("temperature_K", (int, float), 300.0,
-              "Temperature in K for initial velocity assignment."),
+              "Temperature in K for initial velocity assignment.",
+                    minimum=0.0),
     ),
 )
 
@@ -445,15 +473,18 @@ SIMULATION = PhaseSchema(
         Field("duration_ns", (int, float), None,
               "Production length in ns (standard MD convention — "
               "equilibration is independent). Default: 2 ns.",
-              example=100.0),
+              example=100.0,
+                    minimum=0.0),
         Field("nvt_duration_ns", (int, float), None,
               "NVT equilibration in ns. Default: fixed 500 ps regardless "
               "of production length.",
-              example=1.0),
+              example=1.0,
+                    minimum=0.0),
         Field("npt_duration_ns", (int, float), None,
               "NPT equilibration in ns. Default: fixed 1 ns regardless of "
               "production length.",
-              example=2.0),
+              example=2.0,
+                    minimum=0.0),
         Field("nvt_steps", int, None,
               "NVT step count (overrides nvt_duration_ns). Default: 250000.",
               example=250000),
@@ -504,15 +535,18 @@ SIMULATION = PhaseSchema(
         Field("minimize_max_iterations", int, 0,
               "Max minimization iterations (0 = until convergence)."),
         Field("timestep_fs", (int, float), 2.0,
-              "Integrator timestep in fs."),
+              "Integrator timestep in fs.",
+                    minimum=0.0),
         Field("temperature_K", (int, float), 300.0,
-              "Production temperature in K."),
+              "Production temperature in K.",
+              minimum=0.0),
         Field("pressure_bar", (int, float), 1.0,
               "Pressure for the Monte Carlo barostat in bar (OpenMM-native).",
               # The phase must start from None. Bar wins when both units are
               # given, so a phase table holding 1.0 would make bar always
               # present and quietly override an explicit pressure_atm.
-              phase_sentinel=None),
+              phase_sentinel=None,
+                    minimum=0.0),
         Field("pressure_atm", (int, float), None,
               "Pressure in atm (converted to bar internally). Accepted as "
               "an alternative to pressure_bar; bar wins if both are given.",

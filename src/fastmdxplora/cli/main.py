@@ -1032,11 +1032,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--attempts",
         type=int,
         metavar="N",
-        default=4,
+        default=3,
         help=(
             "How many times it may correct itself before giving up "
-            "(default: 4). Each attempt is checked before anything runs, "
-            "so they cost seconds rather than GPU time."
+            "(default: 3). Each attempt is checked before anything runs, "
+            "so they cost seconds rather than GPU time. Three is measured "
+            "rather than guessed: claude-sonnet-4-6 took at most two on "
+            "the evaluation set with the schema's help text, and at most "
+            "three without it."
         ),
     )
 
@@ -1882,6 +1885,14 @@ def _run_agent(args: Any) -> int:
 
     config = dict(proposal.config)
     config["agent"] = args.agent_mode
+    # And which model, not only that one was used. `agent: assisted` says a
+    # model was involved; this says which, so the record identifies the
+    # software rather than the category.
+    from fastmdxplora.agent import load_choice
+
+    chosen = load_choice()
+    if chosen is not None:
+        config["agent_model"] = f"{chosen.provider}/{chosen.model}"
     text = yaml.safe_dump(config, sort_keys=False)
     print(f"  ✓ Accepted after {proposal.cycles} attempt(s)\n")
     print(text)

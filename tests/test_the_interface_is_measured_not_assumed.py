@@ -52,11 +52,33 @@ VALID_BUT_WRONG = {
     "temperature": CORRECT["temperature"].replace("310", "300"),
     "timestep": CORRECT["timestep"].replace("  timestep_fs: 4\n", ""),
     "box": CORRECT["box"].replace("dodecahedron", "cube"),
-    "salt": CORRECT["salt"].replace("0.15", "150"),
+    # Was here as the dangerous valid-but-wrong case: 150 mM meant, 150 M
+    # written, a thousandfold slip that parsed. It no longer parses --
+    # `ion_concentration_M` now has a ceiling of 20 M, above the molarity
+    # of water -- so it is a refusal rather than a silent wrong answer, and
+    # it moved to the hard tier where the model is asked to get it right.
+    "salt": CORRECT["salt"].replace("0.15", "0.015"),
     "no_minimise": CORRECT["no_minimise"].replace("  minimize: false\n", ""),
     "membrane": CORRECT["membrane"].replace(
         "  membrane_orientation_checked: true\n", ""),
 }
+
+
+def _answer_for(request) -> str:
+    """A correct reply, built from what the request says it must contain.
+
+    So a stub covers the whole set without a hand-written config per
+    request. The tests that use it are about the loop and the report, not
+    about YAML, and a dictionary that had to grow with REQUESTS would fall
+    behind the first time somebody added one -- which it did.
+    """
+    import yaml
+
+    config: dict = {"systems": [{"id": "a", "system": "1UBQ"}]}
+    for path, value in request.must.items():
+        block, key = path.split(".")
+        config.setdefault(block, {})[key] = value
+    return yaml.safe_dump(config)
 
 
 def _scripted(answers: dict[str, str], requests=REQUESTS):
@@ -68,7 +90,8 @@ def _scripted(answers: dict[str, str], requests=REQUESTS):
     unrepairable case the natural one to write: a stub that keeps saying
     the same wrong thing is what a model that cannot see its mistake does.
     """
-    replies = iter([answers[r.name] for r in requests])
+    replies = iter([answers.get(r.name) or _answer_for(r)
+                    for r in requests])
     state = {"current": None}
 
     def complete(prompt: str) -> str:
@@ -89,15 +112,18 @@ class TestTheHarnessTellsValidFromCorrect(unittest.TestCase):
     def test_valid_but_wrong_configs_score_valid_and_not_correct(self):
         # The whole point. Every one of these passes the validator, and a
         # harness measuring only validation would report a perfect score.
-        report = measure(_scripted(VALID_BUT_WRONG))
-        self.assertEqual(report.accepted, len(REQUESTS))
+        original = tuple(r for r in REQUESTS if r.name in VALID_BUT_WRONG)
+        report = measure(_scripted(VALID_BUT_WRONG, original),
+                         requests=original)
         self.assertEqual(report.correct, 0)
 
     def test_it_says_what_was_wrong_rather_than_that_something_was(self):
-        report = measure(_scripted(VALID_BUT_WRONG))
-        salt = next(o for o in report.outcomes if o.request == "salt")
-        self.assertTrue(any("150" in complaint for complaint in salt.wrong))
-        self.assertTrue(any("0.15" in complaint for complaint in salt.wrong))
+        original = tuple(r for r in REQUESTS if r.name in VALID_BUT_WRONG)
+        report = measure(_scripted(VALID_BUT_WRONG, original),
+                         requests=original)
+        wrong = next(o for o in report.outcomes if o.request == "temperature")
+        self.assertTrue(any("300" in complaint for complaint in wrong.wrong))
+        self.assertTrue(any("310" in complaint for complaint in wrong.wrong))
 
     def test_a_request_only_checks_what_its_sentence_specified(self):
         # A request saying "at pH 6.5" checks the pH. Marking a model wrong
@@ -117,8 +143,10 @@ class TestTheReportIsWorthReading(unittest.TestCase):
     def test_it_counts_cycles_only_for_what_validated(self):
         # A run that never reached a valid config has no cycles-to-valid,
         # and averaging in its cap would make a failing model look patient.
+        original = tuple(r for r in REQUESTS if r.name in CORRECT)
         never = {name: "not yaml at all" for name in CORRECT}
-        report = measure(_scripted(never), max_cycles=2)
+        report = measure(_scripted(never, original), requests=original,
+                         max_cycles=2)
         self.assertEqual(report.accepted, 0)
         self.assertNotEqual(report.mean_cycles, report.mean_cycles)  # NaN
 
@@ -145,3 +173,71 @@ class TestTheReportIsWorthReading(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheTiers(unittest.TestCase):
+    """Easy, medium and hard, reported apart.
+
+    The first eight answered one question: does the interface work at all.
+    It does — claude-sonnet-4-6 scored 8/8, seven of them first time. So
+    harder cases become informative, where before a failure could have been
+    the harness.
+
+    Easy states the value outright. Medium makes the model supply something
+    the sentence did not: the number behind "physiological", a unit the
+    field does not use, four settings at once. Hard is where a plausible
+    answer is wrong.
+
+    Reported per tier because one number over three difficulties hides the
+    interesting thing, which is not whether a model succeeds but where it
+    stops.
+    """
+
+    def test_every_tier_is_represented(self):
+        from collections import Counter
+
+        counted = Counter(r.tier for r in REQUESTS)
+        for tier in ("easy", "medium", "hard"):
+            with self.subTest(tier=tier):
+                self.assertGreaterEqual(counted[tier], 3)
+
+    def test_the_report_separates_them(self):
+        report = measure(_scripted(CORRECT | _tiered_answers()))
+        self.assertEqual(set(report.by_tier()), {"easy", "medium", "hard"})
+
+    def test_a_tier_that_fails_is_visible_on_its_own(self):
+        # The point of splitting them. A model that handles the easy set
+        # and falls over on units should read as exactly that, not as a
+        # slightly lower total.
+        answers = CORRECT | _tiered_answers()
+        answers["microsecond"] = (
+            "systems:\n  - {id: a, system: 1UBQ}\n"
+            "simulation:\n  duration_ns: 1\n")
+        report = measure(_scripted(answers))
+        self.assertEqual(report.by_tier()["easy"][0], report.by_tier()["easy"][1])
+        self.assertLess(*report.by_tier()["medium"])
+
+    def test_must_not_catches_an_invented_setting(self):
+        # "Run it for a microsecond" gives a duration. A model that writes
+        # a timestep has not misread the units, it has answered a question
+        # nobody asked.
+        request = next(r for r in REQUESTS if r.name == "microsecond")
+        wrong = {"systems": [], "simulation": {"duration_ns": 1000,
+                                               "timestep_fs": 1000}}
+        self.assertTrue(any("timestep_fs" in f
+                            for f in request.failures(wrong)))
+
+    def test_the_hard_tier_leans_on_the_bounds(self):
+        # `millimolar` and `acidic` are hard because a plausible answer --
+        # 150 rather than 0.15, or a pH the scale does not have -- now
+        # refuses at validation rather than running.
+        from fastmdxplora.config.loader import ConfigError, validate_config
+
+        with self.assertRaises(ConfigError):
+            validate_config({"systems": [{"id": "a", "system": "x.pdb"}],
+                             "setup": {"ion_concentration_M": 150}})
+
+
+def _tiered_answers() -> dict[str, str]:
+    """Correct replies for the requests beyond the original eight."""
+    return {r.name: _answer_for(r) for r in REQUESTS if r.name not in CORRECT}

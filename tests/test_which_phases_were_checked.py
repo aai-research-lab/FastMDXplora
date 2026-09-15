@@ -168,3 +168,53 @@ class TestTheRecord(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheRecordSaysWhichModel(unittest.TestCase):
+    """`agent: assisted` says a model was involved, not which one.
+
+    Six months on, that is the difference between a record and a note. A
+    config that says a model wrote it and does not say which cannot be
+    reasoned about: the answer to "why did this study pick 300 K" differs
+    depending on whether a frontier model or a 7B on a laptop proposed it.
+
+    And an alias is not a version. `claude-sonnet-4-6` names different
+    software at different times, because it moves when a new snapshot
+    lands. Anyone who needs the record to identify what ran should pin a
+    dated string, and the field's help says so.
+    """
+
+    def test_the_field_exists_at_the_top_level(self):
+        from fastmdxplora.config.schema import PHASE_SCHEMAS, TOP_LEVEL
+
+        self.assertIn("agent_model", {f.name for f in TOP_LEVEL.fields})
+        # Not per phase: which model wrote the study, not which wrote a
+        # phase. A study drafted in two sittings by two models is not a
+        # shape worth supporting before anybody has wanted it.
+        for phase, schema in PHASE_SCHEMAS.items():
+            with self.subTest(phase=phase):
+                self.assertNotIn("agent_model",
+                                 {f.name for f in schema.fields})
+
+    def test_it_says_to_pin_a_version(self):
+        from fastmdxplora.config.schema import TOP_LEVEL
+
+        field = next(f for f in TOP_LEVEL.fields if f.name == "agent_model")
+        self.assertIn("alias moves", field.help)
+        self.assertIn("20250929", field.example)
+
+    def test_a_config_carrying_it_validates(self):
+        from fastmdxplora.config.loader import validate_config
+
+        validate_config({
+            "systems": [{"id": "a", "system": "x.pdb"}],
+            "agent": "assisted",
+            "agent_model": "anthropic/claude-sonnet-4-5-20250929",
+        })
+
+    def test_a_hand_written_study_carries_no_model(self):
+        # Absent, not "none". Every study written before this existed stays
+        # truthful without being rewritten.
+        from fastmdxplora.config.loader import validate_config
+
+        validate_config({"systems": [{"id": "a", "system": "x.pdb"}]})
