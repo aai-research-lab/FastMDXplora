@@ -63,11 +63,21 @@ def _config_digest(directory: Path) -> str:
     the resolved config differs between segments by design -- production
     steps, minimize, resume_from -- so hashing it whole would say every
     segment came from a different study, which is exactly backwards.
+
+    ``directory`` is the segment directory. A run writes its resolved
+    config at the root of its output directory, which for a segment is
+    ``segment-NNN/resolved_config.yml``; the simulation subdirectory is
+    looked in as well because that is where a hand-assembled campaign
+    tends to put it.
     """
     import hashlib
 
-    resolved = directory / "resolved_config.yml"
-    if not resolved.is_file():
+    for candidate in (directory / "resolved_config.yml",
+                      directory / "simulation" / "resolved_config.yml"):
+        if candidate.is_file():
+            resolved = candidate
+            break
+    else:
         return ""
     try:
         import yaml
@@ -117,7 +127,7 @@ def survey_segments(root: Path | str, *,
             directory=directory,
             trajectory=trajectory if trajectory.is_file() else None,
             finished=seal.is_file(),
-            config_digest=_config_digest(simulation_dir),
+            config_digest=_config_digest(directory),
         ))
     return pieces
 
