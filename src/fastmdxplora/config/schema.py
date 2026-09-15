@@ -63,6 +63,12 @@ ANALYSIS_NAMES = (
     "metad_surface",
     # Reads the pull's own record, where a steered run produced one.
     "steered_work",
+    # Geometry other people's task sets ask for and this package could not
+    # express: a shell count, a chain's extension, the shape of the inertia
+    # tensor, and the separation of two named things. Each is one number per
+    # frame and none of them needed a new phase.
+    "coordination_number", "end_to_end", "moments_of_inertia",
+    "pair_distance",
 )
 
 
@@ -731,7 +737,7 @@ ANALYSIS = PhaseSchema(
               example="simulation/topology.pdb"),
         Field("include", list, None,
               "Subset of analyses to run. Default: every analysis the "
-              "system supports -- nine always, the fraction of native "
+              "system supports -- eleven always, the fraction of native "
               "contacts where the chain is long enough to have a fold, "
               "water sites where the "
               "trajectory has water, five more where there is a ligand, and "

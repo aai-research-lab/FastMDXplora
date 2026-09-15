@@ -49,7 +49,9 @@ class TestEveryAnalysisIsDocumented:
         trajectory = len(_REGISTRY) - len(METHOD_GATED)
         words = {9: "Nine", 10: "Ten", 14: "Fourteen", 15: "Fifteen",
                  16: "Sixteen", 17: "Seventeen", 18: "Eighteen",
-                 19: "Nineteen", 20: "Twenty"}
+                 19: "Nineteen", 20: "Twenty", 21: "Twenty-one",
+                 22: "Twenty-two", 23: "Twenty-three", 24: "Twenty-four",
+                 25: "Twenty-five", 26: "Twenty-six"}
         assert f"{words[trajectory]} analyses" in section, (
             f"there are {trajectory} analyses of the trajectory; "
             "the sentence introducing them says otherwise")

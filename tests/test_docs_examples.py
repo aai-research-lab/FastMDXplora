@@ -647,7 +647,7 @@ class TestNobodyCountsTheAnalysesTwice:
 
         described = PHASE_SCHEMAS["analysis"].get("include").help
         assert "all ten" not in described
-        assert "nine always" in described
+        assert "eleven always" in described
 
         # The split, not the total. Ten unconditional, water sites where
         # there is water, five where there is a ligand, and the potential of
@@ -667,8 +667,8 @@ class TestNobodyCountsTheAnalysesTwice:
                    for attribute in dir(cls)
                    if attribute.startswith("requires_"))
         }
-        assert len(available_analyses()) - len(conditional) == 9, (
-            "the help says nine analyses run unconditionally; if that has "
+        assert len(available_analyses()) - len(conditional) == 11, (
+            "the help says eleven analyses run unconditionally; if that has "
             "changed, say the new split there too")
         assert "where there is a ligand" in described
         assert "umbrella" in described
