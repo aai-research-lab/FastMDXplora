@@ -15,7 +15,7 @@ That S is over atom pairs, not residue pairs, is the whole of the
 definition and not a detail. Counting one closest-heavy distance per
 residue pair is a different measure: it gives every contacting pair of
 residues the same weight whether they touch at one atom or at eight, and
-it produces a different |S|, a different denominator, and different
+it produces a different ``|S|``, a different denominator, and different
 numbers. Both are defensible measures; only one is the published one, and
 Q is quoted across papers as though it were a single quantity. Measured
 against the reference implementation shipped with MDTraj on a peeling
@@ -163,7 +163,7 @@ class QValue(Analysis):
         How far a contact may stretch relative to its own native distance
         before it stops counting. The paper's value.
     min_seq_separation : int, default 4
-        Minimum |i - j| in sequence for a pair to be considered. The
+        Minimum ``|i - j|`` in sequence for a pair to be considered. The
         default 4 excludes local contacts (i±1, i±2, i±3) that don't
         probe the global fold.
     selection : str, default "protein"

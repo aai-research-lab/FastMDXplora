@@ -51,6 +51,14 @@ autodoc_mock_imports = [
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
 
+# Seventeen analysis docstrings end in an "Output" section saying which
+# files the analysis writes. Napoleon does not know that name, so it never
+# closes the Parameters section: every line of Output was parsed as another
+# parameter, split on its commas, and rendered as a list of invented
+# arguments with the real text destroyed. Registering it renders it as a
+# titled block, which is what it reads as in the source.
+napoleon_custom_sections = ["Output"]
+
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
