@@ -23,7 +23,7 @@ The two records are complements, not duplicates:
 
 ## What is in it
 
-```json
+```
 {
   "tool": "FastMDXplora",
   "version": "2.5.6",
