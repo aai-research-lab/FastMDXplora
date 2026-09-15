@@ -189,6 +189,7 @@ class FastMDXplora:
         config_data: dict[str, Any] | None = None,
         output_dir: str | os.PathLike | None = None,
         options: dict[str, dict[str, Any]] | None = None,
+        study_options: dict[str, Any] | None = None,
         verbose: bool = False,
         include: list[str] | None = None,
         exclude: list[str] | None = None,
@@ -223,6 +224,7 @@ class FastMDXplora:
             # owns the layout (flat for one run, runs/<id>/ for many).
             self.system = None  # resolved per-run by the batch layer
             self.options = options or {}
+            self.study_options: dict[str, Any] = dict(study_options or {})
             self.verbose = bool(verbose)
             self._config_include = include
             self._config_exclude = exclude
@@ -265,6 +267,10 @@ class FastMDXplora:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.options: dict[str, dict[str, Any]] = options or {}
+        # Study-level settings (`agent`, `agent_model`), which describe the
+        # config as a whole rather than a phase. The batch layer passes them
+        # down from the config; a direct `system=` study has none.
+        self.study_options: dict[str, Any] = dict(study_options or {})
         self.verbose: bool = bool(verbose)
 
         # Per-phase output subdirectories (created lazily by each phase)
@@ -1078,7 +1084,13 @@ class FastMDXplora:
         try:
             from fastmdxplora.config.agent_modes import resolve_agent_modes
 
-            modes = resolve_agent_modes(options)
+            # `options` is per-phase; the study-level value sits beside it.
+            # Passing only the phase blocks left `study` permanently None,
+            # so a config saying `agent: assisted` at the top and nothing
+            # per phase recorded no `agent` block at all -- and one that
+            # also said `setup: {agent: assisted}` recorded that phase as
+            # *departing* from a study value the resolver could not see.
+            modes = resolve_agent_modes({**options, **self.study_options})
             if modes.study is not None or modes.departures:
                 manifest["agent"] = modes.as_record()
         except Exception:  # noqa: BLE001 - a manifest is worth writing anyway
@@ -1111,6 +1123,11 @@ class FastMDXplora:
             "include": getattr(self, "_resolved_include", None) or self._config_include,
             "exclude": getattr(self, "_resolved_exclude", None) or self._config_exclude,
             "options": getattr(self, "_resolved_options", None) or self.options,
+            # How the study was written travels with it. The config that
+            # comes back out has to say the same thing the one that went in
+            # did, or re-running an agent-written study produces a record
+            # claiming a person wrote it.
+            **dict(getattr(self, "study_options", {}) or {}),
         }
         try:
             path = write_resolved_config(resolved, self.output_dir)

@@ -65,6 +65,11 @@ class RunSpec:
         for the batch manifest.
     system_id : str
         The originating system's id.
+    study : dict[str, Any]
+        The study-level settings -- ``agent`` and ``agent_model`` -- which
+        belong to the config as a whole rather than to a phase. Carried per
+        run because a run is what writes a manifest, and the manifest is
+        where they are recorded.
     """
 
     run_id: str
@@ -72,6 +77,7 @@ class RunSpec:
     options: dict[str, dict[str, Any]] = field(default_factory=dict)
     sweep_values: dict[str, Any] = field(default_factory=dict)
     system_id: str = ""
+    study: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,6 +86,7 @@ class RunSpec:
             "system": self.system,
             "sweep_values": self.sweep_values,
             "options": self.options,
+            "study": self.study,
         }
 
 

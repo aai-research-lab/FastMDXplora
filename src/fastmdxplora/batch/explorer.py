@@ -523,6 +523,7 @@ def _execute_run(
                 system=spec_dict["system"],
                 output_dir=run_out,
                 options=options,
+                study_options=spec_dict.get("study") or None,
                 verbose=verbose,
             )
             # A single-system explore() returns a one-element list of
@@ -727,7 +728,7 @@ class BatchExplorer:
 
     # ------------------------------------------------------------------
     def _build_run_specs(self, raw: dict[str, Any]) -> list[RunSpec]:
-        from fastmdxplora.config import phase_options
+        from fastmdxplora.config import phase_options, study_options
 
         base_options = phase_options(raw)
 
@@ -735,7 +736,18 @@ class BatchExplorer:
         sweep = (
             normalize_sweep(raw["sweep"]) if raw.get("sweep") is not None else None
         )
-        return expand_runs(systems=systems, sweep=sweep, base_options=base_options)
+        specs = expand_runs(
+            systems=systems, sweep=sweep, base_options=base_options
+        )
+        # `phase_options` keeps the four phase blocks and nothing else, so
+        # the study-level settings are attached here rather than threaded
+        # through the cross-product, which has no opinion about them. Every
+        # run of one config shares them: they describe the study.
+        study = study_options(raw)
+        if study:
+            for spec in specs:
+                spec.study = dict(study)
+        return specs
 
     # ------------------------------------------------------------------
     def _refuse_to_overwrite_runs(

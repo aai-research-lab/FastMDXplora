@@ -271,6 +271,16 @@ def write_resolved_config(
     if merged.get("exclude"):
         doc["exclude"] = list(merged["exclude"])
 
+    # Study-level provenance, written before the phase blocks so it reads
+    # as a statement about the study rather than a setting of the last
+    # phase. Only when set: absent means a person wrote it, which is the
+    # default and every study run before the field existed.
+    from fastmdxplora.config.loader import STUDY_LEVEL_KEYS
+
+    for key in STUDY_LEVEL_KEYS:
+        if merged.get(key) is not None:
+            doc[key] = str(merged[key])
+
     options = merged.get("options") or {}
     for phase, block in options.items():
         if block:

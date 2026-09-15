@@ -32,8 +32,10 @@ from fastmdxplora.config.describe import (
 )
 from fastmdxplora.config.loader import (
     ConfigError,
+    STUDY_LEVEL_KEYS,
     load_config_file,
     phase_options,
+    study_options,
     validate_config,
 )
 from fastmdxplora.config.schema import PHASE_SCHEMAS, PhaseSchema
@@ -51,6 +53,8 @@ __all__ = [
     "generate_template",
     "load_config_file",
     "phase_options",
+    "STUDY_LEVEL_KEYS",
+    "study_options",
     "validate_config",
     "write_resolved_config",
 ]
