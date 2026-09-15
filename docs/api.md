@@ -199,6 +199,18 @@ record of what it did.
 .. automodule:: fastmdxplora.analysis.rdf
    :members:
 
+.. automodule:: fastmdxplora.analysis.coordination_number
+   :members:
+
+.. automodule:: fastmdxplora.analysis.pair_distance
+   :members:
+
+.. automodule:: fastmdxplora.analysis.end_to_end
+   :members:
+
+.. automodule:: fastmdxplora.analysis.moments_of_inertia
+   :members:
+
 .. automodule:: fastmdxplora.analysis.cluster
    :members:
 

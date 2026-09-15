@@ -635,6 +635,23 @@ class AnalysisOrchestrator:
             cls = _REGISTRY[name]
             return has_water or not getattr(cls, "requires_water", False)
 
+        def _named_ok(name: str) -> bool:
+            """Some analyses have no subject until somebody names one.
+
+            Every other analysis takes its subject from the trajectory --
+            the protein, the ligand, the solvent -- so a default plan can
+            run it and get an answer worth having. A distance between two
+            groups, or a count within a shell drawn round a chosen pair,
+            has no such subject: the question is which two things, and the
+            trajectory does not contain it.
+
+            Running them anyway would mean picking a pair, which is
+            answering the question rather than measuring it. They are left
+            out of the automatic plan and honoured wherever a study names
+            them in `include`.
+            """
+            return not getattr(_REGISTRY[name], "requires_naming", False)
+
         if include is not None and exclude is not None:
             raise StudyError("Specify either `include` or `exclude`, not both.", code="analysis.option.inapplicable")
 
@@ -660,7 +677,7 @@ class AnalysisOrchestrator:
                 n for n in all_names
                 if n not in exclude and _ligand_ok(n) and _water_ok(n)
                 and _amide_ok(n) and _bfactor_ok(n) and _state_ok(n)
-                and _box_ok(n)
+                and _box_ok(n) and _named_ok(n)
                 and _umbrella_ok(n) and _metadynamics_ok(n)
                 and _steered_ok(n) and _fold_ok(n)
                 and _alignable(n)
@@ -671,7 +688,7 @@ class AnalysisOrchestrator:
         return [n for n in all_names
                 if _ligand_ok(n) and _water_ok(n) and _amide_ok(n)
                 and _bfactor_ok(n) and _state_ok(n) and _box_ok(n)
-                and _umbrella_ok(n)
+                and _named_ok(n) and _umbrella_ok(n)
                 and _metadynamics_ok(n) and _steered_ok(n)
                 and _fold_ok(n) and _alignable(n)]
 
