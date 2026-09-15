@@ -173,3 +173,60 @@ class TestASegmentStatesItRatherThanInfers(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheWarningSaysWhatHappened(unittest.TestCase):
+    """The density warning must agree with the run it describes.
+
+    It is gated on whether the density was ever equilibrated, and that used
+    to be the same question as `npt_steps > 0`. Separating the ensemble
+    broke the equivalence: a resumed segment with `ensemble: npt` and no
+    equilibration gets its barostat, and the warning still said it had
+    none.
+
+    Caught on ubiquitin, in a rehearsal, by reading the segment 1 banner —
+    the barostat was there and the warning said otherwise. A warning that
+    says the opposite of what happened is worse than no warning, because
+    somebody reads it, believes the run was at fixed volume, and discards
+    or defends a result on that basis.
+
+    What it means now: the density was never equilibrated, and nothing in
+    this run will equilibrate it.
+    """
+
+    def warns(self, simulation) -> bool:
+        from fastmdxplora.simulation.ensembles import resolve_ensemble
+
+        # The runner's condition, asserted here rather than by running a
+        # simulation: `not npt_steps > 0 and not npt production`.
+        never_equilibrated = int(simulation.get("npt_steps") or 0) <= 0
+        return never_equilibrated and resolve_ensemble(simulation) != "npt"
+
+    def test_a_run_that_never_equilibrates_the_density_warns(self):
+        self.assertTrue(self.warns({"npt_steps": 0}))
+
+    def test_a_resumed_segment_does_not(self):
+        # It has a barostat. The equilibration happened in segment 0.
+        self.assertFalse(self.warns({"npt_steps": 0, "ensemble": "npt"}))
+
+    def test_npt_equilibration_then_nvt_production_does_not(self):
+        # The recommended workflow. The density was corrected by a barostat
+        # before the box was fixed at it, which is the whole point, and
+        # warning here would train people to ignore the warning.
+        self.assertFalse(self.warns({"npt_steps": 50_000,
+                                     "ensemble": "nvt"}))
+
+    def test_an_ordinary_npt_run_does_not(self):
+        self.assertFalse(self.warns({"npt_steps": 50_000}))
+
+    def test_the_runner_asks_the_ensemble_and_not_only_the_steps(self):
+        # The regression this exists to prevent. If the condition ever goes
+        # back to `npt_steps > 0` alone, a correct segment warns again.
+        import inspect
+
+        from fastmdxplora.simulation import runner
+
+        source = inspect.getsource(runner)
+        self.assertIn(
+            'if not plan["npt_steps"] > 0 and not wants_npt_production:',
+            source)

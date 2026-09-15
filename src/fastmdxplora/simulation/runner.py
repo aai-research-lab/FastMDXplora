@@ -2108,11 +2108,22 @@ def run_simulation(
         # the two stages are divided.
 
         # ---- Stage 3: NPT equilibration -------------------------------
-        # Add the barostat and reinitialize the context so the system picks up
-        # the new force. Production then continues in NPT.
-        # Phrased against the same comparison the branch below uses,
-        # so a plan that answers one answers both.
-        if not plan["npt_steps"] > 0:
+        # Which ensemble production runs in, decided once and read by both
+        # the warning below and the barostat above it. They used to ask
+        # `npt_steps > 0` separately, which was fine while that number
+        # answered both questions and wrong the moment it stopped: a
+        # resumed segment with `ensemble: npt` and no equilibration got its
+        # barostat and a warning saying it had none.
+        #
+        # A warning that says the opposite of what happened is worse than
+        # no warning. Somebody reads it, believes the run was at fixed
+        # volume, and discards or defends a result on that basis.
+        wants_npt_production = resolve_ensemble({
+            "ensemble": ensemble,
+            "npt_steps": plan["npt_steps"],
+        }) == "npt"
+
+        if not plan["npt_steps"] > 0 and not wants_npt_production:
             # Solvation packs a box that is not at the density of water. A
             # real run measured 0.92 g/mL and held it there for every step,
             # because the barostat is the only thing that fixes it: the same
@@ -2128,18 +2139,9 @@ def run_simulation(
             if on_explain:
                 on_explain("ensemble_choice")
 
-        # Two questions, asked separately now. `npt_steps` says how long to
-        # equilibrate at constant pressure; `ensemble` says what production
-        # runs in. They used to be one number, which made the useful
-        # combination -- equilibrate NPT, then produce NVT at the density a
-        # barostat found -- impossible to ask for, and made a resumed
-        # segment silently drop the barostat along with the equilibration.
-        wants_npt_production = (
-            resolve_ensemble(dict(plan, **{
-                "ensemble": ensemble,
-                "npt_steps": plan["npt_steps"],
-            })) == "npt"
-        )
+        # `npt_steps` says how long to equilibrate at constant pressure;
+        # `ensemble` says what production runs in. Resolved above, because
+        # the warning needs the same answer.
         barostat_index = None
         if plan["npt_steps"] > 0 or wants_npt_production:
             barostat_index = _add_barostat(
