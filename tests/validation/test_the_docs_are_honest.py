@@ -290,38 +290,60 @@ class TestTheResolvedConfigIsDescribedAsItIs:
                     for phase in ("setup", "simulation", "analysis", "report"))
         assert f"{total} settings for a study that set two" in self._page()
 
-    def test_the_count_it_pins_across_versions_is_the_real_one(self) -> None:
-        from fastmdxplora.config.schema import PHASE_SCHEMAS
-
-        fixed = sum(1 for group in PHASE_SCHEMAS.values()
-                    for field in group.fields if field.phase_value is not None)
-        assert f"The {fixed} settings with" in self._page()
-
-    @pytest.mark.parametrize("deferred", [
-        "setup.water_model", "analysis.include",
-        "simulation.trajectory_interval_steps",
+    @pytest.mark.parametrize("recorded,phase", [
+        ("production_steps", "simulation"),
+        ("trajectory_interval_steps", "simulation"),
+        ("pressure_bar", "simulation"),
+        ("switch_distance_nm", "setup"),
+        ("force_field", "setup"),
+        ("water_model", "setup"),
+        ("include", "analysis"),
     ])
-    def test_each_deferred_setting_named_really_is_deferred(
-        self, deferred: str
+    def test_each_setting_shown_as_recorded_really_is(
+        self, recorded: str, phase: str
     ) -> None:
-        """Named as the exception to what the file pins down. A field that
-        acquired a fixed default would make the caveat wrong in the
-        direction that undersells the file."""
+        """The page shows a resolved config carrying these. Each is a
+        setting of its phase, each has no fixed default -- so it genuinely
+        had nothing to write before -- and each is one its phase now
+        records."""
         from fastmdxplora.config.schema import PHASE_SCHEMAS
 
-        phase, name = deferred.split(".")
-        field = PHASE_SCHEMAS[phase].get(name)
-        assert field is not None, f"{deferred} is named in config.md"
+        field = PHASE_SCHEMAS[phase].get(recorded)
+        assert field is not None, f"{phase}.{recorded} is shown in config.md"
         assert field.phase_value is None, (
-            f"{deferred} now has a default and is no longer deferred")
-        assert f"`{deferred}`" in self._page()
+            f"{phase}.{recorded} has a fixed default and needs no record")
+        assert recorded in self._page()
 
-    def test_the_two_round_trip_traps_are_both_named(self) -> None:
-        """`null` rather than the declared default, for the two fields
-        where writing the default would replay a different study."""
+    def test_every_phase_shown_recording_has_somewhere_to_record(
+        self
+    ) -> None:
+        """The claim rests on the records existing and being read."""
+        from fastmdxplora.config.generate import _PHASE_RECORDS
+
+        for phase in ("setup", "simulation", "analysis"):
+            assert phase in _PHASE_RECORDS
+
+    def test_the_one_setting_still_deferred_is_named_and_still_is(
+        self
+    ) -> None:
+        """`report.title` is the whole of what is left, so the note saying
+        so is wrong the moment report gains a record."""
+        from fastmdxplora.config.generate import _PHASE_RECORDS
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        assert PHASE_SCHEMAS["report"].get("title").phase_value is None
+        assert "report" not in _PHASE_RECORDS, (
+            "report records its title now; config.md says it does not")
+        assert "`report.title`" in self._page()
+
+    def test_the_round_trip_trap_is_still_explained(self) -> None:
+        """Writing a derived value beside its source is safe only because
+        the value is the run's own answer. Losing that sentence loses the
+        reason the rule is not general."""
         page = self._page()
-        for field in ("`simulation.pressure_bar`", "`simulation.nvt_steps`"):
-            assert field in page
+        assert "only safe because the number written is the run's own answer" \
+            in page
+        assert "production_steps" in page and "duration_ns" in page
 
 
 class TestEveryMethodIsShownAndNotJustOne:

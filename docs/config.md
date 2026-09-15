@@ -350,32 +350,53 @@ you touched it, and every option in that block is named — 108 settings for a
 study that set two. The block is exactly the dictionary the phase was handed,
 not a reconstruction of it.
 
-A setting whose value the run works out for itself is written as `null` rather
-than as the value it worked out, because `null` is what the Config reader takes
-as "decide this again" and a substituted value would not round-trip. Two cases
-where that difference is the whole point:
+**And it carries what the run decided for itself.** Plenty of settings have no
+value until the run works one out: `simulation.duration_ns: 50` is not a number
+of steps until a timestep says so, and `setup.forcefield: auto` is not a force
+field until a registry says which. Each phase records the answers it reached,
+and the resolved config writes them down:
 
-- `simulation.pressure_bar` is `null` in a run configured with `pressure_atm`.
-  Writing its declared `1.0` there would replay a 1.2 atm run at 1.0 bar.
-- `simulation.nvt_steps` is `null` in a run configured with `nvt_duration_ns`.
-  A step count written beside the duration it was derived from would override
-  that duration on replay.
-
-```{note}
-**What this does and does not pin down across versions.** The 57 settings with
-a fixed default are written as values, so a default that moves in a later
-release cannot quietly change what the file means. The rest are written as
-`null`, and for most that is the value — you did not ask for a membrane, a
-ligand or a mutation. But a handful are deferred decisions: `setup.water_model`
-follows the force field, `analysis.include` is the default set of measures,
-`simulation.trajectory_interval_steps` is computed from the run length. If one
-of *those* changes between versions, the file replays under the new rule. What
-the run actually chose is in the phase's own record.
+```yaml
+simulation:
+  duration_ns: 50           # what you asked for
+  production_steps: 25000000  # what that came to, at this timestep
+  trajectory_interval_steps: 12500
+  pressure_bar: 1.2159      # a 1.2 atm run, in the unit the barostat used
+setup:
+  forcefield: auto
+  force_field: [amber14-all.xml, amber14/tip3p.xml]   # what `auto` chose
+  water_model: tip3p
+  switch_distance_nm: 0.9   # nine tenths of the cutoff, worked out
+analysis:
+  include: [rmsd, rmsf, rg, cluster]   # the default set, named
 ```
 
-What each phase actually did — as opposed to what it was asked to do — is
-therefore still worth reading: `setup/setup_parameters.json`,
-`simulation/simulation_parameters.json`, `analysis/<name>/options.json`. See
+Both halves are kept, and they agree. Where a derived value and its source sit
+together, the derived one wins on replay — `production_steps` over the
+`duration_ns` it came from — so you get the same run either way. **That is only
+safe because the number written is the run's own answer.** A step count that was
+merely the schema default, written beside a duration you chose, would override
+that duration and silently shorten the study. So only a recorded resolution is
+allowed to do this; anything else stays `null`, which is what the Config reader
+takes as "decide this again".
+
+```{note}
+**What is still left to the replaying version.** One setting: `report.title`,
+which resolves to `FastMDXplora Study — <system>` and is not recorded. It is
+cosmetic, and report is the only phase with no record of its own, so a file
+exists for it or it stays as it is.
+
+Everything else written as `null` is genuinely unset — you did not ask for a
+membrane, a ligand, a mutation, a particular chain. `null` there is the value,
+not a deferred question.
+```
+
+The phases' own records go further than a config can, and are still worth
+reading for what a study actually *did* rather than what it set out to do —
+the atom count after solvation, the platform, the frames written, the
+per-measure findings: `setup/setup_parameters.json`,
+`simulation/simulation_parameters.json`, `analysis/analysis_manifest.json`,
+`analysis/<name>/options.json`. See
 [The FastMDXplora Manifest](manifest.md).
 
 ### What "reproduces" means

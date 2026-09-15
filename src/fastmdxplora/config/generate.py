@@ -220,6 +220,53 @@ def _minimal_template() -> str:
 # ---------------------------------------------------------------------------
 # Resolved-config dump (reproducibility)
 # ---------------------------------------------------------------------------
+#: Where each phase records the settings it worked out for itself, and the
+#: key it puts them under. A phase writes its record into the run's output
+#: directory as it finishes, and the resolved config is written after all
+#: of them, so by then they are on disk to be read.
+_PHASE_RECORDS = {
+    "setup": ("setup/setup_parameters.json", "resolved"),
+    "simulation": ("simulation/simulation_parameters.json", "resolved"),
+    "analysis": ("analysis/analysis_manifest.json", "resolved"),
+}
+
+
+def _recorded_resolutions(run_dir: Path) -> dict[str, dict[str, Any]]:
+    """Per phase, the settings that phase recorded having worked out.
+
+    Absent for a phase that did not run, for a run from before the records
+    existed, and for one whose phase failed before writing. All three are
+    the same answer -- nothing to add -- and the schema defaults stand.
+
+    Only values are read, never structure: a record is a file on disk that
+    a person may have edited, and a key that is not a setting of that phase
+    would make the resolved config fail its own validation on replay. So
+    anything the phase's schema does not declare is dropped.
+    """
+    import json
+
+    from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+    found: dict[str, dict[str, Any]] = {}
+    for phase, (relative, key) in _PHASE_RECORDS.items():
+        path = run_dir / relative
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        resolved = record.get(key)
+        if not isinstance(resolved, dict):
+            continue
+        schema = PHASE_SCHEMAS.get(phase)
+        if schema is None:
+            continue
+        kept = {name: value for name, value in resolved.items()
+                if value is not None and schema.get(name) is not None}
+        if kept:
+            found[phase] = kept
+    return found
+
+
 def write_resolved_config(
     merged: dict[str, Any],
     output_dir: str | Path,
@@ -309,9 +356,18 @@ def write_resolved_config(
         # file reproduced a study on the version that wrote it and no other.
         # A default that moves in a later release silently changed what the
         # file meant, which is the failure it exists to prevent.
+        recorded = _recorded_resolutions(out)
         for phase, schema in PHASE_SCHEMAS.items():
             block = schema.defaults()
             block.update(options.get(phase) or {})
+            # What the phase worked out goes on top of what it was asked
+            # for, because it is the more specific truth and the two agree:
+            # a step count derived from a duration is that duration, and on
+            # replay the count wins over the duration it came from, giving
+            # the same run. Written as a default beside a duration the user
+            # set, it would not have been -- which is why only a recorded
+            # resolution is allowed to do this.
+            block.update(recorded.get(phase) or {})
             doc[phase] = block
     else:
         for phase, block in options.items():

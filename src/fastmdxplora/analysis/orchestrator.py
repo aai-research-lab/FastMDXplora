@@ -774,8 +774,28 @@ class AnalysisOrchestrator:
             return dict(kwargs)
         return {k: v for k, v in kwargs.items() if k in accepted}
 
+    @staticmethod
+    def _as_setting(value: Any) -> Any:
+        """A path input as a config would spell it.
+
+        A list of trajectories stays a list; one stays a scalar. The field
+        accepts both, and turning one into the other would change what the
+        config says about how many pieces the run read.
+        """
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            return [str(item) for item in value]
+        return str(value)
+
     def _write_manifest(self) -> None:
-        """Write the phase-level analysis manifest."""
+        """Write the phase-level analysis manifest.
+
+        ``resolved`` holds the settings this phase decided, under their
+        config names, for the run's resolved config to carry. The keys
+        above it answer the same questions in this file's own shape and
+        stay as they are; anything reading them already knows them.
+        """
         manifest = {
             "phase": "analysis",
             "trajectory_input": (
@@ -793,6 +813,22 @@ class AnalysisOrchestrator:
             "n_atoms": int(self.traj.n_atoms),
             "n_residues": int(self.traj.n_residues),
             "plan": list(self.results.keys()),
+            # The same facts under the names a config uses, so the run's
+            # resolved config can carry them. `include` is the one that
+            # matters: left unset it means "the default set of measures",
+            # and which measures those are is a property of the version
+            # that ran, not of the study. A release that adds one changes
+            # what the unset value meant.
+            "resolved": {
+                "trajectory": self._as_setting(self._trajectory_input),
+                "topology": self._as_setting(self._topology_input),
+                "include": list(self.results.keys()),
+                "stride": self._load_kwargs.get("stride"),
+                "first": self._load_kwargs.get("first"),
+                "last": self._load_kwargs.get("last"),
+                "selection": self.default_selection,
+                "figure_colours": self.figure_colours,
+            },
             "results": {name: r.to_dict() for name, r in self.results.items()},
         }
         path = self.output_dir / "analysis_manifest.json"

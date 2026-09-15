@@ -767,3 +767,173 @@ class TestTheResolvedConfigNamesEverySettingTheRunUsed:
                                 ("report", REPORT_DEFAULTS)):
             assert doc[phase] == {**defaults, **options.get(phase, {})}, (
                 f"the {phase} block is not what the {phase} phase is handed")
+
+
+class TestAPhaseSaysWhatItWorkedOutForItself:
+    """The settings whose value the run decides, and used to lose.
+
+    A duration is not a number of steps until a timestep says so, and a
+    `forcefield: auto` is not a force field until a registry says which.
+    Those answers were worked out inside the phase and went no further, so
+    the file meant to reproduce the run wrote `null` and asked the same
+    question again -- of whatever version happened to be replaying it.
+
+    Each phase now records what it decided, under the config's own names,
+    and the resolved config reads it.
+    """
+
+    @staticmethod
+    def _record(run_dir, phase, resolved):
+        import json
+
+        where = {
+            "setup": "setup/setup_parameters.json",
+            "simulation": "simulation/simulation_parameters.json",
+            "analysis": "analysis/analysis_manifest.json",
+        }[phase]
+        path = run_dir / where
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"resolved": resolved}), encoding="utf-8")
+
+    @staticmethod
+    def _dump(run_dir, **options):
+        import yaml
+
+        from fastmdxplora.config import write_resolved_config
+
+        path = write_resolved_config(
+            {"system": "1UBQ", "output": str(run_dir), "options": options},
+            run_dir)
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    def test_a_step_count_worked_out_from_a_duration_is_written(
+        self, tmp_path
+    ):
+        self._record(tmp_path, "simulation", {"production_steps": 25_000_000})
+        doc = self._dump(tmp_path, simulation={"duration_ns": 50})
+        assert doc["simulation"]["production_steps"] == 25_000_000
+
+    def test_the_duration_it_came_from_is_kept_beside_it(self, tmp_path):
+        """Both, and they agree. The count is the duration, so on replay
+        the count winning over the duration gives the same run -- which is
+        not true of a count that was merely the default."""
+        self._record(tmp_path, "simulation", {"production_steps": 25_000_000})
+        doc = self._dump(tmp_path, simulation={"duration_ns": 50})
+        assert doc["simulation"]["duration_ns"] == 50
+        steps_per_ns = round(1_000_000.0 / doc["simulation"]["timestep_fs"])
+        assert doc["simulation"]["production_steps"] == 50 * steps_per_ns
+
+    def test_a_pressure_given_in_atm_is_recorded_in_bar(self, tmp_path):
+        """And the two agree, so either winning replays the same pressure.
+
+        Stage A wrote `pressure_bar: null` and left the conversion to be
+        done again. This records the number the barostat used.
+        """
+        from fastmdxplora.simulation.runner import ATM_TO_BAR
+
+        ran_at = 1.2 * ATM_TO_BAR
+        self._record(tmp_path, "simulation", {"pressure_bar": ran_at})
+        doc = self._dump(tmp_path, simulation={"pressure_atm": 1.2})
+        assert doc["simulation"]["pressure_bar"] == pytest.approx(ran_at)
+        assert doc["simulation"]["pressure_atm"] == 1.2
+        assert (doc["simulation"]["pressure_atm"] * ATM_TO_BAR
+                == pytest.approx(doc["simulation"]["pressure_bar"]))
+
+    def test_the_default_set_of_measures_is_named(self, tmp_path):
+        """`include: null` means "the default set", which is a property of
+        the version that ran. A release that adds a measure changes what
+        the unset value meant."""
+        self._record(tmp_path, "analysis",
+                     {"include": ["rmsd", "rmsf", "rg"]})
+        doc = self._dump(tmp_path)
+        assert doc["analysis"]["include"] == ["rmsd", "rmsf", "rg"]
+
+    def test_a_force_field_chosen_by_a_registry_is_named(self, tmp_path):
+        self._record(tmp_path, "setup",
+                     {"force_field": ["amber14-all.xml"], "water_model": "tip3p"})
+        doc = self._dump(tmp_path)
+        assert doc["setup"]["force_field"] == ["amber14-all.xml"]
+        assert doc["setup"]["water_model"] == "tip3p"
+
+    def test_a_setting_the_caller_gave_is_not_overwritten(self, tmp_path):
+        """A record says what the phase worked out. Where the caller said
+        it, the caller's value is what the study asked for."""
+        self._record(tmp_path, "simulation", {"timestep_fs": 4.0})
+        doc = self._dump(tmp_path, simulation={"timestep_fs": 1.0})
+        assert doc["simulation"]["timestep_fs"] == 4.0, (
+            "a recorded resolution is the more specific truth")
+
+    def test_a_key_that_is_not_a_setting_cannot_reach_the_config(
+        self, tmp_path
+    ):
+        """The records are files on disk, and setup's own parameters carry
+        private keys. A config with an unknown option is refused on replay,
+        so the file that must replay cannot be built by copying."""
+        self._record(tmp_path, "setup", {
+            "_retained_pdb": "/tmp/x.pdb",
+            "_reinstated_heterogens": ["BEN"],
+            "not_a_setting": 1,
+            "switch_distance_nm": 0.9,
+        })
+        doc = self._dump(tmp_path)
+        assert doc["setup"]["switch_distance_nm"] == 0.9
+        for leaked in ("_retained_pdb", "_reinstated_heterogens",
+                       "not_a_setting"):
+            assert leaked not in doc["setup"]
+
+    def test_a_run_with_no_records_still_dumps(self, tmp_path):
+        """A phase that did not run, a run from before the records existed,
+        and one whose phase failed before writing are the same answer."""
+        doc = self._dump(tmp_path, setup={"ph": 6.5})
+        assert doc["setup"]["ph"] == 6.5
+        assert doc["simulation"]["production_steps"] is None
+
+    def test_an_unreadable_record_is_not_fatal(self, tmp_path):
+        (tmp_path / "simulation").mkdir(parents=True)
+        (tmp_path / "simulation" / "simulation_parameters.json").write_text(
+            "{not json", encoding="utf-8")
+        doc = self._dump(tmp_path, simulation={"duration_ns": 50})
+        assert doc["simulation"]["duration_ns"] == 50
+
+    def test_what_a_run_achieved_is_not_written_back(self, tmp_path):
+        """Decisions, not outcomes. A run interrupted at 12 ns of a 50 ns
+        study must not replay as a 12 ns study -- so `duration_ns_actual`
+        stays out of the resolved block, under its own name."""
+        import json
+
+        path = tmp_path / "simulation" / "simulation_parameters.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({
+            "duration_ns_actual": 12.0,
+            "n_production_frames": 240,
+            "resolved": {"production_steps": 25_000_000},
+        }), encoding="utf-8")
+        doc = self._dump(tmp_path, simulation={"duration_ns": 50})
+        assert doc["simulation"]["duration_ns"] == 50
+        assert doc["simulation"]["production_steps"] == 25_000_000
+
+    def test_the_file_still_validates_with_every_record_present(
+        self, tmp_path
+    ):
+        from fastmdxplora.config.loader import (
+            load_config_file, normalise_config, validate_config,
+        )
+
+        self._record(tmp_path, "setup",
+                     {"switch_distance_nm": 0.9, "water_model": "tip3p"})
+        self._record(tmp_path, "simulation", {
+            "nvt_steps": 50_000, "npt_steps": 50_000,
+            "production_steps": 25_000_000,
+            "trajectory_interval_steps": 12_500, "pressure_bar": 1.0})
+        self._record(tmp_path, "analysis", {
+            "trajectory": "simulation/production.dcd",
+            "topology": "simulation/topology.pdb",
+            "include": ["rmsd"], "selection": "protein"})
+
+        from fastmdxplora.config import write_resolved_config
+
+        path = write_resolved_config(
+            {"system": "1UBQ", "output": str(tmp_path),
+             "options": {"simulation": {"duration_ns": 50}}}, tmp_path)
+        data = normalise_config(load_config_file(path))
+        validate_config(data, require_systems=True)

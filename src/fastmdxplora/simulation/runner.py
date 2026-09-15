@@ -25,7 +25,7 @@ import csv
 import json
 import math
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -101,6 +101,15 @@ class SimulationResult:
     #: had to report the pressure of an NPT run as unrecorded.
     pressure_bar_used: float | None = None
     minimized_state: Path | None = None
+    #: Settings this run decided for itself, under their config names.
+    #:
+    #: Decisions, not outcomes. A step count worked out from a duration
+    #: belongs here; the duration the run actually reached does not, and
+    #: stays under ``duration_ns_actual``. The difference matters on
+    #: replay: repeating what a run set out to do reproduces the study,
+    #: and repeating what it managed to do before it was interrupted
+    #: reproduces the interruption.
+    resolved: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -2478,6 +2487,25 @@ def run_simulation(
         n_production_frames=int(n_frames),
         duration_ns_actual=float(duration_ns_actual),
         minimized_state=minimized_state_path if minimize else None,
+        # The step plan as this run decided it, and the reporter interval
+        # derived from it. Both were worked out here and went no further,
+        # so a study asking for 50 ns left no record of how many steps that
+        # was -- and the file meant to reproduce it had to ask the same
+        # question again, of whatever version happened to be answering.
+        resolved={
+            "nvt_steps": int(plan["nvt_steps"]),
+            "npt_steps": int(plan["npt_steps"]),
+            "production_steps": int(plan["production_steps"]),
+            "trajectory_interval_steps": int(trajectory_interval_steps),
+            "pressure_bar": resolved_pressure_bar,
+            # Only where restraints were applied. The schedule has a
+            # built-in default that a release could change, and a run that
+            # restrained nothing has no schedule to record -- writing one
+            # would put a setting into the config of a study that never
+            # used it.
+            **({"restraint_release": [float(s) for s in release.steps]}
+               if restraint_parameters else {}),
+        },
     )
 
 

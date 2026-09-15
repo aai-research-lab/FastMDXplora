@@ -819,10 +819,20 @@ def prepare_system(
     if method_key in ("PME", "Ewald"):
         create_system_kwargs["ewaldErrorTolerance"] = float(ewald_error_tolerance)
     # Switching function only applies to cutoff-based methods.
+    #
+    # `resolved_switch_distance_nm` is kept rather than folded into the
+    # kwargs, because when it is not given it is worked out from the cutoff
+    # and nothing wrote the answer down. A study replayed on a version that
+    # derived it differently would switch at a different distance, with the
+    # file meant to reproduce the run saying only `null`.
+    resolved_switch_distance_nm: float | None = None
     if is_cutoff_method and use_switching_function:
+        resolved_switch_distance_nm = float(
+            switch_distance_nm if switch_distance_nm is not None
+            else 0.9 * nonbonded_cutoff_nm
+        )
         create_system_kwargs["switchDistance"] = (
-            (switch_distance_nm if switch_distance_nm is not None
-             else 0.9 * nonbonded_cutoff_nm) * unit.nanometer
+            resolved_switch_distance_nm * unit.nanometer
         )
     if hydrogen_mass_amu is not None:
         create_system_kwargs["hydrogenMass"] = hydrogen_mass_amu * unit.amu
@@ -912,6 +922,12 @@ def prepare_system(
         # image convention constrains, and for a dodecahedron they are shorter
         # than the edge lengths, so both are kept.
         "box": _box_record(modeller),
+        # Settings this phase decided for itself, under their config names,
+        # for `resolved_config.yml` to carry. Named values rather than a
+        # filtered copy of the parameters, so nothing private leaks in.
+        "resolved": {
+            "switch_distance_nm": resolved_switch_distance_nm,
+        },
     }
 
 

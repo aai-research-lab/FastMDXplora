@@ -128,6 +128,63 @@ class TestARealStudy(unittest.TestCase):
         self.assertGreater(cost["seconds"], 0.0)
         self.assertEqual(cost["platform"], "CPU")
 
+    def test_the_resolved_config_names_the_steps_that_ran(self):
+        """The whole chain, on a real run: the runner works the step plan
+        out, the phase records it, and the resolved config carries it.
+
+        Nothing wrote the plan down before. A study asking for a duration
+        left `production_steps: null`, so replaying it derived the count
+        again -- from whichever version was replaying, and from a timestep
+        the file happened to state. Here the counts are known: 100 NVT,
+        100 NPT, 300 production.
+        """
+        import yaml
+
+        doc = yaml.safe_load(
+            (self.output / "resolved_config.yml").read_text(encoding="utf-8"))
+        simulation = doc["simulation"]
+        self.assertEqual(simulation["nvt_steps"], 100)
+        self.assertEqual(simulation["npt_steps"], 100)
+        self.assertEqual(simulation["production_steps"], 300)
+        self.assertIsNotNone(simulation["trajectory_interval_steps"])
+        self.assertIsNotNone(simulation["pressure_bar"])
+
+    def test_the_resolved_config_names_what_setup_chose(self):
+        """`forcefield: auto` names a family whose membership is a
+        property of the release, not of the study."""
+        import yaml
+
+        doc = yaml.safe_load(
+            (self.output / "resolved_config.yml").read_text(encoding="utf-8"))
+        self.assertTrue(doc["setup"]["force_field"],
+                        "the XMLs `auto` resolved to")
+        self.assertTrue(doc["setup"]["water_model"])
+
+    def test_the_resolved_config_is_still_a_config(self):
+        """Every setting a run decided, written back, and the file still
+        passes the validation any config passes. A resolution written
+        under a name the schema does not know would fail here."""
+        from fastmdxplora.config.loader import (
+            load_config_file, normalise_config, validate_config,
+        )
+
+        data = normalise_config(
+            load_config_file(self.output / "resolved_config.yml"))
+        validate_config(data, require_systems=True)
+
+    def test_no_private_key_reached_the_resolved_config(self):
+        """Setup injects private keys into its own parameters. They are
+        not settings, and a config carrying one is refused on replay."""
+        import yaml
+
+        text = (self.output / "resolved_config.yml").read_text(encoding="utf-8")
+        doc = yaml.safe_load(text)
+        for phase in ("setup", "simulation", "analysis", "report"):
+            for name in doc.get(phase) or {}:
+                self.assertFalse(
+                    name.startswith("_"),
+                    f"{phase}.{name} is internal and should not be here")
+
     def test_the_checkpoint_is_written_and_sealed(self):
         simulation = self.output / "simulation"
         checkpoint = simulation / "checkpoint.chk"

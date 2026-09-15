@@ -590,6 +590,7 @@ def run(
             pressure_bar_used=result.pressure_bar_used,
             n_frames=result.n_production_frames,
             duration_ns_actual=result.duration_ns_actual,
+            resolved=result.resolved,
         )
     except ImportError as exc:
         notes.append(f"OpenMM unavailable: {exc}")
@@ -631,8 +632,16 @@ def _write_manifest(
     n_frames: int | None = None,
     duration_ns_actual: float | None = None,
     pressure_bar_used: float | None = None,
+    resolved: dict[str, Any] | None = None,
 ) -> None:
-    """Write ``simulation_parameters.json`` with full provenance."""
+    """Write ``simulation_parameters.json`` with full provenance.
+
+    ``parameters`` is what the phase was handed; ``resolved`` is what it
+    decided from that, under the same config names. Two questions, two
+    keys -- and ``resolved`` is built from named values rather than by
+    copying and filtering ``parameters``, so the private keys the pipeline
+    injects cannot reach it.
+    """
     canonical = {
         "trajectory": "production.dcd",
         "topology": "topology.pdb",
@@ -650,6 +659,11 @@ def _write_manifest(
         # can be given in bar or atmospheres and unset means one bar, so the
         # number used was known only inside the runner.
         "pressure_bar_used": pressure_bar_used,
+        # What this run set out to do, so `resolved_config.yml` can say it
+        # rather than asking the derivation again on whatever version is
+        # replaying. `duration_ns_actual` below is the opposite: what the
+        # run managed, which a replay must not inherit.
+        "resolved": dict(resolved or {}),
         "n_production_frames": n_frames,
         "duration_ns_actual": duration_ns_actual,
         "artifacts_planned": canonical,

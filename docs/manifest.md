@@ -151,9 +151,9 @@ the failure are not lost with it.
 `manifest.json` is the index. Four other files record what one phase or one
 measure actually did. They answer a different question from
 [`resolved_config.yml`](config.md#reproducing-a-run): that file says what the
-run was asked for, down to every default; these say what each phase resolved
-that request to — the force field actually chosen, the platform actually used,
-the pressure actually applied, the frames actually written.
+study **was**, down to every setting; these say what running it **produced** —
+the solvated atom count, the platform it landed on, the frames written, the
+length actually reached.
 
 | File | What it records |
 |---|---|
@@ -161,6 +161,35 @@ the pressure actually applied, the frames actually written.
 | `simulation/simulation_parameters.json` | Every resolved simulation parameter, the platform actually used, the pressure used, frames written, and the length actually reached |
 | `analysis/analysis_manifest.json` | The plan, the load settings, frame/atom/residue counts, and a result record per analysis |
 | `analysis/<name>/options.json` | One measure's selection, every option, its findings, and **the format of the `.dat` file beside it** |
+
+### `resolved`: the settings a phase worked out
+
+The first three carry a `resolved` block — the settings that phase decided for
+itself, under the names a Config uses. It is what
+[`resolved_config.yml`](config.md#reproducing-a-run) reads to write down a step
+count derived from a duration, or the force field `auto` chose.
+
+```json
+"resolved": {
+  "nvt_steps": 50000,
+  "npt_steps": 50000,
+  "production_steps": 25000000,
+  "trajectory_interval_steps": 12500,
+  "pressure_bar": 1.2159
+}
+```
+
+**Decisions, not outcomes.** A step count worked out from a duration belongs
+here; the duration the run actually reached does not, and stays under
+`duration_ns_actual` beside it. The difference matters on replay: repeating what
+a run set out to do reproduces the study, and repeating what it managed before
+being interrupted reproduces the interruption.
+
+It is also kept separate from `parameters` deliberately. `parameters` is what
+the phase was handed, and setup's copy carries private keys and a `ligand_name`
+that becomes a list where several ligands were found — neither of which is a
+Config setting. `resolved` is built from named values rather than by copying and
+filtering, so nothing that would break a replay can reach it.
 
 **The input structure's checksum lives in `setup/setup_parameters.json`**,
 under `input.structure`, not in `manifest.json`:

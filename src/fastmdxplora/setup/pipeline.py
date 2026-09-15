@@ -1044,7 +1044,8 @@ def run(
 
     # ---- Stage 4: Manifest --------------------------------------------
     _write_manifest(setup_dir, orchestrator, input_form, params, artifacts, notes,
-                    n_atoms_solvated=(produced or {}).get("n_atoms_solvated"))
+                    n_atoms_solvated=(produced or {}).get("n_atoms_solvated"),
+                    resolved=(produced or {}).get("resolved"))
     artifacts.append("setup_parameters.json")
 
     if presenter:
@@ -1052,6 +1053,49 @@ def run(
 
     logger.debug("setup: wrote %d artifact(s) to %s", len(artifacts), setup_dir)
     return artifacts
+
+
+def _resolved_settings(
+    params: dict[str, Any],
+    resolved_ff: dict[str, Any],
+    from_preparation: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The settings setup decided, under the names a config uses.
+
+    Only settings that were *worked out*. A value the caller gave is
+    already in the config that asked for it, and repeating it here would
+    say the phase had chosen something it merely accepted.
+
+    ``ligand_name`` is deliberately absent even though the pipeline
+    resolves it: where several ligands are found it becomes a list, and
+    the field is declared ``str``, so writing it back produces a config
+    that fails its own validation on replay. What was prepared is in
+    ``resolved_forcefield.ligand`` instead, which is the shape that
+    question already had.
+    """
+    settings: dict[str, Any] = dict(from_preparation or {})
+
+    # The force field, as a list of XMLs, is what `force_field` means --
+    # and it is the resolution of `forcefield: auto`, which names a family
+    # whose membership can change between releases.
+    xmls = resolved_ff.get("xmls")
+    if xmls and not params.get("force_field"):
+        settings["force_field"] = list(xmls)
+
+    # The water model follows the force field where it was not asked for.
+    water = resolved_ff.get("water_model")
+    if water and not params.get("water_model"):
+        settings["water_model"] = str(water)
+
+    # And the small-molecule force field follows it the same way.
+    ligand = resolved_ff.get("ligand") or {}
+    small_molecule = (ligand.get("forcefield")
+                      or resolved_ff.get("small_molecule_forcefield"))
+    if small_molecule and not params.get("ligand_forcefield"):
+        settings["ligand_forcefield"] = str(small_molecule)
+
+    return {name: value for name, value in settings.items()
+            if value is not None}
 
 
 def _write_manifest(
@@ -1062,8 +1106,18 @@ def _write_manifest(
     artifacts: list[str],
     notes: list[str],
     n_atoms_solvated: int | None = None,
+    resolved: dict[str, Any] | None = None,
 ) -> None:
-    """Write ``setup_parameters.json`` with the full provenance record."""
+    """Write ``setup_parameters.json`` with the full provenance record.
+
+    ``parameters`` is what the phase was handed; ``resolved`` is what it
+    decided from that, under the same config names. They are kept apart
+    deliberately: ``parameters`` carries private keys this pipeline injects
+    (``_retained_pdb`` and its neighbours) and a ``ligand_name`` that
+    becomes a list where several ligands were found, neither of which is a
+    config setting. ``resolved`` is built from named values, so neither can
+    reach the file that has to replay.
+    """
     # Record what the force-field selection actually resolved to, so the
     # manifest is reproducible regardless of whether the user picked a named
     # force field or passed a raw XML list.
@@ -1128,6 +1182,11 @@ def _write_manifest(
         # recorded, of a number the run had printed to the terminal.
         "n_atoms_solvated": n_atoms_solvated,
         "resolved_forcefield": resolved_ff,
+        # Settings this phase decided, under their config names, for
+        # `resolved_config.yml` to carry. The force field resolution above
+        # answers the same question in its own shape and stays where it is;
+        # this is the part that has to go back into a config.
+        "resolved": _resolved_settings(params, resolved_ff, resolved),
         "artifacts_planned": canonical,
         "artifacts_written": list(artifacts),
         "notes": notes,

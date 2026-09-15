@@ -589,3 +589,78 @@ class TestTheSoftwareDoesNotAdvertiseWhatItCannotDo:
         message = str(raised.value)
         assert "structure predictor" in message
         assert any(name in message for name in ("AlphaFold", "ESMFold"))
+
+
+class TestSetupSaysWhatItChose:
+    """`forcefield: auto` is not a force field until a registry says
+    which, and a switching distance left unset is nine tenths of the
+    cutoff -- a rule, not a number.
+
+    Both were worked out inside the phase and went no further, so the
+    file meant to reproduce the run wrote `null` for each and left the
+    question to whatever version replayed it. What the phase decided is
+    recorded now, and only what it decided: a value the caller supplied
+    is already in the config that asked for it, and repeating it here
+    would claim the phase had chosen something it merely accepted.
+    """
+
+    @staticmethod
+    def _resolved(params=None, forcefield=None, prepared=None):
+        from fastmdxplora.setup.pipeline import _resolved_settings
+
+        return _resolved_settings(params or {}, forcefield or {}, prepared)
+
+    def test_the_registry_choice_is_recorded(self) -> None:
+        got = self._resolved(forcefield={
+            "xmls": ["amber14-all.xml", "amber14/tip3p.xml"],
+            "water_model": "tip3p"})
+        assert got["force_field"] == ["amber14-all.xml", "amber14/tip3p.xml"]
+        assert got["water_model"] == "tip3p"
+
+    def test_what_the_caller_gave_is_left_alone(self) -> None:
+        got = self._resolved(
+            params={"water_model": "tip4pew", "force_field": ["mine.xml"]},
+            forcefield={"xmls": ["amber14-all.xml"], "water_model": "tip3p"})
+        assert "water_model" not in got
+        assert "force_field" not in got
+
+    def test_the_switching_distance_comes_from_preparation(self) -> None:
+        got = self._resolved(prepared={"switch_distance_nm": 0.9})
+        assert got["switch_distance_nm"] == 0.9
+
+    def test_a_method_without_a_switching_function_records_none(self) -> None:
+        """`None` means the question did not arise, and a key whose value
+        is None says nothing a default did not already say."""
+        got = self._resolved(prepared={"switch_distance_nm": None})
+        assert "switch_distance_nm" not in got
+
+    def test_the_small_molecule_force_field_follows_the_ligand(self) -> None:
+        got = self._resolved(forcefield={
+            "ligand": {"name": "BEN", "forcefield": "openff-2.2.1"}})
+        assert got["ligand_forcefield"] == "openff-2.2.1"
+
+    def test_the_ligand_name_is_never_written_back(self) -> None:
+        """The pipeline resolves it, and where several ligands are found
+        it becomes a list. The field is declared `str`, so a config
+        carrying the list fails its own validation on replay. What was
+        prepared is under `resolved_forcefield.ligand`, which is the shape
+        that question already had.
+        """
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        assert PHASE_SCHEMAS["setup"].get("ligand_name").type is str
+        got = self._resolved(
+            params={"ligand_name": ["BEN", "LIG"]},
+            forcefield={"ligand": {"name": ["BEN", "LIG"]}})
+        assert "ligand_name" not in got
+
+    def test_nothing_private_is_carried(self) -> None:
+        """Setup injects `_retained_pdb` and its neighbours into its own
+        parameters. The record is built from named values rather than by
+        copying them, so there is nothing to filter."""
+        got = self._resolved(params={
+            "_retained_pdb": "/tmp/kept.pdb",
+            "_reinstated_heterogens": ("BEN",),
+            "_explained_heterogens": ("HOH",),
+        })
+        assert not any(name.startswith("_") for name in got)
