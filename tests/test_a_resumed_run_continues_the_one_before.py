@@ -60,10 +60,27 @@ def _a_small_system():
 
 
 def _a_simulation(system, topology, positions):
+    """One simulation, on one thread.
+
+    The thread count is pinned because these tests compare two runs
+    number for number. OpenMM's CPU platform splits force evaluation
+    across as many threads as it finds cores, and the order a sum is
+    accumulated in decides its last bit -- so two contexts built moments
+    apart on a busy machine can take different thread counts and differ
+    by an ulp before either has taken a step.
+
+    An ulp would not matter if this were a measurement. It is dynamics:
+    Langevin trajectories separate exponentially, so a difference in the
+    sixteenth decimal reaches the fifth within a thousand steps. That is
+    not a defect being caught, it is chaos being rediscovered, and it
+    arrives as a test that passes on a quiet machine and fails on a
+    loaded one.
+    """
     integrator = mm.LangevinMiddleIntegrator(
         300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtosecond)
     simulation = app.Simulation(topology, system, integrator,
-                                mm.Platform.getPlatformByName("CPU"))
+                                mm.Platform.getPlatformByName("CPU"),
+                                {"Threads": "1"})
     simulation.context.setPositions(positions)
     return simulation
 
@@ -310,6 +327,21 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
             asNumpy=True).value_in_unit(unit.nanometer)
         return box_at_checkpoint, box_after_load, straight, resumed
 
+    def _state_at_checkpoint(self, *, barostat):
+        """The first run's state at the moment it was checkpointed."""
+        system, topology, positions = _a_periodic_system(barostat=barostat)
+        first = _a_simulation(system, topology, positions)
+        first.minimizeEnergy(maxIterations=50)
+        first.context.setVelocitiesToTemperature(300 * unit.kelvin, 99)
+        first.step(1000)
+        state = first.context.getState(getPositions=True, getVelocities=True)
+        return (
+            state.getPositions(asNumpy=True).value_in_unit(unit.nanometer),
+            state.getVelocities(asNumpy=True).value_in_unit(
+                unit.nanometer / unit.picosecond),
+            bytes(first.context.createCheckpoint()),
+        )
+
     def test_the_box_comes_back_exactly_under_pressure(self):
         # The part that does work. Positions, velocities and box vectors
         # are all in the checkpoint, so the state a second segment starts
@@ -318,9 +350,56 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
             barostat=True)
         np.testing.assert_allclose(at_checkpoint, after_load, atol=1e-9)
 
-    def test_constant_volume_resumes_exactly(self):
+    def test_the_state_a_resumed_run_starts_from_is_the_state_it_stopped_at(
+        self
+    ):
+        """The claim segmentation actually rests on, asked before any
+        dynamics can obscure it.
+
+        Positions and velocities both, because positions alone would pass
+        for a run that resumed from the right place at the wrong speed --
+        which is a different trajectory and a different temperature, and
+        nothing downstream would say so.
+
+        Tight, and it can afford to be: this compares a checkpoint with
+        what loading it produced, with no integration in between, so
+        there is nothing here for chaos to amplify. The test below runs a
+        thousand steps and cannot be this strict.
+        """
+        positions, velocities, checkpoint = self._state_at_checkpoint(
+            barostat=False)
+
+        system, topology, start = _a_periodic_system(barostat=False)
+        second = _a_simulation(system, topology, start)
+        second.context.loadCheckpoint(checkpoint)
+        state = second.context.getState(getPositions=True, getVelocities=True)
+
+        np.testing.assert_allclose(
+            state.getPositions(asNumpy=True).value_in_unit(unit.nanometer),
+            positions, atol=1e-9)
+        np.testing.assert_allclose(
+            state.getVelocities(asNumpy=True).value_in_unit(
+                unit.nanometer / unit.picosecond),
+            velocities, atol=1e-9)
+
+    def test_constant_volume_stays_together_for_a_thousand_steps(self):
+        """And the consequence: having started from the same state, the
+        two runs track each other.
+
+        `atol` is loose on purpose, and no amount of care makes it tight.
+        Langevin dynamics separates exponentially, so two trajectories
+        that begin identically diverge at whatever rate the last bit of
+        their arithmetic allows -- and the arithmetic is only identical
+        while the thread count is, which is why `_a_simulation` pins it.
+
+        This once asserted 1e-5 and called itself "resumes exactly". It
+        passed for a long time and then failed on a loaded CI runner by
+        1.2e-5 across three of a hundred and ninety-two numbers, which is
+        what chaos looks like arriving on schedule rather than a defect.
+        Exactness is the test above; this one is a sanity bound.
+        """
         _, _, straight, resumed = self._continue_and_resume(barostat=False)
-        np.testing.assert_allclose(straight, resumed, atol=1e-5)
+        np.testing.assert_allclose(straight, resumed, atol=1e-3)
 
     def test_constant_pressure_does_not_and_that_is_why_it_is_qualified(self):
         # The finding the qualification exists for. The barostat's adaptive
