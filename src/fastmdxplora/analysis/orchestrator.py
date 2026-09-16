@@ -449,13 +449,32 @@ class AnalysisOrchestrator:
             nothing reads. But there is nothing to draw for an ordinary run,
             and an analysis that fails on every unbiased trajectory would
             turn a missing study into a failed phase.
+
+            The study writes `pmf.json` at its own root, beside the runs
+            rather than inside any one of them, because it is the answer
+            from all the windows together. How far that is from here
+            depends on the layout: a single run is flat, so it is one
+            level up from `<run>/analysis`; a study with windows puts each
+            under `runs/<id>/`, which is two levels further, three in all.
+
+            The ladder stopped at two, and an umbrella study always has
+            windows -- so the gate held for the one layout an umbrella
+            study never uses and failed for the one it always does. Every
+            `requires_umbrella` analysis was dropped from the default plan
+            of every umbrella study, and `False` is also what an ordinary
+            run returns, so nothing said so.
             """
             cls = _REGISTRY[name]
             if not getattr(cls, "requires_umbrella", False):
                 return True
             here = Path(self.output_dir)
+            # Erring long rather than short: a false positive runs the
+            # analysis, which refuses with a message naming what it wanted.
+            # A false negative drops it from the plan in silence, which is
+            # the failure above.
             return any((parent / "pmf.json").is_file()
-                       for parent in (here, here.parent, here.parent.parent))
+                       for parent in (here, here.parent, here.parent.parent,
+                                      here.parent.parent.parent))
 
         def _metadynamics_ok(name: str) -> bool:
             """A surface exists only where a metadynamics run produced one.

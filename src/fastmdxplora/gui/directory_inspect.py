@@ -33,8 +33,21 @@ TRAJECTORY_SUFFIXES = (
 TOPOLOGY_SUFFIXES = (".pdb", ".prmtop", ".parm7", ".psf", ".gro", ".top", ".cif")
 
 #: A file this software wrote, which says the folder is a previous run.
+#:
+#: Every name here is checked against what actually writes it, because two
+#: of them were not: `status.json` and `setup_manifest.json` were renamed to
+#: `live_status.json` and `setup_parameters.json` and this list stayed
+#: behind. Half of "a file this software wrote" was a file it never wrote,
+#: and nothing failed -- the two live names matched first, so a folder was
+#: still recognised and the dead pair simply never fired.
+#:
+#: `live_status.json` sits in the simulation directory rather than the run
+#: root, so it marks a folder someone opened one level in. That is worth
+#: recognising: a person browsing to the trajectory is in that directory,
+#: not its parent.
 _RUN_MARKERS = (
-    "resolved_config.yml", "manifest.json", "status.json", "setup_manifest.json",
+    "resolved_config.yml", "manifest.json",
+    "live_status.json", "setup_parameters.json",
 )
 
 #: Sizes are shown so a person can tell the production run from the

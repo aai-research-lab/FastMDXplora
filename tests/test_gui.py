@@ -1813,6 +1813,50 @@ class TestPointingAtAFolderOfResults:
         assert found["is_previous_run"]
         assert "resolved_config.yml" in found["run_markers"]
 
+    @pytest.mark.parametrize("marker", [
+        "resolved_config.yml", "manifest.json",
+        "live_status.json", "setup_parameters.json",
+    ])
+    def test_every_marker_is_a_file_this_software_writes(
+        self, marker: str
+    ) -> None:
+        """The comment above the list says so, and for two of them it was
+        not true.
+
+        `status.json` and `setup_manifest.json` sat there after being
+        renamed to `live_status.json` and `setup_parameters.json`. Nothing
+        failed: the two live names matched first, so a folder was still
+        recognised and the dead pair simply never fired -- which is why a
+        list of four could be half wrong for as long as it liked.
+
+        Asked of the source rather than of a fixture, because a fixture
+        writes whatever the test decides to write.
+        """
+        from pathlib import Path
+
+        import fastmdxplora
+        from fastmdxplora.gui.directory_inspect import _RUN_MARKERS
+
+        assert marker in _RUN_MARKERS
+
+        root = Path(fastmdxplora.__file__).parent
+        writers = [
+            path for path in root.rglob("*.py")
+            if path.name != "directory_inspect.py"
+            and marker in path.read_text(encoding="utf-8", errors="replace")
+        ]
+        assert writers, f"nothing outside directory_inspect names {marker}"
+
+    def test_the_list_has_not_grown_a_name_nobody_writes(self) -> None:
+        """The parametrize above pins the four that exist. This catches a
+        fifth being added without the same check."""
+        from fastmdxplora.gui.directory_inspect import _RUN_MARKERS
+
+        assert set(_RUN_MARKERS) == {
+            "resolved_config.yml", "manifest.json",
+            "live_status.json", "setup_parameters.json",
+        }
+
     def test_a_lone_structure_is_something_to_set_up(self, tmp_path) -> None:
         """A PDB on its own is a simulation waiting to happen, not a result."""
         from fastmdxplora.gui.directory_inspect import inspect_directory

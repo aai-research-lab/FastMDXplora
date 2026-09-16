@@ -180,3 +180,79 @@ class TestTheStudyDrawsItsOwnFreeEnergy:
         _written(tmp_path)
         result = PMF(output_dir=tmp_path / "free_energy").run(None)
         assert result.status == "ok"
+
+
+class TestTheGateFindsTheStudysOwnResult:
+    """Whether `pmf` reaches the default plan, asked of a real layout.
+
+    The test above this one reads the orchestrator's source and asserts
+    that `_umbrella_ok` appears in it. That is satisfied by a gate which
+    can never return True, and for a long time it was: the ladder of
+    candidate directories stopped one level short of where a study with
+    windows writes `pmf.json`, so every `requires_umbrella` analysis was
+    dropped from the default plan of every umbrella study. `False` is
+    also what an ordinary run returns, so nothing said so.
+
+    It held for a flat single run -- the one layout an umbrella study
+    never uses, since an umbrella study is windows by definition.
+    """
+
+    class _Orchestrator:
+        """Enough of one to build a plan. `_build_plan` reads the output
+        directory, the ligand and the trajectory, and guards the last."""
+
+        ligand_resname = None
+        traj = None
+
+        def __init__(self, output_dir: Path) -> None:
+            self.output_dir = output_dir
+
+    @staticmethod
+    def _plan(analysis_dir: Path) -> list[str]:
+        import fastmdxplora.analysis  # noqa: F401  -- fills the registry
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator
+
+        return AnalysisOrchestrator._build_plan(
+            TestTheGateFindsTheStudysOwnResult._Orchestrator(analysis_dir),
+            None, None)
+
+    @staticmethod
+    def _pmf_beside(root: Path) -> None:
+        (root / "pmf.json").write_text(
+            json.dumps({"coordinate": "distance", "free_energy": []}),
+            encoding="utf-8")
+
+    def test_a_study_with_windows_finds_it(self, tmp_path) -> None:
+        """`<batch>/runs/<id>/analysis` looking for `<batch>/pmf.json` --
+        three levels, where the ladder reached two. This is every real
+        umbrella study."""
+        analysis = tmp_path / "runs" / "window-000" / "analysis"
+        analysis.mkdir(parents=True)
+        self._pmf_beside(tmp_path)
+        assert "pmf" in self._plan(analysis)
+
+    def test_a_flat_run_still_finds_it(self, tmp_path) -> None:
+        """One level up, and the case that always worked."""
+        analysis = tmp_path / "analysis"
+        analysis.mkdir()
+        self._pmf_beside(tmp_path)
+        assert "pmf" in self._plan(analysis)
+
+    def test_an_ordinary_run_does_not(self, tmp_path) -> None:
+        """There is nothing to draw for an unbiased trajectory, and an
+        analysis that failed on every one of them would turn a missing
+        study into a failed phase."""
+        analysis = tmp_path / "analysis"
+        analysis.mkdir()
+        assert "pmf" not in self._plan(analysis)
+
+    def test_the_gate_is_reachable_at_all(self, tmp_path) -> None:
+        """The claim the source-text test cannot make: that some layout
+        exists in which this returns True."""
+        analysis = tmp_path / "runs" / "window-000" / "analysis"
+        analysis.mkdir(parents=True)
+        without = self._plan(analysis)
+        self._pmf_beside(tmp_path)
+        assert "pmf" not in without and "pmf" in self._plan(analysis), (
+            "the gate must distinguish a study that produced a PMF "
+            "from one that did not")
