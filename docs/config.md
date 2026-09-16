@@ -381,14 +381,20 @@ allowed to do this; anything else stays `null`, which is what the Config reader
 takes as "decide this again".
 
 ```{note}
-**What is still left to the replaying version.** One setting: `report.title`,
-which resolves to `FastMDXplora Study — <system>` and is not recorded. It is
-cosmetic, and report is the only phase with no record of its own, so a file
-exists for it or it stays as it is.
+**What `null` means, and why nothing is left open.** A setting written as `null`
+is one you did not ask for: no membrane, no ligand, no mutation, no particular
+chain. `null` is the value, not a question the file failed to answer.
 
-Everything else written as `null` is genuinely unset — you did not ask for a
-membrane, a ligand, a mutation, a particular chain. `null` there is the value,
-not a deferred question.
+The one setting the run derives without recording is `report.title`, which falls
+back to `FastMDXplora Study — <system>`. That is a heading on the report, not a
+property of the study: replay it on any version and you get the same
+trajectory, the same measurements and the same numbers, under a title that may
+be worded differently. It is in the first group, not a gap in the second.
+
+The test for whether a derived value has to be written down is whether losing it
+changes the science. `analysis.include` decides which measures run;
+`simulation.production_steps` decides how long. Both are recorded, above. A
+title decides what the first line says.
 ```
 
 The phases' own records go further than a config can, and are still worth

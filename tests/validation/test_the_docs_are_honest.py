@@ -323,11 +323,18 @@ class TestTheResolvedConfigIsDescribedAsItIs:
         for phase in ("setup", "simulation", "analysis"):
             assert phase in _PHASE_RECORDS
 
-    def test_the_one_setting_still_deferred_is_named_and_still_is(
-        self
-    ) -> None:
-        """`report.title` is the whole of what is left, so the note saying
-        so is wrong the moment report gains a record."""
+    def test_the_one_derived_setting_not_recorded_is_named(self) -> None:
+        """`report.title` is the only value a run derives without writing
+        down, and the page says so by name.
+
+        It is placed with the settings that are genuinely unset rather
+        than with the ones a replay has to decide again, because the test
+        for that is whether losing it changes the science. It does not: a
+        replay produces the same trajectory and the same numbers under a
+        heading that may be worded differently. The note is wrong the
+        moment report starts recording it, or the moment something else
+        stops being recorded.
+        """
         from fastmdxplora.config.generate import _PHASE_RECORDS
         from fastmdxplora.config.schema import PHASE_SCHEMAS
 
@@ -335,6 +342,29 @@ class TestTheResolvedConfigIsDescribedAsItIs:
         assert "report" not in _PHASE_RECORDS, (
             "report records its title now; config.md says it does not")
         assert "`report.title`" in self._page()
+
+    @pytest.mark.parametrize("phase,setting", [
+        ("analysis", "include"),
+        ("simulation", "production_steps"),
+    ])
+    def test_the_settings_it_contrasts_the_title_with_are_recorded(
+        self, phase: str, setting: str
+    ) -> None:
+        """The note draws a line: these decide the science and are written
+        down, a title is not. The line only holds while they are."""
+        from fastmdxplora.config.generate import _PHASE_RECORDS
+
+        assert phase in _PHASE_RECORDS
+        assert setting in self._page()
+
+    def test_the_page_does_not_call_the_title_an_outstanding_gap(
+        self
+    ) -> None:
+        """It said "what is still left to the replaying version", which
+        frames a heading as a hole in reproducibility. Every setting that
+        decides what a run does is recorded; a title is not one."""
+        page = self._page()
+        assert "still left to the replaying version" not in page
 
     def test_the_round_trip_trap_is_still_explained(self) -> None:
         """Writing a derived value beside its source is safe only because
