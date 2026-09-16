@@ -517,6 +517,7 @@ def run(
             state_interval_steps=int(params["state_interval_steps"]),
             checkpoint_interval_steps=int(params["checkpoint_interval_steps"]),
             resume_from=params.get("resume_from"),
+            ensemble=params.get("ensemble"),
             live_telemetry=bool(params["live_telemetry"]),
             telemetry_interval=int(params["telemetry_interval"]),
             on_progress=_progress,

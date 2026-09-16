@@ -102,15 +102,41 @@ class TestItNeverStopsARunThatIsOtherwiseFine:
 
 class TestItFiresOnlyWhereThereIsNoBarostat:
     def test_the_call_sits_under_the_skipped_npt_branch(self) -> None:
-        """A run with NPT has its density corrected and needs no warning."""
+        """A run whose density is corrected somewhere needs no warning.
+
+        The guard grew a clause. It used to ask `npt_steps > 0`, which was
+        the same question as "is there a barostat" until `ensemble` became
+        its own setting. A resumed segment has no equilibration and a
+        barostat, so the old condition warned that a run at constant
+        pressure was at fixed volume -- caught on ubiquitin by reading the
+        segment banner against the volume it produced.
+
+        The shape this test is about has not changed: the warning sits
+        inside the skipped-NPT branch, and before the barostat is added.
+        """
         from pathlib import Path
         import fastmdxplora.simulation.runner as runner
 
         source = Path(runner.__file__).read_text(encoding="utf-8")
-        guard = source.index('if not plan["npt_steps"] > 0:')
+        guard = source.index(
+            'if not plan["npt_steps"] > 0 and not wants_npt_production:')
         call = source.index("_warn_density_was_never_equilibrated(\n", guard)
-        added = source.index('if plan["npt_steps"] > 0:', guard)
+        added = source.index("barostat_index = _add_barostat(", guard)
         assert guard < call < added
+
+    def test_the_guard_asks_about_production_and_not_only_the_stage(self) -> None:
+        """Both halves, so neither can quietly go back to the other.
+
+        Dropping the ensemble clause makes a correct segment warn. Dropping
+        the steps clause makes a run that never equilibrates stay silent,
+        which is the failure the warning was written for.
+        """
+        from pathlib import Path
+        import fastmdxplora.simulation.runner as runner
+
+        source = Path(runner.__file__).read_text(encoding="utf-8")
+        assert 'not plan["npt_steps"] > 0' in source
+        assert "not wants_npt_production" in source
 
 
 class TestTheCaptureItselfWorks:

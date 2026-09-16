@@ -346,7 +346,7 @@ leaves a `resolved_config.yml` saying `ph: 6.0`, not the `7.0` the file said.
 **It carries every setting the run used, defaults included.** That is what the
 file is for: a study you can repeat from what the run left behind rather than
 from what somebody remembers typing. Every phase gets a block whether or not
-you touched it, and every option in that block is named — 108 settings for a
+you touched it, and every option in that block is named — 109 settings for a
 study that set two. The block is exactly the dictionary the phase was handed,
 not a reconstruction of it.
 

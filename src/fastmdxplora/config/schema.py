@@ -494,6 +494,26 @@ SIMULATION = PhaseSchema(
         Field("nvt_steps", int, None,
               "NVT step count (overrides nvt_duration_ns). Default: 250000.",
               example=250000),
+        Field("ensemble", str, None,
+              "Which ensemble production runs in -- 'npt' at constant "
+              "pressure, 'nvt' at constant volume. Absent means it is read "
+              "from `npt_steps`, which is how this worked before the "
+              "setting existed, so every config already written keeps its "
+              "meaning. Worth setting for the case that could not be said "
+              "at all before, which is to equilibrate at constant pressure "
+              "and then produce at constant volume. That is the right way "
+              "to do an NVT production run, because the density has to be "
+              "learned from a barostat before the box is fixed at it, and "
+              "with one setting doing both jobs it was unsayable -- a "
+              "positive NPT stage gave NPT production, and a zero one gave "
+              "NVT at whatever density solvation happened to produce, "
+              "which is the one option nobody intends. With this set, "
+              "`npt_steps` means only how long to equilibrate, so asking "
+              "for npt production with a zero NPT stage is a resumed "
+              "segment, with no equilibration and the barostat the study "
+              "runs under.",
+              choices=("npt", "nvt"),
+              example="nvt"),
         Field("npt_steps", int, None,
               "NPT step count (overrides npt_duration_ns). Default: 500000.",
               example=500000),
@@ -943,7 +963,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("How long it runs",
          "Production length, and the equilibration before it.",
          ("duration_ns", "nvt_duration_ns", "npt_duration_ns",
-          "production_steps", "nvt_steps", "npt_steps")),
+          "production_steps", "nvt_steps", "npt_steps", "ensemble")),
         ("Where it starts",
          "A system prepared here or elsewhere, where the run picks up from "
          "if it is continuing one, and how hard it is minimised first.",

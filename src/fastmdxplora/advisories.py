@@ -196,9 +196,27 @@ def _a_ligand_with_no_chemistry(structure: dict[str, Any],
 
 def _a_density_never_equilibrated(structure: dict[str, Any],
                                   settings: dict[str, Any]) -> Advisory | None:
-    """Without a barostat the box keeps whatever density solvation made."""
+    """Without a barostat the box keeps whatever density solvation made.
+
+    Asks the ensemble as well as the stage length. They were the same
+    question while `npt_steps > 0` decided both, and separating them left
+    this one behind: a resumed segment with `ensemble: npt` and no
+    equilibration gets its barostat, and this still advised that the box
+    was stuck at whatever solvation produced.
+
+    Found by a rehearsal on ubiquitin, after the same mistake had already
+    been fixed in the runner -- this advisory fires before the simulation
+    phase starts, from a different module, so fixing one did not fix the
+    other. Two places asking the same outdated question.
+    """
+    from fastmdxplora.simulation.ensembles import resolve_ensemble
+
     npt = settings.get("npt_steps")
     if npt is None or int(npt) > 0:
+        return None
+    if resolve_ensemble(settings) == "npt":
+        # A barostat acts during production, so the density is equilibrated
+        # even though no stage is labelled NPT.
         return None
     return Advisory(
         setting="npt_steps",

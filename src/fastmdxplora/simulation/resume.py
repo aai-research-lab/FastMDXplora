@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from fastmdxplora.refusals import Refusal, StudyError
+from fastmdxplora.simulation.ensembles import resolve_ensemble
 
 __all__ = [
     "Segment",
@@ -233,6 +234,7 @@ def refusal_for(verdict: Segmentability) -> Refusal | None:
                    details={"method": verdict.method})
 
 
+
 @dataclass(frozen=True)
 class Segment:
     """One piece of a run, as a config and where it continues from.
@@ -330,6 +332,16 @@ def plan_segments(
         if index > 0:
             simulation["minimize"] = False
             simulation["nvt_steps"] = 0
+            # State the ensemble rather than leave it to be inferred from
+            # the stage lengths. Zeroing `npt_steps` used to mean both "do
+            # not equilibrate" and "no barostat", so a resumed segment
+            # silently produced at constant volume while the first segment
+            # produced at constant pressure -- two ensembles in one
+            # trajectory with nothing able to tell.
+            #
+            # Now the two are separate questions and this answers both:
+            # whatever the study runs in, and no equilibration.
+            simulation["ensemble"] = resolve_ensemble(block)
             simulation["npt_steps"] = 0
             simulation.pop("nvt_duration_ns", None)
             simulation.pop("npt_duration_ns", None)

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.simulation.ensembles import resolve_ensemble
 from fastmdxplora.refusals import (
     BackendUnavailable,
     MissingResultError,
@@ -1381,6 +1382,7 @@ def run_simulation(
     state_interval_steps: int = DEFAULT_STATE_INTERVAL_STEPS,
     checkpoint_interval_steps: int = DEFAULT_CHECKPOINT_INTERVAL_STEPS,
     resume_from: str | Path | None = None,
+    ensemble: str | None = None,
     live_telemetry: bool = False,
     telemetry_interval: int = DEFAULT_STATE_INTERVAL_STEPS,
     # Hooks
@@ -2106,11 +2108,22 @@ def run_simulation(
         # the two stages are divided.
 
         # ---- Stage 3: NPT equilibration -------------------------------
-        # Add the barostat and reinitialize the context so the system picks up
-        # the new force. Production then continues in NPT.
-        # Phrased against the same comparison the branch below uses,
-        # so a plan that answers one answers both.
-        if not plan["npt_steps"] > 0:
+        # Which ensemble production runs in, decided once and read by both
+        # the warning below and the barostat above it. They used to ask
+        # `npt_steps > 0` separately, which was fine while that number
+        # answered both questions and wrong the moment it stopped: a
+        # resumed segment with `ensemble: npt` and no equilibration got its
+        # barostat and a warning saying it had none.
+        #
+        # A warning that says the opposite of what happened is worse than
+        # no warning. Somebody reads it, believes the run was at fixed
+        # volume, and discards or defends a result on that basis.
+        wants_npt_production = resolve_ensemble({
+            "ensemble": ensemble,
+            "npt_steps": plan["npt_steps"],
+        }) == "npt"
+
+        if not plan["npt_steps"] > 0 and not wants_npt_production:
             # Solvation packs a box that is not at the density of water. A
             # real run measured 0.92 g/mL and held it there for every step,
             # because the barostat is the only thing that fixes it: the same
@@ -2126,15 +2139,20 @@ def run_simulation(
             if on_explain:
                 on_explain("ensemble_choice")
 
-        if plan["npt_steps"] > 0:
-            _add_barostat(
+        # `npt_steps` says how long to equilibrate at constant pressure;
+        # `ensemble` says what production runs in. Resolved above, because
+        # the warning needs the same answer.
+        barostat_index = None
+        if plan["npt_steps"] > 0 or wants_npt_production:
+            barostat_index = _add_barostat(
                 omm, system,
                 temperature_K=temperature_K,
                 pressure_bar=resolved_pressure_bar,
-            membrane=is_membrane_system(topology),
+                membrane=is_membrane_system(topology),
                 frequency=barostat_frequency,
             )
             simulation.context.reinitialize(preserveState=True)
+        if plan["npt_steps"] > 0:
             if telemetry is not None:
                 telemetry.mark_stage("npt", "current", status="running", current_step=current_step)
                 telemetry.event("NPT started")
@@ -2182,6 +2200,28 @@ def run_simulation(
         elif telemetry is not None:
             telemetry.mark_stage("npt", "skipped", status="running", current_step=current_step)
             telemetry.event("NPT skipped (0 steps)")
+
+        # The barostat comes off before production for an NVT run, the same
+        # way restraints do below and for the same reason: production must
+        # be in the ensemble the study asked for, not whatever
+        # equilibration happened to leave behind.
+        #
+        # This is the combination that could not be expressed while one
+        # setting answered both questions -- equilibrate at constant
+        # pressure so the density is one a barostat found, then fix the box
+        # there and produce at constant volume. Asking for NVT without the
+        # first half fixes the box at whatever solvation produced, which
+        # this package's own explain text calls the option nobody intends.
+        if barostat_index is not None and not wants_npt_production:
+            _remove_force(system, barostat_index)
+            simulation.context.reinitialize(preserveState=True)
+            logger.info(
+                "Barostat removed before production: NVT at the density "
+                "NPT equilibration settled on, rather than the one "
+                "solvation produced."
+            )
+            if on_explain:
+                on_explain("ensemble_choice")
 
         # Restraints come off before production, because a biased production
         # run measures the bias. Keeping them is possible and has to be asked

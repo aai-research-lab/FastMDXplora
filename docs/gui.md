@@ -9,7 +9,7 @@ study, starting it, watching it happen, and reading the results.
 
 The GUI is not a cut-down version of the command line. It offers **every
 setting the software has** — all 304 analysis options across 27 analyses, and
-all 115 phase and top-level settings — because the form is generated from the
+all 116 phase and top-level settings — because the form is generated from the
 same declaration the CLI and the [Config](config.md) are built from rather than
 written by hand. Adding a setting to the schema puts a control in the GUI;
 nothing has to be kept in step.

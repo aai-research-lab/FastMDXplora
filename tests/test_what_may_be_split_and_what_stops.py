@@ -278,6 +278,9 @@ class TestThePiecesAddUpToTheStudy(unittest.TestCase):
         for piece in pieces[1:]:
             self.assertIs(piece.config["simulation"]["minimize"], False)
             self.assertEqual(piece.config["simulation"]["nvt_steps"], 0)
+            # Zero again, and safely so: the barostat no longer rides on
+            # this number. `ensemble` carries it, which is what
+            # TestASegmentRunsTheSameStudy checks.
             self.assertEqual(piece.config["simulation"]["npt_steps"], 0)
 
     def test_every_segment_after_the_first_names_its_predecessor(self):
@@ -412,3 +415,71 @@ class TestASegmentedStudyRunsEndToEnd(unittest.TestCase):
         self.config["simulation"] = {"metadynamics": {"sigma": 0.1}}
         with self.assertRaises(StudyError):
             self.submit(self.queue, "c", self.config, study="s", segments=4)
+
+
+class TestASegmentRunsTheSameStudy(unittest.TestCase):
+    """The ensemble must survive the split, and now it is stated.
+
+    `npt_steps` used to answer two questions: how long to equilibrate, and
+    whether a barostat existed at all. Zeroing it for a resumed segment
+    therefore removed the barostat from production, so segment 0 ran NPT
+    and the rest ran NVT — found on ubiquitin, by a warning that fired on
+    segments 1 to 3 and not on segment 0.
+
+    The first fix kept one token NPT step to re-establish the barostat,
+    which worked and left the conflation in place. The two questions are
+    separate settings now, so a segment can say `ensemble` outright and
+    zero both stages: no equilibration, and the ensemble the study runs in.
+    These assertions moved with it — they were written against the token
+    step, which was the workaround rather than the answer.
+    """
+
+    def setUp(self):
+        from fastmdxplora.simulation.resume import plan_segments
+
+        self.plan = plan_segments
+        self.base = {"systems": [{"id": "a", "system": "x.pdb"}]}
+
+    def segments(self, simulation, count=3):
+        return self.plan({**self.base, "simulation": simulation},
+                         segments=count)
+
+    def test_a_constant_pressure_study_keeps_its_barostat(self):
+        for label, block in (
+                ("unstated", {"duration_ns": 4}),
+                ("explicit", {"duration_ns": 4, "npt_steps": 50_000}),
+                ("by duration", {"duration_ns": 4, "npt_duration_ns": 1})):
+            with self.subTest(study=label):
+                for piece in self.segments(block)[1:]:
+                    self.assertEqual(
+                        piece.config["simulation"]["ensemble"], "npt",
+                        "a resumed segment lost the barostat")
+
+    def test_a_constant_volume_study_stays_at_constant_volume(self):
+        # The other direction matters as much. Adding a barostat to a study
+        # that deliberately had none would also be two ensembles in one
+        # trajectory.
+        for piece in self.segments({"duration_ns": 4, "npt_steps": 0})[1:]:
+            self.assertEqual(piece.config["simulation"]["ensemble"], "nvt")
+
+    def test_equilibration_happens_once_and_costs_nothing_after(self):
+        # Both stages zero, because the ensemble no longer rides on them.
+        # The token step the first fix needed is gone.
+        pieces = self.segments({"duration_ns": 4, "npt_steps": 50_000})
+        self.assertNotIn("nvt_steps", pieces[0].config["simulation"])
+        for piece in pieces[1:]:
+            self.assertEqual(piece.config["simulation"]["nvt_steps"], 0)
+            self.assertEqual(piece.config["simulation"]["npt_steps"], 0)
+
+    def test_an_npt_equilibration_then_nvt_study_splits_faithfully(self):
+        # The combination that could not be expressed at all before.
+        for piece in self.segments(
+                {"duration_ns": 4, "npt_steps": 50_000,
+                 "ensemble": "nvt"})[1:]:
+            self.assertEqual(piece.config["simulation"]["ensemble"], "nvt")
+
+    def test_the_production_steps_still_sum(self):
+        pieces = self.segments({"production_steps": 1_000_000}, count=4)
+        self.assertEqual(
+            sum(p.config["simulation"]["production_steps"] for p in pieces),
+            1_000_000)

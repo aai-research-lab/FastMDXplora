@@ -353,7 +353,7 @@ def migrate(path: pathlib.Path, *, dry_run: bool = False) -> tuple[int, int, lis
         planned.append((node.exc.end_lineno, node.exc.end_col_offset,
                         hits.pop(), promote_to))
 
-    for lineno, col, code, promote_to in sorted(planned, reverse=True):
+    for lineno, col, code, _promote_to in sorted(planned, reverse=True):
         line = lines[lineno - 1]
         close = line.rfind(")", 0, col)
         if close < 0:
