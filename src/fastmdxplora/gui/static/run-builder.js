@@ -924,15 +924,45 @@
     return config;
   }
 
-  function ready() {
-    if (!state.start) return false;
+  /* Why the run cannot start, or "" when it can.
+   *
+   * This used to be a boolean, so the button went grey and nothing said
+   * which condition had failed. A config arriving from the Agent with no
+   * `systems` landed in a form with no structure, a disabled button, and
+   * no way to find out why -- the reader is left guessing at a rule the
+   * software already knows. */
+  function whyNotReady() {
+    if (!state.start) return "Choose what this run starts from.";
     if (state.start === "config") {
-      // Nothing is offered until the file has been read and found sound.
-      return Boolean(state.configVerdict && state.configVerdict.ok);
+      if (!state.configVerdict) return "No config checked yet.";
+      return state.configVerdict.ok ? "" : state.configVerdict.error;
     }
-    if (!state.phases.size) return false;
-    if (state.start === "structure") return Boolean(el("run-system").value.trim());
-    return Boolean(el("run-trajectory").value.trim() && el("run-topology").value.trim());
+    if (!state.phases.size) return "Choose at least one phase to run.";
+    /* Simulate without Setup, starting from a structure, has nothing to
+     * simulate: setup is what turns a structure into a system. Reported
+     * from the browser as a run that started, failed a minute later with
+     * "setup outputs are missing", and then had a paragraph about
+     * timesteps attached to it. The rule is the software's own -- the
+     * pipeline refuses this -- so the button should refuse it first. */
+    if (state.start === "structure" &&
+        state.phases.has("simulation") && !state.phases.has("setup")) {
+      return "Simulate needs Setup first: a structure has to be solvated " +
+             "and parameterised before it can be run. Tick Setup, or " +
+             "start from an existing run's output instead.";
+    }
+    if (state.start === "structure" && !el("run-system").value.trim()) {
+      return "Choose a structure: a PDB file, or an identifier to fetch.";
+    }
+    if (state.start !== "structure" &&
+        !(el("run-trajectory").value.trim() &&
+          el("run-topology").value.trim())) {
+      return "Choose a trajectory and the topology that matches it.";
+    }
+    return "";
+  }
+
+  function ready() {
+    return !whyNotReady();
   }
 
   function updateSummary() {
@@ -945,9 +975,10 @@
     } else {
       const doing = PHASES.filter((p) => state.phases.has(p.name))
         .map((p) => p.label);
+      const why = whyNotReady();
       text(
         el("run-summary"),
-        doing.length ? doing.join(" → ") : "Nothing chosen yet"
+        why || (doing.length ? doing.join(" → ") : "Nothing chosen yet")
       );
     }
     const can = ready();
@@ -1186,9 +1217,24 @@
     if (!window.FastMDXDashboard || !window.FastMDXDashboard.on) return;
     // The handler is given the detail itself, not the event carrying it.
     window.FastMDXDashboard.on("app-state", (detail) => {
-      const running = Boolean(detail && detail.active_run);
+      /* `process_running`, not `active_run`. The latter means "there is a
+       * run to look at", which stays true after one fails -- the output
+       * directory is still there and still being watched -- so Stop the
+       * run was still offered for a run that had already stopped.
+       * Reported from the browser after a setup failure. */
+      const running = Boolean(detail && detail.process_running);
       const stop = el("run-stop");
       if (stop) stop.hidden = !running;
+
+      /* And say why it stopped, where somebody is looking at the button
+       * that just disappeared. */
+      if (detail && detail.status === "failed" && detail.error) {
+        const note = el("run-note");
+        if (note && note.textContent !== detail.error) {
+          text(note, detail.error);
+          note.dataset.ok = "false";
+        }
+      }
     });
   }
 

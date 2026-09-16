@@ -106,7 +106,10 @@ class TestTheLoopStops(unittest.TestCase):
             calls.append(prompt)
             return VALID
 
-        def refuse_semantically(config):
+        def refuse_semantically(config, **kwargs):
+            # **kwargs because the real validate_config takes
+            # `require_systems`, and a stub that does not accept what the
+            # caller passes is testing a function that no longer exists.
             from fastmdxplora.config.loader import ConfigError
             raise ConfigError(
                 "LIG carries groups whose protonation depends on pH.",
@@ -317,3 +320,131 @@ class TestTheBoundaryHolds(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestAProposedStudyHasSomethingToSimulate(unittest.TestCase):
+    """A config with no `systems` is not a study.
+
+    `validate_config` takes `require_systems`, defaulting False so a
+    partial config can be checked — a GUI form mid-edit, a fragment. The
+    agent inherited that leniency without meaning to, and a proposed study
+    is one somebody means to run.
+
+    Found in use. Asked for a water simulation, the model wrote `output`,
+    `simulation.duration_ns`, and no `systems` at all. It passed, reported
+    "Accepted first time", and produced a study with nothing in it to
+    simulate — which then landed in the builder as a form with no structure
+    and a disabled button.
+
+    An empty `systems` list was already refused. An absent one was not.
+    """
+
+    def test_a_config_with_no_systems_is_refused_and_repaired(self):
+        from fastmdxplora.agent import propose_config
+
+        answers = iter([
+            # Verbatim, from a real run.
+            "output: water_sim\nsimulation:\n  duration_ns: 2\n",
+            "systems:\n  - {id: water, system: 1UBQ}\n"
+            "simulation:\n  duration_ns: 2\n",
+        ])
+        last = {}
+
+        def complete(prompt):
+            if not prompt.startswith("That config was refused"):
+                last["reply"] = next(answers)
+            else:
+                last["reply"] = next(answers)
+            return last["reply"]
+
+        proposal = propose_config("simulate water for 2 ns", complete,
+                                  max_cycles=3)
+        self.assertTrue(proposal.accepted)
+        self.assertEqual(proposal.cycles, 2)
+        self.assertIn("systems", proposal.config)
+        first = proposal.attempts[0].refusal
+        self.assertEqual(first.code, "config.option.missing_companion")
+
+    def test_the_refusal_shows_the_shape_it_wants(self):
+        # A model correcting itself needs the syntax, not only the name of
+        # what is missing.
+        from fastmdxplora.config.loader import ConfigError, validate_config
+
+        with self.assertRaises(ConfigError) as caught:
+            validate_config({"simulation": {"duration_ns": 2}},
+                            require_systems=True)
+        message = str(caught.exception)
+        self.assertIn("systems:", message)
+        # No copyable value at all. `protein.pdb` was copied verbatim and
+        # failed in setup; replaced with `1UBQ`, that was copied verbatim
+        # too, and a request for water became a study of ubiquitin. An
+        # example in a refusal is read as the answer whatever it says, so
+        # this one shows the shape with nothing in it to take.
+        self.assertNotIn("1UBQ", message)
+        self.assertNotIn("protein.pdb", message)
+        self.assertIn("<PDB id or path>", message)
+        self.assertIn("optional", message)
+        self.assertIn("taken from the request, not invented", message)
+
+
+
+class TestARequestWithNoStructureGetsAQuestion(unittest.TestCase):
+    """Neither a config nor a refusal: a question back.
+
+    "Simulate water for 2 ns" names no structure. Twice the Agent invented
+    one -- `protein.pdb`, then `1UBQ`, each the example in the refusal it
+    had just been shown -- and each produced a valid study of the wrong
+    thing. The loop had only two outcomes, and a request short of
+    something only a person can supply fitted neither.
+
+    Now the prompt says never to invent a structure and to reply `ASK:`
+    instead, and the loop returns that as a question rather than retrying.
+    Retrying would only ask a model to invent what it was told not to.
+    """
+
+    def test_a_question_comes_back_as_one(self):
+        from fastmdxplora.agent import propose_config
+
+        proposal = propose_config(
+            "simulate water for 2 ns",
+            lambda prompt: "ASK: Which structure? The request names none.")
+        self.assertFalse(proposal.accepted)
+        self.assertIsNone(proposal.refusal)
+        self.assertEqual(proposal.question,
+                         "Which structure? The request names none.")
+
+    def test_it_does_not_retry(self):
+        # One call. A second would be a request to guess.
+        from fastmdxplora.agent import propose_config
+
+        calls = []
+
+        def complete(prompt):
+            calls.append(prompt)
+            return "ASK: which structure?"
+
+        propose_config("simulate water", complete, max_cycles=4)
+        self.assertEqual(len(calls), 1)
+
+    def test_a_config_is_still_a_config(self):
+        from fastmdxplora.agent import propose_config
+
+        proposal = propose_config(
+            "x", lambda prompt: "systems:\n  - {id: a, system: 1UBQ}\n")
+        self.assertTrue(proposal.accepted)
+        self.assertIsNone(proposal.question)
+
+    def test_the_prompt_says_never_to_invent_one(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("Never invent a structure", prompt)
+        self.assertIn("ASK:", prompt)
+
+    def test_a_courtesy_line_after_the_question_still_reads_as_one(self):
+        from fastmdxplora.agent.propose import _question_in
+
+        self.assertEqual(
+            _question_in("ASK: which file?\nHappy to continue once I know."),
+            "which file?")
+        self.assertIsNone(_question_in("systems:\n  - {id: a}"))

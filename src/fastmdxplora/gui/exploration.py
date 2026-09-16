@@ -604,11 +604,30 @@ class DashboardRuntime:
                 if ALREADY_HOLD_RESULTS.lower() in line.lower():
                     detail = " ".join(lines[index:index + 2])
                     break
+            # The last ERROR line, not the last line. A run that fails
+            # keeps logging afterwards -- the resolved config gets written,
+            # handlers close -- so the final line is usually a DEBUG about
+            # housekeeping. Reported from the browser: a setup failure
+            # showed "Wrote resolved config: ..." while the log held "No
+            # structure at 'protein.pdb'" four lines above it.
+            if not detail:
+                errors = [line for line in lines if " - ERROR - " in line]
+                if errors:
+                    # Without the timestamp and level, which the panel
+                    # already shows and which crowd out the sentence.
+                    detail = errors[-1].split(" - ERROR - ", 1)[1]
             if not detail and lines:
                 detail = lines[-1]
-        suffix = f" {detail}" if detail else ""
+        if detail:
+            # The reason first. "The workflow exited with code 1" is true
+            # of every failure and says nothing about this one.
+            return (
+                f"{detail} (exit code {self.process_returncode}; see "
+                f"{self.log_path or self.workspace_root / 'exploration.log'} "
+                "for the full log.)"
+            )
         return (
-            f"The workflow exited with code {self.process_returncode}.{suffix} "
+            f"The workflow exited with code {self.process_returncode}. "
             f"See {self.log_path or self.workspace_root / 'exploration.log'} for the full log."
         )
 

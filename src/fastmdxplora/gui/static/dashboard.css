@@ -2277,3 +2277,106 @@ body.state-ready .loading-screen {
     gap: 6px;
 }
 .builder-multiselect .chip-toggle { font-size: 11px; }
+
+/* The agent panel.
+   The refusals are the point of this panel -- they are the only visible
+   sign that anything checked the config, and somebody watching a model
+   correct itself learns the config language while they wait. So they are
+   readable rather than incidental, and the accepted config is monospaced
+   because it is about to be read as YAML. */
+.agent-attempts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0 0;
+}
+.agent-attempt {
+    border-left: 2px solid var(--border);
+    padding: 6px 0 6px 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+.agent-attempt.ok {
+    border-left-color: var(--accent, #4a8);
+    color: var(--text);
+}
+.agent-result {
+    margin: 12px 0 0;
+    padding: 12px 14px;
+    background: var(--surface-2, rgba(127, 127, 127, .08));
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
+}
+#agent-request {
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 120px;
+}
+
+/* Agent settings, shaped like the file picker but not one of them --
+   test_there_is_only_one_picker asserts there is exactly one, which is a
+   reasonable invariant and this dialog is not a file picker. */
+.agent-dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
+    display: grid;
+    place-items: center;
+    z-index: 60;
+    padding: 24px;
+}
+.agent-dialog[hidden] { display: none; }
+.agent-dialog-panel {
+    background: var(--background-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    box-shadow: var(--shadow-modal);
+    display: flex;
+    flex-direction: column;
+    max-height: min(85vh, 760px);
+    width: min(720px, 100%);
+}
+.agent-dialog-head {
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    padding: 16px 18px;
+}
+.agent-dialog-body {
+    overflow: auto;
+    padding: 16px 18px;
+}
+.agent-dialog-foot {
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: flex-end;
+    padding: 14px 18px;
+}
+
+
+/* The Agent's request box and the button under it. A textarea with a
+   control immediately beneath it reads as one object; the gap says they
+   are two. */
+#agent-request {
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+    resize: vertical;
+    min-height: 160px;
+    padding: 12px 14px;
+}
+/* By the page rather than by sibling selector: the textarea sits inside a
+   label, so `#agent-request + .control-row` never matches, and `:has()`
+   would be doing work a plain descendant rule does. */
+[data-page="agent"] .control-row {
+    margin-top: 16px;
+}

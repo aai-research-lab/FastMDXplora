@@ -294,6 +294,11 @@ CODES: tuple[Code, ...] = (
          "Writing here would overwrite something.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("path",)),
+    Code("environment.budget.absent",
+         "An unattended run was asked for with no ceiling on what it may "
+         "spend.",
+         Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
+         detail_keys=("mode",)),
     Code("environment.budget.exhausted",
          "Starting this job would take the campaign past the allowance it "
          "was given.",

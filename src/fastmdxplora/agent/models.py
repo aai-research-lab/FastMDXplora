@@ -44,6 +44,7 @@ from typing import Any
 from fastmdxplora.refusals import StudyError
 
 __all__ = [
+    "list_models",
     "ModelChoice",
     "PROVIDERS",
     "model_path",
@@ -61,6 +62,18 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "label": "Anthropic",
         "url": "https://api.anthropic.com/v1/messages",
         "default_model": "claude-sonnet-4-6",
+        #: What to offer before a key is set, and if the provider cannot
+        #: be reached. The real list comes from `list_models`, which asks
+        #: the provider -- a list written here is stale the week after it
+        #: is written, and a model released next month would be missing
+        #: with nothing to explain why.
+        #: One string, not a guessed list. `claude-opus-4-1` sat here and
+        #: 404s -- a name invented from a pattern rather than read from the
+        #: provider. Anything beyond the default comes from `list_models`,
+        #: which asks; a wrong name offered in a dropdown is worse than no
+        #: dropdown, because it looks chosen rather than typed.
+        "models": ("claude-sonnet-4-6",),
+        "models_url": "https://api.anthropic.com/v1/models",
         "env": "ANTHROPIC_API_KEY",
         "auth": "x-api-key",
     },
@@ -68,6 +81,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "label": "OpenAI",
         "url": "https://api.openai.com/v1/chat/completions",
         "default_model": "gpt-5",
+        "models": ("gpt-5",),
+        "models_url": "https://api.openai.com/v1/models",
         "env": "OPENAI_API_KEY",
         "auth": "bearer",
     },
@@ -203,6 +218,65 @@ def _key_for(choice: ModelChoice, path: Path | None = None) -> str:
         code="environment.credentials.absent",
         provider=choice.provider, environment_variable=env_name,
     )
+
+
+
+def list_models(choice: ModelChoice | None = None, *,
+                path: Path | None = None, timeout: float = 10.0) -> tuple:
+    """The models this provider currently has, asked of the provider.
+
+    A list written into this file is stale the week after it is written,
+    and a model released next month would simply be missing with nothing to
+    explain why. Both hosted providers publish one at ``/v1/models``, and
+    an OpenAI-compatible server serves the same path relative to its base
+    URL, so a local Ollama answers this too.
+
+    Returns the fallback in `PROVIDERS` when there is no key yet, when the
+    provider cannot be reached, or when the answer is not the shape this
+    expects. Being offline should leave somebody with a usable dropdown
+    rather than an empty one, and the panel's free-text option covers
+    anything neither source knows.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    chosen = choice or load_choice(path=path)
+    if chosen is None:
+        return ()
+    spec = PROVIDERS.get(chosen.provider) or {}
+    fallback = tuple(spec.get("models") or ())
+
+    url = spec.get("models_url")
+    if not url and chosen.base_url:
+        url = chosen.base_url.rstrip("/") + "/models"
+    if not url:
+        return fallback
+
+    try:
+        key = _key_for(chosen, path)
+    except StudyError:
+        return fallback
+    headers = {}
+    if chosen.provider == "anthropic":
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    elif key:
+        headers = {"Authorization": f"Bearer {key}"}
+
+    try:
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return fallback
+
+    # Anthropic and OpenAI both answer {"data": [{"id": ...}, ...]}.
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return fallback
+    found = tuple(str(r["id"]) for r in rows
+                  if isinstance(r, dict) and r.get("id"))
+    return found or fallback
 
 
 def completion_for(choice: ModelChoice | None = None, *,

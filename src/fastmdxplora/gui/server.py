@@ -481,6 +481,7 @@ def make_handler(
                 # they belong on a list rather than in a judgement.
                 "/api/agent/model",
                 "/api/agent/propose",
+                "/api/agent/run",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -517,6 +518,15 @@ def make_handler(
                 from fastmdxplora.gui.agent_panel import model_endpoint
 
                 self._send_json(model_endpoint(payload or {}))
+                return
+            if path == "/api/agent/run":
+                # Starting a study, so it belongs with the endpoints that
+                # need the machine's trust -- listed above with the others.
+                from fastmdxplora.gui.agent_panel import run_endpoint
+
+                self._send_json(run_endpoint(
+                    payload or {}, app_runtime,
+                    dashboard_url=self.headers.get("Origin")))
                 return
             if path == "/api/agent/propose":
                 # A sentence in, a config out -- through the same

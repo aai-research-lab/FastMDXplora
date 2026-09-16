@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["model_endpoint", "propose_endpoint"]
+__all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
 
 
 def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
@@ -33,11 +33,26 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 
     if not payload.get("provider"):
         current = load_choice()
+        # Ask the provider now, if there is already a key to ask with. The
+        # list used to be fetched only when a choice was saved, so opening
+        # Settings showed the written fallback and a model chosen from it
+        # could 404 -- which is how `claude-opus-4-1` reached somebody.
+        live: dict[str, list] = {}
+        if current is not None:
+            from fastmdxplora.agent.models import list_models
+
+            try:
+                found = list(list_models(current))
+            except Exception:  # noqa: BLE001 - a fallback list still works
+                found = []
+            if found:
+                live[current.provider] = found
         return {
             "ok": True,
             "providers": [
                 {"id": name, "label": spec["label"],
                  "default_model": spec["default_model"],
+                 "models": live.get(name) or list(spec.get("models") or ()),
                  "environment_variable": spec["env"],
                  "needs_url": not spec["url"],
                  "examples": [
@@ -71,10 +86,18 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 
     save_choice(ModelChoice(provider, model, base_url),
                 key=str(payload.get("api_key") or ""))
+    # Ask the provider what it actually has, now that there is a key to ask
+    # with. The written list is what to show before this can be answered.
+    from fastmdxplora.agent.models import list_models
+
+    try:
+        offered = list(list_models(ModelChoice(provider, model, base_url)))
+    except Exception:  # noqa: BLE001 - a stale list beats a broken save
+        offered = list(PROVIDERS[provider].get("models") or ())
     # The choice, not the key. A browser that never receives one cannot
     # leak one.
-    return {"ok": True, "current": ModelChoice(provider, model,
-                                               base_url).as_record()}
+    return {"ok": True, "models": offered,
+            "current": ModelChoice(provider, model, base_url).as_record()}
 
 
 def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
@@ -115,6 +138,12 @@ def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
          "refusal": (attempt.refusal.as_dict() if attempt.refusal else None)}
         for attempt in proposal.attempts
     ]
+    if proposal.question:
+        # Not a failure. The request is short of something only the person
+        # can supply, and the honest answer is to say what.
+        return {"ok": False, "question": proposal.question,
+                "code": "config.option.missing_companion",
+                "error": proposal.question, "attempts": attempts}
     if not proposal.accepted:
         last = proposal.refusal
         return {"ok": False, "attempts": attempts, "cycles": proposal.cycles,
@@ -140,3 +169,62 @@ def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         "config": config,
         "yaml": yaml.safe_dump(config, sort_keys=False),
     }
+
+
+def run_endpoint(payload: dict[str, Any], runtime: Any,
+                 *, dashboard_url: str | None = None) -> dict[str, Any]:
+    """Start the study the panel just drafted, on this machine.
+
+    The GUI runs on the user's own hardware, so there is no reason a mode
+    that runs should be a command-line-only workflow. `assisted` still
+    loads into the form, because the point of that mode is that a person
+    reads it first; the other two start here.
+
+    `autonomous` needs a budget, for the same reason the CLI does: it runs
+    without being shown to anybody, so a ceiling is the only thing left
+    that can stop it. The check happens after setup, where the solvated
+    particle count -- and so the cost -- is first known.
+
+    Through `launch_from_config`, which is the GUI's own door for running
+    what a config describes rather than what a form was wired for. Nothing
+    here is a second way of starting a study.
+    """
+    config = payload.get("config")
+    if not isinstance(config, dict) or not config:
+        return {"ok": False, "code": "config.option.missing_companion",
+                "error": "No config to run. Write one first."}
+
+    mode = str(config.get("agent") or "assisted")
+    try:
+        hours = float(payload.get("budget_hours"))
+    except (TypeError, ValueError):
+        hours = 0.0
+
+    # Required for `autonomous`, honoured in every mode. A budget stands in
+    # for a human, which is why the mode with nobody watching must have
+    # one -- and a ceiling is never the wrong thing to have on a study that
+    # will run for days, so it is offered whether or not it is demanded.
+    if mode == "autonomous" and hours <= 0:
+        return {
+            "ok": False,
+            "code": "environment.budget.absent",
+            "error": ("An autonomous run is not shown to you before it "
+                      "starts, so a GPU-hour budget is the only thing left "
+                      "that can stop it. Give one above."),
+        }
+    if hours > 0:
+        # Carried on the config so it reaches resolved_config.yml and the
+        # manifest, rather than living only in this request.
+        config = dict(config)
+        config["budget_hours"] = hours
+
+    state = dict(payload.get("state") or {})
+    state["config"] = config
+    state.setdefault("output_dir", payload.get("output_dir") or "")
+    try:
+        return runtime.launch_from_config(state, dashboard_url=dashboard_url)
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        from fastmdxplora.refusals import refusal_of
+
+        found = refusal_of(exc)
+        return {"ok": False, "error": found.message, "code": found.code}

@@ -815,63 +815,90 @@
           <div class="page-header">
             <div>
               <h1 class="page-title">Agent</h1>
-              <div class="page-subtitle">Describe a study and a model will
-                draft it. What comes back goes through the same validation
-                as a config written by hand, so the agent cannot ask for
-                something FastMDXplora will not do.</div>
+              <div class="page-subtitle">Describe a study in natural language.</div>
+            </div>
+            <button id="agent-settings-open" class="ghost-btn">Settings</button>
+          </div>
+
+          <div class="card builder-card">
+            <label class="builder-field builder-field-wide">
+              <textarea id="agent-request" rows="8"
+                placeholder="Simulate ubiquitin from 1UBQ at pH 6.5 for 50 ns in a dodecahedral box, physiological salt."></textarea>
+            </label>
+            <div class="control-row">
+              <button id="agent-propose" class="ctl-btn primary">Write config</button>
+            </div>
+            <div id="agent-attempts" class="agent-attempts"></div>
+            <pre id="agent-result" class="agent-result" hidden></pre>
+            <div class="control-row" id="agent-actions" hidden>
+              <button id="agent-download" class="ctl-btn">Download</button>
+              <button id="agent-load" class="ctl-btn">Open in builder</button>
+              <button id="agent-run" class="ctl-btn primary" hidden>Explore</button>
             </div>
           </div>
 
-          <div class="card">
-            <h2 class="card-title">Model</h2>
-            <p class="card-note" id="agent-model-current">Loading…</p>
-            <label class="field">
-              <span class="field-label">Provider</span>
-              <select id="agent-provider"></select>
-            </label>
-            <label class="field" id="agent-url-field" hidden>
-              <span class="field-label">Base URL</span>
-              <input id="agent-base-url" type="text"
-                     placeholder="http://localhost:11434/v1">
-              <span class="field-help" id="agent-url-examples"></span>
-            </label>
-            <label class="field">
-              <span class="field-label">Model</span>
-              <input id="agent-model" type="text">
-            </label>
-            <label class="field">
-              <span class="field-label">API key</span>
-              <input id="agent-key" type="password"
-                     placeholder="leave blank to read it from the environment">
-              <span class="field-help">Stored in a file of its own, readable
-                only by you. Never written into a config, a manifest or a
-                log.</span>
-            </label>
-            <button id="agent-save-model" class="button">Save</button>
-          </div>
-
-          <div class="card">
-            <h2 class="card-title">Describe the study</h2>
-            <textarea id="agent-request" rows="3"
-              placeholder="simulate ubiquitin from 1UBQ at pH 6.5 for 50 ns"></textarea>
-            <label class="field">
-              <span class="field-label">Mode</span>
-              <select id="agent-mode">
-                <option value="assisted">assisted — a model drafted it</option>
-                <option value="autonomous">autonomous — drafted without review</option>
-                <option value="unvalidated">unvalidated — outside this schema</option>
-              </select>
-              <span class="field-help">Recorded on the study, and it travels
-                into the config and the manifest. The panel drafts in every
-                mode and never starts a run: read the config, load it into
-                the form, and start it yourself. Running unattended needs a
-                GPU-time budget, which is a command-line workflow today —
-                <code>fastmdx agent "…" --autonomous --budget-hours N</code>.</span>
-            </label>
-            <button id="agent-propose" class="button primary">Write a config</button>
-            <div id="agent-attempts" class="agent-attempts"></div>
-            <pre id="agent-result" class="agent-result" hidden></pre>
-            <button id="agent-load" class="button" hidden>Load into the form</button>
+          <div id="agent-settings" class="agent-dialog" hidden>
+            <div class="agent-dialog-panel" role="dialog" aria-modal="true"
+                 aria-label="Agent settings">
+              <div class="agent-dialog-head">
+                <div>
+                  <div class="builder-label">Agent settings</div>
+                  <div class="builder-card-note" id="agent-model-current"></div>
+                </div>
+                <button id="agent-settings-close" class="ghost-btn">Close</button>
+              </div>
+              <div class="agent-dialog-body">
+                <div class="builder-grid builder-grid-2">
+                  <label class="builder-field">
+                    <span class="builder-label">Provider</span>
+                    <select id="agent-provider"></select>
+                  </label>
+                  <label class="builder-field">
+                    <span class="builder-label">Model</span>
+                    <select id="agent-model"></select>
+                  </label>
+                  <label class="builder-field builder-field-wide" id="agent-model-other-field" hidden>
+                    <span class="builder-label">Model name</span>
+                    <input id="agent-model-other" type="text"
+                           placeholder="exactly as the provider spells it">
+                    <p class="builder-card-note">Any model the provider
+                      has. The list above is what it reports; a name it
+                      does not have is refused by the provider, with its
+                      own message.</p>
+                  </label>
+                  <label class="builder-field builder-field-wide" id="agent-url-field" hidden>
+                    <span class="builder-label">Server address</span>
+                    <input id="agent-base-url" type="text"
+                           placeholder="http://localhost:11434/v1">
+                    <p class="builder-card-note" id="agent-url-examples"></p>
+                  </label>
+                  <label class="builder-field builder-field-wide">
+                    <span class="builder-label">API key</span>
+                    <input id="agent-key" type="password"
+                           placeholder="paste your key">
+                    <p class="builder-card-note" id="agent-key-help"></p>
+                  </label>
+                  <label class="builder-field">
+                    <span class="builder-label">Mode</span>
+                    <select id="agent-mode">
+                      <option value="assisted">Assisted — you approve it</option>
+                      <option value="autonomous">Autonomous — runs unattended</option>
+                      <option value="unvalidated">Unvalidated — outside the schema</option>
+                    </select>
+                    <p class="builder-card-note" id="agent-mode-note"></p>
+                  </label>
+                  <label class="builder-field">
+                    <span class="builder-label">GPU-hour ceiling</span>
+                    <input id="agent-budget" type="number" min="0" step="1"
+                           placeholder="optional">
+                    <p class="builder-card-note" id="agent-budget-note"></p>
+                  </label>
+                </div>
+              </div>
+              <div class="agent-dialog-foot">
+                <button id="agent-save-model" class="primary-btn">Save</button>
+              </div>
+            </div>
           </div>
         </section>
 

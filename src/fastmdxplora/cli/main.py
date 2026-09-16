@@ -1876,6 +1876,13 @@ def _run_agent(args: Any) -> int:
         if attempt.refusal is not None:
             print(f"  ✗ {attempt.refusal.message}")
 
+    if proposal.question:
+        # Not a failure. The request is short of something only the person
+        # can supply -- a structure, most often -- and guessing one would
+        # produce a study of the wrong molecule that validates perfectly.
+        print(f"\n  ? {proposal.question}")
+        print("\nAdd that to the request and try again.")
+        return 2
     if not proposal.accepted:
         print(f"\nGave up after {proposal.cycles} attempt(s). The last "
               "refusal is above.")

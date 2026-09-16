@@ -106,6 +106,14 @@ class Proposal:
     config: dict[str, Any] | None
     attempts: tuple[Attempt, ...]
     refusal: Refusal | None = None
+    #: A question back, when the request does not say enough to write a
+    #: study from. Neither accepted nor refused: nothing was proposed. The
+    #: first shape of this loop had only the other two outcomes, so a
+    #: request that named no structure got one invented -- the example
+    #: from the missing-`systems` refusal, copied verbatim, twice over
+    #: with two different examples. An example in a refusal is read as
+    #: the answer, whatever it says.
+    question: str | None = None
 
     @property
     def accepted(self) -> bool:
@@ -134,6 +142,12 @@ that is there for a reason, and a config that sets everything is harder
 to read and no more correct.
 
 An unknown key is refused rather than ignored, so do not invent settings.
+
+Never invent a structure. A study needs a `systems:` entry whose `system`
+is a PDB identifier or a file path that the request itself supplies. If
+the request names none, do not guess one and do not borrow one from an
+example: reply with a single line starting `ASK:` that says what is
+missing, and nothing else.
 """
 
 
@@ -186,6 +200,24 @@ def repair_prompt_for(previous: str, refusal: Refusal) -> str:
         "Send the corrected YAML only.",
     ]
     return "\n".join(lines)
+
+
+
+def _question_in(raw: str) -> str | None:
+    """The question a reply carries, if the reply is one.
+
+    A line starting ``ASK:`` and nothing else. Looked for on the first
+    non-blank line so a model that adds a courtesy sentence after it still
+    reads as asking; anything that parses as YAML instead is a config.
+    """
+    for line in (raw or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.upper().startswith("ASK:"):
+            return stripped[4:].strip() or "The request does not say enough."
+        return None
+    return None
 
 
 def _parse(raw: str) -> dict[str, Any] | None:
@@ -247,6 +279,13 @@ def propose_config(
 
     for number in range(1, max_cycles + 1):
         raw = complete(prompt)
+        asked = _question_in(raw)
+        if asked:
+            # The request is short of something a model cannot supply and
+            # should not guess. Stop here; retrying would only ask a model
+            # to invent what it was told not to.
+            return Proposal(config=None, attempts=tuple(attempts),
+                            question=asked)
         config = _parse(raw)
 
         if config is None:
@@ -260,7 +299,17 @@ def propose_config(
             continue
 
         try:
-            validate_config(config)
+            # `require_systems=True`, because a proposed study is one
+            # somebody means to run. The default is False so that a partial
+            # config can be checked -- a GUI form mid-edit, a fragment --
+            # and the agent inherited that leniency without meaning to.
+            #
+            # Found in use: asked for a water simulation, the model wrote
+            # `output`, `simulation.duration_ns` and no `systems` at all.
+            # That passed, reported "Accepted first time", and produced a
+            # study with nothing in it to simulate. An empty `systems` list
+            # was already refused; an absent one was not.
+            validate_config(config, require_systems=True)
         except ConfigError as exc:
             refusal = refusal_of(exc)
             attempts.append(Attempt(number, raw, config, refusal))
