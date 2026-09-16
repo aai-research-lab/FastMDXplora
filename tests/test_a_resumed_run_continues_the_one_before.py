@@ -59,6 +59,24 @@ def _a_small_system():
     return system, topology, positions
 
 
+#: How far a resumed run may sit from a straight one after a thousand
+#: steps, and the line the constant-pressure case has to cross.
+#:
+#: One number for both, because the pair is a contrast and two unrelated
+#: tolerances would let it drift into meaninglessness. Measured on a
+#: quiet machine with the thread count pinned: constant volume drifts
+#: 8.3e-8 nm, constant pressure 0.92 nm. Seven orders of magnitude apart,
+#: so anything between them draws the line and this sits a hundredfold
+#: clear of the noise on one side and five orders clear of the signal on
+#: the other.
+#:
+#: The 8.3e-8 is the checkpoint's own precision rather than chaos, and it
+#: does not grow with load once the arithmetic is deterministic -- which
+#: is what `_a_simulation` pins. Before that it was 1.2e-5 and rising
+#: with whatever else the runner was doing.
+_RESUME_DRIFT_NM = 1e-5
+
+
 def _a_simulation(system, topology, positions):
     """One simulation, on one thread.
 
@@ -386,20 +404,21 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
         """And the consequence: having started from the same state, the
         two runs track each other.
 
-        `atol` is loose on purpose, and no amount of care makes it tight.
-        Langevin dynamics separates exponentially, so two trajectories
-        that begin identically diverge at whatever rate the last bit of
-        their arithmetic allows -- and the arithmetic is only identical
-        while the thread count is, which is why `_a_simulation` pins it.
+        Measured at 8.3e-8 nm, a hundredfold inside the bound, and the
+        figure is the checkpoint's own precision rather than chaos: with
+        the thread count pinned the arithmetic is deterministic, so it
+        does not grow with load. Before it was pinned this drifted to
+        1.2e-5 on a busy CI runner and failed a test that asserted 1e-5
+        and called itself "resumes exactly" -- three numbers out of a
+        hundred and ninety-two, which is chaos arriving on schedule
+        rather than a defect.
 
-        This once asserted 1e-5 and called itself "resumes exactly". It
-        passed for a long time and then failed on a loaded CI runner by
-        1.2e-5 across three of a hundred and ninety-two numbers, which is
-        what chaos looks like arriving on schedule rather than a defect.
-        Exactness is the test above; this one is a sanity bound.
+        Exactness is the test above, which compares a checkpoint with
+        what loading it produced and has nothing in between to amplify.
+        This one says the two runs then track each other.
         """
         _, _, straight, resumed = self._continue_and_resume(barostat=False)
-        np.testing.assert_allclose(straight, resumed, atol=1e-3)
+        np.testing.assert_allclose(straight, resumed, atol=_RESUME_DRIFT_NM)
 
     def test_constant_pressure_does_not_and_that_is_why_it_is_qualified(self):
         # The finding the qualification exists for. The barostat's adaptive
@@ -408,12 +427,19 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
         # join. The state is right and the ensemble is right; the
         # trajectory is not the one an unsplit run would have produced.
         #
+        # Against the same bound the constant-volume case is held to, so
+        # the two read as the contrast they are. It is not a close thing:
+        # 0.92 nm measured against 8.3e-8 for constant volume, five orders
+        # past the line. An earlier version compared against a number that
+        # sat below what an unpinned thread count could produce on its
+        # own, which would have let this pass on rounding alone.
+        #
         # If a future OpenMM starts carrying that state, this test fails
         # and the qualification should come off rather than be kept out of
         # habit.
         _, _, straight, resumed = self._continue_and_resume(barostat=True)
         self.assertFalse(
-            np.allclose(straight, resumed, atol=1e-5),
+            np.allclose(straight, resumed, atol=_RESUME_DRIFT_NM),
             "constant pressure now resumes exactly; drop the qualification")
 
     def test_the_qualification_is_attached_to_constant_pressure_studies(self):
