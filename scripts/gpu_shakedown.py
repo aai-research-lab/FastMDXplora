@@ -112,6 +112,15 @@ def main(argv=None) -> int:
     from fastmdxplora.simulation.resume import plan_segments, segmentability
 
     root = Path(args.output)
+    # Before anything is measured. A killed run leaves results behind, the
+    # runner refuses to overwrite them -- correctly -- and without this the
+    # refusal arrives after the machine has been benchmarked and a study
+    # started. Found by killing a run twice.
+    if root.exists() and any(root.iterdir()):
+        print(f"{root} already holds something. Remove it or choose "
+              "another --output; this needs an empty directory so the runs "
+              "it compares are all its own.")
+        return 1
     root.mkdir(parents=True, exist_ok=True)
     findings: dict = {"platform": args.platform, "precision": args.precision}
 
@@ -267,14 +276,19 @@ def _report_the_join(root, directories, findings) -> None:
     # topology, a checkpoint between them -- so the only thing that can
     # move the volume across the join is the barostat re-adapting. That is
     # the measurement this section claims to make.
-    same_system = particles(directories[0]) == particles(directories[1]) \
-        if len(directories) > 1 and particles(directories[0]) else None
-    if same_system is False:
-        print("   The segments do not share a solvation, so a volume "
-              "difference across the join is not a transient. Nothing "
-              "comparable here.")
+    # A later segment has no setup of its own -- it runs with
+    # `include: ["simulation"]` and `setup_from` pointing at segment 0 --
+    # so the absence of its setup record is the evidence that the two share
+    # a solvation, not evidence that they differ. The first version read it
+    # the other way round and refused on exactly the correct case.
+    first, second = particles(directories[0]), particles(directories[1])
+    if first is not None and second is not None and first != second:
+        print(f"   The segments were solvated separately ({first:,} atoms "
+              f"against {second:,}), so a volume difference across the join "
+              "is not a transient. Nothing comparable here.")
         findings["segments_share_a_solvation"] = False
         return
+    findings["particles"] = first
 
     settled = statistics.fmean(before[len(before) // 2:])
     spread = statistics.pstdev(before[len(before) // 2:]) or 1.0
