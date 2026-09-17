@@ -33,6 +33,27 @@
     </div>
   </div>
 
+
+  <div class="settings-popup" id="settings-popup" hidden role="dialog" aria-label="Settings">
+    <div class="settings-section">Appearance</div>
+    <div class="settings-row">
+      <span>Theme</span>
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" class="seg-btn active" data-theme="graphite">Graphite</button>
+        <button type="button" class="seg-btn" data-theme="ink">Ink</button>
+        <button type="button" class="seg-btn" data-theme="paper">Paper</button>
+      </div>
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-section">Agent</div>
+    <div class="settings-row"><span>Engine</span><span class="mono settings-value" id="settings-engine">none</span></div>
+    <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
+    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, ceiling</span></a>
+    <div class="settings-divider"></div>
+    <a href="#cite" class="settings-item" data-view-link="cite">Documentation &amp; citation</a>
+    <a href="#settings" class="settings-item" data-view-link="settings">Browser settings</a>
+    <div class="settings-item settings-about">About FastMDXplora <span class="mono settings-hint" id="settings-version"></span></div>
+  </div>
   <div class="app-shell">
     <!-- Sidebar -->
     <aside class="sidebar" aria-label="Dashboard navigation">
@@ -118,7 +139,16 @@
           <div class="footer-value" id="sidebar-output-folder">—</div>
         </div>
       </div>
+      <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false">
+        <span class="sidebar-account-avatar" aria-hidden="true"></span>
+        <span class="sidebar-account-text">
+          <span class="sidebar-account-name" id="account-name">FastMDXplora</span>
+          <span class="sidebar-account-detail mono" id="account-detail">no engine set</span>
+        </span>
+        <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
+      </button>
     </aside>
+    <div class="col-handle" data-handle="sidebar" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
 
     <!-- Main content -->
     <div class="main">
@@ -988,6 +1018,44 @@
         </section>
       </main>
     </div>
+    <div class="col-handle" data-handle="panel" role="separator" aria-orientation="vertical" aria-label="Resize side panel"></div>
+
+    <!-- Side panel: the run as it happens, and what it has written -->
+    <aside class="side-panel" id="side-panel" aria-label="Run log and files">
+      <div class="side-panel-tabs" role="tablist">
+        <button type="button" class="side-tab active" role="tab" data-side-tab="log" aria-selected="true">Log</button>
+        <button type="button" class="side-tab" role="tab" data-side-tab="files" aria-selected="false">Files</button>
+        <span class="side-panel-spacer"></span>
+        <button type="button" class="ghost-btn side-collapse" id="side-collapse" title="Collapse panel" aria-label="Collapse side panel">&#10095;</button>
+      </div>
+
+      <div class="side-pane" data-side-pane="log" role="tabpanel">
+        <div class="side-log" id="side-log" aria-live="polite"></div>
+        <div class="side-log-foot">
+          <label class="side-follow"><input type="checkbox" id="side-follow" checked> follow</label>
+          <span class="side-panel-spacer"></span>
+          <div class="side-filters" role="group" aria-label="Filter log">
+            <button type="button" class="side-filter active" data-log-filter="all">all</button>
+            <button type="button" class="side-filter" data-log-filter="refusals">refusals</button>
+            <button type="button" class="side-filter" data-log-filter="why">why</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-pane" data-side-pane="files" role="tabpanel" hidden>
+        <div class="side-files" id="side-files"></div>
+        <div class="side-preview" id="side-preview" hidden>
+          <div class="side-preview-head">
+            <span class="mono side-preview-name" id="side-preview-name"></span>
+            <span class="side-panel-spacer"></span>
+            <a class="ghost-btn side-preview-download" id="side-preview-download" href="#" download>Download</a>
+            <a class="ghost-btn" id="side-preview-open" href="#" target="_blank" rel="noopener">Open</a>
+          </div>
+          <div class="side-preview-body" id="side-preview-body"></div>
+        </div>
+      </div>
+    </aside>
+    <button type="button" class="side-expand" id="side-expand" hidden title="Show panel" aria-label="Show side panel">&#10094;</button>
   </div>
 
   <!-- Live region for screen readers -->
@@ -995,6 +1063,7 @@
 
   <script src="/static/3Dmol-min.js"></script>
   <script src="/static/agent-panel.js"></script>
+    <script src="/static/frame.js"></script>
     <script src="/static/dashboard.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>

@@ -110,14 +110,23 @@ button {
 }
 .brand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .brand-product {
-    font-weight: 700;
-    font-size: 15px;
-    letter-spacing: 0.2px;
+    /* A serif, because a name is not a menu item. A system serif rather
+       than a web font: this GUI runs on machines with no route to the
+       internet -- a cluster login node, a lab box behind a firewall --
+       and test_dashboard_html_has_aai_branding refuses any hosted-font
+       link for that reason. Georgia is on every Mac and Windows machine;
+       the rest of the stack covers Linux. */
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif;
+    font-weight: 400;
+    font-size: 27px;
+    line-height: 1;
+    letter-spacing: -0.01em;
     color: var(--accent-white);
 }
 .brand-tagline {
-    color: var(--text-secondary);
-    font-size: 11px;
+    color: var(--text-muted);
+    font-size: 10px;
+    margin-top: 6px;
     line-height: 1.4;
     letter-spacing: 0.05em;
 }
@@ -2380,3 +2389,210 @@ body.state-ready .loading-screen {
 [data-page="agent"] .control-row {
     margin-top: 16px;
 }
+
+/* ===========================================================================
+   The frame: three columns, resizable, with a side panel for the run's own
+   narration and files.
+
+   The sidebar is the study -- what is running and how far along it is --
+   and it stays put across every page. The main column is the task. The
+   side panel is what the command line prints and the browser used to throw
+   away: the explain text, the refusals, the stage transitions, as they
+   happen; and a Files tab for what the run has written, opened in place.
+   =========================================================================== */
+:root {
+    --sidebar-width: 232px;
+    --panel-width: 392px;
+    --handle-width: 6px;
+}
+.app-shell {
+    grid-template-columns:
+        var(--sidebar-width) var(--handle-width)
+        minmax(0, 1fr)
+        var(--handle-width) var(--panel-width);
+}
+body.panel-collapsed .app-shell {
+    grid-template-columns: var(--sidebar-width) var(--handle-width) minmax(0, 1fr) 0 0;
+}
+body.panel-collapsed .side-panel,
+body.panel-collapsed .col-handle[data-handle="panel"] { display: none; }
+body.panel-collapsed .side-expand { display: inline-flex; }
+
+.col-handle {
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    user-select: none;
+}
+.col-handle::after {
+    content: "";
+    position: absolute;
+    inset: 0 2px;
+    border-radius: 2px;
+    background: transparent;
+    transition: background 120ms ease;
+}
+.col-handle:hover::after,
+.col-handle.dragging::after { background: var(--border-primary); }
+body.col-dragging { cursor: col-resize; user-select: none; }
+body.col-dragging iframe, body.col-dragging canvas { pointer-events: none; }
+
+/* The settings trigger at the foot of the sidebar: who and what, and a
+   caret. It doubles as the status line for the Agent -- engine and mode --
+   so a glance says what is configured without opening anything. */
+.sidebar-account {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 8px;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+    font-family: inherit;
+}
+.sidebar-account:hover, .sidebar-account[aria-expanded="true"] { background: var(--background-elevated); }
+.sidebar-account-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex: none;
+    background: var(--border-primary);
+}
+.sidebar-account-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sidebar-account-name { font-size: 12px; font-weight: 500; }
+.sidebar-account-detail { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-account-caret { color: var(--text-muted); font-size: 12px; }
+
+.settings-popup {
+    position: fixed;
+    left: 12px;
+    bottom: 64px;
+    width: 300px;
+    border-radius: 10px;
+    background: var(--background-elevated);
+    border: 1px solid var(--border-primary);
+    box-shadow: 0 18px 48px var(--shadow-color);
+    display: flex;
+    flex-direction: column;
+    padding: 6px 0;
+    z-index: 80;
+}
+.settings-popup[hidden] { display: none; }
+.settings-section {
+    padding: 8px 14px 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.settings-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 14px; font-size: 12px; color: var(--text-secondary);
+}
+.settings-value { font-size: 11px; color: var(--text-primary); }
+.settings-divider { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+.settings-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px; font-size: 12px; color: var(--text-secondary); text-decoration: none;
+}
+a.settings-item:hover { background: var(--background-secondary); color: var(--text-primary); }
+.settings-hint { font-size: 10px; color: var(--text-muted); }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 6px; border: 1px solid var(--border-primary); background: var(--background-primary); }
+.seg-btn {
+    padding: 4px 9px; border-radius: 4px; border: none; background: transparent;
+    color: var(--text-muted); font: 500 11px var(--font-sans, inherit); cursor: pointer;
+}
+.seg-btn.active { background: var(--border-primary); color: var(--text-primary); }
+
+/* The side panel. */
+.side-panel {
+    display: flex; flex-direction: column;
+    background: var(--background-secondary);
+    border-left: 1px solid var(--border-subtle);
+    min-height: 100vh;
+    position: sticky; top: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+.side-panel-tabs {
+    display: flex; align-items: center; gap: 4px;
+    padding: 10px 12px; border-bottom: 1px solid var(--border-subtle);
+}
+.side-tab {
+    padding: 6px 12px; border-radius: 5px; border: none; background: transparent;
+    color: var(--text-muted); font: 500 12px inherit; cursor: pointer; font-family: inherit;
+}
+.side-tab.active { background: var(--background-elevated); color: var(--text-primary); }
+.side-panel-spacer { flex: 1; }
+.side-collapse { padding: 4px 8px; font-size: 11px; }
+.side-expand {
+    position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+    padding: 10px 6px; border: 1px solid var(--border-primary); border-right: none;
+    border-radius: 6px 0 0 6px; background: var(--background-elevated);
+    color: var(--text-secondary); cursor: pointer; z-index: 40; display: none;
+}
+.side-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.side-pane[hidden] { display: none; }
+
+.side-log {
+    flex: 1; overflow-y: auto; padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5;
+}
+.side-log-line { display: flex; gap: 10px; color: var(--text-secondary); }
+.side-log-line[data-level="error"] .side-log-text { color: var(--status-error, #e06c6c); }
+.side-log-line[data-level="warning"] .side-log-text { color: var(--status-warning, #d4a24c); }
+.side-log-line[data-level="success"] .side-log-text { color: var(--status-success, #5fc08a); }
+.side-log-ts { color: var(--text-muted); flex: none; }
+.side-log-text { min-width: 0; overflow-wrap: anywhere; }
+.side-log-block {
+    padding: 10px 12px; border-radius: 6px;
+    background: var(--background-elevated);
+    border-left: 2px solid var(--border-primary);
+    font-family: inherit; font-size: 12px; line-height: 1.5; color: var(--text-secondary);
+}
+.side-log-block[data-kind="refused"] { border-left-color: var(--status-error, #e06c6c); }
+.side-log-block[data-kind="qualified"] { border-left-color: var(--status-warning, #d4a24c); }
+.side-log-kind { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 2px; }
+.side-log-empty { color: var(--text-muted); font-family: inherit; font-size: 12px; padding: 8px 0; }
+.side-log-foot {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-top: 1px solid var(--border-subtle);
+    font-size: 11px; color: var(--text-muted);
+}
+.side-follow { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.side-filters { display: flex; gap: 4px; }
+.side-filter {
+    padding: 3px 8px; border-radius: 4px; border: none; background: transparent;
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); cursor: pointer;
+}
+.side-filter.active { background: var(--background-elevated); color: var(--text-primary); }
+
+.side-files { padding: 8px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; max-height: 45%; border-bottom: 1px solid var(--border-subtle); }
+.side-file {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 5px; border: none; background: transparent; width: 100%;
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary);
+    text-align: left; cursor: pointer;
+}
+.side-file:hover { background: var(--background-elevated); }
+.side-file.active { background: var(--background-elevated); color: var(--text-primary); }
+.side-file-dir { color: var(--text-primary); }
+.side-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-file-meta { font-size: 10px; color: var(--text-muted); }
+.side-preview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.side-preview[hidden] { display: none; }
+.side-preview-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-bottom: 1px solid var(--border-subtle);
+}
+.side-preview-name { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-preview-head .ghost-btn { padding: 4px 9px; font-size: 11px; }
+.side-preview-body { flex: 1; overflow: auto; padding: 12px 14px; }
+.side-preview-body pre { margin: 0; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; color: var(--text-secondary); white-space: pre; }
+.side-preview-body img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
+.side-preview-body iframe { width: 100%; height: 100%; border: none; background: white; border-radius: 6px; }
+.side-preview-note { font-size: 12px; color: var(--text-muted); }

@@ -68,3 +68,39 @@
 
 /* Colour used inside composed box-shadows. */
 :root { --shadow-color: rgba(0, 0, 0, 0.42); }
+
+/* ---------------------------------------------------------------------------
+   Three schemes over one set of tokens.
+
+   Every rule in the dashboard reads a token, so a scheme is an override of
+   the tokens and nothing else. Graphite is the default the tokens above
+   already describe; Ink and Paper redefine the ground and the text and
+   leave the status colours alone -- green done, amber qualified, red
+   refused mean the same in all three, which is the rule a scheme must not
+   break. Chosen from the settings popup and remembered in localStorage;
+   the body carries data-theme so a page can style for one if it needs to.
+   --------------------------------------------------------------------------- */
+body[data-theme="ink"] {
+    --background-primary: #0a0a0a;
+    --background-secondary: #0f0f0f;
+    --background-elevated: #141414;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-primary: rgba(255, 255, 255, 0.14);
+    --text-primary: #ededed;
+    --text-secondary: #a3a3a3;
+    --text-muted: #6b6b6b;
+    --accent-cyan: #e8e8e8;
+}
+body[data-theme="paper"] {
+    --background-primary: #faf9f5;
+    --background-secondary: #f3f2ed;
+    --background-elevated: #ffffff;
+    --border-subtle: rgba(0, 0, 0, 0.08);
+    --border-primary: rgba(0, 0, 0, 0.14);
+    --text-primary: #141413;
+    --text-secondary: #4a4a48;
+    --text-muted: #7a7a76;
+    --accent-white: #141413;
+    --accent-cyan: #2b6cb0;
+    --shadow-color: rgba(0, 0, 0, 0.14);
+}
