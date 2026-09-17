@@ -2668,3 +2668,44 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 /* A grid that continues a card's first question rather than opening a
    second card. */
 .builder-continued { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+
+/* ===========================================================================
+   The Report page: the study's write-up as a document.
+   =========================================================================== */
+.report-notices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.report-notice {
+    padding: 10px 14px; border-radius: 8px;
+    background: var(--background-elevated);
+    border-left: 2px solid var(--accent-amber, #d4a24c);
+    font-size: 12px; line-height: 1.5; color: var(--text-secondary);
+}
+.report-notice-kind {
+    display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent-amber, #d4a24c); margin-bottom: 3px;
+}
+.report-document {
+    padding: 32px 40px;
+    max-width: 860px;
+    line-height: 1.65;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+.report-document h1 { font-size: 22px; font-weight: 600; color: var(--text-primary); margin: 0 0 6px; letter-spacing: -.01em; }
+.report-document h2 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 28px 0 10px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.report-document h3 { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 18px 0 6px; }
+.report-document p { margin: 0 0 12px; }
+.report-document em { color: var(--text-muted); font-style: normal; }
+.report-document strong { color: var(--text-primary); font-weight: 600; }
+.report-document code { font-family: var(--font-mono); font-size: 12px; background: var(--background-primary); padding: 1px 5px; border-radius: 4px; }
+.report-document pre { background: var(--background-primary); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+.report-document pre code { background: transparent; padding: 0; }
+.report-document table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; font-size: 12.5px; }
+.report-document th, .report-document td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.report-document th { color: var(--text-muted); font-weight: 500; font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.report-document td { font-family: var(--font-mono); font-size: 12px; }
+.report-document img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0 14px; display: block; }
+.report-document a { color: var(--accent-cyan); text-decoration: none; }
+.report-document a:hover { text-decoration: underline; }
+.report-document ul, .report-document ol { padding-left: 22px; margin: 0 0 12px; }
+.report-document li { margin: 3px 0; }
+.report-document blockquote { margin: 12px 0; padding: 8px 14px; border-left: 2px solid var(--border-primary); color: var(--text-muted); }

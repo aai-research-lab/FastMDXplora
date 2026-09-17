@@ -115,6 +115,10 @@
           <span class="nav-icon" aria-hidden="true"></span>
           <span>Analysis</span>
         </a>
+        <a href="#" class="nav-link" data-view-link="report" data-requires-run="true">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Report</span>
+        </a>
         <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
           <span>Report</span>
@@ -785,6 +789,21 @@
           </div>
         </section>
 
+        <section class="page" data-page="report" hidden>
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Report</h1>
+              <div class="page-subtitle" id="report-subtitle">The study, written up.</div>
+            </div>
+            <div class="page-header-actions" id="report-downloads"></div>
+          </div>
+          <div id="report-notices" class="report-notices" hidden></div>
+          <div class="empty-state" id="report-empty">
+            <p>No report yet. The report phase writes one at the end of a run.</p>
+          </div>
+          <article class="card report-document" id="report-document" hidden></article>
+        </section>
+
         <section class="page" data-page="files" hidden>
           <div class="page-header">
             <div>
@@ -1063,6 +1082,7 @@
   <script src="/static/3Dmol-min.js"></script>
   <script src="/static/agent-panel.js"></script>
     <script src="/static/frame.js"></script>
+    <script src="/static/report-page.js"></script>
     <script src="/static/dashboard.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>

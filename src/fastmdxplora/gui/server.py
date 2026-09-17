@@ -371,6 +371,11 @@ def make_handler(
             if path == "/api/events":
                 self._send_json({"events": read_events(root)})
                 return
+            if path == "/api/report":
+                from fastmdxplora.gui.report_page import report_payload
+
+                self._send_json(report_payload(root))
+                return
             if path == "/api/artifacts" or path == "/api/files":
                 self._send_json({"artifacts": _artifact_records(root)})
                 return
