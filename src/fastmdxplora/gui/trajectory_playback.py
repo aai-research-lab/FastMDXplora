@@ -297,9 +297,10 @@ def _generate_from_dcd(
         return PlaybackUnavailable("not-enough-trajectory-frames")
     frame_indices = selected_indices
     browser_traj = selected_traj
+    companion_pdb.parent.mkdir(parents=True, exist_ok=True)
     tmp = companion_pdb.with_suffix(".pdb.tmp")
     browser_traj.save_pdb(str(tmp))
-    os.replace(tmp, companion_pdb)
+    _replace_or_yield(tmp, companion_pdb)
 
     times: list[float | None]
     try:
@@ -422,7 +423,30 @@ def _atomic_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    _replace_or_yield(tmp, path)
+
+
+def _replace_or_yield(tmp: Path, path: Path) -> None:
+    """Rename into place, unless somebody else already has.
+
+    The dashboard polls, and two requests arriving together both find no
+    playback yet and both build it. Each writes a `.tmp` at the same name;
+    the first renames it into place, and the second's rename fails with
+    ENOENT because its `.tmp` is the one that was just moved. The final
+    file exists and is right. Seen in the browser as "dashboard route
+    failed: No such file or directory: playback.pdb.tmp" -- an error for
+    a race whose outcome was correct.
+
+    So: if the rename fails and the destination is there, the work was
+    done by the other request and this one has nothing to add. If the
+    destination is not there, something is genuinely wrong, and that is
+    the error worth raising.
+    """
+    try:
+        os.replace(tmp, path)
+    except FileNotFoundError:
+        if not path.is_file():
+            raise
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:

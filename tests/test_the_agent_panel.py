@@ -1206,6 +1206,34 @@ class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
                            "simulation": {"duration_ns": 2}})
         self.assertEqual(list(state["phases"]),
                          ["setup", "simulation", "analysis", "report"])
+        # `include` too. The browser ticks its boxes from that field, and
+        # the first fix corrected `phases` alone -- so this test passed
+        # while the form still showed only Simulate. A test that checks
+        # the field the code fills rather than the field the consumer
+        # reads is a test of the wrong thing.
+        self.assertEqual(state["include"],
+                         ["setup", "simulation", "analysis", "report"])
+
+    def test_the_two_fields_agree_in_every_case(self):
+        for config in (
+                {"systems": [{"system": "1UAO"}], "simulation": {}},
+                {"systems": [{"system": "1UAO"}], "include": ["setup"]},
+                {"systems": [{"system": "1UAO"}], "exclude": ["report"]},
+                {"systems": [{"system": "x"}],
+                 "analysis": {"trajectory": "t.dcd", "topology": "t.pdb"}}):
+            with self.subTest(config=config):
+                state = self.load(config)
+                self.assertEqual(state["include"], list(state["phases"]))
+
+    def test_the_browser_ticks_from_include(self):
+        # Which is why both fields have to say the same thing.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("state.phases = new Set(from.include)", script)
 
     def test_a_phase_with_no_block_still_runs_with_defaults(self):
         state = self.load({"systems": [{"system": "1UAO"}],
@@ -1233,3 +1261,53 @@ class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
         self.assertNotIn("setup", state["phases"])
         self.assertNotIn("simulation", state["phases"])
         self.assertIn("analysis", state["phases"])
+
+
+class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
+    """Two dashboard polls build the playback at once; one wins the rename.
+
+    Seen in the browser as "dashboard route failed: No such file or
+    directory: playback.pdb.tmp". The second request's `.tmp` was the one
+    the first had just renamed into place, so its own rename found nothing
+    -- while the destination sat there, complete and correct. An error for
+    a race whose outcome was right.
+    """
+
+    def test_the_losing_request_yields_when_the_file_is_there(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.trajectory_playback import _replace_or_yield
+
+        root = Path(tempfile.mkdtemp())
+        destination = root / "playback.pdb"
+        destination.write_text("the other request's work")
+        _replace_or_yield(root / "playback.pdb.tmp", destination)
+        self.assertEqual(destination.read_text(),
+                         "the other request's work")
+
+    def test_a_genuine_miss_still_raises(self):
+        # No tmp and no destination is not a race, it is a failure, and
+        # swallowing it would hide the next real bug behind this fix.
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.trajectory_playback import _replace_or_yield
+
+        root = Path(tempfile.mkdtemp())
+        with self.assertRaises(FileNotFoundError):
+            _replace_or_yield(root / "x.tmp", root / "x")
+
+    def test_the_companion_pdb_makes_its_directory(self):
+        # `_atomic_text` did; the PDB writer beside it did not, and a
+        # playback built for a run whose simulation/ did not yet exist
+        # failed on the write rather than the rename.
+        import inspect
+
+        from fastmdxplora.gui import trajectory_playback
+
+        source = inspect.getsource(trajectory_playback)
+        writer = source[source.index('tmp = companion_pdb.with_suffix'):]
+        before = source[:source.index('tmp = companion_pdb.with_suffix')]
+        self.assertIn("companion_pdb.parent.mkdir", before[-200:])
+        self.assertIn("_replace_or_yield(tmp, companion_pdb)", writer[:200])

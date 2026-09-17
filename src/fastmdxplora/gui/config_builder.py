@@ -532,6 +532,12 @@ def state_from_config(
             key: value for key, value in block.items()
             if key not in {"options", "trajectory", "topology"}
         } if isinstance(block, dict) else {}
+    # The browser ticks its boxes from `include`, and reads `phases` only
+    # for the values inside each. The first fix populated `phases` alone,
+    # and the form went on ticking from `checked["phases"]` -- which is
+    # the blocks present, the very thing this replaces. Both fields say
+    # the same thing now, from the same derivation.
+    state["include"] = list(running)
 
     included = analysis.get("include")
     if isinstance(included, str):
