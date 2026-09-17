@@ -63,6 +63,41 @@
           <div class="brand-tagline">Fully Automated SysTem for Molecular Dynamics eXploration</div>
         </div>
       </div>
+      <div class="sidebar-study">
+        <div class="study-label mono" id="topbar-run-id">workspace</div>
+        <div class="study-name" id="topbar-run-title">No active exploration</div>
+        <div class="study-status" role="status" aria-live="polite">
+          <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
+          <span class="status-text" id="topbar-status-text">live</span>
+          <span class="status-divider" aria-hidden="true">·</span>
+          <span class="status-text-muted" id="topbar-stage">—</span>
+        </div>
+      </div>
+
+      <div class="sidebar-progress">
+        <div class="study-label mono">Progress</div>
+        <ol class="sidebar-stages" aria-label="Stages">
+          <li class="stage-step" data-stage="setup"><span class="stage-marker"></span><span class="stage-label">Setup</span></li>
+          <li class="stage-step" data-stage="minimization"><span class="stage-marker"></span><span class="stage-label">Minimisation</span></li>
+          <li class="stage-step" data-stage="nvt"><span class="stage-marker"></span><span class="stage-label">NVT</span></li>
+          <li class="stage-step" data-stage="npt"><span class="stage-marker"></span><span class="stage-label">NPT</span></li>
+          <li class="stage-step" data-stage="production"><span class="stage-marker"></span><span class="stage-label">Production</span></li>
+          <li class="stage-step" data-stage="analysis"><span class="stage-marker"></span><span class="stage-label">Analysis</span></li>
+          <li class="stage-step" data-stage="report"><span class="stage-marker"></span><span class="stage-label">Report</span></li>
+        </ol>
+        <div class="sidebar-metrics">
+          <span class="metric-label">Step</span><span class="metric-value mono"><span id="topbar-step">—</span> / <span id="topbar-total">—</span></span>
+          <span class="metric-label">Progress</span><span class="metric-value mono" id="topbar-progress">—</span>
+          <span class="metric-label">ETA</span><span class="metric-value mono" id="topbar-eta">—</span>
+        </div>
+        <div class="sidebar-controls">
+          <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause updates</span></button>
+          <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">Refresh</button>
+          <button class="ghost-btn" type="button" id="open-output" title="Open output folder">Output</button>
+        </div>
+        <div class="sidebar-refreshed muted" id="refreshed-indicator">refreshed <span id="refreshed-at">just now</span></div>
+      </div>
+
       <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
         <a href="#run" class="nav-link" data-view-link="run">
           <span class="nav-icon nav-icon-launch" aria-hidden="true"></span>
@@ -152,39 +187,6 @@
 
     <!-- Main content -->
     <div class="main">
-      <!-- Top bar -->
-      <header class="top-bar">
-        <div class="top-bar-left">
-          <div class="run-id" id="topbar-run-id">system</div>
-          <div class="run-title" id="topbar-run-title">No active exploration</div>
-        </div>
-        <div class="top-bar-center">
-          <div class="status-cluster" role="status" aria-live="polite">
-            <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
-            <span class="status-text" id="topbar-status-text">live</span>
-            <span class="status-divider" aria-hidden="true">·</span>
-            <span class="status-text-muted" id="topbar-stage">—</span>
-          </div>
-          <div class="metric-cluster">
-            <div class="metric"><span class="metric-label">Step</span><span class="metric-value mono" id="topbar-step">—</span></div>
-            <div class="metric"><span class="metric-label">Total</span><span class="metric-value mono" id="topbar-total">—</span></div>
-            <div class="metric"><span class="metric-label">Progress</span><span class="metric-value mono" id="topbar-progress">—</span></div>
-            <div class="metric"><span class="metric-label">ETA</span><span class="metric-value mono" id="topbar-eta">—</span></div>
-          </div>
-        </div>
-        <div class="top-bar-right">
-          <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)">
-            <span id="pause-label">Pause Updates</span>
-          </button>
-          <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">
-            Refresh
-          </button>
-          <button class="ghost-btn" type="button" id="open-output" title="Open output folder">
-            Open Output
-          </button>
-          <span class="muted" id="refreshed-indicator">Last refreshed: <span id="refreshed-at">just now</span></span>
-        </div>
-      </header>
 
       <!-- Page views -->
       <main class="page-shell" role="main">

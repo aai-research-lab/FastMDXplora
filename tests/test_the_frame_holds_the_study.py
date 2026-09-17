@@ -232,3 +232,40 @@ class TestItServes(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheStudyIsInTheSidebar(unittest.TestCase):
+    """The top bar became a sidebar block, and nothing the JS writes to moved
+    out from under it."""
+
+    def test_the_bar_is_gone(self):
+        self.assertNotIn('class="top-bar"', _page())
+
+    def test_every_id_the_dashboard_writes_to_is_still_there_once(self):
+        page = _page()
+        for run_id in ("topbar-run-id", "topbar-run-title", "topbar-status-dot",
+                       "topbar-status-text", "topbar-stage", "topbar-step",
+                       "topbar-total", "topbar-progress", "topbar-eta",
+                       "pause-toggle", "refresh-now", "open-output",
+                       "refreshed-at"):
+            with self.subTest(id=run_id):
+                self.assertEqual(page.count(f'id="{run_id}"'), 1)
+
+    def test_they_are_inside_the_sidebar(self):
+        page = _page()
+        sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
+        for run_id in ("topbar-run-title", "topbar-eta", "pause-toggle"):
+            with self.subTest(id=run_id):
+                self.assertIn(f'id="{run_id}"', sidebar)
+
+    def test_the_stages_reuse_the_class_the_dashboard_drives(self):
+        # dashboard.js updates `.stage-step` by class selector, so the
+        # sidebar list and the overview timeline are painted by the same
+        # code and cannot disagree.
+        page = _page()
+        sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
+        for stage in ("setup", "nvt", "npt", "production", "analysis", "report"):
+            with self.subTest(stage=stage):
+                self.assertIn(f'class="stage-step" data-stage="{stage}"', sidebar)
+        script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
+        self.assertIn("$$('.stage-step')", script)

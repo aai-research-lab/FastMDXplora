@@ -487,10 +487,16 @@ def test_dashboard_html_has_aai_branding(tmp_path: Path) -> None:
     assert "FastMDXplora" in html
     assert "Fully Automated SysTem for Molecular Dynamics eXploration" in html
 
-    # Sidebar / top bar / nav structure
+    # Sidebar / study block / nav structure. The top bar became the
+    # sidebar's study block: the run's name, status, step count and ETA
+    # belong with the study, and the bar's width was space the page could
+    # use. Every id the JS writes to is still there, once each.
     assert "sidebar" in html
-    assert "top-bar" in html
+    assert "sidebar-study" in html
     assert "data-view-link" in html
+    for run_id in ("topbar-run-title", "topbar-status-dot", "topbar-step",
+                   "topbar-eta", "pause-toggle", "refresh-now", "open-output"):
+        assert html.count(f'id="{run_id}"') == 1, run_id
 
     # Asset wiring
     assert "/static/dashboard.css" in html

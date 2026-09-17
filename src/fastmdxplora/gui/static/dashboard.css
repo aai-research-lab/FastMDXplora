@@ -2596,3 +2596,65 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 .side-preview-body img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
 .side-preview-body iframe { width: 100%; height: 100%; border: none; background: white; border-radius: 6px; }
 .side-preview-note { font-size: 12px; color: var(--text-muted); }
+
+/* ===========================================================================
+   The study, in the sidebar.
+
+   The top bar used to hold the run's name, status, step count and ETA
+   across the head of every page. They belong with the study, which is the
+   sidebar's whole job, and the bar's width was space the page could use.
+   Every id the JS writes to is kept; only where it lives has changed.
+
+   The stage markers reuse .stage-step, which the dashboard already drives
+   by class selector -- so the same update paints the overview's timeline
+   and this list, and the two cannot disagree.
+   =========================================================================== */
+.sidebar { gap: 0; padding: 20px 14px 12px; }
+.sidebar-brand { padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle); }
+
+.sidebar-study { padding: 14px 6px 12px; border-bottom: 1px solid var(--border-subtle); }
+.study-label {
+    font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-muted);
+}
+.study-name {
+    margin-top: 4px; font-size: 14px; font-weight: 600; color: var(--text-primary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.study-status { margin-top: 6px; font-size: 11px; color: var(--text-secondary); display: flex; align-items: center; }
+.study-status .status-dot { width: 7px; height: 7px; margin-right: 6px; }
+.study-status .status-divider { margin: 0 6px; color: var(--text-muted); }
+
+.sidebar-progress { padding: 12px 6px; border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 10px; }
+.sidebar-stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+/* The stage rows here are lines, not the overview's tiles: the same
+   class carries the state, and this context lays it out narrow. */
+.sidebar-stages .stage-step {
+    flex-direction: row; align-items: center; gap: 10px;
+    padding: 0; border: none; background: transparent; border-radius: 0;
+    font-size: 12px; color: var(--text-muted);
+}
+.sidebar-stages .stage-step[hidden] { display: none; }
+.sidebar-stages .stage-marker {
+    width: 7px; height: 7px; flex: none; box-shadow: none;
+    background: var(--border-primary);
+}
+.sidebar-stages .stage-step[data-state="completed"] { color: var(--text-secondary); background: transparent; }
+.sidebar-stages .stage-step[data-state="completed"] .stage-marker { background: var(--accent-green); box-shadow: none; }
+.sidebar-stages .stage-step[data-state="current"] { color: var(--text-primary); font-weight: 500; background: transparent; }
+.sidebar-stages .stage-step[data-state="current"] .stage-marker { background: var(--accent-cyan); box-shadow: 0 0 8px rgba(99, 230, 255, 0.5); }
+.sidebar-stages .stage-step[data-state="failed"] { color: var(--accent-red, #e06c6c); background: transparent; }
+.sidebar-stages .stage-step[data-state="failed"] .stage-marker { background: var(--accent-red, #e06c6c); box-shadow: none; }
+.sidebar-stages .stage-step[data-state="skipped"] { color: var(--text-muted); opacity: .55; background: transparent; }
+
+.sidebar-metrics {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+    font-size: 11px; align-items: baseline;
+}
+.sidebar-metrics .metric-label { color: var(--text-muted); }
+.sidebar-metrics .metric-value { color: var(--text-secondary); text-align: right; font-size: 11px; }
+.sidebar-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.sidebar-controls .ghost-btn { padding: 6px 9px; font-size: 11px; flex: 1; min-width: 0; white-space: nowrap; }
+.sidebar-refreshed { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+
+.sidebar-nav { padding-top: 10px; flex: 1; }
