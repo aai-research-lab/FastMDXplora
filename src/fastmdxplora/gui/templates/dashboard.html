@@ -50,8 +50,9 @@
     <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
     <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, ceiling</span></a>
     <div class="settings-divider"></div>
-    <a href="#cite" class="settings-item" data-view-link="cite">Documentation &amp; citation</a>
     <a href="#settings" class="settings-item" data-view-link="settings">Browser settings</a>
+    <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
+    <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
     <div class="settings-item settings-about">About FastMDXplora <span class="mono settings-hint" id="settings-version"></span></div>
   </div>
   <div class="app-shell">
@@ -72,6 +73,14 @@
           <span class="status-divider" aria-hidden="true">·</span>
           <span class="status-text-muted" id="topbar-stage">—</span>
         </div>
+        <div class="study-facts mono">
+          <span id="sidebar-platform" title="Platform">—</span>
+          <span class="status-divider" aria-hidden="true">·</span>
+          <span id="sidebar-connection-state">Live</span>
+          <span id="sidebar-status-dot" hidden></span>
+          <span id="sidebar-run-name" hidden></span>
+        </div>
+        <div class="study-path mono" id="sidebar-output-folder" title="Output folder">—</div>
       </div>
 
       <div class="sidebar-progress">
@@ -99,9 +108,13 @@
       </div>
 
       <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
-        <a href="#run" class="nav-link" data-view-link="run">
+        <a href="#agent" class="nav-link" data-view-link="agent">
           <span class="nav-icon nav-icon-launch" aria-hidden="true"></span>
-          <span>New Exploration</span>
+          <span>Agent</span>
+        </a>
+        <a href="#run" class="nav-link" data-view-link="run">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Builder</span>
         </a>
         <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
@@ -109,7 +122,7 @@
         </a>
         <a href="#" class="nav-link" data-view-link="viewer" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
-          <span>Molecular Viewer</span>
+          <span>Viewer</span>
         </a>
         <a href="#" class="nav-link" data-view-link="analysis" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
@@ -121,62 +134,16 @@
         </a>
         <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
-          <span>Report</span>
-        </a>
-        <div class="nav-heading">Tools</div>
-        <a href="#" class="nav-link" data-view-link="agent">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Agent</span>
-        </a>
-        <a href="#" class="nav-link" data-view-link="settings">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Settings</span>
-        </a>
-        <!-- Above the two links that leave the page. It sat last, beneath
-             them, under a heading reading Tools -- so the one thing a
-             scientific tool most needs its user to find was the item after
-             the ones that navigate away. -->
-        <a href="#" class="nav-link" data-view-link="cite">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Cite</span>
-        </a>
-        <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html"
-           class="nav-link" target="_blank" rel="noopener">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Documentation</span>
-        </a>
-        <a href="https://github.com/aai-research-lab/FastMDXplora"
-           class="nav-link" target="_blank" rel="noopener">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>GitHub</span>
+          <span>Files</span>
         </a>
       </nav>
       <div class="sidebar-footer">
         <!-- On every page, because a citation nobody sees is a citation
              nobody makes. The full reference is on the Cite page; this is
-             the reminder that there is one. -->
-        <div class="footer-row footer-cite">
-          <a href="#" data-view-link="cite">Cite FastMDXplora</a>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Connection</div>
-          <div class="footer-value">
-            <span class="status-dot status-dot-live" id="sidebar-status-dot"></span>
-            <span id="sidebar-connection-state">Live</span>
-          </div>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Exploring</div>
-          <div class="footer-value" id="sidebar-run-name">—</div>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Platform</div>
-          <div class="footer-value" id="sidebar-platform">—</div>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Output</div>
-          <div class="footer-value" id="sidebar-output-folder">—</div>
-        </div>
+             the reminder that there is one. Kept out of the popup for
+             that reason: a scientific tool's one request of its user
+             should not be behind a click. -->
+        <a href="#" class="footer-cite" data-view-link="cite">Cite FastMDXplora</a>
       </div>
       <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false">
         <span class="sidebar-account-avatar" aria-hidden="true"></span>
@@ -200,7 +167,7 @@
         <section class="page" data-page="run">
           <div class="page-header">
             <div>
-              <h1 class="page-title">New Exploration</h1>
+              <h1 class="page-title">Builder</h1>
               <div class="page-subtitle">
                 Three questions: what you have, what should happen to it, and
                 anything you want to change.
@@ -807,8 +774,8 @@
         <section class="page" data-page="files" hidden>
           <div class="page-header">
             <div>
-              <h1 class="page-title">Report</h1>
-              <div class="page-subtitle">Generated artifacts grouped by purpose</div>
+              <h1 class="page-title">Files</h1>
+              <div class="page-subtitle">Everything the run wrote, grouped by phase</div>
             </div>
           </div>
 

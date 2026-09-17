@@ -3667,7 +3667,7 @@ class TestTheWordsOnTheRunPage:
 
     def test_the_navigation_says_what_the_page_says(self) -> None:
         page, _ = self._files()
-        assert "<span>New Exploration</span>" in page
+        assert "<span>Builder</span>" in page
         assert "New run" not in page
 
     def test_the_results_note_gives_the_path(self) -> None:
@@ -4422,14 +4422,17 @@ class TestTheGUIAsksToBeCited:
                 / "dashboard.html").read_text(encoding="utf-8")
 
     def test_cite_comes_before_the_links_that_leave(self) -> None:
-        import re
-
+        # Documentation and GitHub live in the settings popup now; Cite is
+        # a line in the sidebar itself, on every page. What the test holds
+        # is the principle: the reminder is met before any link that
+        # leaves. The sidebar is visible; the popup is hidden until asked.
         markup = self._markup()
-        nav = markup[markup.index("<nav"):markup.index("</nav>")]
-        order = re.findall(r"<span>([^<]+)</span>", nav)
-
-        assert order.index("Cite") < order.index("Documentation")
-        assert order.index("Cite") < order.index("GitHub")
+        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
+        assert 'data-view-link="cite"' in sidebar
+        popup = markup[markup.index('id="settings-popup"'):]
+        assert "hidden" in popup[:80], "the popup is not hidden by default"
+        assert "readthedocs.io" in popup and "github.com/aai-research-lab" in popup
+        assert "readthedocs.io" not in sidebar and "github.com" not in sidebar
 
     def test_every_page_carries_the_reminder(self) -> None:
         """The sidebar footer shows on all of them, so the request does too."""

@@ -325,7 +325,7 @@ def test_home_server_exposes_exploration_apis(tmp_path: Path) -> None:
     try:
         with urllib.request.urlopen(url + "/") as response:
             html = response.read().decode("utf-8")
-        assert "New Exploration" in html
+        assert "Builder" in html  # the run page, renamed with its nav entry
         # The builder that page carried has been retired; the run page took
         # its place and is what the dashboard now loads.
         assert "/static/run-builder.js" in html

@@ -2709,3 +2709,18 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 .report-document ul, .report-document ol { padding-left: 22px; margin: 0 0 12px; }
 .report-document li { margin: 3px 0; }
 .report-document blockquote { margin: 12px 0; padding: 8px 14px; border-left: 2px solid var(--border-primary); color: var(--text-muted); }
+
+/* The study block's second and third lines: platform and connection, and
+   the output path. These were a footer block of their own with a label
+   per row -- Connection, Exploring, Platform, Output -- that repeated
+   what the study block above it already said. Folded in. */
+.study-facts { margin-top: 5px; font-size: 10.5px; color: var(--text-muted); display: flex; align-items: center; }
+.study-facts .status-divider { margin: 0 6px; }
+.study-path {
+    margin-top: 4px; font-size: 10px; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
+.sidebar-footer { padding: 8px 6px; }
+.footer-cite { font-size: 11px; color: var(--text-muted); text-decoration: none; }
+.footer-cite:hover { color: var(--text-primary); }
+.footer-row { display: none; }

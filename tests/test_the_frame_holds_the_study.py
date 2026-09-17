@@ -166,13 +166,24 @@ class TestTheSettingsPopup(unittest.TestCase):
         self.assertIn('e.key === "Escape"', script)
         self.assertIn("!popup.contains(e.target)", script)
 
-    def test_it_adds_no_external_link_the_page_did_not_have(self):
+    def test_the_page_has_exactly_the_external_links_it_had(self):
         # test_dashboard_html_has_aai_branding counts external references
-        # on purpose. The first version of this popup linked the docs a
-        # second time and tripped it -- correctly.
+        # on purpose. The Tools group moved its two links into the popup;
+        # the total is unchanged, and the DOI on the Cite page is the third.
         page = _page()
-        popup = page[page.index('id="settings-popup"'):page.index("</div>\n  <div class=\"app-shell\">")]
-        self.assertNotIn("https://", popup)
+        self.assertEqual(page.count("https://"), 3)
+        popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
+        self.assertIn("readthedocs.io", popup)
+        self.assertIn("github.com/aai-research-lab", popup)
+
+    def test_cite_is_not_behind_the_popup(self):
+        # The one thing a scientific tool most needs its user to find is
+        # a line in the sidebar on every page, not an item in a menu.
+        page = _page()
+        sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
+        self.assertIn('data-view-link="cite"', sidebar)
+        popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
+        self.assertNotIn('data-view-link="cite"', popup)
 
 
 class TestTheThemes(unittest.TestCase):
