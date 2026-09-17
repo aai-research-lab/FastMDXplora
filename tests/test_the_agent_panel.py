@@ -746,7 +746,7 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # screen.
         script = self.script()
         self.assertIn("function download(yaml)", script)
-        self.assertIn("study.yml", script)
+        self.assertIn("fastmdxplora_config.yml", script)
 
     def test_the_dialog_is_not_a_file_picker(self):
         # It borrows the shape and not the class: there is exactly one file
@@ -1311,3 +1311,45 @@ class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
         before = source[:source.index('tmp = companion_pdb.with_suffix')]
         self.assertIn("companion_pdb.parent.mkdir", before[-200:])
         self.assertIn("_replace_or_yield(tmp, companion_pdb)", writer[:200])
+
+
+
+class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
+    """The header names the author the config records.
+
+    "Written by the FastMDXplora GUI" appeared on a study the Agent drafted,
+    because build_config loaded `agent` and `agent_model` into the form
+    state and then wrote none of it back. Opening an Agent-drafted config
+    in the builder and saving it produced a file claiming a person wrote
+    it -- the one thing those two fields exist to record.
+    """
+
+    def yaml_for(self, config):
+        from fastmdxplora.gui.config_builder import config_yaml, state_from_config
+
+        return config_yaml(state_from_config(config)["state"])["yaml"]
+
+    def test_an_agent_drafted_config_says_so(self):
+        text = self.yaml_for({"systems": [{"system": "1UAO"}],
+                              "agent": "assisted",
+                              "agent_model": "anthropic/claude-opus-5"})
+        self.assertIn("Written by the FastMDXplora Agent", text)
+        self.assertIn("agent: assisted", text)
+        self.assertIn("agent_model: anthropic/claude-opus-5", text)
+
+    def test_a_hand_written_config_says_the_gui(self):
+        text = self.yaml_for({"systems": [{"system": "1UAO"}]})
+        self.assertIn("Written by the FastMDXplora GUI", text)
+        self.assertNotIn("agent:", text)
+
+    def test_the_default_output_is_timestamped(self):
+        # A fixed name collided on the second run and sent somebody off to
+        # choose a folder for a study they had already described.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("function defaultOutput()", script)
+        self.assertIn('"fastmdxplora_output_" + d.getUTCFullYear()', script)

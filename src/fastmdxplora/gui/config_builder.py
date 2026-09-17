@@ -172,6 +172,18 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
     """
     config: dict[str, Any] = {}
 
+    # Who wrote the study, carried through rather than dropped. The form
+    # loads `agent` and `agent_model` into `study` and then, building the
+    # config back, wrote none of it -- so opening an Agent-drafted config
+    # in the builder and saving it produced a file claiming a person wrote
+    # it, headed "Written by the FastMDXplora GUI". That is the one thing
+    # those fields exist to record.
+    study = state.get("study")
+    if isinstance(study, dict):
+        for key in STUDY_LEVEL_KEYS:
+            if study.get(key) is not None:
+                config[key] = study[key]
+
     for key in ("output", "include", "exclude", "verbose"):
         value = state.get(key)
         if value not in (None, "", [], {}):
@@ -309,8 +321,13 @@ def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
             ),
         }
 
+    # The config knows who wrote it: `agent` is set when the Agent did. A
+    # file that says "the GUI" on a study the Agent drafted misattributes
+    # the one thing that field exists to record.
+    author = ("the FastMDXplora Agent" if config.get("agent")
+              else "the FastMDXplora GUI")
     header = (
-        "# Written by the FastMDXplora GUI.\n"
+        f"# Written by {author}.\n"
         "#\n"
         + (
             "# Every setting is named here at the value the run will use,\n"

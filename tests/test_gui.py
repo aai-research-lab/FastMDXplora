@@ -3364,7 +3364,10 @@ class TestTheWordsMatchTheSoftware:
         page = (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
         script = (root / "static" / "run-builder.js").read_text(encoding="utf-8")
         assert 'placeholder="fastmdxplora_output"' in page
-        assert '"fastmdxplora_output"' in script
+        # The default is built by a function now -- timestamped, like the
+        # CLI's -- so a second run does not collide with the first. The
+        # name is still the software's.
+        assert '"fastmdxplora_output_"' in script
 
 
 class TestEveryPathFieldCanBeBrowsed:
@@ -3671,7 +3674,7 @@ class TestTheWordsOnTheRunPage:
     def test_it_joins_the_folder_and_the_name(self) -> None:
         _, script = self._files()
         block = script[script.index("function describeOutput"):][:600]
-        assert "fastmdxplora_output" in block, "the default is not shown"
+        assert "defaultOutput()" in block, "the default is not shown"
         assert "absolute" in block, "an absolute path is not used as given"
 
     def test_the_structure_field_asks_for_what_it_accepts(self) -> None:

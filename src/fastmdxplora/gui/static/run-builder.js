@@ -868,7 +868,7 @@
 
   function currentState() {
     const config = {
-      output: el("run-output").value.trim() || "fastmdxplora_output",
+      output: el("run-output").value.trim() || defaultOutput(),
       include: PHASES.filter((p) => state.phases.has(p.name)).map((p) => p.name),
     };
 
@@ -959,6 +959,19 @@
       return "Choose a trajectory and the topology that matches it.";
     }
     return "";
+  }
+
+  /* Timestamped, as the CLI's default is. A fixed name collided on the
+   * second run -- "Output folder already exists and is not empty" -- and
+   * sent somebody off to choose a folder for a study they had already
+   * described. The run refuses to overwrite, correctly; the default should
+   * not make it need to. */
+  function defaultOutput() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return "fastmdxplora_output_" + d.getUTCFullYear() + pad(d.getUTCMonth() + 1) +
+      pad(d.getUTCDate()) + "_" + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
+      pad(d.getUTCSeconds());
   }
 
   function ready() {
@@ -1303,7 +1316,7 @@
     const where = (state.schema && state.schema.workspace) || "";
     if (!box) return;
     const typed = box.value.trim();
-    const name = typed || "fastmdxplora_output";
+    const name = typed || defaultOutput();
     // A path is absolute on this machine, not on the one this was written on:
     // C:\Users\... starts with neither a slash nor a tilde, and calling it
     // relative would have the note claim the results land somewhere they

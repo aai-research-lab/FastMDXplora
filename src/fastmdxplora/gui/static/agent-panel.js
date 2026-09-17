@@ -264,7 +264,7 @@
     var blob = new Blob([yaml], {type: "text/yaml"});
     var link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "study.yml";
+    link.download = "fastmdxplora_config.yml";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
