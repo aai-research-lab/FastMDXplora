@@ -269,3 +269,58 @@ class TestTheStudyIsInTheSidebar(unittest.TestCase):
                 self.assertIn(f'class="stage-step" data-stage="{stage}"', sidebar)
         script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
         self.assertIn("$$('.stage-step')", script)
+
+
+class TestTheBuilderAsksFourQuestions(unittest.TestCase):
+    """Four numbered cards, the phases as tiles, and the second question
+    continued inside the first rather than opened as a card of its own."""
+
+    def builder(self):
+        page = _page()
+        start = page.index('<section class="page" data-page="run">')
+        # Anchored on the section, not on `data-page="overview"` alone: the
+        # <html> element carries that attribute too, and matching it sent
+        # an earlier edit slicing backwards through the file and
+        # duplicating two hundred lines.
+        end = page.index('<section class="page" data-page="overview"', start)
+        self.assertGreater(end, start)
+        return page[start:end]
+
+    def test_four_cards_numbered_in_order(self):
+        import re
+
+        steps = re.findall(r'builder-step">(\d\d)<', self.builder())
+        self.assertEqual(steps, ["01", "02", "03", "04"])
+        self.assertEqual(self.builder().count('class="card builder-card"'), 4)
+
+    def test_where_it_is_continues_the_first_card(self):
+        builder = self.builder()
+        self.assertNotIn("Where is it?", builder)
+        self.assertIn('id="run-input-card" hidden', builder)
+        # Inside the first card: before the phases card opens.
+        self.assertLess(builder.index('id="run-input-card"'),
+                        builder.index('id="run-phases-card"'))
+
+    def test_every_field_the_js_drives_is_still_there_once(self):
+        builder = self.builder()
+        for field in ("run-start", "run-system", "run-trajectory",
+                      "run-topology", "run-config-path", "run-output",
+                      "run-phases", "run-start-button", "run-download"):
+            with self.subTest(field=field):
+                self.assertEqual(builder.count(f'id="{field}"'), 1)
+
+    def test_the_phases_are_tiles(self):
+        css = _css()
+        rule = css[css.index(".run-phases {"):]
+        rule = rule[:rule.index("}")]
+        self.assertIn("grid-template-columns: 1fr 1fr", rule)
+        # A chosen tile is bordered in the accent, not striped down one
+        # edge, so the set that will run reads at a glance.
+        self.assertIn('.run-phase[data-chosen="true"] { border-color: var(--accent-cyan)', css)
+
+    def test_the_page_is_not_duplicated(self):
+        # The regression the slicing bug produced: the run section's cards
+        # appearing twice. Once, and once only.
+        page = _page()
+        self.assertEqual(page.count('<section class="page" data-page="run">'), 1)
+        self.assertEqual(page.count('id="run-phases-card"'), 1)

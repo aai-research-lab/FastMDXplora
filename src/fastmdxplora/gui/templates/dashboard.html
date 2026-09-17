@@ -225,14 +225,11 @@
                 <span class="builder-card-note" id="run-start-detail"></span>
               </label>
             </div>
-          </div>
-
-          <div class="card builder-card" id="run-input-card" hidden>
-            <div class="card-header">
-              <div><h2 class="card-title">Where is it?</h2></div>
-              <span class="builder-step">02</span>
-            </div>
-            <div class="builder-grid builder-grid-2">
+            <!-- Where it is, revealed once the starting point says what "it"
+                 is. The same id the JS toggles; only the card boundary went.
+                 A second card appearing under the first read as a step
+                 completed rather than a question continued. -->
+            <div class="builder-grid builder-grid-2 builder-continued" id="run-input-card" hidden>
               <label class="builder-field builder-field-wide" id="run-structure-field" hidden>
                 <span class="builder-label">Structure</span>
                 <input type="text" id="run-system" autocomplete="off" data-picks="structure"
@@ -293,7 +290,7 @@
                   run with one of them ticked.
                 </p>
               </div>
-              <span class="builder-step">03</span>
+              <span class="builder-step">02</span>
             </div>
             <div class="run-phases" id="run-phases"></div>
           </div>
@@ -307,7 +304,7 @@
                   when it does not.
                 </p>
               </div>
-              <span class="builder-step">04</span>
+              <span class="builder-step">03</span>
             </div>
             <div class="run-settings" id="run-settings"></div>
           </div>
@@ -322,7 +319,7 @@
                   run.
                 </p>
               </div>
-              <span class="builder-step">05</span>
+              <span class="builder-step">04</span>
             </div>
             <label class="analyse-full-toggle">
               <input type="checkbox" id="run-full-config">
