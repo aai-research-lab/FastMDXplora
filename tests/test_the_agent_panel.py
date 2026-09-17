@@ -1173,3 +1173,63 @@ class TestOneReasonForAFailure(unittest.TestCase):
         with self.assertRaises(ConfigError) as caught:
             validate_config({"simulation": {}}, require_systems=True)
         self.assertIn("optional", str(caught.exception))
+
+
+class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
+    """`include`/`exclude`, defaulting to all — not which blocks exist.
+
+    Reported from the browser: the Agent wrote a config the validator
+    accepts and `fastmdx explore` runs, with a `simulation:` block and no
+    `setup:` block. The builder loaded it with only Simulate ticked, so the
+    Run button was off and the config looked broken. An absent `setup:`
+    block means setup with its defaults, not no setup.
+
+    Two questions were sharing one answer — "does this phase run" and
+    "does this phase have custom settings" — which is the shape of the
+    npt_steps bug in a different place.
+    """
+
+    def load(self, config):
+        import tempfile
+        from pathlib import Path
+
+        import yaml
+
+        from fastmdxplora.gui.config_builder import load_config_into_state
+
+        path = Path(tempfile.mkdtemp()) / "s.yml"
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        return load_config_into_state(str(path))["state"]
+
+    def test_no_include_means_every_phase(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "simulation": {"duration_ns": 2}})
+        self.assertEqual(list(state["phases"]),
+                         ["setup", "simulation", "analysis", "report"])
+
+    def test_a_phase_with_no_block_still_runs_with_defaults(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "simulation": {"duration_ns": 2}})
+        self.assertEqual(state["phases"]["setup"], {})
+        self.assertEqual(state["phases"]["simulation"], {"duration_ns": 2})
+
+    def test_include_is_honoured(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "include": ["setup", "simulation"]})
+        self.assertEqual(list(state["phases"]), ["setup", "simulation"])
+
+    def test_exclude_is_honoured(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "exclude": ["report"]})
+        self.assertNotIn("report", state["phases"])
+        self.assertIn("setup", state["phases"])
+
+    def test_a_trajectory_study_does_not_tick_setup(self):
+        # Setup and simulation have nothing to do with a trajectory that
+        # already exists, even when nothing excludes them.
+        state = self.load({"systems": [{"system": "x"}],
+                           "analysis": {"trajectory": "t.dcd",
+                                        "topology": "t.pdb"}})
+        self.assertNotIn("setup", state["phases"])
+        self.assertNotIn("simulation", state["phases"])
+        self.assertIn("analysis", state["phases"])

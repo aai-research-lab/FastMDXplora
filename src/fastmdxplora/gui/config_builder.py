@@ -503,13 +503,35 @@ def state_from_config(
         },
     }
 
-    for phase in PHASE_SCHEMAS:
+    # Which phases run is `include`/`exclude`, defaulting to all of them.
+    # It used to be read off which phase blocks were present, so a config
+    # with `simulation: {duration_ns: 2}` and no `setup:` block loaded with
+    # only Simulate ticked -- and an absent `setup:` block means setup with
+    # its defaults, not no setup. The two questions, "does this phase run"
+    # and "does this phase have custom settings", shared one answer, which
+    # is the same shape as npt_steps deciding both how long to equilibrate
+    # and whether there was a barostat. A config the validator accepts and
+    # `fastmdx explore` runs then arrived in the form unrunnable.
+    ordered = [str(p) for p in PHASE_SCHEMAS]
+    include = data.get("include")
+    exclude = data.get("exclude")
+    if isinstance(include, list) and include:
+        running = [p for p in ordered if p in {str(x) for x in include}]
+    elif isinstance(exclude, list) and exclude:
+        running = [p for p in ordered if p not in {str(x) for x in exclude}]
+    else:
+        running = ordered
+    if state["start"] == "trajectory":
+        # A config that names a trajectory was written to analyse one;
+        # setup and simulation have nothing to do there even if unstated.
+        running = [p for p in running if p not in ("setup", "simulation")]
+
+    for phase in running:
         block = data.get(phase)
-        if isinstance(block, dict):
-            state["phases"][phase] = {
-                key: value for key, value in block.items()
-                if key not in {"options", "trajectory", "topology"}
-            }
+        state["phases"][phase] = {
+            key: value for key, value in block.items()
+            if key not in {"options", "trajectory", "topology"}
+        } if isinstance(block, dict) else {}
 
     included = analysis.get("include")
     if isinstance(included, str):

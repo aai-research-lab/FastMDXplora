@@ -144,10 +144,14 @@ to read and no more correct.
 An unknown key is refused rather than ignored, so do not invent settings.
 
 Never invent a structure. A study needs a `systems:` entry whose `system`
-is a PDB identifier or a file path that the request itself supplies. If
-the request names none, do not guess one and do not borrow one from an
-example: reply with a single line starting `ASK:` that says what is
-missing, and nothing else.
+is a PDB identifier or a file path. Take it from the request. If the
+request names a molecule by its common name and you know a PDB identifier
+for it with confidence, use that one and say so in `id` -- that is
+looking up, not inventing. If the request names nothing, or names a
+molecule with several deposited structures and does not say which, do not
+choose: reply with a single line starting `ASK:` that names the
+candidates you know and asks which, and nothing else. Do not borrow a
+structure from an example.
 """
 
 
