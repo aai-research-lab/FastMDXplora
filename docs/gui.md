@@ -41,14 +41,27 @@ you. Nothing is uploaded anywhere.
 
 | | |
 |---|---|
-| **New Exploration** | The [Config](config.md) builder |
-| **Overview** | A live run: progress, telemetry, events, a mini structure preview |
-| **Molecular Viewer** | The molecule in 3D, live while running and played back afterwards |
+| **Agent** | [The FastMDXplora Agent](agent.md): a conversation that writes, edits, runs and reads a study |
+| **Builder** | The [Config](config.md) builder: four questions, the phases as tiles |
+| **Overview** | A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
+| **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default |
 | **Analysis** | The figures and tables, grouped |
-| **Report** | The generated artifacts, grouped by purpose |
-| **Agent** | [The FastMDXplora Agent](agent.md): a sentence in, a Config out |
-| **Settings** | Viewer options, refresh rate, display. Browser-side only — existing runs cannot be modified here |
-| **Cite** | The citation, DOI, version and BibTeX, injected from the package so it cannot drift |
+| **Report** | The report itself, rendered as a document, with downloads for what was produced and a notice for what could not be |
+| **Files** | Everything the run wrote, grouped by phase |
+
+Three things are on every page. The **sidebar**: the study, its stage and
+progress, the run's controls, the nav, a *Cite* line, and at its foot the
+settings trigger, which shows the Agent's engine and mode and opens a popup
+with the theme, the Agent's summary, display preferences and the links. The
+**side panel**: a *Log* tab, which is what the command line prints, sorted so
+a refusal is a red-edged block and the explain text a quiet one, with filters
+and a scroll-to-newest toggle; and a *Files* tab, which opens any of the
+run's files in place. And two **seams** between the columns that drag, with a
+double-click to reset; the panel collapses to a tab on the right edge. The
+centre keeps a reading width, except the Viewer, which fills.
+
+Three schemes, from the settings popup: Graphite, Ink and Paper. Green done,
+amber qualified and red refused mean the same in all three.
 
 ---
 

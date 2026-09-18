@@ -135,7 +135,12 @@ fastmdx agent "..." --unvalidated
 ```
 
 They are mutually exclusive, and each writes itself into the Config as
-`agent: <mode>`.
+`agent: <mode>`. The budget writes itself in too, as `budget_hours`, a
+top-level key with a floor of zero. It is read by `explore` whichever door
+the Config came through: a budgeted Config runs in stages, setup first, then
+a price, then the rest only if it fits. Required for `autonomous`, which runs
+without being shown to anybody; optional in every other mode, and never wrong
+to set on a study that will run for days.
 
 ### `assisted` — draft it and stop
 
@@ -340,11 +345,27 @@ in the URL fragment, which the page reads on load to decide where to start. Two
 commands that started two servers would be two things to learn for one thing to
 use.
 
-The panel is a model picker, a box to describe the study in, a mode dropdown,
-and the resulting YAML. **The attempts are shown rather than summarised** —
-they are the only visible sign that anything checked the Config, and watching a
-model correct itself teaches the Config language while you wait, which is the
-path off the panel and onto the form.
+The page is a conversation. What you said sits on the right; what came back
+sits under it: the refusals as the Agent corrected itself, then the Config
+with its actions, or an answer, or a question. Newest at the bottom, where the
+composer is. Enter sends; Shift+Enter breaks a line. Every message can be
+copied, edited or retried, and an edit or a retry cuts the thread from that
+message on, so the conversation continues from there rather than with a fork
+in it.
+
+**The attempts are shown rather than summarised.** They are the only visible
+sign that anything checked the Config, and watching a model correct itself
+teaches the Config language while you wait.
+
+Under a Config are the builder's own actions: *Show the config*, *Download
+config*, *Copy the command*, *Download a script*, *Run here*, and a checkbox
+to write every setting rather than only the ones the Agent set. They are the
+builder's functions, reading the same Config, so the file, the command and the
+script are exactly what the builder would produce. *Open in the builder* is a
+link for changing the Config, not the way out.
+
+The engine, the mode and the GPU-hour ceiling are in Settings, at the foot of
+the sidebar. They are set once.
 
 Nothing in the GUI layer decides whether a Config is acceptable. The validator
 does that, as it does for a Config written by hand.
@@ -399,13 +420,61 @@ fastmdx.FastMDXplora(config_data=proposal.config, output_dir="runs/study").explo
 
 ---
 
+## What the Agent sees, and what it can do
+
+Each request goes to the model with three things beside the schema:
+
+- **The conversation so far**, the last twelve turns each way, so a request
+  that refers to one can be read.
+- **The current Config**, the last one the Agent wrote. A request is a change
+  to it unless it plainly describes a different study: the whole Config comes
+  back with the change applied and everything else kept. "Make it 5 ns" is an
+  edit, not a new study.
+- **What the run is doing**: status, stage, the last error, the health
+  verdict, and once analyses have run, what they found, per analysis: the
+  mean, its standard error, the effective sample count, and how many frames
+  were discarded as unequilibrated. "Is the RMSD converged?" is answered from
+  those numbers, and "why did it stop?" from the error, not from a guess.
+
+A reply is one of four things:
+
+| | |
+|---|---|
+| **A Config** | YAML. Validated, repaired if refused, shown with its actions. |
+| **A question** | When the request is short of something only you can supply, a structure most often. The Agent never invents one. Your next message answers it, and goes back with the request it answers. |
+| **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. |
+| **An action** | One of: run, stop, open viewer, open overview, open report, open builder, show config, download config. |
+
+### Acting
+
+**Your instruction is the click.** "Run it" typed into the thread does what
+pressing *Run here* does, through the same door, so the mode's gates apply to
+a word as they do to a press: an `autonomous` run still needs its budget. The
+thread says what was done. Nothing happens silently.
+
+**It never acts unasked.** Not on a question, not on a request for a Config,
+not because it thinks you would want it, and never twice in one reply. A
+reply that names an action and then keeps talking is shown as prose and not
+carried out.
+
+**Stopping is confirmed.** A run stopped is hours gone, so `stop` asks first,
+naming where the run is:
+
+```
+Stop the run at production step 16,000? Say yes.
+```
+
+Anything that is not *yes* is *Not stopped*.
+
+**A change and a run in one message** writes the Config and says *say run
+when you have read it*. One step of seeing what is about to run is what
+`assisted` promises.
+
 ## What the Agent will not do
 
-- **It does not run simulations**, except under `--autonomous`, which runs the
-  Config it just wrote and stops at the budget.
-- **It does not hold a conversation.** Each request is independent: the repair
-  loop is automatic, but there is no history and no "make it 20 ns instead".
-  Refine by writing a better sentence, or by editing the Config it gave you.
+- **It does not invent a structure.** A request that names none gets a
+  question back. A request that names a molecule with several deposited
+  structures gets the candidates and a question.
 - **It does not decide chemistry the software declined to decide.** A refusal
   that needs a scientific judgement stops the loop rather than being guessed
   around.
@@ -416,19 +485,13 @@ fastmdx.FastMDXplora(config_data=proposal.config, output_dir="runs/study").explo
 
 ### What is not built yet
 
-Two things are specified and incomplete, and it is better to know than to find
+One thing is specified and incomplete, and it is better to know than to find
 out:
 
 - **`unvalidated` is recorded and marked, not enforced.** The mode reaches the
   Config, the Manifest and every figure the marked phase draws. What it is
   meant to unlock — the Agent writing code of its own, outside the schema — is
   not built, so there is currently nothing outside the schema for it to mark.
-- **The GUI panel drafts in every mode and starts nothing.** The mode is
-  recorded on the study and travels into the Config and the Manifest; the run
-  is yours to start from the form. Running one unattended needs a GPU-time
-  budget, which the panel has no field for, so that stays a command-line
-  workflow: `fastmdx agent "…" --autonomous --budget-hours N`. The panel says
-  so beside the mode selector.
 
 ---
 
