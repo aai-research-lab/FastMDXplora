@@ -357,9 +357,34 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") setPopup(false);
     });
+    /* The version is on the Cite page, filled in by the server. Read it
+     * from there rather than asking for a second copy. */
     var version = el("settings-version");
-    var meta = document.querySelector('meta[name="fastmdxplora-version"]');
-    if (version && meta) version.textContent = meta.content;
+    var cite = el("cite-version");
+    if (version && cite) version.textContent = cite.textContent.trim();
+
+    /* "Agent settings…" opens the Agent's own dialog. Landing on the page
+     * and leaving somebody to find the button was the same as not
+     * linking it. */
+    var agentLink = el("settings-agent-link");
+    if (agentLink) {
+      agentLink.addEventListener("click", function (e) {
+        e.preventDefault();
+        setPopup(false);
+        if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+          window.FastMDXDashboard.navigate("agent");
+        } else {
+          window.location.hash = "#agent";
+        }
+        if (window.FastMDXAgent && window.FastMDXAgent.openSettings) {
+          window.FastMDXAgent.openSettings();
+        }
+      });
+    }
+    /* The other popup items navigate; close the popup when they do. */
+    $$(".settings-item[data-view-link]").forEach(function (a) {
+      a.addEventListener("click", function () { setPopup(false); });
+    });
 
     loadLog();
     loadAgentStatus();

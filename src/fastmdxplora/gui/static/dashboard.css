@@ -2724,3 +2724,44 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 .footer-cite { font-size: 11px; color: var(--text-muted); text-decoration: none; }
 .footer-cite:hover { color: var(--text-primary); }
 .footer-row { display: none; }
+
+/* ===========================================================================
+   Each column scrolls by itself.
+
+   The page used to scroll as one document, with the sidebar and panel
+   pinned by position: sticky. That works until a column is taller than
+   the window -- then the sidebar's own foot, and the settings trigger on
+   it, scroll away with the page. Now the shell is the viewport, each
+   column is its own scroll container, and the wordmark is pinned inside
+   the sidebar so it is always where a reader expects it.
+   =========================================================================== */
+html, body { height: 100%; }
+body { overflow: hidden; }
+.app-shell { height: 100vh; min-height: 0; }
+.sidebar, .main, .side-panel {
+    height: 100vh;
+    min-height: 0;
+    position: static;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+}
+.sidebar { padding-top: 0; }
+.sidebar-brand {
+    position: sticky; top: 0; z-index: 2;
+    padding-top: 20px;
+    background: var(--background-secondary);
+}
+.sidebar-account { position: sticky; bottom: 0; z-index: 2; background: var(--background-secondary); }
+.main { display: flex; flex-direction: column; }
+.page-shell { flex: 1; }
+/* The side panel already lays its own scroll region out (.side-log,
+   .side-files); the panel itself should not add a second one. */
+.side-panel { overflow: hidden; }
+
+/* Thin scrollbars that match the ground, so a scrolling column does
+   not announce itself with a bright track. */
+.sidebar, .main, .side-log, .side-files, .side-preview-body, .report-document {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-primary) transparent;
+}

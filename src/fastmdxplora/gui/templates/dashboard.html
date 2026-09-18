@@ -48,12 +48,12 @@
     <div class="settings-section">Agent</div>
     <div class="settings-row"><span>Engine</span><span class="mono settings-value" id="settings-engine">none</span></div>
     <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
-    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, ceiling</span></a>
+    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, mode, ceiling</span></a>
     <div class="settings-divider"></div>
-    <a href="#settings" class="settings-item" data-view-link="settings">Browser settings</a>
+    <a href="#settings" class="settings-item" data-view-link="settings">Display preferences <span class="mono settings-hint">viewer, dashboard</span></a>
     <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
-    <div class="settings-item settings-about">About FastMDXplora <span class="mono settings-hint" id="settings-version"></span></div>
+    <a href="#cite" class="settings-item" data-view-link="cite">About FastMDXplora <span class="mono settings-hint" id="settings-version"></span></a>
   </div>
   <div class="app-shell">
     <!-- Sidebar -->
@@ -100,7 +100,7 @@
           <span class="metric-label">ETA</span><span class="metric-value mono" id="topbar-eta">—</span>
         </div>
         <div class="sidebar-controls">
-          <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause updates</span></button>
+          <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause</span></button>
           <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">Refresh</button>
           <button class="ghost-btn" type="button" id="open-output" title="Open output folder">Output</button>
         </div>

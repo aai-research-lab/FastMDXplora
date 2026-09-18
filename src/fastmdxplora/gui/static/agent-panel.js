@@ -309,4 +309,8 @@
     el("agent-mode").addEventListener("change", modeChanged);
     modeChanged();
   });
+
+  /* For the settings popup: "Agent settings…" should open this dialog,
+   * not merely land on the Agent page. */
+  window.FastMDXAgent = { openSettings: openSettings, closeSettings: closeSettings };
 })();

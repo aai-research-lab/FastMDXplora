@@ -182,8 +182,9 @@ class TestTheSettingsPopup(unittest.TestCase):
         page = _page()
         sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
         self.assertIn('data-view-link="cite"', sidebar)
-        popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
-        self.assertNotIn('data-view-link="cite"', popup)
+        # The popup's About may point there too. What the principle
+        # forbids is the citation being *only* reachable through a menu.
+        self.assertIn("Cite FastMDXplora", sidebar)
 
 
 class TestTheThemes(unittest.TestCase):
@@ -335,3 +336,64 @@ class TestTheBuilderAsksFourQuestions(unittest.TestCase):
         page = _page()
         self.assertEqual(page.count('<section class="page" data-page="run">'), 1)
         self.assertEqual(page.count('id="run-phases-card"'), 1)
+
+
+class TestEachColumnScrollsAlone(unittest.TestCase):
+    """The shell is the viewport; each column is its own scroll region; the
+    wordmark and the settings trigger stay where they are however long the
+    sidebar gets."""
+
+    def test_the_body_does_not_scroll(self):
+        css = _css()
+        self.assertIn("body { overflow: hidden; }", css)
+        self.assertIn(".app-shell { height: 100vh; min-height: 0; }", css)
+
+    def test_the_columns_do(self):
+        css = _css()
+        block = css[css.index("Each column scrolls by itself"):]
+        self.assertIn("overflow-y: auto;", block)
+        self.assertIn(".sidebar, .main, .side-panel {", block)
+
+    def test_the_wordmark_is_pinned(self):
+        css = _css()
+        block = css[css.index("Each column scrolls by itself"):]
+        rule = block[block.index(".sidebar-brand {"):]
+        rule = rule[:rule.index("}")]
+        self.assertIn("position: sticky; top: 0;", rule)
+
+    def test_the_settings_trigger_is_pinned_at_the_foot(self):
+        css = _css()
+        block = css[css.index("Each column scrolls by itself"):]
+        self.assertIn(".sidebar-account { position: sticky; bottom: 0;", block)
+
+
+class TestThePopupItemsAct(unittest.TestCase):
+
+    def test_agent_settings_opens_the_agents_dialog(self):
+        # Landing on the page and leaving somebody to find the button was
+        # the same as not linking it.
+        script = _script()
+        self.assertIn('el("settings-agent-link")', script)
+        self.assertIn("window.FastMDXAgent.openSettings()", script)
+        agent = (STATIC / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn("window.FastMDXAgent = { openSettings: openSettings", agent)
+
+    def test_about_goes_somewhere(self):
+        page = _page()
+        popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
+        about = popup[popup.index("About FastMDXplora") - 120:popup.index("About FastMDXplora")]
+        self.assertIn('href="#cite"', about)
+
+    def test_the_version_comes_from_the_cite_page(self):
+        # One copy, filled in by the server, rather than a second
+        # placeholder to keep in step.
+        self.assertIn('el("cite-version")', _script())
+
+    def test_the_settings_page_is_named_for_what_it_holds(self):
+        # "Browser settings" read as configuring the browser. The page is
+        # viewer and dashboard preferences.
+        self.assertIn("Display preferences", _page())
+
+    def test_pause_is_one_word(self):
+        # "Pause updates" overlapped Refresh in a 232px sidebar.
+        self.assertIn('<span id="pause-label">Pause</span>', _page())

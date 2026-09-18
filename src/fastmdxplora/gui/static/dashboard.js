@@ -169,7 +169,7 @@
     byId("pause-toggle")?.addEventListener("click", () => {
       state.paused = !state.paused;
       byId("pause-toggle")?.setAttribute("aria-pressed", String(state.paused));
-      setText("pause-label", state.paused ? "Resume Updates" : "Pause Updates");
+      setText("pause-label", state.paused ? "Resume" : "Pause");
       showToast(
         state.paused
           ? "Browser updates paused. The OpenMM simulation is still running."
