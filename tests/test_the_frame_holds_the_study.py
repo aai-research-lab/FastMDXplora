@@ -486,3 +486,32 @@ class TestTheOverviewHoldsWhatTheSidebarCannot(unittest.TestCase):
                           "live-eta-cell", "live-progress-fill"):
             with self.subTest(id=hidden_id):
                 self.assertIn(f'id="{hidden_id}" hidden', ov)
+
+
+class TestThreeThingsSeenInTheBrowser(unittest.TestCase):
+
+    def test_the_viewer_overlay_is_contained(self):
+        # "LIVE · nvt · frame 123000 · age 1s" is position: absolute; with
+        # no positioned parent it escaped to the viewport corner, over the
+        # side panel's collapse button.
+        css = _css()
+        self.assertIn(".viewer-canvas-wrap { position: relative; }", css)
+
+    def test_the_summary_cards_have_a_grid(self):
+        # `metric-grid` was a class with no rule behind it, so the cards
+        # had nothing to sit in and overlapped.
+        page = _page()
+        self.assertIn('class="grid grid-4 metric-cards" id="overview-summary-cards"', page)
+        self.assertNotIn("metric-grid", page)
+
+    def test_the_overview_is_one_column(self):
+        # A structure card beside the charts made a second right-hand panel
+        # inside the centre, next to the real one.
+        page = _page()
+        start = page.index('<section class="page" data-page="overview" data-status')
+        ov = page[start:page.index("</section>", start)]
+        self.assertIn('class="overview-stack"', ov)
+        self.assertNotIn("overview-grid", ov)
+        css = _css()
+        self.assertIn(".overview-stack { display: flex; flex-direction: column;", css)
+        self.assertIn("#live-panels .preview-frame { height: 360px; }", css)

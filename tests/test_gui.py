@@ -3057,7 +3057,7 @@ class TestPanelsForPhasesThatAreNotRunning:
             block = re.search(rf'<div[^>]*id="{element_id}"[^>]*>', page)
             assert block, f"{element_id} is gone; check this test"
             assert 'data-needs-phase="simulation"' in block.group(0)
-        for cls in ("overview-facts card", "grid overview-grid"):
+        for cls in ("overview-facts card", "overview-stack"):
             block = re.search(rf'<div class="{cls}"[^>]*>', page)
             assert block, cls
             assert 'data-needs-phase="simulation"' in block.group(0)

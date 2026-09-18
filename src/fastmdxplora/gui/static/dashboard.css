@@ -2786,6 +2786,23 @@ body { overflow: hidden; }
 .overview-strip > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .overview-strip dt { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 .overview-strip dd { margin: 0; font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.overview-grid { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 1100px) { .overview-grid { grid-template-columns: 1fr; } }
+/* One column, every panel the width of the charts. A structure card
+   beside the charts made a second right-hand panel inside the centre,
+   next to the real one -- two columns of side panel, and the charts
+   squeezed between. Stacked, each panel gets the full width and the
+   page reads top to bottom: health, facts, charts, structure, then what
+   was recorded. */
+.overview-stack { display: flex; flex-direction: column; gap: 16px; }
+#live-panels { display: flex; flex-direction: column; gap: 16px; }
+#live-panels .metric-cards, #live-panels .card { width: 100%; box-sizing: border-box; }
+#live-panels .preview-frame { height: 360px; }
 #live-absent .control-row { margin-top: 14px; }
+
+
+/* The viewer's live overlay -- "LIVE · nvt · frame 123000 · age 1s" --
+   is position: absolute and its parent was not positioned, so it escaped
+   to the nearest positioned ancestor, which after the frame was the
+   viewport: it sat at the top-right of the window, over the side
+   panel's collapse button. Its parent is its containing block now, so
+   it sits in the canvas's corner where it was meant to. */
+.viewer-canvas-wrap { position: relative; }
