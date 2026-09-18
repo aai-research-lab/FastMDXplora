@@ -4523,9 +4523,9 @@ class TestOnePageForOneRun:
         # The bar-and-table progress card is gone; the sidebar carries the
         # running stage. What is happening -- the charts, the structure --
         # still comes before what was recorded.
+        assert cards.index("Structure") < cards.index("Live charts")
         assert cards.index("Live charts") < cards.index("Phases")
         assert cards.index("Live charts") < cards.index("Trajectory statistics")
-        assert cards.index("Structure") < cards.index("Phases")
 
     def test_the_two_progress_cards_say_which_is_which(self) -> None:
         """One is a bar for the running stage, the other a table of phases.

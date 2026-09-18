@@ -464,11 +464,17 @@ class TestTheOverviewHoldsWhatTheSidebarCannot(unittest.TestCase):
             with self.subTest(kept=kept):
                 self.assertIn(kept, ov)
 
-    def test_health_comes_first(self):
-        # The one thing that can say the run is going wrong before the
-        # numbers do.
+    def test_the_order_is_health_structure_charts(self):
+        # Health first: the one thing that can say the run is going wrong
+        # before the numbers do. Then the molecule, then what is happening
+        # to it. The charts had come before the structure; the person
+        # running it wanted to see the thing before its numbers.
         ov = self.overview()
-        self.assertLess(ov.index('id="hero-health"'), ov.index('id="chart-stack"'))
+        health = ov.index('id="hero-health"')
+        structure = ov.index('id="mini-preview-canvas"')
+        charts = ov.index('id="chart-stack"')
+        self.assertLess(health, structure)
+        self.assertLess(structure, charts)
 
     def test_the_empty_state_says_what_to_do(self):
         # "Nothing to show" said nothing. It points at the Agent now, and
