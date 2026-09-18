@@ -1337,6 +1337,26 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         dashboard_output_dir = _resolve_dashboard_output_dir(args, config)
         config["output"] = str(dashboard_output_dir)
 
+    # A study carrying a budget runs in stages: setup, then a price, then
+    # the rest only if it fits. That is what `fastmdx agent --autonomous`
+    # does in-process; a config the GUI hands to `explore --config` had no
+    # way to ask for it until the budget became a config key. One reader
+    # for the ceiling, whichever door the study came through.
+    budget = config.get("budget_hours")
+    if budget is not None and not getattr(args, "dry_run", False):
+        from fastmdxplora.agent import run_in_stages
+
+        output = Path(config.get("output") or args.output_dir or "fastmdxplora_output")
+        staged = run_in_stages(config, output, budget_hours=float(budget))
+        for note in staged.notes:
+            print(f"  {note}")
+        if staged.refusal is not None:
+            print(f"\n  \u2717 {staged.refusal.message}")
+            if staged.setup_done:
+                print("\nSetup's output is kept, so a shorter study can reuse it.")
+            return 2
+        return 0
+
     fmdx = FastMDXplora(
         config_data=config,
         output_dir=args.output_dir,

@@ -187,6 +187,15 @@ TOP_LEVEL = PhaseSchema(
               "software at different times while "
               "`claude-sonnet-4-5-20250929` does not.",
               example="anthropic/claude-sonnet-4-5-20250929"),
+        Field("budget_hours", float, None,
+              "A ceiling on GPU hours for this study. Checked after setup, "
+              "where the solvated particle count and so the cost are first "
+              "known, and the study refuses to go on if it would cost more. "
+              "Required for `agent: autonomous`, which runs without being "
+              "shown to anybody, so a ceiling is the only thing left that can "
+              "stop it. Optional in every other mode, and never wrong to set "
+              "on a study that will run for days.",
+              example=40, minimum=0.0),
         Field("agent", str, None,
               "How this study was written. Absent means a person wrote it, "
               "by hand or through the CLI, the API or the GUI, and that is "

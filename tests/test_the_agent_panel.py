@@ -539,6 +539,16 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
     """
 
     class Runtime:
+        """Records the form state the endpoint hands to launch_from_config.
+
+        The first version of these tests read `state["config"]` -- a key
+        the real launch_from_config never reads -- so they passed while the
+        real launch built an empty config and the button said Running over
+        nothing. The endpoint maps the config to form state now, as the
+        builder does, and these read what the real function would: the
+        study block, where a config's study-level keys land.
+        """
+
         def __init__(self):
             self.started = None
 
@@ -563,7 +573,7 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
         # The same reason the CLI refuses: it runs without being shown to
         # anybody, so a ceiling is the only thing left that can stop it.
         answer, runtime = self.start(
-            {"config": {"agent": "autonomous", "systems": []}})
+            {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]}})
         self.assertEqual(answer["code"], "environment.budget.absent")
         self.assertIsNone(runtime.started, "it started anyway")
 
@@ -572,7 +582,7 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
         for value in (0, "0", "", None, "not a number"):
             with self.subTest(budget=value):
                 answer, runtime = self.start(
-                    {"config": {"agent": "autonomous", "systems": []},
+                    {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]},
                      "budget_hours": value})
                 self.assertFalse(answer["ok"])
                 self.assertIsNone(runtime.started)
@@ -581,10 +591,10 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
         # On the config, so it reaches resolved_config.yml and the
         # manifest rather than living only in the request that started it.
         answer, runtime = self.start(
-            {"config": {"agent": "autonomous", "systems": []},
+            {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]},
              "budget_hours": 40})
         self.assertTrue(answer["ok"])
-        self.assertEqual(runtime.started["config"]["budget_hours"], 40.0)
+        self.assertEqual(runtime.started["study"]["budget_hours"], 40.0)
 
     def test_only_autonomous_requires_one(self):
         """A budget stands in for a human, so the mode with nobody watching
@@ -596,7 +606,7 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
         for mode in ("assisted", "unvalidated"):
             with self.subTest(mode=mode):
                 answer, runtime = self.start(
-                    {"config": {"agent": mode, "systems": []}})
+                    {"config": {"agent": mode, "systems": [{"system": "1UAO"}]}})
                 self.assertTrue(answer["ok"])
                 self.assertIsNotNone(runtime.started)
 
@@ -612,18 +622,18 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
         for mode in ("assisted", "unvalidated", "autonomous"):
             with self.subTest(mode=mode):
                 answer, runtime = self.start(
-                    {"config": {"agent": mode, "systems": []},
+                    {"config": {"agent": mode, "systems": [{"system": "1UAO"}]},
                      "budget_hours": 40})
                 self.assertTrue(answer["ok"])
                 self.assertEqual(
-                    runtime.started["config"]["budget_hours"], 40.0)
+                    runtime.started["study"]["budget_hours"], 40.0)
 
     def test_a_budget_is_not_invented_where_none_was_given(self):
         # Absent means absent. A default ceiling would be a number nobody
         # chose deciding when somebody's study stops.
         answer, runtime = self.start(
-            {"config": {"agent": "assisted", "systems": []}})
-        self.assertNotIn("budget_hours", runtime.started["config"])
+            {"config": {"agent": "assisted", "systems": [{"system": "1UAO"}]}})
+        self.assertNotIn("budget_hours", runtime.started.get("study") or {})
 
     def test_the_run_endpoint_needs_the_machine_s_trust(self):
         # It starts work on this machine, so it belongs with the endpoints
@@ -1541,3 +1551,99 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         source = inspect.getsource(exploration.DashboardRuntime.launch_from_config)
         self.assertIn('f"fastmdxplora_output_{stamp}"', source)
         self.assertNotIn('requested = "analysis_output"', source)
+
+
+class TestRunHereActuallyRuns(unittest.TestCase):
+    """The button said Running and nothing ran.
+
+    launch_from_config takes the builder's form state and builds a config
+    from it. The endpoint handed it {"config": ...}, a key nothing reads,
+    and it built an empty config: the study started, the CLI refused it
+    for naming no system, and the button said Running. The tests passed
+    because their stub runtime echoed the "config" key back -- they tested
+    the assumption, not the function. These use the real runtime.
+    """
+
+    def runtime(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.exploration import DashboardRuntime
+
+        root = Path(tempfile.mkdtemp())
+        return DashboardRuntime(root / "watch", root / "explore")
+
+    def test_the_written_config_carries_the_study(self):
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import run_endpoint
+
+        answer = run_endpoint({"config": {
+            "systems": [{"system": "1UAO"}],
+            "simulation": {"duration_ns": 2},
+            "agent": "assisted", "agent_model": "anthropic/x",
+        }}, self.runtime())
+        self.assertTrue(answer["ok"], answer.get("error"))
+        written = Path(answer["config_path"]).read_text(encoding="utf-8")
+        self.assertIn("systems:", written)
+        self.assertIn("system: 1UAO", written)
+        self.assertIn("agent: assisted", written)
+        self.assertNotIn("\n{}\n", written)
+
+    def test_the_budget_reaches_the_file_as_a_number(self):
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import run_endpoint
+
+        answer = run_endpoint({"config": {
+            "systems": [{"system": "1UAO"}], "agent": "autonomous",
+        }, "budget_hours": "40"}, self.runtime())
+        self.assertTrue(answer["ok"], answer.get("error"))
+        written = Path(answer["config_path"]).read_text(encoding="utf-8")
+        self.assertIn("budget_hours: 40", written)
+
+    def test_the_default_output_is_timestamped(self):
+        from fastmdxplora.gui.agent_panel import run_endpoint
+
+        answer = run_endpoint({"config": {"systems": [{"system": "1UAO"}]}},
+                              self.runtime())
+        self.assertTrue(answer["ok"])
+        self.assertIn("fastmdxplora_output_", answer["output"])
+
+
+class TestTheBudgetIsAConfigKey(unittest.TestCase):
+    """The CLI's `agent --autonomous` applied the budget in-process; a
+    config the GUI hands to `explore --config` had no way to carry it. It
+    is a top-level key now, with a floor, read by explore -- one reader
+    for the ceiling, whichever door the study came through."""
+
+    def test_it_validates_with_a_floor(self):
+        from fastmdxplora.config.loader import ConfigError, validate_config
+
+        validate_config({"systems": [{"system": "1UAO"}], "budget_hours": 40})
+        with self.assertRaises(ConfigError):
+            validate_config({"systems": [{"system": "1UAO"}], "budget_hours": -1})
+
+    def test_it_is_carried_with_the_other_study_keys(self):
+        from fastmdxplora.config.loader import STUDY_LEVEL_KEYS
+
+        self.assertIn("budget_hours", STUDY_LEVEL_KEYS)
+
+    def test_explore_routes_a_budgeted_config_through_the_staged_runner(self):
+        import inspect
+
+        from fastmdxplora.cli import main as cli
+
+        module = inspect.getmodule(cli)
+        source = inspect.getsource(module._cmd_explore)
+        self.assertIn('budget = config.get("budget_hours")', source)
+        self.assertIn("run_in_stages(config, output, budget_hours=float(budget))", source)
+
+    def test_run_here_is_the_builders_primary_button(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('<button class="primary-btn" type="button" data-role="run" id="agent-run">', page)

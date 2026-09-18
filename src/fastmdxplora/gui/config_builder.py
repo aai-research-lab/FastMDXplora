@@ -180,9 +180,14 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
     # those fields exist to record.
     study = state.get("study")
     if isinstance(study, dict):
+        fields = {f.name: f for f in TOP_LEVEL.fields}
         for key in STUDY_LEVEL_KEYS:
-            if study.get(key) is not None:
-                config[key] = study[key]
+            if study.get(key) is None:
+                continue
+            field = fields.get(key)
+            value = _coerce(study[key], field) if field is not None else study[key]
+            if value is not None:
+                config[key] = value
 
     for key in ("output", "include", "exclude", "verbose"):
         value = state.get(key)
@@ -513,8 +518,12 @@ def state_from_config(
         # blocks were copied -- so opening an agent-written config in the
         # form and saving it produced a config claiming a person wrote it,
         # which is the one thing this field exists to record.
+        # As stated, not as strings. `agent` and `agent_model` are strings
+        # anyway; `budget_hours` is a number, and str() on it produced a
+        # config the validator refused -- "should be number, got str" --
+        # on the way from the Agent's Run here to the launch.
         "study": {
-            key: str(data[key])
+            key: data[key]
             for key in STUDY_LEVEL_KEYS
             if data.get(key) is not None
         },

@@ -752,7 +752,7 @@ def phase_options(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
 #: folded into the phase blocks: `resolve_agent_modes` compares the two to
 #: find the departures, and a phase that agreed with a study value it could
 #: not see was reported as departing from it.
-STUDY_LEVEL_KEYS = ("agent", "agent_model")
+STUDY_LEVEL_KEYS = ("agent", "agent_model", "budget_hours")
 
 
 def study_options(data: dict[str, Any]) -> dict[str, Any]:
