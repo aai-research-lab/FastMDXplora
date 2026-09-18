@@ -1650,25 +1650,121 @@ class TestTheBudgetIsAConfigKey(unittest.TestCase):
 
 
 class TestTheThreadFollowsTheReply(unittest.TestCase):
+    """The thread scrolls to the newest message after a reply.
 
-    def test_the_last_message_is_scrolled_into_view(self):
-        # scrollTop on the thread assumed the thread was the scroll
-        # container; when the page scrolled instead, nothing moved and a
-        # person scrolled by hand after every reply.
+    Three attempts. Setting scrollTop on the thread assumed the thread was
+    the scroller; scrollIntoView after one frame ran before the reply had
+    finished laying out -- the actions row and the config land after the
+    first paint. Now both the thread and the column are scrolled, after
+    the paint and again once layout has settled.
+    """
+
+    def script(self):
         import pathlib
 
         import fastmdxplora.gui as gui
 
-        script = (pathlib.Path(gui.__file__).parent / "static"
-                  / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn('last.scrollIntoView({ block: "end"', script)
-        self.assertIn("requestAnimationFrame(function ()", script[script.index("function scrollToEnd"):])
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
 
-    def test_the_page_has_a_height_so_the_thread_scrolls(self):
+    def test_both_containers_are_scrolled(self):
+        script = self.script()
+        block = script[script.index("function scrollToEnd()"):script.index("function autosize")]
+        self.assertIn("thread.scrollTop = thread.scrollHeight;", block)
+        self.assertIn("column.scrollTop = column.scrollHeight;", block)
+
+    def test_after_the_paint_and_again_after_layout(self):
+        script = self.script()
+        block = script[script.index("function scrollToEnd()"):script.index("function autosize")]
+        self.assertIn("requestAnimationFrame(toEnd);", block)
+        self.assertIn("setTimeout(toEnd, 400);", block)
+
+    def test_the_page_has_a_height_so_the_thread_can_scroll(self):
         import pathlib
 
         import fastmdxplora.gui as gui
 
         css = (pathlib.Path(gui.__file__).parent / "static"
                / "dashboard.css").read_text(encoding="utf-8")
-        self.assertIn('.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); }', css)
+        self.assertIn('.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); min-height: 0; }', css)
+
+
+class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_a_user_message_has_all_three(self):
+        script = self.script()
+        say = script[script.index("function say(text)"):script.index("function reply()")]
+        for label in ('"Copy"', '"Edit"', '"Retry"'):
+            with self.subTest(label=label):
+                self.assertIn(label, say)
+
+    def test_a_reply_can_be_copied(self):
+        script = self.script()
+        reply = script[script.index("function reply()"):script.index("function scrollToEnd")]
+        self.assertIn('"Copy"', reply)
+
+    def test_edit_and_retry_cut_the_thread_from_there(self):
+        # Everything after the edited message goes, in the thread and in
+        # the history the Agent sees, so the conversation continues from
+        # that point rather than with a fork in it.
+        script = self.script()
+        self.assertIn("function cutFrom(msg)", script)
+        cut = script[script.index("function cutFrom(msg)"):script.index("function say(text)")]
+        self.assertIn("history.length = i;", cut)
+        self.assertIn("currentConfig = null;", cut)
+
+
+class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
+    """Every phase setting survives the GUI's round trip to the launch.
+
+    state_from_config put phase settings under state["phases"]; the browser
+    flattens them to top level before sending; build_config read only the
+    top level. So a config launched through state_from_config -- the
+    Agent's Run here -- lost every phase setting and ran with defaults: a
+    5 ns study ran for the default, and a setup_from redirect was dropped
+    and production looked in its own empty setup/. The Agent diagnosed
+    exactly that from the log and could not know the cause was the door it
+    had come through.
+
+    0020's test checked the system and the agent fields -- both top level
+    -- and not one phase setting. This checks the thing that was lost.
+    """
+
+    def test_phase_settings_survive(self):
+        from fastmdxplora.gui.config_builder import build_config, state_from_config
+
+        config = {"systems": [{"system": "1UAO"}],
+                  "simulation": {"duration_ns": 5, "setup_from": "/runs/first"},
+                  "setup": {"solvent_padding_nm": 1.5},
+                  "exclude": ["setup"]}
+        back = build_config(state_from_config(config)["state"])
+        self.assertEqual(back["simulation"]["duration_ns"], 5)
+        self.assertEqual(back["simulation"]["setup_from"], "/runs/first")
+        # exclude becomes the equivalent include; the phase set is kept.
+        self.assertEqual(back["include"], ["simulation", "analysis", "report"])
+
+    def test_the_file_the_run_reads_carries_them(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import run_endpoint
+        from fastmdxplora.gui.exploration import DashboardRuntime
+
+        root = Path(tempfile.mkdtemp())
+        runtime = DashboardRuntime(root / "w", root / "e")
+        answer = run_endpoint({"config": {
+            "systems": [{"system": "1UAO"}],
+            "simulation": {"duration_ns": 5, "setup_from": "/runs/first"},
+        }}, runtime)
+        self.assertTrue(answer["ok"], answer.get("error"))
+        written = Path(answer["config_path"]).read_text(encoding="utf-8")
+        self.assertIn("duration_ns: 5", written)
+        self.assertIn("setup_from: /runs/first", written)

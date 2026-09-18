@@ -2837,7 +2837,7 @@ body { overflow: hidden; }
    thread and the main column scrolled instead of the thread, so the
    composer left the foot and scrollToEnd moved nothing. The 88px is
    the page shell's own padding, top and bottom. */
-.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); }
+.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); min-height: 0; }
 .page[data-page="agent"] .page-header { flex: none; }
 .agent-thread {
     flex: 1; min-height: 0; overflow-y: auto;
@@ -2889,3 +2889,19 @@ body { overflow: hidden; }
 /* The old single-field rules no longer apply to a composer. */
 #agent-request { min-height: 44px; padding: 12px 14px; }
 .agent-answer { font-size: 14px; line-height: 1.6; color: var(--text-primary); white-space: pre-wrap; max-width: 760px; }
+
+/* Copy / edit / retry on a message, shown on hover. Every assistant a
+   person has used has these; a thread without them is one you cannot
+   go back into. */
+.agent-msg { position: relative; }
+.agent-msg-tools {
+    position: absolute; top: -12px; right: 8px;
+    display: none; gap: 2px; padding: 2px;
+    border-radius: 6px; background: var(--background-elevated); border: 1px solid var(--border-subtle);
+}
+.agent-msg:hover .agent-msg-tools { display: flex; }
+.agent-msg-tools button {
+    padding: 3px 8px; border: none; border-radius: 4px; background: transparent;
+    color: var(--text-muted); font: 500 11px inherit; font-family: inherit; cursor: pointer;
+}
+.agent-msg-tools button:hover { color: var(--text-primary); background: var(--background-secondary); }

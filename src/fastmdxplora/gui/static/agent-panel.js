@@ -210,10 +210,78 @@
   var history = [];
   var currentConfig = null;
 
+  function tools(msg, items) {
+    var bar = document.createElement("div");
+    bar.className = "agent-msg-tools";
+    items.forEach(function (it) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = it.label;
+      b.title = it.title || it.label;
+      b.addEventListener("click", it.run);
+      bar.appendChild(b);
+    });
+    msg.appendChild(bar);
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+    }
+  }
+
+  /* Remove this message and everything after it from the thread and the
+   * history, so an edit or a retry starts from here. */
+  function cutFrom(msg) {
+    var thread = el("agent-thread");
+    var nodes = Array.prototype.slice.call(thread.children);
+    var at = nodes.indexOf(msg);
+    if (at === -1) return;
+    var userIndex = nodes.slice(0, at + 1).filter(function (n) {
+      return n.classList.contains("agent-msg-user");
+    }).length - 1;
+    nodes.slice(at).forEach(function (n) { thread.removeChild(n); });
+    var seen = -1;
+    for (var i = 0; i < history.length; i++) {
+      if (history[i].role === "user") seen += 1;
+      if (seen === userIndex) { history.length = i; break; }
+    }
+    pending = null;
+    stopPending = null;
+    lastReply = null;
+    currentConfig = null;
+    for (var j = history.length - 1; j >= 0; j--) {
+      var text = history[j].text || "";
+      if (history[j].role === "agent" && text.indexOf("Wrote a config:\n") === 0) {
+        currentConfig = text.slice("Wrote a config:\n".length);
+        break;
+      }
+    }
+  }
+
   function say(text) {
     var msg = document.createElement("div");
     msg.className = "agent-msg agent-msg-user";
-    msg.textContent = text;
+    var body = document.createElement("div");
+    body.textContent = text;
+    msg.appendChild(body);
+    tools(msg, [
+      { label: "Copy", run: function () { copyText(text); } },
+      { label: "Edit", title: "Put this back in the composer and continue from here",
+        run: function () {
+          cutFrom(msg);
+          var area = el("agent-request");
+          area.value = text;
+          autosize(area);
+          area.focus();
+        } },
+      { label: "Retry", title: "Send this again from here",
+        run: function () {
+          cutFrom(msg);
+          el("agent-request").value = text;
+          draft();
+        } }
+    ]);
     el("agent-thread").appendChild(msg);
     return msg;
   }
@@ -228,6 +296,15 @@
     });
     el("agent-thread").appendChild(node);
     var part = function (role) { return node.querySelector('[data-role="' + role + '"]'); };
+    tools(node, [
+      { label: "Copy", title: "Copy this reply",
+        run: function () {
+          var result = part("result");
+          var answer = node.querySelector(".agent-answer");
+          copyText(answer ? answer.textContent
+                   : (result && result.textContent) || part("attempts").textContent);
+        } }
+    ]);
     return { node: node, part: part };
   }
 
@@ -237,14 +314,21 @@
      * container, and when it was not, nothing moved. After a frame, so
      * the reply just appended has a height. */
     var thread = el("agent-thread");
-    var last = thread.lastElementChild;
-    requestAnimationFrame(function () {
-      if (last && last.scrollIntoView) {
-        last.scrollIntoView({ block: "end", behavior: "smooth" });
-      } else {
-        thread.scrollTop = thread.scrollHeight;
-      }
-    });
+    var column = thread.closest(".main") || document.scrollingElement;
+    function toEnd() {
+      /* Both: the thread when it is the scroller, the column when the
+       * thread has grown to fit and the column is. Whichever overflows,
+       * setting scrollTop past its end is harmless on the other. */
+      thread.scrollTop = thread.scrollHeight;
+      if (column) column.scrollTop = column.scrollHeight;
+    }
+    /* Once after the next paint, and again after the reply has finished
+     * laying out -- the actions row appears and the config renders after
+     * the first frame, and a scroll taken before that stopped a message
+     * short, which is what was reported. */
+    requestAnimationFrame(toEnd);
+    setTimeout(toEnd, 120);
+    setTimeout(toEnd, 400);
   }
 
   function autosize(area) {

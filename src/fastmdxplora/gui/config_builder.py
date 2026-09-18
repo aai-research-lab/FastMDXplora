@@ -252,8 +252,19 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
         if kept:
             config["execution"] = {**(config.get("execution") or {}), **kept}
 
+    # A phase block arrives at top level from the browser, which flattens
+    # state.values[phase] into config[phase] before sending, and under
+    # `phases` from state_from_config, which mirrors the loaded shape.
+    # build_config read only the first, so a config launched through
+    # state_from_config -- the Agent's Run here -- lost every phase
+    # setting and ran with defaults. A 5 ns study ran for the default.
+    # Both shapes are read now, top level winning where both are present.
+    nested = state.get("phases")
+    nested = nested if isinstance(nested, dict) else {}
     for phase, group in PHASE_SCHEMAS.items():
         block = state.get(phase)
+        if not isinstance(block, dict):
+            block = nested.get(phase)
         if not isinstance(block, dict):
             if not (full and phase in running):
                 continue
