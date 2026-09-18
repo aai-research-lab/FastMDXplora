@@ -406,62 +406,61 @@
           <div class="page-header">
             <div>
               <h1 class="page-title">Overview</h1>
-              <div class="page-subtitle">Health, exploration status, and quick actions</div>
+              <div class="page-subtitle" id="overview-subtitle">What the run is doing, and whether it is doing it well.</div>
             </div>
-          </div>
-          <!-- What was the Live Simulation page. It showed the same
-               run as this one, and the top bar showed it a third
-               time: three places to look for one answer. -->
-          <!-- Shown instead of the panels when a run recorded no telemetry.
-               The panels used to render regardless, twelve fields deep in
-               "not available", which is an apparatus for reading something
-               that is not there. -->
-          <div class="card" id="live-absent" hidden>
-            <div class="card-header"><h2 class="card-title">Nothing to show</h2></div>
-            <div class="card-body" id="live-absent-body"></div>
-          </div>
-          <div class="grid grid-2" id="live-panels">
-            <div class="card">
-              <div class="card-header"><h2 class="card-title">Simulation progress</h2></div>
-              <div class="progress-large">
-                <div class="progress-large-track">
-                  <div class="progress-large-fill" id="live-progress-fill" style="width:0%"></div>
-                </div>
-                <div class="progress-large-meta">
-                  <span class="mono"><span id="live-progress-pct">—</span>% complete</span>
-                  <span class="muted">sim time <span class="mono" id="live-sim-time">—</span> ns</span>
-                </div>
-              </div>
-              <table class="kv-table mono">
-                <tbody>
-                  <tr><th>Current stage</th><td id="live-stage-cell">—</td></tr>
-                  <tr><th>Current step</th><td id="live-step-cell">—</td></tr>
-                  <tr><th>Total planned steps</th><td id="live-total-cell">—</td></tr>
-                  <tr><th>Frames written</th><td id="live-frames-cell">—</td></tr>
-                  <tr><th>Simulation time</th><td id="live-simtime-cell">—</td></tr>
-                  <tr><th>Elapsed wall time</th><td id="live-elapsed-cell">—</td></tr>
-                  <tr><th>ETA</th><td id="live-eta-cell">—</td></tr>
-                  <tr><th>Checkpoint</th><td id="live-checkpoint-cell">—</td></tr>
-                  <tr><th>Last update</th><td id="live-lastupdate-cell">—</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="card">
-              <div class="card-header">
-                <h2 class="card-title">Mini molecular preview</h2>
-                <a href="#" class="ghost-link" data-view-link="viewer">Open full viewer</a>
-              </div>
-              <div class="preview-frame" id="mini-preview-frame">
-                <div id="mini-preview-canvas" class="mini-preview-canvas" aria-label="Molecular preview"></div>
-                <div class="preview-empty" id="mini-preview-empty">
-                  Waiting for a structure file…
-                </div>
-              </div>
-              <p class="muted small">Updates automatically as the simulation progresses.</p>
+            <div class="page-header-actions">
+              <a href="#" class="ghost-btn" data-view-link="viewer">Viewer</a>
+              <a href="#" class="ghost-btn" data-view-link="report" id="overview-report-link" hidden>Report</a>
             </div>
           </div>
 
-          <div class="card">
+          <!-- No run: one sentence and the way to start one. The sidebar
+               already says "No active exploration"; this says what to do. -->
+          <div class="card" id="live-absent" hidden>
+            <div class="card-header"><h2 class="card-title">Nothing running</h2></div>
+            <div class="card-body" id="live-absent-body"></div>
+            <div class="control-row">
+              <a href="#agent" class="primary-btn" data-view-link="agent">Describe a study to the Agent</a>
+              <a href="#run" class="ghost-btn" data-view-link="run">Or build one</a>
+            </div>
+          </div>
+
+          <div id="live-panels">
+            <!-- What the sidebar is too narrow to say. The stage, step,
+                 progress and ETA are in the sidebar on every page; this row
+                 is the rest, in one line each. -->
+            <div class="overview-facts card" data-needs-phase="simulation">
+              <div class="hero-card" id="hero-health" data-state="normal" data-needs-phase="simulation">
+              <div class="hero-card-top">
+                <div>
+                  <div class="hero-label">Simulation health</div>
+                  <div class="hero-status" id="health-headline">—</div>
+                </div>
+                <span class="stage-pill" id="health-pill">normal</span>
+              </div>
+              <p class="muted" id="health-explanation">Live health classification will appear once telemetry has been written.</p>
+              <ul class="health-list" id="health-list" role="list"></ul>
+            </div>
+              <dl class="overview-strip">
+                <div><dt>Simulation time</dt><dd class="mono" id="live-simtime-cell">—</dd></div>
+                <div><dt>Frames written</dt><dd class="mono" id="live-frames-cell">—</dd></div>
+                <div><dt>Wall time</dt><dd class="mono" id="live-elapsed-cell">—</dd></div>
+                <div><dt>Checkpoint</dt><dd class="mono" id="live-checkpoint-cell">—</dd></div>
+                <div><dt>Last update</dt><dd class="mono" id="live-lastupdate-cell">—</dd></div>
+              </dl>
+              <!-- Read by dashboard.js; not shown here because the sidebar
+                   shows them. Kept so the writes have somewhere to land. -->
+              <span id="live-stage-cell" hidden></span>
+              <span id="live-step-cell" hidden></span>
+              <span id="live-total-cell" hidden></span>
+              <span id="live-eta-cell" hidden></span>
+              <span id="live-progress-pct" hidden></span>
+              <span id="live-sim-time" hidden></span>
+              <div id="live-progress-fill" hidden></div>
+            </div>
+
+            <div class="grid overview-grid" data-needs-phase="simulation">
+              <div class="card">
             <div class="card-header">
               <h2 class="card-title">Live charts</h2>
               <div class="card-header-actions">
@@ -509,101 +508,44 @@
             <div class="chart-empty muted" id="chart-empty">Live telemetry will appear after the first sample.</div>
           </div>
 
-          <!-- One health panel. This card said the same three things as the
-               hero card above it, from the same `analyze_health` call, on the
-               same screen -- and unlike that one it had nowhere to put the
-               list of what was wrong. Recent events takes the width the pair
-               used to share. -->
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Recent events</h2></div>
-            <ul class="events-list" id="events-list"></ul>
-          </div>
-        
-        
-
-          <!-- What has been recorded so far. Below the live
-               panels, because during a run the question is
-               what is happening, and afterwards this is
-               still here. -->
-          <div class="grid grid-4 metric-cards" id="overview-summary-cards" hidden></div>
-
-          <div class="grid grid-2">
-            <div class="card hero-card" id="hero-card" data-state="running" data-needs-phase="simulation">
-              <div class="hero-card-top">
-                <div>
-                  <div class="hero-label">Exploration status</div>
-                  <div class="hero-status" id="hero-status-text">—</div>
+<div class="card">
+                <div class="card-header">
+                  <h2 class="card-title">Structure</h2>
+                  <a href="#" class="ghost-link" data-view-link="viewer">Open the viewer</a>
                 </div>
-                <span class="stage-pill mono" id="hero-stage">—</span>
-              </div>
-              <!-- No progress bar, sim time, elapsed, ETA or step here.
-                   Every one of them is in the Simulation progress card
-                   opposite, and percent and ETA are in the top bar as
-                   well -- so a reader had to check three places to find
-                   out whether they agreed. This card keeps the one thing
-                   it says better than anywhere else: the run's state,
-                   in a word, with the stage it is in. -->
-            </div>
-            <div class="card hero-card" id="hero-health" data-state="normal" data-needs-phase="simulation">
-              <div class="hero-card-top">
-                <div>
-                  <div class="hero-label">Simulation health</div>
-                  <div class="hero-status" id="health-headline">—</div>
+                <div class="preview-frame" id="mini-preview-frame">
+                <div id="mini-preview-canvas" class="mini-preview-canvas" aria-label="Molecular preview"></div>
+                <div class="preview-empty" id="mini-preview-empty">
+                  Waiting for a structure file…
                 </div>
-                <span class="stage-pill" id="health-pill">normal</span>
               </div>
-              <p class="muted" id="health-explanation">Live health classification will appear once telemetry has been written.</p>
-              <ul class="health-list" id="health-list" role="list"></ul>
+                <p class="muted small">The newest frame, as it is written.</p>
+              </div>
             </div>
-          </div>
 
-          <div class="card stage-timeline-card">
-            <div class="card-header">
-              <h2 class="card-title">Stage timeline</h2>
-            </div>
-            <ol class="stage-timeline" id="stage-timeline">
-              <li class="stage-step" data-stage="setup"><span class="stage-marker"></span><span class="stage-label">Setup</span></li>
-              <li class="stage-step" data-stage="minimization"><span class="stage-marker"></span><span class="stage-label">Minimization</span></li>
-              <li class="stage-step" data-stage="nvt"><span class="stage-marker"></span><span class="stage-label">NVT</span></li>
-              <li class="stage-step" data-stage="npt"><span class="stage-marker"></span><span class="stage-label">NPT</span></li>
-              <li class="stage-step" data-stage="production"><span class="stage-marker"></span><span class="stage-label">Production</span></li>
-              <li class="stage-step" data-stage="analysis"><span class="stage-marker"></span><span class="stage-label">Analysis</span></li>
-              <li class="stage-step" data-stage="report"><span class="stage-marker"></span><span class="stage-label">Report</span></li>
-            </ol>
-          </div>
-
-          <div class="grid grid-2">
+            <!-- What was recorded, after what is happening. The summary
+                 cards and the phase table come from the same computation
+                 the report uses, so the two surfaces agree; the cards
+                 carry numbers the sidebar has no room for, and the phase
+                 rows carry a detail per phase -- "7.5 s", "Failed" -- that
+                 the sidebar's markers cannot. Both hide until there is
+                 something to say. -->
+            <div class="metric-grid" id="overview-summary-cards" hidden></div>
             <div class="card" id="overview-phase-card" hidden>
-              <div class="card-header">
-                <h2 class="card-title">Phases</h2>
-              </div>
-              <table class="kv-table">
-                <thead>
-                  <tr><th>Phase</th><th>Status</th><th>Detail</th></tr>
-                </thead>
+              <div class="card-header"><h2 class="card-title">Phases</h2></div>
+              <table class="phase-table">
+                <thead><tr><th>Phase</th><th>Status</th><th>Detail</th></tr></thead>
                 <tbody id="overview-phase-rows"></tbody>
               </table>
             </div>
             <div class="card" id="overview-stats-card" hidden>
-              <div class="card-header">
-                <h2 class="card-title">Trajectory statistics</h2>
-              </div>
-              <table class="kv-table">
-                <thead>
-                  <tr><th>Metric</th><th>Average</th><th>Std. dev.</th><th>Unit</th></tr>
-                </thead>
+              <div class="card-header"><h2 class="card-title">Trajectory statistics</h2></div>
+              <table class="phase-table">
+                <thead><tr><th>Metric</th><th>Average</th><th>Std. dev.</th><th>Unit</th></tr></thead>
                 <tbody id="overview-stat-rows"></tbody>
               </table>
             </div>
           </div>
-
-          <!-- The current value of a metric now sits on the chart that
-               shows its trend. This row repeated four of them without
-               their history, and was a third place a metric had to be
-               registered -- which is how total energy came to be
-               recorded, plotted, and absent here. Frames written is not
-               a plotted series; it is progress, and the live table
-               already carries it. -->
         </section>
 <section class="page" data-page="viewer" hidden>
           <div class="page-header">

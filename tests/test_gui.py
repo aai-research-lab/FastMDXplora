@@ -3049,9 +3049,17 @@ class TestPanelsForPhasesThatAreNotRunning:
 
         page = (pathlib.Path(server.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
-        for element_id in ("hero-card", "hero-health"):
+        # The status hero is gone -- the sidebar's status line says it on
+        # every page. The health card stays, and the live facts and the
+        # charts grid declare the same need, so nothing that reads the
+        # simulation shows for a study that has none.
+        for element_id in ("hero-health",):
             block = re.search(rf'<div[^>]*id="{element_id}"[^>]*>', page)
             assert block, f"{element_id} is gone; check this test"
+            assert 'data-needs-phase="simulation"' in block.group(0)
+        for cls in ("overview-facts card", "grid overview-grid"):
+            block = re.search(rf'<div class="{cls}"[^>]*>', page)
+            assert block, cls
             assert 'data-needs-phase="simulation"' in block.group(0)
 
     def test_the_page_hides_them_when_it_knows(self) -> None:
@@ -4494,9 +4502,12 @@ class TestOnePageForOneRun:
         # and the surviving one is the hero card, which also lists what is
         # wrong. The claim here is unchanged -- the live panels are on this
         # page -- only which element proves it.
+        # `events-list` is gone: the Log tab in the side panel is the event
+        # stream now, on every page. The rest are where they were.
         for identifier in ("live-panels", "live-absent", "live-progress-fill",
                            "live-stage-cell", "health-headline",
-                           "events-list"):
+                           "live-simtime-cell", "live-frames-cell",
+                           "chart-stack", "mini-preview-canvas"):
             assert f'id="{identifier}"' in overview, identifier
 
     def test_what_is_happening_comes_before_what_was_recorded(self) -> None:
@@ -4509,16 +4520,25 @@ class TestOnePageForOneRun:
         end = markup.index('<section class="page"', start + 10)
         cards = re.findall(r'card-title">([^<]+)<', markup[start:end])
 
-        assert cards.index("Simulation progress") < cards.index("Phases")
+        # The bar-and-table progress card is gone; the sidebar carries the
+        # running stage. What is happening -- the charts, the structure --
+        # still comes before what was recorded.
+        assert cards.index("Live charts") < cards.index("Phases")
         assert cards.index("Live charts") < cards.index("Trajectory statistics")
+        assert cards.index("Structure") < cards.index("Phases")
 
     def test_the_two_progress_cards_say_which_is_which(self) -> None:
         """One is a bar for the running stage, the other a table of phases.
         Both were called progress."""
         markup = self._markup()
-        assert 'card-title">Simulation progress<' in markup
+        # One progress display now -- the sidebar's, labelled Progress --
+        # and one table of phases, labelled Phases. The Overview's own
+        # "Simulation progress" card repeated the sidebar and is gone.
+        assert 'card-title">Simulation progress<' not in markup
         assert 'card-title">Phases<' in markup
         assert 'card-title">Exploration progress<' not in markup
+        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
+        assert 'study-label mono">Progress<' in sidebar
 
     def test_opening_the_overview_starts_the_polling(self) -> None:
         """It was keyed to opening a page that no longer exists, so nothing

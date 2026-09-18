@@ -432,3 +432,57 @@ class TestTheViewerFollowsTheRun(unittest.TestCase):
         self.assertIn("stopFollowing();", seek[:120])
         action = script[script.index('"dashboard:trajectory-action"'):]
         self.assertIn('action !== "last") stopFollowing()', action[:400])
+
+
+class TestTheOverviewHoldsWhatTheSidebarCannot(unittest.TestCase):
+    """The sidebar shows the stage, the step, the progress and the ETA on
+    every page. The Overview used to show them again, in a bar and a
+    nine-row table, beside a stage timeline the sidebar also has and a
+    Recent events card the Log panel now is. What is left is what only
+    this page can carry."""
+
+    def overview(self):
+        page = _page()
+        start = page.index('<section class="page" data-page="overview" data-status')
+        return page[start:page.index("</section>", start)]
+
+    def test_nothing_repeated_from_the_sidebar(self):
+        ov = self.overview()
+        for gone in ("Simulation progress", "Stage timeline", "Recent events",
+                     'id="hero-card"', 'id="events-list"'):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, ov)
+        # No stage list here: the sidebar's is the one.
+        self.assertNotIn('class="stage-step"', ov)
+
+    def test_what_only_this_page_can_carry(self):
+        ov = self.overview()
+        for kept in ('id="hero-health"', 'id="health-explanation"',
+                     'id="chart-stack"', 'id="mini-preview-canvas"',
+                     'id="live-simtime-cell"', 'id="live-frames-cell"',
+                     'id="live-checkpoint-cell"'):
+            with self.subTest(kept=kept):
+                self.assertIn(kept, ov)
+
+    def test_health_comes_first(self):
+        # The one thing that can say the run is going wrong before the
+        # numbers do.
+        ov = self.overview()
+        self.assertLess(ov.index('id="hero-health"'), ov.index('id="chart-stack"'))
+
+    def test_the_empty_state_says_what_to_do(self):
+        # "Nothing to show" said nothing. It points at the Agent now, and
+        # at the builder as the second way in.
+        ov = self.overview()
+        absent = ov[ov.index('id="live-absent"'):ov.index('id="live-panels"')]
+        self.assertIn('data-view-link="agent"', absent)
+        self.assertIn('data-view-link="run"', absent)
+
+    def test_the_ids_the_script_writes_still_land_somewhere(self):
+        # setText guards on null, but a hidden landing spot keeps the
+        # values reachable for anyone who inspects the page.
+        ov = self.overview()
+        for hidden_id in ("live-stage-cell", "live-step-cell", "live-total-cell",
+                          "live-eta-cell", "live-progress-fill"):
+            with self.subTest(id=hidden_id):
+                self.assertIn(f'id="{hidden_id}" hidden', ov)

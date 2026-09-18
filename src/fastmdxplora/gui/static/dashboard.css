@@ -2765,3 +2765,27 @@ body { overflow: hidden; }
     scrollbar-width: thin;
     scrollbar-color: var(--border-primary) transparent;
 }
+
+/* ===========================================================================
+   The Overview, rebuilt around what the sidebar is too narrow to hold.
+
+   The sidebar shows the stage, the step, the progress and the ETA on
+   every page. The Overview used to show them again, in a bar and a
+   nine-row table, beside a stage timeline the sidebar also has and a
+   Recent events card the Log panel now is. All of that is gone. What is
+   left is what only this page can carry: the health verdict with its
+   explanation, the four facts the sidebar has no room for, the live
+   charts, and the structure as it is written.
+   =========================================================================== */
+.overview-facts { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.overview-facts .hero-card { padding: 0; border: none; background: transparent; box-shadow: none; }
+.overview-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px 18px; margin: 0; padding-top: 14px; border-top: 1px solid var(--border-subtle);
+}
+.overview-strip > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.overview-strip dt { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.overview-strip dd { margin: 0; font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-grid { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .overview-grid { grid-template-columns: 1fr; } }
+#live-absent .control-row { margin-top: 14px; }
