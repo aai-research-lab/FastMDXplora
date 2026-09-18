@@ -371,11 +371,9 @@
       agentLink.addEventListener("click", function (e) {
         e.preventDefault();
         setPopup(false);
-        if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
-          window.FastMDXDashboard.navigate("agent");
-        } else {
-          window.location.hash = "#agent";
-        }
+        /* No navigation. The dialog is at body level and opens over
+         * whatever page is showing; changing the page to open a
+         * settings dialog is a detour nobody asked for. */
         if (window.FastMDXAgent && window.FastMDXAgent.openSettings) {
           window.FastMDXAgent.openSettings();
         }

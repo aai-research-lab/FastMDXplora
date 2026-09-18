@@ -34,6 +34,72 @@
   </div>
 
 
+  <!-- The Agent's settings dialog. At body level so it opens from any
+       page: inside the Agent section it inherited that section's
+       `hidden` everywhere else. -->
+  <div id="agent-settings" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel" role="dialog" aria-modal="true"
+         aria-label="Agent settings">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label">Agent settings</div>
+          <div class="builder-card-note" id="agent-model-current"></div>
+        </div>
+        <button id="agent-settings-close" class="ghost-btn">Close</button>
+      </div>
+      <div class="agent-dialog-body">
+        <div class="builder-grid builder-grid-2">
+          <label class="builder-field">
+            <span class="builder-label">Provider</span>
+            <select id="agent-provider"></select>
+          </label>
+          <label class="builder-field">
+            <span class="builder-label">Model</span>
+            <select id="agent-model"></select>
+          </label>
+          <label class="builder-field builder-field-wide" id="agent-model-other-field" hidden>
+            <span class="builder-label">Model name</span>
+            <input id="agent-model-other" type="text"
+                   placeholder="exactly as the provider spells it">
+            <p class="builder-card-note">Any model the provider
+              has. The list above is what it reports; a name it
+              does not have is refused by the provider, with its
+              own message.</p>
+          </label>
+          <label class="builder-field builder-field-wide" id="agent-url-field" hidden>
+            <span class="builder-label">Server address</span>
+            <input id="agent-base-url" type="text"
+                   placeholder="http://localhost:11434/v1">
+            <p class="builder-card-note" id="agent-url-examples"></p>
+          </label>
+          <label class="builder-field builder-field-wide">
+            <span class="builder-label">API key</span>
+            <input id="agent-key" type="password"
+                   placeholder="paste your key">
+            <p class="builder-card-note" id="agent-key-help"></p>
+          </label>
+          <label class="builder-field">
+            <span class="builder-label">Mode</span>
+            <select id="agent-mode">
+              <option value="assisted">Assisted — you approve it</option>
+              <option value="autonomous">Autonomous — runs unattended</option>
+              <option value="unvalidated">Unvalidated — outside the schema</option>
+            </select>
+            <p class="builder-card-note" id="agent-mode-note"></p>
+          </label>
+          <label class="builder-field">
+            <span class="builder-label">GPU-hour ceiling</span>
+            <input id="agent-budget" type="number" min="0" step="1"
+                   placeholder="optional">
+            <p class="builder-card-note" id="agent-budget-note"></p>
+          </label>
+        </div>
+      </div>
+      <div class="agent-dialog-foot">
+        <button id="agent-save-model" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
   <div class="settings-popup" id="settings-popup" hidden role="dialog" aria-label="Settings">
     <div class="settings-section">Appearance</div>
     <div class="settings-row">
@@ -852,69 +918,6 @@
             </div>
           </div>
 
-          <div id="agent-settings" class="agent-dialog" hidden>
-            <div class="agent-dialog-panel" role="dialog" aria-modal="true"
-                 aria-label="Agent settings">
-              <div class="agent-dialog-head">
-                <div>
-                  <div class="builder-label">Agent settings</div>
-                  <div class="builder-card-note" id="agent-model-current"></div>
-                </div>
-                <button id="agent-settings-close" class="ghost-btn">Close</button>
-              </div>
-              <div class="agent-dialog-body">
-                <div class="builder-grid builder-grid-2">
-                  <label class="builder-field">
-                    <span class="builder-label">Provider</span>
-                    <select id="agent-provider"></select>
-                  </label>
-                  <label class="builder-field">
-                    <span class="builder-label">Model</span>
-                    <select id="agent-model"></select>
-                  </label>
-                  <label class="builder-field builder-field-wide" id="agent-model-other-field" hidden>
-                    <span class="builder-label">Model name</span>
-                    <input id="agent-model-other" type="text"
-                           placeholder="exactly as the provider spells it">
-                    <p class="builder-card-note">Any model the provider
-                      has. The list above is what it reports; a name it
-                      does not have is refused by the provider, with its
-                      own message.</p>
-                  </label>
-                  <label class="builder-field builder-field-wide" id="agent-url-field" hidden>
-                    <span class="builder-label">Server address</span>
-                    <input id="agent-base-url" type="text"
-                           placeholder="http://localhost:11434/v1">
-                    <p class="builder-card-note" id="agent-url-examples"></p>
-                  </label>
-                  <label class="builder-field builder-field-wide">
-                    <span class="builder-label">API key</span>
-                    <input id="agent-key" type="password"
-                           placeholder="paste your key">
-                    <p class="builder-card-note" id="agent-key-help"></p>
-                  </label>
-                  <label class="builder-field">
-                    <span class="builder-label">Mode</span>
-                    <select id="agent-mode">
-                      <option value="assisted">Assisted — you approve it</option>
-                      <option value="autonomous">Autonomous — runs unattended</option>
-                      <option value="unvalidated">Unvalidated — outside the schema</option>
-                    </select>
-                    <p class="builder-card-note" id="agent-mode-note"></p>
-                  </label>
-                  <label class="builder-field">
-                    <span class="builder-label">GPU-hour ceiling</span>
-                    <input id="agent-budget" type="number" min="0" step="1"
-                           placeholder="optional">
-                    <p class="builder-card-note" id="agent-budget-note"></p>
-                  </label>
-                </div>
-              </div>
-              <div class="agent-dialog-foot">
-                <button id="agent-save-model" class="primary-btn">Save</button>
-              </div>
-            </div>
-          </div>
         </section>
 
         <section class="page" data-page="settings" hidden>

@@ -369,12 +369,19 @@ class TestEachColumnScrollsAlone(unittest.TestCase):
 
 class TestThePopupItemsAct(unittest.TestCase):
 
-    def test_agent_settings_opens_the_agents_dialog(self):
+    def test_agent_settings_opens_the_agents_dialog_without_leaving(self):
         # Landing on the page and leaving somebody to find the button was
-        # the same as not linking it.
+        # the same as not linking it. And navigating to the Agent page in
+        # order to open a settings dialog was a detour: the dialog is a
+        # fixed overlay and belongs at body level, where it opens over
+        # whatever page is showing.
         script = _script()
         self.assertIn('el("settings-agent-link")', script)
         self.assertIn("window.FastMDXAgent.openSettings()", script)
+        handler = script[script.index('el("settings-agent-link")'):script.index("The other popup items navigate")]
+        self.assertNotIn('navigate("agent")', handler)
+        page = _page()
+        self.assertLess(page.index('id="agent-settings"'), page.index('<div class="app-shell">'))
         agent = (STATIC / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn("window.FastMDXAgent = { openSettings: openSettings", agent)
 

@@ -675,7 +675,15 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
     def panel(self):
         page = self.page()
         return page[page.index('data-page="agent"'):
-                    page.index("</section>", page.index("agent-save-model"))]
+                    page.index("</section>", page.index('data-page="agent"'))]
+
+    def dialog(self):
+        # At body level, not inside the Agent section: a fixed overlay
+        # that inherited the section's `hidden` could only open from the
+        # Agent page, and the settings popup wanted to open it from any.
+        page = self.page()
+        start = page.index('id="agent-settings"')
+        return page[start:page.index('id="settings-popup"', start)]
 
     def script(self):
         import pathlib
@@ -698,10 +706,9 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # and then irrelevant.
         panel = self.panel()
         self.assertIn('id="agent-settings-open"', panel)
-        settings = panel[panel.index('id="agent-settings"'):]
+        settings = self.dialog()
         self.assertIn('role="dialog"', settings)
-        self.assertIn("hidden", panel[panel.index('id="agent-settings"') - 60:
-                                      panel.index('id="agent-settings"') + 60])
+        self.assertIn("hidden", settings[:80])
 
     def test_no_status_line_about_the_engine_on_the_page(self):
         # "Ready. Drafting with <model>." was a status line about an engine
@@ -752,9 +759,9 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # It borrows the shape and not the class: there is exactly one file
         # picker on the page, which is a reasonable thing to assert, and
         # this is not it.
-        panel = self.panel()
-        self.assertIn("agent-dialog", panel)
-        self.assertNotIn("analyse-picker", panel)
+        dialog = self.dialog()
+        self.assertIn("agent-dialog", dialog)
+        self.assertNotIn("analyse-picker", dialog)
 
 
 class TestTheModelFollowsTheProvider(unittest.TestCase):
@@ -854,17 +861,26 @@ class TestWhatBelongsInSettings(unittest.TestCase):
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
         return page[page.index('data-page="agent"'):
-                    page.index("</section>", page.index("agent-save-model"))]
+                    page.index("</section>", page.index('data-page="agent"'))]
+
+    def dialog(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        start = page.index('id="agent-settings"')
+        return page[start:page.index('id="settings-popup"', start)]
 
     def test_only_the_study_is_on_the_page(self):
         panel = self.panel()
-        page = panel[:panel.index('id="agent-settings"')]
-        self.assertIn('id="agent-request"', page)
-        self.assertIn('id="agent-propose"', page)
+        self.assertIn('id="agent-request"', panel)
+        self.assertIn('id="agent-propose"', panel)
+        self.assertNotIn('id="agent-settings"', panel)
 
     def test_mode_and_the_ceiling_are_behind_settings(self):
-        panel = self.panel()
-        dialog = panel[panel.index('id="agent-settings"'):]
+        dialog = self.dialog()
         for control in ('id="agent-mode"', 'id="agent-budget"',
                         'id="agent-provider"', 'id="agent-key"'):
             with self.subTest(control=control):
