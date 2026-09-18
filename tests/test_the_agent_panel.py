@@ -1807,8 +1807,8 @@ class TestTheMessageToolsAndTheScrollbar(unittest.TestCase):
         rule = css[css.index(".agent-msg-tools {"):]
         rule = rule[:rule.index("}")]
         self.assertNotIn("position: absolute", rule)
-        self.assertIn("margin-top: 6px", rule)
-        self.assertIn(".agent-msg-tools button { width: 56px;", css)
+        self.assertIn("margin-top: 4px", rule)
+        self.assertIn(".agent-msg-tools button { width: 40px;", css)
 
     def test_the_scrollbar_has_its_own_gutter(self):
         # It was painting over the messages.
@@ -1817,3 +1817,45 @@ class TestTheMessageToolsAndTheScrollbar(unittest.TestCase):
         rule = rule[:rule.index("}")]
         self.assertIn("scrollbar-gutter: stable", rule)
         self.assertIn("padding: 8px 16px 24px 0", rule)
+
+
+class TestTheLayoutAndTheVoice(unittest.TestCase):
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def test_the_centre_has_a_reading_width_except_the_viewer(self):
+        css = self.css()
+        self.assertIn(".page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }", css)
+        self.assertIn('html[data-page="viewer"] .page-shell { max-width: none; }', css)
+
+    def test_the_panel_starts_wide(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = self.css()
+        self.assertIn("--panel-width: 700px;", css)
+        frame = (pathlib.Path(gui.__file__).parent / "static"
+                 / "frame.js").read_text(encoding="utf-8")
+        self.assertIn('store.get("panelWidth", "700")', frame)
+        self.assertIn("panel: [280, 960]", frame)
+
+    def test_the_agents_prose_is_a_serif_and_the_persons_is_not(self):
+        css = self.css()
+        self.assertIn(".agent-answer, .agent-msg-agent .agent-attempt {\n    font-family: Georgia", css)
+        # No hosted font: this GUI runs without a route to the internet.
+        self.assertNotIn("googleapis", css)
+
+    def test_the_agent_is_told_to_write_plainly(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("No em dashes and no en dashes", prompt)
+        self.assertIn('No "I\'d be happy to", no "great question"', prompt)
+        self.assertIn("Say the thing and stop.", prompt)

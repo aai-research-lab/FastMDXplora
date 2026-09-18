@@ -2409,7 +2409,7 @@ body.state-ready .loading-screen {
    =========================================================================== */
 :root {
     --sidebar-width: 232px;
-    --panel-width: 392px;
+    --panel-width: 700px;
     --handle-width: 6px;
 }
 .app-shell {
@@ -2755,6 +2755,12 @@ body { overflow: hidden; }
 .sidebar-account { position: sticky; bottom: 0; z-index: 2; background: var(--background-secondary); }
 .main { display: flex; flex-direction: column; }
 .page-shell { flex: 1; }
+/* A reading width for the centre. With the side panel collapsed the
+   column ran to the right edge and a line of prose ran with it. The
+   viewer is the exception: a 3D canvas wants every pixel it can get,
+   and its own right-hand info pane fills the width beside it. */
+.page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }
+html[data-page="viewer"] .page-shell { max-width: none; }
 /* The side panel already lays its own scroll region out (.side-log,
    .side-files); the panel itself should not add a second one. */
 .side-panel { overflow: hidden; }
@@ -2890,7 +2896,19 @@ body { overflow: hidden; }
 .agent-send:disabled { opacity: .45; cursor: default; }
 /* The old single-field rules no longer apply to a composer. */
 #agent-request { min-height: 44px; padding: 12px 14px; }
-.agent-answer { font-size: 14px; line-height: 1.6; color: var(--text-primary); white-space: pre-wrap; max-width: 760px; }
+/* The Agent's prose in a serif; the person's message in the UI sans.
+   That is the pairing every assistant a person has read uses, and it
+   makes the two voices in the thread tell apart at a glance. A system
+   serif, because this GUI runs without a route to the internet. */
+.agent-answer, .agent-msg-agent .agent-attempt {
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif;
+    font-size: 15.5px; line-height: 1.65; color: var(--text-primary);
+    white-space: pre-wrap; max-width: 720px;
+}
+.agent-msg-agent .agent-attempt { font-size: 14.5px; }
+.agent-msg-agent .agent-attempt.ok { font-family: inherit; font-size: 12px; }
+.agent-msg-user > div:first-child { font-size: 14.5px; }
+.agent-composer textarea { font-size: 14.5px; }
 
 /* Copy / edit / retry on a message, shown on hover. Every assistant a
    person has used has these; a thread without them is one you cannot
@@ -2901,15 +2919,16 @@ body { overflow: hidden; }
    the thread does not jump when it appears. */
 .agent-msg { position: relative; }
 .agent-msg-tools {
-    display: flex; gap: 4px; margin-top: 6px; height: 22px;
+    display: flex; gap: 3px; margin-top: 4px; height: 16px;
     visibility: hidden;
 }
 .agent-msg-user .agent-msg-tools { justify-content: flex-end; }
 .agent-msg:hover .agent-msg-tools, .agent-msg:focus-within .agent-msg-tools { visibility: visible; }
-.agent-msg-tools button { width: 56px; text-align: center; }
+.agent-msg-tools button { width: 40px; text-align: center; }
 .agent-msg-tools button {
-    padding: 3px 0; border: 1px solid var(--border-subtle); border-radius: 4px;
+    padding: 1px 0; border: 1px solid var(--border-subtle); border-radius: 3px;
     background: var(--background-elevated);
-    color: var(--text-muted); font: 500 11px inherit; font-family: inherit; cursor: pointer;
+    color: var(--text-muted); font: 500 9.5px inherit; font-family: inherit; cursor: pointer;
+    letter-spacing: .02em;
 }
 .agent-msg-tools button:hover { color: var(--text-primary); background: var(--background-secondary); }

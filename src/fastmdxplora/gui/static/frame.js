@@ -35,7 +35,7 @@
   }
 
   /* ---- Column widths ------------------------------------------------ */
-  var LIMITS = { sidebar: [180, 360], panel: [280, 720] };
+  var LIMITS = { sidebar: [180, 360], panel: [280, 960] };
 
   function setWidth(which, px) {
     var lim = LIMITS[which];
@@ -50,7 +50,7 @@
       down.preventDefault();
       var startX = down.clientX;
       var startW = parseFloat(getComputedStyle(document.documentElement)
-        .getPropertyValue("--" + which + "-width")) || (which === "sidebar" ? 232 : 392);
+        .getPropertyValue("--" + which + "-width")) || (which === "sidebar" ? 232 : 700);
       handle.classList.add("dragging");
       document.body.classList.add("col-dragging");
       function move(e) {
@@ -69,7 +69,7 @@
     });
     // Double-click puts it back.
     handle.addEventListener("dblclick", function () {
-      setWidth(which, which === "sidebar" ? 232 : 392);
+      setWidth(which, which === "sidebar" ? 232 : 700);
     });
   }
 
@@ -324,7 +324,7 @@
     });
 
     var sw = parseInt(store.get("sidebarWidth", "232"), 10);
-    var pw = parseInt(store.get("panelWidth", "392"), 10);
+    var pw = parseInt(store.get("panelWidth", "700"), 10);
     if (sw) setWidth("sidebar", sw);
     if (pw) setWidth("panel", pw);
     $$(".col-handle").forEach(wireHandle);
