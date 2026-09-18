@@ -540,7 +540,7 @@ def make_handler(
                 # whether a config is acceptable.
                 from fastmdxplora.gui.agent_panel import propose_endpoint
 
-                self._send_json(propose_endpoint(payload or {}))
+                self._send_json(propose_endpoint(payload or {}, app_runtime))
                 return
             if path == "/api/load-config":
                 # Bringing a config into the form so it can be changed. The

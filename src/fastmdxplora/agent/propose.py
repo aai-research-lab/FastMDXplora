@@ -114,6 +114,11 @@ class Proposal:
     #: with two different examples. An example in a refusal is read as
     #: the answer, whatever it says.
     question: str | None = None
+    #: A plain answer, when the message was a question rather than a
+    #: request for a study. "What does density tell me?" wants a
+    #: paragraph, not a config and not a refusal, and a loop with no way
+    #: to say one produced configs for questions.
+    answer: str | None = None
 
     @property
     def accepted(self) -> bool:
@@ -143,6 +148,21 @@ to read and no more correct.
 
 An unknown key is refused rather than ignored, so do not invent settings.
 
+This is a conversation, not a form. When there is a conversation so far,
+read it: the request may refer to it ("the same but at 320 K", "run
+it", "why did that fail?"). When there is a current config, a request
+is a change to it unless it plainly describes a different study: return
+the whole config with the change applied, and keep everything the
+person did not ask to change. Do not start over.
+
+Not every message wants a config. If the person asks a question -- about
+molecular dynamics, about a setting, about what the run is doing or why
+it stopped -- answer it: reply with a single paragraph starting `SAY:`
+and nothing else. Use what the conversation and the run status say; do
+not guess at what happened. If they ask to run, stop, or open something,
+say what you would do and that the buttons under the config do it; you
+cannot press them.
+
 Never invent a structure. A study needs a `systems:` entry whose `system`
 is a PDB identifier or a file path. Take it from the request. If the
 request names a molecule by its common name and you know a PDB identifier
@@ -156,7 +176,10 @@ structure from an example.
 
 
 def prompt_for(request: str, *, phases: list[str] | None = None,
-               verbose: bool = True) -> str:
+               verbose: bool = True,
+               history: list[dict[str, str]] | None = None,
+               current_config: str | None = None,
+               run_status: str | None = None) -> str:
     """The first prompt: what the language is, and what is wanted.
 
     The schema description is generated, so it cannot name a setting
@@ -165,11 +188,19 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
     refuses rather than embedding a protein sideways proposes fewer
     studies that will be refused.
     """
-    return (
-        f"{_INSTRUCTIONS}\n"
-        f"{describe_schema(phases=phases, verbose=verbose)}\n\n"
-        f"## The study wanted\n{request}\n"
-    )
+    parts = [_INSTRUCTIONS, "\n", describe_schema(phases=phases, verbose=verbose), "\n\n"]
+    if history:
+        parts.append("## The conversation so far\n")
+        for turn in history[-12:]:
+            who = "Person" if turn.get("role") == "user" else "Agent"
+            parts.append(f"{who}: {str(turn.get('text') or '').strip()}\n")
+        parts.append("\n")
+    if current_config:
+        parts.append(f"## The current config\n```yaml\n{current_config.strip()}\n```\n\n")
+    if run_status:
+        parts.append(f"## What the run is doing\n{run_status.strip()}\n\n")
+    parts.append(f"## The study wanted\n{request}\n")
+    return "".join(parts)
 
 
 def repair_prompt_for(previous: str, refusal: Refusal) -> str:
@@ -206,6 +237,21 @@ def repair_prompt_for(previous: str, refusal: Refusal) -> str:
     return "\n".join(lines)
 
 
+
+
+def _answer_in(raw: str) -> str | None:
+    """A plain answer, if the reply is one: a first line starting SAY:."""
+    lines = (raw or "").splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.upper().startswith("SAY:"):
+            rest = stripped[4:].strip()
+            tail = "\n".join(lines[i + 1:]).strip()
+            return (rest + ("\n" + tail if tail else "")).strip() or "\u2026"
+        return None
+    return None
 
 def _question_in(raw: str) -> str | None:
     """The question a reply carries, if the reply is one.
@@ -246,6 +292,9 @@ def propose_config(
     phases: list[str] | None = None,
     max_cycles: int = 4,
     verbose_schema: bool = True,
+    history: list[dict[str, str]] | None = None,
+    current_config: str | None = None,
+    run_status: str | None = None,
 ) -> Proposal:
     """Ask for a config, and keep asking until it validates or the cap.
 
@@ -278,11 +327,16 @@ def propose_config(
     this design exists to prevent.
     """
     attempts: list[Attempt] = []
-    prompt = prompt_for(request, phases=phases, verbose=verbose_schema)
+    prompt = prompt_for(request, phases=phases, verbose=verbose_schema,
+                        history=history, current_config=current_config,
+                        run_status=run_status)
     refusal: Refusal | None = None
 
     for number in range(1, max_cycles + 1):
         raw = complete(prompt)
+        said = _answer_in(raw)
+        if said:
+            return Proposal(config=None, attempts=tuple(attempts), answer=said)
         asked = _question_in(raw)
         if asked:
             # The request is short of something a model cannot supply and

@@ -204,6 +204,11 @@
    * it answers, joined -- "simulate chignolin for 2 ns" plus "1UAO" is a
    * request the loop can write a study from. */
   var pending = null;
+  /* The conversation, as the Agent sees it: what was said each way. And
+   * the last config it wrote, so "make it 5 ns" is a change to it rather
+   * than a study from nothing. */
+  var history = [];
+  var currentConfig = null;
 
   function say(text) {
     var msg = document.createElement("div");
@@ -244,6 +249,7 @@
     pending = null;
 
     say(typed);
+    history.push({ role: "user", text: typed });
     area.value = "";
     autosize(area);
     var r = reply();
@@ -254,15 +260,29 @@
 
     post("/api/agent/propose", {
       request: request,
-      agent: el("agent-mode").value
+      agent: el("agent-mode").value,
+      history: history.slice(0, -1),
+      current_config: currentConfig
     }).then(function (data) {
       el("agent-propose").disabled = false;
       box.innerHTML = "";
       (data.attempts || []).forEach(function (attempt) {
         if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
       });
+      if (data.answer) {
+        /* A question, answered. No config, no actions. */
+        var p = document.createElement("div");
+        p.className = "agent-answer";
+        p.textContent = data.answer;
+        box.appendChild(p);
+        history.push({ role: "agent", text: data.answer });
+        area.focus();
+        scrollToEnd();
+        return;
+      }
       if (data.question) {
         note(box, data.question);
+        history.push({ role: "agent", text: data.question });
         pending = request;
         area.focus();
         scrollToEnd();
@@ -277,6 +297,8 @@
       note(box, data.cycles === 1
         ? "Accepted first time."
         : "Accepted after " + data.cycles + " attempts.", true);
+      history.push({ role: "agent", text: "Wrote a config:\n" + data.yaml });
+      currentConfig = data.yaml;
       wireActions(r, data, box);
       scrollToEnd();
     }).catch(function () {

@@ -448,3 +448,140 @@ class TestARequestWithNoStructureGetsAQuestion(unittest.TestCase):
             _question_in("ASK: which file?\nHappy to continue once I know."),
             "which file?")
         self.assertIsNone(_question_in("systems:\n  - {id: a}"))
+
+
+class TestTheAgentIsAConversation(unittest.TestCase):
+    """Claude for molecular dynamics, not a form with a model behind it.
+
+    The loop was stateless: instructions, schema, "the study wanted".
+    "Make it 5 ns" started a new study; "why did it stop?" produced a
+    config for a question. Now the prompt carries the conversation so
+    far, the current config and what the run is doing, and a fourth
+    outcome -- an answer -- sits beside config, question and refusal.
+    """
+
+    def test_the_prompt_carries_the_conversation(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("make it 5 ns",
+                            history=[{"role": "user", "text": "simulate 1UAO for 2 ns"},
+                                     {"role": "agent", "text": "Wrote a config"}])
+        self.assertIn("## The conversation so far", prompt)
+        self.assertIn("Person: simulate 1UAO for 2 ns", prompt)
+        self.assertIn("Agent: Wrote a config", prompt)
+
+    def test_the_prompt_carries_the_current_config_and_the_run(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("why?", current_config="systems:\n  - {system: 1UAO}",
+                            run_status="status: failed\nlast error: no structure")
+        self.assertIn("## The current config", prompt)
+        self.assertIn("## What the run is doing", prompt)
+        self.assertIn("last error: no structure", prompt)
+
+    def test_the_conversation_is_bounded(self):
+        # The last twelve turns. A conversation of a hundred is a prompt
+        # of a hundred, and the early ones are not what a change refers to.
+        from fastmdxplora.agent.propose import prompt_for
+
+        turns = [{"role": "user", "text": f"turn {i}"} for i in range(40)]
+        prompt = prompt_for("x", history=turns)
+        self.assertNotIn("turn 0\n", prompt)
+        self.assertIn("turn 39", prompt)
+
+    def test_the_instructions_say_to_modify_not_restart(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("a request\nis a change to it", prompt)
+        self.assertIn("Do not start over", prompt)
+
+    def test_a_question_gets_an_answer_not_a_config(self):
+        from fastmdxplora.agent import propose_config
+
+        proposal = propose_config(
+            "what does density tell me?",
+            lambda prompt: "SAY: Mass per volume of the box; it settles near 1.0 g/mL.")
+        self.assertFalse(proposal.accepted)
+        self.assertIsNone(proposal.question)
+        self.assertEqual(proposal.answer,
+                         "Mass per volume of the box; it settles near 1.0 g/mL.")
+
+    def test_an_answer_is_not_retried(self):
+        from fastmdxplora.agent import propose_config
+
+        calls = []
+
+        def complete(prompt):
+            calls.append(prompt)
+            return "SAY: because."
+
+        propose_config("why?", complete, max_cycles=4)
+        self.assertEqual(len(calls), 1)
+
+    def test_a_config_is_still_a_config(self):
+        from fastmdxplora.agent import propose_config
+
+        proposal = propose_config(
+            "make it 5 ns",
+            lambda prompt: "systems:\n  - {system: 1UAO}\nsimulation:\n  duration_ns: 5\n",
+            current_config="systems:\n  - {system: 1UAO}\nsimulation:\n  duration_ns: 2\n")
+        self.assertTrue(proposal.accepted)
+        self.assertIsNone(proposal.answer)
+        self.assertEqual(proposal.config["simulation"]["duration_ns"], 5)
+
+    def test_the_endpoint_passes_all_three_and_returns_an_answer(self):
+        import os
+        import tempfile
+
+        # Set for this test and restored after: left set, it moved the
+        # key file for every test that ran later in the same process, and
+        # one of them checks where the key file lives.
+        prior_dir = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = tempfile.mkdtemp()
+        self.addCleanup(lambda: (os.environ.__setitem__("FASTMDXPLORA_CONFIG_DIR", prior_dir)
+                                 if prior_dir is not None
+                                 else os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)))
+        import fastmdxplora.agent as agent_mod
+        from fastmdxplora.gui import agent_panel
+
+        seen = {}
+        before = agent_mod.completion_for
+
+        def fake(*a, **k):
+            def complete(prompt):
+                seen["prompt"] = prompt
+                return "SAY: it stopped for the reason in the last error."
+            return complete
+
+        agent_mod.completion_for = fake
+        try:
+            class Runtime:
+                active_root = None
+
+                def snapshot(self):
+                    return {"active_run": "/x", "status": "failed",
+                            "error": "No structure at 'protein.pdb'"}
+
+            answer = agent_panel.propose_endpoint(
+                {"request": "why did it stop?",
+                 "history": [{"role": "user", "text": "run it"}],
+                 "current_config": "systems:\n  - {system: 1UAO}"}, Runtime())
+        finally:
+            agent_mod.completion_for = before
+        self.assertIn("answer", answer)
+        self.assertIn("## The conversation so far", seen["prompt"])
+        self.assertIn("## The current config", seen["prompt"])
+        self.assertIn("No structure at 'protein.pdb'", seen["prompt"])
+
+    def test_the_panel_sends_the_thread_and_renders_an_answer(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn("history: history.slice(0, -1),", script)
+        self.assertIn("current_config: currentConfig", script)
+        self.assertIn("if (data.answer) {", script)
+        self.assertIn('history.push({ role: "agent", text: "Wrote a config:\\n" + data.yaml });', script)

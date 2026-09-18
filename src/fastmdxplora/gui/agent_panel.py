@@ -100,7 +100,8 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
             "current": ModelChoice(provider, model, base_url).as_record()}
 
 
-def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+def propose_endpoint(payload: dict[str, Any],
+                     runtime: Any = None) -> dict[str, Any]:
     """A sentence in, a config out, or the refusal that stopped it.
 
     The attempts come back whole rather than as a count. They are the only
@@ -125,10 +126,21 @@ def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
 
+    # The conversation, the current config and the run, so the Agent can
+    # modify rather than restart, and answer rather than write. The
+    # browser sends the first two; the server knows the third.
+    history = [
+        {"role": str(h.get("role") or "user"), "text": str(h.get("text") or "")}
+        for h in (payload.get("history") or []) if isinstance(h, dict)
+    ][-12:]
+    current = payload.get("current_config")
+    current = str(current) if current else None
     try:
         proposal = propose_config(
             request, complete, phases=list(phases),
-            max_cycles=int(payload.get("attempts") or 4))
+            max_cycles=int(payload.get("attempts") or 4),
+            history=history or None, current_config=current,
+            run_status=_run_status(runtime))
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
@@ -138,6 +150,9 @@ def propose_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
          "refusal": (attempt.refusal.as_dict() if attempt.refusal else None)}
         for attempt in proposal.attempts
     ]
+    if proposal.answer:
+        # A question was asked, not a study. A paragraph back.
+        return {"ok": False, "answer": proposal.answer, "attempts": attempts}
     if proposal.question:
         # Not a failure. The request is short of something only the person
         # can supply, and the honest answer is to say what.
@@ -242,3 +257,39 @@ def run_endpoint(payload: dict[str, Any], runtime: Any,
 
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
+
+
+def _run_status(runtime: Any) -> str | None:
+    """What the run is doing, in a few lines a model can read.
+
+    So "why did it stop?" can be answered from what happened rather than
+    from a guess. Stage, status, the last error if there was one, the
+    health verdict if there is one. Nothing the sidebar does not already
+    show a person.
+    """
+    if runtime is None or not hasattr(runtime, "snapshot"):
+        return None
+    try:
+        snap = runtime.snapshot() or {}
+    except Exception:  # noqa: BLE001 - context, not load-bearing
+        return None
+    if not snap.get("active_run"):
+        return "No run is active."
+    lines = [f"status: {snap.get('status') or 'unknown'}"]
+    if snap.get("process_running"):
+        lines.append("the process is running")
+    if snap.get("error"):
+        lines.append(f"last error: {str(snap['error'])[:400]}")
+    try:
+        from fastmdxplora.gui.telemetry import analyze_health, read_status
+
+        status = read_status(runtime.active_root) or {}
+        if status.get("stage"):
+            lines.append(f"stage: {status['stage']}")
+        health = analyze_health(status, [])
+        if health.get("state"):
+            lines.append(f"health: {health['state']}"
+                         + (f" -- {health['message']}" if health.get("message") else ""))
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n".join(lines)

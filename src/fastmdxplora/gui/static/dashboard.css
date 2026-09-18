@@ -2884,3 +2884,4 @@ body { overflow: hidden; }
 .agent-send:disabled { opacity: .45; cursor: default; }
 /* The old single-field rules no longer apply to a composer. */
 #agent-request { min-height: 44px; padding: 12px 14px; }
+.agent-answer { font-size: 14px; line-height: 1.6; color: var(--text-primary); white-space: pre-wrap; max-width: 760px; }
