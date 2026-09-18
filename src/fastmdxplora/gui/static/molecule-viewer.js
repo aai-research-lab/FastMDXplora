@@ -1184,7 +1184,14 @@
         if (needsFullTopology()) await ensurePlaybackEnvironment();
         if (!isViewerGenerationCurrent(generation)) return false;
         document.getElementById("trajectory-row")?.removeAttribute("hidden");
-        await setPlaybackFrame(Number(document.getElementById("traj-slider")?.value || 0));
+        /* Follow the run: when frames arrive while it is ticked, show the
+         * newest rather than returning to wherever the slider was. Scrubbing
+         * back unticks it, so a person looking at frame 40 is not dragged
+         * to frame 200 by the next poll. */
+        const follow = document.getElementById("traj-follow")?.checked;
+        const current = Number(document.getElementById("traj-slider")?.value || 0);
+        const target = follow && STATE.playbackFrames > 0 ? STATE.playbackFrames - 1 : current;
+        await setPlaybackFrame(Math.max(0, target));
         if (!isViewerGenerationCurrent(generation)) return false;
         updatePlaybackButtons();
         return true;
@@ -1203,6 +1210,10 @@
 
   function wireTrajectoryControls() {
     window.addEventListener("dashboard:trajectory-action", async (event) => {
+      /* Any transport action except "last" is a person choosing a frame;
+       * the run should stop choosing for them. "last" is what follow does,
+       * so it leaves the toggle alone. */
+      if (event.detail?.action && event.detail.action !== "last") stopFollowing();
       const action = event.detail?.action;
       if (action === "play") await startPlayback();
       if (action === "pause") pausePlayback();
@@ -1220,6 +1231,7 @@
       }
     });
     window.addEventListener("dashboard:trajectory-seek", async (event) => {
+      stopFollowing();
       if (await loadPlayback(STATE.playbackPayload)) await setPlaybackFrame(event.detail?.frame || 0);
     });
     document.getElementById("traj-speed")?.addEventListener("change", async (event) => {
@@ -1269,6 +1281,11 @@
       }
     }
     await setPlaybackFrame(next);
+  }
+
+  function stopFollowing() {
+    const follow = document.getElementById("traj-follow");
+    if (follow && follow.checked) follow.checked = false;
   }
 
   async function setPlaybackFrame(frame) {

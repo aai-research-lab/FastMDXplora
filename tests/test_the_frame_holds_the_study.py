@@ -404,3 +404,31 @@ class TestThePopupItemsAct(unittest.TestCase):
     def test_pause_is_one_word(self):
         # "Pause updates" overlapped Refresh in a 232px sidebar.
         self.assertIn('<span id="pause-label">Pause</span>', _page())
+
+
+class TestTheViewerFollowsTheRun(unittest.TestCase):
+    """When new frames arrive during a run, show the newest -- unless a
+    person has chosen a frame, in which case the run stops choosing for
+    them."""
+
+    def script(self):
+        return (STATIC / "molecule-viewer.js").read_text(encoding="utf-8")
+
+    def test_the_toggle_exists_and_is_on_by_default(self):
+        page = _page()
+        self.assertIn('id="traj-follow" checked', page)
+
+    def test_new_frames_land_on_the_newest_when_following(self):
+        script = self.script()
+        self.assertIn('document.getElementById("traj-follow")?.checked', script)
+        self.assertIn("STATE.playbackFrames - 1 : current", script)
+
+    def test_scrubbing_or_stepping_stops_following(self):
+        # A person looking at frame 40 is not dragged to frame 200 by the
+        # next poll.
+        script = self.script()
+        self.assertIn("function stopFollowing()", script)
+        seek = script[script.index('"dashboard:trajectory-seek"'):]
+        self.assertIn("stopFollowing();", seek[:120])
+        action = script[script.index('"dashboard:trajectory-action"'):]
+        self.assertIn('action !== "last") stopFollowing()', action[:400])
