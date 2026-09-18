@@ -119,6 +119,12 @@ class Proposal:
     #: paragraph, not a config and not a refusal, and a loop with no way
     #: to say one produced configs for questions.
     answer: str | None = None
+    #: An action the person asked for, by name: "run", "stop", "open
+    #: viewer". The person's instruction is the click. The loop returns it
+    #: and the caller carries it out through the same door the button
+    #: uses, so the mode's gates -- a budget for autonomous, control for
+    #: stop -- apply to a word in the thread as they do to a press.
+    action: str | None = None
 
     @property
     def accepted(self) -> bool:
@@ -159,9 +165,20 @@ Not every message wants a config. If the person asks a question -- about
 molecular dynamics, about a setting, about what the run is doing or why
 it stopped -- answer it: reply with a single paragraph starting `SAY:`
 and nothing else. Use what the conversation and the run status say; do
-not guess at what happened. If they ask to run, stop, or open something,
-say what you would do and that the buttons under the config do it; you
-cannot press them.
+not guess at what happened.
+
+You can act, but only when told to, and one action at a time. When the
+person plainly instructs you -- "run it", "stop", "open the viewer" --
+reply with a single line `DO: <action>` and nothing else, where the
+action is one of: run, stop, open viewer, open overview, open report,
+open builder, show config, download config. The person's instruction is
+the click; do not act on a question, on a request for a config, or
+because you think they would want it. Never act twice in one reply. If
+they ask for a change and to run it in one message, write the config
+and say "say run when you have read it" -- one step of seeing what is
+about to run is what assisted mode promises. Stopping a run is
+irreversible, so `DO: stop` is confirmed with the person before it
+happens; you need not ask, the software does.
 
 Never invent a structure. A study needs a `systems:` entry whose `system`
 is a PDB identifier or a file path. Take it from the request. If the
@@ -238,6 +255,28 @@ def repair_prompt_for(previous: str, refusal: Refusal) -> str:
 
 
 
+
+
+ACTIONS = ("run", "stop", "open viewer", "open overview", "open report",
+           "open builder", "show config", "download config")
+
+
+def _action_in(raw: str) -> str | None:
+    """An action, if the reply is one: a first line `DO: <action>`.
+
+    Only the named actions, and only one. Anything else after DO: is not
+    an action, and a reply that is not exactly one line is not an action
+    either -- a model that says "DO: run" and then keeps talking is not
+    acting, it is narrating, and the person should see the narration.
+    """
+    lines = [line for line in (raw or "").splitlines() if line.strip()]
+    if len(lines) != 1:
+        return None
+    line = lines[0].strip()
+    if not line.upper().startswith("DO:"):
+        return None
+    action = line[3:].strip().lower().rstrip(".")
+    return action if action in ACTIONS else None
 
 def _answer_in(raw: str) -> str | None:
     """A plain answer, if the reply is one: a first line starting SAY:."""
@@ -334,6 +373,9 @@ def propose_config(
 
     for number in range(1, max_cycles + 1):
         raw = complete(prompt)
+        act = _action_in(raw)
+        if act:
+            return Proposal(config=None, attempts=tuple(attempts), action=act)
         said = _answer_in(raw)
         if said:
             return Proposal(config=None, attempts=tuple(attempts), answer=said)

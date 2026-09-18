@@ -150,6 +150,16 @@ def propose_endpoint(payload: dict[str, Any],
          "refusal": (attempt.refusal.as_dict() if attempt.refusal else None)}
         for attempt in proposal.attempts
     ]
+    if proposal.action:
+        # An instruction. The browser carries it out through the same
+        # door the button uses; the server only names it. For "stop" it
+        # adds where the run is, so the confirmation can say what would
+        # be lost.
+        where = ""
+        if proposal.action == "stop":
+            where = _where_the_run_is(runtime)
+        return {"ok": False, "action": proposal.action, "where": where,
+                "attempts": attempts}
     if proposal.answer:
         # A question was asked, not a study. A paragraph back.
         return {"ok": False, "answer": proposal.answer, "attempts": attempts}
@@ -292,4 +302,85 @@ def _run_status(runtime: Any) -> str | None:
                          + (f" -- {health['message']}" if health.get("message") else ""))
     except Exception:  # noqa: BLE001
         pass
+    results = _results_summary(getattr(runtime, "active_root", None))
+    if results:
+        lines.append("")
+        lines.append(results)
     return "\n".join(lines)
+
+
+def _results_summary(root: Any) -> str:
+    """What the analyses found, in a few lines a model can read.
+
+    The same numbers the Report page shows, from the same computation:
+    for each analysis, the mean, its standard error, how many effective
+    samples the trajectory held and how many frames were discarded as
+    not yet equilibrated. "Is the RMSD converged?" is answerable from
+    that -- the effective sample count against the ten a mean needs --
+    and not from a figure the model cannot see.
+    """
+    if not root:
+        return ""
+    from pathlib import Path
+
+    base = Path(root)
+    analysis = base / "analysis"
+    if not analysis.is_dir():
+        return ""
+    import json
+
+    rows: list[str] = []
+    for options in sorted(analysis.glob("*/options.json")):
+        try:
+            data = json.loads(options.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        name = str(data.get("analysis") or options.parent.name)
+        findings = data.get("findings") or {}
+        if not isinstance(findings, dict):
+            continue
+        parts: list[str] = []
+        for key, f in findings.items():
+            if not isinstance(f, dict) or "mean" not in f:
+                continue
+            mean = f.get("mean")
+            se = f.get("standard_error")
+            n_eff = f.get("effective_samples")
+            discard = f.get("discard")
+            n = f.get("n_frames")
+            # The findings key is usually "mean"; naming it twice reads as
+            # a stutter. Name the key only when it says something else.
+            label = "" if key == "mean" else f"{key} "
+            piece = (f"{label}mean {mean:.4g}" if isinstance(mean, (int, float))
+                     else f"{label}mean {mean}")
+            if isinstance(se, (int, float)):
+                piece += f" \u00b1 {se:.2g} (s.e.)"
+            if isinstance(n_eff, (int, float)):
+                piece += f", {n_eff:.1f} effective samples"
+                if n_eff < 10:
+                    piece += " -- too few for the mean to describe the system rather than this run"
+            if isinstance(discard, int) and isinstance(n, int):
+                piece += f", first {discard} of {n} frames discarded as unequilibrated"
+            parts.append(piece)
+        if parts:
+            rows.append(f"{name}: " + "; ".join(parts))
+    if not rows:
+        return ""
+    return "what the analyses found:\n" + "\n".join(f"  {r}" for r in rows[:20])
+
+
+def _where_the_run_is(runtime: Any) -> str:
+    """"production step 16,000" -- what a stop would throw away."""
+    if runtime is None or not getattr(runtime, "active_root", None):
+        return ""
+    try:
+        from fastmdxplora.gui.telemetry import read_status
+
+        status = read_status(runtime.active_root) or {}
+    except Exception:  # noqa: BLE001
+        return ""
+    stage = status.get("stage") or ""
+    step = status.get("step") or status.get("current_step")
+    if stage and isinstance(step, (int, float)):
+        return f"{stage} step {int(step):,}"
+    return str(stage)

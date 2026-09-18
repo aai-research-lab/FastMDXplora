@@ -254,6 +254,11 @@
     autosize(area);
     var r = reply();
     var box = r.part("attempts");
+    if (stopPending) {
+      confirmStop(typed, box);
+      scrollToEnd();
+      return;
+    }
     note(box, "Writing\u2026");
     scrollToEnd();
     el("agent-propose").disabled = true;
@@ -269,6 +274,15 @@
       (data.attempts || []).forEach(function (attempt) {
         if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
       });
+      if (data.action) {
+        /* An instruction, carried out through the same door the button
+         * uses. The thread says what was done, so nothing happens
+         * silently. */
+        history.push({ role: "agent", text: "DO: " + data.action });
+        act(data.action, data.where || "", box, r);
+        scrollToEnd();
+        return;
+      }
       if (data.answer) {
         /* A question, answered. No config, no actions. */
         var p = document.createElement("div");
@@ -308,7 +322,75 @@
     });
   }
 
+  /* ---- Acting -------------------------------------------------------- */
+
+  /* The last reply that carried a config, so "run it" has something to
+   * run. And a stop that is waiting for a "yes". */
+  var lastReply = null;
+  var stopPending = null;
+
+  function act(action, where, box, r) {
+    if (action === "run") {
+      if (!lastReply) {
+        note(box, "Nothing to run yet. Describe a study first.");
+        return;
+      }
+      note(box, "Starting the run.", true);
+      lastReply.part("run").click();
+      return;
+    }
+    if (action === "stop") {
+      /* Irreversible, so it is confirmed in the thread. The next message
+       * that says yes stops it; anything else is taken as no. */
+      stopPending = true;
+      note(box, "Stop the run" + (where ? " at " + where : "") + "? Say yes.");
+      return;
+    }
+    if (action.indexOf("open ") === 0) {
+      var page = action.slice(5);
+      var target = page === "builder" ? "run" : page;
+      note(box, "Opening the " + page + ".", true);
+      if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+        window.FastMDXDashboard.navigate(target);
+      } else {
+        window.location.hash = "#" + target;
+      }
+      return;
+    }
+    if (action === "show config") {
+      if (!lastReply) { note(box, "No config yet."); return; }
+      var result = lastReply.part("result");
+      if (result.hidden) lastReply.part("show").click();
+      note(box, "Shown above.", true);
+      return;
+    }
+    if (action === "download config") {
+      if (!lastReply) { note(box, "No config yet."); return; }
+      lastReply.part("download").click();
+      note(box, "Downloading.", true);
+      return;
+    }
+    note(box, "I do not know how to " + action + ".");
+  }
+
+  function confirmStop(typed, box) {
+    var yes = /^\s*(yes|y|yes please|do it|stop it|confirm)\s*\.?\s*$/i.test(typed);
+    stopPending = null;
+    if (!yes) {
+      note(box, "Not stopped.");
+      return;
+    }
+    fetch("/api/explore/stop", { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        note(box, d && d.ok !== false ? "Stopped the run." : (d && d.error) || "Could not stop it.", true);
+        history.push({ role: "agent", text: "Stopped the run." });
+      })
+      .catch(function () { note(box, "Could not reach the server to stop it."); });
+  }
+
   function wireActions(r, data, box) {
+    lastReply = r;
     var result = r.part("result");
     var actions = r.part("actions");
     var showBtn = r.part("show");

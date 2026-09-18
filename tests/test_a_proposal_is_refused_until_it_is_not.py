@@ -585,3 +585,172 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         self.assertIn("current_config: currentConfig", script)
         self.assertIn("if (data.answer) {", script)
         self.assertIn('history.push({ role: "agent", text: "Wrote a config:\\n" + data.yaml });', script)
+
+
+class TestTheAgentReadsTheResults(unittest.TestCase):
+    """"Is the RMSD converged?" needs the numbers, not the figure.
+
+    Per analysis: the mean, its standard error, the effective sample count
+    and how many frames were discarded as unequilibrated -- the same
+    findings the Report page shows, from the same files. Ten effective
+    samples is the bar for a mean to describe the system rather than this
+    run, and the summary says when an analysis is under it.
+    """
+
+    def run_dir(self, findings):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        root = Path(tempfile.mkdtemp())
+        for name, f in findings.items():
+            d = root / "analysis" / name
+            d.mkdir(parents=True)
+            (d / "options.json").write_text(json.dumps(
+                {"analysis": name, "findings": {"mean": f}}), encoding="utf-8")
+        return root
+
+    def test_each_analysis_is_one_line(self):
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        root = self.run_dir({"rmsd": {"mean": 0.0212, "standard_error": 0.0014,
+                                      "effective_samples": 40.6, "discard": 57,
+                                      "n_frames": 200}})
+        text = _results_summary(root)
+        self.assertIn("rmsd: mean 0.0212", text)
+        self.assertIn("40.6 effective samples", text)
+        self.assertIn("first 57 of 200 frames discarded", text)
+        self.assertNotIn("mean: mean", text)
+
+    def test_too_few_samples_is_said(self):
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        root = self.run_dir({"hbonds": {"mean": 0.0, "effective_samples": 1.0,
+                                        "discard": 0, "n_frames": 200}})
+        self.assertIn("too few for the mean to describe the system", _results_summary(root))
+
+    def test_no_analysis_no_summary(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        self.assertEqual(_results_summary(Path(tempfile.mkdtemp())), "")
+        self.assertEqual(_results_summary(None), "")
+
+    def test_a_broken_options_file_is_skipped(self):
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        root = self.run_dir({"rmsd": {"mean": 1.0, "effective_samples": 12.0}})
+        (root / "analysis" / "rmsd" / "options.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual(_results_summary(root), "")
+
+    def test_the_results_ride_with_the_run_status(self):
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        root = self.run_dir({"rg": {"mean": 0.32, "effective_samples": 30.0}})
+
+        class Runtime:
+            active_root = root
+
+            def snapshot(self):
+                return {"active_run": str(root), "status": "idle"}
+
+        status = _run_status(Runtime())
+        self.assertIn("what the analyses found", status)
+        self.assertIn("rg: mean 0.32", status)
+
+
+class TestThePersonsInstructionIsTheClick(unittest.TestCase):
+    """The Agent can act -- when told to, one action at a time, through
+    the same door the button uses.
+
+    "Run it" typed into the thread is not different in kind from pressing
+    Run here. Making the person find the button was a wall in the
+    conversation. But the Agent never acts unasked: not on a question, not
+    on a request for a config, not because it thinks they would want it,
+    and never twice in one reply. Stopping is irreversible, so it is
+    confirmed in the thread before it happens.
+    """
+
+    def test_a_named_action_on_one_line_is_an_action(self):
+        from fastmdxplora.agent.propose import _action_in
+
+        self.assertEqual(_action_in("DO: run"), "run")
+        self.assertEqual(_action_in("do: Stop."), "stop")
+        self.assertEqual(_action_in("DO: open viewer"), "open viewer")
+
+    def test_only_the_named_actions(self):
+        from fastmdxplora.agent.propose import ACTIONS, _action_in
+
+        self.assertIsNone(_action_in("DO: delete everything"))
+        self.assertIsNone(_action_in("DO: run twice"))
+        self.assertIn("run", ACTIONS)
+        self.assertIn("stop", ACTIONS)
+
+    def test_narration_is_not_action(self):
+        # A reply that says DO: and keeps talking is not acting.
+        from fastmdxplora.agent.propose import _action_in
+
+        self.assertIsNone(_action_in("DO: run\nand then I will check the log"))
+        self.assertIsNone(_action_in("SAY: DO: run"))
+
+    def test_the_loop_returns_it_without_retrying(self):
+        from fastmdxplora.agent import propose_config
+
+        calls = []
+
+        def complete(prompt):
+            calls.append(prompt)
+            return "DO: run"
+
+        proposal = propose_config("run it", complete, max_cycles=4)
+        self.assertEqual(proposal.action, "run")
+        self.assertFalse(proposal.accepted)
+        self.assertEqual(len(calls), 1)
+
+    def test_the_instructions_say_when_and_when_not(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("only when told to, and one action at a time", prompt)
+        self.assertIn("do not act on a question", prompt)
+        self.assertIn("Never act twice in one reply", prompt)
+        self.assertIn('say "say run when you have read it"', prompt)
+
+    def test_the_endpoint_names_the_action_and_where_the_run_is(self):
+        import os
+        import tempfile
+
+        prior = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = tempfile.mkdtemp()
+        self.addCleanup(lambda: (os.environ.__setitem__("FASTMDXPLORA_CONFIG_DIR", prior)
+                                 if prior is not None
+                                 else os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)))
+        import fastmdxplora.agent as agent_mod
+        from fastmdxplora.gui import agent_panel
+
+        before = agent_mod.completion_for
+        agent_mod.completion_for = lambda *a, **k: (lambda prompt: "DO: stop")
+        try:
+            answer = agent_panel.propose_endpoint({"request": "stop it"}, None)
+        finally:
+            agent_mod.completion_for = before
+        self.assertEqual(answer["action"], "stop")
+        self.assertIn("where", answer)
+
+    def test_the_panel_confirms_a_stop_and_carries_out_a_run(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('note(box, "Stop the run" + (where ? " at " + where : "") + "? Say yes.");', script)
+        self.assertIn("function confirmStop(typed, box)", script)
+        self.assertIn('fetch("/api/explore/stop", { method: "POST" })', script)
+        # Run goes through the button's own handler, so the mode's gates
+        # apply to a word in the thread as they do to a press.
+        self.assertIn('lastReply.part("run").click();', script)
+        # And "no" is anything that is not yes.
+        self.assertIn('note(box, "Not stopped.");', script)
