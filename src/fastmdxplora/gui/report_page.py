@@ -28,18 +28,25 @@ def report_payload(root: Path | str) -> dict[str, Any]:
         return {"ok": False, "reason": "no report yet",
                 "html": "", "not_produced": [], "downloads": {}}
 
+    text = source.read_text(encoding="utf-8", errors="replace")
+    # The markdown library lives in the `pdf` extra, not the base
+    # install, and a base install still has a report to show. With it,
+    # the report is rendered; without it, the same text is shown as it
+    # was written, which is legible Markdown. CI installs the base
+    # package and found this: five failures where a Mac with the extra
+    # had passed.
     try:
         import markdown
-    except ImportError:  # pragma: no cover - declared, but be honest
-        return {"ok": False, "reason": "markdown is not installed",
-                "html": "", "not_produced": [], "downloads": {}}
-
-    text = source.read_text(encoding="utf-8", errors="replace")
-    html = markdown.markdown(
-        text,
-        extensions=["tables", "fenced_code", "toc"],
-        output_format="html5",
-    )
+    except ImportError:
+        html = '<pre class="report-plain">' + _escape(text) + "</pre>"
+        rendered = "plain"
+    else:
+        html = markdown.markdown(
+            text,
+            extensions=["tables", "fenced_code", "toc"],
+            output_format="html5",
+        )
+        rendered = "html"
 
     not_produced: list[dict[str, str]] = []
     record = report_dir / "not_produced.json"
@@ -70,6 +77,7 @@ def report_payload(root: Path | str) -> dict[str, Any]:
         "not_produced": not_produced,
         "downloads": downloads,
         "generated": _generated_line(text),
+        "rendered": rendered,
     }
 
 
@@ -80,3 +88,8 @@ def _generated_line(text: str) -> str:
         if stripped.lower().startswith("generated:"):
             return stripped[len("generated:"):].strip()
     return ""
+
+
+def _escape(text: str) -> str:
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;"))

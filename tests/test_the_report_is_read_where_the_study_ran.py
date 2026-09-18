@@ -50,9 +50,41 @@ class TestThePayload(unittest.TestCase):
 
         answer = report_payload(_run_with_report())
         self.assertTrue(answer["ok"])
-        self.assertIn("<h1", answer["html"])
-        self.assertIn("<table>", answer["html"])
         self.assertEqual(answer["generated"], "2026-09-17 (UTC)")
+        if answer["rendered"] == "html":
+            self.assertIn("<h1", answer["html"])
+            self.assertIn("<table>", answer["html"])
+        else:
+            # The markdown library is in the `pdf` extra. A base install
+            # shows the report as written, which is legible Markdown.
+            self.assertIn("# FastMDXplora Study", answer["html"])
+            self.assertIn('<pre class="report-plain">', answer["html"])
+
+    def test_without_the_markdown_library_the_report_still_shows(self):
+        # CI installs the base package and found this: five failures where
+        # a machine with the extra had passed.
+        import builtins
+        import importlib
+
+        from fastmdxplora.gui import report_page
+
+        real = builtins.__import__
+
+        def hide(name, *a, **k):
+            if name == "markdown":
+                raise ImportError("hidden for the test")
+            return real(name, *a, **k)
+
+        builtins.__import__ = hide
+        try:
+            answer = report_page.report_payload(_run_with_report())
+        finally:
+            builtins.__import__ = real
+            importlib.reload(report_page)
+        self.assertTrue(answer["ok"])
+        self.assertEqual(answer["rendered"], "plain")
+        self.assertIn("# FastMDXplora Study", answer["html"])
+        self.assertNotIn("<h1", answer["html"])
 
     def test_only_downloads_that_exist_are_offered(self):
         from fastmdxplora.gui.report_page import report_payload
@@ -140,7 +172,7 @@ class TestItServes(unittest.TestCase):
         base = f"http://127.0.0.1:{session.port}"
         answer = json.loads(urlopen(base + "/api/report").read())
         self.assertTrue(answer["ok"])
-        self.assertIn("<h1", answer["html"])
+        self.assertIn("FastMDXplora Study", answer["html"])
         self.assertEqual(answer["not_produced"][0]["artifact"], "report.pdf")
         self.assertEqual(urlopen(base + "/static/report-page.js").getcode(), 200)
 
