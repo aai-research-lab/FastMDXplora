@@ -61,6 +61,24 @@
     }).then(function (response) { return response.json(); });
   }
 
+  /* The little markdown a reply may carry -- bold, italic, code, a link --
+   * and nothing else. Escaped first, so the model cannot put markup in
+   * the page; then the four patterns, in an order that keeps code spans
+   * from being reinterpreted. Paragraphs are blank-line separated. */
+  function prose(text) {
+    var s = String(text || "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    s = s.replace(/`([^`\n]+)`/g, function (_, c) { return "<code>" + c + "</code>"; });
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+    /* Italic needs a non-space just inside each star, so "a * b * c" --
+     * an arithmetic asterisk with spaces -- stays as typed. */
+    s = s.replace(/(^|[^*])\*(\S(?:[^*\n]*\S)?)\*(?!\*)/g, "$1<em>$2</em>");
+    s = s.replace(/\bhttps?:\/\/[^\s<)]+/g, function (u) {
+      return '<a href="' + u + '" target="_blank" rel="noopener">' + u + "</a>";
+    });
+    return s;
+  }
+
   function note(box, text, ok) {
     var line = document.createElement("div");
     line.className = "agent-attempt" + (ok ? " ok" : "");
@@ -382,7 +400,7 @@
         /* A question, answered. No config, no actions. */
         var p = document.createElement("div");
         p.className = "agent-answer";
-        p.textContent = data.answer;
+        p.innerHTML = prose(data.answer);
         box.appendChild(p);
         history.push({ role: "agent", text: data.answer });
         area.focus();

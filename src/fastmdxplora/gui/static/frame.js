@@ -359,6 +359,20 @@
     });
     /* The version is on the Cite page, filled in by the server. Read it
      * from there rather than asking for a second copy. */
+    var copyPath = el("copy-output-path");
+    if (copyPath) {
+      copyPath.addEventListener("click", function () {
+        var path = (el("sidebar-output-folder") || {}).textContent || "";
+        if (!path || path === "\u2014") return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(path.trim()).then(function () {
+            copyPath.textContent = "Copied";
+            setTimeout(function () { copyPath.textContent = "Copy path"; }, 1400);
+          });
+        }
+      });
+    }
+
     var version = el("settings-version");
     var cite = el("cite-version");
     if (version && cite) version.textContent = cite.textContent.trim();

@@ -2716,10 +2716,11 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
    what the study block above it already said. Folded in. */
 .study-facts { margin-top: 5px; font-size: 10.5px; color: var(--text-muted); display: flex; align-items: center; }
 .study-facts .status-divider { margin: 0 6px; }
-.study-path {
-    margin-top: 4px; font-size: 10px; color: var(--text-muted);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
-}
+/* The folder's name and path are gone from the block: the Output button
+   opens the folder and Copy path puts it on the clipboard, and two lines
+   of fastmdxplora_output_20260918_113940 said nothing the button does
+   not. The elements stay, hidden, because the JS writes to them. */
+.study-path, .sidebar-study .study-label { display: none; }
 .sidebar-footer { padding: 8px 6px; }
 .footer-cite { font-size: 11px; color: var(--text-muted); text-decoration: none; }
 .footer-cite:hover { color: var(--text-primary); }
@@ -2900,11 +2901,21 @@ html[data-page="viewer"] .page-shell { max-width: none; }
    That is the pairing every assistant a person has read uses, and it
    makes the two voices in the thread tell apart at a glance. A system
    serif, because this GUI runs without a route to the internet. */
+/* Body prose in the secondary text colour at normal weight. In the
+   primary colour -- bright white -- a serif at this size read as bold
+   across the whole reply, which left nowhere for emphasis to go.
+   Emphasis is the model's to place: bold, italic, code and links come
+   through from the reply's own markdown, nothing else does. */
 .agent-answer, .agent-msg-agent .agent-attempt {
     font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif;
-    font-size: 15.5px; line-height: 1.65; color: var(--text-primary);
+    font-size: 15px; line-height: 1.65; font-weight: 400; color: var(--text-secondary);
     white-space: pre-wrap; max-width: 720px;
 }
+.agent-answer strong { color: var(--text-primary); font-weight: 600; }
+.agent-answer em { font-style: italic; }
+.agent-answer code { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary); background: var(--background-elevated); padding: 1px 5px; border-radius: 4px; }
+.agent-answer a { color: var(--accent-cyan); text-decoration: none; }
+.agent-answer a:hover { text-decoration: underline; }
 .agent-msg-agent .agent-attempt { font-size: 14.5px; }
 .agent-msg-agent .agent-attempt.ok { font-family: inherit; font-size: 12px; }
 .agent-msg-user > div:first-child { font-size: 14.5px; }

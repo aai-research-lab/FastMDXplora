@@ -168,7 +168,8 @@
         <div class="sidebar-controls">
           <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause</span></button>
           <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">Refresh</button>
-          <button class="ghost-btn" type="button" id="open-output" title="Open output folder">Output</button>
+          <button class="ghost-btn" type="button" id="open-output" title="Open the output folder">Output</button>
+          <button class="ghost-btn" type="button" id="copy-output-path" title="Copy the output folder's path">Copy path</button>
         </div>
         <div class="sidebar-refreshed muted" id="refreshed-indicator">refreshed <span id="refreshed-at">just now</span></div>
       </div>
@@ -988,7 +989,7 @@
       <div class="side-pane" data-side-pane="log" role="tabpanel">
         <div class="side-log" id="side-log" aria-live="polite"></div>
         <div class="side-log-foot">
-          <label class="side-follow"><input type="checkbox" id="side-follow" checked> follow</label>
+          <label class="side-follow" title="Keep the newest line in view as the run writes. Untick to read back without being pulled to the bottom."><input type="checkbox" id="side-follow" checked> scroll to newest</label>
           <span class="side-panel-spacer"></span>
           <div class="side-filters" role="group" aria-label="Filter log">
             <button type="button" class="side-filter active" data-log-filter="all">all</button>

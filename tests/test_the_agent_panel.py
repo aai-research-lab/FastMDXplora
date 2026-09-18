@@ -1859,3 +1859,84 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
         self.assertIn("No em dashes and no en dashes", prompt)
         self.assertIn('No "I\'d be happy to", no "great question"', prompt)
         self.assertIn("Say the thing and stop.", prompt)
+
+
+class TestTheAgentsProseAndTheSidebar(unittest.TestCase):
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_the_prose_is_normal_weight_in_the_secondary_colour(self):
+        # In the primary colour a serif at this size read as bold across
+        # the whole reply, and left nowhere for emphasis to go.
+        css = self.css()
+        rule = css[css.index(".agent-answer, .agent-msg-agent .agent-attempt {"):]
+        rule = rule[:rule.index("}")]
+        self.assertIn("font-weight: 400", rule)
+        self.assertIn("color: var(--text-secondary)", rule)
+        self.assertIn(".agent-answer strong { color: var(--text-primary); font-weight: 600; }", css)
+
+    def test_a_reply_renders_only_four_kinds_of_emphasis_and_escapes_the_rest(self):
+        script = self.script()
+        self.assertIn("function prose(text)", script)
+        block = script[script.index("function prose(text)"):script.index("function note(box")]
+        self.assertIn('replace(/&/g, "&amp;")', block)
+        for tag in ("<code>", "<strong>", "<em>", "rel=\"noopener\""):
+            with self.subTest(tag=tag):
+                self.assertIn(tag, block)
+        self.assertIn("p.innerHTML = prose(data.answer);", script)
+
+    def test_the_agent_is_told_where_emphasis_belongs(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("**bold** for the one thing to", prompt)
+        self.assertIn("No headings, no bullet lists in an answer.", prompt)
+
+    def test_the_sidebar_shows_the_study_not_its_folder(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = self.css()
+        self.assertIn(".study-path, .sidebar-study .study-label { display: none; }", css)
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        # The elements stay, hidden, because the JS writes to them.
+        self.assertEqual(page.count('id="sidebar-output-folder"'), 1)
+        self.assertEqual(page.count('id="topbar-run-id"'), 1)
+
+    def test_copy_path_stands_beside_output(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="copy-output-path"', page)
+        frame = (pathlib.Path(gui.__file__).parent / "static"
+                 / "frame.js").read_text(encoding="utf-8")
+        self.assertIn('el("copy-output-path")', frame)
+
+    def test_the_follow_toggle_says_what_it_does(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("scroll to newest", page)
+        self.assertIn("Keep the newest line in view as the run writes", page)
