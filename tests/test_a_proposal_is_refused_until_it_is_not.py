@@ -451,7 +451,7 @@ class TestARequestWithNoStructureGetsAQuestion(unittest.TestCase):
 
 
 class TestTheAgentIsAConversation(unittest.TestCase):
-    """Claude for molecular dynamics, not a form with a model behind it.
+    """An assistant for molecular dynamics, not a form with a model behind it.
 
     The loop was stateless: instructions, schema, "the study wanted".
     "Make it 5 ns" started a new study; "why did it stop?" produced a
