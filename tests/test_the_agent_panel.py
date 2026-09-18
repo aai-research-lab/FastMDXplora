@@ -1647,3 +1647,28 @@ class TestTheBudgetIsAConfigKey(unittest.TestCase):
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('<button class="primary-btn" type="button" data-role="run" id="agent-run">', page)
+
+
+class TestTheThreadFollowsTheReply(unittest.TestCase):
+
+    def test_the_last_message_is_scrolled_into_view(self):
+        # scrollTop on the thread assumed the thread was the scroll
+        # container; when the page scrolled instead, nothing moved and a
+        # person scrolled by hand after every reply.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('last.scrollIntoView({ block: "end"', script)
+        self.assertIn("requestAnimationFrame(function ()", script[script.index("function scrollToEnd"):])
+
+    def test_the_page_has_a_height_so_the_thread_scrolls(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        self.assertIn('.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); }', css)

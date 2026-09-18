@@ -2833,7 +2833,11 @@ body { overflow: hidden; }
    from every assistant they have used, and it is the right shape for a
    loop that asks, refuses, corrects and answers.
    =========================================================================== */
-.page[data-page="agent"] { display: flex; flex-direction: column; min-height: calc(100vh - 48px); }
+/* A fixed height, not a minimum: with a minimum the page grew with the
+   thread and the main column scrolled instead of the thread, so the
+   composer left the foot and scrollToEnd moved nothing. The 88px is
+   the page shell's own padding, top and bottom. */
+.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); }
 .page[data-page="agent"] .page-header { flex: none; }
 .agent-thread {
     flex: 1; min-height: 0; overflow-y: auto;

@@ -232,8 +232,19 @@
   }
 
   function scrollToEnd() {
+    /* The last message into view, whichever ancestor scrolls. Setting
+     * scrollTop on the thread assumed the thread was the scroll
+     * container, and when it was not, nothing moved. After a frame, so
+     * the reply just appended has a height. */
     var thread = el("agent-thread");
-    thread.scrollTop = thread.scrollHeight;
+    var last = thread.lastElementChild;
+    requestAnimationFrame(function () {
+      if (last && last.scrollIntoView) {
+        last.scrollIntoView({ block: "end", behavior: "smooth" });
+      } else {
+        thread.scrollTop = thread.scrollHeight;
+      }
+    });
   }
 
   function autosize(area) {
