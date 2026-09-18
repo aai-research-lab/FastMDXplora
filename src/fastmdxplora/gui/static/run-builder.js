@@ -1407,5 +1407,10 @@
 
   window.FastMDXRun = {
     state, currentState, PHASES, STARTING_POINTS, applyLoadedState,
+    /* The four actions the Agent panel offers on a config it just wrote.
+     * They read the builder's state, which the panel loads silently
+     * first, so the file, the command and the script are the same ones
+     * the builder would produce -- one derivation, two doors. */
+    fetchConfig, download, copyCommand, downloadScript,
   };
 })();

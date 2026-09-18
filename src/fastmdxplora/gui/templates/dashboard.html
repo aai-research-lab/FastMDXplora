@@ -854,10 +854,21 @@
             </div>
             <div id="agent-attempts" class="agent-attempts"></div>
             <pre id="agent-result" class="agent-result" hidden></pre>
-            <div class="control-row" id="agent-actions" hidden>
-              <button id="agent-download" class="ctl-btn">Download</button>
-              <button id="agent-load" class="ctl-btn">Open in builder</button>
-              <button id="agent-run" class="ctl-btn primary" hidden>Explore</button>
+            <div id="agent-actions" hidden>
+              <label class="checkbox-row agent-full">
+                <input type="checkbox" id="agent-full-config">
+                <span>Write every setting, not only the ones the Agent set</span>
+              </label>
+              <div class="control-row">
+                <button id="agent-show" class="ctl-btn" type="button">Show the full config</button>
+                <button id="agent-download" class="ctl-btn" type="button">Download config</button>
+                <button id="agent-copy-command" class="ctl-btn" type="button">Copy the command</button>
+                <button id="agent-download-script" class="ctl-btn" type="button">Download a script</button>
+                <button id="agent-run" class="ctl-btn primary" type="button">Run here</button>
+              </div>
+              <p class="builder-card-note">
+                <a href="#run" id="agent-load">Open in the builder</a> to change it first.
+              </p>
             </div>
           </div>
 

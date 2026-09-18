@@ -2815,3 +2815,10 @@ body { overflow: hidden; }
 .overview-summary .metric-card-value { white-space: normal; overflow-wrap: anywhere; font-size: 15px; }
 .overview-summary .metric-card-value[data-kind="path"] { font-size: 12px; }
 @media (max-width: 720px) { .overview-summary { grid-template-columns: 1fr; } }
+
+/* The Agent's action row, once a config is written: the builder's own
+   set, under the Agent. Going to the builder is a link for changing the
+   config, not the way out. */
+#agent-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+#agent-actions .control-row { flex-wrap: wrap; margin-top: 0; }
+.agent-full { font-size: 12px; color: var(--text-secondary); }

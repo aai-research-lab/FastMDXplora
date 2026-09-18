@@ -230,45 +230,68 @@
       note(box, data.cycles === 1
         ? "Accepted first time."
         : "Accepted after " + data.cycles + " attempts.", true);
-      el("agent-download").onclick = function () { download(data.yaml); };
       el("agent-result").textContent = data.yaml;
       el("agent-result").hidden = false;
       el("agent-actions").hidden = false;
-      el("agent-run").hidden = (el("agent-mode").value === "assisted");
-      el("agent-load").onclick = function () {
-        /* An earlier version reached for a `FastMDX` global and a
-         * `loadConfigObject` on it, and neither has ever existed -- the
-         * truthiness guard turned that into a silent no-op, which is why
-         * the button looked like it worked. The mapping from a config to
-         * form state lives on the server, so the config goes there and
-         * comes back as state. */
-        post("/api/load-config", { config: data.config }).then(function (m) {
-          if (!m || !m.ok) {
-            note(box, (m && m.error) || "Could not open it in the builder.");
-            return;
-          }
-          var run = window.FastMDXRun;
-          if (!run || !run.applyLoadedState) return;
-          run.applyLoadedState(m.state, {
-            note: "Opened the Agent's config. Nothing is written until you run it."
+
+      /* Load the config into the builder's state without going there.
+       * The builder's four actions -- the file, the command, the script,
+       * the full config -- all read that state, so once it holds this
+       * config they produce exactly what the builder would. One
+       * derivation, two doors. The mapping from config to state is on
+       * the server. */
+      var loaded = post("/api/load-config", { config: data.config }).then(function (m) {
+        if (!m || !m.ok) {
+          note(box, (m && m.error) || "Could not prepare the config for the builder.");
+          return false;
+        }
+        var run = window.FastMDXRun;
+        if (!run || !run.applyLoadedState) return false;
+        run.applyLoadedState(m.state, {});
+        return true;
+      });
+
+      function viaBuilder(action, label) {
+        return function () {
+          loaded.then(function (ok) {
+            if (!ok) return;
+            var run = window.FastMDXRun;
+            var full = el("run-full-config");
+            if (full) full.checked = el("agent-full-config").checked;
+            Promise.resolve(run[action]()).then(function () {
+              /* The builder reports into its own note; say the same
+               * thing here, where the person is looking. */
+              var said = document.getElementById("run-note");
+              if (said && said.textContent) note(box, said.textContent, true);
+            });
           });
-          window.location.hash = "#run";
+        };
+      }
+
+      el("agent-show").onclick = function () {
+        loaded.then(function (ok) {
+          if (!ok) return;
+          var full = el("run-full-config");
+          if (full) full.checked = el("agent-full-config").checked;
+          window.FastMDXRun.fetchConfig().then(function (built) {
+            if (built && built.ok) el("agent-result").textContent = built.yaml;
+            else if (built) note(box, built.error);
+          });
         });
       };
+      el("agent-download").onclick = viaBuilder("download");
+      el("agent-copy-command").onclick = viaBuilder("copyCommand");
+      el("agent-download-script").onclick = viaBuilder("downloadScript");
+      el("agent-load").onclick = function (e) {
+        e.preventDefault();
+        loaded.then(function (ok) {
+          if (ok) window.location.hash = "#run";
+        });
+      };
+      /* Run here goes through the Agent's own door, which checks the
+       * budget an autonomous run needs and records the mode. */
       el("agent-run").onclick = function () { start(data.config, box); };
     });
-  }
-
-  /* The config, as a file, without a round trip. It is already here. */
-  function download(yaml) {
-    var blob = new Blob([yaml], {type: "text/yaml"});
-    var link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "fastmdxplora_config.yml";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
   }
 
   function start(config, box) {

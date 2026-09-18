@@ -658,12 +658,9 @@
       const body = document.getElementById("live-absent-body");
       if (body && nothing && !body.innerHTML) {
         body.innerHTML =
-          "This run did not record live telemetry, so there is nothing for " +
-          "this page to read. It is written only when a run asks for it, and " +
-          "that is off by default: set <code>live_telemetry: true</code> " +
-          "under <code>simulation</code> in the config, or pass " +
-          "<code>--live-telemetry</code>, and this page fills as the run " +
-          "goes.";
+          "No live telemetry for this run. Turn it on with " +
+          "<code>live_telemetry: true</code> under <code>simulation</code>, " +
+          "or <code>--live-telemetry</code>.";
       }
     }
     if (nothing) return;

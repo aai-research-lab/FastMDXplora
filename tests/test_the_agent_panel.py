@@ -740,20 +740,56 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         self.assertIn("not the same thing", help_text)
 
     def test_the_actions_are_the_ones_asked_for(self):
+        # The builder's own set, under the Agent: there is no need to go
+        # to the builder from the Agent unless you want to change the
+        # config, and that is a link, not the way out.
         panel = self.panel()
-        for action in ("Write config", "Download", "Explore"):
+        for action in ("Write config", "Show the full config", "Download config",
+                       "Copy the command", "Download a script", "Run here",
+                       "Write every setting"):
             with self.subTest(action=action):
                 self.assertIn(action, panel)
+        self.assertIn('id="agent-load"', panel)
         # "Draft" is not a word this page uses.
         self.assertNotIn("draft", panel.lower())
 
-    def test_the_download_needs_no_round_trip(self):
-        # The config is already in the browser. Asking the server for it
-        # again would be a second copy that could differ from the one on
-        # screen.
+    def test_the_actions_are_the_builders_own(self):
+        """One derivation, two doors.
+
+        The file, the command and the script come from the builder's
+        exported actions, reading the builder's state -- which the panel
+        loads silently from the config it just wrote. So what the Agent
+        hands over is exactly what the builder would, rather than a
+        second rendering that could drift. The first version wrote the
+        YAML from the browser without a round trip; that matched the
+        screen but not the builder.
+        """
         script = self.script()
-        self.assertIn("function download(yaml)", script)
-        self.assertIn("fastmdxplora_config.yml", script)
+        self.assertIn('post("/api/load-config", { config: data.config })', script)
+        for action in ("download", "copyCommand", "downloadScript"):
+            with self.subTest(action=action):
+                self.assertIn(f'viaBuilder("{action}")', script)
+        self.assertIn("window.FastMDXRun.fetchConfig()", script)
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        builder = (pathlib.Path(gui.__file__).parent / "static"
+                   / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("fetchConfig, download, copyCommand, downloadScript,", builder)
+
+    def test_run_here_still_goes_through_the_agents_door(self):
+        # It checks the budget an autonomous run needs and records the
+        # mode, which the builder's start does not.
+        script = self.script()
+        self.assertIn('el("agent-run").onclick = function () { start(data.config, box); };', script)
+        self.assertIn('post("/api/agent/run"', script)
+
+    def test_opening_the_builder_is_a_link_not_the_way_out(self):
+        panel = self.panel()
+        load = panel[panel.index('id="agent-load"') - 40:panel.index('id="agent-load"') + 80]
+        self.assertIn("<a href=", load)
+        self.assertIn("to change it first", panel)
 
     def test_the_dialog_is_not_a_file_picker(self):
         # It borrows the shape and not the class: there is exactly one file
