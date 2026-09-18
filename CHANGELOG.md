@@ -7,13 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-## [2.5.6] — 2026-09-09
+## [2.5.6] — 2026-09-18
 
-A pull and its umbrella windows now come from one configuration, which is
-this release's reason for existing. Around it: selections given one
-vocabulary and one documented trap, free energies given an error bar or
-withheld with a reason, a box that grows by its own shape rather than a
-cube's, and a validation corpus that for the first time actually runs.
+A pull and its umbrella windows now come from one configuration, and a
+study can be written from a sentence. Those are the two reasons this
+release exists. Around them: every refusal given a name a program can act
+on, a study designed from a short pilot and priced before it spends
+anything, runs that split and rejoin without becoming a different study,
+selections given one vocabulary and one documented trap, free energies
+given an error bar or withheld with a reason, a box that grows by its own
+shape rather than a cube's, and a validation corpus that for the first
+time actually runs.
 
 ### The thermodynamics analysis could not find the record it needs
 
@@ -290,6 +294,451 @@ Also: `fastmdx info` is the command, not `fastmdx doctor`; a corpus test that
 asserted the installer now asserts the capability; and tests that shell out
 to a tool declare it.
 
+### A study can be written from a sentence
+
+`propose_config` has always taken a callable -- prompt in, text out -- which
+is a reasonable thing to ask of a developer and an unreasonable thing to ask
+of somebody who wants to run a simulation. `fastmdx agent` is that callable,
+built from a choice made once.
+
+```
+fastmdx agent "trypsin with benzamidine, 100 ns, umbrella along the
+               unbinding coordinate" -o study.yml
+```
+
+Two providers by name and a third taking any OpenAI-compatible base URL,
+which covers DeepSeek, vLLM, Ollama, OpenRouter and most local servers. They
+speak the same shape, so there is nothing to add per vendor: a list of
+vendors goes stale and a protocol does not.
+
+What the Agent writes goes through the same `validate_config`, by the same
+code, with the same refusals, as a config typed by hand. When the validator
+refuses, the refusal goes back and the Agent repairs; `--attempts` bounds
+that loop and defaults to 3 on measured evidence rather than on a guess. The
+repair attempts print as they happen, because they are the only visible sign
+that anything checked the config.
+
+The key lives in one file outside any study, owner-only, and the environment
+is read first so a cluster job or a CI run never has to store one. It never
+enters a config, a manifest, a log line or an error message. `agent_model`
+records which model wrote a study, because "why did this pick 300 K" has a
+different answer depending on whether a frontier model or a 7B on a laptop
+proposed it, and an alias is not a version.
+
+`agent/evaluate.py` and `scripts/measure_nli.py` measure the interface
+rather than assume it. Two quantities, and the second is the point: *valid*
+is cycles to a config the validator accepts, *correct* is whether it meant
+what was asked. A config can validate and be the wrong study -- 300 K where
+the sentence said 310, a setting simply omitted, or a concentration written
+in millimolar where the field is molar. The evaluation set is fourteen
+sentences across easy, medium and hard.
+
+### The Agent in the browser is a conversation with the run in front of it
+
+`fastmdx agent` with no request opens the same server `fastmdx gui` starts,
+landing on `#agent`. One browser, one codebase; two commands that started two
+servers would be two things to learn for one thing to use.
+
+The panel is a conversation that can see the config, the run and the
+results. It edits rather than restarts, answers questions about what is on
+screen, and when told to, runs, stops with a confirmation, and opens pages.
+It never acts unasked. Every field of a config it writes reaches the run
+through one renderer, so what the thread shows is what launches.
+
+The key is typed in the browser, sent once, and stored server-side, because
+a browser cannot hold a secret: anything the page keeps is readable by
+anything else the page runs. It is never sent back, and a test asserts the
+response contains no key at all -- a page that never receives one cannot
+leak one. `unvalidated` is refused at this door with the same code the CLI
+gives, because a mode that existed in one door and not the other would be
+two pieces of software wearing one name.
+
+### A short pilot says what an umbrella study should be
+
+An umbrella study's window spacing and force constant decide whether it
+produces a free energy or a refusal, and neither can be read off the
+structure. Finding them has meant running a study, watching it refuse,
+changing something and running it again.
+
+Every window already carries the number that fixes both. It comes to rest
+where its restraint's pull matches the free energy's, so its displacement
+times its force constant is the gradient of the surface there -- the one
+place an umbrella study reports the slope directly. Read a handful of
+windows that way, run briefly, and they measure the gradient along the whole
+coordinate.
+
+`design_from_a_pilot` solves the two requirements together. A window has to
+stay within half the distance to its neighbour, which bounds the constant
+from below; neighbours have to overlap, `d <= 2.5 sigma`, which bounds it
+from above. Asking a window to use four fifths of the room it is allowed
+gives `d = 2.5 kT / G` and `k = G^2 / kT`. On the trypsin-benzamidine
+coordinate a stretch measuring 223 kJ/mol/nm gives 0.0344 nm at 12,970
+kJ/mol/nm^2, against the 0.0344 nm at 13,000 that study reached by hand over
+two days and three attempts.
+
+The design checks itself before it runs. `predicted` says where every window
+it proposes would come to rest, how much of its allowance that uses, and the
+area it would share with its neighbour, computed from the distributions the
+restraints imply rather than asserted. `measured_over` says where the
+readings stop. A proposed study can be refused, repaired and proposed again
+without leaving the planner.
+
+### A study is priced between setup and the part that costs something
+
+`--autonomous` now runs, in two stages with an estimate between them. Cost
+scales with the solvated particle count, which depends on box shape, padding
+and ion concentration -- decisions setup makes. A protein of 2,000 atoms is
+60,000 solvated, so guessing from the residue count would be inventing the
+water, which is most of the atoms. Setup settles the count, the estimate
+comes from that count on this machine, and the simulation starts only if it
+fits the budget.
+
+The gate sits where the information first exists and before the cost is
+incurred: earlier it would be guessing, later there would be nothing left to
+stop. Refusing keeps setup's output, so a shorter study reuses it through
+`setup_from`, and the refusal names both figures -- the estimate and the
+budget -- because the answer to "too expensive" is usually a shorter run
+rather than a larger allowance, and a caller cannot make that choice without
+the numbers.
+
+`--autonomous` refuses without `--budget-hours` rather than defaulting. A
+default allowance would be a number nobody chose deciding how much of
+somebody's card to spend.
+
+### A cone on the angle, and the room it took out of the bulk added back
+
+A window on a distance holds the ligand at a radius and leaves it free on
+the sphere of that radius. The bulk reference the recombination uses,
+`-2kT ln r`, says only that the room at radius r is `4 pi r^2`.
+
+Two things have to be true for that to mean anything, and on a real site
+neither was. A study of trypsin and benzamidine measured both: the sphere 1
+nm from its S1 site is 12 per cent outside the protein and 50 per cent at 2
+nm, because the coordinate's origin is a centroid of backbone atoms and is
+buried. And one window's ligand visited between a twentieth and a third of
+what was open to it, because a sphere of radius 2 nm has 50 square
+nanometres of surface.
+
+`cone` answers both at once: a flat-bottomed wall on the angle between the
+site-to-ligand line and an axis fixed in the protein, confining the ligand
+to a cap of solid angle `Omega = 2 pi (1 - cos theta)`. Flat-bottomed rather
+than harmonic, so inside the cone there is no bias at all. The axis is the
+direction from a named group's centre to the site, so it turns with the
+molecule instead of pointing at a corner of the box. The cone is measured
+off the pull rather than chosen, and each window starts inside the wall it
+will run under.
+
+The solid angle is integrated rather than assumed. A wall is a quadratic
+penalty, not a cliff: at 5,000 kJ/mol/rad^2 the ligand reaches about three
+degrees past thirty, which is seven per cent more cap, and that number
+enters a binding free energy as a logarithm. `solid_angle` integrates the
+wall's own Boltzmann factor over the sphere.
+
+Running inside a cone changes one side of the binding free energy and not
+the other: the bulk state gives up `4 pi / Omega` of its room and a bound
+pose that fits inside the cone gives up none. `binding_free_energy` takes
+the cone the windows ran under and adds `kT ln(4 pi / Omega)` back. Both
+numbers are reported -- `delta_g_before_the_cone_kjmol` is what the curve
+says and `delta_g_kjmol` is what it means -- because a reader checking the
+arithmetic should see the step rather than the result of it.
+
+The half of that derivation which can fail is the bound state, so it is
+measured. Every window writes the wall's own bias beside its coordinate;
+`wall_bias_where_the_bound_state_is` reads that column out of the windows
+holding the bound state, discards what the study discards, and takes the
+worst rather than the average -- one window pressed against the wall is
+enough to have taken population out of the integral. Above a tenth of RT the
+binding free energy is refused, with the number and the remedy. Where no
+window recorded the column, the result says the check was not made rather
+than reporting a zero that would read as a wall that stayed quiet.
+
+The plan's `cone` block records what the correction will cost before it is
+spent, and the windows' own records are read from the directory the runner
+writes them to.
+
+### Every refusal says which refusal it is
+
+437 sites in this package raise, and every one of them now carries a code: a
+stable name a program can act on rather than a sentence only a person can
+read. `MissingPathError` is a path the user gave that is not there;
+`MissingResultError` is an analysis looking for a phase that did not run.
+Both were `FileNotFoundError` and indistinguishable, so a caller could only
+guess -- and guessing wrong means editing a correct config, or re-running a
+phase that was never the problem. `OutputExistsError` refuses to write over
+a finished study, because the cost of being wrong is asymmetric: refusing
+costs one argument, overwriting costs whatever the run took. Where a class
+replaces a builtin it must still be an instance of it, and a test holds that
+-- widening never breaks a handler, narrowing silently does, and only in the
+path nobody exercises until it matters.
+
+The disclosure rule -- what may be told to an automated caller -- is
+enforced by the registry rather than at each raise site, so a semantic
+refusal cannot leak a set of permitted values by accident.
+
+Not enough data is a refusal too, and it says how much short.
+`summarise()` has always withheld a mean it could not stand behind; the
+withholding was prose, so nothing could tell "three frames here" from "the
+correlation time is not resolved, run longer". Three conditions are now
+separated -- `analysis.sampling.too_few_frames`,
+`analysis.sampling.correlation_unresolved`,
+`analysis.sampling.too_few_independent` -- and `sampling_shortfall()`
+answers the question the refusal leaves open. The reason is a `str` subclass
+carrying its code, so it prints, formats and compares exactly as the plain
+string did and the report layer is untouched.
+
+A new raise site that says nothing about itself now fails the suite. The
+assertion is the property rather than a fraction of it: a floor of 0.99 let
+through exactly what it was meant to prevent.
+
+### Drift is told from scatter
+
+Pooling combines estimates of one quantity. If the segments are not
+measuring one quantity -- a system still moving across the whole run -- the
+pooled mean is a confident number for a quantity that does not exist.
+
+Segment means that disagree in no order say the per-segment errors are too
+small: the mean stands and its error is a lower bound. Segment means that
+climb or fall say the system had not settled at the scale of the whole run:
+no mean, `analysis.sampling.drifting`, and the remedy is a longer run rather
+than more pooling.
+
+The ordering is tested by permuting the segments rather than by assuming a
+distribution. The statistic is the weighted least-squares slope against
+segment index and the null is that slope with the same means in random
+order -- exact for any number of segments, which matters because a run is
+often three or four and a t approximation on three points is a number rather
+than a test. Heterogeneity is reported as Cochran's Q over its degrees of
+freedom rather than as a p-value: a ratio of three is plainly too much and
+needs no distribution to say so. Both conditions are required before calling
+drift, because an ordering of segments that agree is a trend of nothing, and
+on the p-value alone a settled eight-segment run would refuse one time in
+twenty.
+
+A study that passes still says what its windows did, and a window's remedy
+is sized against the gate it actually broke.
+
+### A study may be split, and says when it may not
+
+A checkpoint restores positions and velocities. It does not restore the
+biasing state, and for two methods that is the whole calculation. So the
+first thing built here was the refusal.
+
+Metadynamics split into segments begins the second piece from zero bias with
+the system in a well the first piece already filled. The surface that comes
+out is wrong and does not look wrong -- it is smooth, it plots, and the
+depth is off. A steered pull is worse: the restraint is placed by absolute
+step number, so a resumed piece pulls from an anchor the protein is not at,
+and the work integral is taken along a path nothing walked. A hand-written
+PLUMED script refuses too, because what state it keeps is not something this
+software can read. Two are safe and say so: an unbiased run carries nothing
+beyond positions and velocities, and an umbrella window's restraint is a
+function of the collective variable and not of time. `Queue.submit` consults
+this before the first segment's hours are spent.
+
+The resume path is now run rather than read. Twenty argon atoms, a real
+`System`, a real checkpoint: a resumed run reproduces the run it continued
+to 1e-6, and a checkpoint from a different system is rejected with OpenMM's
+own reason travelling out in the refusal -- "wrong number of particles"
+sends somebody to the system they built, "could not be loaded" sends them to
+the disk.
+
+The third claim did not hold. A truncated checkpoint loads silently: at half
+length it loads and gives the right positions, at a tenth it loads and gives
+wrong ones, and at no point does OpenMM object. There is no length or
+checksum in the format. So a finished run seals its checkpoint -- size and
+digest, written beside it on completion -- which detects truncation and,
+because it is written on completion rather than by the reporter, means the
+segment reached the end. A run killed partway leaves a checkpoint and no
+seal, and the next segment refuses.
+
+A segment must run the same study, not a cheaper one. `plan_segments` zeroed
+`npt_steps` after the first segment to skip equilibration; the runner gates
+the barostat on `npt_steps > 0`, so zeroing it removed the barostat from
+production. Segment 0 ran NPT and the rest ran NVT -- two ensembles in one
+trajectory, joined and analysed as one, with nothing downstream able to tell.
+A resumed segment now keeps one token NPT step where the study wants a
+barostat and zero where it does not.
+
+A joined run is read as joined, because reading it as one loses the joins.
+The report finds the joins itself and stops when they say stop. What a join
+costs is measured rather than assumed: the barostat's adaptive move size is
+not in the checkpoint, and the magnitude at production size is what decides
+whether that is a footnote or a rule about minimum segment length.
+
+### The machine measures itself, and learns from what it has run
+
+`measure_this_machine()` is a bootstrap: argon, no water, no PME, no
+constraints. A machine that has run real studies knows more about itself
+than that.
+
+Every finished run now writes `cost.json` beside its output -- particles,
+steps, seconds, platform, precision. The clock starts after the system is
+built and before the first step, so it times integration rather than setup,
+which does not scale with step count and would overstate short runs badly. A
+resumed segment records its own steps. `calibrate_from_runs` fits across
+them, on real system sizes, real force fields, PME rather than a plain
+cutoff.
+
+The part worth having is not the better constant. It is that a fit can say
+something a single point cannot: whether the model holds here at all.
+Seconds are taken to go as particles times steps, and a `fit.spread` past 3
+refuses rather than averaging through a disagreement that wide. A queue's
+budget is arithmetic over those numbers, and a study says how long it will
+take on this machine and holds the line to it.
+
+### Four analyses other task sets ask for
+
+MDCrow, MDArena and MDGym between them ask for four measurements this package
+could not express, and each of them repeatedly: a coordination number appears
+thirty-five times across two of the three, a residue-pair distance and a
+moment of inertia in the others, and an end-to-end distance wherever a chain
+is unstructured. None needed a new phase; each is one number per frame and
+each goes in beside `rg`.
+
+`coordination_number` counts one selection within a shell of another. The
+cutoff *is* the measurement -- water round Mg2+ is six at 0.28 nm and eleven
+at 0.35 -- so no number is assumed. The default reads the first minimum of
+this run's own g(r), records that it did, and refuses where the curve has no
+shell in it. Finding that minimum needed the scatter of g(r) taken at the
+peak's own radius rather than in the bulk: counting noise grows as 1/r, so
+measured against the bulk figure a structureless liquid reports a hydration
+shell. On randomly placed points the scatter was 0.569 inside 0.3 nm against
+0.071 beyond 1.5, a ratio of 8.0 against the 1/r prediction of 7.8.
+
+`pair_distance` separates two selections by centre of mass or closest
+approach, `end_to_end` measures a chain's extension, and `moments_of_inertia`
+gives the three principal moments, which separate a rod from a disc where the
+radius of gyration cannot. Three of the four carry a periodic hazard and say
+so rather than leaving it in the curve: minimum image returns the shorter way
+round, so a separation past half the box is reported as an approach and the
+line folds back with nothing to show that it has.
+
+`requires_naming` is new, and is why two of these are absent from the
+automatic plan: every other analysis takes its subject from the structure,
+and these take it from the user.
+
+### A number the quantity cannot be is refused
+
+pH 25, a negative duration and a temperature below absolute zero all
+validated until now, and so did 150 in a field that means molar -- the
+thousandfold slip the evaluation set exists to trap. Twelve settings gain
+bounds where the bound is a fact rather than a preference. A 10 fs timestep
+gets none, because it is unstable and not impossible.
+
+### What nothing checked says so
+
+A figure drawn by a phase that worked outside the schema carries a visible
+`unvalidated` mark. Only the unchecked phases: a trajectory from a validated
+simulation is sound even when the analysis over it was not, and a mark on
+everything stops being read. No setting removes it; the way out is to rerun
+inside the schema.
+
+### Figures in colour, greyscale, or both
+
+`analysis.figure_colours` takes `colour`, `greyscale` or `both`, declared
+once as a schema field with `choices`, which is what generates
+`--analyze-figure-colours`, the GUI control and the config validation.
+`colour` uses the Okabe-Ito palette, chosen to stay distinguishable under
+the common forms of colour vision deficiency; `greyscale` drops hue and
+carries the same distinctions in value and hatching, which is what a print
+journal wants; `both` writes the colour figure as `<name>.png` and a
+greyscale copy as `<name>_greyscale.png` beside it, so the choice does not
+have to be made before the journal has been. The primary keeps its name
+whichever mode drew it, so the report, the dashboard and every reader that
+knows about `figure_path` are unaffected. British and American spellings are
+both accepted.
+
+A figure now says what it shows, in one house style: what the number means,
+the legend inside the axes, and which frames its mean came from. A time axis
+is the run's clock, the frame number, or nothing.
+
+### Equilibrated and converged, in the field's own words
+
+"Settled" was this package's word for two different physical ideas, and it is
+not the field's word for either. `statistics.py` cites Chodera's automated
+equilibration detection and its function is called `detect_equilibration`,
+while the class it returned was called `Settled` and about ninety
+user-facing strings said "settled" -- on every figure, in every report.
+
+An observable that stops drifting has **equilibrated**; that is Chodera's
+own word, and the transient it discards is the equilibration period. A
+metadynamics bias or a free-energy surface that stops changing has
+**converged**. They are different claims. An independent sample is a whole
+one, and the frames that are thrown away have one noun.
+
+### The GUI is one frame
+
+Three columns: the study in the sidebar, the work in the middle, a log-and-
+files panel beside every page. Each column scrolls alone and the wordmark
+stays put. One nav, in the order somebody works, with the citation in sight.
+The builder asks four questions and the phases are tiles. The Report page
+reads the report where the study ran, and works on a base install. The
+Overview holds what the sidebar cannot. The structure sits above the charts,
+the summary cards are two across, and their text wraps.
+
+### The documentation is a set, not a pile of pages
+
+The pages were individually well written and were not a documentation set.
+Two of the six components had no page at all, one page held seven unrelated
+subjects, and eleven claims described behaviour the code does not have.
+
+The structure is now the six components in the order a study moves through
+them: a Config specifies the study, four phases run it, a Manifest records
+the result, and four interfaces write a Config -- the GUI, the CLI, the API,
+and the Agent in place of a person.
+
+Six new pages. `agent.md` leads with the claim the design turns on: what the
+Agent writes goes through the same validator, by the same code, with the
+same refusals, as a Config typed by hand. `manifest.md`, because
+`manifest.json` was a table row in `results.md` and is half of what the
+software is for. `config_reference.md` lists all 119 settings in the groups
+the GUI form and `--help` already use. `analyses.md` is the per-analysis
+catalogue, `developers.md` takes the contributor material that was loose in
+user pages, and `validation.md` covers the corpus, cross-tool and environment
+measurements.
+
+`refusals.md` goes from 1,113 lines to 266 and covers refusals; its other six
+subjects went where they belong. Renames: `cli_reference` to `cli`,
+`configuration` to `config`, `getting_started` to `first_study`, `phases` to
+`how_it_works`, `simulations` to `studies`, `usage_examples` to `examples`,
+`remote` to `clusters`. Every correction is traced to source, and the numbers
+in the pages are held by tests so they cannot quietly decay.
+
+### Eight defects, and what finding them turned up
+
+The resolved config named only what was typed. It now names every setting
+every phase used -- per phase, exactly the dictionary the phase was handed,
+not a reconstruction of it. A study that decided two settings wrote two; it
+writes 108.
+
+A study-level `agent:` never reached the manifest. `unvalidated` stamped no
+figures. The Agent panel's "Load into the form" did nothing, and two GUI
+sections collected settings and dropped them.
+
+Then, from asking what a complete resolved config changes for its readers:
+`cross_tool` took the ligand from a field that has a default, so every apo
+protein's config would have claimed one and the comparison would have hunted
+a residue that was never prepared. `join_segments` refuses to concatenate
+segments from two studies and could not -- it read a path no run writes, so
+every digest came back empty and three segments at two different pH values
+joined without complaint. The CLI and script renderers turned a resolved
+config into 108 settings, one of them a ligand for a protein without one.
+And the GUI offered "autonomous -- draft it and run it" and drafted.
+
+Two readers of one path, again, in two more places: an umbrella window's own
+record was written under `simulation/` and looked for one directory up, and
+a run's own answers were worked out and then thrown away.
+
+The same-solvation guard read its evidence backwards. A segment after the
+first runs with `include: ["simulation"]` and `setup_from` pointing at
+segment 0, so it never runs setup and has no `setup_parameters.json` of its
+own -- and the absence of that file is the evidence the two share a
+solvation, not that they do not. The guard now refuses only when both counts
+are known and differ, and says the two numbers when it does.
+
+About twenty settings remain deferred decisions written as `null`, and those
+follow whichever version replays them. The docs say so.
+
 ### Housekeeping
 
 A `.mailmap` collapses nine committer identities on `main` to one. Log
@@ -298,6 +747,32 @@ Two claims about the literature that could not be sourced are removed. The
 V4 threshold is fixed before the result it judges exists. Tests that do not
 check an error bar no longer pay to compute one. Windows paths are compared
 as paths rather than as strings.
+
+Read the Docs served `FastMDXplora 0.1.1.dev50+g52cfb8616` in the title of
+every page while PyPI and conda-forge both carried 2.5.5: the build clones
+shallow and without tags, so setuptools-scm found no tag to resolve against
+and stamped its guess into every page. `post_checkout` now fetches the tags
+and deepens the clone -- both are needed, since the version is the nearest
+tag and the distance to it is counted in commits a shallow clone does not
+have. The fallback changes from `0.1.0` to `0.0.0+unknown-version`, because
+a number shaped exactly like a release made a build that failed to find its
+version indistinguishable from one that found it.
+
+The conda environment file installs what it says it installs. PLIP was cited
+and not run, and the docs said otherwise. The seeder reads the spelling the
+docs lead with. The README's link row is Quick start, Agent, Cite; the
+conda-downloads and engine badges are gone. The software says what it is
+rather than what its name stands for. Equilibration steps are not simulation
+steps. Several windows can share one GPU, and this said they could not. A
+window can be held at its own force constant, and one that could not be held
+says what would have held it. Production resets the clock, so a held
+window's COLVAR had two of them; COLVAR is production and the settling has
+its own file. The recombination ran out of iterations before it ran out of
+progress. A slope through two bins is not the slope of either. A study that
+names a prepared system does not prepare another one. The shakedown refuses
+an occupied output directory before measuring the machine rather than three
+minutes in. A test that passes because the network is down is not a test, and
+a hangup is not an incident.
 
 ## [2.5.5] — 2026-08-22
 
