@@ -539,21 +539,21 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
     """
 
     class Runtime:
-        """Records the form state the endpoint hands to launch_from_config.
+        """Records what the endpoint hands to launch_from_config.
 
-        The first version of these tests read `state["config"]` -- a key
-        the real launch_from_config never reads -- so they passed while the
-        real launch built an empty config and the button said Running over
-        nothing. The endpoint maps the config to form state now, as the
-        builder does, and these read what the real function would: the
-        study block, where a config's study-level keys land.
+        Two earlier shapes of this stub each hid a bug: one read a key the
+        real function never read; one read form state, which the endpoint
+        then stopped sending. The endpoint hands over the config itself
+        now -- one source of truth -- and this records exactly that.
         """
 
         def __init__(self):
             self.started = None
 
-        def launch_from_config(self, state, dashboard_url=None):
-            self.started = state
+        def launch_from_config(self, state, dashboard_url=None, config=None):
+            # The endpoint launches the config itself now -- one source of
+            # truth -- so what arrives is the config, and `state` is None.
+            self.started = dict(config) if config is not None else state
             return {"ok": True, "launched": True}
 
     def start(self, payload):
@@ -594,7 +594,7 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
             {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]},
              "budget_hours": 40})
         self.assertTrue(answer["ok"])
-        self.assertEqual(runtime.started["study"]["budget_hours"], 40.0)
+        self.assertEqual(runtime.started["budget_hours"], 40.0)
 
     def test_only_autonomous_requires_one(self):
         """A budget stands in for a human, so the mode with nobody watching
@@ -626,14 +626,14 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
                      "budget_hours": 40})
                 self.assertTrue(answer["ok"])
                 self.assertEqual(
-                    runtime.started["study"]["budget_hours"], 40.0)
+                    runtime.started["budget_hours"], 40.0)
 
     def test_a_budget_is_not_invented_where_none_was_given(self):
         # Absent means absent. A default ceiling would be a number nobody
         # chose deciding when somebody's study stops.
         answer, runtime = self.start(
             {"config": {"agent": "assisted", "systems": [{"system": "1UAO"}]}})
-        self.assertNotIn("budget_hours", runtime.started.get("study") or {})
+        self.assertNotIn("budget_hours", runtime.started)
 
     def test_the_run_endpoint_needs_the_machine_s_trust(self):
         # It starts work on this machine, so it belongs with the endpoints
@@ -1723,35 +1723,49 @@ class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
 
 
 class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
-    """Every phase setting survives the GUI's round trip to the launch.
+    """One source of truth: the Agent's config is the config that launches.
 
-    state_from_config put phase settings under state["phases"]; the browser
-    flattens them to top level before sending; build_config read only the
-    top level. So a config launched through state_from_config -- the
-    Agent's Run here -- lost every phase setting and ran with defaults: a
-    5 ns study ran for the default, and a setup_from redirect was dropped
-    and production looked in its own empty setup/. The Agent diagnosed
-    exactly that from the log and could not know the cause was the door it
-    had come through.
-
-    0020's test checked the system and the agent fields -- both top level
-    -- and not one phase setting. This checks the thing that was lost.
+    It used to be translated into the builder's form state first, and the
+    translation and the builder disagreed about where phase settings lived
+    -- so every Agent-launched run ran with defaults. A 5 ns study ran for
+    the default; a setup_from redirect was dropped and production looked
+    in its own empty setup/. The first fix taught build_config to read
+    both shapes, which was a patch over two sources. Now there is one
+    renderer, render_config, that takes a config; the form reaches it
+    through build_config, the Agent reaches it directly, and no form state
+    stands between the Agent's config and the file the run reads.
     """
 
-    def test_phase_settings_survive(self):
-        from fastmdxplora.gui.config_builder import build_config, state_from_config
+    def test_render_config_is_the_one_renderer(self):
+        import inspect
 
-        config = {"systems": [{"system": "1UAO"}],
-                  "simulation": {"duration_ns": 5, "setup_from": "/runs/first"},
-                  "setup": {"solvent_padding_nm": 1.5},
-                  "exclude": ["setup"]}
-        back = build_config(state_from_config(config)["state"])
-        self.assertEqual(back["simulation"]["duration_ns"], 5)
-        self.assertEqual(back["simulation"]["setup_from"], "/runs/first")
-        # exclude becomes the equivalent include; the phase set is kept.
-        self.assertEqual(back["include"], ["simulation", "analysis", "report"])
+        from fastmdxplora.gui import config_builder, run_from_config
 
-    def test_the_file_the_run_reads_carries_them(self):
+        self.assertIn("return render_config(build_config(state, full=full)",
+                      inspect.getsource(config_builder.config_yaml))
+        self.assertIn("built = render_config(dict(config)",
+                      inspect.getsource(run_from_config.prepare_run))
+
+    def test_the_agent_does_not_go_through_form_state(self):
+        import inspect
+
+        from fastmdxplora.gui import agent_panel
+
+        source = inspect.getsource(agent_panel.run_endpoint)
+        self.assertNotIn("state_from_config", source)
+        self.assertIn("launch_from_config(None, config=config", source)
+
+    def test_build_config_reads_one_shape(self):
+        # The both-shapes patch is gone: the browser's flat shape is the
+        # only form state build_config ever sees.
+        import inspect
+
+        from fastmdxplora.gui import config_builder
+
+        source = inspect.getsource(config_builder.build_config)
+        self.assertNotIn('nested = state.get("phases")', source)
+
+    def test_the_file_the_run_reads_carries_every_field(self):
         import tempfile
         from pathlib import Path
 
@@ -1763,8 +1777,43 @@ class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
         answer = run_endpoint({"config": {
             "systems": [{"system": "1UAO"}],
             "simulation": {"duration_ns": 5, "setup_from": "/runs/first"},
+            "setup": {"solvent_padding_nm": 1.5},
+            "exclude": ["setup"],
+            "agent": "assisted", "agent_model": "anthropic/x",
         }}, runtime)
         self.assertTrue(answer["ok"], answer.get("error"))
         written = Path(answer["config_path"]).read_text(encoding="utf-8")
-        self.assertIn("duration_ns: 5", written)
-        self.assertIn("setup_from: /runs/first", written)
+        for line in ("duration_ns: 5", "setup_from: /runs/first",
+                     "solvent_padding_nm: 1.5", "- setup", "agent: assisted",
+                     "Written by the FastMDXplora Agent"):
+            with self.subTest(line=line):
+                self.assertIn(line, written)
+
+
+class TestTheMessageToolsAndTheScrollbar(unittest.TestCase):
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def test_the_tools_sit_below_in_fixed_widths(self):
+        # Floated over the corner, the bar was wider than a short message
+        # and hung off it.
+        css = self.css()
+        rule = css[css.index(".agent-msg-tools {"):]
+        rule = rule[:rule.index("}")]
+        self.assertNotIn("position: absolute", rule)
+        self.assertIn("margin-top: 6px", rule)
+        self.assertIn(".agent-msg-tools button { width: 56px;", css)
+
+    def test_the_scrollbar_has_its_own_gutter(self):
+        # It was painting over the messages.
+        css = self.css()
+        rule = css[css.index(".agent-thread {"):]
+        rule = rule[:rule.index("}")]
+        self.assertIn("scrollbar-gutter: stable", rule)
+        self.assertIn("padding: 8px 16px 24px 0", rule)

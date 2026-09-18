@@ -37,7 +37,7 @@ from fastmdxplora.config.loader import (
 )
 from fastmdxplora.config.schema import PHASE_SCHEMAS, TOP_LEVEL
 
-__all__ = ["build_config", "config_yaml"]
+__all__ = ["build_config", "config_yaml", "render_config"]
 
 
 def _defaults_for(phase: str) -> dict[str, Any]:
@@ -252,19 +252,8 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
         if kept:
             config["execution"] = {**(config.get("execution") or {}), **kept}
 
-    # A phase block arrives at top level from the browser, which flattens
-    # state.values[phase] into config[phase] before sending, and under
-    # `phases` from state_from_config, which mirrors the loaded shape.
-    # build_config read only the first, so a config launched through
-    # state_from_config -- the Agent's Run here -- lost every phase
-    # setting and ran with defaults. A 5 ns study ran for the default.
-    # Both shapes are read now, top level winning where both are present.
-    nested = state.get("phases")
-    nested = nested if isinstance(nested, dict) else {}
     for phase, group in PHASE_SCHEMAS.items():
         block = state.get(phase)
-        if not isinstance(block, dict):
-            block = nested.get(phase)
         if not isinstance(block, dict):
             if not (full and phase in running):
                 continue
@@ -315,15 +304,28 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
 
 
 def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
-    """The config as text, validated, with what it will do stated plainly.
+    """The config as text, from the builder's form state."""
+    return render_config(build_config(state, full=full), full=full,
+                         short=build_config(state, full=False) if full else None)
+
+
+def render_config(config: dict[str, Any], *, full: bool = False,
+                  short: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The config as text, validated, from a config -- the one source.
+
+    Everything that renders a config to YAML goes through here: the form,
+    via config_yaml after build_config; the Agent, directly, because it
+    already has a config. It used to have to fake form state to reach the
+    launch, and the fake and the real disagreed about where phase settings
+    lived, so every Agent-launched run ran with defaults. One source of
+    truth means the Agent's config is the config that launches, not a
+    translation of it.
 
     Returns ``ok`` false and the validator's own message where the settings
-    would be refused, so the failure arrives here rather than on the cluster an
-    hour later.
+    would be refused, so the failure arrives here rather than on the cluster
+    an hour later.
     """
     import yaml
-
-    config = build_config(state, full=full)
 
     try:
         validate_config(config)
@@ -376,7 +378,10 @@ def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
     # but a command's defaults come free by omission -- and the nested
     # per-analysis options a full file carries have no flags at all. The two
     # forms describe the same run; the short one is the one a person types.
-    decided = config if not full else build_config(state, full=False)
+    # The command in the header is derived from the short form -- a
+    # command's defaults come free by omission. The form's path supplies
+    # it; the Agent's config already is the short form.
+    decided = short if (full and short is not None) else config
     try:
         command = cli_command(decided)
         header += (

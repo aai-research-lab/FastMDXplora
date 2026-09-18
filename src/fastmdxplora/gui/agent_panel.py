@@ -243,25 +243,18 @@ def run_endpoint(payload: dict[str, Any], runtime: Any,
         config = dict(config)
         config["budget_hours"] = hours
 
-    # launch_from_config takes the builder's form state and builds a config
-    # from it. The first version handed it {"config": ...}, a key nothing
-    # reads, and it built an empty config: the study started, the CLI
-    # refused it for naming no system, and the button said Running while
-    # nothing ran. The tests passed because their stub runtime echoed the
-    # "config" key back -- they tested the assumption, not the function.
-    # The config goes through the same mapping the builder uses to load
-    # one, so what launches is what the Agent wrote.
-    from fastmdxplora.gui.config_builder import state_from_config
-
-    mapped = state_from_config(config)
-    if not mapped.get("ok"):
-        return {"ok": False, "code": "config.option.invalid",
-                "error": mapped.get("error") or "The config could not be prepared to run."}
-    state = dict(mapped["state"])
+    # The config goes to the launch as itself. It used to be translated
+    # into the builder's form state first, and the translation and the
+    # builder disagreed about where phase settings lived, so every run
+    # from here ran with defaults. One source of truth: the config the
+    # Agent wrote is the config that launches, rendered by the same
+    # render_config the form's own path ends in.
     if payload.get("output_dir"):
-        state["output"] = str(payload["output_dir"])
+        config = dict(config)
+        config["output"] = str(payload["output_dir"])
     try:
-        return runtime.launch_from_config(state, dashboard_url=dashboard_url)
+        return runtime.launch_from_config(None, config=config,
+                                          dashboard_url=dashboard_url)
     except Exception as exc:  # noqa: BLE001 - reported, not swallowed
         from fastmdxplora.refusals import refusal_of
 

@@ -2842,7 +2842,10 @@ body { overflow: hidden; }
 .agent-thread {
     flex: 1; min-height: 0; overflow-y: auto;
     display: flex; flex-direction: column; gap: 18px;
-    padding: 8px 0 24px;
+    /* Room on the right for the scrollbar, and a stable gutter so it
+       never paints over the text. It was passing over the messages. */
+    padding: 8px 16px 24px 0;
+    scrollbar-gutter: stable;
     scrollbar-width: thin; scrollbar-color: var(--border-primary) transparent;
 }
 .agent-thread:empty::before {
@@ -2850,15 +2853,14 @@ body { overflow: hidden; }
     color: var(--text-muted); font-size: 13px; padding: 40px 0; text-align: center;
 }
 .agent-msg { max-width: 860px; }
-.agent-msg-user {
-    align-self: flex-end;
+.agent-msg-user { align-self: flex-end; max-width: 70%; }
+.agent-msg-user > div:first-child {
     background: var(--background-elevated);
     border: 1px solid var(--border-subtle);
     border-radius: 14px 14px 4px 14px;
     padding: 10px 14px;
     font-size: 14px; line-height: 1.5; color: var(--text-primary);
     white-space: pre-wrap; overflow-wrap: anywhere;
-    max-width: 70%;
 }
 .agent-msg-agent { align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
 .agent-msg-agent .agent-attempts { margin: 0; }
@@ -2893,15 +2895,21 @@ body { overflow: hidden; }
 /* Copy / edit / retry on a message, shown on hover. Every assistant a
    person has used has these; a thread without them is one you cannot
    go back into. */
+/* Below the message, in a row of fixed-width buttons, not floated over
+   its corner: on a short message the floated bar was wider than the
+   bubble and hung off it. Shown on hover; the row keeps its height so
+   the thread does not jump when it appears. */
 .agent-msg { position: relative; }
 .agent-msg-tools {
-    position: absolute; top: -12px; right: 8px;
-    display: none; gap: 2px; padding: 2px;
-    border-radius: 6px; background: var(--background-elevated); border: 1px solid var(--border-subtle);
+    display: flex; gap: 4px; margin-top: 6px; height: 22px;
+    visibility: hidden;
 }
-.agent-msg:hover .agent-msg-tools { display: flex; }
+.agent-msg-user .agent-msg-tools { justify-content: flex-end; }
+.agent-msg:hover .agent-msg-tools, .agent-msg:focus-within .agent-msg-tools { visibility: visible; }
+.agent-msg-tools button { width: 56px; text-align: center; }
 .agent-msg-tools button {
-    padding: 3px 8px; border: none; border-radius: 4px; background: transparent;
+    padding: 3px 0; border: 1px solid var(--border-subtle); border-radius: 4px;
+    background: var(--background-elevated);
     color: var(--text-muted); font: 500 11px inherit; font-family: inherit; cursor: pointer;
 }
 .agent-msg-tools button:hover { color: var(--text-primary); background: var(--background-secondary); }

@@ -863,9 +863,10 @@ class DashboardRuntime:
 
     def launch_from_config(
         self,
-        state: Mapping[str, Any],
+        state: Mapping[str, Any] | None,
         *,
         dashboard_url: str | None = None,
+        config: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run what a config describes, rather than what a form was wired for.
 
@@ -890,7 +891,8 @@ class DashboardRuntime:
             # turned /Users/someone/work into a folder called
             # Users_someone_work sitting inside the launch directory -- which
             # is neither where they pointed nor anywhere they would look.
-            requested = str(dict(state).get("output") or "").strip()
+            source: Mapping[str, Any] = config if config is not None else (state or {})
+            requested = str(dict(source).get("output") or "").strip()
             if not requested:
                 # Timestamped, as the CLI's and the builder's defaults are.
                 # A fixed name meant the second study the Agent wrote
@@ -941,7 +943,8 @@ class DashboardRuntime:
                     ),
                 }
 
-            prepared = prepare_run(dict(state), output_dir)
+            prepared = prepare_run(dict(state) if state else None, output_dir,
+                                   config=dict(config) if config is not None else None)
             if not prepared["ok"]:
                 return prepared
 

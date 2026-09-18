@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastmdxplora.gui.config_builder import config_yaml
+from fastmdxplora.gui.config_builder import config_yaml, render_config
 
 __all__ = ["prepare_run", "CONFIG_FILENAME"]
 
@@ -31,14 +31,20 @@ __all__ = ["prepare_run", "CONFIG_FILENAME"]
 CONFIG_FILENAME = "exploration.yml"
 
 
-def prepare_run(state: dict[str, Any], output_dir: str | Path) -> dict[str, Any]:
+def prepare_run(state: dict[str, Any] | None, output_dir: str | Path, *,
+                config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Write the config for a run and give back the command that runs it.
 
     Nothing is launched here. Writing the file and starting the process are
     separate so that the file can be checked -- and so a test can confirm that
     what would run locally is the same thing the download hands over.
     """
-    built = config_yaml(state)
+    # A config, or the form state to build one from. Never both, and the
+    # config wins: it is the thing itself, not a description of it.
+    if config is not None:
+        built = render_config(dict(config), full=bool((state or {}).get("full")))
+    else:
+        built = config_yaml(state or {})
     if not built["ok"]:
         return {
             "ok": False,
