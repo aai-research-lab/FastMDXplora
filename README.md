@@ -14,12 +14,9 @@
 [![Tests](https://img.shields.io/github/actions/workflow/status/aai-research-lab/FastMDXplora/tests.yml?branch=main&label=tests&labelColor=black)](https://github.com/aai-research-lab/FastMDXplora/actions/workflows/tests.yml)
 [![codecov](https://img.shields.io/codecov/c/github/aai-research-lab/FastMDXplora/main?labelColor=black)](https://codecov.io/gh/aai-research-lab/FastMDXplora)
 [![Docs](https://img.shields.io/readthedocs/fastmdxplora?label=docs&labelColor=black)](https://fastmdxplora.readthedocs.io)
-[![conda downloads](https://img.shields.io/conda/dn/conda-forge/fastmdxplora?label=conda%20downloads&color=44A833)](https://anaconda.org/conda-forge/fastmdxplora)
-[![OpenMM](https://img.shields.io/badge/engine-OpenMM-orange)](https://openmm.org)
 
-[**Documentation**](https://fastmdxplora.readthedocs.io) ·
 [**Quick start**](https://fastmdxplora.readthedocs.io/en/latest/first_study.html) ·
-[**GUI**](https://fastmdxplora.readthedocs.io/en/latest/gui.html) ·
+[**Agent**](https://fastmdxplora.readthedocs.io/en/latest/agent.html) ·
 [**Cite**](#citation)
 
 </div>
