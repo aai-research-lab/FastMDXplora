@@ -751,6 +751,30 @@ class TestThePersonsInstructionIsTheClick(unittest.TestCase):
         self.assertIn('fetch("/api/explore/stop", { method: "POST" })', script)
         # Run goes through the button's own handler, so the mode's gates
         # apply to a word in the thread as they do to a press.
-        self.assertIn('lastReply.part("run").click();', script)
+        self.assertIn('runBtn.click();', script)
         # And "no" is anything that is not yes.
         self.assertIn('note(box, "Not stopped.");', script)
+
+
+class TestRunItKnowsWhatIsAlreadyRunning(unittest.TestCase):
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_run_it_on_a_running_study_says_so(self):
+        # Run here pressed by hand, then "run it" typed: the Agent said
+        # "Starting the run" while clicking a disabled button.
+        script = self.script()
+        self.assertIn('note(box, "It is already running.");', script)
+        run = script[script.index('if (action === "run") {'):script.index('if (action === "stop") {')]
+        self.assertLess(run.index("runBtn.disabled"), run.index("Starting the run"))
+
+    def test_a_stopped_study_can_run_again(self):
+        script = self.script()
+        self.assertIn('again.textContent = "Run again";', script)
+        self.assertIn("again.disabled = false;", script)

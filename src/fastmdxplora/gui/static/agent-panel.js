@@ -335,8 +335,16 @@
         note(box, "Nothing to run yet. Describe a study first.");
         return;
       }
+      var runBtn = lastReply.part("run");
+      if (runBtn.disabled) {
+        /* Already pressed, by hand or by a word. Clicking a disabled
+         * button does nothing, and "Starting the run" over nothing was
+         * a lie -- reported after Run here had been pressed first. */
+        note(box, "It is already running.");
+        return;
+      }
       note(box, "Starting the run.", true);
-      lastReply.part("run").click();
+      runBtn.click();
       return;
     }
     if (action === "stop") {
@@ -383,8 +391,16 @@
     fetch("/api/explore/stop", { method: "POST" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        note(box, d && d.ok !== false ? "Stopped the run." : (d && d.error) || "Could not stop it.", true);
-        history.push({ role: "agent", text: "Stopped the run." });
+        var stopped = d && d.ok !== false;
+        note(box, stopped ? "Stopped the run." : (d && d.error) || "Could not stop it.", true);
+        history.push({ role: "agent", text: stopped ? "Stopped the run." : "Could not stop the run." });
+        if (stopped && lastReply) {
+          /* The same config can run again; each launch gets its own
+           * timestamped folder, so the stopped run's output stays. */
+          var again = lastReply.part("run");
+          again.textContent = "Run again";
+          again.disabled = false;
+        }
       })
       .catch(function () { note(box, "Could not reach the server to stop it."); });
   }
