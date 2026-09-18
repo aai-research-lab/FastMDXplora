@@ -898,11 +898,14 @@ class TestAFactAppearsOnce:
 
     def test_the_hero_keeps_only_what_it_says_best(self) -> None:
         html = self._text("dashboard.html")
-        assert 'id="hero-status-text"' in html
-        assert 'id="hero-stage"' in html
-        for gone in ("hero-progress-fill", "hero-progress-pct", "hero-sim-time",
-                     "hero-elapsed", "hero-eta", "hero-step"):
+        # The hero card is gone altogether: the sidebar's status line is
+        # the one place the run's state is said, on every page.
+        for gone in ("hero-status-text", "hero-stage", "hero-progress-fill",
+                     "hero-progress-pct", "hero-sim-time", "hero-elapsed",
+                     "hero-eta", "hero-step"):
             assert gone not in html, gone
+        assert 'id="topbar-status-text"' in html
+        assert 'id="topbar-stage"' in html
 
     def test_nothing_still_writes_to_them(self) -> None:
         js = self._text("dashboard.js")

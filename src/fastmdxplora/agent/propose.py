@@ -106,6 +106,25 @@ class Proposal:
     config: dict[str, Any] | None
     attempts: tuple[Attempt, ...]
     refusal: Refusal | None = None
+    #: A question back, when the request does not say enough to write a
+    #: study from. Neither accepted nor refused: nothing was proposed. The
+    #: first shape of this loop had only the other two outcomes, so a
+    #: request that named no structure got one invented -- the example
+    #: from the missing-`systems` refusal, copied verbatim, twice over
+    #: with two different examples. An example in a refusal is read as
+    #: the answer, whatever it says.
+    question: str | None = None
+    #: A plain answer, when the message was a question rather than a
+    #: request for a study. "What does density tell me?" wants a
+    #: paragraph, not a config and not a refusal, and a loop with no way
+    #: to say one produced configs for questions.
+    answer: str | None = None
+    #: An action the person asked for, by name: "run", "stop", "open
+    #: viewer". The person's instruction is the click. The loop returns it
+    #: and the caller carries it out through the same door the button
+    #: uses, so the mode's gates -- a budget for autonomous, control for
+    #: stop -- apply to a word in the thread as they do to a press.
+    action: str | None = None
 
     @property
     def accepted(self) -> bool:
@@ -134,11 +153,59 @@ that is there for a reason, and a config that sets everything is harder
 to read and no more correct.
 
 An unknown key is refused rather than ignored, so do not invent settings.
+
+This is a conversation, not a form. When there is a conversation so far,
+read it: the request may refer to it ("the same but at 320 K", "run
+it", "why did that fail?"). When there is a current config, a request
+is a change to it unless it plainly describes a different study: return
+the whole config with the change applied, and keep everything the
+person did not ask to change. Do not start over.
+
+Not every message wants a config. If the person asks a question -- about
+molecular dynamics, about a setting, about what the run is doing or why
+it stopped -- answer it: reply with a single paragraph starting `SAY:`
+and nothing else. Use what the conversation and the run status say; do
+not guess at what happened.
+
+You can act, but only when told to, and one action at a time. When the
+person plainly instructs you -- "run it", "stop", "open the viewer" --
+reply with a single line `DO: <action>` and nothing else, where the
+action is one of: run, stop, open viewer, open overview, open report,
+open builder, show config, download config. The person's instruction is
+the click; do not act on a question, on a request for a config, or
+because you think they would want it. Never act twice in one reply. If
+they ask for a change and to run it in one message, write the config
+and say "say run when you have read it" -- one step of seeing what is
+about to run is what assisted mode promises. Stopping a run is
+irreversible, so `DO: stop` is confirmed with the person before it
+happens; you need not ask, the software does.
+
+Write the way a careful colleague writes, not the way a model writes.
+Short sentences. One idea per sentence. No em dashes and no en dashes;
+use a comma, a full stop, or a new sentence. No colon-then-list where
+prose would do. No "I'd be happy to", no "great question", no summary
+of what you just said. Say the thing and stop. Plain text, with
+emphasis only where it earns its place: **bold** for the one thing to
+notice, *italic* for a term, `code` for a setting name or a value, a
+bare URL for a link. No headings, no bullet lists in an answer.
+
+Never invent a structure. A study needs a `systems:` entry whose `system`
+is a PDB identifier or a file path. Take it from the request. If the
+request names a molecule by its common name and you know a PDB identifier
+for it with confidence, use that one and say so in `id` -- that is
+looking up, not inventing. If the request names nothing, or names a
+molecule with several deposited structures and does not say which, do not
+choose: reply with a single line starting `ASK:` that names the
+candidates you know and asks which, and nothing else. Do not borrow a
+structure from an example.
 """
 
 
 def prompt_for(request: str, *, phases: list[str] | None = None,
-               verbose: bool = True) -> str:
+               verbose: bool = True,
+               history: list[dict[str, str]] | None = None,
+               current_config: str | None = None,
+               run_status: str | None = None) -> str:
     """The first prompt: what the language is, and what is wanted.
 
     The schema description is generated, so it cannot name a setting
@@ -147,11 +214,19 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
     refuses rather than embedding a protein sideways proposes fewer
     studies that will be refused.
     """
-    return (
-        f"{_INSTRUCTIONS}\n"
-        f"{describe_schema(phases=phases, verbose=verbose)}\n\n"
-        f"## The study wanted\n{request}\n"
-    )
+    parts = [_INSTRUCTIONS, "\n", describe_schema(phases=phases, verbose=verbose), "\n\n"]
+    if history:
+        parts.append("## The conversation so far\n")
+        for turn in history[-12:]:
+            who = "Person" if turn.get("role") == "user" else "Agent"
+            parts.append(f"{who}: {str(turn.get('text') or '').strip()}\n")
+        parts.append("\n")
+    if current_config:
+        parts.append(f"## The current config\n```yaml\n{current_config.strip()}\n```\n\n")
+    if run_status:
+        parts.append(f"## What the run is doing\n{run_status.strip()}\n\n")
+    parts.append(f"## The study wanted\n{request}\n")
+    return "".join(parts)
 
 
 def repair_prompt_for(previous: str, refusal: Refusal) -> str:
@@ -188,6 +263,61 @@ def repair_prompt_for(previous: str, refusal: Refusal) -> str:
     return "\n".join(lines)
 
 
+
+
+
+ACTIONS = ("run", "stop", "open viewer", "open overview", "open report",
+           "open builder", "show config", "download config")
+
+
+def _action_in(raw: str) -> str | None:
+    """An action, if the reply is one: a first line `DO: <action>`.
+
+    Only the named actions, and only one. Anything else after DO: is not
+    an action, and a reply that is not exactly one line is not an action
+    either -- a model that says "DO: run" and then keeps talking is not
+    acting, it is narrating, and the person should see the narration.
+    """
+    lines = [line for line in (raw or "").splitlines() if line.strip()]
+    if len(lines) != 1:
+        return None
+    line = lines[0].strip()
+    if not line.upper().startswith("DO:"):
+        return None
+    action = line[3:].strip().lower().rstrip(".")
+    return action if action in ACTIONS else None
+
+def _answer_in(raw: str) -> str | None:
+    """A plain answer, if the reply is one: a first line starting SAY:."""
+    lines = (raw or "").splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.upper().startswith("SAY:"):
+            rest = stripped[4:].strip()
+            tail = "\n".join(lines[i + 1:]).strip()
+            return (rest + ("\n" + tail if tail else "")).strip() or "\u2026"
+        return None
+    return None
+
+def _question_in(raw: str) -> str | None:
+    """The question a reply carries, if the reply is one.
+
+    A line starting ``ASK:`` and nothing else. Looked for on the first
+    non-blank line so a model that adds a courtesy sentence after it still
+    reads as asking; anything that parses as YAML instead is a config.
+    """
+    for line in (raw or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.upper().startswith("ASK:"):
+            return stripped[4:].strip() or "The request does not say enough."
+        return None
+    return None
+
+
 def _parse(raw: str) -> dict[str, Any] | None:
     """YAML out of a reply, tolerating the fences a model adds anyway."""
     import yaml
@@ -210,6 +340,9 @@ def propose_config(
     phases: list[str] | None = None,
     max_cycles: int = 4,
     verbose_schema: bool = True,
+    history: list[dict[str, str]] | None = None,
+    current_config: str | None = None,
+    run_status: str | None = None,
 ) -> Proposal:
     """Ask for a config, and keep asking until it validates or the cap.
 
@@ -242,11 +375,26 @@ def propose_config(
     this design exists to prevent.
     """
     attempts: list[Attempt] = []
-    prompt = prompt_for(request, phases=phases, verbose=verbose_schema)
+    prompt = prompt_for(request, phases=phases, verbose=verbose_schema,
+                        history=history, current_config=current_config,
+                        run_status=run_status)
     refusal: Refusal | None = None
 
     for number in range(1, max_cycles + 1):
         raw = complete(prompt)
+        act = _action_in(raw)
+        if act:
+            return Proposal(config=None, attempts=tuple(attempts), action=act)
+        said = _answer_in(raw)
+        if said:
+            return Proposal(config=None, attempts=tuple(attempts), answer=said)
+        asked = _question_in(raw)
+        if asked:
+            # The request is short of something a model cannot supply and
+            # should not guess. Stop here; retrying would only ask a model
+            # to invent what it was told not to.
+            return Proposal(config=None, attempts=tuple(attempts),
+                            question=asked)
         config = _parse(raw)
 
         if config is None:
@@ -260,7 +408,17 @@ def propose_config(
             continue
 
         try:
-            validate_config(config)
+            # `require_systems=True`, because a proposed study is one
+            # somebody means to run. The default is False so that a partial
+            # config can be checked -- a GUI form mid-edit, a fragment --
+            # and the agent inherited that leniency without meaning to.
+            #
+            # Found in use: asked for a water simulation, the model wrote
+            # `output`, `simulation.duration_ns` and no `systems` at all.
+            # That passed, reported "Accepted first time", and produced a
+            # study with nothing in it to simulate. An empty `systems` list
+            # was already refused; an absent one was not.
+            validate_config(config, require_systems=True)
         except ConfigError as exc:
             refusal = refusal_of(exc)
             attempts.append(Attempt(number, raw, config, refusal))

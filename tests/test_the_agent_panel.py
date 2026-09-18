@@ -245,11 +245,24 @@ class TestThePageCarriesIt(unittest.TestCase):
     def test_the_panel_says_a_run_is_started_by_hand(self):
         """Removing the false promise leaves the reader needing the true
         one, or the mode names alone imply it."""
-        page = self.page()
-        start = page.index('<select id="agent-mode">')
-        help_text = page[start:page.index("</label>", start)]
-        self.assertIn("never starts a run", help_text)
-        self.assertIn("--budget-hours", help_text)
+        # The note sits beside the mode field rather than inside its
+        # <label>. It describes the panel, not that one control, and the
+        # dashboard's own pattern puts a note in `builder-card-note` at
+        # card level -- the first version nested it in the label, which is
+        # why help text rendered at body size and the fields ran together.
+        # The promise moved from a paragraph beside the dropdown to a line
+        # per mode in the script, shown for the mode actually chosen. A
+        # paragraph covering all three was a paragraph nobody read.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        notes = script[script.index("MODE_NOTES"):script.index("KEY_HELP")]
+        self.assertIn("Nothing runs until you say so", notes)
+        self.assertIn("ceiling is", notes)
+        self.assertIn("stamped", notes)
 
 
 if __name__ == "__main__":  # pragma: no cover
@@ -510,3 +523,1420 @@ class TestAConfigThatWasNeverOnDiskCanBeOpened(unittest.TestCase):
         })
         self.assertEqual(rebuilt["agent"], "unvalidated")
         self.assertEqual(rebuilt["agent_model"], "anthropic/x")
+
+
+class TestTheOtherTwoModesRunHere(unittest.TestCase):
+    """The GUI runs on the user's own machine, so a mode that runs can run.
+
+    `assisted` still loads into the form, because the point of that mode is
+    that a person reads the config first. `autonomous` and `unvalidated`
+    start from the panel — making them command-line-only was a limitation
+    of where the wiring stopped, not a property of the modes.
+
+    Through `launch_from_config`, which is the GUI's own door for running
+    what a config describes rather than what a form was wired for. Nothing
+    here is a second way of starting a study.
+    """
+
+    class Runtime:
+        """Records what the endpoint hands to launch_from_config.
+
+        Two earlier shapes of this stub each hid a bug: one read a key the
+        real function never read; one read form state, which the endpoint
+        then stopped sending. The endpoint hands over the config itself
+        now -- one source of truth -- and this records exactly that.
+        """
+
+        def __init__(self):
+            self.started = None
+
+        def launch_from_config(self, state, dashboard_url=None, config=None):
+            # The endpoint launches the config itself now -- one source of
+            # truth -- so what arrives is the config, and `state` is None.
+            self.started = dict(config) if config is not None else state
+            return {"ok": True, "launched": True}
+
+    def start(self, payload):
+        """Not `run`: that is TestCase.run, the method unittest calls to
+        execute the test, and overriding it replaces the runner."""
+        from fastmdxplora.gui.agent_panel import run_endpoint
+
+        runtime = self.Runtime()
+        return run_endpoint(payload, runtime), runtime
+
+    def test_nothing_to_run_is_refused(self):
+        answer, runtime = self.start({})
+        self.assertFalse(answer["ok"])
+        self.assertIsNone(runtime.started)
+
+    def test_autonomous_without_a_budget_is_refused(self):
+        # The same reason the CLI refuses: it runs without being shown to
+        # anybody, so a ceiling is the only thing left that can stop it.
+        answer, runtime = self.start(
+            {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]}})
+        self.assertEqual(answer["code"], "environment.budget.absent")
+        self.assertIsNone(runtime.started, "it started anyway")
+
+    def test_a_budget_of_zero_is_not_a_budget(self):
+        # For autonomous, where one is required.
+        for value in (0, "0", "", None, "not a number"):
+            with self.subTest(budget=value):
+                answer, runtime = self.start(
+                    {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]},
+                     "budget_hours": value})
+                self.assertFalse(answer["ok"])
+                self.assertIsNone(runtime.started)
+
+    def test_autonomous_with_a_budget_runs_and_carries_it(self):
+        # On the config, so it reaches resolved_config.yml and the
+        # manifest rather than living only in the request that started it.
+        answer, runtime = self.start(
+            {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]},
+             "budget_hours": 40})
+        self.assertTrue(answer["ok"])
+        self.assertEqual(runtime.started["budget_hours"], 40.0)
+
+    def test_only_autonomous_requires_one(self):
+        """A budget stands in for a human, so the mode with nobody watching
+        must have one. The others have something else standing between them
+        and a bad study: `assisted` has the person reading the config,
+        `unvalidated` has the mark on every figure -- its risk is an
+        unchecked method rather than an unbounded spend.
+        """
+        for mode in ("assisted", "unvalidated"):
+            with self.subTest(mode=mode):
+                answer, runtime = self.start(
+                    {"config": {"agent": mode, "systems": [{"system": "1UAO"}]}})
+                self.assertTrue(answer["ok"])
+                self.assertIsNotNone(runtime.started)
+
+    def test_but_every_mode_may_have_one(self):
+        """Offered everywhere, demanded in one place.
+
+        The first version hid the field outside `autonomous`, which drew
+        the line on the wrong axis: a ceiling is never the wrong thing to
+        have on a study that will run for days, and somebody who reads a
+        config carefully and then leaves it running overnight wants one as
+        much as anybody.
+        """
+        for mode in ("assisted", "unvalidated", "autonomous"):
+            with self.subTest(mode=mode):
+                answer, runtime = self.start(
+                    {"config": {"agent": mode, "systems": [{"system": "1UAO"}]},
+                     "budget_hours": 40})
+                self.assertTrue(answer["ok"])
+                self.assertEqual(
+                    runtime.started["budget_hours"], 40.0)
+
+    def test_a_budget_is_not_invented_where_none_was_given(self):
+        # Absent means absent. A default ceiling would be a number nobody
+        # chose deciding when somebody's study stops.
+        answer, runtime = self.start(
+            {"config": {"agent": "assisted", "systems": [{"system": "1UAO"}]}})
+        self.assertNotIn("budget_hours", runtime.started)
+
+    def test_the_run_endpoint_needs_the_machine_s_trust(self):
+        # It starts work on this machine, so it belongs with the endpoints
+        # that refuse on a non-loopback bind.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        source = (pathlib.Path(gui.__file__).parent
+                  / "server.py").read_text(encoding="utf-8")
+        gated = source[source.index("if not allow_control and path in {"):]
+        self.assertIn("/api/agent/run", gated[:gated.index("}:")])
+
+    def test_the_panel_offers_a_budget_in_every_mode(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        # Present and not hidden: offered in every mode. Its note says
+        # which mode demands it, written by the script as the mode changes,
+        # rather than a placeholder that has to cover every case at once.
+        field = page[page.index('id="agent-budget"'):]
+        self.assertNotIn("hidden", field[:field.index(">")])
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn("Required in this mode", script)
+        self.assertIn('mode === "autonomous"', script)
+
+
+class TestThePageIsATextareaAndButtons(unittest.TestCase):
+    """What the page says and what it does not.
+
+    Earlier versions explained the mechanism in the subtitle, reported
+    which model was configured in a status line, put the engine form on the
+    page beside the study, and told a GUI user to run a command. Each was
+    a thing a reader had to get past to do what they came for.
+    """
+
+    def page(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def panel(self):
+        page = self.page()
+        return page[page.index('data-page="agent"'):
+                    page.index("</section>", page.index('data-page="agent"'))]
+
+    def dialog(self):
+        # At body level, not inside the Agent section: a fixed overlay
+        # that inherited the section's `hidden` could only open from the
+        # Agent page, and the settings popup wanted to open it from any.
+        page = self.page()
+        start = page.index('id="agent-settings"')
+        return page[start:page.index('id="settings-popup"', start)]
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_the_subtitle_says_what_to_do_and_not_how_it_works(self):
+        panel = self.panel()
+        self.assertIn("Describe a study in natural language", panel)
+        for mechanism in ("corrects itself", "same rules as one you wrote",
+                          "cannot ask for a study"):
+            with self.subTest(phrase=mechanism):
+                self.assertNotIn(mechanism, panel)
+
+    def test_the_engine_is_behind_a_button(self):
+        # Not a card competing with the study for attention. It is set once
+        # and then irrelevant.
+        panel = self.panel()
+        self.assertIn('id="agent-settings-open"', panel)
+        settings = self.dialog()
+        self.assertIn('role="dialog"', settings)
+        self.assertIn("hidden", settings[:80])
+
+    def test_no_status_line_about_the_engine_on_the_page(self):
+        # "Ready. Drafting with <model>." was a status line about an engine
+        # on a page about a study. The model is named in the dialog, where
+        # somebody is choosing, and recorded in `agent_model` where a
+        # reader needs it.
+        self.assertNotIn("Drafting with", self.script().replace(
+            "* the page itself, as \"Ready. Drafting with <model>.\" -- a status line", ""))
+
+    def test_the_gui_never_tells_you_to_run_a_command(self):
+        """A GUI that says "run `fastmdx agent set`" has given up.
+
+        The refusals are written for a terminal, which is right there. This
+        surface has a Settings button, so it says that instead.
+        """
+        script = self.script()
+        mapping = script[script.index("IN_THE_GUI"):script.index("function el(")]
+        self.assertIn("environment.model.unset", mapping)
+        self.assertIn("environment.credentials.absent", mapping)
+        self.assertIn("Open Settings", mapping)
+
+    def test_the_key_field_says_where_to_get_one(self):
+        script = self.script()
+        help_text = script[script.index("KEY_HELP"):script.index("IN_THE_GUI")]
+        self.assertIn("platform.claude.com", help_text)
+        self.assertIn("platform.openai.com", help_text)
+        # And that a subscription is not an API account, which is the thing
+        # people get wrong.
+        self.assertIn("not the same thing", help_text)
+
+    def test_the_actions_are_the_ones_asked_for(self):
+        # The builder's own set, under the Agent: there is no need to go
+        # to the builder from the Agent unless you want to change the
+        # config, and that is a link, not the way out.
+        panel = self.panel()
+        for action in ("Write config", "Show the config", "Download config",
+                       "Copy the command", "Download a script", "Run here",
+                       "Write every setting"):
+            with self.subTest(action=action):
+                self.assertIn(action, panel)
+        self.assertIn('id="agent-load"', panel)
+        # "Draft" is not a word this page uses.
+        self.assertNotIn("draft", panel.lower())
+
+    def test_the_actions_are_the_builders_own(self):
+        """One derivation, two doors.
+
+        The file, the command and the script come from the builder's
+        exported actions, reading the builder's state -- which the panel
+        loads silently from the config it just wrote. So what the Agent
+        hands over is exactly what the builder would, rather than a
+        second rendering that could drift. The first version wrote the
+        YAML from the browser without a round trip; that matched the
+        screen but not the builder.
+        """
+        script = self.script()
+        self.assertIn('post("/api/load-config", { config: data.config })', script)
+        for action in ("download", "copyCommand", "downloadScript"):
+            with self.subTest(action=action):
+                self.assertIn(f'viaBuilder("{action}")', script)
+        self.assertIn("window.FastMDXRun.fetchConfig()", script)
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        builder = (pathlib.Path(gui.__file__).parent / "static"
+                   / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("fetchConfig, download, copyCommand, downloadScript,", builder)
+
+    def test_run_here_still_goes_through_the_agents_door(self):
+        # It checks the budget an autonomous run needs and records the
+        # mode, which the builder's start does not.
+        script = self.script()
+        run = script[script.index("runBtn.onclick = function () {"):]
+        run = run[:run.index("};", run.index("post("))]
+        self.assertIn('post("/api/agent/run"', run)
+
+    def test_opening_the_builder_is_a_link_not_the_way_out(self):
+        panel = self.panel()
+        load = panel[panel.index('id="agent-load"') - 40:panel.index('id="agent-load"') + 80]
+        self.assertIn("<a href=", load)
+        self.assertIn("to change it first", panel)
+
+    def test_the_dialog_is_not_a_file_picker(self):
+        # It borrows the shape and not the class: there is exactly one file
+        # picker on the page, which is a reasonable thing to assert, and
+        # this is not it.
+        dialog = self.dialog()
+        self.assertIn("agent-dialog", dialog)
+        self.assertNotIn("analyse-picker", dialog)
+
+
+class TestTheModelFollowsTheProvider(unittest.TestCase):
+    """Choosing a provider chooses among its models, not any string.
+
+    It was a free-text field. Somebody had to know how a provider spells
+    its model, and switching provider left the previous one's model in
+    place — OpenAI selected with claude-sonnet-4-6 still showing, which is
+    a configuration that cannot work and looked fine.
+
+    Not a closed list. A model released next month will not be on it, so
+    there is an "Other…" option and a field to name one. Typing a model a
+    provider does not have fails at the first request with that provider's
+    own message, which is clearer than anything this could say about a
+    list it cannot keep current.
+    """
+
+    def setUp(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(Path(tempfile.mkdtemp()))
+
+    def tearDown(self):
+        import os
+
+        if self.before is None:
+            os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)
+        else:
+            os.environ["FASTMDXPLORA_CONFIG_DIR"] = self.before
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_each_hosted_provider_offers_models(self):
+        from fastmdxplora.gui.agent_panel import model_endpoint
+
+        for provider in model_endpoint({})["providers"]:
+            with self.subTest(provider=provider["id"]):
+                if provider["needs_url"]:
+                    # Whatever the local server happens to serve. A list
+                    # here would be a guess about somebody else's machine.
+                    self.assertEqual(provider["models"], [])
+                else:
+                    self.assertIn(provider["default_model"],
+                                  provider["models"])
+
+    def test_a_model_not_on_the_list_still_saves(self):
+        # The list is a convenience, not a gate.
+        from fastmdxplora.gui.agent_panel import model_endpoint
+
+        model_endpoint({"provider": "openai", "model": "gpt-6-unreleased"})
+        self.assertEqual(model_endpoint({})["current"]["model"],
+                         "gpt-6-unreleased")
+
+    def test_the_model_is_a_dropdown(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('<select id="agent-model">', page)
+        self.assertIn('id="agent-model-other"', page)
+
+    def test_switching_provider_refills_the_models(self):
+        # The bug: it filled the model only when the field was empty, so
+        # the previous provider's model stayed.
+        script = self.script()
+        self.assertIn("fillModels(spec,", script)
+        self.assertNotIn('if (!el("agent-model").value)', script)
+
+    def test_what_is_saved_is_what_is_shown(self):
+        # Whichever of the two controls is in use.
+        script = self.script()
+        self.assertIn("function chosenModel()", script)
+        self.assertIn("model: chosenModel(),", script)
+
+
+class TestWhatBelongsInSettings(unittest.TestCase):
+    """The page is a textarea and a button; everything set once is behind
+    Settings. Mode and the ceiling are set once and then left alone, so
+    they sit with the provider rather than beside the study."""
+
+    def panel(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        return page[page.index('data-page="agent"'):
+                    page.index("</section>", page.index('data-page="agent"'))]
+
+    def dialog(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        start = page.index('id="agent-settings"')
+        return page[start:page.index('id="settings-popup"', start)]
+
+    def test_only_the_study_is_on_the_page(self):
+        panel = self.panel()
+        self.assertIn('id="agent-request"', panel)
+        self.assertIn('id="agent-propose"', panel)
+        self.assertNotIn('id="agent-settings"', panel)
+
+    def test_mode_and_the_ceiling_are_behind_settings(self):
+        dialog = self.dialog()
+        for control in ('id="agent-mode"', 'id="agent-budget"',
+                        'id="agent-provider"', 'id="agent-key"'):
+            with self.subTest(control=control):
+                self.assertIn(control, dialog)
+
+
+class TestTheModelsComeFromTheProvider(unittest.TestCase):
+    """A list of model names written into this repository is stale the week
+    after it is written, and a model released next month would be missing
+    with nothing to explain why. Both hosted providers publish one at
+    `/v1/models`, and an OpenAI-compatible server serves the same path
+    relative to its base URL -- so a local Ollama answers it too.
+
+    The written list is what to show before there is a key to ask with,
+    and when the provider cannot be reached. Being offline should leave
+    somebody with a usable dropdown rather than an empty one.
+    """
+
+    def setUp(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(Path(tempfile.mkdtemp()))
+
+    def tearDown(self):
+        import os
+
+        if self.before is None:
+            os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)
+        else:
+            os.environ["FASTMDXPLORA_CONFIG_DIR"] = self.before
+
+    def test_it_asks_the_provider(self):
+        import json
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        from fastmdxplora.agent import ModelChoice, save_choice
+        from fastmdxplora.agent.models import list_models
+
+        asked = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802 - http.server's spelling
+                asked["path"] = self.path
+                body = json.dumps({"data": [{"id": "llama3.1"},
+                                            {"id": "qwen2.5-coder"}]}).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+
+        save_choice(ModelChoice("compatible", "llama3.1",
+                                f"http://127.0.0.1:{port}/v1"), key="none")
+        self.assertEqual(list_models(), ("llama3.1", "qwen2.5-coder"))
+        self.assertEqual(asked["path"], "/v1/models")
+
+    def test_an_unreachable_provider_falls_back_rather_than_emptying(self):
+        from fastmdxplora.agent import ModelChoice
+        from fastmdxplora.agent.models import PROVIDERS, list_models
+
+        found = list_models(ModelChoice("anthropic", "claude-sonnet-4-6"))
+        self.assertEqual(found, PROVIDERS["anthropic"]["models"])
+
+    def test_a_provider_with_no_way_to_ask_gives_nothing(self):
+        from fastmdxplora.agent import ModelChoice
+        from fastmdxplora.agent.models import list_models
+
+        self.assertEqual(list_models(ModelChoice("nope", "x")), ())
+
+    def test_saving_returns_what_the_provider_has(self):
+        # So the dropdown fills from the provider the moment there is a key
+        # to ask with, without a second round trip the panel has to know to
+        # make.
+        from fastmdxplora.gui.agent_panel import model_endpoint
+
+        answer = model_endpoint({"provider": "anthropic",
+                                 "model": "claude-sonnet-4-6",
+                                 "api_key": "sk-not-real"})
+        self.assertTrue(answer["ok"])
+        self.assertTrue(answer["models"])
+
+    def test_the_gui_says_what_to_do_about_a_missing_key(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn("API key required. Open Settings and paste one.",
+                      script)
+
+
+class TestAFailedRunSaysWhy(unittest.TestCase):
+    """The reason, not the exit code, and not the last line of the log.
+
+    Reported from the browser: a setup failure showed "FastMDXplora
+    exploration failed" and nothing else, while the log held "No structure
+    at 'protein.pdb'. The path is read from where fastmdx was run" four
+    lines above the end. The panel took the log's last line, which by then
+    was a DEBUG about writing the resolved config -- a run keeps logging
+    after it fails, so the final line is usually housekeeping.
+    """
+
+    def test_the_last_error_line_is_preferred_over_the_last_line(self):
+        import inspect
+
+        from fastmdxplora.gui import exploration
+
+        source = inspect.getsource(exploration.DashboardRuntime
+                                   ._process_failure_message)
+        self.assertIn(' - ERROR - ', source)
+        # And the reason leads, because "exited with code 1" is true of
+        # every failure and says nothing about this one.
+        self.assertIn("exit code", source)
+
+    def test_stop_follows_the_process_and_not_the_directory(self):
+        """`active_run` means there is a run to look at, which stays true
+        after one fails. Stop the run was still offered for a run that had
+        already stopped."""
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        watcher = script[script.index("function watchForARun"):
+                         script.index("async function start()")]
+        self.assertIn("detail.process_running", watcher)
+        self.assertNotIn("Boolean(detail && detail.active_run)", watcher)
+
+    def test_the_runtime_reports_both_separately(self):
+        # The fix only works because the payload distinguishes them.
+        import inspect
+
+        from fastmdxplora.gui import exploration
+
+        source = inspect.getsource(exploration.DashboardRuntime.snapshot)
+        self.assertIn('"process_running"', source)
+        self.assertIn('"active_run"', source)
+
+
+class TestTheModelListIsAskedForRatherThanGuessed(unittest.TestCase):
+    """A guessed name in a dropdown is worse than no dropdown.
+
+    The fallback held `claude-opus-4-1`, invented from a pattern rather
+    than read from anywhere. Choosing it returned 404 from the provider —
+    and it looked chosen rather than typed, so the obvious reading was that
+    the software was broken.
+
+    The fallback is now one string per provider that is known to work.
+    Everything else comes from `/v1/models`, asked when Settings opens
+    rather than only when a choice is saved: opening the dialog used to
+    show the written list, and a model picked from it could fail.
+    """
+
+    def setUp(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(Path(tempfile.mkdtemp()))
+
+    def tearDown(self):
+        import os
+
+        if self.before is None:
+            os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)
+        else:
+            os.environ["FASTMDXPLORA_CONFIG_DIR"] = self.before
+
+    def test_the_fallback_is_one_string_not_a_guessed_list(self):
+        from fastmdxplora.agent.models import PROVIDERS
+
+        for name, spec in PROVIDERS.items():
+            with self.subTest(provider=name):
+                offered = spec.get("models") or ()
+                self.assertLessEqual(
+                    len(offered), 1,
+                    "a list written here is a list of guesses")
+                if offered:
+                    self.assertEqual(offered[0], spec["default_model"])
+
+    def test_opening_settings_asks_the_provider(self):
+        import json
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        from fastmdxplora.agent import ModelChoice, save_choice
+        from fastmdxplora.gui.agent_panel import model_endpoint
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802 - http.server's spelling
+                body = json.dumps({"data": [{"id": "one"}, {"id": "two"}]})
+                raw = body.encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def log_message(self, *a):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        save_choice(ModelChoice("compatible", "one",
+                                f"http://127.0.0.1:{port}/v1"), key="k")
+
+        offered = next(p for p in model_endpoint({})["providers"]
+                       if p["id"] == "compatible")["models"]
+        self.assertEqual(offered, ["one", "two"])
+
+    def test_a_model_the_list_does_not_have_still_saves(self):
+        from fastmdxplora.gui.agent_panel import model_endpoint
+
+        answer = model_endpoint({"provider": "anthropic",
+                                 "model": "claude-fable-5-1"})
+        self.assertTrue(answer["ok"])
+        self.assertEqual(answer["current"]["model"], "claude-fable-5-1")
+
+    def test_typing_one_is_offered_in_words(self):
+        # It said "Other…", and was reported as "I still can't choose any
+        # model, only prelisted ones" -- by somebody with that option in
+        # the dropdown in front of them.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn("Type a model name", script)
+        self.assertNotIn('? "Other\\u2026"', script)
+
+
+class TestOneReasonForAFailure(unittest.TestCase):
+    """A failed run gets one explanation, and it is the right one.
+
+    Reported from the browser: a run started with Simulate and not Setup,
+    failed a minute later with "setup outputs are missing", and the health
+    panel attached a paragraph about timesteps, clashes and temperature to
+    it. Two reasons on screen for one failure, one of them about a
+    simulation that had never taken a step.
+    """
+
+    def test_a_missing_setup_is_not_called_numerical_instability(self):
+        from fastmdxplora.gui.telemetry import analyze_health
+
+        health = analyze_health(
+            {"status": "failed",
+             "latest_error": "Simulation cannot start because setup outputs "
+                             "are missing in /x/setup. Run the setup phase "
+                             "first."}, [])
+        self.assertEqual(health["state"], "failed")
+        self.assertEqual(health["explanation"], "")
+
+    def test_a_blow_up_still_gets_the_explanation(self):
+        from fastmdxplora.gui.telemetry import NUMERIC_EXPLANATION, analyze_health
+
+        for said in ("Particle coordinate is NaN",
+                     "The integration became unstable"):
+            with self.subTest(error=said):
+                health = analyze_health(
+                    {"status": "failed", "latest_error": said}, [])
+                self.assertEqual(health["explanation"], NUMERIC_EXPLANATION)
+
+    def test_the_builder_refuses_simulate_without_setup_first(self):
+        # The pipeline refuses it; the button should refuse it before the
+        # pipeline is reached. Starting from a structure, Setup is what
+        # turns it into a system.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        gate = script[script.index("function whyNotReady"):
+                      script.index("function ready()")]
+        self.assertIn('state.phases.has("simulation") && '
+                      '!state.phases.has("setup")', gate)
+        self.assertIn("Simulate needs Setup first", gate)
+
+    def test_an_id_is_optional_and_the_refusal_says_so(self):
+        # The accepted config had `- system: 1UAO` and no id, which is
+        # fine -- ids are numbered if absent -- while the refusal said each
+        # entry needs one. A message that contradicts the validator it
+        # speaks for is a message that teaches the wrong rule.
+        from fastmdxplora.config.loader import ConfigError, validate_config
+
+        validate_config({"systems": [{"system": "1UAO"}]},
+                        require_systems=True)
+        with self.assertRaises(ConfigError) as caught:
+            validate_config({"simulation": {}}, require_systems=True)
+        self.assertIn("optional", str(caught.exception))
+
+
+class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
+    """`include`/`exclude`, defaulting to all — not which blocks exist.
+
+    Reported from the browser: the Agent wrote a config the validator
+    accepts and `fastmdx explore` runs, with a `simulation:` block and no
+    `setup:` block. The builder loaded it with only Simulate ticked, so the
+    Run button was off and the config looked broken. An absent `setup:`
+    block means setup with its defaults, not no setup.
+
+    Two questions were sharing one answer — "does this phase run" and
+    "does this phase have custom settings" — which is the shape of the
+    npt_steps bug in a different place.
+    """
+
+    def load(self, config):
+        import tempfile
+        from pathlib import Path
+
+        import yaml
+
+        from fastmdxplora.gui.config_builder import load_config_into_state
+
+        path = Path(tempfile.mkdtemp()) / "s.yml"
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        return load_config_into_state(str(path))["state"]
+
+    def test_no_include_means_every_phase(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "simulation": {"duration_ns": 2}})
+        self.assertEqual(list(state["phases"]),
+                         ["setup", "simulation", "analysis", "report"])
+        # `include` too. The browser ticks its boxes from that field, and
+        # the first fix corrected `phases` alone -- so this test passed
+        # while the form still showed only Simulate. A test that checks
+        # the field the code fills rather than the field the consumer
+        # reads is a test of the wrong thing.
+        self.assertEqual(state["include"],
+                         ["setup", "simulation", "analysis", "report"])
+
+    def test_the_two_fields_agree_in_every_case(self):
+        for config in (
+                {"systems": [{"system": "1UAO"}], "simulation": {}},
+                {"systems": [{"system": "1UAO"}], "include": ["setup"]},
+                {"systems": [{"system": "1UAO"}], "exclude": ["report"]},
+                {"systems": [{"system": "x"}],
+                 "analysis": {"trajectory": "t.dcd", "topology": "t.pdb"}}):
+            with self.subTest(config=config):
+                state = self.load(config)
+                self.assertEqual(state["include"], list(state["phases"]))
+
+    def test_the_browser_ticks_from_include(self):
+        # Which is why both fields have to say the same thing.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("state.phases = new Set(from.include)", script)
+
+    def test_a_phase_with_no_block_still_runs_with_defaults(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "simulation": {"duration_ns": 2}})
+        self.assertEqual(state["phases"]["setup"], {})
+        self.assertEqual(state["phases"]["simulation"], {"duration_ns": 2})
+
+    def test_include_is_honoured(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "include": ["setup", "simulation"]})
+        self.assertEqual(list(state["phases"]), ["setup", "simulation"])
+
+    def test_exclude_is_honoured(self):
+        state = self.load({"systems": [{"system": "1UAO"}],
+                           "exclude": ["report"]})
+        self.assertNotIn("report", state["phases"])
+        self.assertIn("setup", state["phases"])
+
+    def test_a_trajectory_study_does_not_tick_setup(self):
+        # Setup and simulation have nothing to do with a trajectory that
+        # already exists, even when nothing excludes them.
+        state = self.load({"systems": [{"system": "x"}],
+                           "analysis": {"trajectory": "t.dcd",
+                                        "topology": "t.pdb"}})
+        self.assertNotIn("setup", state["phases"])
+        self.assertNotIn("simulation", state["phases"])
+        self.assertIn("analysis", state["phases"])
+
+
+class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
+    """Two dashboard polls build the playback at once; one wins the rename.
+
+    Seen in the browser as "dashboard route failed: No such file or
+    directory: playback.pdb.tmp". The second request's `.tmp` was the one
+    the first had just renamed into place, so its own rename found nothing
+    -- while the destination sat there, complete and correct. An error for
+    a race whose outcome was right.
+    """
+
+    def test_the_losing_request_yields_when_the_file_is_there(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.trajectory_playback import _replace_or_yield
+
+        root = Path(tempfile.mkdtemp())
+        destination = root / "playback.pdb"
+        destination.write_text("the other request's work")
+        _replace_or_yield(root / "playback.pdb.tmp", destination)
+        self.assertEqual(destination.read_text(),
+                         "the other request's work")
+
+    def test_a_genuine_miss_still_raises(self):
+        # No tmp and no destination is not a race, it is a failure, and
+        # swallowing it would hide the next real bug behind this fix.
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.trajectory_playback import _replace_or_yield
+
+        root = Path(tempfile.mkdtemp())
+        with self.assertRaises(FileNotFoundError):
+            _replace_or_yield(root / "x.tmp", root / "x")
+
+    def test_the_companion_pdb_makes_its_directory(self):
+        # `_atomic_text` did; the PDB writer beside it did not, and a
+        # playback built for a run whose simulation/ did not yet exist
+        # failed on the write rather than the rename.
+        import inspect
+
+        from fastmdxplora.gui import trajectory_playback
+
+        source = inspect.getsource(trajectory_playback)
+        writer = source[source.index('tmp = companion_pdb.with_suffix'):]
+        before = source[:source.index('tmp = companion_pdb.with_suffix')]
+        self.assertIn("companion_pdb.parent.mkdir", before[-200:])
+        self.assertIn("_replace_or_yield(tmp, companion_pdb)", writer[:200])
+
+
+
+class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
+    """The header names the author the config records.
+
+    "Written by the FastMDXplora GUI" appeared on a study the Agent drafted,
+    because build_config loaded `agent` and `agent_model` into the form
+    state and then wrote none of it back. Opening an Agent-drafted config
+    in the builder and saving it produced a file claiming a person wrote
+    it -- the one thing those two fields exist to record.
+    """
+
+    def yaml_for(self, config):
+        from fastmdxplora.gui.config_builder import config_yaml, state_from_config
+
+        return config_yaml(state_from_config(config)["state"])["yaml"]
+
+    def test_an_agent_drafted_config_says_so(self):
+        text = self.yaml_for({"systems": [{"system": "1UAO"}],
+                              "agent": "assisted",
+                              "agent_model": "anthropic/claude-opus-5"})
+        self.assertIn("Written by the FastMDXplora Agent", text)
+        self.assertIn("agent: assisted", text)
+        self.assertIn("agent_model: anthropic/claude-opus-5", text)
+
+    def test_a_hand_written_config_says_the_gui(self):
+        text = self.yaml_for({"systems": [{"system": "1UAO"}]})
+        self.assertIn("Written by the FastMDXplora GUI", text)
+        self.assertNotIn("agent:", text)
+
+    def test_the_default_output_is_timestamped(self):
+        # A fixed name collided on the second run and sent somebody off to
+        # choose a folder for a study they had already described.
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("function defaultOutput()", script)
+        self.assertIn('"fastmdxplora_output_" + d.getUTCFullYear()', script)
+
+
+class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def page(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def test_show_becomes_hide(self):
+        script = self.script()
+        self.assertIn('showBtn.textContent = "Hide the config";', script)
+        self.assertIn('showBtn.textContent = "Show the config";', script)
+
+    def test_the_two_actions_carry_the_builders_descriptions(self):
+        page = self.page()
+        agent = page[page.index('id="agent-copy-command"'):page.index('id="agent-run"')]
+        self.assertIn("The fastmdx invocation that runs this study", agent)
+        self.assertIn("The same study as a Python script", agent)
+
+    def test_a_note_lands_beside_the_button_not_above_the_config(self):
+        # "Command copied" three lines above the config, where the
+        # attempts are listed, was read as not having happened.
+        page = self.page()
+        self.assertIn('id="agent-action-note"', page)
+        script = self.script()
+        self.assertIn('noteEl.textContent = said ? said.textContent : "";', script)
+        self.assertNotIn("note(box, said.textContent", script)
+
+    def test_downloads_ask_where(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        builder = (pathlib.Path(gui.__file__).parent / "static"
+                   / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("async function saveAs(text, name, type)", builder)
+        self.assertIn("window.showSaveFilePicker", builder)
+        self.assertIn('saveAs(built.yaml, "fastmdxplora_config.yml"', builder)
+        self.assertIn('saveAs(built.script, "fastmdxplora_study.py"', builder)
+
+    def test_the_empty_state_no_longer_names_a_setting_that_is_on(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        dash = (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.js").read_text(encoding="utf-8")
+        self.assertNotIn("live_telemetry: true", dash)
+        self.assertIn("Waiting for the simulation", dash)
+        self.assertIn("Nothing running", dash)
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        field = next(f for f in PHASE_SCHEMAS["simulation"].fields if f.name == "live_telemetry")
+        self.assertTrue(field.default, "the message said to turn on something that is on")
+
+
+class TestTheAgentIsAConversation(unittest.TestCase):
+    """What you said, what came back, what it wrote, scrolling up; a
+    composer pinned at the foot. A textarea on a page with a button under
+    it was a form."""
+
+    def page(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_a_thread_a_composer_and_a_template_for_each_reply(self):
+        page = self.page()
+        agent = page[page.index('data-page="agent"'):page.index("</section>", page.index('data-page="agent"'))]
+        self.assertIn('id="agent-thread"', agent)
+        self.assertIn('class="agent-composer"', agent)
+        self.assertIn('<template id="agent-reply-template">', agent)
+
+    def test_enter_sends_and_shift_enter_breaks(self):
+        script = self.script()
+        self.assertIn('e.key === "Enter" && !e.shiftKey', script)
+        self.assertIn("e.preventDefault();\n        draft();", script)
+
+    def test_the_composer_grows(self):
+        script = self.script()
+        self.assertIn("function autosize(area)", script)
+        self.assertIn('area.addEventListener("input"', script)
+
+    def test_each_reply_has_its_own_controls(self):
+        # Two replies on one page cannot share an id. The template's ids
+        # are stripped on clone and each part is found by data-role.
+        script = self.script()
+        self.assertIn('n.removeAttribute("id")', script)
+        self.assertIn("node.querySelector('[data-role=\"' + role + '\"]')", script)
+
+    def test_a_question_carries_the_request_into_the_answer(self):
+        # The loop is stateless. "simulate chignolin for 2 ns" then "1UAO"
+        # goes back as one request the loop can write a study from.
+        script = self.script()
+        self.assertIn("var request = pending ? pending + \"\\n\" + typed : typed;", script)
+        self.assertIn("pending = request;", script)
+
+    def test_run_here_runs_once(self):
+        # A second press started it again into the same folder and was
+        # refused for the folder being occupied -- the right refusal for
+        # the wrong reason.
+        script = self.script()
+        self.assertIn('runBtn.textContent = "Running";', script)
+
+    def test_the_servers_default_output_is_timestamped(self):
+        import inspect
+
+        from fastmdxplora.gui import exploration
+
+        source = inspect.getsource(exploration.DashboardRuntime.launch_from_config)
+        self.assertIn('f"fastmdxplora_output_{stamp}"', source)
+        self.assertNotIn('requested = "analysis_output"', source)
+
+
+class TestRunHereActuallyRuns(unittest.TestCase):
+    """The button said Running and nothing ran.
+
+    launch_from_config takes the builder's form state and builds a config
+    from it. The endpoint handed it {"config": ...}, a key nothing reads,
+    and it built an empty config: the study started, the CLI refused it
+    for naming no system, and the button said Running. The tests passed
+    because their stub runtime echoed the "config" key back -- they tested
+    the assumption, not the function. These use the real runtime.
+    """
+
+    def runtime(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.exploration import DashboardRuntime
+
+        root = Path(tempfile.mkdtemp())
+        return DashboardRuntime(root / "watch", root / "explore")
+
+    def test_the_written_config_carries_the_study(self):
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import run_endpoint
+
+        answer = run_endpoint({"config": {
+            "systems": [{"system": "1UAO"}],
+            "simulation": {"duration_ns": 2},
+            "agent": "assisted", "agent_model": "anthropic/x",
+        }}, self.runtime())
+        self.assertTrue(answer["ok"], answer.get("error"))
+        written = Path(answer["config_path"]).read_text(encoding="utf-8")
+        self.assertIn("systems:", written)
+        self.assertIn("system: 1UAO", written)
+        self.assertIn("agent: assisted", written)
+        self.assertNotIn("\n{}\n", written)
+
+    def test_the_budget_reaches_the_file_as_a_number(self):
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import run_endpoint
+
+        answer = run_endpoint({"config": {
+            "systems": [{"system": "1UAO"}], "agent": "autonomous",
+        }, "budget_hours": "40"}, self.runtime())
+        self.assertTrue(answer["ok"], answer.get("error"))
+        written = Path(answer["config_path"]).read_text(encoding="utf-8")
+        self.assertIn("budget_hours: 40", written)
+
+    def test_the_default_output_is_timestamped(self):
+        from fastmdxplora.gui.agent_panel import run_endpoint
+
+        answer = run_endpoint({"config": {"systems": [{"system": "1UAO"}]}},
+                              self.runtime())
+        self.assertTrue(answer["ok"])
+        self.assertIn("fastmdxplora_output_", answer["output"])
+
+
+class TestTheBudgetIsAConfigKey(unittest.TestCase):
+    """The CLI's `agent --autonomous` applied the budget in-process; a
+    config the GUI hands to `explore --config` had no way to carry it. It
+    is a top-level key now, with a floor, read by explore -- one reader
+    for the ceiling, whichever door the study came through."""
+
+    def test_it_validates_with_a_floor(self):
+        from fastmdxplora.config.loader import ConfigError, validate_config
+
+        validate_config({"systems": [{"system": "1UAO"}], "budget_hours": 40})
+        with self.assertRaises(ConfigError):
+            validate_config({"systems": [{"system": "1UAO"}], "budget_hours": -1})
+
+    def test_it_is_carried_with_the_other_study_keys(self):
+        from fastmdxplora.config.loader import STUDY_LEVEL_KEYS
+
+        self.assertIn("budget_hours", STUDY_LEVEL_KEYS)
+
+    def test_explore_routes_a_budgeted_config_through_the_staged_runner(self):
+        import inspect
+
+        from fastmdxplora.cli import main as cli
+
+        module = inspect.getmodule(cli)
+        source = inspect.getsource(module._cmd_explore)
+        self.assertIn('budget = config.get("budget_hours")', source)
+        self.assertIn("run_in_stages(config, output, budget_hours=float(budget))", source)
+
+    def test_run_here_is_the_builders_primary_button(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('<button class="primary-btn" type="button" data-role="run" id="agent-run">', page)
+
+
+class TestTheThreadFollowsTheReply(unittest.TestCase):
+    """The thread scrolls to the newest message after a reply.
+
+    Three attempts. Setting scrollTop on the thread assumed the thread was
+    the scroller; scrollIntoView after one frame ran before the reply had
+    finished laying out -- the actions row and the config land after the
+    first paint. Now both the thread and the column are scrolled, after
+    the paint and again once layout has settled.
+    """
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_both_containers_are_scrolled(self):
+        script = self.script()
+        block = script[script.index("function scrollToEnd()"):script.index("function autosize")]
+        self.assertIn("thread.scrollTop = thread.scrollHeight;", block)
+        self.assertIn("column.scrollTop = column.scrollHeight;", block)
+
+    def test_after_the_paint_and_again_after_layout(self):
+        script = self.script()
+        block = script[script.index("function scrollToEnd()"):script.index("function autosize")]
+        self.assertIn("requestAnimationFrame(toEnd);", block)
+        self.assertIn("setTimeout(toEnd, 400);", block)
+
+    def test_the_page_has_a_height_so_the_thread_can_scroll(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        self.assertIn('.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); min-height: 0; }', css)
+
+
+class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_a_user_message_has_all_three(self):
+        script = self.script()
+        say = script[script.index("function say(text)"):script.index("function reply()")]
+        for label in ('"Copy"', '"Edit"', '"Retry"'):
+            with self.subTest(label=label):
+                self.assertIn(label, say)
+
+    def test_a_reply_can_be_copied(self):
+        script = self.script()
+        reply = script[script.index("function reply()"):script.index("function scrollToEnd")]
+        self.assertIn('"Copy"', reply)
+
+    def test_edit_and_retry_cut_the_thread_from_there(self):
+        # Everything after the edited message goes, in the thread and in
+        # the history the Agent sees, so the conversation continues from
+        # that point rather than with a fork in it.
+        script = self.script()
+        self.assertIn("function cutFrom(msg)", script)
+        cut = script[script.index("function cutFrom(msg)"):script.index("function say(text)")]
+        self.assertIn("history.length = i;", cut)
+        self.assertIn("currentConfig = null;", cut)
+
+
+class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
+    """One source of truth: the Agent's config is the config that launches.
+
+    It used to be translated into the builder's form state first, and the
+    translation and the builder disagreed about where phase settings lived
+    -- so every Agent-launched run ran with defaults. A 5 ns study ran for
+    the default; a setup_from redirect was dropped and production looked
+    in its own empty setup/. The first fix taught build_config to read
+    both shapes, which was a patch over two sources. Now there is one
+    renderer, render_config, that takes a config; the form reaches it
+    through build_config, the Agent reaches it directly, and no form state
+    stands between the Agent's config and the file the run reads.
+    """
+
+    def test_render_config_is_the_one_renderer(self):
+        import inspect
+
+        from fastmdxplora.gui import config_builder, run_from_config
+
+        self.assertIn("return render_config(build_config(state, full=full)",
+                      inspect.getsource(config_builder.config_yaml))
+        self.assertIn("built = render_config(dict(config)",
+                      inspect.getsource(run_from_config.prepare_run))
+
+    def test_the_agent_does_not_go_through_form_state(self):
+        import inspect
+
+        from fastmdxplora.gui import agent_panel
+
+        source = inspect.getsource(agent_panel.run_endpoint)
+        self.assertNotIn("state_from_config", source)
+        self.assertIn("launch_from_config(None, config=config", source)
+
+    def test_build_config_reads_one_shape(self):
+        # The both-shapes patch is gone: the browser's flat shape is the
+        # only form state build_config ever sees.
+        import inspect
+
+        from fastmdxplora.gui import config_builder
+
+        source = inspect.getsource(config_builder.build_config)
+        self.assertNotIn('nested = state.get("phases")', source)
+
+    def test_the_file_the_run_reads_carries_every_field(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import run_endpoint
+        from fastmdxplora.gui.exploration import DashboardRuntime
+
+        root = Path(tempfile.mkdtemp())
+        runtime = DashboardRuntime(root / "w", root / "e")
+        answer = run_endpoint({"config": {
+            "systems": [{"system": "1UAO"}],
+            "simulation": {"duration_ns": 5, "setup_from": "/runs/first"},
+            "setup": {"solvent_padding_nm": 1.5},
+            "exclude": ["setup"],
+            "agent": "assisted", "agent_model": "anthropic/x",
+        }}, runtime)
+        self.assertTrue(answer["ok"], answer.get("error"))
+        written = Path(answer["config_path"]).read_text(encoding="utf-8")
+        for line in ("duration_ns: 5", "setup_from: /runs/first",
+                     "solvent_padding_nm: 1.5", "- setup", "agent: assisted",
+                     "Written by the FastMDXplora Agent"):
+            with self.subTest(line=line):
+                self.assertIn(line, written)
+
+
+class TestTheMessageToolsAndTheScrollbar(unittest.TestCase):
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def test_the_tools_sit_below_in_fixed_widths(self):
+        # Floated over the corner, the bar was wider than a short message
+        # and hung off it.
+        css = self.css()
+        rule = css[css.index(".agent-msg-tools {"):]
+        rule = rule[:rule.index("}")]
+        self.assertNotIn("position: absolute", rule)
+        self.assertIn("margin-top: 4px", rule)
+        self.assertIn(".agent-msg-tools button { width: 40px;", css)
+
+    def test_the_scrollbar_has_its_own_gutter(self):
+        # It was painting over the messages.
+        css = self.css()
+        rule = css[css.index(".agent-thread {"):]
+        rule = rule[:rule.index("}")]
+        self.assertIn("scrollbar-gutter: stable", rule)
+        self.assertIn("padding: 8px 16px 24px 0", rule)
+
+
+class TestTheLayoutAndTheVoice(unittest.TestCase):
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def test_the_centre_has_a_reading_width_except_the_viewer(self):
+        css = self.css()
+        self.assertIn(".page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }", css)
+        self.assertIn('html[data-page="viewer"] .page-shell { max-width: none; }', css)
+
+    def test_the_panel_starts_wide(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = self.css()
+        self.assertIn("--panel-width: 700px;", css)
+        frame = (pathlib.Path(gui.__file__).parent / "static"
+                 / "frame.js").read_text(encoding="utf-8")
+        self.assertIn('store.get("panelWidth", "700")', frame)
+        self.assertIn("panel: [280, 960]", frame)
+
+    def test_the_agents_prose_is_a_serif_and_the_persons_is_not(self):
+        css = self.css()
+        self.assertIn(".agent-answer, .agent-msg-agent .agent-attempt {\n    font-family: Georgia", css)
+        # No hosted font: this GUI runs without a route to the internet.
+        self.assertNotIn("googleapis", css)
+
+    def test_the_agent_is_told_to_write_plainly(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("No em dashes and no en dashes", prompt)
+        self.assertIn('No "I\'d be happy to", no "great question"', prompt)
+        self.assertIn("Say the thing and stop.", prompt)
+
+
+class TestTheAgentsProseAndTheSidebar(unittest.TestCase):
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_the_prose_is_normal_weight_in_the_secondary_colour(self):
+        # In the primary colour a serif at this size read as bold across
+        # the whole reply, and left nowhere for emphasis to go.
+        css = self.css()
+        rule = css[css.index(".agent-answer, .agent-msg-agent .agent-attempt {"):]
+        rule = rule[:rule.index("}")]
+        self.assertIn("font-weight: 400", rule)
+        self.assertIn("color: var(--text-secondary)", rule)
+        self.assertIn(".agent-answer strong { color: var(--text-primary); font-weight: 600; }", css)
+
+    def test_a_reply_renders_only_four_kinds_of_emphasis_and_escapes_the_rest(self):
+        script = self.script()
+        self.assertIn("function prose(text)", script)
+        block = script[script.index("function prose(text)"):script.index("function note(box")]
+        self.assertIn('replace(/&/g, "&amp;")', block)
+        for tag in ("<code>", "<strong>", "<em>", "rel=\"noopener\""):
+            with self.subTest(tag=tag):
+                self.assertIn(tag, block)
+        self.assertIn("p.innerHTML = prose(data.answer);", script)
+
+    def test_the_agent_is_told_where_emphasis_belongs(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("**bold** for the one thing to", prompt)
+        self.assertIn("No headings, no bullet lists in an answer.", prompt)
+
+    def test_the_sidebar_shows_the_study_not_its_folder(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = self.css()
+        self.assertIn(".study-path, .sidebar-study .study-label { display: none; }", css)
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        # The elements stay, hidden, because the JS writes to them.
+        self.assertEqual(page.count('id="sidebar-output-folder"'), 1)
+        self.assertEqual(page.count('id="topbar-run-id"'), 1)
+
+    def test_copy_path_stands_beside_output(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="copy-output-path"', page)
+        frame = (pathlib.Path(gui.__file__).parent / "static"
+                 / "frame.js").read_text(encoding="utf-8")
+        self.assertIn('el("copy-output-path")', frame)
+
+    def test_the_follow_toggle_says_what_it_does(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("scroll to newest", page)
+        self.assertIn("Keep the newest line in view as the run writes", page)

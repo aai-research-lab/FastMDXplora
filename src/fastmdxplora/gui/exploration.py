@@ -604,11 +604,30 @@ class DashboardRuntime:
                 if ALREADY_HOLD_RESULTS.lower() in line.lower():
                     detail = " ".join(lines[index:index + 2])
                     break
+            # The last ERROR line, not the last line. A run that fails
+            # keeps logging afterwards -- the resolved config gets written,
+            # handlers close -- so the final line is usually a DEBUG about
+            # housekeeping. Reported from the browser: a setup failure
+            # showed "Wrote resolved config: ..." while the log held "No
+            # structure at 'protein.pdb'" four lines above it.
+            if not detail:
+                errors = [line for line in lines if " - ERROR - " in line]
+                if errors:
+                    # Without the timestamp and level, which the panel
+                    # already shows and which crowd out the sentence.
+                    detail = errors[-1].split(" - ERROR - ", 1)[1]
             if not detail and lines:
                 detail = lines[-1]
-        suffix = f" {detail}" if detail else ""
+        if detail:
+            # The reason first. "The workflow exited with code 1" is true
+            # of every failure and says nothing about this one.
+            return (
+                f"{detail} (exit code {self.process_returncode}; see "
+                f"{self.log_path or self.workspace_root / 'exploration.log'} "
+                "for the full log.)"
+            )
         return (
-            f"The workflow exited with code {self.process_returncode}.{suffix} "
+            f"The workflow exited with code {self.process_returncode}. "
             f"See {self.log_path or self.workspace_root / 'exploration.log'} for the full log."
         )
 
@@ -844,9 +863,10 @@ class DashboardRuntime:
 
     def launch_from_config(
         self,
-        state: Mapping[str, Any],
+        state: Mapping[str, Any] | None,
         *,
         dashboard_url: str | None = None,
+        config: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run what a config describes, rather than what a form was wired for.
 
@@ -871,9 +891,18 @@ class DashboardRuntime:
             # turned /Users/someone/work into a folder called
             # Users_someone_work sitting inside the launch directory -- which
             # is neither where they pointed nor anywhere they would look.
-            requested = str(dict(state).get("output") or "").strip()
+            source: Mapping[str, Any] = config if config is not None else (state or {})
+            requested = str(dict(source).get("output") or "").strip()
             if not requested:
-                requested = "analysis_output"
+                # Timestamped, as the CLI's and the builder's defaults are.
+                # A fixed name meant the second study the Agent wrote
+                # collided with the first: "Output folder already exists
+                # and is not empty". The refusal is right; the default
+                # should not make it fire.
+                from datetime import datetime, timezone
+
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                requested = f"fastmdxplora_output_{stamp}"
             candidate = Path(requested).expanduser()
             if candidate.is_absolute():
                 output_dir = candidate.resolve()
@@ -914,7 +943,8 @@ class DashboardRuntime:
                     ),
                 }
 
-            prepared = prepare_run(dict(state), output_dir)
+            prepared = prepare_run(dict(state) if state else None, output_dir,
+                                   config=dict(config) if config is not None else None)
             if not prepared["ok"]:
                 return prepared
 

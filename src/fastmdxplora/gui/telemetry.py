@@ -493,10 +493,20 @@ def analyze_health(
     """Classify the latest telemetry into ok/warning/failed with plain text."""
     latest_error = status.get("latest_error")
     if latest_error or str(status.get("status", "")).lower() == "failed":
+        # The explanation used to be NUMERIC_EXPLANATION for every failure,
+        # so "setup outputs are missing" arrived with a paragraph about
+        # timesteps and clashes attached -- two reasons on screen, one of
+        # them about a simulation that never took a step. The message
+        # already says what happened. A second sentence is offered only
+        # when the failure is the kind it describes.
+        said = str(latest_error or "Simulation failed.")
+        numeric = any(word in said.lower() for word in (
+            "nan", "inf", "unstable", "blew up", "exploded", "particle"
+            " coordinate", "energy is"))
         return {
             "state": "failed",
-            "message": str(latest_error or "Simulation failed."),
-            "explanation": NUMERIC_EXPLANATION,
+            "message": said,
+            "explanation": NUMERIC_EXPLANATION if numeric else "",
         }
 
     latest = metrics[-1] if metrics else {}

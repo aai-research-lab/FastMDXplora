@@ -33,6 +33,94 @@
     </div>
   </div>
 
+
+  <!-- The Agent's settings dialog. At body level so it opens from any
+       page: inside the Agent section it inherited that section's
+       `hidden` everywhere else. -->
+  <div id="agent-settings" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel" role="dialog" aria-modal="true"
+         aria-label="Agent settings">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label">Agent settings</div>
+          <div class="builder-card-note" id="agent-model-current"></div>
+        </div>
+        <button id="agent-settings-close" class="ghost-btn">Close</button>
+      </div>
+      <div class="agent-dialog-body">
+        <div class="builder-grid builder-grid-2">
+          <label class="builder-field">
+            <span class="builder-label">Provider</span>
+            <select id="agent-provider"></select>
+          </label>
+          <label class="builder-field">
+            <span class="builder-label">Model</span>
+            <select id="agent-model"></select>
+          </label>
+          <label class="builder-field builder-field-wide" id="agent-model-other-field" hidden>
+            <span class="builder-label">Model name</span>
+            <input id="agent-model-other" type="text"
+                   placeholder="exactly as the provider spells it">
+            <p class="builder-card-note">Any model the provider
+              has. The list above is what it reports; a name it
+              does not have is refused by the provider, with its
+              own message.</p>
+          </label>
+          <label class="builder-field builder-field-wide" id="agent-url-field" hidden>
+            <span class="builder-label">Server address</span>
+            <input id="agent-base-url" type="text"
+                   placeholder="http://localhost:11434/v1">
+            <p class="builder-card-note" id="agent-url-examples"></p>
+          </label>
+          <label class="builder-field builder-field-wide">
+            <span class="builder-label">API key</span>
+            <input id="agent-key" type="password"
+                   placeholder="paste your key">
+            <p class="builder-card-note" id="agent-key-help"></p>
+          </label>
+          <label class="builder-field">
+            <span class="builder-label">Mode</span>
+            <select id="agent-mode">
+              <option value="assisted">Assisted — you approve it</option>
+              <option value="autonomous">Autonomous — runs unattended</option>
+              <option value="unvalidated">Unvalidated — outside the schema</option>
+            </select>
+            <p class="builder-card-note" id="agent-mode-note"></p>
+          </label>
+          <label class="builder-field">
+            <span class="builder-label">GPU-hour ceiling</span>
+            <input id="agent-budget" type="number" min="0" step="1"
+                   placeholder="optional">
+            <p class="builder-card-note" id="agent-budget-note"></p>
+          </label>
+        </div>
+      </div>
+      <div class="agent-dialog-foot">
+        <button id="agent-save-model" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
+  <div class="settings-popup" id="settings-popup" hidden role="dialog" aria-label="Settings">
+    <div class="settings-section">Appearance</div>
+    <div class="settings-row">
+      <span>Theme</span>
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" class="seg-btn active" data-theme="graphite">Graphite</button>
+        <button type="button" class="seg-btn" data-theme="ink">Ink</button>
+        <button type="button" class="seg-btn" data-theme="paper">Paper</button>
+      </div>
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-section">Agent</div>
+    <div class="settings-row"><span>Engine</span><span class="mono settings-value" id="settings-engine">none</span></div>
+    <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
+    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, mode, ceiling</span></a>
+    <div class="settings-divider"></div>
+    <a href="#settings" class="settings-item" data-view-link="settings">Display preferences <span class="mono settings-hint">viewer, dashboard</span></a>
+    <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
+    <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
+    <a href="#cite" class="settings-item" data-view-link="cite">About FastMDXplora <span class="mono settings-hint" id="settings-version"></span></a>
+  </div>
   <div class="app-shell">
     <!-- Sidebar -->
     <aside class="sidebar" aria-label="Dashboard navigation">
@@ -42,10 +130,58 @@
           <div class="brand-tagline">Fully Automated SysTem for Molecular Dynamics eXploration</div>
         </div>
       </div>
+      <div class="sidebar-study">
+        <div class="study-label mono" id="topbar-run-id">workspace</div>
+        <div class="study-name" id="topbar-run-title">No active exploration</div>
+        <div class="study-status" role="status" aria-live="polite">
+          <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
+          <span class="status-text" id="topbar-status-text">live</span>
+          <span class="status-divider" aria-hidden="true">·</span>
+          <span class="status-text-muted" id="topbar-stage">—</span>
+        </div>
+        <div class="study-facts mono">
+          <span id="sidebar-platform" title="Platform">—</span>
+          <span class="status-divider" aria-hidden="true">·</span>
+          <span id="sidebar-connection-state">Live</span>
+          <span id="sidebar-status-dot" hidden></span>
+          <span id="sidebar-run-name" hidden></span>
+        </div>
+        <div class="study-path mono" id="sidebar-output-folder" title="Output folder">—</div>
+      </div>
+
+      <div class="sidebar-progress">
+        <div class="study-label mono">Progress</div>
+        <ol class="sidebar-stages" aria-label="Stages">
+          <li class="stage-step" data-stage="setup"><span class="stage-marker"></span><span class="stage-label">Setup</span></li>
+          <li class="stage-step" data-stage="minimization"><span class="stage-marker"></span><span class="stage-label">Minimisation</span></li>
+          <li class="stage-step" data-stage="nvt"><span class="stage-marker"></span><span class="stage-label">NVT</span></li>
+          <li class="stage-step" data-stage="npt"><span class="stage-marker"></span><span class="stage-label">NPT</span></li>
+          <li class="stage-step" data-stage="production"><span class="stage-marker"></span><span class="stage-label">Production</span></li>
+          <li class="stage-step" data-stage="analysis"><span class="stage-marker"></span><span class="stage-label">Analysis</span></li>
+          <li class="stage-step" data-stage="report"><span class="stage-marker"></span><span class="stage-label">Report</span></li>
+        </ol>
+        <div class="sidebar-metrics">
+          <span class="metric-label">Step</span><span class="metric-value mono"><span id="topbar-step">—</span> / <span id="topbar-total">—</span></span>
+          <span class="metric-label">Progress</span><span class="metric-value mono" id="topbar-progress">—</span>
+          <span class="metric-label">ETA</span><span class="metric-value mono" id="topbar-eta">—</span>
+        </div>
+        <div class="sidebar-controls">
+          <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause</span></button>
+          <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">Refresh</button>
+          <button class="ghost-btn" type="button" id="open-output" title="Open the output folder">Output</button>
+          <button class="ghost-btn" type="button" id="copy-output-path" title="Copy the output folder's path">Copy path</button>
+        </div>
+        <div class="sidebar-refreshed muted" id="refreshed-indicator">refreshed <span id="refreshed-at">just now</span></div>
+      </div>
+
       <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
-        <a href="#run" class="nav-link" data-view-link="run">
+        <a href="#agent" class="nav-link" data-view-link="agent">
           <span class="nav-icon nav-icon-launch" aria-hidden="true"></span>
-          <span>New Exploration</span>
+          <span>Agent</span>
+        </a>
+        <a href="#run" class="nav-link" data-view-link="run">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Builder</span>
         </a>
         <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
@@ -53,108 +189,42 @@
         </a>
         <a href="#" class="nav-link" data-view-link="viewer" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
-          <span>Molecular Viewer</span>
+          <span>Viewer</span>
         </a>
         <a href="#" class="nav-link" data-view-link="analysis" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
           <span>Analysis</span>
         </a>
-        <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
+        <a href="#" class="nav-link" data-view-link="report" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
           <span>Report</span>
         </a>
-        <div class="nav-heading">Tools</div>
-        <a href="#" class="nav-link" data-view-link="agent">
+        <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
-          <span>Agent</span>
-        </a>
-        <a href="#" class="nav-link" data-view-link="settings">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Settings</span>
-        </a>
-        <!-- Above the two links that leave the page. It sat last, beneath
-             them, under a heading reading Tools -- so the one thing a
-             scientific tool most needs its user to find was the item after
-             the ones that navigate away. -->
-        <a href="#" class="nav-link" data-view-link="cite">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Cite</span>
-        </a>
-        <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html"
-           class="nav-link" target="_blank" rel="noopener">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Documentation</span>
-        </a>
-        <a href="https://github.com/aai-research-lab/FastMDXplora"
-           class="nav-link" target="_blank" rel="noopener">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>GitHub</span>
+          <span>Files</span>
         </a>
       </nav>
       <div class="sidebar-footer">
         <!-- On every page, because a citation nobody sees is a citation
              nobody makes. The full reference is on the Cite page; this is
-             the reminder that there is one. -->
-        <div class="footer-row footer-cite">
-          <a href="#" data-view-link="cite">Cite FastMDXplora</a>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Connection</div>
-          <div class="footer-value">
-            <span class="status-dot status-dot-live" id="sidebar-status-dot"></span>
-            <span id="sidebar-connection-state">Live</span>
-          </div>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Exploring</div>
-          <div class="footer-value" id="sidebar-run-name">—</div>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Platform</div>
-          <div class="footer-value" id="sidebar-platform">—</div>
-        </div>
-        <div class="footer-row">
-          <div class="footer-label">Output</div>
-          <div class="footer-value" id="sidebar-output-folder">—</div>
-        </div>
+             the reminder that there is one. Kept out of the popup for
+             that reason: a scientific tool's one request of its user
+             should not be behind a click. -->
+        <a href="#" class="footer-cite" data-view-link="cite">Cite FastMDXplora</a>
       </div>
+      <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false">
+        <span class="sidebar-account-avatar" aria-hidden="true"></span>
+        <span class="sidebar-account-text">
+          <span class="sidebar-account-name" id="account-name">FastMDXplora</span>
+          <span class="sidebar-account-detail mono" id="account-detail">no engine set</span>
+        </span>
+        <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
+      </button>
     </aside>
+    <div class="col-handle" data-handle="sidebar" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
 
     <!-- Main content -->
     <div class="main">
-      <!-- Top bar -->
-      <header class="top-bar">
-        <div class="top-bar-left">
-          <div class="run-id" id="topbar-run-id">system</div>
-          <div class="run-title" id="topbar-run-title">No active exploration</div>
-        </div>
-        <div class="top-bar-center">
-          <div class="status-cluster" role="status" aria-live="polite">
-            <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
-            <span class="status-text" id="topbar-status-text">live</span>
-            <span class="status-divider" aria-hidden="true">·</span>
-            <span class="status-text-muted" id="topbar-stage">—</span>
-          </div>
-          <div class="metric-cluster">
-            <div class="metric"><span class="metric-label">Step</span><span class="metric-value mono" id="topbar-step">—</span></div>
-            <div class="metric"><span class="metric-label">Total</span><span class="metric-value mono" id="topbar-total">—</span></div>
-            <div class="metric"><span class="metric-label">Progress</span><span class="metric-value mono" id="topbar-progress">—</span></div>
-            <div class="metric"><span class="metric-label">ETA</span><span class="metric-value mono" id="topbar-eta">—</span></div>
-          </div>
-        </div>
-        <div class="top-bar-right">
-          <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)">
-            <span id="pause-label">Pause Updates</span>
-          </button>
-          <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">
-            Refresh
-          </button>
-          <button class="ghost-btn" type="button" id="open-output" title="Open output folder">
-            Open Output
-          </button>
-          <span class="muted" id="refreshed-indicator">Last refreshed: <span id="refreshed-at">just now</span></span>
-        </div>
-      </header>
 
       <!-- Page views -->
       <main class="page-shell" role="main">
@@ -164,7 +234,7 @@
         <section class="page" data-page="run">
           <div class="page-header">
             <div>
-              <h1 class="page-title">New Exploration</h1>
+              <h1 class="page-title">Builder</h1>
               <div class="page-subtitle">
                 Three questions: what you have, what should happen to it, and
                 anything you want to change.
@@ -193,14 +263,11 @@
                 <span class="builder-card-note" id="run-start-detail"></span>
               </label>
             </div>
-          </div>
-
-          <div class="card builder-card" id="run-input-card" hidden>
-            <div class="card-header">
-              <div><h2 class="card-title">Where is it?</h2></div>
-              <span class="builder-step">02</span>
-            </div>
-            <div class="builder-grid builder-grid-2">
+            <!-- Where it is, revealed once the starting point says what "it"
+                 is. The same id the JS toggles; only the card boundary went.
+                 A second card appearing under the first read as a step
+                 completed rather than a question continued. -->
+            <div class="builder-grid builder-grid-2 builder-continued" id="run-input-card" hidden>
               <label class="builder-field builder-field-wide" id="run-structure-field" hidden>
                 <span class="builder-label">Structure</span>
                 <input type="text" id="run-system" autocomplete="off" data-picks="structure"
@@ -261,7 +328,7 @@
                   run with one of them ticked.
                 </p>
               </div>
-              <span class="builder-step">03</span>
+              <span class="builder-step">02</span>
             </div>
             <div class="run-phases" id="run-phases"></div>
           </div>
@@ -275,7 +342,7 @@
                   when it does not.
                 </p>
               </div>
-              <span class="builder-step">04</span>
+              <span class="builder-step">03</span>
             </div>
             <div class="run-settings" id="run-settings"></div>
           </div>
@@ -290,7 +357,7 @@
                   run.
                 </p>
               </div>
-              <span class="builder-step">05</span>
+              <span class="builder-step">04</span>
             </div>
             <label class="analyse-full-toggle">
               <input type="checkbox" id="run-full-config">
@@ -340,62 +407,75 @@
           <div class="page-header">
             <div>
               <h1 class="page-title">Overview</h1>
-              <div class="page-subtitle">Health, exploration status, and quick actions</div>
+              <div class="page-subtitle" id="overview-subtitle">What the run is doing, and whether it is doing it well.</div>
+            </div>
+            <div class="page-header-actions">
+              <a href="#" class="ghost-btn" data-view-link="viewer">Viewer</a>
+              <a href="#" class="ghost-btn" data-view-link="report" id="overview-report-link" hidden>Report</a>
             </div>
           </div>
-          <!-- What was the Live Simulation page. It showed the same
-               run as this one, and the top bar showed it a third
-               time: three places to look for one answer. -->
-          <!-- Shown instead of the panels when a run recorded no telemetry.
-               The panels used to render regardless, twelve fields deep in
-               "not available", which is an apparatus for reading something
-               that is not there. -->
+
+          <!-- No run: one sentence and the way to start one. The sidebar
+               already says "No active exploration"; this says what to do. -->
           <div class="card" id="live-absent" hidden>
-            <div class="card-header"><h2 class="card-title">Nothing to show</h2></div>
+            <div class="card-header"><h2 class="card-title" id="live-absent-title">Nothing running</h2></div>
             <div class="card-body" id="live-absent-body"></div>
-          </div>
-          <div class="grid grid-2" id="live-panels">
-            <div class="card">
-              <div class="card-header"><h2 class="card-title">Simulation progress</h2></div>
-              <div class="progress-large">
-                <div class="progress-large-track">
-                  <div class="progress-large-fill" id="live-progress-fill" style="width:0%"></div>
-                </div>
-                <div class="progress-large-meta">
-                  <span class="mono"><span id="live-progress-pct">—</span>% complete</span>
-                  <span class="muted">sim time <span class="mono" id="live-sim-time">—</span> ns</span>
-                </div>
-              </div>
-              <table class="kv-table mono">
-                <tbody>
-                  <tr><th>Current stage</th><td id="live-stage-cell">—</td></tr>
-                  <tr><th>Current step</th><td id="live-step-cell">—</td></tr>
-                  <tr><th>Total planned steps</th><td id="live-total-cell">—</td></tr>
-                  <tr><th>Frames written</th><td id="live-frames-cell">—</td></tr>
-                  <tr><th>Simulation time</th><td id="live-simtime-cell">—</td></tr>
-                  <tr><th>Elapsed wall time</th><td id="live-elapsed-cell">—</td></tr>
-                  <tr><th>ETA</th><td id="live-eta-cell">—</td></tr>
-                  <tr><th>Checkpoint</th><td id="live-checkpoint-cell">—</td></tr>
-                  <tr><th>Last update</th><td id="live-lastupdate-cell">—</td></tr>
-                </tbody>
-              </table>
+            <div class="control-row" id="live-absent-actions">
+              <a href="#agent" class="primary-btn" data-view-link="agent">Describe a study to the Agent</a>
+              <a href="#run" class="ghost-btn" data-view-link="run">Or build one</a>
             </div>
-            <div class="card">
-              <div class="card-header">
-                <h2 class="card-title">Mini molecular preview</h2>
-                <a href="#" class="ghost-link" data-view-link="viewer">Open full viewer</a>
+          </div>
+
+          <div id="live-panels">
+            <!-- What the sidebar is too narrow to say. The stage, step,
+                 progress and ETA are in the sidebar on every page; this row
+                 is the rest, in one line each. -->
+            <div class="overview-facts card" data-needs-phase="simulation">
+              <div class="hero-card" id="hero-health" data-state="normal" data-needs-phase="simulation">
+              <div class="hero-card-top">
+                <div>
+                  <div class="hero-label">Simulation health</div>
+                  <div class="hero-status" id="health-headline">—</div>
+                </div>
+                <span class="stage-pill" id="health-pill">normal</span>
               </div>
-              <div class="preview-frame" id="mini-preview-frame">
+              <p class="muted" id="health-explanation">Live health classification will appear once telemetry has been written.</p>
+              <ul class="health-list" id="health-list" role="list"></ul>
+            </div>
+              <dl class="overview-strip">
+                <div><dt>Simulation time</dt><dd class="mono" id="live-simtime-cell">—</dd></div>
+                <div><dt>Frames written</dt><dd class="mono" id="live-frames-cell">—</dd></div>
+                <div><dt>Wall time</dt><dd class="mono" id="live-elapsed-cell">—</dd></div>
+                <div><dt>Checkpoint</dt><dd class="mono" id="live-checkpoint-cell">—</dd></div>
+                <div><dt>Last update</dt><dd class="mono" id="live-lastupdate-cell">—</dd></div>
+              </dl>
+              <!-- Read by dashboard.js; not shown here because the sidebar
+                   shows them. Kept so the writes have somewhere to land. -->
+              <span id="live-stage-cell" hidden></span>
+              <span id="live-step-cell" hidden></span>
+              <span id="live-total-cell" hidden></span>
+              <span id="live-eta-cell" hidden></span>
+              <span id="live-progress-pct" hidden></span>
+              <span id="live-sim-time" hidden></span>
+              <div id="live-progress-fill" hidden></div>
+            </div>
+
+            <div class="overview-stack" data-needs-phase="simulation">
+              <div class="card">
+                <div class="card-header">
+                  <h2 class="card-title">Structure</h2>
+                  <a href="#" class="ghost-link" data-view-link="viewer">Open the viewer</a>
+                </div>
+                <div class="preview-frame" id="mini-preview-frame">
                 <div id="mini-preview-canvas" class="mini-preview-canvas" aria-label="Molecular preview"></div>
                 <div class="preview-empty" id="mini-preview-empty">
                   Waiting for a structure file…
                 </div>
               </div>
-              <p class="muted small">Updates automatically as the simulation progresses.</p>
-            </div>
-          </div>
+                <p class="muted small">The newest frame, as it is written.</p>
+              </div>
 
-          <div class="card">
+<div class="card">
             <div class="card-header">
               <h2 class="card-title">Live charts</h2>
               <div class="card-header-actions">
@@ -442,102 +522,31 @@
             </div>
             <div class="chart-empty muted" id="chart-empty">Live telemetry will appear after the first sample.</div>
           </div>
-
-          <!-- One health panel. This card said the same three things as the
-               hero card above it, from the same `analyze_health` call, on the
-               same screen -- and unlike that one it had nowhere to put the
-               list of what was wrong. Recent events takes the width the pair
-               used to share. -->
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Recent events</h2></div>
-            <ul class="events-list" id="events-list"></ul>
-          </div>
-        
-        
-
-          <!-- What has been recorded so far. Below the live
-               panels, because during a run the question is
-               what is happening, and afterwards this is
-               still here. -->
-          <div class="grid grid-4 metric-cards" id="overview-summary-cards" hidden></div>
-
-          <div class="grid grid-2">
-            <div class="card hero-card" id="hero-card" data-state="running" data-needs-phase="simulation">
-              <div class="hero-card-top">
-                <div>
-                  <div class="hero-label">Exploration status</div>
-                  <div class="hero-status" id="hero-status-text">—</div>
-                </div>
-                <span class="stage-pill mono" id="hero-stage">—</span>
-              </div>
-              <!-- No progress bar, sim time, elapsed, ETA or step here.
-                   Every one of them is in the Simulation progress card
-                   opposite, and percent and ETA are in the top bar as
-                   well -- so a reader had to check three places to find
-                   out whether they agreed. This card keeps the one thing
-                   it says better than anywhere else: the run's state,
-                   in a word, with the stage it is in. -->
             </div>
-            <div class="card hero-card" id="hero-health" data-state="normal" data-needs-phase="simulation">
-              <div class="hero-card-top">
-                <div>
-                  <div class="hero-label">Simulation health</div>
-                  <div class="hero-status" id="health-headline">—</div>
-                </div>
-                <span class="stage-pill" id="health-pill">normal</span>
-              </div>
-              <p class="muted" id="health-explanation">Live health classification will appear once telemetry has been written.</p>
-              <ul class="health-list" id="health-list" role="list"></ul>
-            </div>
-          </div>
 
-          <div class="card stage-timeline-card">
-            <div class="card-header">
-              <h2 class="card-title">Stage timeline</h2>
-            </div>
-            <ol class="stage-timeline" id="stage-timeline">
-              <li class="stage-step" data-stage="setup"><span class="stage-marker"></span><span class="stage-label">Setup</span></li>
-              <li class="stage-step" data-stage="minimization"><span class="stage-marker"></span><span class="stage-label">Minimization</span></li>
-              <li class="stage-step" data-stage="nvt"><span class="stage-marker"></span><span class="stage-label">NVT</span></li>
-              <li class="stage-step" data-stage="npt"><span class="stage-marker"></span><span class="stage-label">NPT</span></li>
-              <li class="stage-step" data-stage="production"><span class="stage-marker"></span><span class="stage-label">Production</span></li>
-              <li class="stage-step" data-stage="analysis"><span class="stage-marker"></span><span class="stage-label">Analysis</span></li>
-              <li class="stage-step" data-stage="report"><span class="stage-marker"></span><span class="stage-label">Report</span></li>
-            </ol>
-          </div>
-
-          <div class="grid grid-2">
+            <!-- What was recorded, after what is happening. The summary
+                 cards and the phase table come from the same computation
+                 the report uses, so the two surfaces agree; the cards
+                 carry numbers the sidebar has no room for, and the phase
+                 rows carry a detail per phase -- "7.5 s", "Failed" -- that
+                 the sidebar's markers cannot. Both hide until there is
+                 something to say. -->
+            <div class="grid overview-summary metric-cards" id="overview-summary-cards" hidden></div>
             <div class="card" id="overview-phase-card" hidden>
-              <div class="card-header">
-                <h2 class="card-title">Phases</h2>
-              </div>
-              <table class="kv-table">
-                <thead>
-                  <tr><th>Phase</th><th>Status</th><th>Detail</th></tr>
-                </thead>
+              <div class="card-header"><h2 class="card-title">Phases</h2></div>
+              <table class="phase-table">
+                <thead><tr><th>Phase</th><th>Status</th><th>Detail</th></tr></thead>
                 <tbody id="overview-phase-rows"></tbody>
               </table>
             </div>
             <div class="card" id="overview-stats-card" hidden>
-              <div class="card-header">
-                <h2 class="card-title">Trajectory statistics</h2>
-              </div>
-              <table class="kv-table">
-                <thead>
-                  <tr><th>Metric</th><th>Average</th><th>Std. dev.</th><th>Unit</th></tr>
-                </thead>
+              <div class="card-header"><h2 class="card-title">Trajectory statistics</h2></div>
+              <table class="phase-table">
+                <thead><tr><th>Metric</th><th>Average</th><th>Std. dev.</th><th>Unit</th></tr></thead>
                 <tbody id="overview-stat-rows"></tbody>
               </table>
             </div>
           </div>
-
-          <!-- The current value of a metric now sits on the chart that
-               shows its trend. This row repeated four of them without
-               their history, and was a third place a metric had to be
-               registered -- which is how total energy came to be
-               recorded, plotted, and absent here. Frames written is not
-               a plotted series; it is progress, and the live table
-               already carries it. -->
         </section>
 <section class="page" data-page="viewer" hidden>
           <div class="page-header">
@@ -656,6 +665,7 @@
                       </select>
                     </label>
                     <label class="chip-toggle micro"><input type="checkbox" id="traj-loop">Loop</label>
+                    <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it"><input type="checkbox" id="traj-follow" checked>Follow</label>
                   </div>
                 </div>
               </div>
@@ -756,11 +766,26 @@
           </div>
         </section>
 
-        <section class="page" data-page="files" hidden>
+        <section class="page" data-page="report" hidden>
           <div class="page-header">
             <div>
               <h1 class="page-title">Report</h1>
-              <div class="page-subtitle">Generated artifacts grouped by purpose</div>
+              <div class="page-subtitle" id="report-subtitle">The study, written up.</div>
+            </div>
+            <div class="page-header-actions" id="report-downloads"></div>
+          </div>
+          <div id="report-notices" class="report-notices" hidden></div>
+          <div class="empty-state" id="report-empty">
+            <p>No report yet. The report phase writes one at the end of a run.</p>
+          </div>
+          <article class="card report-document" id="report-document" hidden></article>
+        </section>
+
+        <section class="page" data-page="files" hidden>
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Files</h1>
+              <div class="page-subtitle">Everything the run wrote, grouped by phase</div>
             </div>
           </div>
 
@@ -815,64 +840,53 @@
           <div class="page-header">
             <div>
               <h1 class="page-title">Agent</h1>
-              <div class="page-subtitle">Describe a study and a model will
-                draft it. What comes back goes through the same validation
-                as a config written by hand, so the agent cannot ask for
-                something FastMDXplora will not do.</div>
+              <div class="page-subtitle">Describe a study in natural language.</div>
             </div>
+            <button id="agent-settings-open" class="ghost-btn">Settings</button>
           </div>
 
-          <div class="card">
-            <h2 class="card-title">Model</h2>
-            <p class="card-note" id="agent-model-current">Loading…</p>
-            <label class="field">
-              <span class="field-label">Provider</span>
-              <select id="agent-provider"></select>
-            </label>
-            <label class="field" id="agent-url-field" hidden>
-              <span class="field-label">Base URL</span>
-              <input id="agent-base-url" type="text"
-                     placeholder="http://localhost:11434/v1">
-              <span class="field-help" id="agent-url-examples"></span>
-            </label>
-            <label class="field">
-              <span class="field-label">Model</span>
-              <input id="agent-model" type="text">
-            </label>
-            <label class="field">
-              <span class="field-label">API key</span>
-              <input id="agent-key" type="password"
-                     placeholder="leave blank to read it from the environment">
-              <span class="field-help">Stored in a file of its own, readable
-                only by you. Never written into a config, a manifest or a
-                log.</span>
-            </label>
-            <button id="agent-save-model" class="button">Save</button>
+          <!-- The conversation. Each exchange is what you said and what
+               came back: the refusals as it corrected itself, the config,
+               the actions on it. Newest at the bottom, where the composer
+               is. -->
+          <div class="agent-thread" id="agent-thread" aria-live="polite"></div>
+
+          <!-- The composer, pinned. Grows with what is typed; Enter sends,
+               Shift+Enter breaks a line. -->
+          <div class="agent-composer">
+            <textarea id="agent-request" rows="1"
+              placeholder="Describe a study — a structure, what to do to it, and for how long."></textarea>
+            <button id="agent-propose" class="agent-send" type="button" aria-label="Write config" title="Write config (Enter)">&#8593;</button>
           </div>
 
-          <div class="card">
-            <h2 class="card-title">Describe the study</h2>
-            <textarea id="agent-request" rows="3"
-              placeholder="simulate ubiquitin from 1UBQ at pH 6.5 for 50 ns"></textarea>
-            <label class="field">
-              <span class="field-label">Mode</span>
-              <select id="agent-mode">
-                <option value="assisted">assisted — a model drafted it</option>
-                <option value="autonomous">autonomous — drafted without review</option>
-                <option value="unvalidated">unvalidated — outside this schema</option>
-              </select>
-              <span class="field-help">Recorded on the study, and it travels
-                into the config and the manifest. The panel drafts in every
-                mode and never starts a run: read the config, load it into
-                the form, and start it yourself. Running unattended needs a
-                GPU-time budget, which is a command-line workflow today —
-                <code>fastmdx agent "…" --autonomous --budget-hours N</code>.</span>
-            </label>
-            <button id="agent-propose" class="button primary">Write a config</button>
-            <div id="agent-attempts" class="agent-attempts"></div>
-            <pre id="agent-result" class="agent-result" hidden></pre>
-            <button id="agent-load" class="button" hidden>Load into the form</button>
-          </div>
+          <!-- One reply's worth of controls, cloned into each exchange. The
+               ids here are the template's; each clone addresses its own
+               copy by data-role. -->
+          <template id="agent-reply-template">
+            <div class="agent-msg agent-msg-agent">
+              <div class="agent-attempts" data-role="attempts" id="agent-attempts"></div>
+              <pre class="agent-result" data-role="result" id="agent-result" hidden></pre>
+              <div class="agent-actions" data-role="actions" id="agent-actions" hidden>
+                <label class="checkbox-row agent-full">
+                  <input type="checkbox" data-role="full" id="agent-full-config">
+                  <span>Write every setting, not only the ones the Agent set</span>
+                </label>
+                <div class="control-row">
+                  <button class="ctl-btn" type="button" data-role="show" id="agent-show">Show the config</button>
+                  <button class="ctl-btn" type="button" data-role="download" id="agent-download">Download config</button>
+                  <button class="ctl-btn" type="button" data-role="copy" id="agent-copy-command"
+                          title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy the command</button>
+                  <button class="ctl-btn" type="button" data-role="script" id="agent-download-script"
+                          title="The same study as a Python script, using the documented API.">Download a script</button>
+                  <button class="primary-btn" type="button" data-role="run" id="agent-run">Run here</button>
+                  <span class="builder-card-note agent-action-note" data-role="note" id="agent-action-note" role="status"></span>
+                </div>
+                <p class="builder-card-note">
+                  <a href="#run" data-role="load" id="agent-load">Open in the builder</a> to change it first.
+                </p>
+              </div>
+            </div>
+          </template>
         </section>
 
         <section class="page" data-page="settings" hidden>
@@ -961,6 +975,44 @@
         </section>
       </main>
     </div>
+    <div class="col-handle" data-handle="panel" role="separator" aria-orientation="vertical" aria-label="Resize side panel"></div>
+
+    <!-- Side panel: the run as it happens, and what it has written -->
+    <aside class="side-panel" id="side-panel" aria-label="Run log and files">
+      <div class="side-panel-tabs" role="tablist">
+        <button type="button" class="side-tab active" role="tab" data-side-tab="log" aria-selected="true">Log</button>
+        <button type="button" class="side-tab" role="tab" data-side-tab="files" aria-selected="false">Files</button>
+        <span class="side-panel-spacer"></span>
+        <button type="button" class="ghost-btn side-collapse" id="side-collapse" title="Collapse panel" aria-label="Collapse side panel">&#10095;</button>
+      </div>
+
+      <div class="side-pane" data-side-pane="log" role="tabpanel">
+        <div class="side-log" id="side-log" aria-live="polite"></div>
+        <div class="side-log-foot">
+          <label class="side-follow" title="Keep the newest line in view as the run writes. Untick to read back without being pulled to the bottom."><input type="checkbox" id="side-follow" checked> scroll to newest</label>
+          <span class="side-panel-spacer"></span>
+          <div class="side-filters" role="group" aria-label="Filter log">
+            <button type="button" class="side-filter active" data-log-filter="all">all</button>
+            <button type="button" class="side-filter" data-log-filter="refusals">refusals</button>
+            <button type="button" class="side-filter" data-log-filter="why">why</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-pane" data-side-pane="files" role="tabpanel" hidden>
+        <div class="side-files" id="side-files"></div>
+        <div class="side-preview" id="side-preview" hidden>
+          <div class="side-preview-head">
+            <span class="mono side-preview-name" id="side-preview-name"></span>
+            <span class="side-panel-spacer"></span>
+            <a class="ghost-btn side-preview-download" id="side-preview-download" href="#" download>Download</a>
+            <a class="ghost-btn" id="side-preview-open" href="#" target="_blank" rel="noopener">Open</a>
+          </div>
+          <div class="side-preview-body" id="side-preview-body"></div>
+        </div>
+      </div>
+    </aside>
+    <button type="button" class="side-expand" id="side-expand" hidden title="Show panel" aria-label="Show side panel">&#10094;</button>
   </div>
 
   <!-- Live region for screen readers -->
@@ -968,6 +1020,8 @@
 
   <script src="/static/3Dmol-min.js"></script>
   <script src="/static/agent-panel.js"></script>
+    <script src="/static/frame.js"></script>
+    <script src="/static/report-page.js"></script>
     <script src="/static/dashboard.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>

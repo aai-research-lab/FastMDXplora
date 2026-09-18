@@ -110,14 +110,23 @@ button {
 }
 .brand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .brand-product {
-    font-weight: 700;
-    font-size: 15px;
-    letter-spacing: 0.2px;
+    /* A serif, because a name is not a menu item. A system serif rather
+       than a web font: this GUI runs on machines with no route to the
+       internet -- a cluster login node, a lab box behind a firewall --
+       and test_dashboard_html_has_aai_branding refuses any hosted-font
+       link for that reason. Georgia is on every Mac and Windows machine;
+       the rest of the stack covers Linux. */
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif;
+    font-weight: 400;
+    font-size: 27px;
+    line-height: 1;
+    letter-spacing: -0.01em;
     color: var(--accent-white);
 }
 .brand-tagline {
-    color: var(--text-secondary);
-    font-size: 11px;
+    color: var(--text-muted);
+    font-size: 10px;
+    margin-top: 6px;
     line-height: 1.4;
     letter-spacing: 0.05em;
 }
@@ -1989,22 +1998,29 @@ body.state-ready .loading-screen {
 }
 .run-start-detail { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 
-.run-phases { display: grid; gap: 10px; }
+/* The four phases as tiles, two by two. A row of checkboxes reads as a
+   form; a tile reads as a choice, and each carries the one line that says
+   what it does. The chosen ones get the accent border rather than an
+   inset stripe, so the set that will run is visible at a glance. */
+.run-phases { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .run-phase {
     align-items: flex-start;
-    background: var(--background-elevated);
+    background: var(--background-primary);
     border: 1px solid var(--border-subtle);
     border-radius: 10px;
     cursor: pointer;
     display: flex;
+    transition: border-color 120ms ease, background 120ms ease;
     gap: 12px;
     padding: 12px 16px;
 }
-.run-phase[data-chosen="true"] { box-shadow: inset 3px 0 0 var(--accent-cyan); }
+.run-phase[data-chosen="true"] { border-color: var(--accent-cyan); background: var(--background-elevated); }
+.run-phase:hover { border-color: var(--border-primary); }
 .run-phase input { accent-color: var(--accent-cyan); margin-top: 3px; }
 .run-phase-naming { display: flex; flex-direction: column; gap: 3px; }
-.run-phase-label { color: var(--text-primary); font-size: 14px; }
-.run-phase-blurb { color: var(--text-muted); font-size: 12px; }
+.run-phase-label { color: var(--text-primary); font-size: 13px; font-weight: 500; }
+.run-phase-blurb { color: var(--text-muted); font-size: 11.5px; line-height: 1.45; }
+@media (max-width: 980px) { .run-phases { grid-template-columns: 1fr; } }
 
 .run-settings { display: grid; gap: 10px; }
 .run-section {
@@ -2277,3 +2293,653 @@ body.state-ready .loading-screen {
     gap: 6px;
 }
 .builder-multiselect .chip-toggle { font-size: 11px; }
+
+/* The agent panel.
+   The refusals are the point of this panel -- they are the only visible
+   sign that anything checked the config, and somebody watching a model
+   correct itself learns the config language while they wait. So they are
+   readable rather than incidental, and the accepted config is monospaced
+   because it is about to be read as YAML. */
+.agent-attempts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0 0;
+}
+.agent-attempt {
+    border-left: 2px solid var(--border);
+    padding: 6px 0 6px 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+.agent-attempt.ok {
+    border-left-color: var(--accent, #4a8);
+    color: var(--text);
+}
+.agent-result {
+    margin: 12px 0 0;
+    padding: 12px 14px;
+    background: var(--surface-2, rgba(127, 127, 127, .08));
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
+}
+#agent-request {
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 120px;
+}
+
+/* Agent settings, shaped like the file picker but not one of them --
+   test_there_is_only_one_picker asserts there is exactly one, which is a
+   reasonable invariant and this dialog is not a file picker. */
+.agent-dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
+    display: grid;
+    place-items: center;
+    z-index: 60;
+    padding: 24px;
+}
+.agent-dialog[hidden] { display: none; }
+.agent-dialog-panel {
+    background: var(--background-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    box-shadow: var(--shadow-modal);
+    display: flex;
+    flex-direction: column;
+    max-height: min(85vh, 760px);
+    width: min(720px, 100%);
+}
+.agent-dialog-head {
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    padding: 16px 18px;
+}
+.agent-dialog-body {
+    overflow: auto;
+    padding: 16px 18px;
+}
+.agent-dialog-foot {
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: flex-end;
+    padding: 14px 18px;
+}
+
+
+/* The Agent's request box and the button under it. A textarea with a
+   control immediately beneath it reads as one object; the gap says they
+   are two. */
+#agent-request {
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+    resize: vertical;
+    min-height: 160px;
+    padding: 12px 14px;
+}
+/* By the page rather than by sibling selector: the textarea sits inside a
+   label, so `#agent-request + .control-row` never matches, and `:has()`
+   would be doing work a plain descendant rule does. */
+[data-page="agent"] .control-row {
+    margin-top: 16px;
+}
+
+/* ===========================================================================
+   The frame: three columns, resizable, with a side panel for the run's own
+   narration and files.
+
+   The sidebar is the study -- what is running and how far along it is --
+   and it stays put across every page. The main column is the task. The
+   side panel is what the command line prints and the browser used to throw
+   away: the explain text, the refusals, the stage transitions, as they
+   happen; and a Files tab for what the run has written, opened in place.
+   =========================================================================== */
+:root {
+    --sidebar-width: 232px;
+    --panel-width: 700px;
+    --handle-width: 6px;
+}
+.app-shell {
+    grid-template-columns:
+        var(--sidebar-width) var(--handle-width)
+        minmax(0, 1fr)
+        var(--handle-width) var(--panel-width);
+}
+body.panel-collapsed .app-shell {
+    grid-template-columns: var(--sidebar-width) var(--handle-width) minmax(0, 1fr) 0 0;
+}
+body.panel-collapsed .side-panel,
+body.panel-collapsed .col-handle[data-handle="panel"] { display: none; }
+body.panel-collapsed .side-expand { display: inline-flex; }
+
+.col-handle {
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    user-select: none;
+}
+.col-handle::after {
+    content: "";
+    position: absolute;
+    inset: 0 2px;
+    border-radius: 2px;
+    background: transparent;
+    transition: background 120ms ease;
+}
+.col-handle:hover::after,
+.col-handle.dragging::after { background: var(--border-primary); }
+body.col-dragging { cursor: col-resize; user-select: none; }
+body.col-dragging iframe, body.col-dragging canvas { pointer-events: none; }
+
+/* The settings trigger at the foot of the sidebar: who and what, and a
+   caret. It doubles as the status line for the Agent -- engine and mode --
+   so a glance says what is configured without opening anything. */
+.sidebar-account {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 8px;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+    font-family: inherit;
+}
+.sidebar-account:hover, .sidebar-account[aria-expanded="true"] { background: var(--background-elevated); }
+.sidebar-account-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex: none;
+    background: var(--border-primary);
+}
+.sidebar-account-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sidebar-account-name { font-size: 12px; font-weight: 500; }
+.sidebar-account-detail { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-account-caret { color: var(--text-muted); font-size: 12px; }
+
+.settings-popup {
+    position: fixed;
+    left: 12px;
+    bottom: 64px;
+    width: 300px;
+    border-radius: 10px;
+    background: var(--background-elevated);
+    border: 1px solid var(--border-primary);
+    box-shadow: 0 18px 48px var(--shadow-color);
+    display: flex;
+    flex-direction: column;
+    padding: 6px 0;
+    z-index: 80;
+}
+.settings-popup[hidden] { display: none; }
+.settings-section {
+    padding: 8px 14px 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.settings-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 14px; font-size: 12px; color: var(--text-secondary);
+}
+.settings-value { font-size: 11px; color: var(--text-primary); }
+.settings-divider { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+.settings-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px; font-size: 12px; color: var(--text-secondary); text-decoration: none;
+}
+a.settings-item:hover { background: var(--background-secondary); color: var(--text-primary); }
+.settings-hint { font-size: 10px; color: var(--text-muted); }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 6px; border: 1px solid var(--border-primary); background: var(--background-primary); }
+.seg-btn {
+    padding: 4px 9px; border-radius: 4px; border: none; background: transparent;
+    color: var(--text-muted); font: 500 11px var(--font-sans, inherit); cursor: pointer;
+}
+.seg-btn.active { background: var(--border-primary); color: var(--text-primary); }
+
+/* The side panel. */
+.side-panel {
+    display: flex; flex-direction: column;
+    background: var(--background-secondary);
+    border-left: 1px solid var(--border-subtle);
+    min-height: 100vh;
+    position: sticky; top: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+.side-panel-tabs {
+    display: flex; align-items: center; gap: 4px;
+    padding: 10px 12px; border-bottom: 1px solid var(--border-subtle);
+}
+.side-tab {
+    padding: 6px 12px; border-radius: 5px; border: none; background: transparent;
+    color: var(--text-muted); font: 500 12px inherit; cursor: pointer; font-family: inherit;
+}
+.side-tab.active { background: var(--background-elevated); color: var(--text-primary); }
+.side-panel-spacer { flex: 1; }
+.side-collapse { padding: 4px 8px; font-size: 11px; }
+.side-expand {
+    position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+    padding: 10px 6px; border: 1px solid var(--border-primary); border-right: none;
+    border-radius: 6px 0 0 6px; background: var(--background-elevated);
+    color: var(--text-secondary); cursor: pointer; z-index: 40; display: none;
+}
+.side-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.side-pane[hidden] { display: none; }
+
+.side-log {
+    flex: 1; overflow-y: auto; padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5;
+}
+.side-log-line { display: flex; gap: 10px; color: var(--text-secondary); }
+.side-log-line[data-level="error"] .side-log-text { color: var(--status-error, #e06c6c); }
+.side-log-line[data-level="warning"] .side-log-text { color: var(--status-warning, #d4a24c); }
+.side-log-line[data-level="success"] .side-log-text { color: var(--status-success, #5fc08a); }
+.side-log-ts { color: var(--text-muted); flex: none; }
+.side-log-text { min-width: 0; overflow-wrap: anywhere; }
+.side-log-block {
+    padding: 10px 12px; border-radius: 6px;
+    background: var(--background-elevated);
+    border-left: 2px solid var(--border-primary);
+    font-family: inherit; font-size: 12px; line-height: 1.5; color: var(--text-secondary);
+}
+.side-log-block[data-kind="refused"] { border-left-color: var(--status-error, #e06c6c); }
+.side-log-block[data-kind="qualified"] { border-left-color: var(--status-warning, #d4a24c); }
+.side-log-kind { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 2px; }
+.side-log-empty { color: var(--text-muted); font-family: inherit; font-size: 12px; padding: 8px 0; }
+.side-log-foot {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-top: 1px solid var(--border-subtle);
+    font-size: 11px; color: var(--text-muted);
+}
+.side-follow { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.side-filters { display: flex; gap: 4px; }
+.side-filter {
+    padding: 3px 8px; border-radius: 4px; border: none; background: transparent;
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); cursor: pointer;
+}
+.side-filter.active { background: var(--background-elevated); color: var(--text-primary); }
+
+.side-files { padding: 8px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; max-height: 45%; border-bottom: 1px solid var(--border-subtle); }
+.side-file {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 5px; border: none; background: transparent; width: 100%;
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary);
+    text-align: left; cursor: pointer;
+}
+.side-file:hover { background: var(--background-elevated); }
+.side-file.active { background: var(--background-elevated); color: var(--text-primary); }
+.side-file-dir { color: var(--text-primary); }
+.side-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-file-meta { font-size: 10px; color: var(--text-muted); }
+.side-preview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.side-preview[hidden] { display: none; }
+.side-preview-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-bottom: 1px solid var(--border-subtle);
+}
+.side-preview-name { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-preview-head .ghost-btn { padding: 4px 9px; font-size: 11px; }
+.side-preview-body { flex: 1; overflow: auto; padding: 12px 14px; }
+.side-preview-body pre { margin: 0; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; color: var(--text-secondary); white-space: pre; }
+.side-preview-body img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
+.side-preview-body iframe { width: 100%; height: 100%; border: none; background: white; border-radius: 6px; }
+.side-preview-note { font-size: 12px; color: var(--text-muted); }
+
+/* ===========================================================================
+   The study, in the sidebar.
+
+   The top bar used to hold the run's name, status, step count and ETA
+   across the head of every page. They belong with the study, which is the
+   sidebar's whole job, and the bar's width was space the page could use.
+   Every id the JS writes to is kept; only where it lives has changed.
+
+   The stage markers reuse .stage-step, which the dashboard already drives
+   by class selector -- so the same update paints the overview's timeline
+   and this list, and the two cannot disagree.
+   =========================================================================== */
+.sidebar { gap: 0; padding: 20px 14px 12px; }
+.sidebar-brand { padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle); }
+
+.sidebar-study { padding: 14px 6px 12px; border-bottom: 1px solid var(--border-subtle); }
+.study-label {
+    font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-muted);
+}
+.study-name {
+    margin-top: 4px; font-size: 14px; font-weight: 600; color: var(--text-primary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.study-status { margin-top: 6px; font-size: 11px; color: var(--text-secondary); display: flex; align-items: center; }
+.study-status .status-dot { width: 7px; height: 7px; margin-right: 6px; }
+.study-status .status-divider { margin: 0 6px; color: var(--text-muted); }
+
+.sidebar-progress { padding: 12px 6px; border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 10px; }
+.sidebar-stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+/* The stage rows here are lines, not the overview's tiles: the same
+   class carries the state, and this context lays it out narrow. */
+.sidebar-stages .stage-step {
+    flex-direction: row; align-items: center; gap: 10px;
+    padding: 0; border: none; background: transparent; border-radius: 0;
+    font-size: 12px; color: var(--text-muted);
+}
+.sidebar-stages .stage-step[hidden] { display: none; }
+.sidebar-stages .stage-marker {
+    width: 7px; height: 7px; flex: none; box-shadow: none;
+    background: var(--border-primary);
+}
+.sidebar-stages .stage-step[data-state="completed"] { color: var(--text-secondary); background: transparent; }
+.sidebar-stages .stage-step[data-state="completed"] .stage-marker { background: var(--accent-green); box-shadow: none; }
+.sidebar-stages .stage-step[data-state="current"] { color: var(--text-primary); font-weight: 500; background: transparent; }
+.sidebar-stages .stage-step[data-state="current"] .stage-marker { background: var(--accent-cyan); box-shadow: 0 0 8px rgba(99, 230, 255, 0.5); }
+.sidebar-stages .stage-step[data-state="failed"] { color: var(--accent-red, #e06c6c); background: transparent; }
+.sidebar-stages .stage-step[data-state="failed"] .stage-marker { background: var(--accent-red, #e06c6c); box-shadow: none; }
+.sidebar-stages .stage-step[data-state="skipped"] { color: var(--text-muted); opacity: .55; background: transparent; }
+
+.sidebar-metrics {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+    font-size: 11px; align-items: baseline;
+}
+.sidebar-metrics .metric-label { color: var(--text-muted); }
+.sidebar-metrics .metric-value { color: var(--text-secondary); text-align: right; font-size: 11px; }
+.sidebar-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.sidebar-controls .ghost-btn { padding: 6px 9px; font-size: 11px; flex: 1; min-width: 0; white-space: nowrap; }
+.sidebar-refreshed { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+
+.sidebar-nav { padding-top: 10px; flex: 1; }
+/* A grid that continues a card's first question rather than opening a
+   second card. */
+.builder-continued { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+
+/* ===========================================================================
+   The Report page: the study's write-up as a document.
+   =========================================================================== */
+.report-notices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.report-notice {
+    padding: 10px 14px; border-radius: 8px;
+    background: var(--background-elevated);
+    border-left: 2px solid var(--accent-amber, #d4a24c);
+    font-size: 12px; line-height: 1.5; color: var(--text-secondary);
+}
+.report-notice-kind {
+    display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent-amber, #d4a24c); margin-bottom: 3px;
+}
+.report-document {
+    padding: 32px 40px;
+    max-width: 860px;
+    line-height: 1.65;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+.report-document h1 { font-size: 22px; font-weight: 600; color: var(--text-primary); margin: 0 0 6px; letter-spacing: -.01em; }
+.report-document h2 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 28px 0 10px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.report-document h3 { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 18px 0 6px; }
+.report-document p { margin: 0 0 12px; }
+.report-document em { color: var(--text-muted); font-style: normal; }
+.report-document strong { color: var(--text-primary); font-weight: 600; }
+.report-document code { font-family: var(--font-mono); font-size: 12px; background: var(--background-primary); padding: 1px 5px; border-radius: 4px; }
+.report-document pre { background: var(--background-primary); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+.report-document pre code { background: transparent; padding: 0; }
+.report-document table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; font-size: 12.5px; }
+.report-document th, .report-document td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.report-document th { color: var(--text-muted); font-weight: 500; font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.report-document td { font-family: var(--font-mono); font-size: 12px; }
+.report-document img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0 14px; display: block; }
+.report-document a { color: var(--accent-cyan); text-decoration: none; }
+.report-document a:hover { text-decoration: underline; }
+.report-document ul, .report-document ol { padding-left: 22px; margin: 0 0 12px; }
+.report-document li { margin: 3px 0; }
+.report-document blockquote { margin: 12px 0; padding: 8px 14px; border-left: 2px solid var(--border-primary); color: var(--text-muted); }
+
+/* The study block's second and third lines: platform and connection, and
+   the output path. These were a footer block of their own with a label
+   per row -- Connection, Exploring, Platform, Output -- that repeated
+   what the study block above it already said. Folded in. */
+.study-facts { margin-top: 5px; font-size: 10.5px; color: var(--text-muted); display: flex; align-items: center; }
+.study-facts .status-divider { margin: 0 6px; }
+/* The folder's name and path are gone from the block: the Output button
+   opens the folder and Copy path puts it on the clipboard, and two lines
+   of fastmdxplora_output_20260918_113940 said nothing the button does
+   not. The elements stay, hidden, because the JS writes to them. */
+.study-path, .sidebar-study .study-label { display: none; }
+.sidebar-footer { padding: 8px 6px; }
+.footer-cite { font-size: 11px; color: var(--text-muted); text-decoration: none; }
+.footer-cite:hover { color: var(--text-primary); }
+.footer-row { display: none; }
+
+/* ===========================================================================
+   Each column scrolls by itself.
+
+   The page used to scroll as one document, with the sidebar and panel
+   pinned by position: sticky. That works until a column is taller than
+   the window -- then the sidebar's own foot, and the settings trigger on
+   it, scroll away with the page. Now the shell is the viewport, each
+   column is its own scroll container, and the wordmark is pinned inside
+   the sidebar so it is always where a reader expects it.
+   =========================================================================== */
+html, body { height: 100%; }
+body { overflow: hidden; }
+.app-shell { height: 100vh; min-height: 0; }
+.sidebar, .main, .side-panel {
+    height: 100vh;
+    min-height: 0;
+    position: static;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+}
+.sidebar { padding-top: 0; }
+.sidebar-brand {
+    position: sticky; top: 0; z-index: 2;
+    padding-top: 20px;
+    background: var(--background-secondary);
+}
+.sidebar-account { position: sticky; bottom: 0; z-index: 2; background: var(--background-secondary); }
+.main { display: flex; flex-direction: column; }
+.page-shell { flex: 1; }
+/* A reading width for the centre. With the side panel collapsed the
+   column ran to the right edge and a line of prose ran with it. The
+   viewer is the exception: a 3D canvas wants every pixel it can get,
+   and its own right-hand info pane fills the width beside it. */
+.page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }
+html[data-page="viewer"] .page-shell { max-width: none; }
+/* The side panel already lays its own scroll region out (.side-log,
+   .side-files); the panel itself should not add a second one. */
+.side-panel { overflow: hidden; }
+
+/* Thin scrollbars that match the ground, so a scrolling column does
+   not announce itself with a bright track. */
+.sidebar, .main, .side-log, .side-files, .side-preview-body, .report-document {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-primary) transparent;
+}
+
+/* ===========================================================================
+   The Overview, rebuilt around what the sidebar is too narrow to hold.
+
+   The sidebar shows the stage, the step, the progress and the ETA on
+   every page. The Overview used to show them again, in a bar and a
+   nine-row table, beside a stage timeline the sidebar also has and a
+   Recent events card the Log panel now is. All of that is gone. What is
+   left is what only this page can carry: the health verdict with its
+   explanation, the four facts the sidebar has no room for, the live
+   charts, and the structure as it is written.
+   =========================================================================== */
+.overview-facts { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.overview-facts .hero-card { padding: 0; border: none; background: transparent; box-shadow: none; }
+.overview-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px 18px; margin: 0; padding-top: 14px; border-top: 1px solid var(--border-subtle);
+}
+.overview-strip > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.overview-strip dt { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.overview-strip dd { margin: 0; font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* One column, every panel the width of the charts. A structure card
+   beside the charts made a second right-hand panel inside the centre,
+   next to the real one -- two columns of side panel, and the charts
+   squeezed between. Stacked, each panel gets the full width and the
+   page reads top to bottom: health, facts, charts, structure, then what
+   was recorded. */
+.overview-stack { display: flex; flex-direction: column; gap: 16px; }
+#live-panels { display: flex; flex-direction: column; gap: 16px; }
+#live-panels .metric-cards, #live-panels .card { width: 100%; box-sizing: border-box; }
+#live-panels .preview-frame { height: 360px; }
+#live-absent .control-row { margin-top: 14px; }
+
+
+/* The viewer's live overlay -- "LIVE · nvt · frame 123000 · age 1s" --
+   is position: absolute and its parent was not positioned, so it escaped
+   to the nearest positioned ancestor, which after the frame was the
+   viewport: it sat at the top-right of the window, over the side
+   panel's collapse button. Its parent is its containing block now, so
+   it sits in the canvas's corner where it was meant to. */
+.viewer-canvas-wrap { position: relative; }
+
+/* The summary cards, two across. Four across put each at a quarter of
+   the page, and a card that says "fastmdxplora_output_20260917_232609"
+   at a quarter width says "fastmdxplora_ou…". Half each, and the value
+   wraps rather than clips. */
+.overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.overview-summary .metric-card-value { white-space: normal; overflow-wrap: anywhere; font-size: 15px; }
+.overview-summary .metric-card-value[data-kind="path"] { font-size: 12px; }
+@media (max-width: 720px) { .overview-summary { grid-template-columns: 1fr; } }
+
+/* The Agent's action row, once a config is written: the builder's own
+   set, under the Agent. Going to the builder is a link for changing the
+   config, not the way out. */
+#agent-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+#agent-actions .control-row { flex-wrap: wrap; margin-top: 0; }
+.agent-full { font-size: 12px; color: var(--text-secondary); }
+.agent-action-note { align-self: center; margin-left: 6px; font-size: 12px; }
+
+/* ===========================================================================
+   The Agent as a conversation.
+
+   What you said, what came back, what it wrote, scrolling up; a composer
+   pinned at the foot that grows as you type. A textarea on a page with a
+   button under it was a form. This is the shape a person already knows
+   from every assistant they have used, and it is the right shape for a
+   loop that asks, refuses, corrects and answers.
+   =========================================================================== */
+/* A fixed height, not a minimum: with a minimum the page grew with the
+   thread and the main column scrolled instead of the thread, so the
+   composer left the foot and scrollToEnd moved nothing. The 88px is
+   the page shell's own padding, top and bottom. */
+.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); min-height: 0; }
+.page[data-page="agent"] .page-header { flex: none; }
+.agent-thread {
+    flex: 1; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 18px;
+    /* Room on the right for the scrollbar, and a stable gutter so it
+       never paints over the text. It was passing over the messages. */
+    padding: 8px 16px 24px 0;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin; scrollbar-color: var(--border-primary) transparent;
+}
+.agent-thread:empty::before {
+    content: "Nothing yet. Say what you want to run.";
+    color: var(--text-muted); font-size: 13px; padding: 40px 0; text-align: center;
+}
+.agent-msg { max-width: 860px; }
+.agent-msg-user { align-self: flex-end; max-width: 70%; }
+.agent-msg-user > div:first-child {
+    background: var(--background-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px 14px 4px 14px;
+    padding: 10px 14px;
+    font-size: 14px; line-height: 1.5; color: var(--text-primary);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.agent-msg-agent { align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
+.agent-msg-agent .agent-attempts { margin: 0; }
+.agent-msg-agent .agent-result { margin: 0; }
+.agent-msg-agent .agent-actions { margin: 0; }
+.agent-composer {
+    flex: none; position: sticky; bottom: 0;
+    display: flex; align-items: flex-end; gap: 8px;
+    padding: 12px 0 8px;
+    background: linear-gradient(180deg, transparent, var(--background-primary) 30%);
+}
+.agent-composer textarea {
+    flex: 1; resize: none; min-height: 44px; max-height: 40vh;
+    padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--border-primary);
+    background: var(--background-elevated);
+    color: var(--text-primary);
+    font: 400 14px/1.5 inherit; font-family: inherit;
+    overflow-y: auto;
+}
+.agent-composer textarea:focus { outline: none; border-color: var(--accent-cyan); }
+.agent-send {
+    flex: none; width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid var(--accent-cyan); background: var(--accent-cyan); color: #0f1114;
+    font-size: 18px; line-height: 1; cursor: pointer;
+}
+.agent-send:disabled { opacity: .45; cursor: default; }
+/* The old single-field rules no longer apply to a composer. */
+#agent-request { min-height: 44px; padding: 12px 14px; }
+/* The Agent's prose in a serif; the person's message in the UI sans.
+   That is the pairing every assistant a person has read uses, and it
+   makes the two voices in the thread tell apart at a glance. A system
+   serif, because this GUI runs without a route to the internet. */
+/* Body prose in the secondary text colour at normal weight. In the
+   primary colour -- bright white -- a serif at this size read as bold
+   across the whole reply, which left nowhere for emphasis to go.
+   Emphasis is the model's to place: bold, italic, code and links come
+   through from the reply's own markdown, nothing else does. */
+.agent-answer, .agent-msg-agent .agent-attempt {
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif;
+    font-size: 15px; line-height: 1.65; font-weight: 400; color: var(--text-secondary);
+    white-space: pre-wrap; max-width: 720px;
+}
+.agent-answer strong { color: var(--text-primary); font-weight: 600; }
+.agent-answer em { font-style: italic; }
+.agent-answer code { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary); background: var(--background-elevated); padding: 1px 5px; border-radius: 4px; }
+.agent-answer a { color: var(--accent-cyan); text-decoration: none; }
+.agent-answer a:hover { text-decoration: underline; }
+.agent-msg-agent .agent-attempt { font-size: 14.5px; }
+.agent-msg-agent .agent-attempt.ok { font-family: inherit; font-size: 12px; }
+.agent-msg-user > div:first-child { font-size: 14.5px; }
+.agent-composer textarea { font-size: 14.5px; }
+
+/* Copy / edit / retry on a message, shown on hover. Every assistant a
+   person has used has these; a thread without them is one you cannot
+   go back into. */
+/* Below the message, in a row of fixed-width buttons, not floated over
+   its corner: on a short message the floated bar was wider than the
+   bubble and hung off it. Shown on hover; the row keeps its height so
+   the thread does not jump when it appears. */
+.agent-msg { position: relative; }
+.agent-msg-tools {
+    display: flex; gap: 3px; margin-top: 4px; height: 16px;
+    visibility: hidden;
+}
+.agent-msg-user .agent-msg-tools { justify-content: flex-end; }
+.agent-msg:hover .agent-msg-tools, .agent-msg:focus-within .agent-msg-tools { visibility: visible; }
+.agent-msg-tools button { width: 40px; text-align: center; }
+.agent-msg-tools button {
+    padding: 1px 0; border: 1px solid var(--border-subtle); border-radius: 3px;
+    background: var(--background-elevated);
+    color: var(--text-muted); font: 500 9.5px inherit; font-family: inherit; cursor: pointer;
+    letter-spacing: .02em;
+}
+.agent-msg-tools button:hover { color: var(--text-primary); background: var(--background-secondary); }

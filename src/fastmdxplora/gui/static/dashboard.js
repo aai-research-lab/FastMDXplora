@@ -169,7 +169,7 @@
     byId("pause-toggle")?.addEventListener("click", () => {
       state.paused = !state.paused;
       byId("pause-toggle")?.setAttribute("aria-pressed", String(state.paused));
-      setText("pause-label", state.paused ? "Resume Updates" : "Pause Updates");
+      setText("pause-label", state.paused ? "Resume" : "Pause");
       showToast(
         state.paused
           ? "Browser updates paused. The OpenMM simulation is still running."
@@ -655,16 +655,20 @@
     if (panels) panels.hidden = nothing;
     if (absent) {
       absent.hidden = !nothing;
+      /* Two different situations look the same to this page -- no
+       * status yet -- and used to get one message, about a setting that
+       * is on by default. With a run under way the simulation has not
+       * started: say so, and hide the "start one" buttons. With no run,
+       * say that, and show them. */
+      const hasRun = Boolean(state.appState && state.appState.active_run);
+      const title = document.getElementById("live-absent-title");
       const body = document.getElementById("live-absent-body");
-      if (body && nothing && !body.innerHTML) {
-        body.innerHTML =
-          "This run did not record live telemetry, so there is nothing for " +
-          "this page to read. It is written only when a run asks for it, and " +
-          "that is off by default: set <code>live_telemetry: true</code> " +
-          "under <code>simulation</code> in the config, or pass " +
-          "<code>--live-telemetry</code>, and this page fills as the run " +
-          "goes.";
-      }
+      const actions = document.getElementById("live-absent-actions");
+      if (title) title.textContent = hasRun ? "Waiting for the simulation" : "Nothing running";
+      if (body) body.textContent = hasRun
+        ? "Setup is under way. This page fills in once the simulation starts."
+        : "";
+      if (actions) actions.hidden = hasRun;
     }
     if (nothing) return;
 

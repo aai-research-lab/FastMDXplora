@@ -371,6 +371,11 @@ def make_handler(
             if path == "/api/events":
                 self._send_json({"events": read_events(root)})
                 return
+            if path == "/api/report":
+                from fastmdxplora.gui.report_page import report_payload
+
+                self._send_json(report_payload(root))
+                return
             if path == "/api/artifacts" or path == "/api/files":
                 self._send_json({"artifacts": _artifact_records(root)})
                 return
@@ -481,6 +486,7 @@ def make_handler(
                 # they belong on a list rather than in a judgement.
                 "/api/agent/model",
                 "/api/agent/propose",
+                "/api/agent/run",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -518,6 +524,15 @@ def make_handler(
 
                 self._send_json(model_endpoint(payload or {}))
                 return
+            if path == "/api/agent/run":
+                # Starting a study, so it belongs with the endpoints that
+                # need the machine's trust -- listed above with the others.
+                from fastmdxplora.gui.agent_panel import run_endpoint
+
+                self._send_json(run_endpoint(
+                    payload or {}, app_runtime,
+                    dashboard_url=self.headers.get("Origin")))
+                return
             if path == "/api/agent/propose":
                 # A sentence in, a config out -- through the same
                 # `propose_config` the CLI uses and the same validator a
@@ -525,7 +540,7 @@ def make_handler(
                 # whether a config is acceptable.
                 from fastmdxplora.gui.agent_panel import propose_endpoint
 
-                self._send_json(propose_endpoint(payload or {}))
+                self._send_json(propose_endpoint(payload or {}, app_runtime))
                 return
             if path == "/api/load-config":
                 # Bringing a config into the form so it can be changed. The

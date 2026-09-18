@@ -607,9 +607,14 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
     if require_systems and not data.get("systems"):
         raise ConfigError(
             "Config must define a `systems:` list (the canonical way to "
-            "specify input). Even a single system goes in the list, e.g.\n"
+            "specify input). Each entry needs a `system` that is a PDB "
+            "identifier to fetch or a path to a structure file that "
+            "exists -- taken from the request, not invented. An `id` is "
+            "optional and is numbered if absent:\n"
             "  systems:\n"
-            "    - {id: protein1, system: protein.pdb}",
+            "    - {system: <PDB id or path>}\n"
+            "If the request names no structure, there is nothing to put "
+            "here and the study cannot be written.",
             code="config.option.missing_companion",
             option="systems", requires=["systems"],
         )
@@ -747,7 +752,7 @@ def phase_options(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
 #: folded into the phase blocks: `resolve_agent_modes` compares the two to
 #: find the departures, and a phase that agreed with a study value it could
 #: not see was reported as departing from it.
-STUDY_LEVEL_KEYS = ("agent", "agent_model")
+STUDY_LEVEL_KEYS = ("agent", "agent_model", "budget_hours")
 
 
 def study_options(data: dict[str, Any]) -> dict[str, Any]:

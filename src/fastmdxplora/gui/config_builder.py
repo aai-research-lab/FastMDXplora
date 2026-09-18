@@ -37,7 +37,7 @@ from fastmdxplora.config.loader import (
 )
 from fastmdxplora.config.schema import PHASE_SCHEMAS, TOP_LEVEL
 
-__all__ = ["build_config", "config_yaml"]
+__all__ = ["build_config", "config_yaml", "render_config"]
 
 
 def _defaults_for(phase: str) -> dict[str, Any]:
@@ -172,6 +172,23 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
     """
     config: dict[str, Any] = {}
 
+    # Who wrote the study, carried through rather than dropped. The form
+    # loads `agent` and `agent_model` into `study` and then, building the
+    # config back, wrote none of it -- so opening an Agent-drafted config
+    # in the builder and saving it produced a file claiming a person wrote
+    # it, headed "Written by the FastMDXplora GUI". That is the one thing
+    # those fields exist to record.
+    study = state.get("study")
+    if isinstance(study, dict):
+        fields = {f.name: f for f in TOP_LEVEL.fields}
+        for key in STUDY_LEVEL_KEYS:
+            if study.get(key) is None:
+                continue
+            field = fields.get(key)
+            value = _coerce(study[key], field) if field is not None else study[key]
+            if value is not None:
+                config[key] = value
+
     for key in ("output", "include", "exclude", "verbose"):
         value = state.get(key)
         if value not in (None, "", [], {}):
@@ -287,15 +304,28 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
 
 
 def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
-    """The config as text, validated, with what it will do stated plainly.
+    """The config as text, from the builder's form state."""
+    return render_config(build_config(state, full=full), full=full,
+                         short=build_config(state, full=False) if full else None)
+
+
+def render_config(config: dict[str, Any], *, full: bool = False,
+                  short: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The config as text, validated, from a config -- the one source.
+
+    Everything that renders a config to YAML goes through here: the form,
+    via config_yaml after build_config; the Agent, directly, because it
+    already has a config. It used to have to fake form state to reach the
+    launch, and the fake and the real disagreed about where phase settings
+    lived, so every Agent-launched run ran with defaults. One source of
+    truth means the Agent's config is the config that launches, not a
+    translation of it.
 
     Returns ``ok`` false and the validator's own message where the settings
-    would be refused, so the failure arrives here rather than on the cluster an
-    hour later.
+    would be refused, so the failure arrives here rather than on the cluster
+    an hour later.
     """
     import yaml
-
-    config = build_config(state, full=full)
 
     try:
         validate_config(config)
@@ -309,8 +339,13 @@ def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
             ),
         }
 
+    # The config knows who wrote it: `agent` is set when the Agent did. A
+    # file that says "the GUI" on a study the Agent drafted misattributes
+    # the one thing that field exists to record.
+    author = ("the FastMDXplora Agent" if config.get("agent")
+              else "the FastMDXplora GUI")
     header = (
-        "# Written by the FastMDXplora GUI.\n"
+        f"# Written by {author}.\n"
         "#\n"
         + (
             "# Every setting is named here at the value the run will use,\n"
@@ -343,7 +378,10 @@ def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
     # but a command's defaults come free by omission -- and the nested
     # per-analysis options a full file carries have no flags at all. The two
     # forms describe the same run; the short one is the one a person types.
-    decided = config if not full else build_config(state, full=False)
+    # The command in the header is derived from the short form -- a
+    # command's defaults come free by omission. The form's path supplies
+    # it; the Agent's config already is the short form.
+    decided = short if (full and short is not None) else config
     try:
         command = cli_command(decided)
         header += (
@@ -496,20 +534,52 @@ def state_from_config(
         # blocks were copied -- so opening an agent-written config in the
         # form and saving it produced a config claiming a person wrote it,
         # which is the one thing this field exists to record.
+        # As stated, not as strings. `agent` and `agent_model` are strings
+        # anyway; `budget_hours` is a number, and str() on it produced a
+        # config the validator refused -- "should be number, got str" --
+        # on the way from the Agent's Run here to the launch.
         "study": {
-            key: str(data[key])
+            key: data[key]
             for key in STUDY_LEVEL_KEYS
             if data.get(key) is not None
         },
     }
 
-    for phase in PHASE_SCHEMAS:
+    # Which phases run is `include`/`exclude`, defaulting to all of them.
+    # It used to be read off which phase blocks were present, so a config
+    # with `simulation: {duration_ns: 2}` and no `setup:` block loaded with
+    # only Simulate ticked -- and an absent `setup:` block means setup with
+    # its defaults, not no setup. The two questions, "does this phase run"
+    # and "does this phase have custom settings", shared one answer, which
+    # is the same shape as npt_steps deciding both how long to equilibrate
+    # and whether there was a barostat. A config the validator accepts and
+    # `fastmdx explore` runs then arrived in the form unrunnable.
+    ordered = [str(p) for p in PHASE_SCHEMAS]
+    include = data.get("include")
+    exclude = data.get("exclude")
+    if isinstance(include, list) and include:
+        running = [p for p in ordered if p in {str(x) for x in include}]
+    elif isinstance(exclude, list) and exclude:
+        running = [p for p in ordered if p not in {str(x) for x in exclude}]
+    else:
+        running = ordered
+    if state["start"] == "trajectory":
+        # A config that names a trajectory was written to analyse one;
+        # setup and simulation have nothing to do there even if unstated.
+        running = [p for p in running if p not in ("setup", "simulation")]
+
+    for phase in running:
         block = data.get(phase)
-        if isinstance(block, dict):
-            state["phases"][phase] = {
-                key: value for key, value in block.items()
-                if key not in {"options", "trajectory", "topology"}
-            }
+        state["phases"][phase] = {
+            key: value for key, value in block.items()
+            if key not in {"options", "trajectory", "topology"}
+        } if isinstance(block, dict) else {}
+    # The browser ticks its boxes from `include`, and reads `phases` only
+    # for the values inside each. The first fix populated `phases` alone,
+    # and the form went on ticking from `checked["phases"]` -- which is
+    # the blocks present, the very thing this replaces. Both fields say
+    # the same thing now, from the same derivation.
+    state["include"] = list(running)
 
     included = analysis.get("include")
     if isinstance(included, str):

@@ -868,7 +868,7 @@
 
   function currentState() {
     const config = {
-      output: el("run-output").value.trim() || "fastmdxplora_output",
+      output: el("run-output").value.trim() || defaultOutput(),
       include: PHASES.filter((p) => state.phases.has(p.name)).map((p) => p.name),
     };
 
@@ -924,15 +924,58 @@
     return config;
   }
 
-  function ready() {
-    if (!state.start) return false;
+  /* Why the run cannot start, or "" when it can.
+   *
+   * This used to be a boolean, so the button went grey and nothing said
+   * which condition had failed. A config arriving from the Agent with no
+   * `systems` landed in a form with no structure, a disabled button, and
+   * no way to find out why -- the reader is left guessing at a rule the
+   * software already knows. */
+  function whyNotReady() {
+    if (!state.start) return "Choose what this run starts from.";
     if (state.start === "config") {
-      // Nothing is offered until the file has been read and found sound.
-      return Boolean(state.configVerdict && state.configVerdict.ok);
+      if (!state.configVerdict) return "No config checked yet.";
+      return state.configVerdict.ok ? "" : state.configVerdict.error;
     }
-    if (!state.phases.size) return false;
-    if (state.start === "structure") return Boolean(el("run-system").value.trim());
-    return Boolean(el("run-trajectory").value.trim() && el("run-topology").value.trim());
+    if (!state.phases.size) return "Choose at least one phase to run.";
+    /* Simulate without Setup, starting from a structure, has nothing to
+     * simulate: setup is what turns a structure into a system. Reported
+     * from the browser as a run that started, failed a minute later with
+     * "setup outputs are missing", and then had a paragraph about
+     * timesteps attached to it. The rule is the software's own -- the
+     * pipeline refuses this -- so the button should refuse it first. */
+    if (state.start === "structure" &&
+        state.phases.has("simulation") && !state.phases.has("setup")) {
+      return "Simulate needs Setup first: a structure has to be solvated " +
+             "and parameterised before it can be run. Tick Setup, or " +
+             "start from an existing run's output instead.";
+    }
+    if (state.start === "structure" && !el("run-system").value.trim()) {
+      return "Choose a structure: a PDB file, or an identifier to fetch.";
+    }
+    if (state.start !== "structure" &&
+        !(el("run-trajectory").value.trim() &&
+          el("run-topology").value.trim())) {
+      return "Choose a trajectory and the topology that matches it.";
+    }
+    return "";
+  }
+
+  /* Timestamped, as the CLI's default is. A fixed name collided on the
+   * second run -- "Output folder already exists and is not empty" -- and
+   * sent somebody off to choose a folder for a study they had already
+   * described. The run refuses to overwrite, correctly; the default should
+   * not make it need to. */
+  function defaultOutput() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return "fastmdxplora_output_" + d.getUTCFullYear() + pad(d.getUTCMonth() + 1) +
+      pad(d.getUTCDate()) + "_" + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
+      pad(d.getUTCSeconds());
+  }
+
+  function ready() {
+    return !whyNotReady();
   }
 
   function updateSummary() {
@@ -945,9 +988,10 @@
     } else {
       const doing = PHASES.filter((p) => state.phases.has(p.name))
         .map((p) => p.label);
+      const why = whyNotReady();
       text(
         el("run-summary"),
-        doing.length ? doing.join(" → ") : "Nothing chosen yet"
+        why || (doing.length ? doing.join(" → ") : "Nothing chosen yet")
       );
     }
     const can = ready();
@@ -984,19 +1028,41 @@
     button.setAttribute("aria-expanded", "true");
   }
 
+  /* Save a file where the person chooses. showSaveFilePicker asks for a
+   * location; where the browser lacks it, an anchor with a download
+   * attribute saves to the default folder, which is what every download
+   * did before and what a person reported as "does not let me choose". */
+  async function saveAs(text, name, type) {
+    const blob = new Blob([text], { type });
+    if (typeof window.showSaveFilePicker === "function") {
+      try {
+        const handle = await window.showSaveFilePicker({ suggestedName: name });
+        const stream = await handle.createWritable();
+        await stream.write(blob);
+        await stream.close();
+        return true;
+      } catch (error) {
+        if (error && error.name === "AbortError") return false;
+        // Fall through: a picker that fails for any other reason should
+        // not cost the person the file.
+      }
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    return true;
+  }
+
   async function download() {
     const built = await fetchConfig();
     if (!built.ok) {
       text(el("run-note"), built.error);
       return;
     }
-    text(el("run-note"), `${built.settings_changed} setting(s) written.`);
-    const blob = new Blob([built.yaml], { type: "text/yaml" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "fastmdxplora.yml";
-    link.click();
-    URL.revokeObjectURL(link.href);
+    const saved = await saveAs(built.yaml, "fastmdxplora_config.yml", "text/yaml");
+    text(el("run-note"), saved ? `${built.settings_changed} setting(s) written.` : "Not saved.");
   }
 
   /* The same study, in its other two languages. A form that can only hand
@@ -1036,12 +1102,8 @@
       text(el("run-note"), built.error);
       return;
     }
-    const blob = new Blob([built.script], { type: "text/x-python" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "fastmdxplora_study.py";
-    link.click();
-    URL.revokeObjectURL(link.href);
+    const saved = await saveAs(built.script, "fastmdxplora_study.py", "text/x-python");
+    if (!saved) text(el("run-note"), "Not saved.");
   }
 
   /* A config that has been elsewhere can be run as it stands, or opened and
@@ -1186,9 +1248,24 @@
     if (!window.FastMDXDashboard || !window.FastMDXDashboard.on) return;
     // The handler is given the detail itself, not the event carrying it.
     window.FastMDXDashboard.on("app-state", (detail) => {
-      const running = Boolean(detail && detail.active_run);
+      /* `process_running`, not `active_run`. The latter means "there is a
+       * run to look at", which stays true after one fails -- the output
+       * directory is still there and still being watched -- so Stop the
+       * run was still offered for a run that had already stopped.
+       * Reported from the browser after a setup failure. */
+      const running = Boolean(detail && detail.process_running);
       const stop = el("run-stop");
       if (stop) stop.hidden = !running;
+
+      /* And say why it stopped, where somebody is looking at the button
+       * that just disappeared. */
+      if (detail && detail.status === "failed" && detail.error) {
+        const note = el("run-note");
+        if (note && note.textContent !== detail.error) {
+          text(note, detail.error);
+          note.dataset.ok = "false";
+        }
+      }
     });
   }
 
@@ -1257,7 +1334,7 @@
     const where = (state.schema && state.schema.workspace) || "";
     if (!box) return;
     const typed = box.value.trim();
-    const name = typed || "fastmdxplora_output";
+    const name = typed || defaultOutput();
     // A path is absolute on this machine, not on the one this was written on:
     // C:\Users\... starts with neither a slash nor a tilde, and calling it
     // relative would have the note claim the results land somewhere they
@@ -1348,5 +1425,10 @@
 
   window.FastMDXRun = {
     state, currentState, PHASES, STARTING_POINTS, applyLoadedState,
+    /* The four actions the Agent panel offers on a config it just wrote.
+     * They read the builder's state, which the panel loads silently
+     * first, so the file, the command and the script are the same ones
+     * the builder would produce -- one derivation, two doors. */
+    fetchConfig, download, copyCommand, downloadScript,
   };
 })();

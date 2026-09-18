@@ -487,10 +487,16 @@ def test_dashboard_html_has_aai_branding(tmp_path: Path) -> None:
     assert "FastMDXplora" in html
     assert "Fully Automated SysTem for Molecular Dynamics eXploration" in html
 
-    # Sidebar / top bar / nav structure
+    # Sidebar / study block / nav structure. The top bar became the
+    # sidebar's study block: the run's name, status, step count and ETA
+    # belong with the study, and the bar's width was space the page could
+    # use. Every id the JS writes to is still there, once each.
     assert "sidebar" in html
-    assert "top-bar" in html
+    assert "sidebar-study" in html
     assert "data-view-link" in html
+    for run_id in ("topbar-run-title", "topbar-status-dot", "topbar-step",
+                   "topbar-eta", "pause-toggle", "refresh-now", "open-output"):
+        assert html.count(f'id="{run_id}"') == 1, run_id
 
     # Asset wiring
     assert "/static/dashboard.css" in html
@@ -3013,7 +3019,7 @@ class TestWhereTheResultsGo:
         runtime = self._runtime(tmp_path)
         try:
             started = runtime.launch_from_config(self._state(""))
-            assert pathlib.Path(started["output"]).name == "analysis_output"
+            assert (pathlib.Path(started["output"]).name ).startswith("fastmdxplora_output_")  # timestamped, so a second run does not collide
         finally:
             runtime.stop()
 
@@ -3043,9 +3049,17 @@ class TestPanelsForPhasesThatAreNotRunning:
 
         page = (pathlib.Path(server.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
-        for element_id in ("hero-card", "hero-health"):
+        # The status hero is gone -- the sidebar's status line says it on
+        # every page. The health card stays, and the live facts and the
+        # charts grid declare the same need, so nothing that reads the
+        # simulation shows for a study that has none.
+        for element_id in ("hero-health",):
             block = re.search(rf'<div[^>]*id="{element_id}"[^>]*>', page)
             assert block, f"{element_id} is gone; check this test"
+            assert 'data-needs-phase="simulation"' in block.group(0)
+        for cls in ("overview-facts card", "overview-stack"):
+            block = re.search(rf'<div class="{cls}"[^>]*>', page)
+            assert block, cls
             assert 'data-needs-phase="simulation"' in block.group(0)
 
     def test_the_page_hides_them_when_it_knows(self) -> None:
@@ -3364,7 +3378,10 @@ class TestTheWordsMatchTheSoftware:
         page = (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
         script = (root / "static" / "run-builder.js").read_text(encoding="utf-8")
         assert 'placeholder="fastmdxplora_output"' in page
-        assert '"fastmdxplora_output"' in script
+        # The default is built by a function now -- timestamped, like the
+        # CLI's -- so a second run does not collide with the first. The
+        # name is still the software's.
+        assert '"fastmdxplora_output_"' in script
 
 
 class TestEveryPathFieldCanBeBrowsed:
@@ -3658,7 +3675,7 @@ class TestTheWordsOnTheRunPage:
 
     def test_the_navigation_says_what_the_page_says(self) -> None:
         page, _ = self._files()
-        assert "<span>New Exploration</span>" in page
+        assert "<span>Builder</span>" in page
         assert "New run" not in page
 
     def test_the_results_note_gives_the_path(self) -> None:
@@ -3671,7 +3688,7 @@ class TestTheWordsOnTheRunPage:
     def test_it_joins_the_folder_and_the_name(self) -> None:
         _, script = self._files()
         block = script[script.index("function describeOutput"):][:600]
-        assert "fastmdxplora_output" in block, "the default is not shown"
+        assert "defaultOutput()" in block, "the default is not shown"
         assert "absolute" in block, "an absolute path is not used as given"
 
     def test_the_structure_field_asks_for_what_it_accepts(self) -> None:
@@ -4312,7 +4329,10 @@ class TestTheLiveTabDoesNotPretendToHaveData:
 
         script = (pathlib.Path(server.__file__).parent / "static"
                   / "dashboard.js").read_text(encoding="utf-8")
-        block = script[script.index("function renderLiveProgress"):][:1200]
+        # To the next function, not a fixed 1200 characters: a comment
+        # explaining the two empty states pushed the return past the cut.
+        block = script[script.index("function renderLiveProgress"):]
+        block = block[:block.index("\n  function ", 10)]
 
         assert "live-panels" in block and "live-absent" in block
         assert "if (nothing) return;" in block
@@ -4413,14 +4433,17 @@ class TestTheGUIAsksToBeCited:
                 / "dashboard.html").read_text(encoding="utf-8")
 
     def test_cite_comes_before_the_links_that_leave(self) -> None:
-        import re
-
+        # Documentation and GitHub live in the settings popup now; Cite is
+        # a line in the sidebar itself, on every page. What the test holds
+        # is the principle: the reminder is met before any link that
+        # leaves. The sidebar is visible; the popup is hidden until asked.
         markup = self._markup()
-        nav = markup[markup.index("<nav"):markup.index("</nav>")]
-        order = re.findall(r"<span>([^<]+)</span>", nav)
-
-        assert order.index("Cite") < order.index("Documentation")
-        assert order.index("Cite") < order.index("GitHub")
+        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
+        assert 'data-view-link="cite"' in sidebar
+        popup = markup[markup.index('id="settings-popup"'):]
+        assert "hidden" in popup[:80], "the popup is not hidden by default"
+        assert "readthedocs.io" in popup and "github.com/aai-research-lab" in popup
+        assert "readthedocs.io" not in sidebar and "github.com" not in sidebar
 
     def test_every_page_carries_the_reminder(self) -> None:
         """The sidebar footer shows on all of them, so the request does too."""
@@ -4482,9 +4505,12 @@ class TestOnePageForOneRun:
         # and the surviving one is the hero card, which also lists what is
         # wrong. The claim here is unchanged -- the live panels are on this
         # page -- only which element proves it.
+        # `events-list` is gone: the Log tab in the side panel is the event
+        # stream now, on every page. The rest are where they were.
         for identifier in ("live-panels", "live-absent", "live-progress-fill",
                            "live-stage-cell", "health-headline",
-                           "events-list"):
+                           "live-simtime-cell", "live-frames-cell",
+                           "chart-stack", "mini-preview-canvas"):
             assert f'id="{identifier}"' in overview, identifier
 
     def test_what_is_happening_comes_before_what_was_recorded(self) -> None:
@@ -4497,16 +4523,25 @@ class TestOnePageForOneRun:
         end = markup.index('<section class="page"', start + 10)
         cards = re.findall(r'card-title">([^<]+)<', markup[start:end])
 
-        assert cards.index("Simulation progress") < cards.index("Phases")
+        # The bar-and-table progress card is gone; the sidebar carries the
+        # running stage. What is happening -- the charts, the structure --
+        # still comes before what was recorded.
+        assert cards.index("Structure") < cards.index("Live charts")
+        assert cards.index("Live charts") < cards.index("Phases")
         assert cards.index("Live charts") < cards.index("Trajectory statistics")
 
     def test_the_two_progress_cards_say_which_is_which(self) -> None:
         """One is a bar for the running stage, the other a table of phases.
         Both were called progress."""
         markup = self._markup()
-        assert 'card-title">Simulation progress<' in markup
+        # One progress display now -- the sidebar's, labelled Progress --
+        # and one table of phases, labelled Phases. The Overview's own
+        # "Simulation progress" card repeated the sidebar and is gone.
+        assert 'card-title">Simulation progress<' not in markup
         assert 'card-title">Phases<' in markup
         assert 'card-title">Exploration progress<' not in markup
+        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
+        assert 'study-label mono">Progress<' in sidebar
 
     def test_opening_the_overview_starts_the_polling(self) -> None:
         """It was keyed to opening a page that no longer exists, so nothing
