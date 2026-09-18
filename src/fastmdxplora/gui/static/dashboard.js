@@ -655,13 +655,20 @@
     if (panels) panels.hidden = nothing;
     if (absent) {
       absent.hidden = !nothing;
+      /* Two different situations look the same to this page -- no
+       * status yet -- and used to get one message, about a setting that
+       * is on by default. With a run under way the simulation has not
+       * started: say so, and hide the "start one" buttons. With no run,
+       * say that, and show them. */
+      const hasRun = Boolean(state.appState && state.appState.active_run);
+      const title = document.getElementById("live-absent-title");
       const body = document.getElementById("live-absent-body");
-      if (body && nothing && !body.innerHTML) {
-        body.innerHTML =
-          "No live telemetry for this run. Turn it on with " +
-          "<code>live_telemetry: true</code> under <code>simulation</code>, " +
-          "or <code>--live-telemetry</code>.";
-      }
+      const actions = document.getElementById("live-absent-actions");
+      if (title) title.textContent = hasRun ? "Waiting for the simulation" : "Nothing running";
+      if (body) body.textContent = hasRun
+        ? "Setup is under way. This page fills in once the simulation starts."
+        : "";
+      if (actions) actions.hidden = hasRun;
     }
     if (nothing) return;
 

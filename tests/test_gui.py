@@ -4329,7 +4329,10 @@ class TestTheLiveTabDoesNotPretendToHaveData:
 
         script = (pathlib.Path(server.__file__).parent / "static"
                   / "dashboard.js").read_text(encoding="utf-8")
-        block = script[script.index("function renderLiveProgress"):][:1200]
+        # To the next function, not a fixed 1200 characters: a comment
+        # explaining the two empty states pushed the return past the cut.
+        block = script[script.index("function renderLiveProgress"):]
+        block = block[:block.index("\n  function ", 10)]
 
         assert "live-panels" in block and "live-absent" in block
         assert "if (nothing) return;" in block

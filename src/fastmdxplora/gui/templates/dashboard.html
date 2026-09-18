@@ -417,9 +417,9 @@
           <!-- No run: one sentence and the way to start one. The sidebar
                already says "No active exploration"; this says what to do. -->
           <div class="card" id="live-absent" hidden>
-            <div class="card-header"><h2 class="card-title">Nothing running</h2></div>
+            <div class="card-header"><h2 class="card-title" id="live-absent-title">Nothing running</h2></div>
             <div class="card-body" id="live-absent-body"></div>
-            <div class="control-row">
+            <div class="control-row" id="live-absent-actions">
               <a href="#agent" class="primary-btn" data-view-link="agent">Describe a study to the Agent</a>
               <a href="#run" class="ghost-btn" data-view-link="run">Or build one</a>
             </div>
@@ -860,11 +860,14 @@
                 <span>Write every setting, not only the ones the Agent set</span>
               </label>
               <div class="control-row">
-                <button id="agent-show" class="ctl-btn" type="button">Show the full config</button>
+                <button id="agent-show" class="ctl-btn" type="button">Show the config</button>
                 <button id="agent-download" class="ctl-btn" type="button">Download config</button>
-                <button id="agent-copy-command" class="ctl-btn" type="button">Copy the command</button>
-                <button id="agent-download-script" class="ctl-btn" type="button">Download a script</button>
+                <button id="agent-copy-command" class="ctl-btn" type="button"
+                        title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy the command</button>
+                <button id="agent-download-script" class="ctl-btn" type="button"
+                        title="The same study as a Python script, using the documented API.">Download a script</button>
                 <button id="agent-run" class="ctl-btn primary" type="button">Run here</button>
+                <span class="builder-card-note agent-action-note" id="agent-action-note" role="status" aria-live="polite"></span>
               </div>
               <p class="builder-card-note">
                 <a href="#run" id="agent-load">Open in the builder</a> to change it first.

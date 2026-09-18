@@ -1028,19 +1028,41 @@
     button.setAttribute("aria-expanded", "true");
   }
 
+  /* Save a file where the person chooses. showSaveFilePicker asks for a
+   * location; where the browser lacks it, an anchor with a download
+   * attribute saves to the default folder, which is what every download
+   * did before and what a person reported as "does not let me choose". */
+  async function saveAs(text, name, type) {
+    const blob = new Blob([text], { type });
+    if (typeof window.showSaveFilePicker === "function") {
+      try {
+        const handle = await window.showSaveFilePicker({ suggestedName: name });
+        const stream = await handle.createWritable();
+        await stream.write(blob);
+        await stream.close();
+        return true;
+      } catch (error) {
+        if (error && error.name === "AbortError") return false;
+        // Fall through: a picker that fails for any other reason should
+        // not cost the person the file.
+      }
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    return true;
+  }
+
   async function download() {
     const built = await fetchConfig();
     if (!built.ok) {
       text(el("run-note"), built.error);
       return;
     }
-    text(el("run-note"), `${built.settings_changed} setting(s) written.`);
-    const blob = new Blob([built.yaml], { type: "text/yaml" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "fastmdxplora.yml";
-    link.click();
-    URL.revokeObjectURL(link.href);
+    const saved = await saveAs(built.yaml, "fastmdxplora_config.yml", "text/yaml");
+    text(el("run-note"), saved ? `${built.settings_changed} setting(s) written.` : "Not saved.");
   }
 
   /* The same study, in its other two languages. A form that can only hand
@@ -1080,12 +1102,8 @@
       text(el("run-note"), built.error);
       return;
     }
-    const blob = new Blob([built.script], { type: "text/x-python" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "fastmdxplora_study.py";
-    link.click();
-    URL.revokeObjectURL(link.href);
+    const saved = await saveAs(built.script, "fastmdxplora_study.py", "text/x-python");
+    if (!saved) text(el("run-note"), "Not saved.");
   }
 
   /* A config that has been elsewhere can be run as it stands, or opened and

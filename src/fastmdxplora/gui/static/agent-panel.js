@@ -231,8 +231,10 @@
         ? "Accepted first time."
         : "Accepted after " + data.cycles + " attempts.", true);
       el("agent-result").textContent = data.yaml;
-      el("agent-result").hidden = false;
+      el("agent-result").hidden = true;
       el("agent-actions").hidden = false;
+      el("agent-show").textContent = "Show the config";
+      el("agent-action-note").textContent = "";
 
       /* Load the config into the builder's state without going there.
        * The builder's four actions -- the file, the command, the script,
@@ -260,24 +262,53 @@
             if (full) full.checked = el("agent-full-config").checked;
             Promise.resolve(run[action]()).then(function () {
               /* The builder reports into its own note; say the same
-               * thing here, where the person is looking. */
+               * thing here, beside the button that was pressed. "Command
+               * copied" three lines above the config, where the attempts
+               * are listed, was read as not having happened. */
               var said = document.getElementById("run-note");
-              if (said && said.textContent) note(box, said.textContent, true);
+              el("agent-action-note").textContent = said ? said.textContent : "";
             });
           });
         };
       }
 
       el("agent-show").onclick = function () {
+        var result = el("agent-result");
+        var button = el("agent-show");
+        if (!result.hidden) {
+          result.hidden = true;
+          button.textContent = "Show the config";
+          return;
+        }
+        var everything = el("agent-full-config").checked;
+        if (!everything) {
+          result.textContent = data.yaml;
+          result.hidden = false;
+          button.textContent = "Hide the config";
+          return;
+        }
         loaded.then(function (ok) {
           if (!ok) return;
           var full = el("run-full-config");
-          if (full) full.checked = el("agent-full-config").checked;
+          if (full) full.checked = true;
           window.FastMDXRun.fetchConfig().then(function (built) {
-            if (built && built.ok) el("agent-result").textContent = built.yaml;
-            else if (built) note(box, built.error);
+            if (built && built.ok && built.yaml) {
+              result.textContent = built.yaml;
+              result.hidden = false;
+              button.textContent = "Hide the config";
+            } else {
+              el("agent-action-note").textContent = (built && built.error) || "Could not render the full config.";
+            }
           });
         });
+      };
+      /* Ticking "write every setting" while the config is showing
+       * re-renders it; the two are one control. */
+      el("agent-full-config").onchange = function () {
+        if (!el("agent-result").hidden) {
+          el("agent-result").hidden = true;
+          el("agent-show").onclick();
+        }
       };
       el("agent-download").onclick = viaBuilder("download");
       el("agent-copy-command").onclick = viaBuilder("copyCommand");

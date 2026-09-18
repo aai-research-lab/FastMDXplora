@@ -744,7 +744,7 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # to the builder from the Agent unless you want to change the
         # config, and that is a link, not the way out.
         panel = self.panel()
-        for action in ("Write config", "Show the full config", "Download config",
+        for action in ("Write config", "Show the config", "Download config",
                        "Copy the command", "Download a script", "Run here",
                        "Write every setting"):
             with self.subTest(action=action):
@@ -1405,3 +1405,69 @@ class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
                   / "run-builder.js").read_text(encoding="utf-8")
         self.assertIn("function defaultOutput()", script)
         self.assertIn('"fastmdxplora_output_" + d.getUTCFullYear()', script)
+
+
+class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def page(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def test_show_becomes_hide(self):
+        script = self.script()
+        self.assertIn('button.textContent = "Hide the config";', script)
+        self.assertIn('button.textContent = "Show the config";', script)
+
+    def test_the_two_actions_carry_the_builders_descriptions(self):
+        page = self.page()
+        agent = page[page.index('id="agent-copy-command"'):page.index('id="agent-run"')]
+        self.assertIn("The fastmdx invocation that runs this study", agent)
+        self.assertIn("The same study as a Python script", agent)
+
+    def test_a_note_lands_beside_the_button_not_above_the_config(self):
+        # "Command copied" three lines above the config, where the
+        # attempts are listed, was read as not having happened.
+        page = self.page()
+        self.assertIn('id="agent-action-note"', page)
+        script = self.script()
+        self.assertIn('el("agent-action-note").textContent = said ? said.textContent : "";', script)
+        self.assertNotIn("note(box, said.textContent", script)
+
+    def test_downloads_ask_where(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        builder = (pathlib.Path(gui.__file__).parent / "static"
+                   / "run-builder.js").read_text(encoding="utf-8")
+        self.assertIn("async function saveAs(text, name, type)", builder)
+        self.assertIn("window.showSaveFilePicker", builder)
+        self.assertIn('saveAs(built.yaml, "fastmdxplora_config.yml"', builder)
+        self.assertIn('saveAs(built.script, "fastmdxplora_study.py"', builder)
+
+    def test_the_empty_state_no_longer_names_a_setting_that_is_on(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        dash = (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.js").read_text(encoding="utf-8")
+        self.assertNotIn("live_telemetry: true", dash)
+        self.assertIn("Waiting for the simulation", dash)
+        self.assertIn("Nothing running", dash)
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        field = next(f for f in PHASE_SCHEMAS["simulation"].fields if f.name == "live_telemetry")
+        self.assertTrue(field.default, "the message said to turn on something that is on")
