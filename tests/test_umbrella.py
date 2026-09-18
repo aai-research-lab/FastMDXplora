@@ -701,7 +701,15 @@ class TestItLooksWhereTheRunsActuallyWent:
                             for i, v in enumerate(values)),
                 encoding="utf-8")
 
-        explorer._maybe_build_pmf()
+        # Eight resamples, because this test is about a path. The curve over
+        # these seventeen windows takes 0.04 s and two hundred resamples take
+        # 13.6, with two hundred binding free energies riding along on them,
+        # and none of that is what the assertions below look at. It timed out
+        # at ten minutes on a Windows runner while passing in half a minute
+        # elsewhere, which is what a test paying for statistics it does not
+        # read buys. Every other caller of `compute_pmf` in this suite already
+        # names a number here.
+        explorer._maybe_build_pmf(bootstrap_resamples=8)
 
         written = json.loads(
             (tmp_path / "out" / "pmf.json").read_text(encoding="utf-8"))
@@ -735,6 +743,50 @@ class TestItLooksWhereTheRunsActuallyWent:
 
         with pytest.raises(FileNotFoundError, match="COLVAR"):
             collect_samples({0: tmp_path / "nowhere"})
+
+    def test_a_study_still_gets_the_full_bootstrap(self, tmp_path,
+                                                   monkeypatch) -> None:
+        """The knob above is for callers, not a quiet cut to what a study
+        reports.
+
+        A test that makes its own work cheap can make the product cheap by
+        the same edit, and the error bar on a free energy is the last thing
+        that should thin out because a test was slow. So this asserts the
+        default path says nothing about resamples and `compute_pmf` keeps
+        its own -- captured from the call the explorer actually makes,
+        rather than read off the signature.
+        """
+        from fastmdxplora.simulation import umbrella
+
+        seen = {}
+        real = umbrella.compute_pmf
+
+        def _watch(*args, **kwargs):
+            seen.update(kwargs)
+            return real(*args, **{**kwargs, "bootstrap_resamples": 0})
+
+        monkeypatch.setattr(umbrella, "compute_pmf", _watch)
+
+        explorer = self._explorer(tmp_path)
+        for spec in explorer.run_specs:
+            block = spec.options["simulation"]["umbrella"]
+            simulation = explorer._run_output_dir(spec) / "simulation"
+            simulation.mkdir(parents=True)
+            values = _sample(block["centre"], block["force_constant"],
+                             n=300, seed=block["index"])
+            simulation.joinpath("COLVAR").write_text(
+                "#! FIELDS time cv bias\n"
+                + "\n".join(f"{i * 0.1:.1f} {v:.6f} 0.0"
+                            for i, v in enumerate(values)),
+                encoding="utf-8")
+
+        explorer._maybe_build_pmf()
+
+        assert seen, "the explorer did not reach compute_pmf"
+        assert "bootstrap_resamples" not in seen, (
+            "a study must inherit compute_pmf's own resample count; passing "
+            "one here is how a default quietly becomes whatever a test wanted"
+        )
 
 
 class TestParallelRunsShareOneTerminal:

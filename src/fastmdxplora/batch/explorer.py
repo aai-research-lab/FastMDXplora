@@ -1221,13 +1221,27 @@ class BatchExplorer:
         return {s.index: s.directory for s in seeds}
 
     # ------------------------------------------------------------------
-    def _maybe_build_pmf(self) -> None:
+    def _maybe_build_pmf(self, *, bootstrap_resamples: int | None = None) -> None:
         """Recombine umbrella windows once they have all run.
 
         The windows are ordinary runs, so nothing before this point knows
         they belong together. Here is where they have all finished and the
         set is visible -- and where the overlap between them can be checked,
         which is the thing that decides whether a free energy exists at all.
+
+        ``bootstrap_resamples`` is the one knob a caller may need and had no
+        way to reach. A study pays for it: on seventeen windows of three
+        thousand samples the curve itself takes 0.04 s and the two hundred
+        resamples behind its error bar take 13.6, and with a binding free
+        energy riding along there are two hundred of those too. That is the
+        right default for a study, whose curve is worth an interval, and the
+        wrong one for a caller exercising the recombination rather than the
+        statistics. Every other caller in the tree already says a number
+        here -- 0, 8, 20, 25, 30, 40 -- because `compute_pmf` takes one
+        directly; this path was the only one that could not, so the only
+        test that takes it was paying two hundred resamples to check a
+        directory name. `None` keeps `compute_pmf`'s own default, so a study
+        is unchanged.
         """
         import json
 
@@ -1292,8 +1306,11 @@ class BatchExplorer:
                     where, curve, temperature_K=_t).get("delta_g_kjmol")
 
             wants_binding = _the_coordinate_has_a_volume(plan)
+            how_many = ({} if bootstrap_resamples is None
+                        else {"bootstrap_resamples": int(bootstrap_resamples)})
             payload = compute_pmf(samples, plan, temperature_K=temperature,
-                                  also=_binding_from if wants_binding else None)
+                                  also=_binding_from if wants_binding else None,
+                                  **how_many)
             payload["plan"] = plan.as_record()
 
             # What these windows say the study should have been. Every
