@@ -2806,3 +2806,12 @@ body { overflow: hidden; }
    panel's collapse button. Its parent is its containing block now, so
    it sits in the canvas's corner where it was meant to. */
 .viewer-canvas-wrap { position: relative; }
+
+/* The summary cards, two across. Four across put each at a quarter of
+   the page, and a card that says "fastmdxplora_output_20260917_232609"
+   at a quarter width says "fastmdxplora_ou…". Half each, and the value
+   wraps rather than clips. */
+.overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.overview-summary .metric-card-value { white-space: normal; overflow-wrap: anywhere; font-size: 15px; }
+.overview-summary .metric-card-value[data-kind="path"] { font-size: 12px; }
+@media (max-width: 720px) { .overview-summary { grid-template-columns: 1fr; } }

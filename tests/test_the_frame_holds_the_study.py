@@ -507,8 +507,13 @@ class TestThreeThingsSeenInTheBrowser(unittest.TestCase):
         # `metric-grid` was a class with no rule behind it, so the cards
         # had nothing to sit in and overlapped.
         page = _page()
-        self.assertIn('class="grid grid-4 metric-cards" id="overview-summary-cards"', page)
+        self.assertIn('class="grid overview-summary metric-cards" id="overview-summary-cards"', page)
         self.assertNotIn("metric-grid", page)
+        css = _css()
+        # Two across, and the value wraps rather than clips. Four across
+        # put each card at a quarter of the page with its text cut off.
+        self.assertIn(".overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr))", css)
+        self.assertIn(".overview-summary .metric-card-value { white-space: normal", css)
 
     def test_the_overview_is_one_column(self):
         # A structure card beside the charts made a second right-hand panel
