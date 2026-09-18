@@ -892,7 +892,15 @@ class DashboardRuntime:
             # is neither where they pointed nor anywhere they would look.
             requested = str(dict(state).get("output") or "").strip()
             if not requested:
-                requested = "analysis_output"
+                # Timestamped, as the CLI's and the builder's defaults are.
+                # A fixed name meant the second study the Agent wrote
+                # collided with the first: "Output folder already exists
+                # and is not empty". The refusal is right; the default
+                # should not make it fire.
+                from datetime import datetime, timezone
+
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                requested = f"fastmdxplora_output_{stamp}"
             candidate = Path(requested).expanduser()
             if candidate.is_absolute():
                 output_dir = candidate.resolve()

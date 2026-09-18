@@ -2823,3 +2823,64 @@ body { overflow: hidden; }
 #agent-actions .control-row { flex-wrap: wrap; margin-top: 0; }
 .agent-full { font-size: 12px; color: var(--text-secondary); }
 .agent-action-note { align-self: center; margin-left: 6px; font-size: 12px; }
+
+/* ===========================================================================
+   The Agent as a conversation.
+
+   What you said, what came back, what it wrote, scrolling up; a composer
+   pinned at the foot that grows as you type. A textarea on a page with a
+   button under it was a form. This is the shape a person already knows
+   from every assistant they have used, and it is the right shape for a
+   loop that asks, refuses, corrects and answers.
+   =========================================================================== */
+.page[data-page="agent"] { display: flex; flex-direction: column; min-height: calc(100vh - 48px); }
+.page[data-page="agent"] .page-header { flex: none; }
+.agent-thread {
+    flex: 1; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 18px;
+    padding: 8px 0 24px;
+    scrollbar-width: thin; scrollbar-color: var(--border-primary) transparent;
+}
+.agent-thread:empty::before {
+    content: "Nothing yet. Say what you want to run.";
+    color: var(--text-muted); font-size: 13px; padding: 40px 0; text-align: center;
+}
+.agent-msg { max-width: 860px; }
+.agent-msg-user {
+    align-self: flex-end;
+    background: var(--background-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px 14px 4px 14px;
+    padding: 10px 14px;
+    font-size: 14px; line-height: 1.5; color: var(--text-primary);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    max-width: 70%;
+}
+.agent-msg-agent { align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
+.agent-msg-agent .agent-attempts { margin: 0; }
+.agent-msg-agent .agent-result { margin: 0; }
+.agent-msg-agent .agent-actions { margin: 0; }
+.agent-composer {
+    flex: none; position: sticky; bottom: 0;
+    display: flex; align-items: flex-end; gap: 8px;
+    padding: 12px 0 8px;
+    background: linear-gradient(180deg, transparent, var(--background-primary) 30%);
+}
+.agent-composer textarea {
+    flex: 1; resize: none; min-height: 44px; max-height: 40vh;
+    padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--border-primary);
+    background: var(--background-elevated);
+    color: var(--text-primary);
+    font: 400 14px/1.5 inherit; font-family: inherit;
+    overflow-y: auto;
+}
+.agent-composer textarea:focus { outline: none; border-color: var(--accent-cyan); }
+.agent-send {
+    flex: none; width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid var(--accent-cyan); background: var(--accent-cyan); color: #0f1114;
+    font-size: 18px; line-height: 1; cursor: pointer;
+}
+.agent-send:disabled { opacity: .45; cursor: default; }
+/* The old single-field rules no longer apply to a composer. */
+#agent-request { min-height: 44px; padding: 12px 14px; }

@@ -782,8 +782,9 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # It checks the budget an autonomous run needs and records the
         # mode, which the builder's start does not.
         script = self.script()
-        self.assertIn('el("agent-run").onclick = function () { start(data.config, box); };', script)
-        self.assertIn('post("/api/agent/run"', script)
+        run = script[script.index("runBtn.onclick = function () {"):]
+        run = run[:run.index("};", run.index("post("))]
+        self.assertIn('post("/api/agent/run"', run)
 
     def test_opening_the_builder_is_a_link_not_the_way_out(self):
         panel = self.panel()
@@ -1427,8 +1428,8 @@ class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
 
     def test_show_becomes_hide(self):
         script = self.script()
-        self.assertIn('button.textContent = "Hide the config";', script)
-        self.assertIn('button.textContent = "Show the config";', script)
+        self.assertIn('showBtn.textContent = "Hide the config";', script)
+        self.assertIn('showBtn.textContent = "Show the config";', script)
 
     def test_the_two_actions_carry_the_builders_descriptions(self):
         page = self.page()
@@ -1442,7 +1443,7 @@ class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
         page = self.page()
         self.assertIn('id="agent-action-note"', page)
         script = self.script()
-        self.assertIn('el("agent-action-note").textContent = said ? said.textContent : "";', script)
+        self.assertIn('noteEl.textContent = said ? said.textContent : "";', script)
         self.assertNotIn("note(box, said.textContent", script)
 
     def test_downloads_ask_where(self):
@@ -1471,3 +1472,72 @@ class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
 
         field = next(f for f in PHASE_SCHEMAS["simulation"].fields if f.name == "live_telemetry")
         self.assertTrue(field.default, "the message said to turn on something that is on")
+
+
+class TestTheAgentIsAConversation(unittest.TestCase):
+    """What you said, what came back, what it wrote, scrolling up; a
+    composer pinned at the foot. A textarea on a page with a button under
+    it was a form."""
+
+    def page(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_a_thread_a_composer_and_a_template_for_each_reply(self):
+        page = self.page()
+        agent = page[page.index('data-page="agent"'):page.index("</section>", page.index('data-page="agent"'))]
+        self.assertIn('id="agent-thread"', agent)
+        self.assertIn('class="agent-composer"', agent)
+        self.assertIn('<template id="agent-reply-template">', agent)
+
+    def test_enter_sends_and_shift_enter_breaks(self):
+        script = self.script()
+        self.assertIn('e.key === "Enter" && !e.shiftKey', script)
+        self.assertIn("e.preventDefault();\n        draft();", script)
+
+    def test_the_composer_grows(self):
+        script = self.script()
+        self.assertIn("function autosize(area)", script)
+        self.assertIn('area.addEventListener("input"', script)
+
+    def test_each_reply_has_its_own_controls(self):
+        # Two replies on one page cannot share an id. The template's ids
+        # are stripped on clone and each part is found by data-role.
+        script = self.script()
+        self.assertIn('n.removeAttribute("id")', script)
+        self.assertIn("node.querySelector('[data-role=\"' + role + '\"]')", script)
+
+    def test_a_question_carries_the_request_into_the_answer(self):
+        # The loop is stateless. "simulate chignolin for 2 ns" then "1UAO"
+        # goes back as one request the loop can write a study from.
+        script = self.script()
+        self.assertIn("var request = pending ? pending + \"\\n\" + typed : typed;", script)
+        self.assertIn("pending = request;", script)
+
+    def test_run_here_runs_once(self):
+        # A second press started it again into the same folder and was
+        # refused for the folder being occupied -- the right refusal for
+        # the wrong reason.
+        script = self.script()
+        self.assertIn('runBtn.textContent = "Running";', script)
+
+    def test_the_servers_default_output_is_timestamped(self):
+        import inspect
+
+        from fastmdxplora.gui import exploration
+
+        source = inspect.getsource(exploration.DashboardRuntime.launch_from_config)
+        self.assertIn('f"fastmdxplora_output_{stamp}"', source)
+        self.assertNotIn('requested = "analysis_output"', source)

@@ -197,146 +197,193 @@
     });
   }
 
+  /* ---- The conversation ---------------------------------------------- */
+
+  /* When the Agent asked a question, the next message answers it. The
+   * proposing loop is stateless, so the answer goes back with the request
+   * it answers, joined -- "simulate chignolin for 2 ns" plus "1UAO" is a
+   * request the loop can write a study from. */
+  var pending = null;
+
+  function say(text) {
+    var msg = document.createElement("div");
+    msg.className = "agent-msg agent-msg-user";
+    msg.textContent = text;
+    el("agent-thread").appendChild(msg);
+    return msg;
+  }
+
+  function reply() {
+    var tpl = el("agent-reply-template");
+    var node = tpl.content.firstElementChild.cloneNode(true);
+    /* The template's ids belong to the template. Each clone is addressed
+     * by data-role so that two replies on the page do not share an id. */
+    Array.prototype.forEach.call(node.querySelectorAll("[id]"), function (n) {
+      n.removeAttribute("id");
+    });
+    el("agent-thread").appendChild(node);
+    var part = function (role) { return node.querySelector('[data-role="' + role + '"]'); };
+    return { node: node, part: part };
+  }
+
+  function scrollToEnd() {
+    var thread = el("agent-thread");
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  function autosize(area) {
+    area.style.height = "auto";
+    area.style.height = Math.min(area.scrollHeight, window.innerHeight * 0.4) + "px";
+  }
+
   function draft() {
-    var button = el("agent-propose");
-    var box = el("agent-attempts");
-    button.disabled = true;
-    el("agent-result").hidden = true;
-    el("agent-actions").hidden = true;
-    box.innerHTML = "";
+    var area = el("agent-request");
+    var typed = area.value.trim();
+    if (!typed) return;
+    var request = pending ? pending + "\n" + typed : typed;
+    pending = null;
+
+    say(typed);
+    area.value = "";
+    autosize(area);
+    var r = reply();
+    var box = r.part("attempts");
     note(box, "Writing\u2026");
+    scrollToEnd();
+    el("agent-propose").disabled = true;
 
     post("/api/agent/propose", {
-      request: el("agent-request").value,
+      request: request,
       agent: el("agent-mode").value
     }).then(function (data) {
-      button.disabled = false;
+      el("agent-propose").disabled = false;
       box.innerHTML = "";
       (data.attempts || []).forEach(function (attempt) {
         if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
       });
       if (data.question) {
-        /* Not a refusal and not a failure: the Agent needs something only
-         * you can give it. Put the question where the answer goes. */
         note(box, data.question);
-        el("agent-request").focus();
+        pending = request;
+        area.focus();
+        scrollToEnd();
         return;
       }
       if (!data.ok) {
         note(box, IN_THE_GUI[data.code] || data.error);
         if (IN_THE_GUI[data.code]) openSettings();
+        scrollToEnd();
         return;
       }
       note(box, data.cycles === 1
         ? "Accepted first time."
         : "Accepted after " + data.cycles + " attempts.", true);
-      el("agent-result").textContent = data.yaml;
-      el("agent-result").hidden = true;
-      el("agent-actions").hidden = false;
-      el("agent-show").textContent = "Show the config";
-      el("agent-action-note").textContent = "";
-
-      /* Load the config into the builder's state without going there.
-       * The builder's four actions -- the file, the command, the script,
-       * the full config -- all read that state, so once it holds this
-       * config they produce exactly what the builder would. One
-       * derivation, two doors. The mapping from config to state is on
-       * the server. */
-      var loaded = post("/api/load-config", { config: data.config }).then(function (m) {
-        if (!m || !m.ok) {
-          note(box, (m && m.error) || "Could not prepare the config for the builder.");
-          return false;
-        }
-        var run = window.FastMDXRun;
-        if (!run || !run.applyLoadedState) return false;
-        run.applyLoadedState(m.state, {});
-        return true;
-      });
-
-      function viaBuilder(action, label) {
-        return function () {
-          loaded.then(function (ok) {
-            if (!ok) return;
-            var run = window.FastMDXRun;
-            var full = el("run-full-config");
-            if (full) full.checked = el("agent-full-config").checked;
-            Promise.resolve(run[action]()).then(function () {
-              /* The builder reports into its own note; say the same
-               * thing here, beside the button that was pressed. "Command
-               * copied" three lines above the config, where the attempts
-               * are listed, was read as not having happened. */
-              var said = document.getElementById("run-note");
-              el("agent-action-note").textContent = said ? said.textContent : "";
-            });
-          });
-        };
-      }
-
-      el("agent-show").onclick = function () {
-        var result = el("agent-result");
-        var button = el("agent-show");
-        if (!result.hidden) {
-          result.hidden = true;
-          button.textContent = "Show the config";
-          return;
-        }
-        var everything = el("agent-full-config").checked;
-        if (!everything) {
-          result.textContent = data.yaml;
-          result.hidden = false;
-          button.textContent = "Hide the config";
-          return;
-        }
-        loaded.then(function (ok) {
-          if (!ok) return;
-          var full = el("run-full-config");
-          if (full) full.checked = true;
-          window.FastMDXRun.fetchConfig().then(function (built) {
-            if (built && built.ok && built.yaml) {
-              result.textContent = built.yaml;
-              result.hidden = false;
-              button.textContent = "Hide the config";
-            } else {
-              el("agent-action-note").textContent = (built && built.error) || "Could not render the full config.";
-            }
-          });
-        });
-      };
-      /* Ticking "write every setting" while the config is showing
-       * re-renders it; the two are one control. */
-      el("agent-full-config").onchange = function () {
-        if (!el("agent-result").hidden) {
-          el("agent-result").hidden = true;
-          el("agent-show").onclick();
-        }
-      };
-      el("agent-download").onclick = viaBuilder("download");
-      el("agent-copy-command").onclick = viaBuilder("copyCommand");
-      el("agent-download-script").onclick = viaBuilder("downloadScript");
-      el("agent-load").onclick = function (e) {
-        e.preventDefault();
-        loaded.then(function (ok) {
-          if (ok) window.location.hash = "#run";
-        });
-      };
-      /* Run here goes through the Agent's own door, which checks the
-       * budget an autonomous run needs and records the mode. */
-      el("agent-run").onclick = function () { start(data.config, box); };
+      wireActions(r, data, box);
+      scrollToEnd();
+    }).catch(function () {
+      el("agent-propose").disabled = false;
+      box.innerHTML = "";
+      note(box, "The Agent did not answer. Check Settings, then try again.");
     });
   }
 
-  function start(config, box) {
-    var button = el("agent-run");
-    button.disabled = true;
-    post("/api/agent/run", {
-      config: config,
-      budget_hours: el("agent-budget").value
-    }).then(function (started) {
-      button.disabled = false;
-      note(box, started.ok
-        ? "Started. Watch it on the Exploration page."
-        : started.error, started.ok);
+  function wireActions(r, data, box) {
+    var result = r.part("result");
+    var actions = r.part("actions");
+    var showBtn = r.part("show");
+    var fullBox = r.part("full");
+    var noteEl = r.part("note");
+    var runBtn = r.part("run");
+
+    result.textContent = data.yaml;
+    result.hidden = true;
+    actions.hidden = false;
+
+    /* Load the config into the builder's state without going there. The
+     * builder's actions read that state, so the file, the command and
+     * the script are exactly what the builder would produce. One
+     * derivation, two doors. */
+    var loaded = post("/api/load-config", { config: data.config }).then(function (m) {
+      if (!m || !m.ok) {
+        noteEl.textContent = (m && m.error) || "Could not prepare the config for the builder.";
+        return false;
+      }
+      var run = window.FastMDXRun;
+      if (!run || !run.applyLoadedState) return false;
+      run.applyLoadedState(m.state, {});
+      return true;
     });
+
+    function viaBuilder(action) {
+      return function () {
+        loaded.then(function (ok) {
+          if (!ok) return;
+          var full = el("run-full-config");
+          if (full) full.checked = fullBox.checked;
+          Promise.resolve(window.FastMDXRun[action]()).then(function () {
+            var said = document.getElementById("run-note");
+            noteEl.textContent = said ? said.textContent : "";
+          });
+        });
+      };
+    }
+
+    showBtn.onclick = function () {
+      if (!result.hidden) {
+        result.hidden = true;
+        showBtn.textContent = "Show the config";
+        return;
+      }
+      if (!fullBox.checked) {
+        result.textContent = data.yaml;
+        result.hidden = false;
+        showBtn.textContent = "Hide the config";
+        scrollToEnd();
+        return;
+      }
+      loaded.then(function (ok) {
+        if (!ok) return;
+        var full = el("run-full-config");
+        if (full) full.checked = true;
+        window.FastMDXRun.fetchConfig().then(function (built) {
+          if (built && built.ok && built.yaml) {
+            result.textContent = built.yaml;
+            result.hidden = false;
+            showBtn.textContent = "Hide the config";
+            scrollToEnd();
+          } else {
+            noteEl.textContent = (built && built.error) || "Could not render the full config.";
+          }
+        });
+      });
+    };
+    fullBox.onchange = function () {
+      if (!result.hidden) { result.hidden = true; showBtn.onclick(); }
+    };
+    r.part("download").onclick = viaBuilder("download");
+    r.part("copy").onclick = viaBuilder("copyCommand");
+    r.part("script").onclick = viaBuilder("downloadScript");
+    r.part("load").onclick = function (e) {
+      e.preventDefault();
+      loaded.then(function (ok) { if (ok) window.location.hash = "#run"; });
+    };
+    runBtn.onclick = function () {
+      runBtn.disabled = true;
+      post("/api/agent/run", {
+        config: data.config,
+        budget_hours: el("agent-budget").value
+      }).then(function (started) {
+        if (started.ok) {
+          /* Started once. A second press started it again into the same
+           * folder and was refused for the folder being occupied. The
+           * button says what happened and stays put. */
+          runBtn.textContent = "Running";
+          note(box, "Started. Watch it in the sidebar and the Overview.", true);
+        } else {
+          runBtn.disabled = false;
+          noteEl.textContent = started.error;
+        }
+      });
+    };
   }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -351,6 +398,15 @@
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
     el("agent-propose").addEventListener("click", draft);
+    var area = el("agent-request");
+    area.addEventListener("input", function () { autosize(area); });
+    area.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        draft();
+      }
+    });
+    autosize(area);
 
     function modeChanged() {
       var mode = el("agent-mode").value;

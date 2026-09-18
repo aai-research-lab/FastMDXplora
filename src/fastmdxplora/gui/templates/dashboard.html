@@ -844,37 +844,48 @@
             <button id="agent-settings-open" class="ghost-btn">Settings</button>
           </div>
 
-          <div class="card builder-card">
-            <label class="builder-field builder-field-wide">
-              <textarea id="agent-request" rows="8"
-                placeholder="Simulate ubiquitin from 1UBQ at pH 6.5 for 50 ns in a dodecahedral box, physiological salt."></textarea>
-            </label>
-            <div class="control-row">
-              <button id="agent-propose" class="ctl-btn primary">Write config</button>
-            </div>
-            <div id="agent-attempts" class="agent-attempts"></div>
-            <pre id="agent-result" class="agent-result" hidden></pre>
-            <div id="agent-actions" hidden>
-              <label class="checkbox-row agent-full">
-                <input type="checkbox" id="agent-full-config">
-                <span>Write every setting, not only the ones the Agent set</span>
-              </label>
-              <div class="control-row">
-                <button id="agent-show" class="ctl-btn" type="button">Show the config</button>
-                <button id="agent-download" class="ctl-btn" type="button">Download config</button>
-                <button id="agent-copy-command" class="ctl-btn" type="button"
-                        title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy the command</button>
-                <button id="agent-download-script" class="ctl-btn" type="button"
-                        title="The same study as a Python script, using the documented API.">Download a script</button>
-                <button id="agent-run" class="ctl-btn primary" type="button">Run here</button>
-                <span class="builder-card-note agent-action-note" id="agent-action-note" role="status" aria-live="polite"></span>
-              </div>
-              <p class="builder-card-note">
-                <a href="#run" id="agent-load">Open in the builder</a> to change it first.
-              </p>
-            </div>
+          <!-- The conversation. Each exchange is what you said and what
+               came back: the refusals as it corrected itself, the config,
+               the actions on it. Newest at the bottom, where the composer
+               is. -->
+          <div class="agent-thread" id="agent-thread" aria-live="polite"></div>
+
+          <!-- The composer, pinned. Grows with what is typed; Enter sends,
+               Shift+Enter breaks a line. -->
+          <div class="agent-composer">
+            <textarea id="agent-request" rows="1"
+              placeholder="Describe a study — a structure, what to do to it, and for how long."></textarea>
+            <button id="agent-propose" class="agent-send" type="button" aria-label="Write config" title="Write config (Enter)">&#8593;</button>
           </div>
 
+          <!-- One reply's worth of controls, cloned into each exchange. The
+               ids here are the template's; each clone addresses its own
+               copy by data-role. -->
+          <template id="agent-reply-template">
+            <div class="agent-msg agent-msg-agent">
+              <div class="agent-attempts" data-role="attempts" id="agent-attempts"></div>
+              <pre class="agent-result" data-role="result" id="agent-result" hidden></pre>
+              <div class="agent-actions" data-role="actions" id="agent-actions" hidden>
+                <label class="checkbox-row agent-full">
+                  <input type="checkbox" data-role="full" id="agent-full-config">
+                  <span>Write every setting, not only the ones the Agent set</span>
+                </label>
+                <div class="control-row">
+                  <button class="ctl-btn" type="button" data-role="show" id="agent-show">Show the config</button>
+                  <button class="ctl-btn" type="button" data-role="download" id="agent-download">Download config</button>
+                  <button class="ctl-btn" type="button" data-role="copy" id="agent-copy-command"
+                          title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy the command</button>
+                  <button class="ctl-btn" type="button" data-role="script" id="agent-download-script"
+                          title="The same study as a Python script, using the documented API.">Download a script</button>
+                  <button class="ctl-btn primary" type="button" data-role="run" id="agent-run">Run here</button>
+                  <span class="builder-card-note agent-action-note" data-role="note" id="agent-action-note" role="status"></span>
+                </div>
+                <p class="builder-card-note">
+                  <a href="#run" data-role="load" id="agent-load">Open in the builder</a> to change it first.
+                </p>
+              </div>
+            </div>
+          </template>
         </section>
 
         <section class="page" data-page="settings" hidden>

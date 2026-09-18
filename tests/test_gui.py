@@ -3019,7 +3019,7 @@ class TestWhereTheResultsGo:
         runtime = self._runtime(tmp_path)
         try:
             started = runtime.launch_from_config(self._state(""))
-            assert pathlib.Path(started["output"]).name == "analysis_output"
+            assert (pathlib.Path(started["output"]).name ).startswith("fastmdxplora_output_")  # timestamped, so a second run does not collide
         finally:
             runtime.stop()
 
