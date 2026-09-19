@@ -948,9 +948,20 @@
     el("agent-propose").addEventListener("click", draft);
     var plus = el("agent-attach");
     var attachPath = el("agent-attach-path");
+    /* The workspace, from the app state, so the picker can open there
+     * for a thread about no study. */
+    var workspaceRoot = "";
+    if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
+      window.FastMDXDashboard.on("app-state", function (s) {
+        workspaceRoot = (s && s.exploration_root) || workspaceRoot;
+      });
+    }
     if (plus && attachPath && window.FastMDXPicker) {
       plus.addEventListener("click", function () {
-        window.FastMDXPicker.open({ into: "agent-attach-path", mode: "file" });
+        /* Open where this conversation lives: the study's own folder for
+         * a thread about a study, the workspace for a general one. */
+        window.FastMDXPicker.open({ into: "agent-attach-path", mode: "file",
+                                    start: convStudy || workspaceRoot || "" });
       });
       attachPath.addEventListener("change", function () {
         var p = attachPath.value.trim();

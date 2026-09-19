@@ -2905,7 +2905,7 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 }
 .agent-send:disabled { opacity: .45; cursor: default; }
 /* The old single-field rules no longer apply to a composer. */
-#agent-request { min-height: 44px; padding: 12px 14px; }
+#agent-request { min-height: 44px; padding: 12px 52px 12px 46px; }  /* clear of the + and the send */
 /* The Agent's prose in a serif; the person's message in the UI sans.
    That is the pairing every assistant a person has read uses, and it
    makes the two voices in the thread tell apart at a glance. A system
@@ -3055,3 +3055,11 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .agent-chip .rm:hover { color: var(--text-primary); }
 /* In a sent message, what was attached. */
 .agent-msg-user .attached { margin-top: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+
+/* The picker tells a study from a folder of structures from a folder of
+   trajectories at a glance. A study is a FastMDXplora output folder: it
+   has a manifest or a resolved config. */
+.fastmdx-picker-row .badge-study { color: var(--accent-cyan); border-color: var(--accent-cyan); }
+.fastmdx-picker-row .badge-structure { color: var(--status-success, #5fc08a); border-color: var(--status-success, #5fc08a); }
+.fastmdx-picker-row .badge-trajectory { color: var(--status-warning, #e0a45a); border-color: var(--status-warning, #e0a45a); }
+.fastmdx-picker-row.is-study .name { color: var(--accent-cyan); }

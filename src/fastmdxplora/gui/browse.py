@@ -99,7 +99,18 @@ def _interesting(directory: Path, depth: int = _LOOK_DEPTH) -> dict[str, Any]:
         "structures": structures,
         "readable": True,
         "truncated": truncated,
+        # A FastMDXplora study: the folder a run wrote. The markers are
+        # what every run leaves at its root, whatever phases it ran.
+        "study": _is_study(directory),
     }
+
+
+def _is_study(directory: Path) -> bool:
+    try:
+        return any((directory / m).exists()
+                   for m in ("manifest.json", "resolved_config.yml", "exploration.yml"))
+    except OSError:
+        return False
 
 
 def browse(
@@ -127,7 +138,17 @@ def browse(
         # A file was given -- the folder holding it is what was meant.
         root = root.parent
 
-    wanted = KINDS.get(kind or "", ())
+    # A kind narrows the files to one sort, which is what the builder
+    # wants. No kind used to mean no files at all -- the picker was built
+    # to find a trajectory or a structure and nothing else -- so a person
+    # opening it from the Agent to attach a log or a manifest saw folders
+    # and no way into them. No kind lists every file the Agent can read.
+    if kind:
+        wanted = KINDS.get(kind, ())
+    else:
+        from fastmdxplora.gui.agent_panel import ATTACHABLE_SUFFIXES
+
+        wanted = ATTACHABLE_SUFFIXES
 
     entries: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []

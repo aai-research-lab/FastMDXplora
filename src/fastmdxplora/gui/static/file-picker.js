@@ -112,13 +112,23 @@
     list.innerHTML = "";
     if (listing.parent) list.appendChild(row("\u2191 up one level", listing.parent, null, true));
     (listing.entries || []).forEach((entry) => {
-      const holds = entry.trajectories
-        ? `${entry.trajectories} trajectory`
+      /* A study first: the folder a run wrote is what a person opening
+       * the picker from the Agent is looking for most of the time, and
+       * it is told apart from a folder of structures or trajectories by
+       * colour as well as by word. */
+      const kind = entry.study ? "study"
+        : entry.trajectories ? "trajectory"
+        : entry.structures ? "structure" : null;
+      const holds = entry.study ? "study"
+        : entry.trajectories ? `${entry.trajectories} trajectory`
         : entry.structures ? `${entry.structures} structure` : null;
-      list.appendChild(row(entry.name, entry.path, holds, true));
+      list.appendChild(row(entry.name, entry.path, holds, true, kind));
     });
     (listing.files || []).forEach((file) => {
-      list.appendChild(row(file.name, file.path, `${file.size_mb} MB`, false));
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      const kind = ["dcd", "xtc", "trr", "nc", "netcdf", "h5", "hdf5"].includes(ext) ? "trajectory"
+        : ["pdb", "cif", "gro", "psf", "prmtop", "top"].includes(ext) ? "structure" : null;
+      list.appendChild(row(file.name, file.path, `${file.size_mb} MB`, false, kind));
     });
 
     if (!list.children.length) {
@@ -126,20 +136,21 @@
     }
   }
 
-  function row(label, path, badge, isFolder) {
+  function row(label, path, badge, isFolder, kind) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "analyse-folder-row";
+    button.className = "analyse-folder-row fastmdx-picker-row" + (kind === "study" ? " is-study" : "");
     button.dataset.folder = String(Boolean(isFolder));
+    if (kind) button.dataset.kind = kind;
 
     const name = document.createElement("span");
-    name.className = "analyse-folder-name";
+    name.className = "analyse-folder-name name";
     name.textContent = label;
     button.appendChild(name);
 
     if (badge) {
       const mark = document.createElement("span");
-      mark.className = "analyse-folder-holds";
+      mark.className = "analyse-folder-holds" + (kind ? " badge-" + kind : "");
       mark.textContent = badge;
       button.appendChild(mark);
     }
@@ -167,7 +178,10 @@
     host.hidden = false;
 
     const current = el(options.into);
-    show((current && current.value.trim()) || "");
+    // Where to start: what the field already holds, else the caller's
+    // suggestion -- the Agent opens a study's own folder for a thread
+    // about that study, the workspace for a general one -- else home.
+    show((current && current.value.trim()) || options.start || "");
   }
 
   /* Any input marked with data-picks gets a button, so a new field needs no

@@ -2529,3 +2529,87 @@ class TestAFileCanBeAttachedToAMessage(unittest.TestCase):
         self.assertIn('{ role: "user", text: typed, attachments: record }', script)
         # Sent with the text for the model.
         self.assertIn("attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })", script)
+
+
+class TestThePickerServesTheAgentToo(unittest.TestCase):
+    """The picker was built for the builder: find a trajectory or a
+    structure and nothing else. Opened from the Agent to attach a log or
+    a manifest, it showed folders and no way into them. It marks a study
+    folder now, colours the three kinds, lists every readable file when
+    no kind is asked for, and opens where the conversation lives."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.ws = Path(tempfile.mkdtemp())
+        self.study = self.ws / "fastmdxplora_1UAO_study_x"
+        for d in ("setup", "simulation"):
+            (self.study / d).mkdir(parents=True)
+        (self.study / "manifest.json").write_text("{}", encoding="utf-8")
+        (self.study / "exploration.log").write_text("x", encoding="utf-8")
+        (self.study / "setup" / "system.pdb").write_text("ATOM", encoding="utf-8")
+        (self.study / "setup" / "setup_parameters.json").write_text("{}", encoding="utf-8")
+        (self.study / "simulation" / "production.dcd").write_bytes(b"0")
+
+    def test_a_study_folder_is_marked(self):
+        from fastmdxplora.gui.browse import browse
+
+        entries = {e["name"]: e for e in browse(self.ws)["entries"]}
+        self.assertTrue(entries["fastmdxplora_1UAO_study_x"]["study"])
+        (self.ws / "notes").mkdir()
+        entries = {e["name"]: e for e in browse(self.ws)["entries"]}
+        self.assertFalse(entries["notes"]["study"])
+
+    def test_no_kind_lists_what_the_agent_can_read(self):
+        from fastmdxplora.gui.browse import browse
+
+        self.assertEqual([f["name"] for f in browse(self.study)["files"]],
+                         ["exploration.log", "manifest.json"])
+        names = [f["name"] for f in browse(self.study / "setup")["files"]]
+        self.assertEqual(names, ["setup_parameters.json", "system.pdb"])
+        # A trajectory is not attachable and is not listed without a kind.
+        self.assertEqual([f["name"] for f in browse(self.study / "simulation")["files"]], [])
+
+    def test_a_kind_still_narrows_for_the_builder(self):
+        from fastmdxplora.gui.browse import browse
+
+        self.assertEqual([f["name"] for f in browse(self.study / "setup", kind="structure")["files"]],
+                         ["system.pdb"])
+        self.assertEqual([f["name"] for f in browse(self.study / "simulation", kind="trajectory")["files"]],
+                         ["production.dcd"])
+
+    def test_the_picker_colours_the_kinds_and_takes_a_start(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        js = (pathlib.Path(gui.__file__).parent / "static"
+              / "file-picker.js").read_text(encoding="utf-8")
+        self.assertIn('const kind = entry.study ? "study"', js)
+        self.assertIn('" badge-" + kind', js)
+        self.assertIn('options.start || ""', js)
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        for k in ("badge-study", "badge-structure", "badge-trajectory"):
+            with self.subTest(kind=k):
+                self.assertIn(f".fastmdx-picker-row .{k}", css)
+
+    def test_the_plus_opens_where_the_conversation_lives(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('start: convStudy || workspaceRoot || ""', script)
+
+    def test_the_placeholder_clears_the_plus(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        # The ID rule outranks the class rule, so the indent lives on it.
+        self.assertIn("#agent-request { min-height: 44px; padding: 12px 52px 12px 46px; }", css)
