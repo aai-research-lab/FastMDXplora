@@ -181,7 +181,7 @@ def _what_the_run_supports(project_root: Path) -> str | None:
     if equilibrated == total:
         return (f"All {total} {what} assessed had equilibrated, but {thin} "
                 "hold too few independent samples for the mean to describe "
-                "the system rather than this run; see Convergence.")
+                "the system rather than this run; see [Convergence](#convergence).")
 
     parts = []
     if equilibrated:
@@ -193,7 +193,7 @@ def _what_the_run_supports(project_root: Path) -> str | None:
     if thin:
         parts.append(f"{thin} hold too few independent samples to average")
     return (f"Of {total} {what} assessed, " + ", ".join(parts)
-            + "; see Convergence below before using any average from this run.")
+            + "; see [Convergence](#convergence) before using any average from this run.")
 
 
 def _summary_section(phase_context: PhaseContext, project_root: Path) -> str:
@@ -253,7 +253,7 @@ def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
         lines.append("### Every setting used")
         lines.append("")
         lines.append(
-            "The paragraph above states what a methods section must; this is "
+            "The paragraphs above say what a methods section says; this is "
             "the complete record, for anyone repeating the run exactly."
         )
         lines.append("")
@@ -283,7 +283,7 @@ def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
             "Production MD was performed with the following simulation parameters:"
         )
         lines.append("")
-        for k, v in sim_params.items():
+        for k, v in _resolve_derived(dict(sim_params)).items():
             lines.append(f"- **{_md_text(k)}**: `{_code_text(v)}`")
     else:
         lines.append("")
@@ -317,7 +317,18 @@ def _results_section(project_root: Path) -> str:
 
     n_frames = analysis_manifest.get("n_frames")
     n_residues = analysis_manifest.get("n_residues")
-    if n_frames is not None and n_residues is not None:
+    n_protein = analysis_manifest.get("n_protein_residues")
+    if n_frames is not None and n_protein is not None:
+        # Ions are residues to MDTraj, and "not water" keeps them, so a
+        # 20-residue peptide reads as 27. Say what the trajectory holds.
+        others = int(n_residues) - int(n_protein) if n_residues is not None else 0
+        tail = (f" and {others} other residue{'s' if others != 1 else ''} "
+                f"(ions and any cofactors kept by the save selection)") if others else ""
+        lines.append(
+            f"Analysis was performed on a trajectory of {n_frames} frames: "
+            f"{n_protein} protein residues{tail}.")
+        lines.append("")
+    elif n_frames is not None and n_residues is not None:
         lines.append(
             f"Analysis was performed on a trajectory of {n_frames} frames "
             f"and {n_residues} residues."
@@ -384,6 +395,19 @@ def _results_section(project_root: Path) -> str:
         heading = analysis.upper() if len(analysis) <= 4 else analysis.title()
         heading = _md_text(heading)
         lines.append(f"### {heading}")
+        # What this analysis measures, in a sentence, before its parameters.
+        # RMSF, secondary structure, dihedrals, thermodynamics and the
+        # moments of inertia had a heading, a parameter list and a figure,
+        # and nothing that said what the figure was of.
+        try:
+            from fastmdxplora.analysis.describe import explain_analysis
+
+            about = explain_analysis(str(analysis)).get("summary") or ""
+        except Exception:  # noqa: BLE001 - a missing description is no description
+            about = ""
+        if about:
+            lines.append("")
+            lines.append(about.strip())
         lines.append("")
 
         # Per-analysis result row from the analysis manifest
@@ -782,7 +806,7 @@ def build_document(
     if author:
         header.append(f"_Author: {_md_text(author, limit=200)}_  ")
     header.append(f"_Generated: {now} (UTC)_  ")
-    header.append("_Tool: FastMDXplora_  ")
+    header.append("_Software: FastMDXplora_  ")
     header.append("_Dashboard: [dashboard.html](dashboard.html)_")
     sections.append("\n".join(header))
 
@@ -834,9 +858,19 @@ def _software_versions() -> dict[str, str]:
         versions["FastMDXplora"] = str(__version__)
     except Exception:  # noqa: BLE001
         pass
+    # The engine and the structure tools first; then the numerical and
+    # plotting libraries every phase stands on. The list named five and
+    # left out NumPy, SciPy, matplotlib, pandas and scikit-learn, which
+    # do the arithmetic, the fitting, the figures, the tables and the
+    # clustering respectively. A version of any of them can change a
+    # number in this report.
     for label, module in (("OpenMM", "openmm"), ("MDTraj", "mdtraj"),
                           ("OpenFF Toolkit", "openff.toolkit"),
-                          ("PDBFixer", "pdbfixer"), ("RDKit", "rdkit")):
+                          ("OpenMM force fields", "openmmforcefields"),
+                          ("PDBFixer", "pdbfixer"), ("RDKit", "rdkit"),
+                          ("NumPy", "numpy"), ("SciPy", "scipy"),
+                          ("matplotlib", "matplotlib"), ("pandas", "pandas"),
+                          ("scikit-learn", "sklearn")):
         try:
             import importlib
 
@@ -847,3 +881,58 @@ def _software_versions() -> dict[str, str]:
         except Exception:  # noqa: BLE001 - a tool not installed did no work
             continue
     return versions
+
+
+def _resolve_derived(params: dict[str, Any]) -> dict[str, Any]:
+    """Fill in what the given settings determine.
+
+    A run given `duration_ns` has a production step count; a run given
+    `nvt_steps` has an NVT duration; a pressure in bar is a pressure in
+    atm. The dump printed None for whichever form was not typed, and a
+    reader of "every setting used" was left to do the arithmetic. These
+    are the record of what the run used, so they are filled from the
+    timestep and each other. Values already set are left as they are.
+    """
+    out = dict(params)
+    dt_fs = out.get("timestep_fs")
+    try:
+        dt_ns = float(dt_fs) * 1e-6 if dt_fs is not None else None
+    except (TypeError, ValueError):
+        dt_ns = None
+
+    def steps_from(ns: Any) -> int | None:
+        try:
+            return int(round(float(ns) / dt_ns)) if dt_ns else None
+        except (TypeError, ValueError):
+            return None
+
+    def ns_from(steps: Any) -> float | None:
+        try:
+            return round(int(steps) * dt_ns, 6) if dt_ns else None
+        except (TypeError, ValueError):
+            return None
+
+    for ns_key, steps_key in (("duration_ns", "production_steps"),
+                              ("nvt_duration_ns", "nvt_steps"),
+                              ("npt_duration_ns", "npt_steps")):
+        if out.get(steps_key) is None and out.get(ns_key) is not None:
+            out[steps_key] = steps_from(out[ns_key])
+        elif out.get(ns_key) is None and out.get(steps_key) is not None:
+            out[ns_key] = ns_from(out[steps_key])
+
+    bar, atm = out.get("pressure_bar"), out.get("pressure_atm")
+    if bar is None and atm is None:
+        # The runner's default when neither is given, as the methods
+        # paragraph says: "Pressure was maintained at 1.0 bar".
+        out["pressure_bar"], out["pressure_atm"] = 1.0, round(1.0 / 1.01325, 5)
+    elif bar is None:
+        try:
+            out["pressure_bar"] = round(float(atm) * 1.01325, 5)
+        except (TypeError, ValueError):
+            pass
+    elif atm is None:
+        try:
+            out["pressure_atm"] = round(float(bar) / 1.01325, 5)
+        except (TypeError, ValueError):
+            pass
+    return out
