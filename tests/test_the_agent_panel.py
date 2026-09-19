@@ -2213,3 +2213,15 @@ class TestTheConversationIsKept(unittest.TestCase):
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('id="agent-new"', page)
+
+
+class TestItHasAName(unittest.TestCase):
+
+    def test_asked_who_it_is_it_says_the_fastmdxplora_agent(self):
+        # It called itself "the assistant built into FastMDXplora". It has
+        # a name, and it is not the model's or the vendor's.
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("who are you?")
+        self.assertIn("You are the FastMDXplora Agent.", prompt)
+        self.assertIn("Do not name the model\nor the company behind it", prompt)
