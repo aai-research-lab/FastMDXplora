@@ -589,3 +589,77 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         self.assertIn('<span id="topbar-stage" hidden></span>', sidebar)
         self.assertIn('<span class="metric-label">Complete</span>', sidebar)
         self.assertNotIn('<span class="metric-label">Progress</span>', sidebar)
+
+
+class TestTheCentreSurvivesCollapse(unittest.TestCase):
+    """A display:none grid item leaves auto-placement, so hiding the
+    sidebar and its handle shifted .main a track to the left, into the
+    collapsed sidebar's zero track, and it vanished. The collapsed columns
+    are hidden by width and visibility now, kept in the grid flow, so each
+    child stays mapped to its track and the centre keeps the 1fr."""
+
+    def css(self):
+        return (STATIC / "dashboard.css").read_text(encoding="utf-8")
+
+    def test_collapsed_columns_are_not_display_none(self):
+        css = self.css()
+        # The rule that hides the panel keeps it in flow.
+        block = css[css.index('body.panel-collapsed .side-panel,'):]
+        block = block[:block.index("}")]
+        self.assertNotIn("display: none", block)
+        self.assertIn("width: 0", block)
+        self.assertIn("visibility: hidden", block)
+        sb = css[css.index('body.sidebar-collapsed .sidebar,'):]
+        sb = sb[:sb.index("}")]
+        self.assertNotIn("display: none", sb)
+        self.assertIn("width: 0", sb)
+
+
+try:
+    from playwright.sync_api import sync_playwright  # noqa: F401
+    _HAVE_PLAYWRIGHT = True
+except ImportError:
+    _HAVE_PLAYWRIGHT = False
+
+
+@unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
+class TestTheCentreIsCentredInEveryStateRendered(unittest.TestCase):
+    """Rendered, not read: the centre column keeps a positive width and
+    its content stays centred with both side columns folded."""
+
+    def test_rendered_widths(self):
+        import sys
+        sys.path.insert(0, "src")
+        from playwright.sync_api import sync_playwright
+
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        session = start_dashboard_session(output="/tmp/sh7/whole",
+                                          host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto(session.url, wait_until="domcontentloaded")
+                page.wait_for_selector(".main", timeout=8000)
+
+                def width(sel):
+                    return page.eval_on_selector(
+                        sel, "el => Math.round(el.getBoundingClientRect().width)")
+
+                def left(sel):
+                    return page.eval_on_selector(
+                        sel, "el => Math.round(el.getBoundingClientRect().left)")
+
+                page.evaluate("(c)=>{document.body.className=c;}",
+                              "sidebar-collapsed panel-collapsed")
+                page.wait_for_timeout(120)
+                # The centre column spans the viewport and its content is
+                # centred within it, not pinned to an edge.
+                self.assertGreater(width(".main"), 1000)
+                shell_left = left(".page-shell")
+                self.assertGreater(shell_left, 100)
+                self.assertEqual(width(".page-shell"), 900)
+                browser.close()
+        finally:
+            session.server.shutdown()
