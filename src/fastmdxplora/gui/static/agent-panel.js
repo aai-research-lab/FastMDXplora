@@ -402,7 +402,7 @@
       scrollToEnd();
       return;
     }
-    note(box, "Writing\u2026");
+    note(box, "Thinking\u2026");
     scrollToEnd();
     el("agent-propose").disabled = true;
 

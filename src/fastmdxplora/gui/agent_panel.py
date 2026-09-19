@@ -289,6 +289,24 @@ def _run_status(runtime: Any) -> str | None:
         status = read_status(runtime.active_root) or {}
         if status.get("stage"):
             lines.append(f"stage: {status['stage']}")
+        # The numbers the sidebar shows, so "how far along?" is answered
+        # with a step and a time rather than "I have only the stage". The
+        # Agent said exactly that while the sidebar read 334,000 of
+        # 350,000 and three minutes left.
+        step, total = status.get("current_step"), status.get("total_planned_steps")
+        if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
+            lines.append(f"step: {int(step):,} of {int(total):,} "
+                         f"({100.0 * step / total:.1f}% complete)")
+            elapsed = status.get("elapsed_wall_time_s")
+            if isinstance(elapsed, (int, float)) and step > 0:
+                remaining = elapsed * (total / step - 1.0)
+                lines.append(f"elapsed: {_hms(elapsed)}; about {_hms(remaining)} left")
+        sim_ns = status.get("simulation_time_completed_ns")
+        if isinstance(sim_ns, (int, float)):
+            lines.append(f"simulated so far: {sim_ns:.3f} ns")
+        speed = status.get("ns_per_day") or status.get("speed")
+        if isinstance(speed, (int, float)) and speed > 0:
+            lines.append(f"speed: {speed:.2f} ns/day")
         health = analyze_health(status, [])
         if health.get("state"):
             lines.append(f"health: {health['state']}"
@@ -322,6 +340,8 @@ def _results_summary(root: Any) -> str:
         return ""
     import json
 
+    from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+
     rows: list[str] = []
     for options in sorted(analysis.glob("*/options.json")):
         try:
@@ -350,7 +370,7 @@ def _results_summary(root: Any) -> str:
                 piece += f" \u00b1 {se:.2g} (s.e.)"
             if isinstance(n_eff, (int, float)):
                 piece += f", {n_eff:.1f} effective samples"
-                if n_eff < 10:
+                if n_eff < MINIMUM_EFFECTIVE_SAMPLES:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):
                 piece += f", first {discard} of {n} frames discarded as unequilibrated"
@@ -377,3 +397,10 @@ def _where_the_run_is(runtime: Any) -> str:
     if stage and isinstance(step, (int, float)):
         return f"{stage} step {int(step):,}"
     return str(stage)
+
+
+def _hms(seconds: float) -> str:
+    total = max(0, int(seconds))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h {m}m" if h else f"{m}m {s}s"

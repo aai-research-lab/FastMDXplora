@@ -2875,12 +2875,19 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-msg-agent .agent-actions { margin: 0; }
 .agent-composer {
     flex: none; position: sticky; bottom: 0;
-    display: flex; align-items: flex-end; gap: 8px;
     padding: 12px 0 8px;
     background: linear-gradient(180deg, transparent, var(--background-primary) 30%);
 }
+/* The send button sits inside the box at its right end, as every
+   assistant a person has used places it, rather than beside the box. */
+.agent-composer-box { position: relative; }
+.agent-composer-box textarea { padding-right: 52px; }
+.agent-composer-box .agent-send {
+    position: absolute; right: 8px; bottom: 8px;
+    width: 32px; height: 32px; border-radius: 8px; font-size: 16px;
+}
 .agent-composer textarea {
-    flex: 1; resize: none; min-height: 44px; max-height: 40vh;
+    width: 100%; box-sizing: border-box; resize: none; min-height: 48px; max-height: 40vh;
     padding: 12px 14px; border-radius: 12px;
     border: 1px solid var(--border-primary);
     background: var(--background-elevated);

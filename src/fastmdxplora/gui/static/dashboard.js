@@ -120,6 +120,11 @@
       );
     });
     document.documentElement.setAttribute("data-page", page);
+    // A page opens at its top. The column's scroll position carried over
+    // from the last page, so "open the report" from the foot of a long
+    // thread landed at the foot of the report.
+    const column = document.querySelector(".main");
+    if (column) column.scrollTop = 0;
     if (opts.updateHash !== false && location.hash !== `#${page}`) {
       history.replaceState(null, "", `#${page}`);
     }

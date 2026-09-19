@@ -37,7 +37,13 @@ __all__ = ["Assessment", "assess_series", "assess_run", "autocorrelation_time"]
 #: Below this many independent samples, a mean is a number without a useful
 #: error bar. Two is the least that permits any spread at all; five is where
 #: the interval starts to narrow enough to say something.
-_ENOUGH_SAMPLES = 5
+# One bar for one judgement. This module had its own, at five, while the
+# per-analysis prose in the same report said ten -- so the Convergence
+# table counted rg at 8.3 independent samples as adequately sampled while
+# the section above it said it was not, and the Summary's count of "too
+# few" disagreed with the table under it. The constant lives in
+# statistics.py with its reasoning; this is a reference to it.
+from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES as _ENOUGH_SAMPLES
 
 #: Energy drift above this, per nanosecond per degree of freedom, is the
 #: conventional sign that the integration is not conserving what it should.

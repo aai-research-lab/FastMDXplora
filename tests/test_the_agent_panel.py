@@ -754,7 +754,11 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # to the builder from the Agent unless you want to change the
         # config, and that is a link, not the way out.
         panel = self.panel()
-        for action in ("Write config", "Show the config", "Download config",
+        # The send control is an arrow inside the box with a title, as every
+        # assistant places it, rather than a labelled button beside it.
+        self.assertIn('id="agent-propose"', panel)
+        self.assertIn('title="Send (Enter). Shift+Enter for a new line."', panel)
+        for action in ("Show the config", "Download config",
                        "Copy the command", "Download a script", "Run here",
                        "Write every setting"):
             with self.subTest(action=action):
@@ -1959,3 +1963,84 @@ class TestEditIsInPlace(unittest.TestCase):
         self.assertIn("body.textContent = before;", edit)
         # Not the old detour through the composer.
         self.assertNotIn("Put this back in the composer", edit)
+
+
+class TestSixMoreFromUsingIt(unittest.TestCase):
+
+    def test_the_agent_sees_the_step_and_the_time_left(self):
+        # It said "I do not have a step count or an elapsed time" while the
+        # sidebar read 334,000 of 350,000 and three minutes left.
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        root = Path(tempfile.mkdtemp())
+        (root / "simulation").mkdir()
+        (root / "simulation" / "live_status.json").write_text(json.dumps({
+            "stage": "production", "current_step": 334000,
+            "total_planned_steps": 350000, "elapsed_wall_time_s": 4000,
+            "simulation_time_completed_ns": 0.668}), encoding="utf-8")
+
+        class Runtime:
+            active_root = root
+
+            def snapshot(self):
+                return {"active_run": str(root), "status": "running"}
+
+        status = _run_status(Runtime())
+        self.assertIn("step: 334,000 of 350,000 (95.4% complete)", status)
+        self.assertIn("left", status)
+        self.assertIn("simulated so far: 0.668 ns", status)
+
+    def test_thinking_not_writing(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('note(box, "Thinking\\u2026");', script)
+        self.assertNotIn('"Writing\\u2026"', script)
+
+    def test_send_is_inside_the_box(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('<div class="agent-composer-box">', page)
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        self.assertIn(".agent-composer-box .agent-send {\n    position: absolute; right: 8px; bottom: 8px;", css)
+
+    def test_the_placeholder_is_as_general_as_the_agent(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('placeholder="Describe a study, ask a question, or tell me what to do."', page)
+
+    def test_a_page_opens_at_its_top(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "dashboard.js").read_text(encoding="utf-8")
+        nav = script[script.index("function navigate(page, options)"):script.index("function startLoadingChecklist")]
+        self.assertIn("column.scrollTop = 0;", nav)
+
+    def test_one_sampling_bar(self):
+        # convergence.py had its own, at five, while the report's prose said
+        # ten. The Convergence table counted rg at 8.3 as adequately sampled
+        # while the section above it said it was not.
+        from fastmdxplora.report import convergence
+        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+
+        self.assertEqual(convergence._ENOUGH_SAMPLES, MINIMUM_EFFECTIVE_SAMPLES)
+        self.assertEqual(MINIMUM_EFFECTIVE_SAMPLES, 10.0)

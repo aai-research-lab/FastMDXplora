@@ -844,9 +844,11 @@
           <!-- The composer, pinned. Grows with what is typed; Enter sends,
                Shift+Enter breaks a line. -->
           <div class="agent-composer">
-            <textarea id="agent-request" rows="1"
-              placeholder="Describe a study — a structure, what to do to it, and for how long."></textarea>
-            <button id="agent-propose" class="agent-send" type="button" aria-label="Write config" title="Write config (Enter)">&#8593;</button>
+            <div class="agent-composer-box">
+              <textarea id="agent-request" rows="1"
+                placeholder="Describe a study, ask a question, or tell me what to do."></textarea>
+              <button id="agent-propose" class="agent-send" type="button" aria-label="Send" title="Send (Enter). Shift+Enter for a new line.">&#8593;</button>
+            </div>
           </div>
 
           <!-- One reply's worth of controls, cloned into each exchange. The
