@@ -2539,6 +2539,16 @@ class TestTheReportSaysWhatItMeans:
         assert out["pressure_bar"] == 1.0
         assert abs(out["pressure_atm"] - 0.98692) < 1e-5
 
+    def test_the_ensemble_is_read_from_npt_steps_when_absent(self):
+        # Absent means "read it from npt_steps", which is how it always
+        # worked. "ensemble: None" in the record told a reader nothing.
+        from fastmdxplora.report.document import _resolve_derived
+
+        assert _resolve_derived({"npt_steps": 50000, "timestep_fs": 2.0})["ensemble"] == "npt"
+        assert _resolve_derived({"npt_steps": 0, "timestep_fs": 2.0})["ensemble"] == "nvt"
+        assert _resolve_derived({"ensemble": "nvt", "npt_steps": 50000,
+                                 "timestep_fs": 2.0})["ensemble"] == "nvt"
+
     def test_a_given_value_is_not_overwritten(self):
         from fastmdxplora.report.document import _resolve_derived
 

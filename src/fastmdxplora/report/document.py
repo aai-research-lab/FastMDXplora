@@ -920,6 +920,16 @@ def _resolve_derived(params: dict[str, Any]) -> dict[str, Any]:
         elif out.get(ns_key) is None and out.get(steps_key) is not None:
             out[ns_key] = ns_from(out[steps_key])
 
+    # The ensemble production ran in. Absent means "read it from
+    # npt_steps", which is how it always worked; the record should say
+    # what that read to, not that nothing was typed.
+    if out.get("ensemble") is None:
+        try:
+            npt = int(out.get("npt_steps") or 0)
+        except (TypeError, ValueError):
+            npt = 0
+        out["ensemble"] = "npt" if npt > 0 else "nvt"
+
     bar, atm = out.get("pressure_bar"), out.get("pressure_atm")
     if bar is None and atm is None:
         # The runner's default when neither is given, as the methods
