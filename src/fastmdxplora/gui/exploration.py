@@ -1026,6 +1026,50 @@ class DashboardRuntime:
                 **started,
             }
 
+    def switch_to(self, folder: str | Path) -> dict[str, Any]:
+        """Watch a different output folder without relaunching.
+
+        The GUI was bound to the one folder given at launch. A person with
+        several finished studies had to stop the server and start it again
+        with a new --output to look at another; this makes it a control in
+        the page. Refused while a run is in progress here -- the dashboard
+        watches one study at a time, and swapping the folder under a live
+        run would read one study's telemetry against another's process.
+        """
+        with self.lock:
+            self._refresh_process()
+            if self.process is not None and self.process.poll() is None:
+                return {"ok": False,
+                        "error": "A run is in progress here. Stop it before "
+                                 "loading another study.",
+                        "state": self.snapshot()}
+            path = Path(folder).expanduser().resolve()
+            if not path.is_dir():
+                return {"ok": False, "error": f"No such folder: {path}",
+                        "state": self.snapshot()}
+            # A run folder is one FastMDXplora wrote: it carries a manifest,
+            # or a simulation directory, or an analysis directory. Anything
+            # else is a wrong turn in the picker, and loading it would show
+            # an empty study rather than say so.
+            markers = ("manifest.json", "simulation", "analysis", "report")
+            if not any((path / m).exists() for m in markers):
+                return {"ok": False,
+                        "error": f"{path.name} does not look like a "
+                                 "FastMDXplora output folder.",
+                        "state": self.snapshot()}
+            # A fresh watch of the new folder: forget the last run's process
+            # and completion, and let the pollers read the new telemetry.
+            self.active_root = path
+            self.process = None
+            self.process_started_at = None
+            self.process_finished_at = None
+            self.process_returncode = None
+            self.completion_error = None
+            self.data_stale = False
+            self.log_path = None
+            self.command = []
+            return {"ok": True, "active_run": str(path), "state": self.snapshot()}
+
     def stop(self) -> dict[str, Any]:
         with self.lock:
             self._refresh_process()

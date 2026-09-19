@@ -508,3 +508,80 @@ class TestBuildConfigYaml:
         config = self._config(run_name="../../etc/passwd")
         doc = yaml.safe_load(build_config_yaml(config, tmp_path / "runs"))
         assert ".." not in doc["systems"][0]["id"]
+
+
+def _switch_runtime(tmp_path):
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    rt = DashboardRuntime(tmp_path / "w", tmp_path / "e")
+    return rt, tmp_path / "e"
+
+
+def _make_run(base, name):
+    run = base / name
+    (run / "simulation").mkdir(parents=True)
+    (run / "manifest.json").write_text("{}", encoding="utf-8")
+    return run
+
+
+def test_switch_between_run_folders(tmp_path):
+    # The GUI was bound to the one folder given at launch; switch_to makes
+    # loading another study a control in the page.
+    rt, base = _switch_runtime(tmp_path)
+    a, b = _make_run(base, "a"), _make_run(base, "b")
+    assert rt.switch_to(a)["ok"]
+    assert Path(rt.active_root) == a.resolve()
+    assert rt.switch_to(b)["ok"]
+    assert Path(rt.active_root) == b.resolve()
+
+
+def test_switch_forgets_the_previous_run(tmp_path):
+    rt, base = _switch_runtime(tmp_path)
+    rt.completion_error = "old failure"
+    rt.process_returncode = 1
+    rt.switch_to(_make_run(base, "a"))
+    assert rt.completion_error is None
+    assert rt.process_returncode is None
+    assert rt.process is None
+
+
+def test_switch_refuses_a_folder_that_is_not_a_run(tmp_path):
+    rt, base = _switch_runtime(tmp_path)
+    plain = base / "notes"
+    plain.mkdir()
+    answer = rt.switch_to(plain)
+    assert not answer["ok"]
+    assert "does not look like" in answer["error"]
+
+
+def test_switch_refuses_a_missing_folder(tmp_path):
+    rt, base = _switch_runtime(tmp_path)
+    assert not rt.switch_to(base / "nope")["ok"]
+
+
+def test_switch_refuses_while_running(tmp_path):
+    rt, base = _switch_runtime(tmp_path)
+    a = _make_run(base, "a")
+
+    class Proc:
+        def poll(self):
+            return None
+
+    rt.process = Proc()
+    rt.process_started_at = "2026-01-01T00:00:00+00:00"
+    answer = rt.switch_to(a)
+    assert not answer["ok"]
+    assert "Stop it before" in answer["error"]
+
+
+def test_the_sidebar_has_the_load_control():
+    import pathlib
+
+    import fastmdxplora.gui as gui
+
+    page = (pathlib.Path(gui.__file__).parent / "templates"
+            / "dashboard.html").read_text(encoding="utf-8")
+    assert 'id="load-study"' in page
+    frame = (pathlib.Path(gui.__file__).parent / "static"
+             / "frame.js").read_text(encoding="utf-8")
+    assert 'fetch("/api/explore/switch"' in frame

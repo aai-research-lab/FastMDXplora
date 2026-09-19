@@ -642,6 +642,14 @@ def make_handler(
             if path == "/api/explore/stop":
                 self._send_json(app_runtime.stop())
                 return
+            if path == "/api/explore/switch":
+                folder = str((payload or {}).get("folder") or "").strip()
+                if not folder:
+                    self._send_json({"ok": False, "error": "No folder given."},
+                                    status=400)
+                    return
+                self._send_json(app_runtime.switch_to(folder))
+                return
             self.send_error(404, "Not found")
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002

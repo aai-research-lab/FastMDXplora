@@ -381,6 +381,45 @@
       }, true);
     }
 
+    var loadStudy = el("load-study");
+    var loadPath = el("load-study-path");
+    if (loadStudy && loadPath && window.FastMDXPicker) {
+      loadStudy.addEventListener("click", function () {
+        // The same folder picker the builder uses, opening into a hidden
+        // input. When it writes a folder, load that study.
+        window.FastMDXPicker.open({ into: "load-study-path", mode: "folder" });
+      });
+      loadPath.addEventListener("change", function () {
+        var folder = loadPath.value.trim();
+        if (!folder) return;
+        loadStudy.disabled = true;
+        loadStudy.textContent = "Loading\u2026";
+        fetch("/api/explore/switch", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ folder: folder })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          loadStudy.disabled = false;
+          loadStudy.textContent = "Load study";
+          loadPath.value = "";
+          if (d && d.ok) {
+            // Read the new study at once rather than waiting for the poll,
+            // and land on the overview.
+            if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+              window.FastMDXDashboard.navigate("overview");
+            }
+            location.reload();
+          } else {
+            window.alert((d && d.error) || "Could not load that folder.");
+          }
+        }).catch(function () {
+          loadStudy.disabled = false;
+          loadStudy.textContent = "Load study";
+          window.alert("Could not reach the server.");
+        });
+      });
+    }
+
     var version = el("settings-version");
     var cite = el("cite-version");
     if (version && cite) version.textContent = cite.textContent.trim();
