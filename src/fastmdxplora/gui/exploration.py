@@ -539,6 +539,12 @@ class DashboardRuntime:
     workspace_root: Path
     exploration_root: Path
     active_root: Path | None = None
+    #: Where the running process is writing, which is not always what is
+    #: being viewed. The two were one field, so looking at a finished
+    #: study while another ran was refused: Stop would have killed a run
+    #: nobody was looking at, and the staleness check would have measured
+    #: one study's telemetry against another's start time.
+    running_root: Path | None = None
     process: subprocess.Popen[Any] | None = None
     process_started_at: str | None = None
     process_finished_at: str | None = None
@@ -568,8 +574,20 @@ class DashboardRuntime:
                 return self.workspace_root / _NO_CURRENT_RUN
             return self.active_root or self.workspace_root
 
+    def _viewing_the_running_study(self) -> bool:
+        # An unset running_root means the process belongs to whatever is
+        # viewed, which is what one field used to mean and what every
+        # caller that sets active_root and process directly still means.
+        if self.running_root is None:
+            return True
+        return self.active_root is not None and self.active_root == self.running_root
+
     def _telemetry_predates_process(self) -> bool:
         if self.active_root is None or not self.process_started_at:
+            return False
+        if not self._viewing_the_running_study():
+            # The viewed study is not the one the process is writing; its
+            # telemetry is older by definition and that says nothing.
             return False
         status = _json_mapping(self.active_root / "simulation" / "live_status.json")
         recorded = status.get("run_started_at") or status.get("last_update_timestamp")
@@ -735,14 +753,19 @@ class DashboardRuntime:
         with self.lock:
             self._refresh_process()
             running = self.process is not None and self.process.poll() is None
+            viewing_running = self._viewing_the_running_study()
             status = "idle"
-            if running:
+            if running and viewing_running:
                 status = "running"
-            elif self.completion_error:
+            elif running:
+                # A run is going, elsewhere. The viewed study is what it is
+                # on disk; the sidebar says where the live one is.
+                status = "idle"
+            elif self.completion_error and viewing_running:
                 status = "failed"
-            elif self.process is not None and self.process_returncode == 0:
+            elif self.process is not None and self.process_returncode == 0 and viewing_running:
                 status = "completed"
-            elif self.process is not None and self.process_returncode is not None:
+            elif self.process is not None and self.process_returncode is not None and viewing_running:
                 status = "failed"
             return {
                 "mode": "home" if self.active_root is None or self.data_stale else "run",
@@ -750,9 +773,11 @@ class DashboardRuntime:
                 "active_run": str(self.active_root) if self.active_root and not self.data_stale else None,
                 "workspace": str(self.workspace_root),
                 "exploration_root": str(self.exploration_root),
-                "process_running": running,
+                "process_running": running and viewing_running,
+                "running_elsewhere": (str(self.running_root)
+                                      if running and not viewing_running else None),
                 "returncode": self.process_returncode,
-                "error": self.completion_error,
+                "error": self.completion_error if viewing_running else None,
                 "started_at": self.process_started_at,
                 "finished_at": self.process_finished_at,
                 "log_path": str(self.log_path) if self.log_path else None,
@@ -846,6 +871,7 @@ class DashboardRuntime:
         # long-lived Python file object while the child continues writing.
         log_handle.close()
         self.active_root = output_dir
+        self.running_root = output_dir
         self.process = process
         self.process_started_at = _utc_now()
         self.process_finished_at = None
@@ -1038,11 +1064,6 @@ class DashboardRuntime:
         """
         with self.lock:
             self._refresh_process()
-            if self.process is not None and self.process.poll() is None:
-                return {"ok": False,
-                        "error": "A run is in progress here. Stop it before "
-                                 "loading another study.",
-                        "state": self.snapshot()}
             path = Path(folder).expanduser().resolve()
             if not path.is_dir():
                 return {"ok": False, "error": f"No such folder: {path}",
@@ -1057,17 +1078,26 @@ class DashboardRuntime:
                         "error": f"{path.name} does not look like a "
                                  "FastMDXplora output folder.",
                         "state": self.snapshot()}
-            # A fresh watch of the new folder: forget the last run's process
-            # and completion, and let the pollers read the new telemetry.
+            # Look at the new folder. The process, if any, keeps running
+            # where it is and stays stoppable; a switch changes what is
+            # viewed, not what is happening. Only a finished process is
+            # forgotten, so its completion does not colour another study.
+            # A live process that was never pinned to a folder belongs to
+            # the folder being left.
+            if (self.process is not None and self.process.poll() is None
+                    and self.running_root is None):
+                self.running_root = self.active_root
             self.active_root = path
-            self.process = None
-            self.process_started_at = None
-            self.process_finished_at = None
-            self.process_returncode = None
-            self.completion_error = None
             self.data_stale = False
-            self.log_path = None
-            self.command = []
+            if self.process is None or self.process.poll() is not None:
+                self.process = None
+                self.running_root = None
+                self.process_started_at = None
+                self.process_finished_at = None
+                self.process_returncode = None
+                self.completion_error = None
+                self.log_path = None
+                self.command = []
             return {"ok": True, "active_run": str(path), "state": self.snapshot()}
 
     def stop(self) -> dict[str, Any]:

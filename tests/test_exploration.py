@@ -559,19 +559,45 @@ def test_switch_refuses_a_missing_folder(tmp_path):
     assert not rt.switch_to(base / "nope")["ok"]
 
 
-def test_switch_refuses_while_running(tmp_path):
+def test_switch_while_running_views_another_and_keeps_the_process(tmp_path):
+    # A two-day run should not lock a person out of their other studies.
+    # The process keeps running where it is and stays stoppable; the
+    # viewed study is idle and the snapshot says where the live one is.
     rt, base = _switch_runtime(tmp_path)
-    a = _make_run(base, "a")
+    a, b = _make_run(base, "a"), _make_run(base, "b")
 
     class Proc:
         def poll(self):
             return None
 
+    rt.active_root = a.resolve()
+    rt.running_root = a.resolve()
     rt.process = Proc()
     rt.process_started_at = "2026-01-01T00:00:00+00:00"
-    answer = rt.switch_to(a)
-    assert not answer["ok"]
-    assert "Stop it before" in answer["error"]
+    answer = rt.switch_to(b)
+    assert answer["ok"]
+    assert rt.process is not None
+    assert Path(rt.running_root) == a.resolve()
+    snap = rt.snapshot()
+    assert snap["status"] == "idle"
+    assert snap["process_running"] is False
+    assert snap["running_elsewhere"] == str(a.resolve())
+    # Back to the running one: its process state returns.
+    rt.switch_to(a)
+    snap = rt.snapshot()
+    assert snap["status"] == "running"
+    assert snap["running_elsewhere"] is None
+
+
+def test_the_sidebar_says_where_the_live_run_is():
+    import pathlib
+
+    import fastmdxplora.gui as gui
+
+    page = (pathlib.Path(gui.__file__).parent / "templates"
+            / "dashboard.html").read_text(encoding="utf-8")
+    assert 'id="study-elsewhere"' in page
+    assert 'id="study-elsewhere-view"' in page
 
 
 def test_the_sidebar_has_the_load_control():

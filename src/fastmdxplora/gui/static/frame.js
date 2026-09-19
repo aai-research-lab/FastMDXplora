@@ -420,6 +420,31 @@
       });
     }
 
+    /* A run in another folder: say so, offer the way back. */
+    var elsewhere = el("study-elsewhere");
+    var elsewhereName = el("study-elsewhere-name");
+    var elsewhereView = el("study-elsewhere-view");
+    if (elsewhere && window.FastMDXDashboard) {
+      var elsewherePath = "";
+      window.FastMDXDashboard.on("app-state", function (s) {
+        elsewherePath = (s && s.running_elsewhere) || "";
+        elsewhere.hidden = !elsewherePath;
+        if (elsewherePath && elsewhereName) {
+          elsewhereName.textContent = elsewherePath.split("/").pop();
+          elsewhereName.title = elsewherePath;
+        }
+      });
+      if (elsewhereView) {
+        elsewhereView.addEventListener("click", function () {
+          if (!elsewherePath) return;
+          fetch("/api/explore/switch", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ folder: elsewherePath })
+          }).then(function () { location.reload(); });
+        });
+      }
+    }
+
     var version = el("settings-version");
     var cite = el("cite-version");
     if (version && cite) version.textContent = cite.textContent.trim();

@@ -150,6 +150,13 @@
           <button class="ghost-btn" type="button" id="load-study" title="Load a different study's output folder">Load study</button>
           <input type="hidden" id="load-study-path">
         </div>
+        <!-- Shown when a run is going in a folder other than the one on
+             screen: what is live, and one click back to it. -->
+        <div class="study-elsewhere" id="study-elsewhere" hidden>
+          <span class="status-dot status-dot-live"></span>
+          <span>Running: <span id="study-elsewhere-name" class="mono"></span></span>
+          <button class="ghost-btn" type="button" id="study-elsewhere-view">View</button>
+        </div>
         <div class="study-path mono" id="sidebar-output-folder" title="Output folder">—</div>
       </div>
 
