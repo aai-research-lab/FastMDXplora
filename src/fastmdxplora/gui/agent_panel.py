@@ -304,7 +304,10 @@ def _run_status(runtime: Any) -> str | None:
                 lines.append(f"elapsed: {_hms(elapsed)}; about {_hms(remaining)} left")
         sim_ns = status.get("simulation_time_completed_ns")
         if isinstance(sim_ns, (int, float)):
-            lines.append(f"simulated so far: {sim_ns:.3f} ns")
+            # Equilibration included. "0.7 ns" here was read back as a
+            # production length of 0.7 ns when the config said 0.5; the
+            # config below is where the production length lives.
+            lines.append(f"simulated so far, equilibration included: {sim_ns:.3f} ns")
         speed = status.get("ns_per_day") or status.get("speed")
         if isinstance(speed, (int, float)) and speed > 0:
             lines.append(f"speed: {speed:.2f} ns/day")
@@ -314,11 +317,46 @@ def _run_status(runtime: Any) -> str | None:
                          + (f" -- {health['message']}" if health.get("message") else ""))
     except Exception:  # noqa: BLE001
         pass
+    used = _config_the_run_used(getattr(runtime, "active_root", None))
+    if used:
+        lines.append("")
+        lines.append("the config this run used (the short form, as written):")
+        lines.append(used)
     results = _results_summary(getattr(runtime, "active_root", None))
     if results:
         lines.append("")
         lines.append(results)
     return "\n".join(lines)
+
+
+def _config_the_run_used(root: Any) -> str:
+    """The active run's own config, so "the same settings as that one" has
+    something to copy from.
+
+    The Agent lost the previous study's config the moment it wrote a new
+    one, and said "I have no chignolin study in this conversation" while
+    the chignolin run was the active study with its resolved config on
+    disk. It reads that file now. The short form, not the full dump:
+    the full one is a hundred lines of defaults, and what a person means
+    by "the same settings" is what was decided.
+    """
+    if not root:
+        return ""
+    path = Path(root) / "resolved_config.yml"
+    if not path.is_file():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    # Drop the header comments and cap the length; a config that runs to
+    # pages is not something to paste into every prompt.
+    body = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    body = body.strip()
+    if len(body) > 4000:
+        body = body[:4000] + "\n# … (truncated)"
+    return body
+
 
 
 def _results_summary(root: Any) -> str:

@@ -1992,7 +1992,7 @@ class TestSixMoreFromUsingIt(unittest.TestCase):
         status = _run_status(Runtime())
         self.assertIn("step: 334,000 of 350,000 (95.4% complete)", status)
         self.assertIn("left", status)
-        self.assertIn("simulated so far: 0.668 ns", status)
+        self.assertIn("simulated so far, equilibration included: 0.668 ns", status)
 
     def test_thinking_not_writing(self):
         import pathlib
@@ -2231,3 +2231,61 @@ class TestItHasAName(unittest.TestCase):
         self.assertIn("say it is the one chosen in Settings", prompt)
         self.assertIn("do not repeat a phrase across turns", prompt)
         self.assertNotIn("that is\nthe whole answer", prompt)
+
+
+class TestTheAgentSeesTheRunsOwnConfig(unittest.TestCase):
+    """"The same settings as the chignolin one" needs the chignolin
+    config. The Agent lost it the moment it wrote a new one, and read
+    "simulated so far: 0.7 ns" back as a production length of 0.7 when the
+    config said 0.5. The active run's resolved config rides with the run
+    status now, and the prompt says which number is which."""
+
+    def test_the_resolved_config_rides_with_the_status(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        root = Path(tempfile.mkdtemp())
+        (root / "resolved_config.yml").write_text(
+            "# header\nsystems:\n- system: 1UAO\nsimulation:\n  duration_ns: 0.5\n",
+            encoding="utf-8")
+
+        class Runtime:
+            active_root = root
+
+            def snapshot(self):
+                return {"active_run": str(root), "status": "idle"}
+
+        status = _run_status(Runtime())
+        self.assertIn("the config this run used", status)
+        self.assertIn("duration_ns: 0.5", status)
+        self.assertNotIn("# header", status)
+
+    def test_simulated_so_far_says_equilibration_included(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        root = Path(tempfile.mkdtemp())
+        (root / "simulation").mkdir()
+        (root / "simulation" / "live_status.json").write_text(
+            json.dumps({"stage": "production", "simulation_time_completed_ns": 0.7}),
+            encoding="utf-8")
+
+        class Runtime:
+            active_root = root
+
+            def snapshot(self):
+                return {"active_run": str(root), "status": "running"}
+
+        self.assertIn("equilibration included: 0.700 ns", _run_status(Runtime()))
+
+    def test_the_prompt_says_where_the_same_settings_come_from(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("the config the active run used", prompt)
+        self.assertIn("is not\nthe production length", prompt)
