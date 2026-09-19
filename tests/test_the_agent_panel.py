@@ -2678,3 +2678,34 @@ class TestTheWordsAndTheRows(unittest.TestCase):
         self.assertIn("align-items: center", rule)
         self.assertIn("min-height: 44px", rule)
         self.assertIn(".page-subtitle {\n    display: inline;", css)
+
+
+class TestTheHeadersStayPut(unittest.TestCase):
+
+    def test_every_page_header_is_sticky(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        rule = css[css.index(".page-header {"):css.index("}", css.index(".page-header {"))]
+        self.assertIn("position: sticky", rule)
+        self.assertIn("top: 0", rule)
+        self.assertIn("background: var(--background-primary)", rule)
+
+    def test_the_config_subtitle_and_no_not_ready_reason_in_the_header(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("Select what you have, what should happen to it, and anything you want to change.", page)
+        self.assertNotIn("Nothing chosen yet", page)
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        # The reason is still said at the Run button; not in the header.
+        self.assertIn('return "Choose what this run starts from.";', script)
+        summary = script[script.index('text(el("run-summary")'):script.index(";", script.index('text(el("run-summary")'))]
+        self.assertNotIn("whyNotReady", summary)

@@ -380,6 +380,14 @@ button {
     border-bottom: 1px solid var(--border-subtle);
     padding-bottom: 10px;
     min-height: 44px;
+    /* Fixed while the page scrolls under it. The centre column is the
+       scroll container, so sticky at its top is fixed to the eye; the
+       background stops the content showing through. */
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--background-primary);
+    padding-top: 8px;
 }
 .page-header > div:first-child { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .page-title {

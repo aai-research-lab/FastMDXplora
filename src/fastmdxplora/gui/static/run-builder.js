@@ -989,11 +989,11 @@
     } else {
       const doing = PHASES.filter((p) => state.phases.has(p.name))
         .map((p) => p.label);
-      const why = whyNotReady();
-      text(
-        el("run-summary"),
-        why || (doing.length ? doing.join(" → ") : "Nothing chosen yet")
-      );
+      // The chain of phases, or nothing. The reason a run is not ready
+      // was shown here too, and "Choose what this run starts from" in the
+      // page header read as a heading rather than a note; it is said at
+      // the Run button, where it can be acted on.
+      text(el("run-summary"), doing.length ? doing.join(" → ") : "");
     }
     const can = ready();
     ["run-start-button", "run-download", "run-copy-command",
