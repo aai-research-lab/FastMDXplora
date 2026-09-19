@@ -4433,23 +4433,22 @@ class TestTheGUIAsksToBeCited:
                 / "dashboard.html").read_text(encoding="utf-8")
 
     def test_cite_comes_before_the_links_that_leave(self) -> None:
-        # Documentation and GitHub live in the settings popup now; Cite is
-        # a line in the sidebar itself, on every page. What the test holds
-        # is the principle: the reminder is met before any link that
-        # leaves. The sidebar is visible; the popup is hidden until asked.
+        # In the settings popup now, by the owner's choice, with the version
+        # beside it. What the test still holds: it comes before Documentation
+        # and GitHub in that popup, and neither of those is in the sidebar.
         markup = self._markup()
-        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
-        assert 'data-view-link="cite"' in sidebar
         popup = markup[markup.index('id="settings-popup"'):]
-        assert "hidden" in popup[:80], "the popup is not hidden by default"
-        assert "readthedocs.io" in popup and "github.com/aai-research-lab" in popup
+        cite = popup.index("Cite FastMDXplora")
+        assert cite < popup.index("readthedocs.io")
+        assert cite < popup.index("github.com/aai-research-lab")
+        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
         assert "readthedocs.io" not in sidebar and "github.com" not in sidebar
 
     def test_every_page_carries_the_reminder(self) -> None:
-        """The sidebar footer shows on all of them, so the request does too."""
+        # The popup is on every page, and Cite is in it, one click away.
         markup = self._markup()
-        footer = markup[markup.index('class="sidebar-footer"'):]
-        assert 'data-view-link="cite"' in footer[:600]
+        popup = markup[markup.index('id="settings-popup"'):markup.index('<div class="app-shell">')]
+        assert 'data-view-link="cite">Cite FastMDXplora' in popup
 
     def test_the_page_itself_carries_the_reference_and_the_doi(self) -> None:
         markup = self._markup()

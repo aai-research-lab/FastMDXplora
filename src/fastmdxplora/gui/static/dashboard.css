@@ -1846,7 +1846,7 @@ body.state-ready .loading-screen {
 .analyse-picker {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.62);
+    background: var(--shadow-color);
     display: grid;
     place-items: center;
     z-index: 60;
@@ -2891,7 +2891,7 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-composer textarea:focus { outline: none; border-color: var(--accent-cyan); }
 .agent-send {
     flex: none; width: 40px; height: 40px; border-radius: 10px;
-    border: 1px solid var(--accent-cyan); background: var(--accent-cyan); color: #0f1114;
+    border: 1px solid var(--accent-cyan); background: var(--accent-cyan); color: var(--background-primary);
     font-size: 18px; line-height: 1; cursor: pointer;
 }
 .agent-send:disabled { opacity: .45; cursor: default; }
@@ -2944,3 +2944,37 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 }
 .agent-msg-tools button:hover { color: var(--text-primary); background: var(--background-secondary); }
 .report-document .report-plain { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; margin: 0; }
+
+
+/* The sidebar collapses too. The same shape as the panel: a chevron in
+   the brand row folds it, a tab on the left edge brings it back, and the
+   grid gives the column no width while it is away. */
+body.sidebar-collapsed .app-shell {
+    grid-template-columns: 0 0 minmax(0, 1fr) var(--handle-width) var(--panel-width);
+}
+body.sidebar-collapsed.panel-collapsed .app-shell {
+    grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
+}
+body.sidebar-collapsed .sidebar,
+body.sidebar-collapsed .col-handle[data-handle="sidebar"] { display: none; }
+body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
+.sidebar-brand { display: flex; align-items: flex-start; gap: 8px; }
+.sidebar-brand .brand-text { flex: 1; min-width: 0; }
+.sidebar-collapse { order: 2; padding: 4px 7px; font-size: 11px; margin-top: 4px; }
+.sidebar-expand {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+    padding: 10px 6px; border: 1px solid var(--border-primary); border-left: none;
+    border-radius: 0 6px 6px 0; background: var(--background-elevated);
+    color: var(--text-secondary); cursor: pointer; z-index: 40; display: none;
+}
+
+/* The settings trigger is the name and a caret. The engine and mode
+   under it read as a standing advertisement for somebody else's product;
+   they are in the popup, where somebody choosing them is looking. */
+.sidebar-account-detail { display: none; }
+
+/* A message being edited in place. */
+.agent-msg-user > div.editing {
+    outline: 1px solid var(--accent-cyan); outline-offset: 2px;
+    background: var(--background-primary);
+}

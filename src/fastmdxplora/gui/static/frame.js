@@ -92,6 +92,13 @@
     store.set("panelCollapsed", yes ? "1" : "0");
   }
 
+  function setSidebarCollapsed(yes) {
+    document.body.classList.toggle("sidebar-collapsed", yes);
+    var expand = el("sidebar-expand");
+    if (expand) expand.hidden = !yes;
+    store.set("sidebarCollapsed", yes ? "1" : "0");
+  }
+
   /* ---- The log ------------------------------------------------------ */
   var logFilter = "all";
   var lastSeen = 0;
@@ -103,6 +110,7 @@
   function classify(ev) {
     var msg = String(ev.message || "");
     var level = String(ev.level || "info").toLowerCase();
+    if (level === "explain") return { kind: "why", level: "info" };
     if (level === "error" || /refused|Refusal|\b[a-z]+\.[a-z_]+\.[a-z_]+\b.*(?:refus|cannot|must)/.test(msg)) {
       return { kind: "refused", level: "error" };
     }
@@ -302,15 +310,8 @@
       method: "POST", headers: {"content-type": "application/json"}, body: "{}"
     }).then(function (r) { return r.json(); }).then(function (d) {
       var cur = d && d.current;
-      var detail = el("account-detail");
       var engine = el("settings-engine");
-      if (cur) {
-        if (detail) detail.textContent = cur.model + " · assisted";
-        if (engine) engine.textContent = cur.provider + " · " + cur.model;
-      } else {
-        if (detail) detail.textContent = "no engine set";
-        if (engine) engine.textContent = "none";
-      }
+      if (engine) engine.textContent = cur ? cur.provider + " \u00b7 " + cur.model : "none";
     }).catch(function () { /* fine */ });
   }
 
@@ -332,6 +333,9 @@
     setCollapsed(store.get("panelCollapsed", "0") === "1");
     el("side-collapse").addEventListener("click", function () { setCollapsed(true); });
     el("side-expand").addEventListener("click", function () { setCollapsed(false); });
+    setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1");
+    el("sidebar-collapse").addEventListener("click", function () { setSidebarCollapsed(true); });
+    el("sidebar-expand").addEventListener("click", function () { setSidebarCollapsed(false); });
 
     $$(".side-tab").forEach(function (t) {
       t.addEventListener("click", function () { showTab(t.dataset.sideTab); });
@@ -359,18 +363,22 @@
     });
     /* The version is on the Cite page, filled in by the server. Read it
      * from there rather than asking for a second copy. */
-    var copyPath = el("copy-output-path");
-    if (copyPath) {
-      copyPath.addEventListener("click", function () {
+    /* One button. Open opens the folder where the browser can, and the
+     * path goes to the clipboard either way, so the button is useful on
+     * a machine the browser is not on. Four buttons in a 232px sidebar
+     * was too many. */
+    var openOut = el("open-output");
+    if (openOut) {
+      openOut.addEventListener("click", function () {
         var path = (el("sidebar-output-folder") || {}).textContent || "";
         if (!path || path === "\u2014") return;
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(path.trim()).then(function () {
-            copyPath.textContent = "Copied";
-            setTimeout(function () { copyPath.textContent = "Copy path"; }, 1400);
+            openOut.textContent = "Path copied";
+            setTimeout(function () { openOut.textContent = "Output"; }, 1400);
           });
         }
-      });
+      }, true);
     }
 
     var version = el("settings-version");

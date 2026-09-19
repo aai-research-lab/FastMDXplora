@@ -547,7 +547,13 @@
 
     state.runId = status.system_id || state.results?.system?.system || state.runId;
     setTextWithTooltip("topbar-run-id", state.runId || "system");
-    setTextWithTooltip("topbar-run-title", state.runTitle);
+    // The study's name is the system, not the folder it went into. The
+    // server's run_title is the output folder's name, and once a run began
+    // the title read fastmdxplora_output_20260919_021313 under the wordmark,
+    // which says nothing a person did not already choose. A name set in
+    // Display preferences still wins.
+    const chosen = (byId("setting-run-name")?.value || "").trim();
+    setTextWithTooltip("topbar-run-title", chosen || state.runId || state.runTitle);
   }
 
   function setTextWithTooltip(id, value) {

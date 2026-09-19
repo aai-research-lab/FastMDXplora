@@ -1919,17 +1919,17 @@ class TestTheAgentsProseAndTheSidebar(unittest.TestCase):
         self.assertEqual(page.count('id="sidebar-output-folder"'), 1)
         self.assertEqual(page.count('id="topbar-run-id"'), 1)
 
-    def test_copy_path_stands_beside_output(self):
+    def test_output_is_one_button(self):
+        # Four buttons in a 232px sidebar was too many. Output opens the
+        # folder and copies the path.
         import pathlib
 
         import fastmdxplora.gui as gui
 
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn('id="copy-output-path"', page)
-        frame = (pathlib.Path(gui.__file__).parent / "static"
-                 / "frame.js").read_text(encoding="utf-8")
-        self.assertIn('el("copy-output-path")', frame)
+        self.assertNotIn('id="copy-output-path"', page)
+        self.assertIn('title="Open the output folder, and copy its path"', page)
 
     def test_the_follow_toggle_says_what_it_does(self):
         import pathlib
@@ -1940,3 +1940,22 @@ class TestTheAgentsProseAndTheSidebar(unittest.TestCase):
                 / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn("scroll to newest", page)
         self.assertIn("Keep the newest line in view as the run writes", page)
+
+
+class TestEditIsInPlace(unittest.TestCase):
+
+    def test_the_bubble_becomes_editable(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        edit = script[script.index('label: "Edit"'):script.index('label: "Retry"')]
+        self.assertIn('body.contentEditable = "true";', edit)
+        # Enter sends; Escape restores; blur restores.
+        self.assertIn('e.key === "Enter" && !e.shiftKey', edit)
+        self.assertIn('e.key === "Escape"', edit)
+        self.assertIn("body.textContent = before;", edit)
+        # Not the old detour through the composer.
+        self.assertNotIn("Put this back in the composer", edit)

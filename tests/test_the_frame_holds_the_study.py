@@ -148,10 +148,15 @@ class TestTheSettingsPopup(unittest.TestCase):
         between = page[trigger:sidebar_close]
         self.assertNotIn("<nav", between)
 
-    def test_the_trigger_says_what_the_agent_is_configured_with(self):
+    def test_the_trigger_is_the_name_and_nothing_else(self):
+        # The engine and mode under the name read as a standing
+        # advertisement for somebody else's product. They are in the
+        # popup, where somebody choosing them is looking.
         page = _page()
-        self.assertIn('id="account-detail"', page)
-        self.assertIn('el("account-detail")', _script())
+        trigger = page[page.index('id="settings-open"'):page.index("</button>", page.index('id="settings-open"'))]
+        self.assertNotIn("account-detail", trigger)
+        self.assertIn('id="account-name">FastMDXplora', trigger)
+        self.assertNotIn('el("account-detail")', _script())
 
     def test_the_popup_is_a_dialog_with_a_theme_switch(self):
         page = _page()
@@ -176,15 +181,19 @@ class TestTheSettingsPopup(unittest.TestCase):
         self.assertIn("readthedocs.io", popup)
         self.assertIn("github.com/aai-research-lab", popup)
 
-    def test_cite_is_not_behind_the_popup(self):
-        # The one thing a scientific tool most needs its user to find is
-        # a line in the sidebar on every page, not an item in a menu.
+    def test_cite_is_in_the_popup_with_the_version(self):
+        # It was a line in the sidebar on every page. The owner moved it
+        # into the settings popup, replacing About and keeping the version
+        # beside it: the popup is on every page too, one click away, and
+        # the sidebar had grown crowded. That is his call to make.
         page = _page()
+        popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
+        self.assertIn('data-view-link="cite">Cite FastMDXplora', popup)
+        self.assertIn('id="settings-version"', popup)
+        self.assertNotIn("About FastMDXplora", popup)
         sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
-        self.assertIn('data-view-link="cite"', sidebar)
-        # The popup's About may point there too. What the principle
-        # forbids is the citation being *only* reachable through a menu.
-        self.assertIn("Cite FastMDXplora", sidebar)
+        self.assertNotIn("footer-cite", sidebar)
+
 
 
 class TestTheThemes(unittest.TestCase):
@@ -385,11 +394,11 @@ class TestThePopupItemsAct(unittest.TestCase):
         agent = (STATIC / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn("window.FastMDXAgent = { openSettings: openSettings", agent)
 
-    def test_about_goes_somewhere(self):
+    def test_cite_in_the_popup_goes_to_the_cite_page(self):
         page = _page()
         popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
-        about = popup[popup.index("About FastMDXplora") - 120:popup.index("About FastMDXplora")]
-        self.assertIn('href="#cite"', about)
+        item = popup[popup.index("Cite FastMDXplora") - 120:popup.index("Cite FastMDXplora")]
+        self.assertIn('href="#cite"', item)
 
     def test_the_version_comes_from_the_cite_page(self):
         # One copy, filled in by the server, rather than a second
@@ -526,3 +535,57 @@ class TestThreeThingsSeenInTheBrowser(unittest.TestCase):
         css = _css()
         self.assertIn(".overview-stack { display: flex; flex-direction: column;", css)
         self.assertIn("#live-panels .preview-frame { height: 360px; }", css)
+
+
+class TestElevenThingsFromUsingIt(unittest.TestCase):
+
+    def test_the_study_keeps_its_name_when_a_run_begins(self):
+        script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
+        self.assertIn("The study's name is the system, not the folder it went into", script)
+        self.assertIn('setTextWithTooltip("topbar-run-title", chosen || state.runId || state.runTitle);', script)
+
+    def test_one_output_button_that_also_copies_the_path(self):
+        page = _page()
+        self.assertEqual(page.count('id="open-output"'), 1)
+        self.assertNotIn('id="copy-output-path"', page)
+        self.assertIn('openOut.textContent = "Path copied";', _script())
+
+    def test_paper_leaves_no_token_dark(self):
+        import re
+
+        theme = (STATIC / "theme.css").read_text(encoding="utf-8")
+        root = theme[theme.index(":root {"):theme.index("}", theme.index(":root {"))]
+        paper = theme[theme.index('body[data-theme="paper"]'):]
+        paper = paper[:paper.index("}")]
+        overridden = set(re.findall(r"(--[a-z0-9-]+):", paper))
+        for token, value in re.findall(r"(--[a-z0-9-]+):\s*([^;]+);", root):
+            if re.search(r"#[01][0-9a-f]{5}\b|rgba\(0, 0, 0, 0\.[3-9]|rgba\(255, 255, 255", value):
+                with self.subTest(token=token):
+                    self.assertIn(token, overridden, f"{token} is still {value.strip()} under Paper")
+
+    def test_the_sidebar_collapses_like_the_panel(self):
+        page = _page()
+        self.assertIn('id="sidebar-collapse"', page)
+        self.assertIn('id="sidebar-expand"', page)
+        script = _script()
+        self.assertIn("function setSidebarCollapsed(yes)", script)
+        self.assertIn("body.sidebar-collapsed .app-shell", _css())
+
+    def test_the_explanations_reach_the_log(self):
+        # The "why" filter had nothing to show: the explain text was
+        # printed by the caller's hook and never written as an event.
+        import inspect
+
+        from fastmdxplora.simulation import runner
+
+        source = inspect.getsource(runner.run_simulation)
+        self.assertIn('telemetry.event(text, level="explain")', source)
+        self.assertIn('if (level === "explain") return { kind: "why", level: "info" };', _script())
+
+    def test_one_status_row_and_complete(self):
+        page = _page()
+        sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
+        self.assertNotIn('class="study-facts', sidebar)
+        self.assertIn('<span id="topbar-stage" hidden></span>', sidebar)
+        self.assertIn('<span class="metric-label">Complete</span>', sidebar)
+        self.assertNotIn('<span class="metric-label">Progress</span>', sidebar)

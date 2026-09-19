@@ -117,14 +117,15 @@
     <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, mode, ceiling</span></a>
     <div class="settings-divider"></div>
     <a href="#settings" class="settings-item" data-view-link="settings">Display preferences <span class="mono settings-hint">viewer, dashboard</span></a>
+    <a href="#cite" class="settings-item" data-view-link="cite">Cite FastMDXplora <span class="mono settings-hint" id="settings-version"></span></a>
     <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
-    <a href="#cite" class="settings-item" data-view-link="cite">About FastMDXplora <span class="mono settings-hint" id="settings-version"></span></a>
   </div>
   <div class="app-shell">
     <!-- Sidebar -->
     <aside class="sidebar" aria-label="Dashboard navigation">
       <div class="sidebar-brand">
+        <button type="button" class="ghost-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">&#10094;</button>
         <div class="brand-text">
           <div class="brand-product">FastMDXplora</div>
           <div class="brand-tagline">Fully Automated SysTem for Molecular Dynamics eXploration</div>
@@ -137,12 +138,11 @@
           <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
           <span class="status-text" id="topbar-status-text">live</span>
           <span class="status-divider" aria-hidden="true">·</span>
-          <span class="status-text-muted" id="topbar-stage">—</span>
-        </div>
-        <div class="study-facts mono">
-          <span id="sidebar-platform" title="Platform">—</span>
+          <span class="mono" id="sidebar-platform" title="Platform">—</span>
           <span class="status-divider" aria-hidden="true">·</span>
-          <span id="sidebar-connection-state">Live</span>
+          <span class="mono" id="sidebar-connection-state">Live</span>
+          <!-- Written by the JS, shown under Progress instead. -->
+          <span id="topbar-stage" hidden></span>
           <span id="sidebar-status-dot" hidden></span>
           <span id="sidebar-run-name" hidden></span>
         </div>
@@ -162,14 +162,13 @@
         </ol>
         <div class="sidebar-metrics">
           <span class="metric-label">Step</span><span class="metric-value mono"><span id="topbar-step">—</span> / <span id="topbar-total">—</span></span>
-          <span class="metric-label">Progress</span><span class="metric-value mono" id="topbar-progress">—</span>
+          <span class="metric-label">Complete</span><span class="metric-value mono" id="topbar-progress">—</span>
           <span class="metric-label">ETA</span><span class="metric-value mono" id="topbar-eta">—</span>
         </div>
         <div class="sidebar-controls">
           <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause</span></button>
           <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">Refresh</button>
-          <button class="ghost-btn" type="button" id="open-output" title="Open the output folder">Output</button>
-          <button class="ghost-btn" type="button" id="copy-output-path" title="Copy the output folder's path">Copy path</button>
+          <button class="ghost-btn" type="button" id="open-output" title="Open the output folder, and copy its path">Output</button>
         </div>
         <div class="sidebar-refreshed muted" id="refreshed-indicator">refreshed <span id="refreshed-at">just now</span></div>
       </div>
@@ -204,19 +203,10 @@
           <span>Files</span>
         </a>
       </nav>
-      <div class="sidebar-footer">
-        <!-- On every page, because a citation nobody sees is a citation
-             nobody makes. The full reference is on the Cite page; this is
-             the reminder that there is one. Kept out of the popup for
-             that reason: a scientific tool's one request of its user
-             should not be behind a click. -->
-        <a href="#" class="footer-cite" data-view-link="cite">Cite FastMDXplora</a>
-      </div>
       <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false">
         <span class="sidebar-account-avatar" aria-hidden="true"></span>
         <span class="sidebar-account-text">
           <span class="sidebar-account-name" id="account-name">FastMDXplora</span>
-          <span class="sidebar-account-detail mono" id="account-detail">no engine set</span>
         </span>
         <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
       </button>
@@ -1013,6 +1003,7 @@
       </div>
     </aside>
     <button type="button" class="side-expand" id="side-expand" hidden title="Show panel" aria-label="Show side panel">&#10094;</button>
+    <button type="button" class="sidebar-expand" id="sidebar-expand" hidden title="Show sidebar" aria-label="Show sidebar">&#10095;</button>
   </div>
 
   <!-- Live region for screen readers -->

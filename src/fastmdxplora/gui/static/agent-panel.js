@@ -285,13 +285,43 @@
     msg.appendChild(body);
     tools(msg, [
       { label: "Copy", run: function () { copyText(text); } },
-      { label: "Edit", title: "Put this back in the composer and continue from here",
+      { label: "Edit", title: "Edit this message in place and send it again",
         run: function () {
-          cutFrom(msg);
-          var area = el("agent-request");
-          area.value = text;
-          autosize(area);
-          area.focus();
+          /* In place, as every assistant a person has used does it: the
+           * bubble becomes editable, Enter sends, Escape puts it back.
+           * Copying the text down into the composer was a detour. */
+          if (body.isContentEditable) return;
+          var before = body.textContent;
+          body.contentEditable = "true";
+          body.classList.add("editing");
+          body.focus();
+          var range = document.createRange();
+          range.selectNodeContents(body);
+          range.collapse(false);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          function done(send) {
+            body.contentEditable = "false";
+            body.classList.remove("editing");
+            body.removeEventListener("keydown", onKey);
+            body.removeEventListener("blur", onBlur);
+            var edited = body.textContent.trim();
+            if (!send || !edited) {
+              body.textContent = before;
+              return;
+            }
+            cutFrom(msg);
+            el("agent-request").value = edited;
+            draft();
+          }
+          function onKey(e) {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); done(true); }
+            if (e.key === "Escape") { e.preventDefault(); done(false); }
+          }
+          function onBlur() { done(false); }
+          body.addEventListener("keydown", onKey);
+          body.addEventListener("blur", onBlur);
         } },
       { label: "Retry", title: "Send this again from here",
         run: function () {

@@ -1846,6 +1846,26 @@ def run_simulation(
             precision_applied=bool(platform_props.get("Precision")),
             target_temperature_K=temperature_K,
         )
+        # The explanations reach the GUI's log as well as the terminal. The
+        # Log tab's "why" filter had nothing to show: the explain text was
+        # printed by the caller's hook and never written as an event.
+        _print_explanation = on_explain
+
+        def on_explain(key: str | None) -> None:  # noqa: F811 - deliberate
+            if _print_explanation is not None:
+                _print_explanation(key)
+            if key and telemetry is not None:
+                from fastmdxplora.explain import explain as _explain
+
+                found = _explain(key)
+                if found is not None:
+                    text = found.why.strip()
+                    if found.reference:
+                        text += f"\n\u2192 {found.reference}"
+                    try:
+                        telemetry.event(text, level="explain")
+                    except Exception:  # noqa: BLE001 - not load-bearing
+                        pass
         telemetry.event("Live simulation telemetry started")
         telemetry.write_status(
             stage="loading",
