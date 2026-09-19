@@ -1014,6 +1014,17 @@ def serve_dashboard(
         pass
     finally:
         session.stop()
+        # The run is its own session and is not stopped by stopping the
+        # server. Say so, and say where, so nobody assumes it died with
+        # the terminal or wonders where it went.
+        runtime = getattr(session, "runtime", None)
+        proc = getattr(runtime, "process", None)
+        if proc is not None and proc.poll() is None:
+            where = getattr(runtime, "running_root", None) or getattr(runtime, "active_root", None)
+            print(
+                f"\nThe study in {where} is still running (pid {proc.pid}).\n"
+                f"Reopen the GUI on it to watch, or stop it with:  kill {proc.pid}"
+            )
 
 
 def start_dashboard_session(

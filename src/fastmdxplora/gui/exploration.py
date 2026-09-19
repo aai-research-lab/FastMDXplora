@@ -869,6 +869,14 @@ class DashboardRuntime:
             env["FASTMDX_DASHBOARD_URL"] = dashboard_url
         log_handle = log_path.open("a", encoding="utf-8", buffering=1)
         try:
+            # Its own session, so the run outlives the server. Without this
+            # it sat in the terminal's process group, and Ctrl-C on the
+            # server sent SIGINT to the run as well: the server shut down
+            # cleanly and a day-long simulation died mid-step, not by any
+            # decision but because the terminal delivers the signal to the
+            # whole group. A study launched at five should be there in the
+            # morning whether the GUI is or not. Stop still stops it: the
+            # server holds the handle and signals the child directly.
             process = subprocess.Popen(
                 command,
                 cwd=str(self.exploration_root),
@@ -877,6 +885,7 @@ class DashboardRuntime:
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 shell=False,
+                start_new_session=True,
             )
         except Exception:
             log_handle.close()

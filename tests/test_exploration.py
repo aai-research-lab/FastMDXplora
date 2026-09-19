@@ -662,3 +662,42 @@ def test_the_sidebar_reads_top_down():
     assert study.index('id="topbar-status-text"') < study.index('id="study-elsewhere"') < study.index('id="load-study"')
     assert 'id="study-elsewhere-pct"' in study
     assert ">Load available study<" in study
+
+
+def test_the_run_outlives_the_server():
+    # Without start_new_session the run sat in the terminal's process
+    # group, and Ctrl-C on the server sent SIGINT to the run as well: a
+    # day-long simulation died mid-step, not by any decision but because
+    # the terminal delivers the signal to the whole group.
+    import inspect
+
+    from fastmdxplora.gui import exploration
+
+    source = inspect.getsource(exploration.DashboardRuntime._spawn)
+    assert "start_new_session=True" in source
+
+
+def test_stopping_the_server_says_what_is_still_running():
+    import inspect
+
+    from fastmdxplora.gui import server
+
+    source = inspect.getsource(server.serve_dashboard)
+    assert "is still running (pid" in source
+    assert "kill {proc.pid}" in source
+
+
+def test_a_new_session_child_leaves_the_terminals_group():
+    import os
+    import subprocess
+    import sys
+    import time
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"],
+                             start_new_session=True)
+    try:
+        time.sleep(0.2)
+        assert os.getpgid(child.pid) != os.getpgid(os.getpid())
+    finally:
+        child.terminate()
+        child.wait()
