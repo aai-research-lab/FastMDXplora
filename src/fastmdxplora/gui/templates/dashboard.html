@@ -146,6 +146,10 @@
           <span id="sidebar-status-dot" hidden></span>
           <span id="sidebar-run-name" hidden></span>
         </div>
+        <div class="study-switch">
+          <button class="ghost-btn" type="button" id="load-study" title="Load a different study's output folder">Load study</button>
+          <input type="hidden" id="load-study-path">
+        </div>
         <div class="study-path mono" id="sidebar-output-folder" title="Output folder">—</div>
       </div>
 
@@ -169,8 +173,6 @@
           <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause</span></button>
           <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">Refresh</button>
           <button class="ghost-btn" type="button" id="open-output" title="Open the output folder, and copy its path">Output</button>
-          <button class="ghost-btn" type="button" id="load-study" title="Load a different study's output folder">Load study</button>
-          <input type="hidden" id="load-study-path" data-picks="folder">
         </div>
         <div class="sidebar-refreshed muted" id="refreshed-indicator">refreshed <span id="refreshed-at">just now</span></div>
       </div>

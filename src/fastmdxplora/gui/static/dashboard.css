@@ -2990,3 +2990,10 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     background: var(--background-primary);
 }
 
+
+/* Load study sits in the study block: which study this is, is that
+   block's whole question. It had been a fourth button in the controls
+   row, beside a "Browse" the picker attaches to any data-picks input
+   -- two buttons for one action, in a row meant for three. */
+.study-switch { margin-top: 8px; }
+.study-switch .ghost-btn { padding: 5px 9px; font-size: 11px; width: 100%; }

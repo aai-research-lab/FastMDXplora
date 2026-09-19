@@ -582,6 +582,16 @@ def test_the_sidebar_has_the_load_control():
     page = (pathlib.Path(gui.__file__).parent / "templates"
             / "dashboard.html").read_text(encoding="utf-8")
     assert 'id="load-study"' in page
+    # In the study block, not the controls row: which study this is, is
+    # that block's whole question, and the row holds three.
+    study = page[page.index('class="sidebar-study"'):page.index('class="sidebar-progress"')]
+    assert 'id="load-study"' in study
+    row = page[page.index('class="sidebar-controls"'):]
+    row = row[:row.index("</div>")]
+    assert row.count("<button") == 3
+    # No data-picks on the hidden input: the picker would attach a second
+    # "Browse" button for the same action.
+    assert 'id="load-study-path" data-picks' not in page
     frame = (pathlib.Path(gui.__file__).parent / "static"
              / "frame.js").read_text(encoding="utf-8")
     assert 'fetch("/api/explore/switch"' in frame
