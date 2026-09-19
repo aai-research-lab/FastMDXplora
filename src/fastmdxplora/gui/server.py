@@ -685,7 +685,9 @@ def make_handler(
                 from fastmdxplora.gui.agent_panel import attach_conversation
 
                 self._send_json(attach_conversation(app_runtime,
-                                                    (payload or {}).get("study")))
+                                                    (payload or {}).get("study"),
+                                                    (payload or {}).get("id"),
+                                                    (payload or {}).get("from_study")))
                 return
             if path == "/api/agent/conversation/delete":
                 from fastmdxplora.gui.agent_panel import delete_conversation

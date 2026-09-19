@@ -2201,16 +2201,42 @@ class TestConversationsBelongToStudies(unittest.TestCase):
         self.rt.active_root = self.trp
         self.assertEqual(read_conversation(self.rt)["entries"], [])
 
-    def test_a_launch_moves_the_conversation_into_the_new_study(self):
+    def test_a_launch_moves_the_whole_conversation_into_the_new_study(self):
+        # The sequence a person takes: a thread in chignolin writes a
+        # config; Run here launches trpcage, which switches the loaded
+        # study BEFORE the move runs. The browser names the conversation
+        # and where it was, so the move finds it. Without those the move
+        # looked in the new study, found nothing, and the config exchange
+        # was lost from the thread that landed there.
         from fastmdxplora.gui.agent_panel import (CONVERSATIONS_SUBDIR, attach_conversation,
-                                                   write_conversation)
+                                                   read_conversation, write_conversation)
 
         self.rt.active_root = self.chig
-        write_conversation(self.rt, [{"role": "user", "text": "run trpcage"}])
-        moved = attach_conversation(self.rt, self.trp)
+        saved = write_conversation(self.rt, [
+            {"role": "user", "text": "run trpcage with the same settings"},
+            {"role": "agent", "kind": "config", "yaml": "x", "config": {}}])
+        self.rt.active_root = self.trp  # the launch already switched
+        moved = attach_conversation(self.rt, self.trp, saved["id"], saved["study"])
         self.assertTrue(moved["moved"])
         self.assertTrue((self.trp / CONVERSATIONS_SUBDIR / f"{moved['id']}.json").is_file())
         self.assertFalse((self.chig / CONVERSATIONS_SUBDIR / f"{moved['id']}.json").exists())
+        kinds = [e.get("kind", "user") for e in read_conversation(self.rt)["entries"]]
+        self.assertEqual(kinds, ["user", "config"])
+
+    def test_the_old_lookup_would_have_moved_nothing(self):
+        from fastmdxplora.gui.agent_panel import attach_conversation, write_conversation
+
+        self.rt.active_root = self.chig
+        write_conversation(self.rt, [{"role": "user", "text": "x"}])
+        self.rt.active_root = self.trp
+        self.assertFalse(attach_conversation(self.rt, self.trp)["moved"])
+
+    def test_the_save_reports_its_scope(self):
+        from fastmdxplora.gui.agent_panel import write_conversation
+
+        self.rt.active_root = self.chig
+        self.assertEqual(write_conversation(self.rt, [{"role": "user", "text": "x"}])["study"],
+                         str(self.chig))
 
     def test_the_list_groups_by_study_loaded_first(self):
         from fastmdxplora.gui.agent_panel import list_conversations, write_conversation
@@ -2278,7 +2304,11 @@ class TestConversationsBelongToStudies(unittest.TestCase):
                   / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn('post("/api/agent/conversation/open", { id: c.id, study: g.study })', script)
         self.assertIn("if (o.loaded_study && !g.loaded) {", script)
-        self.assertIn('post("/api/agent/conversation/attach", { study: started.output })', script)
+        self.assertIn('study: started.output, id: convId, from_study: fromStudy', script)
+        # Saved before the launch, so the move carries the last exchange.
+        run = script[script.index("runBtn.onclick = function () {"):]
+        run = run[:run.index("\n  }\n", run.index("started.error"))]
+        self.assertLess(run.index("persist().then("), run.index('post("/api/agent/run"'))
         self.assertIn("This conversation now belongs to the new study.", script)
 
 

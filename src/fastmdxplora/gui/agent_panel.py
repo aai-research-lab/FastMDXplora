@@ -610,7 +610,8 @@ def write_conversation(runtime: Any, entries: Any) -> dict[str, Any]:
         _write_one(store, cid, entries)
     except OSError as exc:
         return {"ok": False, "error": f"Could not save the conversation: {exc}"}
-    return {"ok": True, "id": cid, "entries": _read_one(store, cid)}
+    return {"ok": True, "id": cid, "entries": _read_one(store, cid),
+            "study": str(study) if study else None}
 
 
 def new_conversation(runtime: Any) -> dict[str, Any]:
@@ -691,24 +692,42 @@ def open_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, An
             "study": str(target) if target else None, "loaded_study": target is not None}
 
 
-def attach_conversation(runtime: Any, study: Any) -> dict[str, Any]:
-    """Move the current conversation into a study it just launched."""
+def attach_conversation(runtime: Any, study: Any, cid: Any = None,
+                        from_study: Any = None) -> dict[str, Any]:
+    """Move a conversation into the study it just launched.
+
+    The browser names the conversation and where it is now. It has to:
+    by the time this runs the launch has already switched the loaded
+    study to the new one, so "the current conversation in scope" is the
+    new study's, which has none -- the first version looked there, moved
+    nothing, and the next save started a fresh thread in the new study
+    from whatever the browser held. With no id given, fall back to the
+    current conversation of the given source scope.
+    """
     import os
 
     target = Path(study) if study else None
     if target is None or not target.is_dir():
         return {"ok": False, "error": "No such study."}
-    workspace, current_study = _scope(runtime)
-    source = _store_for(workspace, current_study)
-    cid = _current_in(source)
-    if cid is None:
+    workspace, _ = _scope(runtime)
+    source_study = Path(from_study) if from_study else None
+    if source_study is not None and not _is_study(source_study):
+        return {"ok": False, "error": "No such source study."}
+    source = _store_for(workspace, source_study)
+    if cid is not None and not _valid_id(cid):
+        return {"ok": False, "error": "No such conversation."}
+    cid = str(cid) if cid else _current_in(source)
+    if cid is None or not (source / f"{cid}.json").is_file():
         return {"ok": True, "moved": False}
     dest = target / CONVERSATIONS_SUBDIR
+    if source.resolve() == dest.resolve():
+        return {"ok": True, "moved": False, "id": cid, "study": str(target)}
     try:
         dest.mkdir(parents=True, exist_ok=True)
         os.replace(source / f"{cid}.json", dest / f"{cid}.json")
         (dest / "current").write_text(cid, encoding="utf-8")
-        (source / "current").unlink(missing_ok=True)
+        if _current_in(source) is None:
+            (source / "current").unlink(missing_ok=True)
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True, "moved": True, "id": cid, "study": str(target)}

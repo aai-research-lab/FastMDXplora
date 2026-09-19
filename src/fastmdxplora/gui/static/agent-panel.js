@@ -232,9 +232,19 @@
    * each exchange, restored when the page opens. The thread used to live
    * only in the browser's memory, and a refresh emptied it. */
   var transcript = [];
+  /* Which conversation this is and where it lives, from the last save or
+   * restore, so a launch can name it exactly when moving it. */
+  var convId = null;
+  var convStudy = null;
 
   function persist() {
-    post("/api/agent/conversation", { entries: transcript }).catch(function () {});
+    return post("/api/agent/conversation", { entries: transcript }).then(function (d) {
+      if (d && d.ok) {
+        convId = d.id || convId;
+        if (d.study !== undefined) convStudy = d.study;
+      }
+      return d;
+    }).catch(function () {});
   }
 
   function tools(msg, items) {
@@ -660,9 +670,18 @@
     };
     runBtn.onclick = function () {
       runBtn.disabled = true;
-      post("/api/agent/run", {
-        config: data.config,
-        budget_hours: el("agent-budget").value
+      /* The thread is saved before the launch, and the launch is told
+       * which conversation to move and where it is now. The launch
+       * switches the loaded study before the move runs, so "the current
+       * conversation" is the new study's -- none -- and the first version
+       * moved nothing; the next save then started a fresh thread in the
+       * new study from whatever the browser held, minus a race. */
+      var fromStudy = convStudy;
+      persist().then(function () {
+        return post("/api/agent/run", {
+          config: data.config,
+          budget_hours: el("agent-budget").value
+        });
       }).then(function (started) {
         if (started.ok) {
           /* Started once. A second press started it again into the same
@@ -674,7 +693,10 @@
            * this the thread would vanish from view the moment the page
            * switched to the new study's empty list. */
           if (started.output) {
-            post("/api/agent/conversation/attach", { study: started.output }).then(function (m) {
+            post("/api/agent/conversation/attach", {
+              study: started.output, id: convId, from_study: fromStudy
+            }).then(function (m) {
+              if (m && m.ok && m.id) { convId = m.id; convStudy = m.study || started.output; }
               if (m && m.moved) note(box, "This conversation now belongs to the new study.", true);
             }).catch(function () {});
           }
@@ -691,6 +713,7 @@
    * config, so Run here on a restored thread runs what was written. */
   function restore() {
     fetch("/api/agent/conversation").then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.ok) { convId = d.id || null; convStudy = d.study || null; }
       replay((d && d.entries) || []);
     }).catch(function () {});
   }
@@ -747,7 +770,8 @@
     var fresh = el("agent-new");
     if (fresh) {
       fresh.addEventListener("click", function () {
-        post("/api/agent/conversation/new", {}).then(function () {
+        post("/api/agent/conversation/new", {}).then(function (d) {
+          if (d && d.ok) convId = d.id || null;
           resetThread();
           hideList();
           el("agent-request").focus();
@@ -793,6 +817,7 @@
                   location.reload();
                   return;
                 }
+                convId = o.id || null; convStudy = o.study || null;
                 resetThread();
                 hideList();
                 replay(o.entries || []);
