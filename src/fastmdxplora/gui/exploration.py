@@ -574,6 +574,18 @@ class DashboardRuntime:
                 return self.workspace_root / _NO_CURRENT_RUN
             return self.active_root or self.workspace_root
 
+    def _progress_of(self, root: Path | None) -> dict[str, Any] | None:
+        """The running study's stage and fraction complete, for the sidebar's
+        Running line. Read from its own telemetry; nothing is guessed."""
+        if root is None:
+            return None
+        status = _json_mapping(Path(root) / "simulation" / "live_status.json")
+        step, total = status.get("current_step"), status.get("total_planned_steps")
+        out: dict[str, Any] = {"stage": status.get("stage")}
+        if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
+            out["percent"] = round(100.0 * float(step) / float(total), 1)
+        return out
+
     def _viewing_the_running_study(self) -> bool:
         # An unset running_root means the process belongs to whatever is
         # viewed, which is what one field used to mean and what every
@@ -776,6 +788,8 @@ class DashboardRuntime:
                 "process_running": running and viewing_running,
                 "running_elsewhere": (str(self.running_root)
                                       if running and not viewing_running else None),
+                "running_elsewhere_progress": (self._progress_of(self.running_root)
+                                               if running and not viewing_running else None),
                 "returncode": self.process_returncode,
                 "error": self.completion_error if viewing_running else None,
                 "started_at": self.process_started_at,

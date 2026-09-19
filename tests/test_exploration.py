@@ -621,3 +621,44 @@ def test_the_sidebar_has_the_load_control():
     frame = (pathlib.Path(gui.__file__).parent / "static"
              / "frame.js").read_text(encoding="utf-8")
     assert 'fetch("/api/explore/switch"' in frame
+
+
+def test_the_running_study_reports_its_progress_when_viewed_from_elsewhere(tmp_path):
+    # The sidebar's Running line shows the system, its fraction complete,
+    # and a View button. The fraction is read from the running study's
+    # own telemetry; nothing is guessed.
+    import json
+
+    rt, base = _switch_runtime(tmp_path)
+    a, b = _make_run(base, "fastmdxplora_1UAO_study_20260919022007"), _make_run(base, "b")
+    (a / "simulation" / "live_status.json").write_text(json.dumps(
+        {"stage": "production", "current_step": 175000, "total_planned_steps": 350000}),
+        encoding="utf-8")
+
+    class Proc:
+        def poll(self):
+            return None
+
+    rt.active_root = a.resolve()
+    rt.running_root = a.resolve()
+    rt.process = Proc()
+    rt.process_started_at = "2026-01-01T00:00:00+00:00"
+    rt.switch_to(b)
+    snap = rt.snapshot()
+    assert snap["running_elsewhere_progress"] == {"stage": "production", "percent": 50.0}
+    rt.switch_to(a)
+    assert rt.snapshot()["running_elsewhere_progress"] is None
+
+
+def test_the_sidebar_reads_top_down():
+    import pathlib
+
+    import fastmdxplora.gui as gui
+
+    page = (pathlib.Path(gui.__file__).parent / "templates"
+            / "dashboard.html").read_text(encoding="utf-8")
+    study = page[page.index('class="sidebar-study"'):page.index('class="sidebar-progress"')]
+    # Status row, then Running, then Load available study.
+    assert study.index('id="topbar-status-text"') < study.index('id="study-elsewhere"') < study.index('id="load-study"')
+    assert 'id="study-elsewhere-pct"' in study
+    assert ">Load available study<" in study

@@ -146,16 +146,22 @@
           <span id="sidebar-status-dot" hidden></span>
           <span id="sidebar-run-name" hidden></span>
         </div>
-        <div class="study-switch">
-          <button class="ghost-btn" type="button" id="load-study" title="Load a different study's output folder">Load study</button>
-          <input type="hidden" id="load-study-path">
+        <!-- The study block reads top-down as a person thinks: what is on
+             screen (above), what is running elsewhere (this, when it is),
+             what else can be opened (the button). From this GUI at most one
+             study runs at a time, so this is a line, not a list. -->
+        <div class="study-running" id="study-elsewhere" hidden>
+          <div class="study-section-label mono">Running</div>
+          <div class="study-running-row">
+            <span class="status-dot status-dot-live" aria-hidden="true"></span>
+            <span class="study-running-name mono" id="study-elsewhere-name"></span>
+            <span class="study-running-pct mono" id="study-elsewhere-pct"></span>
+            <button class="ghost-btn" type="button" id="study-elsewhere-view" title="View the running study">View</button>
+          </div>
         </div>
-        <!-- Shown when a run is going in a folder other than the one on
-             screen: what is live, and one click back to it. -->
-        <div class="study-elsewhere" id="study-elsewhere" hidden>
-          <span class="status-dot status-dot-live"></span>
-          <span>Running: <span id="study-elsewhere-name" class="mono"></span></span>
-          <button class="ghost-btn" type="button" id="study-elsewhere-view">View</button>
+        <div class="study-switch">
+          <button class="ghost-btn" type="button" id="load-study" title="Open another study from this workspace">Load available study</button>
+          <input type="hidden" id="load-study-path">
         </div>
         <div class="study-path mono" id="sidebar-output-folder" title="Output folder">—</div>
       </div>

@@ -2998,15 +2998,21 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .study-switch { margin-top: 8px; }
 .study-switch .ghost-btn { padding: 5px 9px; font-size: 11px; width: 100%; }
 
-.study-elsewhere {
-    margin-top: 8px; padding: 6px 8px; border-radius: 6px;
+.study-running { margin-top: 10px; }
+.study-section-label {
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 4px;
+}
+.study-running-row {
     display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; border-radius: 6px;
     background: var(--background-elevated); border: 1px solid var(--border-subtle);
     font-size: 11px; color: var(--text-secondary);
 }
-.study-elsewhere .status-dot { width: 6px; height: 6px; margin: 0; }
-.study-elsewhere > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.study-elsewhere .ghost-btn { padding: 3px 8px; font-size: 10px; }
+.study-running-row .status-dot { width: 6px; height: 6px; margin: 0; }
+.study-running-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.study-running-pct { color: var(--text-muted); font-size: 10.5px; }
+.study-running-row .ghost-btn { padding: 2px 7px; font-size: 10px; }
 
 .agent-conv-list {
     margin: 0 0 12px; padding: 6px; border-radius: 10px;

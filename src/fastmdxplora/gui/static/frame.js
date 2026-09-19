@@ -430,8 +430,19 @@
         elsewherePath = (s && s.running_elsewhere) || "";
         elsewhere.hidden = !elsewherePath;
         if (elsewherePath && elsewhereName) {
-          elsewhereName.textContent = elsewherePath.split("/").pop();
+          /* The system's name, as the folder now carries it:
+           * fastmdxplora_<system>_study_<stamp>. Older folders show
+           * their whole name. */
+          var folder = elsewherePath.split("/").pop();
+          var m = /^fastmdxplora_(.+)_study_\d+$/.exec(folder);
+          elsewhereName.textContent = m ? m[1] : folder;
           elsewhereName.title = elsewherePath;
+          var pct = el("study-elsewhere-pct");
+          var prog = s.running_elsewhere_progress || {};
+          if (pct) {
+            pct.textContent = typeof prog.percent === "number" ? prog.percent.toFixed(1) + "%"
+              : (prog.stage ? String(prog.stage) : "");
+          }
         }
       });
       if (elsewhereView) {
