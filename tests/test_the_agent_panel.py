@@ -2097,3 +2097,38 @@ class TestSixFromLaunchingIt(unittest.TestCase):
 
         source = inspect.getsource(document)
         self.assertIn("v is not None and v != \"\"", source)
+
+
+class TestTheCentreStaysCentred(unittest.TestCase):
+    """The centre column stays visible and centred whatever is folded.
+
+    Collapsing the sidebar had pinned the page shell 24px from the left,
+    so with both columns folded the content sat hard against the edge and
+    read as gone. The shell centres in its column -- max-width and margin
+    auto -- and the column is minmax(0, 1fr) in every collapse state, so
+    it takes the freed width and the content sits in the middle of it.
+    """
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def test_no_left_pin_when_the_sidebar_folds(self):
+        self.assertNotIn("margin-left: 24px", self.css())
+
+    def test_the_shell_centres_in_its_column(self):
+        self.assertIn(".page-shell { max-width: 900px; margin: 0 auto; width: 100%; }", self.css())
+
+    def test_the_centre_track_is_a_fraction_in_every_state(self):
+        css = self.css()
+        for sel in ("body.panel-collapsed .app-shell {",
+                    "body.sidebar-collapsed .app-shell {",
+                    "body.sidebar-collapsed.panel-collapsed .app-shell {"):
+            block = css[css.index(sel):css.index("}", css.index(sel))]
+            with self.subTest(sel=sel):
+                # The third track -- the centre -- is the fraction.
+                self.assertIn("minmax(0, 1fr)", block)

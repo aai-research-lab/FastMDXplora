@@ -2986,8 +2986,3 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     background: var(--background-primary);
 }
 
-/* With the sidebar folded the centre should take the room, not leave it
-   as margin. The reading cap stays, but the column aligns left so the
-   content moves toward where the sidebar was rather than sitting centred
-   with a gap on its left. */
-body.sidebar-collapsed .page-shell { margin-left: 24px; }
