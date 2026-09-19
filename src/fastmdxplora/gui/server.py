@@ -298,12 +298,12 @@ def make_handler(
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import read_conversation
 
-                self._send_json(read_conversation(app_runtime.exploration_root))
+                self._send_json(read_conversation(app_runtime))
                 return
             if path == "/api/agent/conversations":
                 from fastmdxplora.gui.agent_panel import list_conversations
 
-                self._send_json(list_conversations(app_runtime.exploration_root))
+                self._send_json(list_conversations(app_runtime))
                 return
             if path in {"/api/browse", "/api/inspect-directory"} and not allow_control:
                 # These walk the filesystem for a folder picker, which is a
@@ -503,6 +503,7 @@ def make_handler(
                 "/api/agent/conversation/new",
                 "/api/agent/conversation/open",
                 "/api/agent/conversation/delete",
+                "/api/agent/conversation/attach",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -661,29 +662,37 @@ def make_handler(
                 from fastmdxplora.gui.agent_panel import write_conversation
 
                 self._send_json(write_conversation(
-                    app_runtime.exploration_root, (payload or {}).get("entries")))
+                    app_runtime, (payload or {}).get("entries")))
                 return
             if path == "/api/agent/conversation/clear":
                 from fastmdxplora.gui.agent_panel import clear_conversation
 
-                self._send_json(clear_conversation(app_runtime.exploration_root))
+                self._send_json(clear_conversation(app_runtime))
                 return
             if path == "/api/agent/conversation/new":
                 from fastmdxplora.gui.agent_panel import new_conversation
 
-                self._send_json(new_conversation(app_runtime.exploration_root))
+                self._send_json(new_conversation(app_runtime))
                 return
             if path == "/api/agent/conversation/open":
                 from fastmdxplora.gui.agent_panel import open_conversation
 
-                self._send_json(open_conversation(app_runtime.exploration_root,
-                                                  (payload or {}).get("id")))
+                self._send_json(open_conversation(app_runtime,
+                                                  (payload or {}).get("id"),
+                                                  (payload or {}).get("study")))
+                return
+            if path == "/api/agent/conversation/attach":
+                from fastmdxplora.gui.agent_panel import attach_conversation
+
+                self._send_json(attach_conversation(app_runtime,
+                                                    (payload or {}).get("study")))
                 return
             if path == "/api/agent/conversation/delete":
                 from fastmdxplora.gui.agent_panel import delete_conversation
 
-                self._send_json(delete_conversation(app_runtime.exploration_root,
-                                                    (payload or {}).get("id")))
+                self._send_json(delete_conversation(app_runtime,
+                                                    (payload or {}).get("id"),
+                                                    (payload or {}).get("study")))
                 return
             if path == "/api/explore/switch":
                 folder = str((payload or {}).get("folder") or "").strip()

@@ -446,34 +446,58 @@ def _hms(seconds: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Conversations, kept.
+# Conversations belong to studies.
 #
-# The thread lived only in the browser's memory: a refresh emptied it.
-# Then it was one file per workspace, and "New conversation" deleted it.
-# A conversation about a study is part of the record, and a person should
-# be able to start a fresh thread without losing the last one, and come
-# back to any of them. One folder per workspace, one file per
-# conversation, and a pointer to the current one.
+# The model is the one Claude's users already know: a chat belongs to a
+# project, and every chat in a project sees the project's context. Here a
+# study is the project. A conversation lives inside the study folder it is
+# about, at <study>/agent/conversations/, so copying a study carries the
+# conversations that made it -- the record stays with the data. A
+# conversation about no study in particular lives at the workspace level,
+# as a chat outside any project does. Opening a conversation from another
+# study loads that study, so the thread and the Agent's context are never
+# about two different runs. A conversation that launches a run moves into
+# the study it created: how a study came to be belongs with the study.
 # ---------------------------------------------------------------------------
 
-CONVERSATIONS_DIR = ".fastmdxplora_agent_conversations"
-CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"  # the pre-0047 single file
+CONVERSATIONS_SUBDIR = Path("agent") / "conversations"
+WORKSPACE_CONVERSATIONS_DIR = ".fastmdxplora_agent_conversations"
+CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"  # pre-0047 single file
 CONVERSATION_KEEP = 400
 
 
-def _store(workspace: Any) -> Path:
-    return Path(workspace) / CONVERSATIONS_DIR
+def _is_study(path: Any) -> bool:
+    """A folder FastMDXplora wrote: a manifest or a phase directory."""
+    if not path:
+        return False
+    p = Path(path)
+    return p.is_dir() and any((p / m).exists()
+                              for m in ("manifest.json", "simulation", "analysis", "report", "setup"))
+
+
+def _store_for(workspace: Any, study: Any) -> Path:
+    """Where a scope's conversations are kept."""
+    if study is not None and _is_study(study):
+        return Path(study) / CONVERSATIONS_SUBDIR
+    return Path(workspace) / WORKSPACE_CONVERSATIONS_DIR
+
+
+def _scope(runtime: Any) -> tuple[Path, Path | None]:
+    """(workspace, study-or-None) for the runtime's current view."""
+    workspace = Path(getattr(runtime, "exploration_root", None) or ".")
+    study = getattr(runtime, "active_root", None)
+    return workspace, (Path(study) if study and _is_study(study) else None)
 
 
 def _migrate_single_file(workspace: Any) -> None:
-    """The one-file thread from before becomes the first conversation."""
+    """The one-file thread from before 0047 becomes a workspace conversation."""
     import json
     import os
 
     old = Path(workspace) / CONVERSATION_FILE
     if not old.is_file():
         return
-    store = _store(workspace)
+    store = Path(workspace) / WORKSPACE_CONVERSATIONS_DIR
     store.mkdir(parents=True, exist_ok=True)
     try:
         data = json.loads(old.read_text(encoding="utf-8"))
@@ -506,9 +530,8 @@ def _title_of(entries: list) -> str:
 def _read_one(store: Path, cid: str) -> list:
     import json
 
-    path = store / f"{cid}.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads((store / f"{cid}.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
     entries = data.get("entries") if isinstance(data, dict) else None
@@ -521,15 +544,15 @@ def _write_one(store: Path, cid: str, entries: list) -> None:
 
     clean = [e for e in entries if isinstance(e, dict) and e.get("role") in ("user", "agent")]
     clean = clean[-CONVERSATION_KEEP:]
+    store.mkdir(parents=True, exist_ok=True)
     path = store / f"{cid}.json"
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"version": 2, "id": cid, "entries": clean}, indent=1),
+    tmp.write_text(json.dumps({"version": 3, "id": cid, "entries": clean}, indent=1),
                    encoding="utf-8")
     os.replace(tmp, path)
 
 
-def _current_id(workspace: Any) -> str | None:
-    store = _store(workspace)
+def _current_in(store: Path) -> str | None:
     try:
         cid = (store / "current").read_text(encoding="utf-8").strip()
     except OSError:
@@ -537,28 +560,52 @@ def _current_id(workspace: Any) -> str | None:
     return cid if (store / f"{cid}.json").is_file() else None
 
 
-def read_conversation(workspace: Any) -> dict[str, Any]:
-    """The current thread, or an empty one. A broken file is an empty
-    thread: a person should not be locked out of the Agent by a cache."""
+def _valid_id(cid: Any) -> bool:
+    cid = str(cid or "")
+    return cid.startswith("conv-") and "/" not in cid and ".." not in cid
+
+
+def _study_label(study: Path) -> str:
+    """The study's system name if the manifest has it, else the folder."""
+    import json
+
+    try:
+        manifest = json.loads((study / "manifest.json").read_text(encoding="utf-8"))
+        system = (manifest.get("system") or {}).get("system") or manifest.get("system_input")
+        if system:
+            return str(Path(str(system)).stem)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return study.name
+
+
+# ---- the API the endpoints call, all scoped by the runtime's view ---------
+
+def read_conversation(runtime: Any) -> dict[str, Any]:
+    """The current conversation in the current scope, or an empty one."""
+    workspace, study = _scope(runtime)
     _migrate_single_file(workspace)
-    cid = _current_id(workspace)
+    store = _store_for(workspace, study)
+    cid = _current_in(store)
+    scope = {"study": str(study) if study else None,
+             "study_label": _study_label(study) if study else None}
     if cid is None:
-        return {"ok": True, "id": None, "entries": []}
-    return {"ok": True, "id": cid, "entries": _read_one(_store(workspace), cid)}
+        return {"ok": True, "id": None, "entries": [], **scope}
+    return {"ok": True, "id": cid, "entries": _read_one(store, cid), **scope}
 
 
-def write_conversation(workspace: Any, entries: Any) -> dict[str, Any]:
-    """Replace the current thread with what the browser holds. Starts one
-    if none is current. Bounded, atomic."""
+def write_conversation(runtime: Any, entries: Any) -> dict[str, Any]:
+    """Replace the current conversation with what the browser holds."""
     if not isinstance(entries, list):
         return {"ok": False, "error": "entries must be a list"}
+    workspace, study = _scope(runtime)
     _migrate_single_file(workspace)
-    store = _store(workspace)
+    store = _store_for(workspace, study)
     try:
-        store.mkdir(parents=True, exist_ok=True)
-        cid = _current_id(workspace)
+        cid = _current_in(store)
         if cid is None:
             cid = _new_id()
+            store.mkdir(parents=True, exist_ok=True)
             (store / "current").write_text(cid, encoding="utf-8")
         _write_one(store, cid, entries)
     except OSError as exc:
@@ -566,12 +613,11 @@ def write_conversation(workspace: Any, entries: Any) -> dict[str, Any]:
     return {"ok": True, "id": cid, "entries": _read_one(store, cid)}
 
 
-def new_conversation(workspace: Any) -> dict[str, Any]:
-    """Start a fresh thread. The current one stays where it is."""
-    _migrate_single_file(workspace)
-    store = _store(workspace)
+def new_conversation(runtime: Any) -> dict[str, Any]:
+    """A fresh thread in the current scope. The last one stays."""
+    workspace, study = _scope(runtime)
+    store = _store_for(workspace, study)
     try:
-        store.mkdir(parents=True, exist_ok=True)
         cid = _new_id()
         _write_one(store, cid, [])
         (store / "current").write_text(cid, encoding="utf-8")
@@ -580,54 +626,121 @@ def new_conversation(workspace: Any) -> dict[str, Any]:
     return {"ok": True, "id": cid, "entries": []}
 
 
-def list_conversations(workspace: Any) -> dict[str, Any]:
-    """Every conversation in the workspace, newest first."""
+def list_conversations(runtime: Any) -> dict[str, Any]:
+    """Every conversation the workspace holds, grouped by study.
+
+    The current study's come first, then each other study's, then the
+    workspace's own. Newest first within each. Cheap: a few small files
+    per study, read once per opening of the list.
+    """
+    workspace, study = _scope(runtime)
     _migrate_single_file(workspace)
-    store = _store(workspace)
-    current = _current_id(workspace)
-    rows = []
-    if store.is_dir():
+
+    def rows_in(store: Path, study_path: Path | None) -> list[dict[str, Any]]:
+        if not store.is_dir():
+            return []
+        current = _current_in(store)
+        out = []
         for path in sorted(store.glob("conv-*.json"), reverse=True):
             cid = path.stem
             entries = _read_one(store, cid)
-            rows.append({"id": cid, "title": _title_of(entries),
-                         "entries": len(entries), "current": cid == current,
-                         "started": cid[5:13] + " " + cid[14:16] + ":" + cid[16:18]})
-    return {"ok": True, "current": current, "conversations": rows}
+            out.append({"id": cid, "title": _title_of(entries), "entries": len(entries),
+                        "current": cid == current,
+                        "study": str(study_path) if study_path else None,
+                        "study_label": _study_label(study_path) if study_path else None,
+                        "started": cid[5:13] + " " + cid[14:16] + ":" + cid[16:18]})
+        return out
+
+    groups: list[dict[str, Any]] = []
+    if study is not None:
+        groups.append({"study": str(study), "label": _study_label(study), "loaded": True,
+                       "conversations": rows_in(_store_for(workspace, study), study)})
+    for folder in sorted(workspace.iterdir() if workspace.is_dir() else [], reverse=True):
+        if study is not None and folder.resolve() == study.resolve():
+            continue
+        if _is_study(folder):
+            rows = rows_in(folder / CONVERSATIONS_SUBDIR, folder)
+            if rows:
+                groups.append({"study": str(folder), "label": _study_label(folder),
+                               "loaded": False, "conversations": rows})
+    ws_rows = rows_in(workspace / WORKSPACE_CONVERSATIONS_DIR, None)
+    if ws_rows or study is None:
+        groups.append({"study": None, "label": "No study", "loaded": study is None,
+                       "conversations": ws_rows})
+    return {"ok": True, "groups": groups}
 
 
-def open_conversation(workspace: Any, cid: Any) -> dict[str, Any]:
-    """Make a saved conversation the current one and return it."""
-    store = _store(workspace)
-    cid = str(cid or "")
-    if not cid.startswith("conv-") or "/" in cid or not (store / f"{cid}.json").is_file():
+def open_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, Any]:
+    """Make a conversation current. If it belongs to another study, load
+    that study first, so the thread and the Agent's context agree."""
+    if not _valid_id(cid):
         return {"ok": False, "error": "No such conversation."}
-    (store / "current").write_text(cid, encoding="utf-8")
-    return {"ok": True, "id": cid, "entries": _read_one(store, cid)}
+    workspace, current_study = _scope(runtime)
+    target = Path(study) if study else None
+    if target is not None and not _is_study(target):
+        return {"ok": False, "error": "No such study."}
+    if target is not None and (current_study is None or target.resolve() != current_study.resolve()):
+        switched = runtime.switch_to(target) if hasattr(runtime, "switch_to") else {"ok": False}
+        if not switched.get("ok"):
+            return {"ok": False, "error": switched.get("error") or "Could not load that study."}
+    store = _store_for(workspace, target)
+    if not (store / f"{cid}.json").is_file():
+        return {"ok": False, "error": "No such conversation."}
+    (store / "current").write_text(str(cid), encoding="utf-8")
+    return {"ok": True, "id": str(cid), "entries": _read_one(store, str(cid)),
+            "study": str(target) if target else None, "loaded_study": target is not None}
 
 
-def delete_conversation(workspace: Any, cid: Any) -> dict[str, Any]:
-    """Delete one conversation. Asked for by the person, per conversation,
-    never as a side effect of starting another."""
-    store = _store(workspace)
-    cid = str(cid or "")
+def attach_conversation(runtime: Any, study: Any) -> dict[str, Any]:
+    """Move the current conversation into a study it just launched."""
+    import os
+
+    target = Path(study) if study else None
+    if target is None or not target.is_dir():
+        return {"ok": False, "error": "No such study."}
+    workspace, current_study = _scope(runtime)
+    source = _store_for(workspace, current_study)
+    cid = _current_in(source)
+    if cid is None:
+        return {"ok": True, "moved": False}
+    dest = target / CONVERSATIONS_SUBDIR
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        os.replace(source / f"{cid}.json", dest / f"{cid}.json")
+        (dest / "current").write_text(cid, encoding="utf-8")
+        (source / "current").unlink(missing_ok=True)
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "moved": True, "id": cid, "study": str(target)}
+
+
+def delete_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, Any]:
+    """Delete one conversation, wherever it is. Asked for, per
+    conversation, never a side effect of anything else."""
+    if not _valid_id(cid):
+        return {"ok": False, "error": "No such conversation."}
+    workspace, _ = _scope(runtime)
+    target = Path(study) if study else None
+    store = _store_for(workspace, target)
     path = store / f"{cid}.json"
-    if not cid.startswith("conv-") or "/" in cid or not path.is_file():
+    if not path.is_file():
         return {"ok": False, "error": "No such conversation."}
     try:
         path.unlink()
-        if _current_id(workspace) == cid:
+        if _current_in(store) is None:
             (store / "current").unlink(missing_ok=True)
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True}
 
 
-def clear_conversation(workspace: Any) -> dict[str, Any]:
-    """Kept for the old endpoint: it now means "delete the current one"."""
-    cid = _current_id(workspace)
+def clear_conversation(runtime: Any) -> dict[str, Any]:
+    """The old endpoint: delete the current conversation in scope."""
+    workspace, study = _scope(runtime)
+    store = _store_for(workspace, study)
+    cid = _current_in(store)
     if cid is None:
         return {"ok": True, "entries": []}
-    answer = delete_conversation(workspace, cid)
+    answer = delete_conversation(runtime, cid, str(study) if study else None)
     answer["entries"] = []
     return answer

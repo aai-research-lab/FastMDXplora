@@ -670,6 +670,14 @@
            * button says what happened and stays put. */
           runBtn.textContent = "Running";
           note(box, "Started. Watch it in the sidebar and the Overview.", true);
+          /* The conversation that launched a study belongs with it. Without
+           * this the thread would vanish from view the moment the page
+           * switched to the new study's empty list. */
+          if (started.output) {
+            post("/api/agent/conversation/attach", { study: started.output }).then(function (m) {
+              if (m && m.moved) note(box, "This conversation now belongs to the new study.", true);
+            }).catch(function () {});
+          }
         } else {
           runBtn.disabled = false;
           noteEl.textContent = started.error;
@@ -754,46 +762,67 @@
     function showList() {
       fetch("/api/agent/conversations").then(function (r) { return r.json(); }).then(function (d) {
         list.innerHTML = "";
-        var rows = (d && d.conversations) || [];
-        if (!rows.length) {
-          var e = document.createElement("div");
-          e.className = "agent-conv-empty";
-          e.textContent = "No conversations yet.";
-          list.appendChild(e);
-        }
-        rows.forEach(function (c) {
-          var row = document.createElement("div");
-          row.className = "agent-conv-row" + (c.current ? " current" : "");
-          var title = document.createElement("span");
-          title.className = "title";
-          title.textContent = c.title + (c.current ? "  (open)" : "");
-          title.title = c.entries + " messages";
-          title.addEventListener("click", function () {
-            post("/api/agent/conversation/open", { id: c.id }).then(function (o) {
-              if (!o || !o.ok) return;
-              resetThread();
-              hideList();
-              replay(o.entries || []);
+        var groups = (d && d.groups) || [];
+        var any = false;
+        groups.forEach(function (g) {
+          if (!g.conversations.length && !g.loaded) return;
+          var head = document.createElement("div");
+          head.className = "agent-conv-group" + (g.loaded ? " loaded" : "");
+          head.textContent = g.label + (g.loaded ? "  \u00b7 loaded" : "");
+          list.appendChild(head);
+          if (!g.conversations.length) {
+            var e = document.createElement("div");
+            e.className = "agent-conv-empty";
+            e.textContent = "No conversations yet.";
+            list.appendChild(e);
+          }
+          g.conversations.forEach(function (c) {
+            any = true;
+            var row = document.createElement("div");
+            row.className = "agent-conv-row" + (c.current && g.loaded ? " current" : "");
+            var title = document.createElement("span");
+            title.className = "title";
+            title.textContent = c.title + (c.current && g.loaded ? "  (open)" : "");
+            title.title = c.entries + " messages" + (g.loaded ? "" : " \u00b7 opens this study");
+            title.addEventListener("click", function () {
+              post("/api/agent/conversation/open", { id: c.id, study: g.study }).then(function (o) {
+                if (!o || !o.ok) { window.alert((o && o.error) || "Could not open it."); return; }
+                if (o.loaded_study && !g.loaded) {
+                  /* Another study: the page reloads so every panel reads it,
+                   * and the conversation is current there on return. */
+                  location.reload();
+                  return;
+                }
+                resetThread();
+                hideList();
+                replay(o.entries || []);
+              });
             });
-          });
-          var when = document.createElement("span");
-          when.className = "when";
-          when.textContent = c.started;
-          var del = document.createElement("button");
-          del.className = "del";
-          del.type = "button";
-          del.title = "Delete this conversation";
-          del.textContent = "\u2715";
-          del.addEventListener("click", function () {
-            if (!window.confirm("Delete \u201c" + c.title + "\u201d? This cannot be undone.")) return;
-            post("/api/agent/conversation/delete", { id: c.id }).then(function () {
-              if (c.current) resetThread();
-              showList();
+            var when = document.createElement("span");
+            when.className = "when";
+            when.textContent = c.started;
+            var del = document.createElement("button");
+            del.className = "del";
+            del.type = "button";
+            del.title = "Delete this conversation";
+            del.textContent = "\u2715";
+            del.addEventListener("click", function () {
+              if (!window.confirm("Delete \u201c" + c.title + "\u201d? This cannot be undone.")) return;
+              post("/api/agent/conversation/delete", { id: c.id, study: g.study }).then(function () {
+                if (c.current && g.loaded) resetThread();
+                showList();
+              });
             });
+            row.appendChild(title); row.appendChild(when); row.appendChild(del);
+            list.appendChild(row);
           });
-          row.appendChild(title); row.appendChild(when); row.appendChild(del);
-          list.appendChild(row);
         });
+        if (!any && !groups.length) {
+          var none = document.createElement("div");
+          none.className = "agent-conv-empty";
+          none.textContent = "No conversations yet.";
+          list.appendChild(none);
+        }
         list.hidden = false;
       }).catch(function () {});
     }
