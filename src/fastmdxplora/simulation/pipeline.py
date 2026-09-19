@@ -665,6 +665,12 @@ def _write_manifest(
         # replaying. `duration_ns_actual` below is the opposite: what the
         # run managed, which a replay must not inherit.
         "resolved": dict(resolved or {}),
+        # What this run continues, if it continues anything: the parent
+        # study, the checkpoint, and the step it was taken at. A segment's
+        # campaign record said this at the campaign; a hand-written
+        # resume_from said it nowhere, and the study folder read as an
+        # unrelated run of the same system. The study says it for itself.
+        "continues": _continuation_of(params),
         "n_production_frames": n_frames,
         "duration_ns_actual": duration_ns_actual,
         "artifacts_planned": canonical,
@@ -673,3 +679,28 @@ def _write_manifest(
     }
     with (output_dir / "simulation_parameters.json").open("w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, default=str)
+
+
+def _continuation_of(params: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The parent of a resumed run, from the checkpoint's sidecar."""
+    checkpoint = (params or {}).get("resume_from")
+    if not checkpoint:
+        return None
+    from pathlib import Path
+
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    path = Path(str(checkpoint)).expanduser()
+    side = read_checkpoint_sidecar(path) or {}
+    parent = side.get("study")
+    if not parent:
+        # No sidecar: the checkpoint's own folder is the best guess at
+        # the parent, and it is recorded as a guess.
+        parent = str(path.parent.parent) if path.parent.name == "simulation" else str(path.parent)
+    return {
+        "study": str(parent),
+        "checkpoint": str(path),
+        "from_step": side.get("step"),
+        "stage": side.get("stage"),
+        "known_from_sidecar": bool(side),
+    }

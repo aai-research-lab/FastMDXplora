@@ -94,7 +94,7 @@ def _interesting(directory: Path, depth: int = _LOOK_DEPTH) -> dict[str, Any]:
     except (OSError, PermissionError):
         return {"trajectories": 0, "structures": 0, "readable": False,
                 "truncated": False}
-    return {
+    out: dict[str, Any] = {
         "trajectories": trajectories,
         "structures": structures,
         "readable": True,
@@ -103,6 +103,26 @@ def _interesting(directory: Path, depth: int = _LOOK_DEPTH) -> dict[str, Any]:
         # what every run leaves at its root, whatever phases it ran.
         "study": _is_study(directory),
     }
+    if out["study"]:
+        cont = continuation_of(directory)
+        if cont:
+            # Shown as a continuation of its parent, by the parent's name.
+            out["continues"] = Path(str(cont["study"])).name
+            out["from_step"] = cont.get("from_step")
+    return out
+
+
+def continuation_of(directory: Path) -> dict[str, Any] | None:
+    """What a study continues, from its simulation manifest, or None."""
+    import json
+
+    manifest = directory / "simulation" / "simulation_parameters.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    cont = data.get("continues") if isinstance(data, dict) else None
+    return cont if isinstance(cont, dict) and cont.get("study") else None
 
 
 def _is_study(directory: Path) -> bool:

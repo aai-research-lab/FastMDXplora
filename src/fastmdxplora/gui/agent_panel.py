@@ -329,6 +329,10 @@ def _run_status(runtime: Any) -> str | None:
         lines.append("")
         lines.append("the config this run used (the short form, as written):")
         lines.append(used)
+    cont = _continuation_summary(getattr(runtime, "active_root", None))
+    if cont:
+        lines.append("")
+        lines.append(cont)
     results = _results_summary(getattr(runtime, "active_root", None))
     if results:
         lines.append("")
@@ -573,17 +577,24 @@ def _valid_id(cid: Any) -> bool:
 
 
 def _study_label(study: Path) -> str:
-    """The study's system name if the manifest has it, else the folder."""
+    """The study's system name if the manifest has it, else the folder;
+    and, for a continuation, whose."""
     import json
 
+    label = study.name
     try:
         manifest = json.loads((study / "manifest.json").read_text(encoding="utf-8"))
         system = (manifest.get("system") or {}).get("system") or manifest.get("system_input")
         if system:
-            return str(Path(str(system)).stem)
+            label = str(Path(str(system)).stem)
     except (OSError, ValueError, AttributeError):
         pass
-    return study.name
+    from fastmdxplora.gui.browse import continuation_of
+
+    cont = continuation_of(study)
+    if cont:
+        label += f" (continues {Path(str(cont['study'])).name})"
+    return label
 
 
 # ---- the API the endpoints call, all scoped by the runtime's view ---------
@@ -829,3 +840,37 @@ def read_attachment(path: Any) -> dict[str, Any]:
         return {"ok": False, "error": f"{file.name} looks binary; the Agent reads text."}
     return {"ok": True, "name": file.name, "path": str(file.resolve()),
             "size": len(raw), "sha256": digest, "text": text, "truncated": truncated}
+
+
+def _continuation_summary(root: Any) -> str:
+    """Whether and how this study can be continued, with the ready-made
+    config, so "continue to 0.5 ns" is answered from the record.
+
+    The Agent used to write resume_from by hand -- leaving minimisation
+    and equilibration on, which the runner now refuses -- and ask for the
+    equilibration lengths it needed for the arithmetic. The planner has
+    them, and the config it makes is the one to hand back.
+    """
+    if not root:
+        return ""
+    try:
+        import yaml
+
+        from fastmdxplora.simulation.resume import continuation_of
+
+        cont = continuation_of(root)
+    except Exception:  # noqa: BLE001 - context, not load-bearing
+        return ""
+    if not cont.possible:
+        if "no checkpoint" in (cont.refusal or ""):
+            return ""
+        return f"continuing this study: {cont.as_text()}"
+    short = dict(cont.config)
+    text = yaml.safe_dump(short, sort_keys=False, default_flow_style=False).strip()
+    return (
+        f"continuing this study: {cont.as_text()}. To continue it, use this "
+        f"config as the base and set simulation.duration_ns to how much MORE "
+        f"production is wanted (the remainder of the plan is filled in); "
+        f"for a total, subtract {cont.production_done_ns:.3f} ns already done. "
+        f"Do not turn minimisation or equilibration back on:\n```yaml\n{text}\n```"
+    )

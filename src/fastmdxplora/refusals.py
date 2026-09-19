@@ -534,6 +534,18 @@ CODES: tuple[Code, ...] = (
          "would pull from an anchor the system is not at.",
          Kind.SEMANTIC, Disclosure.NOTHING,
          detail_keys=("method", "segments")),
+    Code("simulation.resume.would_reequilibrate",
+         "A checkpoint from production was to be minimised or equilibrated "
+         "again, which throws away its velocities and makes the continuation "
+         "a new run from a snapshot rather than the same trajectory.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("path", "stage", "step", "minimize", "nvt_steps", "npt_steps")),
+    Code("simulation.resume.timestep_differs",
+         "A checkpoint was to be continued with a different timestep from "
+         "the one that wrote it; the integrator state it carries is for the "
+         "other.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("path", "written_fs", "requested_fs")),
     Code("simulation.run.unstable",
          "The integration produced a non-finite state.",
          Kind.SEMANTIC, Disclosure.NOTHING,

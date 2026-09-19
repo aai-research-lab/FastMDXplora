@@ -684,7 +684,8 @@ def write_trajectory_topology(
 
 
 def _attach_checkpoint_reporter(
-    omm: dict, simulation: Any, chk_path: Path, *, interval: int
+    omm: dict, simulation: Any, chk_path: Path, *, interval: int,
+    sidecar: dict[str, Any] | None = None,
 ) -> Any:
     """Attach a binary CheckpointReporter for crash recovery / restart.
 
@@ -715,6 +716,24 @@ def _attach_checkpoint_reporter(
         return None
     chk_path.parent.mkdir(parents=True, exist_ok=True)
     reporter = omm["CheckpointReporter"](str(chk_path), interval)
+    if sidecar is not None:
+        # Each time OpenMM writes the checkpoint, the sidecar is written
+        # with the step it was taken at, so the file can say what it is.
+        inner = reporter
+
+        class _WithSidecar:
+            def describeNextReport(self, sim):  # noqa: N802 - OpenMM API
+                return inner.describeNextReport(sim)
+
+            def report(self, sim, state):
+                inner.report(sim, state)
+                try:
+                    write_checkpoint_sidecar(
+                        chk_path, step=int(sim.currentStep), **sidecar)
+                except Exception:  # noqa: BLE001 - the checkpoint itself was written
+                    logger.debug("Could not write the checkpoint sidecar.")
+
+        reporter = _WithSidecar()
     simulation.reporters.append(reporter)
     return reporter
 
@@ -1214,6 +1233,101 @@ def trajectory_interval_for(
 # ---------------------------------------------------------------------------
 
 CHECKPOINT_DIGEST_SUFFIX = ".sha256"
+
+
+CHECKPOINT_SIDECAR_SUFFIX = ".json"
+
+
+def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
+                             ensemble: str, temperature_K: float,
+                             timestep_fs: float, study: str | Path | None = None,
+                             system_digest: str | None = None) -> Path:
+    """What a checkpoint is, beside it: the stage that wrote it, the step,
+    the ensemble and temperature, the timestep, and the study.
+
+    A checkpoint carries positions, velocities and the integrator's state,
+    and nothing that says where in a run it was taken. Loading one from
+    production into a run that then minimises and equilibrates it throws
+    the velocities away and makes the continuation a new run from a
+    snapshot rather than the same trajectory; nothing refused, because
+    nothing knew. This is how the loader knows.
+    """
+    import json
+
+    checkpoint = Path(path)
+    sidecar = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    sidecar.write_text(json.dumps({
+        "stage": str(stage), "step": int(step), "ensemble": str(ensemble),
+        "temperature_K": float(temperature_K), "timestep_fs": float(timestep_fs),
+        "study": str(study) if study else None,
+        "system_digest": system_digest,
+        "written_at": datetime.now(timezone.utc).isoformat(),
+    }, indent=1), encoding="utf-8")
+    return sidecar
+
+
+def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
+    """The sidecar, or None for a checkpoint that has none: one a person
+    made by hand, or one from before the sidecar existed."""
+    import json
+
+    checkpoint = Path(path)
+    sidecar = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    if not sidecar.is_file():
+        return None
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def check_continuation(path: str | Path, *, minimize: bool, nvt_steps: int,
+                       npt_steps: int, timestep_fs: float) -> dict[str, Any] | None:
+    """Refuse a plan that would not continue the checkpoint.
+
+    A production checkpoint continues only into a run that neither
+    minimises nor equilibrates and keeps the timestep. A checkpoint with no
+    sidecar loads as it always did, with a warning naming the risk: there
+    is nothing to check it against, and refusing would lock out every
+    checkpoint made before this existed.
+    """
+    side = read_checkpoint_sidecar(path)
+    if side is None:
+        logger.warning(
+            "%s has no sidecar, so nothing says which stage wrote it; it is "
+            "loaded as given. If it came from production and this run "
+            "minimises or equilibrates, the continuation is a new run from a "
+            "snapshot, not the same trajectory.", Path(path).name)
+        return None
+    stage = str(side.get("stage") or "").lower()
+    if stage == "production" and (minimize or nvt_steps > 0 or npt_steps > 0):
+        from fastmdxplora.refusals import StudyError
+
+        raise StudyError(
+            f"{Path(path).name} was written during production at step "
+            f"{side.get('step')}; this run would "
+            + ", ".join(w for w, on in (("minimise it", minimize),
+                                        (f"run {nvt_steps} NVT steps on it", nvt_steps > 0),
+                                        (f"run {npt_steps} NPT steps on it", npt_steps > 0)) if on)
+            + ", which throws away its velocities and makes the continuation "
+              "a new run from a snapshot rather than the same trajectory. Set "
+              "`minimize: false`, `nvt_steps: 0`, `npt_steps: 0` -- or use "
+              "segments, which do this.",
+            code="simulation.resume.would_reequilibrate",
+            details={"path": str(path), "stage": stage, "step": side.get("step"),
+                     "minimize": minimize, "nvt_steps": nvt_steps, "npt_steps": npt_steps})
+    written_fs = side.get("timestep_fs")
+    if isinstance(written_fs, (int, float)) and abs(float(written_fs) - float(timestep_fs)) > 1e-9:
+        from fastmdxplora.refusals import StudyError
+
+        raise StudyError(
+            f"{Path(path).name} was written with a {written_fs} fs timestep; "
+            f"this run asks for {timestep_fs} fs. The integrator state it "
+            "carries is for the other. Keep the timestep the run had.",
+            code="simulation.resume.timestep_differs",
+            details={"path": str(path), "written_fs": written_fs, "requested_fs": timestep_fs})
+    return side
 
 
 def seal_checkpoint(path: str | Path) -> Path:
@@ -1803,6 +1917,12 @@ def run_simulation(
     _validate_state_finite(omm, simulation, stage="loading state.xml")
 
     if resume_from is not None:
+        # Before the load: would this run continue the checkpoint, or
+        # minimise and equilibrate it again? The sidecar says what stage
+        # wrote it; the plan says what this run would do to it.
+        check_continuation(resume_from, minimize=bool(minimize),
+                           nvt_steps=int(plan["nvt_steps"]), npt_steps=int(plan["npt_steps"]),
+                           timestep_fs=float(timestep_fs))
         # require_seal: the predecessor was written by this software and is
         # always sealed on a clean finish, so a missing seal means it was
         # killed mid-write.
@@ -2370,6 +2490,10 @@ def run_simulation(
         _attach_checkpoint_reporter(
             omm, simulation, output_dir / "checkpoint.chk",
             interval=checkpoint_interval_steps,
+            sidecar={"stage": "production", "ensemble": "npt" if wants_npt_production else "nvt",
+                     "temperature_K": float(temperature_K),
+                     "timestep_fs": float(timestep_fs),
+                     "study": str(output_dir.parent)},
         )
         if telemetry is not None:
             if plan["production_steps"] > 0:
@@ -2453,6 +2577,10 @@ def run_simulation(
             with checkpoint_path.open("wb") as fh:
                 fh.write(simulation.context.createCheckpoint())
             seal_checkpoint(checkpoint_path)
+            write_checkpoint_sidecar(
+                checkpoint_path, stage="production", step=int(simulation.currentStep),
+                ensemble="npt" if wants_npt_production else "nvt", temperature_K=float(temperature_K),
+                timestep_fs=float(timestep_fs), study=str(output_dir.parent))
         except Exception:  # noqa: BLE001 - a run that finished still finished
             logger.warning(
                 "Could not write a sealed checkpoint to %s; this run is "

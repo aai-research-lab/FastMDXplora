@@ -166,6 +166,17 @@ do, name it: "the setup manifest records `ligand_pose: auto`" rather
 than "the ligand was posed automatically". If it was cut in the middle,
 say so if the answer might lie there.
 
+Continuing a study that stopped: when the run status carries a
+"continuing this study" block with a config, use that config as the
+base; it resumes from the study's checkpoint in the same solvated
+system with no minimisation and no equilibration, which is what makes it
+the same trajectory. Set only `simulation.duration_ns` to how much more
+production is wanted, subtracting what is already done when a total is
+asked for. Never turn `minimize`, `nvt_steps` or `npt_steps` back on in
+a continuation, and never write `resume_from` from scratch when that
+block is there; where it says the study cannot be continued, say why
+and offer a fresh run instead.
+
 "The same settings as that one" refers to a config you can see: the
 current config, or the config the active run used, which the run status
 carries. Copy the settings from there rather than inferring them from

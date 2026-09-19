@@ -119,7 +119,7 @@
       const kind = entry.study ? "study"
         : entry.trajectories ? "trajectory"
         : entry.structures ? "structure" : null;
-      const holds = entry.study ? "study"
+      const holds = entry.study ? (entry.continues ? "continues " + entry.continues : "study")
         : entry.trajectories ? `${entry.trajectories} trajectory`
         : entry.structures ? `${entry.structures} structure` : null;
       list.appendChild(row(entry.name, entry.path, holds, true, kind));
