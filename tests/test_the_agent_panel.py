@@ -2224,4 +2224,10 @@ class TestItHasAName(unittest.TestCase):
 
         prompt = prompt_for("who are you?")
         self.assertIn("You are the FastMDXplora Agent.", prompt)
-        self.assertIn("Do not name the model\nor the company behind it", prompt)
+        # Asked the engine, it says: the one chosen in Settings, and names
+        # it when the config shows it. Hiding it from the person who chose
+        # it read as evasion, and the earlier "that is the whole answer"
+        # came back three times in a row.
+        self.assertIn("say it is the one chosen in Settings", prompt)
+        self.assertIn("do not repeat a phrase across turns", prompt)
+        self.assertNotIn("that is\nthe whole answer", prompt)
