@@ -267,6 +267,12 @@ class FastMDXplora:
             else Path(default_output_name(system_of(self.config)))
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Which process this study is, so a GUI opened on the folder later
+        # can adopt the run: show it as running and stop it if asked. The
+        # file goes when the process exits; a crash leaves it, and an
+        # adopter checks the process is alive and is this run before
+        # believing it.
+        _record_run_process(self.output_dir)
 
         self.options: dict[str, dict[str, Any]] = options or {}
         # Study-level settings (`agent`, `agent_model`), which describe the
@@ -1213,3 +1219,34 @@ class FastMDXplora:
         from fastmdxplora.utils.presenter import get_presenter
 
         return get_presenter()
+
+
+RUN_PROCESS_FILE = ".fastmdxplora_run.json"
+
+
+def _record_run_process(output_dir: Path) -> None:
+    import atexit
+    import json
+    import os
+    import sys
+
+    path = Path(output_dir) / RUN_PROCESS_FILE
+    try:
+        path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "argv": list(sys.argv),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }), encoding="utf-8")
+    except OSError:
+        return
+
+    def _remove(p: Path = path, pid: int = os.getpid()) -> None:
+        # Only this process's record: a child that inherited this hook must not
+        # remove the parent's.
+        try:
+            if os.getpid() == pid and p.is_file():
+                p.unlink()
+        except OSError:
+            pass
+
+    atexit.register(_remove)

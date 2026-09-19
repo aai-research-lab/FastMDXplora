@@ -701,3 +701,125 @@ def test_a_new_session_child_leaves_the_terminals_group():
     finally:
         child.terminate()
         child.wait()
+
+
+def _fake_run(study):
+    """A process whose command line names the study, as fastmdx's does."""
+    import subprocess
+    import sys
+    import time
+
+    script = study.parent / "fake_fastmdx.py"
+    script.write_text("import time; time.sleep(60)\n", encoding="utf-8")
+    child = subprocess.Popen([sys.executable, str(script), "explore", "--output", str(study)],
+                             start_new_session=True)
+    time.sleep(0.3)
+    return child
+
+
+def test_a_fresh_server_adopts_a_running_study_and_can_stop_it(tmp_path):
+    # A GUI reopened on a running study could watch it but not stop it,
+    # and its sidebar called it idle. The run records its PID; a server
+    # opened on the folder adopts it.
+    import json
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "fastmdxplora_1UAO_study_20260919120000")
+    child = _fake_run(study)
+    try:
+        (study / RUN_PROCESS_FILE).write_text(json.dumps(
+            {"pid": child.pid, "argv": ["fastmdx", "explore"], "started_at": "2026-09-19T12:00:00+00:00"}),
+            encoding="utf-8")
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        snap = rt.snapshot()
+        assert snap["status"] == "running"
+        assert snap["process_running"] is True
+        assert rt.process.pid == child.pid
+        assert rt.stop()["stopped"] is True
+        child.wait(timeout=5)
+        assert rt.snapshot()["status"] in {"failed", "completed"}
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+
+
+def test_a_stale_pid_record_is_not_adopted(tmp_path):
+    import json
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "s")
+    (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": 2 ** 22 - 7, "argv": []}),
+                                          encoding="utf-8")
+    rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+    assert rt.process is None
+    assert rt.snapshot()["status"] == "idle"
+
+
+def test_a_process_that_is_not_this_run_is_not_adopted(tmp_path):
+    # The PID is alive but its command line names neither the study nor
+    # the program: the OS reused the number for something else.
+    import json
+    import subprocess
+    import sys
+    import time
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "s")
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        time.sleep(0.2)
+        (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": other.pid, "argv": []}),
+                                              encoding="utf-8")
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        assert rt.process is None
+    finally:
+        other.kill()
+        other.wait()
+
+
+def test_load_study_adopts_a_running_one(tmp_path):
+    import json
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "fastmdxplora_1L2Y_study_20260919120000")
+    child = _fake_run(study)
+    try:
+        (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": child.pid, "argv": []}),
+                                              encoding="utf-8")
+        rt = DashboardRuntime(workspace_root=tmp_path / "w", exploration_root=tmp_path, active_root=None)
+        assert rt.switch_to(study)["ok"]
+        assert rt.snapshot()["status"] == "running"
+    finally:
+        child.kill()
+        child.wait()
+
+
+def test_the_orchestrator_records_its_pid_and_removes_it_on_exit(tmp_path):
+    import subprocess
+    import sys
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    out = tmp_path / "study"
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    code = "\n".join([
+        f"import sys; sys.path.insert(0, {src!r})",
+        "from fastmdxplora.orchestrator import _record_run_process",
+        "from pathlib import Path",
+        f"_record_run_process(Path({str(out)!r}))",
+        f"import json, os; print(json.load(open(Path({str(out)!r}) / {RUN_PROCESS_FILE!r}))['pid'] == os.getpid())",
+    ])
+    out.mkdir()
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20)
+    assert result.stdout.strip().endswith("True"), result.stderr
+    # Gone once the process has exited.
+    assert not (out / RUN_PROCESS_FILE).exists()

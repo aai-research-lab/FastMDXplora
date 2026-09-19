@@ -65,6 +65,121 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class _AdoptedProcess:
+    """A run this server did not start, held by its PID.
+
+    Everything the runtime does with a Popen -- poll, terminate, kill,
+    wait, pid -- works here through signals. The exit code of a process
+    that was never this server's child cannot be read, so once it is gone poll
+    reports 0 if the study's manifest says it completed, else 1.
+    """
+
+    def __init__(self, pid: int, root: Path) -> None:
+        self.pid = int(pid)
+        self.root = Path(root)
+        self._returncode: int | None = None
+
+    def _alive(self) -> bool:
+        """Alive, and not a zombie. A process that has exited but has not
+        been reaped answers a signal, so os.kill(pid, 0) alone reports a
+        dead run as living; that is what made Stop wait five seconds
+        twice on a child that had already gone. ps shows its state."""
+        import os
+
+        try:
+            os.kill(self.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        try:
+            state = subprocess.run(["ps", "-o", "stat=", "-p", str(self.pid)],
+                                   capture_output=True, text=True, timeout=2).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return True
+        if not state:
+            return False
+        return not state.startswith("Z")
+
+    def poll(self) -> int | None:
+        if self._returncode is not None:
+            return self._returncode
+        if self._alive():
+            return None
+        manifest = _json_mapping(self.root / "manifest.json")
+        done = str(manifest.get("status") or "").lower() in {"completed", "complete", "success"}
+        self._returncode = 0 if done else 1
+        return self._returncode
+
+    def terminate(self) -> None:
+        import os
+        import signal
+
+        try:
+            os.kill(self.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    def kill(self) -> None:
+        import os
+        import signal
+
+        try:
+            os.kill(self.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def wait(self, timeout: float | None = None) -> int:
+        import time
+
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.poll() is None:
+            if deadline is not None and time.monotonic() > deadline:
+                raise subprocess.TimeoutExpired(cmd=f"pid {self.pid}", timeout=timeout or 0)
+            time.sleep(0.1)
+        return self._returncode or 0
+
+
+def _process_is_this_run(pid: int, root: Path) -> bool:
+    """The PID is alive and its command line names this study or the
+    program. Guards against a stale record whose PID the OS has reused."""
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    line = _command_line_of(pid)
+    if line is None:
+        return True  # alive, and no way to look closer; trust the record
+    # The study's path or the program's name. Not the bare folder name: a
+    # short one is a substring of almost anything.
+    return str(root) in line or "fastmdx" in line
+
+
+def _command_line_of(pid: int) -> str | None:
+    """The whole command line, not what fits a terminal. ps cuts its output
+    at the terminal's width, and a study's path is long enough that the
+    part naming it was cut off; the check then said a real run was not
+    this run. /proc has the full line on Linux; -ww asks ps for it
+    elsewhere."""
+    proc = Path("/proc") / str(pid) / "cmdline"
+    try:
+        raw = proc.read_bytes()
+        if raw:
+            return raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    except OSError:
+        pass
+    try:
+        out = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.strip() or None
+
+
 def _slug(value: str, fallback: str = "fastmdxplora_run") -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value).strip()).strip("._-")
     return cleaned[:96] or fallback
@@ -562,6 +677,7 @@ class DashboardRuntime:
         self.exploration_root.mkdir(parents=True, exist_ok=True)
         if self.active_root is not None:
             self.active_root = self.active_root.expanduser().resolve()
+            self._adopt_if_running(self.active_root)
 
     def data_root(self) -> Path:
         with self.lock:
@@ -1074,6 +1190,35 @@ class DashboardRuntime:
                 **started,
             }
 
+    def _adopt_if_running(self, root: Path | None) -> bool:
+        """If the study at root has a live run this server did not start,
+        hold it as the process: it shows as running, and Stop reaches it.
+
+        A GUI reopened on a running study could watch it but not stop it,
+        and its sidebar called it idle. The run records its PID in the
+        folder; this reads it, checks the process is alive and is this
+        run, and adopts it.
+        """
+        if root is None or self.process is not None and self.process.poll() is None:
+            return False
+        from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+        record = _json_mapping(Path(root) / RUN_PROCESS_FILE)
+        pid = record.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return False
+        if not _process_is_this_run(pid, Path(root)):
+            return False
+        self.process = _AdoptedProcess(pid, Path(root))
+        self.running_root = Path(root)
+        self.process_started_at = str(record.get("started_at") or _utc_now())
+        self.process_finished_at = None
+        self.process_returncode = None
+        self.completion_error = None
+        self.log_path = Path(root) / "exploration.log"
+        self.command = [str(a) for a in (record.get("argv") or [])]
+        return True
+
     def switch_to(self, folder: str | Path) -> dict[str, Any]:
         """Watch a different output folder without relaunching.
 
@@ -1111,6 +1256,7 @@ class DashboardRuntime:
                 self.running_root = self.active_root
             self.active_root = path
             self.data_stale = False
+            self._adopt_if_running(path)
             if self.process is None or self.process.poll() is not None:
                 self.process = None
                 self.running_root = None

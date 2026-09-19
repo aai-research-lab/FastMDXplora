@@ -34,6 +34,10 @@ PACKAGE = pathlib.Path(fastmdxplora.__file__).parent
 NOT_REFUSALS = frozenset({
     "AssertionError", "NotImplementedError", "SystemExit",
     "KeyboardInterrupt", "StopIteration", "AttributeError",
+    # A protocol exception, not a refusal: it is what Popen.wait raises,
+    # and the adopted-process handle raises the same so the runtime's
+    # stop() can catch it by name whichever kind of process it holds.
+    "TimeoutExpired",
 })
 
 #: Helpers that carry an inner refusal's code out to an outer raise. A site
