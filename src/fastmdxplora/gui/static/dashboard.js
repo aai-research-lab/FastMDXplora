@@ -377,9 +377,9 @@
 
     if (!activeRun) {
       setText("topbar-run-id", "workspace");
-      setText("topbar-run-title", "No active exploration");
+      setText("topbar-run-title", "No active study");
       setText("topbar-stage", "configure a simulation");
-      setText("sidebar-run-name", "No active exploration");
+      setText("sidebar-run-name", "No active study");
       setText("sidebar-platform", "—");
     }
     // Sections that only have content once a run exists are dimmed until one
@@ -525,9 +525,9 @@
       setText("topbar-eta", "—");
       setText("sidebar-platform", "—");
       setText("sidebar-output-folder", "—");
-      setText("sidebar-run-name", "No active exploration");
+      setText("sidebar-run-name", "No active study");
       setText("topbar-run-id", "workspace");
-      setText("topbar-run-title", "No active exploration");
+      setText("topbar-run-title", "No active study");
       return;
     }
     const statusName = String(health.state || status.status || "waiting").toLowerCase();

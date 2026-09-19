@@ -3681,7 +3681,11 @@ class TestTheWordsOnTheRunPage:
 
     def test_the_navigation_says_what_the_page_says(self) -> None:
         page, _ = self._files()
-        assert "<span>Builder</span>" in page
+        # The tab says Config; the page says Config Builder. The tab is the
+        # thing, the page is the thing and what it does to it.
+        assert "<span>Config</span>" in page
+        assert "<h1 class=\"page-title\">Config Builder</h1>" in page
+        assert "<span>Builder</span>" not in page
         assert "New run" not in page
 
     def test_the_results_note_gives_the_path(self) -> None:

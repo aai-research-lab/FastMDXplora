@@ -180,8 +180,10 @@
     const current = el(options.into);
     // Where to start: what the field already holds, else the caller's
     // suggestion -- the Agent opens a study's own folder for a thread
-    // about that study, the workspace for a general one -- else home.
-    show((current && current.value.trim()) || options.start || "");
+    // about that study -- else the workspace, which the picker learns
+    // from the app state, so Load available study and every builder
+    // field start among the studies rather than at home.
+    show((current && current.value.trim()) || options.start || state.workspace || "");
   }
 
   /* Any input marked with data-picks gets a button, so a new field needs no
@@ -219,6 +221,12 @@
     document.addEventListener("DOMContentLoaded", attachAll);
   } else {
     attachAll();
+  }
+
+  if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
+    window.FastMDXDashboard.on("app-state", (s) => {
+      if (s && s.exploration_root) state.workspace = s.exploration_root;
+    });
   }
 
   window.FastMDXPicker = { open, close, attachAll };

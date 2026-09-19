@@ -982,6 +982,8 @@
     function modeChanged() {
       var mode = el("agent-mode").value;
       el("agent-mode-note").textContent = MODE_NOTES[mode] || "";
+      var footer = el("agent-footer-mode");
+      if (footer) footer.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
       el("agent-budget-note").textContent = mode === "autonomous"
         ? "Required in this mode. Checked after setup, where the cost is "
           + "first known."

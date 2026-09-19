@@ -368,26 +368,32 @@ button {
 .page { display: block; }
 .page[hidden] { display: none; }
 
+/* One row: the title, its subtitle inline and muted, the page's actions
+   at the right. The two-line header with a rule under it took 90px of
+   every page for a title and a sentence; this takes 44. */
 .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
-    margin-bottom: 22px;
-    gap: 18px;
+    align-items: center;
+    margin-bottom: 14px;
+    gap: 14px;
     border-bottom: 1px solid var(--border-subtle);
-    padding-bottom: 16px;
+    padding-bottom: 10px;
+    min-height: 44px;
 }
+.page-header > div:first-child { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .page-title {
-    font-size: 24px;
+    font-size: 19px;
     font-weight: 700;
     letter-spacing: -0.01em;
     margin: 0;
     color: var(--accent-white);
 }
 .page-subtitle {
+    display: inline;
     color: var(--text-secondary);
-    font-size: 13px;
-    margin-top: 4px;
+    font-size: 12.5px;
+    margin-top: 0;
 }
 
 /* ============================================================ */
@@ -3063,3 +3069,15 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .fastmdx-picker-row .badge-structure { color: var(--status-success, #5fc08a); border-color: var(--status-success, #5fc08a); }
 .fastmdx-picker-row .badge-trajectory { color: var(--status-warning, #e0a45a); border-color: var(--status-warning, #e0a45a); }
 .fastmdx-picker-row.is-study .name { color: var(--accent-cyan); }
+
+/* The Agent's footer: small links under the composer, at the right. */
+.agent-footer {
+    display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+    padding: 6px 4px 0; font-size: 11.5px; color: var(--text-muted);
+}
+.agent-footer-link {
+    border: none; background: transparent; padding: 2px 4px;
+    color: var(--text-muted); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.agent-footer-link:hover { color: var(--text-primary); text-decoration: underline; }
+.agent-footer-dot { opacity: .6; }

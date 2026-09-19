@@ -2588,7 +2588,9 @@ class TestThePickerServesTheAgentToo(unittest.TestCase):
               / "file-picker.js").read_text(encoding="utf-8")
         self.assertIn('const kind = entry.study ? "study"', js)
         self.assertIn('" badge-" + kind', js)
-        self.assertIn('options.start || ""', js)
+        # The caller's start, else the workspace the picker learned itself.
+        self.assertIn('options.start || state.workspace || ""', js)
+        self.assertIn('state.workspace = s.exploration_root', js)
         css = (pathlib.Path(gui.__file__).parent / "static"
                / "dashboard.css").read_text(encoding="utf-8")
         for k in ("badge-study", "badge-structure", "badge-trajectory"):
@@ -2613,3 +2615,66 @@ class TestThePickerServesTheAgentToo(unittest.TestCase):
                / "dashboard.css").read_text(encoding="utf-8")
         # The ID rule outranks the class rule, so the indent lives on it.
         self.assertIn("#agent-request { min-height: 44px; padding: 12px 52px 12px 46px; }", css)
+
+
+class TestTheWordsAndTheRows(unittest.TestCase):
+
+    def page(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def test_no_active_study(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        for name in ("dashboard.js", "frame.js"):
+            js = (pathlib.Path(gui.__file__).parent / "static" / name).read_text(encoding="utf-8")
+            with self.subTest(file=name):
+                self.assertNotIn("No active exploration", js)
+        self.assertNotIn("No active exploration", self.page())
+
+    def test_study_overview_title_and_overview_tab(self):
+        page = self.page()
+        self.assertIn('<h1 class="page-title">Study Overview</h1>', page)
+        self.assertIn("<span>Overview</span>", page)
+
+    def test_the_agent_header_is_a_title_row_and_the_controls_are_under_the_composer(self):
+        page = self.page()
+        agent = page[page.index('data-page="agent"'):page.index("</section>", page.index('data-page="agent"'))]
+        header = agent[agent.index('<div class="page-header">'):agent.index("</div>\n          </div>", agent.index('<div class="page-header">'))]
+        for gone in ("agent-settings-open", "agent-conversations", "agent-new"):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, header)
+        footer = agent[agent.index('<div class="agent-footer">'):]
+        for here in ('id="agent-settings-open"', 'id="agent-footer-mode"',
+                     'id="agent-conversations"', 'id="agent-new"'):
+            with self.subTest(here=here):
+                self.assertIn(here, footer)
+        # The footer comes after the composer box.
+        self.assertLess(agent.index('<div class="agent-composer-box">'), agent.index('<div class="agent-footer">'))
+
+    def test_the_footer_shows_the_mode(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('var footer = el("agent-footer-mode");', script)
+
+    def test_page_headers_are_one_row(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        rule = css[css.index(".page-header {"):css.index("}", css.index(".page-header {"))]
+        self.assertIn("align-items: center", rule)
+        self.assertIn("min-height: 44px", rule)
+        self.assertIn(".page-subtitle {\n    display: inline;", css)

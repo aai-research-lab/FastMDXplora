@@ -42,8 +42,8 @@ you. Nothing is uploaded anywhere.
 | | |
 |---|---|
 | **Agent** | [The FastMDXplora Agent](agent.md): a conversation that writes, edits, runs and reads a study |
-| **Builder** | The [Config](config.md) builder: four questions, the phases as tiles |
-| **Overview** | A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
+| **Config** | The [Config](config.md) builder: four questions, the phases as tiles |
+| **Overview** | Study Overview. A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
 | **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default |
 | **Analysis** | The figures and tables, grouped |
 | **Report** | The report itself, rendered as a document, with downloads for what was produced and a notice for what could not be |
