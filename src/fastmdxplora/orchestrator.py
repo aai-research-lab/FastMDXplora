@@ -414,6 +414,13 @@ class FastMDXplora:
         self._resolved_options = {
             p: opts for p, opts in merged_options.items() if opts
         }
+        # Written now, before the first phase, and again at the end. A run
+        # in progress or one that was stopped had no resolved_config.yml,
+        # because it was written only after the loop: the one record of
+        # what a study was became available only once it was over, and a
+        # question about a running study's settings had nothing to read.
+        # What was decided is known here; writing it here is the record.
+        self._write_resolved_config()
 
         # Plan goes to file/audit; the presenter shows headers visually.
         logger.debug("Plan: %s", " -> ".join(plan))

@@ -2387,3 +2387,41 @@ class TestTheAgentSeesTheRunsOwnConfig(unittest.TestCase):
         prompt = prompt_for("x")
         self.assertIn("the config the active run used", prompt)
         self.assertIn("is not\nthe production length", prompt)
+
+
+class TestAStopIsRecordedWhenItHappens(unittest.TestCase):
+    """A reloaded thread said "Did: stop" about a run that was only asked
+    to stop and never confirmed, and the person's "yes" then went to the
+    model as a new message. The ask is recorded as a question; the stop
+    is recorded when it is confirmed; a reload restores the pending
+    state if the ask was the last thing said."""
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_the_ask_is_a_question_not_an_action(self):
+        script = self.script()
+        block = script[script.index('if (data.action === "stop") {'):script.index("act(data.action, data.where")]
+        self.assertIn('kind: "question"', block)
+        self.assertIn("? Say yes.", block)
+
+    def test_the_stop_is_recorded_on_confirmation(self):
+        script = self.script()
+        confirm = script[script.index("function confirmStop(typed, box)"):script.index("function wireActions")]
+        self.assertIn('kind: "action", action: "stop"', confirm)
+        self.assertIn('kind: "answer", text: "Not stopped."', confirm)
+
+    def test_a_reload_keeps_a_pending_stop(self):
+        script = self.script()
+        replay = script[script.index("function replay(entries)"):script.index("document.addEventListener")]
+        self.assertIn("stopPending = /^Stop the run.*\\? Say yes\\.$/.test(e.text", replay)
+        self.assertIn("var last = entries[entries.length - 1];", replay)
+
+    def test_replay_never_says_did_stop(self):
+        script = self.script()
+        self.assertIn('e.action === "stop" ? "Stopped the run." : "Did: " + e.action', script)

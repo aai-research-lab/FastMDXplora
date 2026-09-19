@@ -448,7 +448,16 @@
          * uses. The thread says what was done, so nothing happens
          * silently. */
         history.push({ role: "agent", text: "DO: " + data.action });
-        transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
+        if (data.action === "stop") {
+          /* Asked, not done. A stop is recorded when it is confirmed, so
+           * a reloaded thread never says "Did: stop" about a run that was
+           * never stopped -- which it did, and the person's "yes" then
+           * went to the model as a new message. */
+          transcript.push({ role: "agent", kind: "question",
+                            text: "Stop the run" + (data.where ? " at " + data.where : "") + "? Say yes." });
+        } else {
+          transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
+        }
         persist();
         act(data.action, data.where || "", box, r);
         scrollToEnd();
@@ -568,6 +577,8 @@
     stopPending = null;
     if (!yes) {
       note(box, "Not stopped.");
+      transcript.push({ role: "agent", kind: "answer", text: "Not stopped." });
+      persist();
       return;
     }
     fetch("/api/explore/stop", { method: "POST" })
@@ -576,6 +587,9 @@
         var stopped = d && d.ok !== false;
         note(box, stopped ? "Stopped the run." : (d && d.error) || "Could not stop it.", true);
         history.push({ role: "agent", text: stopped ? "Stopped the run." : "Could not stop the run." });
+        transcript.push(stopped ? { role: "agent", kind: "action", action: "stop", where: "" }
+                                : { role: "agent", kind: "error", text: "Could not stop the run." });
+        persist();
         if (stopped && lastReply) {
           /* The same config can run again; each launch gets its own
            * timestamped folder, so the stopped run's output stays. */
@@ -747,14 +761,23 @@
         } else if (e.kind === "question") {
           note(box, e.text);
           history.push({ role: "agent", text: e.text });
+          // A stop confirmation that was the last thing said is still
+          // waiting for its yes after a reload.
+          stopPending = /^Stop the run.*\? Say yes\.$/.test(e.text || "") ? true : null;
         } else if (e.kind === "action") {
-          note(box, "Did: " + e.action + ".", true);
+          note(box, e.action === "stop" ? "Stopped the run." : "Did: " + e.action + ".", true);
           history.push({ role: "agent", text: "DO: " + e.action });
         } else {
           note(box, e.text || "");
         }
         transcript.push(e);
       });
+      // Only a stop question that is the final entry keeps its pending
+      // state; anything said after it answered or superseded it.
+      var last = entries[entries.length - 1];
+      if (!(last && last.kind === "question" && /^Stop the run.*\? Say yes\.$/.test(last.text || ""))) {
+        stopPending = null;
+      }
       scrollToEnd();
   }
 

@@ -2176,7 +2176,11 @@ class TestTheBundleCarriesTheRunRecord:
         from fastmdxplora.orchestrator import FastMDXplora
 
         source = inspect.getsource(FastMDXplora)
-        order = [source.index(call) for call in (
+        # The final writes, not the first: the resolved config is written
+        # once before the phase loop too, so a running study has a record,
+        # and again at the end so what actually ran is the record the
+        # bundle carries. The bundle is added after that last write.
+        order = [source.rindex(call) for call in (
             "self._write_manifest()",
             "self._write_resolved_config()",
             "self._add_run_record_to_bundle()",
