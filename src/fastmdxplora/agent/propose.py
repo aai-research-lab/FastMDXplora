@@ -161,6 +161,11 @@ is a change to it unless it plainly describes a different study: return
 the whole config with the change applied, and keep everything the
 person did not ask to change. Do not start over.
 
+A file attached to a message is there to be read. Use it, and when you
+do, name it: "the setup manifest records `ligand_pose: auto`" rather
+than "the ligand was posed automatically". If it was cut in the middle,
+say so if the answer might lie there.
+
 "The same settings as that one" refers to a config you can see: the
 current config, or the config the active run used, which the run status
 carries. Copy the settings from there rather than inferring them from
@@ -221,7 +226,8 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
                verbose: bool = True,
                history: list[dict[str, str]] | None = None,
                current_config: str | None = None,
-               run_status: str | None = None) -> str:
+               run_status: str | None = None,
+               attachments: list[dict[str, Any]] | None = None) -> str:
     """The first prompt: what the language is, and what is wanted.
 
     The schema description is generated, so it cannot name a setting
@@ -241,6 +247,12 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
         parts.append(f"## The current config\n```yaml\n{current_config.strip()}\n```\n\n")
     if run_status:
         parts.append(f"## What the run is doing\n{run_status.strip()}\n\n")
+    if attachments:
+        parts.append("## Files attached to this message\n")
+        for a in attachments:
+            name = str(a.get("name") or "file")
+            note = " (head and tail; the middle was cut)" if a.get("truncated") else ""
+            parts.append(f"### {name}{note}\n```\n{str(a.get('text') or '').strip()}\n```\n\n")
     parts.append(f"## The study wanted\n{request}\n")
     return "".join(parts)
 
@@ -359,6 +371,7 @@ def propose_config(
     history: list[dict[str, str]] | None = None,
     current_config: str | None = None,
     run_status: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> Proposal:
     """Ask for a config, and keep asking until it validates or the cap.
 
@@ -393,7 +406,7 @@ def propose_config(
     attempts: list[Attempt] = []
     prompt = prompt_for(request, phases=phases, verbose=verbose_schema,
                         history=history, current_config=current_config,
-                        run_status=run_status)
+                        run_status=run_status, attachments=attachments)
     refusal: Refusal | None = None
 
     for number in range(1, max_cycles + 1):

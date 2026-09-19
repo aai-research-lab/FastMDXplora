@@ -868,10 +868,14 @@
           <!-- The composer, pinned. Grows with what is typed; Enter sends,
                Shift+Enter breaks a line. -->
           <div class="agent-composer">
+            <!-- Files attached to the next message, as chips. -->
+            <div class="agent-attachments" id="agent-attachments" hidden></div>
             <div class="agent-composer-box">
+              <button id="agent-attach" class="agent-plus" type="button" aria-label="Attach a file" title="Attach a file for the Agent to read: a config, a log, a manifest, a data table, a structure.">+</button>
               <textarea id="agent-request" rows="1"
                 placeholder="Describe a study, ask a question, or tell me what to do."></textarea>
               <button id="agent-propose" class="agent-send" type="button" aria-label="Send" title="Send (Enter). Shift+Enter for a new line.">&#8593;</button>
+              <input type="hidden" id="agent-attach-path">
             </div>
           </div>
 

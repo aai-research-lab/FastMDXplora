@@ -504,6 +504,7 @@ def make_handler(
                 "/api/agent/conversation/open",
                 "/api/agent/conversation/delete",
                 "/api/agent/conversation/attach",
+                "/api/agent/attachment",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -680,6 +681,11 @@ def make_handler(
                 self._send_json(open_conversation(app_runtime,
                                                   (payload or {}).get("id"),
                                                   (payload or {}).get("study")))
+                return
+            if path == "/api/agent/attachment":
+                from fastmdxplora.gui.agent_panel import read_attachment
+
+                self._send_json(read_attachment((payload or {}).get("path")))
                 return
             if path == "/api/agent/conversation/attach":
                 from fastmdxplora.gui.agent_panel import attach_conversation

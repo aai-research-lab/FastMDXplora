@@ -3032,3 +3032,26 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
 }
 .agent-conv-group.loaded { color: var(--accent-cyan); }
+
+/* The + at the left of the composer, and the chips above it. */
+.agent-composer-box textarea { padding-left: 46px; }
+.agent-composer-box .agent-plus {
+    position: absolute; left: 8px; bottom: 8px;
+    width: 32px; height: 32px; border-radius: 8px;
+    border: 1px solid var(--border-subtle); background: transparent;
+    color: var(--text-muted); font-size: 20px; line-height: 1; cursor: pointer;
+}
+.agent-composer-box .agent-plus:hover { color: var(--text-primary); border-color: var(--border-primary); }
+.agent-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.agent-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 8px 4px 10px; border-radius: 999px; font-size: 12px;
+    background: var(--background-elevated); border: 1px solid var(--border-subtle);
+    color: var(--text-secondary); max-width: 320px;
+}
+.agent-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11.5px; }
+.agent-chip .size { color: var(--text-muted); font-size: 10.5px; }
+.agent-chip .rm { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.agent-chip .rm:hover { color: var(--text-primary); }
+/* In a sent message, what was attached. */
+.agent-msg-user .attached { margin-top: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }

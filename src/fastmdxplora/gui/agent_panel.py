@@ -136,12 +136,19 @@ def propose_endpoint(payload: dict[str, Any],
     ][-12:]
     current = payload.get("current_config")
     current = str(current) if current else None
+    # Files attached to this message: the browser sends what read_attachment
+    # returned, name and text; the bytes never go into the transcript.
+    attachments = [
+        {"name": str(a.get("name") or "file"), "text": str(a.get("text") or ""),
+         "truncated": bool(a.get("truncated"))}
+        for a in (payload.get("attachments") or []) if isinstance(a, dict) and a.get("text")
+    ][:6]
     try:
         proposal = propose_config(
             request, complete, phases=list(phases),
             max_cycles=int(payload.get("attempts") or 4),
             history=history or None, current_config=current,
-            run_status=_run_status(runtime))
+            run_status=_run_status(runtime), attachments=attachments or None)
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
@@ -763,3 +770,62 @@ def clear_conversation(runtime: Any) -> dict[str, Any]:
     answer = delete_conversation(runtime, cid, str(study) if study else None)
     answer["entries"] = []
     return answer
+
+
+# ---------------------------------------------------------------------------
+# Attaching a file to a message.
+#
+# The Agent reads what the run status hands it and nothing else, by
+# design. When a person wants it to see a file -- a log, a manifest, a
+# config from another study -- they attach it to a message, as one does
+# in any assistant, and it goes with that message as context. Per
+# message, explicit, and recorded: the transcript keeps the file's name,
+# path, size and digest, so the conversation stays a scientific record of
+# what was looked at, without copying the bytes into it.
+# ---------------------------------------------------------------------------
+
+ATTACHABLE_SUFFIXES = frozenset({
+    ".yml", ".yaml", ".json", ".log", ".md", ".txt", ".csv", ".tsv", ".dat",
+    ".pdb", ".cif", ".py", ".toml", ".ini", ".cfg", ".xml", ".sdf", ".mol2",
+})
+ATTACH_LIMIT_BYTES = 200_000
+ATTACH_KEEP_EACH_END = 80_000
+
+
+def read_attachment(path: Any) -> dict[str, Any]:
+    """A text file the person chose, with what a model can read of it.
+
+    Text types only: a trajectory or a checkpoint is refused with a
+    sentence rather than fed to a model as bytes. A file past the limit
+    keeps its head and its tail, which is where a log's start and its
+    failure are, and says how much went from the middle.
+    """
+    import hashlib
+
+    file = Path(str(path or "")).expanduser()
+    if not str(path or "").strip():
+        return {"ok": False, "error": "No file given."}
+    if not file.is_file():
+        return {"ok": False, "error": f"No such file: {file}"}
+    if file.suffix.lower() not in ATTACHABLE_SUFFIXES:
+        return {"ok": False,
+                "error": f"{file.name} is not a text file the Agent can read. "
+                         "Attach a config, a log, a manifest, a data table or a structure file."}
+    try:
+        raw = file.read_bytes()
+    except OSError as exc:
+        return {"ok": False, "error": f"Could not read {file.name}: {exc}"}
+    digest = hashlib.sha256(raw).hexdigest()[:12]
+    truncated = False
+    if len(raw) > ATTACH_LIMIT_BYTES:
+        head = raw[:ATTACH_KEEP_EACH_END].decode("utf-8", "replace")
+        tail = raw[-ATTACH_KEEP_EACH_END:].decode("utf-8", "replace")
+        dropped = len(raw) - 2 * ATTACH_KEEP_EACH_END
+        text = (head + f"\n\n[\u2026 {dropped:,} bytes from the middle of the file not shown \u2026]\n\n" + tail)
+        truncated = True
+    else:
+        text = raw.decode("utf-8", "replace")
+    if "\x00" in text[:4000]:
+        return {"ok": False, "error": f"{file.name} looks binary; the Agent reads text."}
+    return {"ok": True, "name": file.name, "path": str(file.resolve()),
+            "size": len(raw), "sha256": digest, "text": text, "truncated": truncated}

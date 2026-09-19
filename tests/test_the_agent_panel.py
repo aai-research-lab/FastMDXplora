@@ -1709,7 +1709,7 @@ class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
 
     def test_a_user_message_has_all_three(self):
         script = self.script()
-        say = script[script.index("function say(text)"):script.index("function reply()")]
+        say = script[script.index("function say(text, attached)"):script.index("function reply()")]
         for label in ('"Copy"', '"Edit"', '"Retry"'):
             with self.subTest(label=label):
                 self.assertIn(label, say)
@@ -1725,7 +1725,7 @@ class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
         # that point rather than with a fork in it.
         script = self.script()
         self.assertIn("function cutFrom(msg)", script)
-        cut = script[script.index("function cutFrom(msg)"):script.index("function say(text)")]
+        cut = script[script.index("function cutFrom(msg)"):script.index("function say(text, attached)")]
         self.assertIn("history.length = i;", cut)
         self.assertIn("currentConfig = null;", cut)
 
@@ -2425,3 +2425,107 @@ class TestAStopIsRecordedWhenItHappens(unittest.TestCase):
     def test_replay_never_says_did_stop(self):
         script = self.script()
         self.assertIn('e.action === "stop" ? "Stopped the run." : "Did: " + e.action', script)
+
+
+class TestAFileCanBeAttachedToAMessage(unittest.TestCase):
+    """The + beside the composer. A file the person chose goes with that
+    message as context: per message, explicit, and recorded by name, path,
+    size and digest rather than by copying its bytes into the thread."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.d = Path(tempfile.mkdtemp())
+
+    def test_a_text_file_is_read_with_its_digest(self):
+        from fastmdxplora.gui.agent_panel import read_attachment
+
+        f = self.d / "setup_parameters.json"
+        f.write_text('{"ligand_pose": "auto"}', encoding="utf-8")
+        r = read_attachment(f)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["name"], "setup_parameters.json")
+        self.assertEqual(r["size"], 23)
+        self.assertEqual(len(r["sha256"]), 12)
+        self.assertIn("ligand_pose", r["text"])
+        self.assertFalse(r["truncated"])
+
+    def test_a_binary_is_refused_with_a_sentence(self):
+        from fastmdxplora.gui.agent_panel import read_attachment
+
+        f = self.d / "traj.dcd"
+        f.write_bytes(b"\\x00" * 64)
+        r = read_attachment(f)
+        self.assertFalse(r["ok"])
+        self.assertIn("not a text file", r["error"])
+
+    def test_a_long_log_keeps_its_head_and_tail(self):
+        from fastmdxplora.gui.agent_panel import ATTACH_LIMIT_BYTES, read_attachment
+
+        f = self.d / "exploration.log"
+        f.write_text("start\n" + "x" * (ATTACH_LIMIT_BYTES + 50_000) + "\nERROR at the end\n",
+                     encoding="utf-8")
+        r = read_attachment(f)
+        self.assertTrue(r["truncated"])
+        self.assertTrue(r["text"].startswith("start"))
+        self.assertTrue(r["text"].rstrip().endswith("ERROR at the end"))
+        self.assertIn("not shown", r["text"])
+
+    def test_missing_and_empty_are_refused(self):
+        from fastmdxplora.gui.agent_panel import read_attachment
+
+        self.assertFalse(read_attachment(self.d / "nope.yml")["ok"])
+        self.assertFalse(read_attachment("")["ok"])
+
+    def test_the_prompt_carries_the_file_under_its_name(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("why?", attachments=[
+            {"name": "setup_parameters.json", "text": '{"ligand_pose": "auto"}', "truncated": True}])
+        self.assertIn("## Files attached to this message", prompt)
+        self.assertIn("### setup_parameters.json (head and tail; the middle was cut)", prompt)
+        self.assertIn("ligand_pose", prompt)
+        self.assertIn("A file attached to a message is there to be read", prompt)
+
+    def test_the_endpoint_passes_attachments_through(self):
+        import os
+        import tempfile
+
+        prior = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = tempfile.mkdtemp()
+        self.addCleanup(lambda: (os.environ.__setitem__("FASTMDXPLORA_CONFIG_DIR", prior)
+                                 if prior is not None
+                                 else os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)))
+        import fastmdxplora.agent as agent_mod
+        from fastmdxplora.gui import agent_panel
+
+        seen = {}
+        before = agent_mod.completion_for
+        agent_mod.completion_for = lambda *a, **k: (
+            lambda prompt: (seen.__setitem__("prompt", prompt), "SAY: read it.")[1])
+        try:
+            agent_panel.propose_endpoint(
+                {"request": "look", "attachments": [{"name": "a.log", "text": "the log says"}]}, None)
+        finally:
+            agent_mod.completion_for = before
+        self.assertIn("### a.log", seen["prompt"])
+        self.assertIn("the log says", seen["prompt"])
+
+    def test_the_composer_has_the_plus_and_records_what_was_attached(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="agent-attach"', page)
+        self.assertIn('id="agent-attachments"', page)
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('post("/api/agent/attachment", { path: path })', script)
+        # Recorded by name, path, size and digest; the bytes are not kept.
+        self.assertIn("return { name: f.name, path: f.path, size: f.size, sha256: f.sha256, truncated: !!f.truncated };", script)
+        self.assertIn('{ role: "user", text: typed, attachments: record }', script)
+        # Sent with the text for the model.
+        self.assertIn("attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })", script)

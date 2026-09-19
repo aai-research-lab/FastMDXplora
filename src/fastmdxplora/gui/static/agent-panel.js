@@ -236,6 +236,44 @@
    * restore, so a launch can name it exactly when moving it. */
   var convId = null;
   var convStudy = null;
+  /* Files attached to the next message: what read_attachment returned. */
+  var pendingFiles = [];
+
+  function fmtSize(n) {
+    return n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+  }
+
+  function renderChips() {
+    var host = el("agent-attachments");
+    if (!host) return;
+    host.innerHTML = "";
+    host.hidden = pendingFiles.length === 0;
+    pendingFiles.forEach(function (f, i) {
+      var chip = document.createElement("span");
+      chip.className = "agent-chip";
+      var name = document.createElement("span");
+      name.className = "name"; name.textContent = f.name; name.title = f.path;
+      var size = document.createElement("span");
+      size.className = "size"; size.textContent = fmtSize(f.size) + (f.truncated ? " \u00b7 cut" : "");
+      var rm = document.createElement("button");
+      rm.className = "rm"; rm.type = "button"; rm.textContent = "\u2715"; rm.title = "Remove";
+      rm.addEventListener("click", function () { pendingFiles.splice(i, 1); renderChips(); });
+      chip.appendChild(name); chip.appendChild(size); chip.appendChild(rm);
+      host.appendChild(chip);
+    });
+  }
+
+  function attachFile(path) {
+    if (!path) return;
+    post("/api/agent/attachment", { path: path }).then(function (d) {
+      if (!d || !d.ok) { window.alert((d && d.error) || "Could not attach that file."); return; }
+      if (pendingFiles.some(function (f) { return f.path === d.path; })) return;
+      if (pendingFiles.length >= 6) { window.alert("Six files at most on one message."); return; }
+      pendingFiles.push(d);
+      renderChips();
+      el("agent-request").focus();
+    }).catch(function () { window.alert("Could not reach the server."); });
+  }
 
   function persist() {
     return post("/api/agent/conversation", { entries: transcript }).then(function (d) {
@@ -302,11 +340,18 @@
     }
   }
 
-  function say(text) {
+  function say(text, attached) {
     var msg = document.createElement("div");
     msg.className = "agent-msg agent-msg-user";
     var body = document.createElement("div");
     body.textContent = text;
+    if (attached && attached.length) {
+      var list = document.createElement("div");
+      list.className = "attached";
+      list.textContent = "\u{1F4CE} " + attached.map(function (a) { return a.name; }).join(", ");
+      list.title = attached.map(function (a) { return a.path + " (" + a.sha256 + ")"; }).join("\n");
+      body.appendChild(list);
+    }
     msg.appendChild(body);
     tools(msg, [
       { label: "Copy", run: function () { copyText(text); } },
@@ -416,9 +461,16 @@
     var request = pending ? pending + "\n" + typed : typed;
     pending = null;
 
-    say(typed);
-    history.push({ role: "user", text: typed });
-    transcript.push({ role: "user", text: typed });
+    var files = pendingFiles.slice();
+    pendingFiles = [];
+    renderChips();
+    var record = files.map(function (f) {
+      return { name: f.name, path: f.path, size: f.size, sha256: f.sha256, truncated: !!f.truncated };
+    });
+    say(typed, record);
+    var historyText = typed + (record.length ? "\n[attached: " + record.map(function (a) { return a.name; }).join(", ") + "]" : "");
+    history.push({ role: "user", text: historyText });
+    transcript.push(record.length ? { role: "user", text: typed, attachments: record } : { role: "user", text: typed });
     area.value = "";
     autosize(area);
     var r = reply();
@@ -436,7 +488,8 @@
       request: request,
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
-      current_config: currentConfig
+      current_config: currentConfig,
+      attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })
     }).then(function (data) {
       el("agent-propose").disabled = false;
       box.innerHTML = "";
@@ -736,9 +789,11 @@
       if (!entries.length) return;
       entries.forEach(function (e) {
         if (e.role === "user") {
-          say(e.text || "");
-          history.push({ role: "user", text: e.text || "" });
-          transcript.push({ role: "user", text: e.text || "" });
+          say(e.text || "", e.attachments || []);
+          var htext = (e.text || "") + ((e.attachments || []).length
+            ? "\n[attached: " + e.attachments.map(function (a) { return a.name; }).join(", ") + "]" : "");
+          history.push({ role: "user", text: htext });
+          transcript.push(e);
           return;
         }
         var r = reply();
@@ -891,6 +946,18 @@
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
     el("agent-propose").addEventListener("click", draft);
+    var plus = el("agent-attach");
+    var attachPath = el("agent-attach-path");
+    if (plus && attachPath && window.FastMDXPicker) {
+      plus.addEventListener("click", function () {
+        window.FastMDXPicker.open({ into: "agent-attach-path", mode: "file" });
+      });
+      attachPath.addEventListener("change", function () {
+        var p = attachPath.value.trim();
+        attachPath.value = "";
+        attachFile(p);
+      });
+    }
     var area = el("agent-request");
     area.addEventListener("input", function () { autosize(area); });
     area.addEventListener("keydown", function (e) {
