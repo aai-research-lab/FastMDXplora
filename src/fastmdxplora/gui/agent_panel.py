@@ -16,6 +16,7 @@ the page runs.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 __all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
@@ -404,3 +405,72 @@ def _hms(seconds: float) -> str:
     h, rem = divmod(total, 3600)
     m, s = divmod(rem, 60)
     return f"{h}h {m}m" if h else f"{m}m {s}s"
+
+
+# ---------------------------------------------------------------------------
+# The conversation, kept.
+#
+# The thread lived only in the browser's memory: a refresh emptied it. A
+# conversation about a study is part of the study's record, and a person
+# who closes the tab and comes back should find what they said and what
+# came back. One file per workspace, beside the runs, owned by the server
+# so it survives the browser and follows the workspace rather than one
+# machine's local storage.
+# ---------------------------------------------------------------------------
+
+CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"
+CONVERSATION_KEEP = 400
+
+
+def conversation_path(workspace: Any) -> Path:
+    return Path(workspace) / CONVERSATION_FILE
+
+
+def read_conversation(workspace: Any) -> dict[str, Any]:
+    """What was said, or an empty thread. A broken file is an empty thread
+    too: a person should not be locked out of the Agent by a corrupt cache."""
+    import json
+
+    path = conversation_path(workspace)
+    if not path.is_file():
+        return {"ok": True, "entries": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"ok": True, "entries": []}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        entries = []
+    return {"ok": True, "entries": entries[-CONVERSATION_KEEP:]}
+
+
+def write_conversation(workspace: Any, entries: Any) -> dict[str, Any]:
+    """Replace the thread with what the browser holds. Bounded, atomic."""
+    import json
+    import os
+    from pathlib import Path
+
+    if not isinstance(entries, list):
+        return {"ok": False, "error": "entries must be a list"}
+    clean = [e for e in entries if isinstance(e, dict) and e.get("role") in ("user", "agent")]
+    clean = clean[-CONVERSATION_KEEP:]
+    path = conversation_path(workspace)
+    try:
+        Path(workspace).mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"version": 1, "entries": clean}, indent=1),
+                       encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        return {"ok": False, "error": f"Could not save the conversation: {exc}"}
+    return {"ok": True, "entries": clean}
+
+
+def clear_conversation(workspace: Any) -> dict[str, Any]:
+    path = conversation_path(workspace)
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "entries": []}

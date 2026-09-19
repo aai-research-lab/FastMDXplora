@@ -295,6 +295,11 @@ def make_handler(
             if path == "/api/explore/defaults":
                 self._send_json(exploration_defaults())
                 return
+            if path == "/api/agent/conversation":
+                from fastmdxplora.gui.agent_panel import read_conversation
+
+                self._send_json(read_conversation(app_runtime.exploration_root))
+                return
             if path in {"/api/browse", "/api/inspect-directory"} and not allow_control:
                 # These walk the filesystem for a folder picker, which is a
                 # reasonable thing for a tool on your own machine and not for
@@ -488,6 +493,8 @@ def make_handler(
                 "/api/agent/model",
                 "/api/agent/propose",
                 "/api/agent/run",
+                "/api/agent/conversation",
+                "/api/agent/conversation/clear",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -641,6 +648,17 @@ def make_handler(
                 return
             if path == "/api/explore/stop":
                 self._send_json(app_runtime.stop())
+                return
+            if path == "/api/agent/conversation":
+                from fastmdxplora.gui.agent_panel import write_conversation
+
+                self._send_json(write_conversation(
+                    app_runtime.exploration_root, (payload or {}).get("entries")))
+                return
+            if path == "/api/agent/conversation/clear":
+                from fastmdxplora.gui.agent_panel import clear_conversation
+
+                self._send_json(clear_conversation(app_runtime.exploration_root))
                 return
             if path == "/api/explore/switch":
                 folder = str((payload or {}).get("folder") or "").strip()

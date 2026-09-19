@@ -2132,3 +2132,84 @@ class TestTheCentreStaysCentred(unittest.TestCase):
             with self.subTest(sel=sel):
                 # The third track -- the centre -- is the fraction.
                 self.assertIn("minmax(0, 1fr)", block)
+
+
+class TestTheConversationIsKept(unittest.TestCase):
+    """The thread lived only in the browser's memory: a refresh emptied it.
+    A conversation about a study is part of the study's record. One file
+    per workspace, owned by the server, restored when the page opens."""
+
+    def workspace(self):
+        import tempfile
+        from pathlib import Path
+
+        return Path(tempfile.mkdtemp())
+
+    def test_empty_when_nothing_was_said(self):
+        from fastmdxplora.gui.agent_panel import read_conversation
+
+        self.assertEqual(read_conversation(self.workspace())["entries"], [])
+
+    def test_written_then_read_back(self):
+        from fastmdxplora.gui.agent_panel import read_conversation, write_conversation
+
+        ws = self.workspace()
+        entries = [{"role": "user", "text": "simulate 1UAO"},
+                   {"role": "agent", "kind": "config", "yaml": "systems:\\n- system: 1UAO\\n",
+                    "config": {"systems": [{"system": "1UAO"}]}, "cycles": 1}]
+        self.assertTrue(write_conversation(ws, entries)["ok"])
+        self.assertEqual(read_conversation(ws)["entries"], entries)
+
+    def test_the_file_lives_beside_the_runs(self):
+        from fastmdxplora.gui.agent_panel import CONVERSATION_FILE, write_conversation
+
+        ws = self.workspace()
+        write_conversation(ws, [{"role": "user", "text": "x"}])
+        self.assertTrue((ws / CONVERSATION_FILE).is_file())
+
+    def test_a_bad_role_is_dropped_and_the_thread_is_bounded(self):
+        from fastmdxplora.gui.agent_panel import CONVERSATION_KEEP, write_conversation
+
+        ws = self.workspace()
+        many = [{"role": "user", "text": str(i)} for i in range(CONVERSATION_KEEP + 50)]
+        many.append({"role": "system", "text": "not a party to this"})
+        kept = write_conversation(ws, many)["entries"]
+        self.assertEqual(len(kept), CONVERSATION_KEEP)
+        self.assertTrue(all(e["role"] in ("user", "agent") for e in kept))
+
+    def test_a_corrupt_file_is_an_empty_thread(self):
+        # A person should not be locked out of the Agent by a corrupt cache.
+        from fastmdxplora.gui.agent_panel import CONVERSATION_FILE, read_conversation
+
+        ws = self.workspace()
+        (ws / CONVERSATION_FILE).write_text("{not json", encoding="utf-8")
+        self.assertEqual(read_conversation(ws)["entries"], [])
+
+    def test_clear_removes_the_file(self):
+        from fastmdxplora.gui.agent_panel import (CONVERSATION_FILE, clear_conversation,
+                                                   write_conversation)
+
+        ws = self.workspace()
+        write_conversation(ws, [{"role": "user", "text": "x"}])
+        self.assertTrue(clear_conversation(ws)["ok"])
+        self.assertFalse((ws / CONVERSATION_FILE).exists())
+
+    def test_the_panel_saves_after_each_exchange_and_restores_on_open(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('post("/api/agent/conversation", { entries: transcript })', script)
+        self.assertIn("function restore()", script)
+        self.assertIn('fetch("/api/agent/conversation")', script)
+        # Every kind of reply is recorded, and a restored config gets its
+        # actions back.
+        for kind in ('kind: "config"', 'kind: "answer"', 'kind: "question"', 'kind: "action"'):
+            with self.subTest(kind=kind):
+                self.assertIn(kind, script)
+        self.assertIn("wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles }, box);", script)
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="agent-new"', page)

@@ -227,6 +227,15 @@
    * than a study from nothing. */
   var history = [];
   var currentConfig = null;
+  /* The transcript, as it can be replayed: every entry carries enough to
+   * draw it again without asking the model. Saved to the workspace after
+   * each exchange, restored when the page opens. The thread used to live
+   * only in the browser's memory, and a refresh emptied it. */
+  var transcript = [];
+
+  function persist() {
+    post("/api/agent/conversation", { entries: transcript }).catch(function () {});
+  }
 
   function tools(msg, items) {
     var bar = document.createElement("div");
@@ -264,6 +273,12 @@
       if (history[i].role === "user") seen += 1;
       if (seen === userIndex) { history.length = i; break; }
     }
+    var seenT = -1;
+    for (var k = 0; k < transcript.length; k++) {
+      if (transcript[k].role === "user") seenT += 1;
+      if (seenT === userIndex) { transcript.length = k; break; }
+    }
+    persist();
     pending = null;
     stopPending = null;
     lastReply = null;
@@ -393,6 +408,7 @@
 
     say(typed);
     history.push({ role: "user", text: typed });
+    transcript.push({ role: "user", text: typed });
     area.value = "";
     autosize(area);
     var r = reply();
@@ -422,6 +438,8 @@
          * uses. The thread says what was done, so nothing happens
          * silently. */
         history.push({ role: "agent", text: "DO: " + data.action });
+        transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
+        persist();
         act(data.action, data.where || "", box, r);
         scrollToEnd();
         return;
@@ -433,6 +451,8 @@
         p.innerHTML = prose(data.answer);
         box.appendChild(p);
         history.push({ role: "agent", text: data.answer });
+        transcript.push({ role: "agent", kind: "answer", text: data.answer });
+        persist();
         area.focus();
         scrollToEnd();
         return;
@@ -440,6 +460,8 @@
       if (data.question) {
         note(box, data.question);
         history.push({ role: "agent", text: data.question });
+        transcript.push({ role: "agent", kind: "question", text: data.question });
+        persist();
         pending = request;
         area.focus();
         scrollToEnd();
@@ -447,6 +469,8 @@
       }
       if (!data.ok) {
         note(box, IN_THE_GUI[data.code] || data.error);
+        transcript.push({ role: "agent", kind: "error", text: IN_THE_GUI[data.code] || data.error });
+        persist();
         if (IN_THE_GUI[data.code]) openSettings();
         scrollToEnd();
         return;
@@ -456,6 +480,11 @@
         : "Accepted after " + data.cycles + " attempts.", true);
       history.push({ role: "agent", text: "Wrote a config:\n" + data.yaml });
       currentConfig = data.yaml;
+      transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
+                        cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
+                          return a.refusal ? { refusal: { message: a.refusal.message } } : {};
+                        }) });
+      persist();
       wireActions(r, data, box);
       scrollToEnd();
     }).catch(function () {
@@ -649,7 +678,64 @@
     };
   }
 
+  /* Draw a saved thread again. Each entry renders the way it rendered
+   * the first time; a config gets its actions back, wired to the stored
+   * config, so Run here on a restored thread runs what was written. */
+  function restore() {
+    fetch("/api/agent/conversation").then(function (r) { return r.json(); }).then(function (d) {
+      var entries = (d && d.entries) || [];
+      if (!entries.length) return;
+      entries.forEach(function (e) {
+        if (e.role === "user") {
+          say(e.text || "");
+          history.push({ role: "user", text: e.text || "" });
+          transcript.push({ role: "user", text: e.text || "" });
+          return;
+        }
+        var r = reply();
+        var box = r.part("attempts");
+        if (e.kind === "config") {
+          (e.attempts || []).forEach(function (a) {
+            if (a.refusal) note(box, "Refused: " + a.refusal.message);
+          });
+          note(box, e.cycles === 1 ? "Accepted first time."
+               : "Accepted after " + (e.cycles || "several") + " attempts.", true);
+          history.push({ role: "agent", text: "Wrote a config:\n" + e.yaml });
+          currentConfig = e.yaml;
+          wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles }, box);
+        } else if (e.kind === "answer") {
+          var p = document.createElement("div");
+          p.className = "agent-answer";
+          p.innerHTML = prose(e.text);
+          box.appendChild(p);
+          history.push({ role: "agent", text: e.text });
+        } else if (e.kind === "question") {
+          note(box, e.text);
+          history.push({ role: "agent", text: e.text });
+        } else if (e.kind === "action") {
+          note(box, "Did: " + e.action + ".", true);
+          history.push({ role: "agent", text: "DO: " + e.action });
+        } else {
+          note(box, e.text || "");
+        }
+        transcript.push(e);
+      });
+      scrollToEnd();
+    }).catch(function () {});
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
+    restore();
+    var fresh = el("agent-new");
+    if (fresh) {
+      fresh.addEventListener("click", function () {
+        if (transcript.length && !window.confirm("Start a new conversation? The current one is cleared.")) return;
+        el("agent-thread").innerHTML = "";
+        history = []; transcript = []; currentConfig = null; pending = null;
+        stopPending = null; lastReply = null;
+        post("/api/agent/conversation/clear", {}).catch(function () {});
+      });
+    }
     if (!el("agent-provider")) return;
     loadEngine();
 
