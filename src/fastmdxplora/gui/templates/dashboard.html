@@ -844,10 +844,14 @@
               <div class="page-subtitle">Describe a study in natural language.</div>
             </div>
             <div class="page-header-actions">
-              <button id="agent-new" class="ghost-btn" type="button" title="Clear the thread and start again">New conversation</button>
+              <button id="agent-conversations" class="ghost-btn" type="button" title="Open an earlier conversation">Conversations</button>
+              <button id="agent-new" class="ghost-btn" type="button" title="Start a fresh thread; this one is kept">New</button>
               <button id="agent-settings-open" class="ghost-btn" type="button">Settings</button>
             </div>
           </div>
+
+          <!-- Earlier conversations, newest first, to reopen or delete. -->
+          <div class="agent-conv-list" id="agent-conv-list" hidden></div>
 
           <!-- The conversation. Each exchange is what you said and what
                came back: the refusals as it corrected itself, the config,

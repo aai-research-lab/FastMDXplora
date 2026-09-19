@@ -300,6 +300,11 @@ def make_handler(
 
                 self._send_json(read_conversation(app_runtime.exploration_root))
                 return
+            if path == "/api/agent/conversations":
+                from fastmdxplora.gui.agent_panel import list_conversations
+
+                self._send_json(list_conversations(app_runtime.exploration_root))
+                return
             if path in {"/api/browse", "/api/inspect-directory"} and not allow_control:
                 # These walk the filesystem for a folder picker, which is a
                 # reasonable thing for a tool on your own machine and not for
@@ -495,6 +500,9 @@ def make_handler(
                 "/api/agent/run",
                 "/api/agent/conversation",
                 "/api/agent/conversation/clear",
+                "/api/agent/conversation/new",
+                "/api/agent/conversation/open",
+                "/api/agent/conversation/delete",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -659,6 +667,23 @@ def make_handler(
                 from fastmdxplora.gui.agent_panel import clear_conversation
 
                 self._send_json(clear_conversation(app_runtime.exploration_root))
+                return
+            if path == "/api/agent/conversation/new":
+                from fastmdxplora.gui.agent_panel import new_conversation
+
+                self._send_json(new_conversation(app_runtime.exploration_root))
+                return
+            if path == "/api/agent/conversation/open":
+                from fastmdxplora.gui.agent_panel import open_conversation
+
+                self._send_json(open_conversation(app_runtime.exploration_root,
+                                                  (payload or {}).get("id")))
+                return
+            if path == "/api/agent/conversation/delete":
+                from fastmdxplora.gui.agent_panel import delete_conversation
+
+                self._send_json(delete_conversation(app_runtime.exploration_root,
+                                                    (payload or {}).get("id")))
                 return
             if path == "/api/explore/switch":
                 folder = str((payload or {}).get("folder") or "").strip()

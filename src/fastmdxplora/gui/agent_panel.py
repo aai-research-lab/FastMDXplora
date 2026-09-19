@@ -446,69 +446,188 @@ def _hms(seconds: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# The conversation, kept.
+# Conversations, kept.
 #
-# The thread lived only in the browser's memory: a refresh emptied it. A
-# conversation about a study is part of the study's record, and a person
-# who closes the tab and comes back should find what they said and what
-# came back. One file per workspace, beside the runs, owned by the server
-# so it survives the browser and follows the workspace rather than one
-# machine's local storage.
+# The thread lived only in the browser's memory: a refresh emptied it.
+# Then it was one file per workspace, and "New conversation" deleted it.
+# A conversation about a study is part of the record, and a person should
+# be able to start a fresh thread without losing the last one, and come
+# back to any of them. One folder per workspace, one file per
+# conversation, and a pointer to the current one.
 # ---------------------------------------------------------------------------
 
-CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"
+CONVERSATIONS_DIR = ".fastmdxplora_agent_conversations"
+CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"  # the pre-0047 single file
 CONVERSATION_KEEP = 400
 
 
-def conversation_path(workspace: Any) -> Path:
-    return Path(workspace) / CONVERSATION_FILE
+def _store(workspace: Any) -> Path:
+    return Path(workspace) / CONVERSATIONS_DIR
 
 
-def read_conversation(workspace: Any) -> dict[str, Any]:
-    """What was said, or an empty thread. A broken file is an empty thread
-    too: a person should not be locked out of the Agent by a corrupt cache."""
+def _migrate_single_file(workspace: Any) -> None:
+    """The one-file thread from before becomes the first conversation."""
+    import json
+    import os
+
+    old = Path(workspace) / CONVERSATION_FILE
+    if not old.is_file():
+        return
+    store = _store(workspace)
+    store.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(old.read_text(encoding="utf-8"))
+        entries = data.get("entries") if isinstance(data, dict) else []
+    except (OSError, ValueError):
+        entries = []
+    cid = _new_id()
+    _write_one(store, cid, entries or [])
+    (store / "current").write_text(cid, encoding="utf-8")
+    try:
+        os.replace(old, old.with_suffix(".json.migrated"))
+    except OSError:
+        pass
+
+
+def _new_id() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("conv-%Y%m%d-%H%M%S-%f")
+
+
+def _title_of(entries: list) -> str:
+    for e in entries:
+        if isinstance(e, dict) and e.get("role") == "user" and e.get("text"):
+            text = str(e["text"]).strip().splitlines()[0]
+            return text[:60] + ("\u2026" if len(text) > 60 else "")
+    return "New conversation"
+
+
+def _read_one(store: Path, cid: str) -> list:
     import json
 
-    path = conversation_path(workspace)
-    if not path.is_file():
-        return {"ok": True, "entries": []}
+    path = store / f"{cid}.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"ok": True, "entries": []}
+        return []
     entries = data.get("entries") if isinstance(data, dict) else None
-    if not isinstance(entries, list):
-        entries = []
-    return {"ok": True, "entries": entries[-CONVERSATION_KEEP:]}
+    return entries[-CONVERSATION_KEEP:] if isinstance(entries, list) else []
+
+
+def _write_one(store: Path, cid: str, entries: list) -> None:
+    import json
+    import os
+
+    clean = [e for e in entries if isinstance(e, dict) and e.get("role") in ("user", "agent")]
+    clean = clean[-CONVERSATION_KEEP:]
+    path = store / f"{cid}.json"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"version": 2, "id": cid, "entries": clean}, indent=1),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _current_id(workspace: Any) -> str | None:
+    store = _store(workspace)
+    try:
+        cid = (store / "current").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return cid if (store / f"{cid}.json").is_file() else None
+
+
+def read_conversation(workspace: Any) -> dict[str, Any]:
+    """The current thread, or an empty one. A broken file is an empty
+    thread: a person should not be locked out of the Agent by a cache."""
+    _migrate_single_file(workspace)
+    cid = _current_id(workspace)
+    if cid is None:
+        return {"ok": True, "id": None, "entries": []}
+    return {"ok": True, "id": cid, "entries": _read_one(_store(workspace), cid)}
 
 
 def write_conversation(workspace: Any, entries: Any) -> dict[str, Any]:
-    """Replace the thread with what the browser holds. Bounded, atomic."""
-    import json
-    import os
-    from pathlib import Path
-
+    """Replace the current thread with what the browser holds. Starts one
+    if none is current. Bounded, atomic."""
     if not isinstance(entries, list):
         return {"ok": False, "error": "entries must be a list"}
-    clean = [e for e in entries if isinstance(e, dict) and e.get("role") in ("user", "agent")]
-    clean = clean[-CONVERSATION_KEEP:]
-    path = conversation_path(workspace)
+    _migrate_single_file(workspace)
+    store = _store(workspace)
     try:
-        Path(workspace).mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"version": 1, "entries": clean}, indent=1),
-                       encoding="utf-8")
-        os.replace(tmp, path)
+        store.mkdir(parents=True, exist_ok=True)
+        cid = _current_id(workspace)
+        if cid is None:
+            cid = _new_id()
+            (store / "current").write_text(cid, encoding="utf-8")
+        _write_one(store, cid, entries)
     except OSError as exc:
         return {"ok": False, "error": f"Could not save the conversation: {exc}"}
-    return {"ok": True, "entries": clean}
+    return {"ok": True, "id": cid, "entries": _read_one(store, cid)}
+
+
+def new_conversation(workspace: Any) -> dict[str, Any]:
+    """Start a fresh thread. The current one stays where it is."""
+    _migrate_single_file(workspace)
+    store = _store(workspace)
+    try:
+        store.mkdir(parents=True, exist_ok=True)
+        cid = _new_id()
+        _write_one(store, cid, [])
+        (store / "current").write_text(cid, encoding="utf-8")
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "id": cid, "entries": []}
+
+
+def list_conversations(workspace: Any) -> dict[str, Any]:
+    """Every conversation in the workspace, newest first."""
+    _migrate_single_file(workspace)
+    store = _store(workspace)
+    current = _current_id(workspace)
+    rows = []
+    if store.is_dir():
+        for path in sorted(store.glob("conv-*.json"), reverse=True):
+            cid = path.stem
+            entries = _read_one(store, cid)
+            rows.append({"id": cid, "title": _title_of(entries),
+                         "entries": len(entries), "current": cid == current,
+                         "started": cid[5:13] + " " + cid[14:16] + ":" + cid[16:18]})
+    return {"ok": True, "current": current, "conversations": rows}
+
+
+def open_conversation(workspace: Any, cid: Any) -> dict[str, Any]:
+    """Make a saved conversation the current one and return it."""
+    store = _store(workspace)
+    cid = str(cid or "")
+    if not cid.startswith("conv-") or "/" in cid or not (store / f"{cid}.json").is_file():
+        return {"ok": False, "error": "No such conversation."}
+    (store / "current").write_text(cid, encoding="utf-8")
+    return {"ok": True, "id": cid, "entries": _read_one(store, cid)}
+
+
+def delete_conversation(workspace: Any, cid: Any) -> dict[str, Any]:
+    """Delete one conversation. Asked for by the person, per conversation,
+    never as a side effect of starting another."""
+    store = _store(workspace)
+    cid = str(cid or "")
+    path = store / f"{cid}.json"
+    if not cid.startswith("conv-") or "/" in cid or not path.is_file():
+        return {"ok": False, "error": "No such conversation."}
+    try:
+        path.unlink()
+        if _current_id(workspace) == cid:
+            (store / "current").unlink(missing_ok=True)
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True}
 
 
 def clear_conversation(workspace: Any) -> dict[str, Any]:
-    path = conversation_path(workspace)
-    try:
-        if path.exists():
-            path.unlink()
-    except OSError as exc:
-        return {"ok": False, "error": str(exc)}
-    return {"ok": True, "entries": []}
+    """Kept for the old endpoint: it now means "delete the current one"."""
+    cid = _current_id(workspace)
+    if cid is None:
+        return {"ok": True, "entries": []}
+    answer = delete_conversation(workspace, cid)
+    answer["entries"] = []
+    return answer

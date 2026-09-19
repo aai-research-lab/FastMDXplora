@@ -2134,10 +2134,12 @@ class TestTheCentreStaysCentred(unittest.TestCase):
                 self.assertIn("minmax(0, 1fr)", block)
 
 
-class TestTheConversationIsKept(unittest.TestCase):
+class TestConversationsAreKept(unittest.TestCase):
     """The thread lived only in the browser's memory: a refresh emptied it.
-    A conversation about a study is part of the study's record. One file
-    per workspace, owned by the server, restored when the page opens."""
+    Then it was one file per workspace, and New conversation deleted it.
+    Now there are many, kept: New starts a fresh thread and leaves the
+    last one where it can be reopened, and delete is per conversation,
+    asked for, never a side effect of starting another."""
 
     def workspace(self):
         import tempfile
@@ -2155,64 +2157,107 @@ class TestTheConversationIsKept(unittest.TestCase):
 
         ws = self.workspace()
         entries = [{"role": "user", "text": "simulate 1UAO"},
-                   {"role": "agent", "kind": "config", "yaml": "systems:\\n- system: 1UAO\\n",
+                   {"role": "agent", "kind": "config", "yaml": "systems:\n- system: 1UAO\n",
                     "config": {"systems": [{"system": "1UAO"}]}, "cycles": 1}]
         self.assertTrue(write_conversation(ws, entries)["ok"])
         self.assertEqual(read_conversation(ws)["entries"], entries)
 
-    def test_the_file_lives_beside_the_runs(self):
-        from fastmdxplora.gui.agent_panel import CONVERSATION_FILE, write_conversation
+    def test_new_keeps_the_old_one(self):
+        from fastmdxplora.gui.agent_panel import (list_conversations, new_conversation,
+                                                   read_conversation, write_conversation)
 
         ws = self.workspace()
-        write_conversation(ws, [{"role": "user", "text": "x"}])
-        self.assertTrue((ws / CONVERSATION_FILE).is_file())
+        write_conversation(ws, [{"role": "user", "text": "first thread"}])
+        first = read_conversation(ws)["id"]
+        fresh = new_conversation(ws)
+        self.assertTrue(fresh["ok"])
+        self.assertEqual(fresh["entries"], [])
+        self.assertNotEqual(read_conversation(ws)["id"], first)
+        ids = [c["id"] for c in list_conversations(ws)["conversations"]]
+        self.assertIn(first, ids)
 
-    def test_a_bad_role_is_dropped_and_the_thread_is_bounded(self):
-        from fastmdxplora.gui.agent_panel import CONVERSATION_KEEP, write_conversation
-
-        ws = self.workspace()
-        many = [{"role": "user", "text": str(i)} for i in range(CONVERSATION_KEEP + 50)]
-        many.append({"role": "system", "text": "not a party to this"})
-        kept = write_conversation(ws, many)["entries"]
-        self.assertEqual(len(kept), CONVERSATION_KEEP)
-        self.assertTrue(all(e["role"] in ("user", "agent") for e in kept))
-
-    def test_a_corrupt_file_is_an_empty_thread(self):
-        # A person should not be locked out of the Agent by a corrupt cache.
-        from fastmdxplora.gui.agent_panel import CONVERSATION_FILE, read_conversation
+    def test_a_conversation_can_be_reopened(self):
+        from fastmdxplora.gui.agent_panel import (new_conversation, open_conversation,
+                                                   read_conversation, write_conversation)
 
         ws = self.workspace()
-        (ws / CONVERSATION_FILE).write_text("{not json", encoding="utf-8")
-        self.assertEqual(read_conversation(ws)["entries"], [])
+        write_conversation(ws, [{"role": "user", "text": "chignolin"}])
+        first = read_conversation(ws)["id"]
+        new_conversation(ws)
+        write_conversation(ws, [{"role": "user", "text": "trpcage"}])
+        back = open_conversation(ws, first)
+        self.assertTrue(back["ok"])
+        self.assertEqual(back["entries"][0]["text"], "chignolin")
+        self.assertEqual(read_conversation(ws)["id"], first)
 
-    def test_clear_removes_the_file(self):
-        from fastmdxplora.gui.agent_panel import (CONVERSATION_FILE, clear_conversation,
+    def test_the_list_is_titled_by_the_first_message_newest_first(self):
+        from fastmdxplora.gui.agent_panel import (list_conversations, new_conversation,
                                                    write_conversation)
 
         ws = self.workspace()
-        write_conversation(ws, [{"role": "user", "text": "x"}])
-        self.assertTrue(clear_conversation(ws)["ok"])
+        write_conversation(ws, [{"role": "user", "text": "a very long first message " * 5}])
+        new_conversation(ws)
+        write_conversation(ws, [{"role": "user", "text": "second"}])
+        rows = list_conversations(ws)["conversations"]
+        self.assertEqual(rows[0]["title"], "second")
+        self.assertTrue(rows[0]["current"])
+        self.assertTrue(rows[1]["title"].endswith("\u2026"))
+        self.assertLessEqual(len(rows[1]["title"]), 61)
+
+    def test_delete_is_one_conversation_and_refuses_a_bad_id(self):
+        from fastmdxplora.gui.agent_panel import (delete_conversation, list_conversations,
+                                                   new_conversation, read_conversation,
+                                                   write_conversation)
+
+        ws = self.workspace()
+        write_conversation(ws, [{"role": "user", "text": "keep"}])
+        keep = read_conversation(ws)["id"]
+        new_conversation(ws)
+        write_conversation(ws, [{"role": "user", "text": "drop"}])
+        drop = read_conversation(ws)["id"]
+        self.assertTrue(delete_conversation(ws, drop)["ok"])
+        ids = [c["id"] for c in list_conversations(ws)["conversations"]]
+        self.assertEqual(ids, [keep])
+        self.assertFalse(delete_conversation(ws, "../etc/passwd")["ok"])
+        self.assertFalse(delete_conversation(ws, "conv-nope")["ok"])
+
+    def test_the_old_single_file_becomes_the_first_conversation(self):
+        from fastmdxplora.gui.agent_panel import CONVERSATION_FILE, read_conversation
+
+        ws = self.workspace()
+        (ws / CONVERSATION_FILE).write_text(
+            '{"entries": [{"role": "user", "text": "from before"}]}', encoding="utf-8")
+        self.assertEqual(read_conversation(ws)["entries"][0]["text"], "from before")
         self.assertFalse((ws / CONVERSATION_FILE).exists())
 
-    def test_the_panel_saves_after_each_exchange_and_restores_on_open(self):
+    def test_a_corrupt_file_is_an_empty_thread(self):
+        from fastmdxplora.gui.agent_panel import _store, read_conversation, write_conversation
+
+        ws = self.workspace()
+        write_conversation(ws, [{"role": "user", "text": "x"}])
+        cid = read_conversation(ws)["id"]
+        (_store(ws) / f"{cid}.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual(read_conversation(ws)["entries"], [])
+
+    def test_the_panel_has_new_and_a_list_and_no_confirm_on_new(self):
         import pathlib
 
         import fastmdxplora.gui as gui
 
-        script = (pathlib.Path(gui.__file__).parent / "static"
-                  / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn('post("/api/agent/conversation", { entries: transcript })', script)
-        self.assertIn("function restore()", script)
-        self.assertIn('fetch("/api/agent/conversation")', script)
-        # Every kind of reply is recorded, and a restored config gets its
-        # actions back.
-        for kind in ('kind: "config"', 'kind: "answer"', 'kind: "question"', 'kind: "action"'):
-            with self.subTest(kind=kind):
-                self.assertIn(kind, script)
-        self.assertIn("wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles }, box);", script)
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('id="agent-new"', page)
+        self.assertIn('id="agent-conversations"', page)
+        self.assertIn('id="agent-conv-list"', page)
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('post("/api/agent/conversation/new", {})', script)
+        self.assertIn('post("/api/agent/conversation/open", { id: c.id })', script)
+        self.assertIn("function replay(entries)", script)
+        # New does not ask; nothing is lost. Delete asks; something is.
+        self.assertNotIn("Start a new conversation? The current one is cleared.", script)
+        self.assertIn("This cannot be undone.", script)
+
 
 
 class TestItHasAName(unittest.TestCase):

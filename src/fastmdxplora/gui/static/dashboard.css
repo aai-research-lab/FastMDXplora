@@ -3007,3 +3007,17 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .study-elsewhere .status-dot { width: 6px; height: 6px; margin: 0; }
 .study-elsewhere > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .study-elsewhere .ghost-btn { padding: 3px 8px; font-size: 10px; }
+
+.agent-conv-list {
+    margin: 0 0 12px; padding: 6px; border-radius: 10px;
+    background: var(--background-elevated); border: 1px solid var(--border-subtle);
+    max-height: 40vh; overflow-y: auto;
+}
+.agent-conv-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; font-size: 13px; }
+.agent-conv-row:hover { background: var(--background-secondary); }
+.agent-conv-row.current { color: var(--text-primary); }
+.agent-conv-row .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.agent-conv-row .when { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); }
+.agent-conv-row .del { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 4px; }
+.agent-conv-row .del:hover { color: var(--status-error, #e5484d); }
+.agent-conv-empty { padding: 10px; color: var(--text-muted); font-size: 12.5px; }

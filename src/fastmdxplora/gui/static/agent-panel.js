@@ -683,7 +683,11 @@
    * config, so Run here on a restored thread runs what was written. */
   function restore() {
     fetch("/api/agent/conversation").then(function (r) { return r.json(); }).then(function (d) {
-      var entries = (d && d.entries) || [];
+      replay((d && d.entries) || []);
+    }).catch(function () {});
+  }
+
+  function replay(entries) {
       if (!entries.length) return;
       entries.forEach(function (e) {
         if (e.role === "user") {
@@ -721,19 +725,82 @@
         transcript.push(e);
       });
       scrollToEnd();
-    }).catch(function () {});
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     restore();
+    /* Start fresh: the thread on screen is already saved and stays in
+     * the list. Nothing is lost, so nothing is confirmed. */
+    function resetThread() {
+      el("agent-thread").innerHTML = "";
+      history = []; transcript = []; currentConfig = null; pending = null;
+      stopPending = null; lastReply = null;
+    }
     var fresh = el("agent-new");
     if (fresh) {
       fresh.addEventListener("click", function () {
-        if (transcript.length && !window.confirm("Start a new conversation? The current one is cleared.")) return;
-        el("agent-thread").innerHTML = "";
-        history = []; transcript = []; currentConfig = null; pending = null;
-        stopPending = null; lastReply = null;
-        post("/api/agent/conversation/clear", {}).catch(function () {});
+        post("/api/agent/conversation/new", {}).then(function () {
+          resetThread();
+          hideList();
+          el("agent-request").focus();
+        }).catch(function () {});
+      });
+    }
+
+    /* The list of conversations, newest first. Click a title to reopen
+     * it; the cross deletes that one, and only that one, after asking. */
+    var list = el("agent-conv-list");
+    function hideList() { if (list) list.hidden = true; }
+    function showList() {
+      fetch("/api/agent/conversations").then(function (r) { return r.json(); }).then(function (d) {
+        list.innerHTML = "";
+        var rows = (d && d.conversations) || [];
+        if (!rows.length) {
+          var e = document.createElement("div");
+          e.className = "agent-conv-empty";
+          e.textContent = "No conversations yet.";
+          list.appendChild(e);
+        }
+        rows.forEach(function (c) {
+          var row = document.createElement("div");
+          row.className = "agent-conv-row" + (c.current ? " current" : "");
+          var title = document.createElement("span");
+          title.className = "title";
+          title.textContent = c.title + (c.current ? "  (open)" : "");
+          title.title = c.entries + " messages";
+          title.addEventListener("click", function () {
+            post("/api/agent/conversation/open", { id: c.id }).then(function (o) {
+              if (!o || !o.ok) return;
+              resetThread();
+              hideList();
+              replay(o.entries || []);
+            });
+          });
+          var when = document.createElement("span");
+          when.className = "when";
+          when.textContent = c.started;
+          var del = document.createElement("button");
+          del.className = "del";
+          del.type = "button";
+          del.title = "Delete this conversation";
+          del.textContent = "\u2715";
+          del.addEventListener("click", function () {
+            if (!window.confirm("Delete \u201c" + c.title + "\u201d? This cannot be undone.")) return;
+            post("/api/agent/conversation/delete", { id: c.id }).then(function () {
+              if (c.current) resetThread();
+              showList();
+            });
+          });
+          row.appendChild(title); row.appendChild(when); row.appendChild(del);
+          list.appendChild(row);
+        });
+        list.hidden = false;
+      }).catch(function () {});
+    }
+    var convs = el("agent-conversations");
+    if (convs && list) {
+      convs.addEventListener("click", function () {
+        if (list.hidden) showList(); else hideList();
       });
     }
     if (!el("agent-provider")) return;
