@@ -868,7 +868,7 @@
 
   function currentState() {
     const config = {
-      output: el("run-output").value.trim() || defaultOutput(),
+      output: el("run-output").value.trim(),
       include: PHASES.filter((p) => state.phases.has(p.name)).map((p) => p.name),
     };
 
@@ -961,17 +961,18 @@
     return "";
   }
 
-  /* Timestamped, as the CLI's default is. A fixed name collided on the
-   * second run -- "Output folder already exists and is not empty" -- and
-   * sent somebody off to choose a folder for a study they had already
-   * described. The run refuses to overwrite, correctly; the default should
-   * not make it need to. */
+  /* The default name is the server's to make -- one rule, in
+   * fastmdxplora/naming.py, that knows the system:
+   * fastmdxplora_<system>_study_<UTC timestamp>. The browser sends the
+   * field as typed, empty included, and never names a folder itself; a
+   * copy of the rule here would be the seventh, and drift. For the note
+   * under the field it shows the pattern. */
   function defaultOutput() {
-    const d = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    return "fastmdxplora_output_" + d.getUTCFullYear() + pad(d.getUTCMonth() + 1) +
-      pad(d.getUTCDate()) + "_" + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
-      pad(d.getUTCSeconds());
+    const field = state.start === "structure" ? el("run-system") : el("run-topology");
+    const system = (field && field.value.trim()) || "";
+    const slug = system ? system.split(/[\\/]/).pop().replace(/\.[^.]+$/, "")
+      .replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 40) : "";
+    return "fastmdxplora" + (slug ? "_" + slug : "") + "_study_<timestamp>";
   }
 
   function ready() {

@@ -750,7 +750,7 @@ def test_cli_dashboard_remaining_lifecycle_and_startup_branches(
     generated = cli._resolve_dashboard_output_dir(SimpleNamespace(output_dir=None))
     assert explicit == (tmp_path / "explicit").resolve()
     assert configured == (tmp_path / "configured").resolve()
-    assert generated.name.startswith("fastmdxplora_output_")
+    assert generated.name.startswith("fastmdxplora_") and "_study_" in generated.name
 
     gui_args = SimpleNamespace(
         output=tmp_path,

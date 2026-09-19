@@ -64,7 +64,7 @@ nearest match.
 | Key | Type | What it is |
 |---|---|---|
 | `systems` | list | **Required.** One entry per system. See below |
-| `output` | str | Where everything goes. Defaults to `./fastmdxplora_output_<UTC timestamp>` |
+| `output` | str | Where everything goes. Defaults to `./fastmdxplora_<system>_study_<UTC timestamp>` |
 | `include` | list | Which phases to run: `setup`, `simulation`, `analysis`, `report` |
 | `exclude` | list | Which phases to skip. Mutually exclusive with `include` |
 

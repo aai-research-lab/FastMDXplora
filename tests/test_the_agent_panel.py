@@ -1419,7 +1419,9 @@ class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "run-builder.js").read_text(encoding="utf-8")
         self.assertIn("function defaultOutput()", script)
-        self.assertIn('"fastmdxplora_output_" + d.getUTCFullYear()', script)
+        # The browser does not name the folder; the server does, by one rule.
+        self.assertNotIn('"fastmdxplora_output_"', script)
+        self.assertIn('output: el("run-output").value.trim(),', script)
 
 
 class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
@@ -1553,7 +1555,7 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         from fastmdxplora.gui import exploration
 
         source = inspect.getsource(exploration.DashboardRuntime.launch_from_config)
-        self.assertIn('f"fastmdxplora_output_{stamp}"', source)
+        self.assertIn("default_output_name(system_of(dict(source)))", source)
         self.assertNotIn('requested = "analysis_output"', source)
 
 
@@ -1612,7 +1614,9 @@ class TestRunHereActuallyRuns(unittest.TestCase):
         answer = run_endpoint({"config": {"systems": [{"system": "1UAO"}]}},
                               self.runtime())
         self.assertTrue(answer["ok"])
-        self.assertIn("fastmdxplora_output_", answer["output"])
+        import pathlib
+
+        self.assertRegex(pathlib.Path(answer["output"]).name, r"fastmdxplora_1UAO_study_\d{14}")
 
 
 class TestTheBudgetIsAConfigKey(unittest.TestCase):

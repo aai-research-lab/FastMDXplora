@@ -24,7 +24,7 @@ For the flag spelling of any setting below, see
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `output` | str | `./fastmdxplora_output_<UTC timestamp>` | Where everything goes |
+| `output` | str | `./fastmdxplora_<system>_study_<UTC timestamp>` | Where everything goes |
 | `include` | list | all four | Phases to run: `setup`, `simulation`, `analysis`, `report` |
 | `exclude` | list | — | Phases to skip. Mutually exclusive with `include` |
 | `explain` | bool | `true` | Say why each step is happening, as it happens |

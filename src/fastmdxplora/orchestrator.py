@@ -157,7 +157,7 @@ class FastMDXplora:
         is the same either way. Mutually exclusive with ``system``.
     output_dir : str | os.PathLike | None
         Where to write project outputs. Defaults to
-        ``./fastmdxplora_output_<timestamp>``.
+        ``./fastmdxplora_<system>_study_<timestamp>``.
     options : dict[str, dict] | None
         Per-phase keyword arguments, e.g.
         ``{"simulation": {"duration_ns": 100}}``.
@@ -260,10 +260,11 @@ class FastMDXplora:
         self._config_include: list[str] | None = include
         self._config_exclude: list[str] | None = exclude
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        from fastmdxplora.naming import default_output_name, system_of
+
         self.output_dir: Path | None = (
             Path(output_dir) if output_dir
-            else Path(f"fastmdxplora_output_{timestamp}")
+            else Path(default_output_name(system_of(self.config)))
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
 

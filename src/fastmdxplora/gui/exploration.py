@@ -925,10 +925,9 @@ class DashboardRuntime:
                 # collided with the first: "Output folder already exists
                 # and is not empty". The refusal is right; the default
                 # should not make it fire.
-                from datetime import datetime, timezone
+                from fastmdxplora.naming import default_output_name, system_of
 
-                stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                requested = f"fastmdxplora_output_{stamp}"
+                requested = default_output_name(system_of(dict(source)))
             candidate = Path(requested).expanduser()
             if candidate.is_absolute():
                 output_dir = candidate.resolve()
