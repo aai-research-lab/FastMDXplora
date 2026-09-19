@@ -1835,7 +1835,7 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
 
     def test_the_centre_has_a_reading_width_except_the_viewer(self):
         css = self.css()
-        self.assertIn(".page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }", css)
+        self.assertIn(".page-shell { max-width: 900px; margin: 0 auto; width: 100%; }", css)
         self.assertIn('html[data-page="viewer"] .page-shell { max-width: none; }', css)
 
     def test_the_panel_starts_wide(self):
@@ -1844,11 +1844,11 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
         import fastmdxplora.gui as gui
 
         css = self.css()
-        self.assertIn("--panel-width: 700px;", css)
+        self.assertIn("--panel-width: 560px;", css)
         frame = (pathlib.Path(gui.__file__).parent / "static"
                  / "frame.js").read_text(encoding="utf-8")
-        self.assertIn('store.get("panelWidth", "700")', frame)
-        self.assertIn("panel: [280, 960]", frame)
+        self.assertIn('store.get("panelWidth", "560")', frame)
+        self.assertIn("panel: [280, 640]", frame)
 
     def test_the_agents_prose_is_a_serif_and_the_persons_is_not(self):
         css = self.css()
@@ -2044,3 +2044,56 @@ class TestSixMoreFromUsingIt(unittest.TestCase):
 
         self.assertEqual(convergence._ENOUGH_SAMPLES, MINIMUM_EFFECTIVE_SAMPLES)
         self.assertEqual(MINIMUM_EFFECTIVE_SAMPLES, 10.0)
+
+
+class TestSixFromLaunchingIt(unittest.TestCase):
+
+    def test_the_browser_opens_after_the_server_answers(self):
+        # It was opened first, and on a completed-run folder reached the
+        # port before it was listening: "unable to connect" until a refresh.
+        import inspect
+
+        from fastmdxplora.gui import server
+
+        source = inspect.getsource(server.serve_dashboard)
+        self.assertIn("on_ready", source)
+        self.assertIn("urllib.request.urlopen(url", source)
+        # The CLI hands serve_dashboard an on_ready rather than opening first.
+        from fastmdxplora.cli import main as cli
+
+        whole = inspect.getsource(inspect.getmodule(cli))
+        self.assertIn("on_ready=on_ready", whole)
+
+    def test_the_sidebar_collapse_leaves_the_centre(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        # minmax(0, 1fr) for the centre when the sidebar is away: it takes
+        # the room, it does not collapse with the sidebar.
+        self.assertIn("body.sidebar-collapsed .app-shell {\n    grid-template-columns: 0 0 minmax(0, 1fr)", css)
+
+    def test_the_widths_are_smaller(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        self.assertIn("--panel-width: 560px;", css)
+        self.assertIn(".page-shell { max-width: 900px;", css)
+        frame = (pathlib.Path(gui.__file__).parent / "static"
+                 / "frame.js").read_text(encoding="utf-8")
+        self.assertIn("panel: [280, 640]", frame)
+
+    def test_an_empty_report_parameter_is_dropped(self):
+        # "state_csv: None" in the report said a file was not given, which
+        # is noise, not a setting.
+        import inspect
+
+        from fastmdxplora.report import document
+
+        source = inspect.getsource(document)
+        self.assertIn("v is not None and v != \"\"", source)

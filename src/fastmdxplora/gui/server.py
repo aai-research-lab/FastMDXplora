@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from functools import lru_cache
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -905,6 +906,7 @@ def serve_dashboard(
     config: DashboardConfig | None = None,
     home_mode: bool = False,
     exploration_root: str | Path | None = None,
+    on_ready: Callable[[str], None] | None = None,
 ) -> None:
     session = start_dashboard_session(
         output=output,
@@ -915,6 +917,28 @@ def serve_dashboard(
         exploration_root=exploration_root,
     )
     print(f"FastMDXplora GUI running at {session.url}")
+    if on_ready is not None:
+        # After the socket answers, not before. One request that returns
+        # confirms the handler is serving, and only then is the browser
+        # pointed at it, so the first page it asks for is one the server
+        # can give -- a completed-run folder has more to read before the
+        # first response, which is where the race showed.
+        import threading
+        import time
+        import urllib.request
+
+        def _open_when_ready(url: str) -> None:
+            for _ in range(100):
+                try:
+                    with urllib.request.urlopen(url, timeout=0.5) as response:
+                        response.read(1)
+                    break
+                except Exception:  # noqa: BLE001 - keep polling
+                    time.sleep(0.1)
+            on_ready(url)
+
+        threading.Thread(target=_open_when_ready, args=(session.url,),
+                         daemon=True).start()
     if session.port_was_changed:
         print(
             f"Requested port {session.requested_port} was busy, "

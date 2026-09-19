@@ -415,11 +415,15 @@ def _results_section(project_root: Path) -> str:
         opts = per_analysis.get("options", {})
         selection = per_analysis.get("selection")
 
-        if opts or selection:
+        # A parameter left at its default reads as None, and "state_csv:
+        # None" in the report says a file was not given, which is noise, not
+        # a setting. Drop the empty ones; if nothing is left, drop the block.
+        shown = [(k, v) for k, v in opts.items() if v is not None and v != ""]
+        if selection or shown:
             lines.append("**Parameters:**")
             if selection:
                 lines.append(f"- `selection`: `{_code_text(selection)}`")
-            for k, v in opts.items():
+            for k, v in shown:
                 lines.append(f"- `{_code_text(k)}`: `{_code_text(v)}`")
 
         # What the analysis worked out, said in a sentence rather than

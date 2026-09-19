@@ -1758,20 +1758,30 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
             getattr(args, "binding_pocket_cutoff_A", 5.0) or 5.0
         ),
     )
+    # Open the browser only once the server answers. It was opened first,
+    # and on a completed-run folder -- more to read before the first
+    # response -- the browser reached the port before it was listening and
+    # showed "unable to connect" until a refresh. A short poll closes the
+    # race; the browser still opens best-effort.
+    on_ready = None
     if not getattr(args, "no_browser", False):
         import webbrowser
-        try:
-            fragment = f"#{panel}" if panel else ""
-            webbrowser.open(
-                f"http://{args.host}:{args.port}{fragment}", new=2)
-        except Exception:  # noqa: BLE001 - opening a browser is best effort
-            pass
+
+        fragment = f"#{panel}" if panel else ""
+
+        def on_ready(url: str) -> None:
+            try:
+                webbrowser.open(f"{url}{fragment}", new=2)
+            except Exception:  # noqa: BLE001 - best effort
+                pass
+
     serve_dashboard(
         output=output,
         host=args.host,
         port=args.port,
         config=config,
         home_mode=not watching_a_run,
+        on_ready=on_ready,
     )
     return 0
 

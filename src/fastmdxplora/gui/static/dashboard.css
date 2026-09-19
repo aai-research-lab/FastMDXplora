@@ -2409,7 +2409,7 @@ body.state-ready .loading-screen {
    =========================================================================== */
 :root {
     --sidebar-width: 232px;
-    --panel-width: 700px;
+    --panel-width: 560px;
     --handle-width: 6px;
 }
 .app-shell {
@@ -2760,7 +2760,7 @@ body { overflow: hidden; }
    column ran to the right edge and a line of prose ran with it. The
    viewer is the exception: a 3D canvas wants every pixel it can get,
    and its own right-hand info pane fills the width beside it. */
-.page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }
+.page-shell { max-width: 900px; margin: 0 auto; width: 100%; }
 html[data-page="viewer"] .page-shell { max-width: none; }
 /* The side panel already lays its own scroll region out (.side-log,
    .side-files); the panel itself should not add a second one. */
@@ -2985,3 +2985,9 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     outline: 1px solid var(--accent-cyan); outline-offset: 2px;
     background: var(--background-primary);
 }
+
+/* With the sidebar folded the centre should take the room, not leave it
+   as margin. The reading cap stays, but the column aligns left so the
+   content moves toward where the sidebar was rather than sitting centred
+   with a gap on its left. */
+body.sidebar-collapsed .page-shell { margin-left: 24px; }
