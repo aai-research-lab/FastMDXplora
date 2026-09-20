@@ -627,16 +627,38 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     # trajectory with nothing to mark it, and every analysis downstream
     # would read straight through it. Said now, before a segment is
     # simulated, rather than after.
-    unsealed = [piece.index for piece in survey_segments(root) if not piece.finished]
-    if unsealed:
+    # A piece that was killed holds frames written after its last
+    # checkpoint -- the frames this resume runs again. They are left out
+    # of the join, so the pieces meet at the checkpoint rather than
+    # overlapping. Where the frames to keep cannot be counted -- no
+    # recorded step, no recorded interval -- the join is refused rather
+    # than guessed at, because a guess here puts an overlap in a
+    # trajectory and calls it whole.
+    keep_frames: dict[int, int] = {}
+    uncountable: list[int] = []
+    for piece in survey_segments(root):
+        if piece.finished:
+            continue
+        folder = root if piece.index == 0 else root / f"segment-{piece.index:03d}"
+        keep = frames_before_checkpoint(folder)
+        if keep is None:
+            uncountable.append(piece.index)
+        else:
+            keep_frames[piece.index] = keep
+    if uncountable:
         where = ", ".join(("the study's own run" if i == 0 else f"segment-{i:03d}")
-                          for i in unsealed)
-        return {"ok": False, "stage": "planning", "unsealed": unsealed,
-                "error": f"{where} did not finish cleanly, so its trajectory holds "
-                         "frames written after its last checkpoint -- the frames a "
-                         "resume would run again. Joining them would leave that "
-                         "overlap in the middle of the trajectory. Analyse the "
-                         "piece you have, or start the run again."}
+                          for i in uncountable)
+        return {"ok": False, "stage": "planning", "unsealed": uncountable,
+                "error": f"{where} did not finish cleanly, and how much of its "
+                         "trajectory precedes its last checkpoint cannot be worked "
+                         "out: the step or the frame interval is not recorded. "
+                         "Joining it would leave frames the resume runs again in "
+                         "the middle of the trajectory."}
+    if keep_frames:
+        # The resume starts from a checkpoint the run did not seal, which
+        # the runner refuses unless it is told. OpenMM still refuses one it
+        # cannot read, which is what a torn write leaves.
+        plan.config.setdefault("simulation", {})["resume_unsealed"] = True
 
     segment = Path(plan.config["output"])
     config_path = segment.with_name(segment.name + ".yml")
@@ -660,7 +682,8 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     topology = root / "simulation" / "trajectory_topology.pdb"
     try:
         record = join_segments(root, joined_dir / "production.dcd",
-                               topology=topology if topology.is_file() else None)
+                               topology=topology if topology.is_file() else None,
+                               keep_frames=keep_frames or None)
     except Exception as exc:  # noqa: BLE001 - reported, not swallowed
         from fastmdxplora.refusals import refusal_of
 
@@ -696,3 +719,36 @@ def json_dumps(value: Any) -> str:
     import json
 
     return json.dumps(value, indent=1, default=str)
+
+
+def frames_before_checkpoint(segment: str | Path) -> int | None:
+    """How many written frames precede this segment's last checkpoint.
+
+    A killed run's trajectory holds frames past its last checkpoint --
+    the frames a resume runs again. Those are the frames to leave out of
+    a join, and this counts the ones to keep. A reporter writes a frame
+    every ``trajectory_interval_steps``, so frame k is at step
+    k*interval and the frames at or before the checkpoint are
+    ``step // interval``. None where the interval or the step is not
+    recorded, because a guess here would put an overlap in a trajectory
+    and call it whole.
+    """
+    import yaml
+
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    folder = Path(segment)
+    checkpoint = folder / "simulation" / "checkpoint.chk"
+    side = read_checkpoint_sidecar(checkpoint) or {}
+    step = side.get("step")
+    if not isinstance(step, (int, float)) or step < 0:
+        return None
+    try:
+        config = yaml.safe_load(
+            (folder / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    interval = (config.get("simulation") or {}).get("trajectory_interval_steps")
+    if not isinstance(interval, (int, float)) or interval <= 0:
+        return None
+    return int(step) // int(interval)

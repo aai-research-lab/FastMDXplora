@@ -151,7 +151,7 @@ see [How FastMDXplora works](how_it_works.md#the-nonbonded-cutoff-comes-from-the
 
 ---
 
-## `simulation` — 41 settings
+## `simulation` — 42 settings
 
 ### How this phase was written
 

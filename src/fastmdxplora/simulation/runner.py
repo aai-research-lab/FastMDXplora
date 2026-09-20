@@ -726,8 +726,39 @@ def _attach_checkpoint_reporter(
                 return inner.describeNextReport(sim)
 
             def report(self, sim, state):
-                inner.report(sim, state)
+                # The checkpoint and its seal are one fact in two files, so
+                # they are written as a pair: both to .new, then renamed in,
+                # the checkpoint first and the seal second. A kill during
+                # the writes leaves the live pair untouched; a kill between
+                # the two renames leaves a new checkpoint whose seal has not
+                # landed, and the .new seal it was written with is still
+                # there for the loader to verify against. There is no moment
+                # at which a whole checkpoint cannot be shown to be whole.
+                import hashlib
+                import os as _os
+
+                payload = sim.context.createCheckpoint()
+                new_chk = chk_path.with_suffix(chk_path.suffix + ".new")
+                seal_path = chk_path.with_suffix(
+                    chk_path.suffix + CHECKPOINT_DIGEST_SUFFIX)
+                new_seal = seal_path.with_suffix(seal_path.suffix + ".new")
+                new_chk.write_bytes(payload)
+                new_seal.write_text(
+                    f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
+                    encoding="utf-8")
+                _os.replace(new_chk, chk_path)
+                _os.replace(new_seal, seal_path)
                 try:
+                    # Sealed as it is written, not only at a clean finish.
+                    # The seal says the file is whole -- that a kill did not
+                    # tear the write -- and that is as true of a checkpoint
+                    # at step 2,000 as of the last one. Sealing only at the
+                    # end made the marker say "this run finished" instead,
+                    # so the checkpoint a killed run leaves, the one worth
+                    # resuming from, looked damaged when it was intact. The
+                    # seal goes after the checkpoint, so a process killed
+                    # between the two leaves no seal and is still refused.
+                    seal_checkpoint(chk_path)
                     write_checkpoint_sidecar(
                         chk_path, step=int(sim.currentStep), **sidecar)
                 except Exception:  # noqa: BLE001 - the checkpoint itself was written
@@ -1358,6 +1389,15 @@ def seal_checkpoint(path: str | Path) -> Path:
     return seal
 
 
+def _seal_candidates(checkpoint: Path) -> list[Path]:
+    """The seal, and the one a rename had not yet landed. A checkpoint is
+    renamed into place before its seal is, so the pair can be caught a
+    moment apart; the seal written alongside that checkpoint is still on
+    disk under its temporary name and verifies it exactly."""
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    return [seal, seal.with_suffix(seal.suffix + ".new")]
+
+
 def verify_checkpoint(path: str | Path, *, require_seal: bool = False) -> bool:
     """Whether a checkpoint is the whole file that was written.
 
@@ -1374,7 +1414,8 @@ def verify_checkpoint(path: str | Path, *, require_seal: bool = False) -> bool:
     import hashlib
 
     checkpoint = Path(path)
-    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    seal = next((candidate for candidate in _seal_candidates(checkpoint)
+                 if candidate.is_file()), _seal_candidates(checkpoint)[0])
     if not seal.is_file():
         if require_seal:
             raise MissingResultError(
@@ -1496,6 +1537,10 @@ def run_simulation(
     state_interval_steps: int = DEFAULT_STATE_INTERVAL_STEPS,
     checkpoint_interval_steps: int = DEFAULT_CHECKPOINT_INTERVAL_STEPS,
     resume_from: str | Path | None = None,
+    #: Accept a checkpoint with no seal -- a run that was killed. Said by
+    #: the caller, never guessed, because the seal is the only marker
+    #: that separates a clean finish from an interrupted one.
+    resume_unsealed: bool = False,
     ensemble: str | None = None,
     live_telemetry: bool = False,
     telemetry_interval: int = DEFAULT_STATE_INTERVAL_STEPS,
@@ -1923,10 +1968,14 @@ def run_simulation(
         check_continuation(resume_from, minimize=bool(minimize),
                            nvt_steps=int(plan["nvt_steps"]), npt_steps=int(plan["npt_steps"]),
                            timestep_fs=float(timestep_fs))
-        # require_seal: the predecessor was written by this software and is
-        # always sealed on a clean finish, so a missing seal means it was
-        # killed mid-write.
-        load_checkpoint(omm, simulation, resume_from, require_seal=True)
+        # require_seal: the predecessor is sealed on a clean finish, so a
+        # missing seal means it was killed. Resuming a killed run is the
+        # point of `fastmdx resume`, and the caller says so explicitly by
+        # passing resume_unsealed; OpenMM still refuses a checkpoint it
+        # cannot read, which is what a torn write leaves. Nothing is
+        # assumed about the file beyond its own validation.
+        load_checkpoint(omm, simulation, resume_from,
+                        require_seal=not bool(resume_unsealed))
         _validate_state_finite(omm, simulation, stage="loading the checkpoint")
         logger.info("Resumed from %s", Path(resume_from).as_posix())
 

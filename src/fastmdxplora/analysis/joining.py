@@ -180,6 +180,7 @@ def join_segments(
     *,
     topology: Path | str | None = None,
     trajectory_name: str = "production.dcd",
+    keep_frames: dict[int, int] | None = None,
 ) -> dict[str, Any]:
     """Concatenate a segmented run into one trajectory, or refuse.
 
@@ -221,7 +222,13 @@ def join_segments(
             code="analysis.data.absent",
             needs=f"segments {gap}")
 
-    unfinished = [p.index for p in pieces if not p.finished]
+    limits = dict(keep_frames or {})
+    # A segment that was killed holds frames written after its last
+    # checkpoint -- the frames a resume runs again. Given a frame limit
+    # for it, those frames are left out and the pieces meet exactly at
+    # the checkpoint; without one, the overlap has nowhere to go and the
+    # join refuses as before.
+    unfinished = [p.index for p in pieces if not p.finished and p.index not in limits]
     if unfinished:
         raise MissingResultError(
             f"Segments {unfinished} have no sealed checkpoint, so they did "
@@ -271,8 +278,16 @@ def join_segments(
         for piece in pieces:
             if piece.index != pieces[0].index:
                 joins.append(frames)
+            allowed = limits.get(piece.index)
+            written_here = 0
             for chunk in mdtraj.iterload(str(piece.trajectory),
                                          top=str(topology_path), chunk=500):
+                if allowed is not None:
+                    if written_here >= allowed:
+                        break
+                    if written_here + len(chunk) > allowed:
+                        chunk = chunk[: allowed - written_here]
+                written_here += len(chunk)
                 writer.write(chunk.xyz * 10.0,
                              cell_lengths=(chunk.unitcell_lengths * 10.0
                                            if chunk.unitcell_lengths is not None
@@ -284,6 +299,10 @@ def join_segments(
         "trajectory": str(out),
         "segments": [p.index for p in pieces],
         "frames": frames,
+        # What was left out, and from where. A joined trajectory is
+        # derived; a reader should be able to see that a killed segment
+        # was cut back to its checkpoint without opening the file.
+        "trimmed": {str(index): count for index, count in sorted(limits.items())},
         "joins": joins,
         "topology": str(topology_path),
         # Stated so a reader knows this file is derived without having to

@@ -154,10 +154,10 @@ class TestTheDriverDoesAllThree(unittest.TestCase):
 
         source = (P(__file__).resolve().parents[1] / "src" / "fastmdxplora"
                   / "cli" / "main.py").read_text(encoding="utf-8")
-        self.assertIn('"extend",', source)
-        self.assertIn('group.add_argument("--to"', source)
-        self.assertIn('group.add_argument("--more"', source)
-        self.assertIn('if args.command == "extend":', source)
+        self.assertIn('("extend", "Run more production on a study', source)
+        self.assertIn('wanted.add_argument("--duration-ns"', source)
+        self.assertIn('wanted.add_argument("--extra-ns"', source)
+        self.assertIn('if args.command in ("extend", "resume"):', source)
 
 
 class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
@@ -188,11 +188,20 @@ class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
                 self.assertFalse(plan.config["simulation"]["minimize"])
                 self.assertEqual(plan.config["simulation"]["nvt_steps"], 0)
 
-    def test_the_cli_makes_the_flags_optional(self):
+    def test_the_cli_offers_both_names_with_the_flags_optional(self):
         source = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
                   / "cli" / "main.py").read_text(encoding="utf-8")
-        self.assertIn("group = ex.add_mutually_exclusive_group()", source)
-        self.assertNotIn("add_mutually_exclusive_group(required=True)", source)
+        # Two names for one operation, because they are two intentions.
+        self.assertIn('("resume", "Finish a study that stopped', source)
+        self.assertIn('("extend", "Run more production on a study', source)
+        self.assertIn('if args.command in ("extend", "resume"):', source)
+        # The study is named by --output, and the amounts are optional so
+        # the plain resume can be asked for.
+        self.assertIn('cmd.add_argument("--output", required=True', source)
+        self.assertIn('wanted.add_argument("--duration-ns"', source)
+        self.assertIn('wanted.add_argument("--extra-ns"', source)
+        self.assertNotIn('"--to"', source)
+        self.assertNotIn('"--more"', source)
 
     def test_the_staged_runner_uses_the_same_segment_names(self):
         # A campaign's segments and an extension's are the same
@@ -205,28 +214,137 @@ class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
                       inspect.getsource(staged.segment_directory))
 
 
-class TestAKilledPieceIsRefusedBeforeAnythingRuns(unittest.TestCase):
-    """A segment with no seal was killed, and its trajectory holds frames
-    written after its last checkpoint -- the frames a resume would run
-    again. Joining them would leave that overlap in the middle of the
-    trajectory with nothing to mark it."""
+class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
+    """A killed run's trajectory holds frames written after its last
+    checkpoint -- the frames a resume runs again. They are left out of
+    the join, so the pieces meet at the checkpoint rather than
+    overlapping, and the trim is recorded."""
 
-    def test_it_is_refused_with_the_reason(self):
+    def test_the_frames_to_keep_are_counted_from_the_record(self):
+        from fastmdxplora.simulation.resume import frames_before_checkpoint
+
+        root = _study()
+        (root / "resolved_config.yml").write_text(yaml.safe_dump({
+            "simulation": {"trajectory_interval_steps": 125}}), encoding="utf-8")
+        # A frame every 125 steps, a checkpoint at 250,000: 2,000 frames
+        # precede it and anything after is what the resume runs again.
+        self.assertEqual(frames_before_checkpoint(root), 2000)
+
+    def test_a_guess_is_refused_rather_than_made(self):
+        from fastmdxplora.simulation.resume import frames_before_checkpoint
+
+        root = _study()
+        (root / "resolved_config.yml").write_text(yaml.safe_dump({
+            "simulation": {}}), encoding="utf-8")
+        self.assertIsNone(frames_before_checkpoint(root))
+
+    def test_the_join_leaves_the_overlap_out(self):
         from fastmdxplora.simulation.resume import extend_study
 
         root = _study()
         (root / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink()
+        (root / "resolved_config.yml").write_text(yaml.safe_dump({
+            "systems": [{"id": "s1", "system": "1L2Y"}],
+            "simulation": {"duration_ns": 0.5, "nvt_steps": 50000,
+                           "npt_steps": 50000, "timestep_fs": 2.0,
+                           "trajectory_interval_steps": 125}}), encoding="utf-8")
+        import inspect
+
+        source = inspect.getsource(extend_study)
+        self.assertIn("keep_frames[piece.index] = keep", source)
+        self.assertIn("keep_frames=keep_frames or None", source)
+        # And the resume is told it is loading an unsealed checkpoint
+        # rather than inferring it.
+        self.assertIn('["resume_unsealed"] = True', source)
+
+    def test_the_join_records_what_it_left_out(self):
+        import inspect
+
+        from fastmdxplora.analysis import joining
+
+        source = inspect.getsource(joining.join_segments)
+        self.assertIn('"trimmed": {str(index): count', source)
+        self.assertIn("if written_here >= allowed:", source)
+
+    def test_where_it_cannot_be_counted_the_join_is_still_refused(self):
+        from fastmdxplora.simulation.resume import extend_study
+
+        root = _study()
+        (root / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink()
+        (root / "resolved_config.yml").write_text(yaml.safe_dump({
+            "systems": [{"id": "s1", "system": "1L2Y"}],
+            "simulation": {"duration_ns": 0.5, "nvt_steps": 50000,
+                           "npt_steps": 50000, "timestep_fs": 2.0}}),
+            encoding="utf-8")
         answer = extend_study(root, more_ns=0.1)
         self.assertFalse(answer["ok"])
-        self.assertEqual(answer["stage"], "planning")
-        self.assertEqual(answer["unsealed"], [0])
-        self.assertIn("frames written after its last checkpoint", answer["error"])
+        self.assertIn("cannot be worked out", answer["error"])
+        self.assertFalse((root / "segment-001").exists())
 
-    def test_it_is_refused_before_a_segment_is_simulated(self):
-        from fastmdxplora.simulation.resume import extend_study
 
-        root = _study()
-        (root / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink()
-        extend_study(root, more_ns=0.1)
-        self.assertFalse((root / "segment-001").exists(),
-                         "a refusal must not leave a half-run segment behind")
+class TestACheckpointAndItsSealAreOneFact(unittest.TestCase):
+    """The seal says the file is whole -- that a kill did not tear the
+    write -- and that is as true of a checkpoint at step 2,000 as of the
+    last one. Sealing only at a clean finish made the marker say "this
+    run finished" instead, so the checkpoint a killed run leaves, the one
+    worth resuming from, looked damaged when it was intact."""
+
+    def pair(self, payload: bytes = b"state-bytes"):
+        import hashlib
+
+        from fastmdxplora.simulation.runner import CHECKPOINT_DIGEST_SUFFIX
+
+        folder = Path(tempfile.mkdtemp())
+        checkpoint = folder / "checkpoint.chk"
+        checkpoint.write_bytes(payload)
+        seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+        seal.write_text(f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
+                        encoding="utf-8")
+        return checkpoint, seal
+
+    def test_every_checkpoint_is_sealed_as_it_is_written(self):
+        import inspect
+
+        from fastmdxplora.simulation import runner
+
+        source = inspect.getsource(runner._attach_checkpoint_reporter)
+        self.assertIn("new_seal.write_text(", source)
+        self.assertIn("_os.replace(new_chk, chk_path)", source)
+        self.assertIn("_os.replace(new_seal, seal_path)", source)
+
+    def test_a_matching_pair_verifies(self):
+        from fastmdxplora.simulation.runner import verify_checkpoint
+
+        checkpoint, _ = self.pair()
+        self.assertTrue(verify_checkpoint(checkpoint, require_seal=True))
+
+    def test_caught_between_the_two_renames_it_still_verifies(self):
+        # The checkpoint is renamed in before its seal, so the pair can be
+        # caught a moment apart. The seal written alongside it is on disk
+        # under its temporary name and verifies it exactly.
+        from fastmdxplora.simulation.runner import verify_checkpoint
+
+        checkpoint, seal = self.pair()
+        seal.rename(seal.with_suffix(seal.suffix + ".new"))
+        self.assertTrue(verify_checkpoint(checkpoint, require_seal=True))
+
+    def test_a_torn_file_is_still_refused(self):
+        from fastmdxplora.refusals import UnstableRun
+        from fastmdxplora.simulation.runner import verify_checkpoint
+
+        checkpoint, _ = self.pair()
+        checkpoint.write_bytes(b"torn")
+        with self.assertRaises(UnstableRun):
+            verify_checkpoint(checkpoint, require_seal=True)
+
+    def test_the_runner_accepts_an_unsealed_checkpoint_only_when_told(self):
+        import inspect
+
+        from fastmdxplora.simulation import pipeline, runner
+
+        source = inspect.getsource(runner.run_simulation)
+        self.assertIn("require_seal=not bool(resume_unsealed)", source)
+        # And the key reaches the runner from the config rather than
+        # being set somewhere in between.
+        self.assertIn('resume_unsealed=bool(params.get("resume_unsealed"))',
+                      inspect.getsource(pipeline))

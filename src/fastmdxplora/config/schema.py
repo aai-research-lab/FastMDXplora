@@ -544,6 +544,12 @@ SIMULATION = PhaseSchema(
               "is what this package calls the automated first phase, so "
               "`setup_from` is what a directory that phase wrote is called.",
               example="runs/reference"),
+        Field("resume_unsealed", bool, False,
+              "Accept a checkpoint with no seal -- a run that was killed "
+              "rather than one that finished cleanly. `fastmdx resume` sets "
+              "this. The frames the killed run wrote after that checkpoint "
+              "are left out of the join, so the pieces meet at the "
+              "checkpoint rather than overlapping it."),
         Field("resume_from", str, None,
               "Path to a checkpoint this run continues from. Set on every "
               "segment after the first when a long run is split; leave it "
@@ -976,7 +982,8 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Where it starts",
          "A system prepared here or elsewhere, where the run picks up from "
          "if it is continuing one, and how hard it is minimised first.",
-         ("setup_from", "prepared_from", "resume_from", "minimize",
+         ("setup_from", "prepared_from", "resume_from", "resume_unsealed",
+          "minimize",
           "minimize_tolerance_kjmol_per_nm",
           "minimize_max_iterations")),
         ("Conditions",
