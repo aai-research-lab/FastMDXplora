@@ -196,6 +196,19 @@ checkpoint was written from; loading refuses rather than proceeding on a
 mismatch. Metadynamics and steered runs cannot be split at all — see
 [Long runs and segments](production.md#long-runs-and-segments).
 
+Every checkpoint FastMDXplora writes has a sidecar beside it,
+`checkpoint.chk.json`: the stage that wrote it, the step, the ensemble, the
+temperature, the timestep, the study. A run resuming from a production
+checkpoint must continue it — `minimize: false`, `nvt_steps: 0`,
+`npt_steps: 0`, the same timestep. A plan that would minimise or
+equilibrate the checkpoint again is refused, with the reason: it throws the
+velocities away and makes the continuation a new run from a snapshot rather
+than the same trajectory. A checkpoint with no sidecar, made by hand or
+before the sidecar existed, loads as it always did, with a warning.
+Checkpoints are written during production only; a run stopped in
+equilibration has none to resume from. The Agent's *continue* writes all of
+this for you — see [Continuing a study that stopped](agent.md#continuing-a-study-that-stopped).
+
 ### Conditions
 
 | Setting | Type | Default | What it does |

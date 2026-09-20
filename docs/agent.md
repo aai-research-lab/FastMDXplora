@@ -345,6 +345,19 @@ in the URL fragment, which the page reads on load to decide where to start. Two
 commands that started two servers would be two things to learn for one thing to
 use.
 
+**Conversations belong to studies.** The model is the one Claude's users
+know: a chat belongs to a project, and every chat in a project sees the
+project's context. A study is the project. A conversation lives inside the
+study folder it is about, at `<study>/agent/conversations/`, so copying a
+study carries the conversations that made it — the record stays with the
+data. A conversation about no study lives at the workspace level, as a chat
+outside any project does. Under the composer, at the right: the mode, which
+opens the Agent's settings; *Conversations*, a list grouped by study with
+the loaded one first, where opening a conversation from another study loads
+that study; and *New*, which starts a fresh thread and keeps the last. Every
+exchange is saved as it happens; a reload shows the thread as it was. A
+conversation that launches a run moves into the study it created.
+
 The page is a conversation. What you said sits on the right; what came back
 sits under it: the refusals as the Agent corrected itself, then the Config
 with its actions, or an answer, or a question. Newest at the bottom, where the
@@ -430,11 +443,25 @@ Each request goes to the model with three things beside the schema:
   to it unless it plainly describes a different study: the whole Config comes
   back with the change applied and everything else kept. "Make it 5 ns" is an
   edit, not a new study.
-- **What the run is doing**: status, stage, the last error, the health
-  verdict, and once analyses have run, what they found, per analysis: the
-  mean, its standard error, the effective sample count, and how many frames
-  were discarded as unequilibrated. "Is the RMSD converged?" is answered from
-  those numbers, and "why did it stop?" from the error, not from a guess.
+- **What the run is doing**: status, stage, the step and the fraction
+  complete, elapsed and remaining time, the last error, the health verdict;
+  the config the run used, in its short form, so "the same settings as that
+  one" has something to copy from; once analyses have run, what they found,
+  per analysis: the mean, its standard error, the effective sample count,
+  and how many frames were discarded as unequilibrated; and whether the
+  study can be continued, with the config that would continue it. "Is the
+  RMSD converged?" is answered from those numbers, "why did it stop?" from
+  the error, and "how far along?" from the step, not from a guess.
+- **A file you attached.** The `+` at the left of the composer opens a
+  picker on the study's own folder, or the workspace for a thread about no
+  study. A chosen file goes with that message as context: text types only,
+  six at most, a long log kept as its head and tail with the cut marked.
+  The message records the file's name, path, size and digest, not its
+  bytes. The Agent is told to cite a file when it uses it: *the setup
+  manifest records `ligand_pose: auto`*, not a paraphrase.
+
+The Agent does not open files on its own. What it needs, it is handed; what
+you want it to see, you attach.
 
 A reply is one of four things:
 
@@ -469,6 +496,21 @@ Anything that is not *yes* is *Not stopped*.
 **A change and a run in one message** writes the Config and says *say run
 when you have read it*. One step of seeing what is about to run is what
 `assisted` promises.
+
+### Continuing a study that stopped
+
+Say *continue it*, or *continue to 0.5 ns total*, on a study that reached
+production and stopped. The Agent is handed a config that continues it,
+planned from the record: the parent's resolved config has the equilibration
+lengths, the checkpoint's sidecar has the step, and the remainder is
+subtraction. Stopped at whole-run step 321,000 with 100,000 of
+equilibration, 0.442 ns of production is done; 0.5 ns in all leaves 0.058.
+The config reuses the prepared system, resumes from the checkpoint, and
+neither minimises nor equilibrates — which is what makes it the same
+trajectory rather than a new run from a snapshot. The Agent sets only the
+duration and never writes `resume_from` by hand. Where a study cannot be
+continued — no production checkpoint, or a method whose bias a checkpoint
+does not carry — it says why and offers a fresh run.
 
 ## What the Agent will not do
 

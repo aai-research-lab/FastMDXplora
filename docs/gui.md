@@ -49,16 +49,53 @@ you. Nothing is uploaded anywhere.
 | **Report** | The report itself, rendered as a document, with downloads for what was produced and a notice for what could not be |
 | **Files** | Everything the run wrote, grouped by phase |
 
-Three things are on every page. The **sidebar**: the study, its stage and
-progress, the run's controls, the nav, a *Cite* line, and at its foot the
-settings trigger, which shows the Agent's engine and mode and opens a popup
-with the theme, the Agent's summary, display preferences and the links. The
-**side panel**: a *Log* tab, which is what the command line prints, sorted so
-a refusal is a red-edged block and the explain text a quiet one, with filters
-and a scroll-to-newest toggle; and a *Files* tab, which opens any of the
-run's files in place. And two **seams** between the columns that drag, with a
-double-click to reset; the panel collapses to a tab on the right edge. The
-centre keeps a reading width, except the Viewer, which fills.
+Three things are on every page. The **sidebar**: the study block, the run's
+controls, the nav, and at its foot the settings trigger. The **side panel**:
+a *Log* tab, which is what the command line prints, sorted so a refusal is a
+red-edged block and the explain text a quiet one, with filters and a
+scroll-to-newest toggle; and a *Files* tab, which opens any of the run's
+files in place. And two **seams** between the columns that drag, with a
+double-click to reset; either side column folds to a tab at its edge, and
+the centre stays centred at a reading width whatever is folded, except the
+Viewer, which fills. Every page's header stays put while the page scrolls.
+
+**The study block** reads top-down, in the order a person thinks: what is
+on screen, what is running, what else there is.
+
+```
+1UAO
+● ok · CPU · live
+
+RUNNING
+● 1UBQ                    50.0%   [View]
+
+[ Load available study ]
+```
+
+The study's name is its system. The status row says the run's state, the
+platform, and whether the page is live. The *Running* section appears only
+when a run is going in a study other than the one on screen — from this
+GUI at most one study runs at a time — with its fraction complete read from
+its own telemetry and a *View* button back to it. *Load available study*
+opens a picker on the workspace, the folder your studies are in, with each
+study badged and a continuation badged as one. A finished study can be
+loaded and read while another runs; Stop still stops the running one from
+any page.
+
+**A study's folder** is named for what it holds:
+`fastmdxplora_<system>_study_<UTC timestamp>` — the first system in the
+config, then `study`, then a timestamp, so two runs never collide and a
+folder says what it is. One rule, in `fastmdxplora/naming.py`, that the
+CLI, the API and the GUI all ask.
+
+**The run outlives the server.** A study started from the GUI is its own
+process. Close the browser tab and it runs on; Ctrl-C the server and it runs
+on, and the server says where it is and how to stop it. A server opened
+later on that folder, or brought to it by *Load available study*, adopts
+the run: it shows as running, and Stop reaches it. The run records its own
+process in the folder; a stale record left by a crash is checked against
+the live process before anything is believed, and a process that is not
+FastMDXplora running that study is never adopted.
 
 Three schemes, from the settings popup: Graphite, Ink and Paper. Green done,
 amber qualified and red refused mean the same in all three.
