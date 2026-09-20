@@ -2627,10 +2627,19 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 }
 .side-preview-name { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-preview-head .ghost-btn { padding: 4px 9px; font-size: 11px; }
-.side-preview-body { flex: 1; overflow: auto; padding: 12px 14px; }
+/* min-height: 0 so the body can be shorter than its content, and a
+   definite height for the percentage below to resolve against. */
+.side-preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; }
 .side-preview-body pre { margin: 0; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; color: var(--text-secondary); white-space: pre; }
 .side-preview-body img { max-width: 100%; height: auto; border-radius: 6px; display: block; }
-.side-preview-body iframe { width: 100%; height: 100%; border: none; background: white; border-radius: 6px; }
+/* A PDF or an HTML page fills what is left of the body. height: 100%
+   resolved to nothing against a flex parent with no definite height, so
+   the frame was there and zero pixels tall: the PDF "did not render". */
+.side-preview-body iframe {
+    width: 100%; flex: 1 1 auto; min-height: 320px; border: none;
+    background: white; border-radius: 6px;
+}
+.side-preview-body > .file-code, .side-preview-body > .file-view { flex: 0 0 auto; }
 .side-preview-note { font-size: 12px; color: var(--text-muted); }
 
 /* ===========================================================================

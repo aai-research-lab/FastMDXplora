@@ -774,3 +774,20 @@ class TestTheFilePreviewReadsWhatTheAgentCanRead(unittest.TestCase):
     def test_the_preview_header_stays_put(self):
         css = _css()
         self.assertIn(".side-preview-head { position: sticky; top: 0;", css)
+
+
+class TestAPdfFillsThePreview(unittest.TestCase):
+
+    def test_the_iframe_has_a_height_that_resolves(self):
+        # height: 100% against a flex parent with no definite height
+        # resolves to nothing: the frame was there and zero pixels tall,
+        # which reads as "the PDF does not render".
+        css = _css()
+        rule = css[css.index(".side-preview-body iframe {"):]
+        rule = rule[:rule.index("}")]
+        self.assertIn("flex: 1 1 auto", rule)
+        self.assertIn("min-height: 320px", rule)
+        self.assertNotIn("height: 100%", rule)
+        body = css[css.index(".side-preview-body { "):]
+        body = body[:body.index("}")]
+        self.assertIn("min-height: 0", body)
