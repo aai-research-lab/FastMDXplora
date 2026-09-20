@@ -996,3 +996,55 @@ class TestTheTwoFilesSurfacesAgree(unittest.TestCase):
         for kind in ("molecule", "structure", "tree", "table", "doc", "log"):
             with self.subTest(kind=kind):
                 self.assertIn(f'kind === "{kind}"' if kind != "log" else "renderFileLog(host, text)", frame)
+
+
+class TestTheFilesPageHoldsStill(unittest.TestCase):
+    """The page rebuilt its HTML on every poll, and a rebuilt <details>
+    comes back closed: two seconds after the run record was expanded,
+    the poll closed it. The page rebuilds only when the files changed,
+    and carries every open fold across a rebuild."""
+
+    def test_rebuild_only_on_change_and_folds_survive(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
+        self.assertIn("if (signature === lastFilesSignature) return;", dash)
+        self.assertIn('data-fold="${escapeAttr(key)}"', dash)
+        self.assertIn('if (openFolds.has(d.getAttribute("data-fold"))) d.open = true;', dash)
+
+    def test_copy_path_is_one_line(self):
+        css = _css()
+        rule = css[css.index(".file-action {"):css.index("}", css.index(".file-action {"))]
+        self.assertIn("white-space: nowrap", rule)
+        self.assertIn(".file-row .file-actions { display: flex; gap: 4px; flex-wrap: nowrap; }", css)
+
+
+@unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
+class TestTheRunRecordStaysOpenRendered(unittest.TestCase):
+
+    def test_expanded_it_stays_expanded_across_polls(self):
+        import sys
+
+        from playwright.sync_api import sync_playwright
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        session = start_dashboard_session(output="/tmp/sh7/whole", host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto(session.url + "#files", wait_until="domcontentloaded")
+                page.wait_for_selector("details.file-fold", timeout=20000)
+                page.evaluate("() => { document.querySelector('details.file-fold').open = true; }")
+                page.wait_for_timeout(7000)  # two or three polls
+                self.assertTrue(page.eval_on_selector("details.file-fold", "el => el.open"))
+                tall = page.eval_on_selector_all(
+                    ".file-action", "els => els.filter(e => e.getBoundingClientRect().height > 28).length")
+                self.assertEqual(tall, 0, "a file action button wrapped onto two lines")
+                browser.close()
+        finally:
+            session.server.shutdown()

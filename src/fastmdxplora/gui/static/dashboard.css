@@ -1100,8 +1100,9 @@ button {
     font-size: 11px;
     color: var(--text-muted);
 }
-.file-row .file-actions { display: flex; gap: 4px; }
+.file-row .file-actions { display: flex; gap: 4px; flex-wrap: nowrap; }
 .file-action {
+    white-space: nowrap;  /* "Copy path" is one line, not "Copy" over "path" */
     padding: 3px 8px;
     border: 1px solid var(--border-subtle);
     border-radius: 5px;

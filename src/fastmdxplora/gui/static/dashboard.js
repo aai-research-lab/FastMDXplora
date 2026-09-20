@@ -998,7 +998,24 @@
     "png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"]);
   const OPEN_IN_BROWSER = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"]);
 
+  /* The page rebuilt its HTML on every poll, and a rebuilt <details>
+   * comes back closed: two seconds after the run record was expanded,
+   * the poll closed it. Rebuild only when the files changed, and carry
+   * every open fold across the rebuild. */
+  let lastFilesSignature = null;
+
   function renderFiles(payload) {
+    const signature = JSON.stringify((payload && payload.artifacts) || null);
+    if (signature === lastFilesSignature) return;
+    lastFilesSignature = signature;
+    const openFolds = new Set($$("details.file-fold[open]").map((d) => d.getAttribute("data-fold")));
+    renderFilesNow(payload);
+    $$("details.file-fold").forEach((d) => {
+      if (openFolds.has(d.getAttribute("data-fold"))) d.open = true;
+    });
+  }
+
+  function renderFilesNow(payload) {
     const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
     const host = byId("file-groups");
     if (!host) return;
@@ -1012,7 +1029,7 @@
       const bytes = files.reduce((total, item) => total + (parseInt(item.size, 10) || 0), 0);
       const rows = files.map(fileRowHtml).join("");
       const body = folded
-        ? `<details class="file-fold"><summary>${files.length} files, ${escapeHTML(humanSize(bytes))}</summary>${rows}</details>`
+        ? `<details class="file-fold" data-fold="${escapeAttr(key)}"><summary>${files.length} files, ${escapeHTML(humanSize(bytes))}</summary>${rows}</details>`
         : rows;
       return `
         <div class="card">
