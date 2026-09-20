@@ -154,9 +154,33 @@ def _process_is_this_run(pid: int, root: Path) -> bool:
     line = _command_line_of(pid)
     if line is None:
         return True  # alive, and no way to look closer; trust the record
-    # The study's path or the program's name. Not the bare folder name: a
-    # short one is a substring of almost anything.
-    return str(root) in line or "fastmdx" in line
+    return _command_line_is_a_run(line, root)
+
+
+def _command_line_is_a_run(line: str, root: Path) -> bool:
+    """Whether a command line is FastMDXplora running this study.
+
+    Judged by what is being run, never by where the interpreter lives.
+    "fastmdx" as a substring matched the whole command line, and on a
+    machine whose conda environment is named fastmdxplora every Python
+    process carries that substring in its interpreter path: a stale PID
+    reused by any Python at all would have been adopted, and Stop would
+    have killed it. A run names the study as an argument, or runs the
+    program -- the fastmdx entry point or the fastmdxplora.cli module --
+    as a token of its own.
+    """
+    tokens = line.split()
+    study = str(root)
+    for token in tokens:
+        if token == study or token.startswith(study + "/") or token.rstrip("/") == study.rstrip("/"):
+            return True
+    for token in tokens:
+        name = token.rsplit("/", 1)[-1]
+        if name in ("fastmdx", "fastmdxplora") or token in ("fastmdxplora.cli.main", "fastmdxplora.cli"):
+            return True
+        if token.startswith("fastmdxplora.cli"):
+            return True
+    return False
 
 
 def _command_line_of(pid: int) -> str | None:

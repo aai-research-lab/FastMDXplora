@@ -601,7 +601,9 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
         sim = continuation_of(s).config["simulation"]
         self.assertFalse(sim["minimize"])
         self.assertEqual((sim["nvt_steps"], sim["npt_steps"]), (0, 0))
-        self.assertEqual(sim["setup_from"], str(s))
+        # Resolved: on macOS /var is /private/var, and a config should
+        # carry the canonical path.
+        self.assertEqual(sim["setup_from"], str(s.resolve()))
         self.assertTrue(sim["resume_from"].endswith("checkpoint.chk"))
         self.assertEqual(sim["ensemble"], "npt")
         # And the fence it would face agrees.

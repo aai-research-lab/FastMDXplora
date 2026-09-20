@@ -823,3 +823,20 @@ def test_the_orchestrator_records_its_pid_and_removes_it_on_exit(tmp_path):
     assert result.stdout.strip().endswith("True"), result.stderr
     # Gone once the process has exited.
     assert not (out / RUN_PROCESS_FILE).exists()
+
+
+def test_a_run_is_judged_by_what_it_runs_not_where_the_interpreter_lives():
+    # "fastmdx" as a substring matched the whole command line, and on a
+    # Mac whose conda environment is named fastmdxplora every Python
+    # process carried it in its interpreter path: a stale PID reused by
+    # any Python would have been adopted, and Stop would have killed it.
+    from fastmdxplora.gui.exploration import _command_line_is_a_run
+
+    study = Path("/Users/someone/lab/fastmdxplora_1UAO_study_x")
+    env = "/Users/someone/.conda/envs/fastmdxplora/bin/python3"
+    assert not _command_line_is_a_run(f"{env} -c import time; time.sleep(30)", study)
+    assert not _command_line_is_a_run(f"{env} -m jupyter notebook", study)
+    assert _command_line_is_a_run(f"{env} /Users/someone/.conda/envs/fastmdxplora/bin/fastmdx explore", study)
+    assert _command_line_is_a_run("/usr/bin/python3 -m fastmdxplora.cli.main explore --output /tmp/s", study)
+    assert _command_line_is_a_run(f"/usr/bin/python3 fake.py --output {study}", study)
+    assert not _command_line_is_a_run("/usr/bin/python3 fake.py --output /Users/someone/lab/fastmdxplora_1UAO_study_y", study)
