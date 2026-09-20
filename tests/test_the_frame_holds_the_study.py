@@ -791,3 +791,59 @@ class TestAPdfFillsThePreview(unittest.TestCase):
         body = css[css.index(".side-preview-body { "):]
         body = body[:body.index("}")]
         self.assertIn("min-height: 0", body)
+
+
+@unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
+class TestTheSidePanelTabsRendered(unittest.TestCase):
+    """Rendered, not read: one pane at a time, and the Files pane works.
+
+    A rule setting `display` on a pane was written after
+    `.side-pane[hidden] { display: none }` and outranked it, so the Files
+    pane showed stacked under the Log pane and both were wrecked. A
+    reading of the CSS would not have caught it; a browser does.
+    """
+
+    def test_one_pane_shows_at_a_time_and_the_preview_works(self):
+        import sys
+
+        from playwright.sync_api import sync_playwright
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        session = start_dashboard_session(output="/tmp/sh7/whole", host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto(session.url, wait_until="domcontentloaded")
+                page.wait_for_selector(".side-panel", timeout=8000)
+                page.wait_for_timeout(300)
+
+                def display(sel):
+                    return page.eval_on_selector(sel, "el => getComputedStyle(el).display")
+
+                def height(sel):
+                    return page.eval_on_selector(
+                        sel, "el => Math.round(el.getBoundingClientRect().height)")
+
+                page.evaluate("() => window.FastMDXFrame.showTab('log')")
+                page.wait_for_timeout(200)
+                self.assertEqual(display('.side-pane[data-side-pane="files"]'), "none")
+                self.assertGreater(height("#side-log"), 200, "the log must have room")
+
+                page.evaluate("() => window.FastMDXFrame.showTab('files')")
+                page.wait_for_timeout(500)
+                self.assertEqual(display('.side-pane[data-side-pane="log"]'), "none")
+                self.assertGreater(height("#side-files"), 100)
+                listed = page.eval_on_selector_all("#side-files button.side-file", "els => els.length")
+                if listed:
+                    page.eval_on_selector_all(
+                        "#side-files button.side-file", "els => els[els.length - 1].click()")
+                    page.wait_for_timeout(700)
+                    self.assertFalse(page.eval_on_selector("#side-preview", "el => el.hidden"))
+                    self.assertGreater(height("#side-preview-body"), 100,
+                                       "the preview body must have room to show a file")
+                browser.close()
+        finally:
+            session.server.shutdown()
