@@ -942,3 +942,55 @@ class TestTheLogRendersLines(unittest.TestCase):
                 browser.close()
         finally:
             session.server.shutdown()
+
+
+class TestTheTwoFilesSurfacesAgree(unittest.TestCase):
+    """The centre Files page is the catalogue; the side panel is where a
+    file is read. A row on the page offers View, which opens the file in
+    the panel, and Open only for what the browser shows itself; Download
+    and Copy path always. The same two rules the panel applies."""
+
+    def test_the_page_offers_view_and_the_panel_reads_it(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
+        self.assertIn("const VIEW_IN_PANEL = new Set(", dash)
+        self.assertIn("const OPEN_IN_BROWSER = new Set(", dash)
+        self.assertIn('data-view-file', dash)
+        self.assertIn("window.FastMDXFrame.previewPath(path)", dash)
+        frame = _script()
+        self.assertIn("function previewPath(path)", frame)
+        self.assertIn("previewPath: previewPath", frame)
+
+    def test_the_two_rules_match_the_panels(self):
+        import pathlib
+        import re
+
+        import fastmdxplora.gui as gui
+
+        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
+        page_open = set(re.search(r'OPEN_IN_BROWSER = new Set\(\[(.*?)\]\)', dash, re.S).group(1).replace('"', "").replace(" ", "").split(","))
+        frame = _script()
+        panel_open = set(re.search(r'side-preview-open"\)\.hidden = \[(.*?)\]', frame).group(1).replace('"', "").replace(" ", "").split(","))
+        self.assertEqual(page_open, panel_open)
+
+    def test_every_type_the_plus_accepts_has_a_view_or_is_code(self):
+        # Every text type either has a View renderer or is Code-only on
+        # purpose (.py: a rendering of a script is the script).
+        import re
+
+        from fastmdxplora.gui.agent_panel import ATTACHABLE_SUFFIXES
+
+        frame = _script()
+        block = frame[frame.index("var VIEWABLE = {"):frame.index("};", frame.index("var VIEWABLE = {"))]
+        viewable = set(re.findall(r"(\w+):\s*\"", block))
+        code_only = {"py"}
+        for suffix in ATTACHABLE_SUFFIXES:
+            ext = suffix.lstrip(".")
+            with self.subTest(ext=ext):
+                self.assertTrue(ext in viewable or ext in code_only, f".{ext} has no View and is not code-only")
+        for kind in ("molecule", "structure", "tree", "table", "doc", "log"):
+            with self.subTest(kind=kind):
+                self.assertIn(f'kind === "{kind}"' if kind != "log" else "renderFileLog(host, text)", frame)

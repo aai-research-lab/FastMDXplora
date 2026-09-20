@@ -798,6 +798,7 @@ def clear_conversation(runtime: Any) -> dict[str, Any]:
 ATTACHABLE_SUFFIXES = frozenset({
     ".yml", ".yaml", ".json", ".log", ".md", ".txt", ".csv", ".tsv", ".dat",
     ".pdb", ".cif", ".py", ".toml", ".ini", ".cfg", ".xml", ".sdf", ".mol2",
+    ".sha256",  # a checkpoint's seal: one line, a size and a digest
 })
 ATTACH_LIMIT_BYTES = 200_000
 ATTACH_KEEP_EACH_END = 80_000

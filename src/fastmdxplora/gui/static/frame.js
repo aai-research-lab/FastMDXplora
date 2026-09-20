@@ -188,6 +188,7 @@
 
   /* ---- Files -------------------------------------------------------- */
   var filesLoaded = false;
+  var lastArtifacts = [];
 
   function human(size) {
     var n = Number(size);
@@ -211,8 +212,11 @@
     md: "doc", markdown: "doc",
     csv: "table", tsv: "table", dat: "table",
     json: "tree", yml: "tree", yaml: "tree", toml: "tree", ini: "tree", cfg: "tree",
-    log: "log", txt: "log",
+    xml: "tree",                     /* OpenMM's state.xml and system.xml fold by their indentation */
+    log: "log", txt: "log", sha256: "log",
     pdb: "structure", cif: "structure",
+    sdf: "molecule", mol2: "molecule",  /* a ligand: name, atoms and bonds before the text */
+    /* .py has no View: Code is the view. */
   };
 
   function escapeText(s) {
@@ -269,6 +273,35 @@
         + (models > 1 ? " \u00b7 " + models + " models" : "");
       host.appendChild(note);
     }
+    var pre = document.createElement("pre");
+    pre.textContent = text;
+    host.appendChild(pre);
+  }
+
+  function renderMolecule(host, text, suffix) {
+    /* An SDF's header is three lines then a counts line, "  9  8" for
+     * atoms and bonds; a MOL2 says @<TRIPOS>MOLECULE, then the name, then
+     * the counts. The counts are what a person is checking. */
+    var lines = text.split("\n");
+    var name = "", atoms = null, bonds = null;
+    if (suffix === "sdf") {
+      name = (lines[0] || "").trim();
+      var counts = (lines[3] || "").trim().split(/\s+/);
+      atoms = parseInt(counts[0], 10); bonds = parseInt(counts[1], 10);
+    } else {
+      var at = lines.findIndex(function (l) { return l.indexOf("@<TRIPOS>MOLECULE") === 0; });
+      if (at !== -1) {
+        name = (lines[at + 1] || "").trim();
+        var c2 = (lines[at + 2] || "").trim().split(/\s+/);
+        atoms = parseInt(c2[0], 10); bonds = parseInt(c2[1], 10);
+      }
+    }
+    var note = document.createElement("div");
+    note.className = "summary";
+    note.textContent = (name ? name + " \u00b7 " : "")
+      + (isNaN(atoms) || atoms === null ? "" : atoms + " atoms")
+      + (isNaN(bonds) || bonds === null ? "" : " \u00b7 " + bonds + " bonds");
+    if (note.textContent) host.appendChild(note);
     var pre = document.createElement("pre");
     pre.textContent = text;
     host.appendChild(pre);
@@ -468,10 +501,12 @@
         renderFileLog(host, text);
       }
     } else if (kind === "tree") {
-      var ok = data.suffix === "json" ? renderJsonTree(host, text) : renderYamlTree(host, text);
+      var ok = data.suffix === "json" ? renderJsonTree(host, text) : renderYamlTree(host, text);  /* yaml, toml, ini, xml: by indentation */
       if (!ok) renderFileLog(host, text);
     } else if (kind === "structure") {
       renderStructure(host, text);
+    } else if (kind === "molecule") {
+      renderMolecule(host, text, data.suffix);
     } else if (kind === "doc") {
       renderDoc(host, data);
     } else {
@@ -594,6 +629,7 @@
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "side-file";
+        btn.dataset.path = it.path;
         btn.style.paddingLeft = top ? "24px" : "10px";
         btn.innerHTML = '<span class="side-file-name"></span><span class="side-file-meta"></span>';
         btn.querySelector(".side-file-name").textContent = it.name;
@@ -611,7 +647,8 @@
   function loadFiles() {
     return fetch("/api/artifacts").then(function (r) { return r.json(); }).then(function (d) {
       filesLoaded = true;
-      renderFiles(Array.isArray(d.artifacts) ? d.artifacts : []);
+      lastArtifacts = Array.isArray(d.artifacts) ? d.artifacts : [];
+      renderFiles(lastArtifacts);
     }).catch(function () { /* not load-bearing */ });
   }
 
@@ -846,5 +883,25 @@
     }
   });
 
-  window.FastMDXFrame = { showTab: showTab, setCollapsed: setCollapsed, applyTheme: applyTheme };
+  /* Open a file in the panel's reader by its path, for the centre Files
+   * page's View button. The panel's tab shows, the list loads if it has
+   * not, the row is marked, and the file opens. */
+  function previewPath(path) {
+    setCollapsed(false);
+    showTab("files");
+    var open = function () {
+      var item = lastArtifacts.find(function (it) { return it.path === path; });
+      if (!item) return false;
+      $$(".side-file.active").forEach(function (b) { b.classList.remove("active"); });
+      $$("#side-files .side-file").forEach(function (b) {
+        if (b.dataset.path === path) { b.classList.add("active"); b.scrollIntoView({ block: "nearest" }); }
+      });
+      preview(item);
+      return true;
+    };
+    if (!open()) loadFiles().then(open);
+  }
+
+  window.FastMDXFrame = { showTab: showTab, setCollapsed: setCollapsed, applyTheme: applyTheme,
+                          previewPath: previewPath };
 })();

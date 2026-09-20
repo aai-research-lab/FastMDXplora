@@ -988,6 +988,16 @@
     ["record", "Run record"],
   ];
 
+  /* The same two rules the side panel's preview applies, so the centre
+   * Files page and the panel agree on what can be read here and what the
+   * browser shows itself. View reads the file in the panel; Open is for
+   * what the browser has its own viewer for; Download is always there,
+   * since the study may be on a machine the browser is not. */
+  const VIEW_IN_PANEL = new Set(["yml", "yaml", "json", "log", "md", "markdown", "txt", "csv", "tsv",
+    "dat", "pdb", "cif", "py", "toml", "ini", "cfg", "xml", "sdf", "mol2", "sha256",
+    "png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"]);
+  const OPEN_IN_BROWSER = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"]);
+
   function renderFiles(payload) {
     const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
     const host = byId("file-groups");
@@ -1034,6 +1044,7 @@
       : "—";
     const href = file.href || `/artifacts/${encodeURI(file.path || "")}`;
     const downloadHref = file.download_href || `${href}${href.includes("?") ? "&" : "?"}download=1`;
+    const ext = String(file.name || file.path || "").split(".").pop().toLowerCase();
     return `
       <div class="file-row" data-path="${escapeAttr(file.absolute_path || file.path || "")}">
         <div class="file-title" title="${escapeAttr(file.path || "")}">${escapeHTML(title)}</div>
@@ -1042,7 +1053,8 @@
           <span>${escapeHTML(size)}</span>
           <span class="muted">${escapeHTML(mtime)}</span>
           <div class="file-actions">
-            <a class="file-action" href="${escapeAttr(href)}" target="_blank" rel="noopener">Open</a>
+            ${VIEW_IN_PANEL.has(ext) ? `<button class="file-action" type="button" data-view-file>View</button>` : ""}
+            ${OPEN_IN_BROWSER.has(ext) ? `<a class="file-action" href="${escapeAttr(href)}" target="_blank" rel="noopener">Open</a>` : ""}
             <a class="file-action" href="${escapeAttr(downloadHref)}" download>Download</a>
             <button class="file-action" type="button" data-copy-path>Copy path</button>
           </div>
@@ -1050,7 +1062,22 @@
       </div>`;
   }
 
+  function wireViewActions() {
+    /* View sends the file to the side panel's reader: the panel's Files
+     * tab shows, the file opens there, and the list follows. The centre
+     * page is the catalogue; the panel is where a file is read. */
+    $$('[data-view-file]').forEach((button) => {
+      button.addEventListener("click", () => {
+        const row = button.closest(".file-row");
+        const path = row?.querySelector(".file-title")?.getAttribute("title") || "";
+        if (!path || !window.FastMDXFrame || !window.FastMDXFrame.previewPath) return;
+        window.FastMDXFrame.previewPath(path);
+      });
+    });
+  }
+
   function wireCopyActions() {
+    wireViewActions();
     $$('[data-copy-path]').forEach((button) => {
       button.addEventListener("click", async () => {
         const row = button.closest(".file-row");
