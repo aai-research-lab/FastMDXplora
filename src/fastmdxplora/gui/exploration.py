@@ -26,6 +26,10 @@ from fastmdxplora.dependencies import dependency_error_message, missing_dependen
 from fastmdxplora.refusals import StudyError
 
 
+from fastmdxplora.utils.logging import get_logger
+
+logger = get_logger("gui.exploration")
+
 _FORCEFIELDS = ("auto", "charmm36", "amber14", "amber-fb15", "amber-openff")
 _PLATFORMS = ("auto", "CPU", "CUDA", "OpenCL", "HIP")
 # The accepted values are declared once, in the schema, and read here. The
@@ -65,6 +69,73 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ---------------------------------------------------------------------------
+# Looking at a process this server did not start.
+#
+# Three questions, each answered differently by platform: is it alive, what
+# is it running, and how is it ended. On POSIX a zero signal probes without
+# touching, /proc or ps gives the command line, and SIGTERM asks nicely.
+# On Windows there is no zero signal -- os.kill maps every signal but the
+# two console events to TerminateProcess, so the POSIX liveness check
+# killed the process it was checking -- and no ps: the kernel is asked
+# through ctypes, and the command line through PowerShell.
+# ---------------------------------------------------------------------------
+
+_WINDOWS = sys.platform.startswith("win")
+
+
+def _process_alive(pid: int) -> bool:
+    """Alive, and on POSIX not a zombie. Never touches the process."""
+    if _WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not handle:
+            return False
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                               capture_output=True, text=True, timeout=2).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return True
+    if not state:
+        return False
+    return not state.startswith("Z")
+
+
+def _terminate_process(pid: int, *, force: bool = False) -> None:
+    """Ask a process to stop; with force, make it. On Windows both are
+    TerminateProcess, which is the only end the platform offers."""
+    import os
+    import signal
+
+    try:
+        if _WINDOWS:
+            os.kill(pid, signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        pass
+
+
 class _AdoptedProcess:
     """A run this server did not start, held by its PID.
 
@@ -80,26 +151,7 @@ class _AdoptedProcess:
         self._returncode: int | None = None
 
     def _alive(self) -> bool:
-        """Alive, and not a zombie. A process that has exited but has not
-        been reaped answers a signal, so os.kill(pid, 0) alone reports a
-        dead run as living; that is what made Stop wait five seconds
-        twice on a child that had already gone. ps shows its state."""
-        import os
-
-        try:
-            os.kill(self.pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        try:
-            state = subprocess.run(["ps", "-o", "stat=", "-p", str(self.pid)],
-                                   capture_output=True, text=True, timeout=2).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            return True
-        if not state:
-            return False
-        return not state.startswith("Z")
+        return _process_alive(self.pid)
 
     def poll(self) -> int | None:
         if self._returncode is not None:
@@ -112,22 +164,10 @@ class _AdoptedProcess:
         return self._returncode
 
     def terminate(self) -> None:
-        import os
-        import signal
-
-        try:
-            os.kill(self.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        _terminate_process(self.pid)
 
     def kill(self) -> None:
-        import os
-        import signal
-
-        try:
-            os.kill(self.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _terminate_process(self.pid, force=True)
 
     def wait(self, timeout: float | None = None) -> int:
         import time
@@ -143,17 +183,17 @@ class _AdoptedProcess:
 def _process_is_this_run(pid: int, root: Path) -> bool:
     """The PID is alive and its command line names this study or the
     program. Guards against a stale record whose PID the OS has reused."""
-    import os
-
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+    if not _process_alive(pid):
         return False
-    except PermissionError:
-        return True
     line = _command_line_of(pid)
     if line is None:
-        return True  # alive, and no way to look closer; trust the record
+        # Alive, and no way to see what it is. Adopting it would mean Stop
+        # could kill a process the OS reused the number for. Not adopted;
+        # the record is a guess and the sidebar says idle, which is the
+        # honest word for "cannot tell".
+        logger.warning("Process %s is alive but its command line could not be read; "
+                       "not adopting it.", pid)
+        return False
     return _command_line_is_a_run(line, root)
 
 
@@ -169,14 +209,18 @@ def _command_line_is_a_run(line: str, root: Path) -> bool:
     program -- the fastmdx entry point or the fastmdxplora.cli module --
     as a token of its own.
     """
-    tokens = line.split()
+    # Quotes off, as a Windows command line carries them; either
+    # separator, as either platform writes paths.
+    tokens = [tok.strip('"\'') for tok in line.split()]
     study = str(root)
+    study_norm = study.replace("\\", "/").rstrip("/").lower()
     for token in tokens:
-        if token == study or token.startswith(study + "/") or token.rstrip("/") == study.rstrip("/"):
+        norm = token.replace("\\", "/").rstrip("/").lower()
+        if norm == study_norm or norm.startswith(study_norm + "/"):
             return True
     for token in tokens:
-        name = token.rsplit("/", 1)[-1]
-        if name in ("fastmdx", "fastmdxplora") or token in ("fastmdxplora.cli.main", "fastmdxplora.cli"):
+        name = token.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if name in ("fastmdx", "fastmdx.exe", "fastmdxplora", "fastmdxplora.exe"):
             return True
         if token.startswith("fastmdxplora.cli"):
             return True
@@ -189,6 +233,15 @@ def _command_line_of(pid: int) -> str | None:
     part naming it was cut off; the check then said a real run was not
     this run. /proc has the full line on Linux; -ww asks ps for it
     elsewhere."""
+    if _WINDOWS:
+        try:
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+                capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return out.strip() or None
     proc = Path("/proc") / str(pid) / "cmdline"
     try:
         raw = proc.read_bytes()

@@ -693,6 +693,11 @@ def test_a_new_session_child_leaves_the_terminals_group():
     import sys
     import time
 
+    import pytest
+
+    if not hasattr(os, "getpgid"):
+        pytest.skip("process groups are a POSIX notion; Windows has no getpgid")
+
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"],
                              start_new_session=True)
     try:
@@ -840,3 +845,44 @@ def test_a_run_is_judged_by_what_it_runs_not_where_the_interpreter_lives():
     assert _command_line_is_a_run("/usr/bin/python3 -m fastmdxplora.cli.main explore --output /tmp/s", study)
     assert _command_line_is_a_run(f"/usr/bin/python3 fake.py --output {study}", study)
     assert not _command_line_is_a_run("/usr/bin/python3 fake.py --output /Users/someone/lab/fastmdxplora_1UAO_study_y", study)
+    # Windows: quoted tokens, backslashes, an .exe entry point. Judged the
+    # same way, once the quotes are off and the separators agree.
+    win = Path(r"C:\Users\r\Temp\x\fastmdxplora_1UAO_study_1")
+    assert _command_line_is_a_run(
+        r'"C:\py\python.exe" "C:\x\fake.py" explore --output C:\Users\r\Temp\x\fastmdxplora_1UAO_study_1', win)
+    assert _command_line_is_a_run(r'"C:\envs\fastmdxplora\Scripts\fastmdx.exe" explore', win)
+    assert not _command_line_is_a_run(r'"C:\envs\fastmdxplora\python.exe" -c "import time"', win)
+
+
+def test_liveness_never_touches_the_process():
+    # On Windows os.kill(pid, 0) is TerminateProcess: the POSIX liveness
+    # check killed the process it was checking. The primitive must leave a
+    # live process alive and report it so.
+    import subprocess
+    import sys
+    import time
+
+    from fastmdxplora.gui.exploration import _process_alive
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        time.sleep(0.3)
+        assert _process_alive(child.pid) is True
+        time.sleep(0.3)
+        assert child.poll() is None, "checking liveness must not end the process"
+    finally:
+        child.kill()
+        child.wait()
+    assert _process_alive(child.pid) is False
+
+
+def test_an_unreadable_command_line_is_not_trusted(monkeypatch):
+    # Alive, but no way to see what it is: not adopted. Adopting it would
+    # mean Stop could kill a process the OS reused the number for.
+    import os
+
+    from fastmdxplora.gui import exploration
+
+    monkeypatch.setattr(exploration, "_command_line_of", lambda pid: None)
+    assert exploration._process_is_this_run(os.getpid(), Path("/nowhere")) is False
+
