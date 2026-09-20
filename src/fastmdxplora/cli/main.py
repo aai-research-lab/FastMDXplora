@@ -864,7 +864,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "extend",
         help="Run more production on a finished study, joined and reanalysed.",
         description=(
-            "Continue a study from its checkpoint and leave one study behind, "
+            "Finish or lengthen a study from its checkpoint, leaving one study "
+            "behind rather than two. With no flag it runs the remainder of "
+            "what the study planned -- the resume case, for a run that stopped "
+            "short. With --to or --more it runs past the original plan. "
             "not two. The extra production runs as the study's next segment, "
             "every finished segment is joined into one trajectory, and the "
             "analyses and the report are rerun over the whole of it. The join "
@@ -872,11 +875,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     ex.add_argument("study", help="The study directory to extend.")
-    group = ex.add_mutually_exclusive_group(required=True)
+    group = ex.add_mutually_exclusive_group()
     group.add_argument("--to", type=float, metavar="NS",
                        help="Total production wanted, counting what already ran.")
     group.add_argument("--more", type=float, metavar="NS",
                        help="Additional production to run.")
+    # With neither, the remainder of what the study already planned: the
+    # resume case, where a run stopped before its own duration_ns and
+    # finishing it is the whole intent.
     ex.add_argument("--no-analysis", action="store_true",
                     help="Simulate and join, but leave the analyses alone.")
 

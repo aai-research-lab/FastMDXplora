@@ -613,10 +613,30 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
 
     from fastmdxplora.analysis.joining import join_segments
 
+    from fastmdxplora.analysis.joining import survey_segments
+
     root = Path(study).expanduser().resolve()
     plan = extension_of(root, total_ns=total_ns, more_ns=more_ns)
     if not plan.possible:
         return {"ok": False, "error": plan.refusal, "stage": "planning"}
+
+    # Before anything runs: can what is here be joined to what will be?
+    # A segment with no seal was killed, and its trajectory holds frames
+    # written after its last checkpoint -- the frames a resume would run
+    # again. Joining the two would put that overlap in the middle of the
+    # trajectory with nothing to mark it, and every analysis downstream
+    # would read straight through it. Said now, before a segment is
+    # simulated, rather than after.
+    unsealed = [piece.index for piece in survey_segments(root) if not piece.finished]
+    if unsealed:
+        where = ", ".join(("the study's own run" if i == 0 else f"segment-{i:03d}")
+                          for i in unsealed)
+        return {"ok": False, "stage": "planning", "unsealed": unsealed,
+                "error": f"{where} did not finish cleanly, so its trajectory holds "
+                         "frames written after its last checkpoint -- the frames a "
+                         "resume would run again. Joining them would leave that "
+                         "overlap in the middle of the trajectory. Analyse the "
+                         "piece you have, or start the run again."}
 
     segment = Path(plan.config["output"])
     config_path = segment.with_name(segment.name + ".yml")

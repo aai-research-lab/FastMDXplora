@@ -158,3 +158,75 @@ class TestTheDriverDoesAllThree(unittest.TestCase):
         self.assertIn('group.add_argument("--to"', source)
         self.assertIn('group.add_argument("--more"', source)
         self.assertIn('if args.command == "extend":', source)
+
+
+class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
+    """Two intentions, one path. Resume finishes what the study planned;
+    extend runs past it. Both resume from the checkpoint, land inside the
+    study as its next segment, and join."""
+
+    def test_no_flag_runs_the_remainder_of_the_plan(self):
+        from fastmdxplora.simulation.resume import extension_of
+
+        # Planned 0.5 ns, 0.3 of it done.
+        plan = extension_of(_study(done_steps=150_000))
+        self.assertAlmostEqual(plan.config["simulation"]["duration_ns"], 0.2, places=6)
+
+    def test_a_flag_runs_past_the_plan(self):
+        from fastmdxplora.simulation.resume import extension_of
+
+        plan = extension_of(_study(done_steps=250_000), total_ns=0.6)
+        self.assertAlmostEqual(plan.config["simulation"]["duration_ns"], 0.1, places=6)
+
+    def test_both_land_in_the_next_segment_of_the_same_study(self):
+        from fastmdxplora.simulation.resume import extension_of
+
+        root = _study(done_steps=150_000)
+        for plan in (extension_of(root), extension_of(root, more_ns=0.1)):
+            with self.subTest(plan=plan.config["simulation"]["duration_ns"]):
+                self.assertEqual(Path(plan.config["output"]), root / "segment-001")
+                self.assertFalse(plan.config["simulation"]["minimize"])
+                self.assertEqual(plan.config["simulation"]["nvt_steps"], 0)
+
+    def test_the_cli_makes_the_flags_optional(self):
+        source = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
+                  / "cli" / "main.py").read_text(encoding="utf-8")
+        self.assertIn("group = ex.add_mutually_exclusive_group()", source)
+        self.assertNotIn("add_mutually_exclusive_group(required=True)", source)
+
+    def test_the_staged_runner_uses_the_same_segment_names(self):
+        # A campaign's segments and an extension's are the same
+        # convention, so the same join reads both.
+        import inspect
+
+        from fastmdxplora.agent import run as staged
+
+        self.assertIn('f"segment-{segment:03d}"',
+                      inspect.getsource(staged.segment_directory))
+
+
+class TestAKilledPieceIsRefusedBeforeAnythingRuns(unittest.TestCase):
+    """A segment with no seal was killed, and its trajectory holds frames
+    written after its last checkpoint -- the frames a resume would run
+    again. Joining them would leave that overlap in the middle of the
+    trajectory with nothing to mark it."""
+
+    def test_it_is_refused_with_the_reason(self):
+        from fastmdxplora.simulation.resume import extend_study
+
+        root = _study()
+        (root / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink()
+        answer = extend_study(root, more_ns=0.1)
+        self.assertFalse(answer["ok"])
+        self.assertEqual(answer["stage"], "planning")
+        self.assertEqual(answer["unsealed"], [0])
+        self.assertIn("frames written after its last checkpoint", answer["error"])
+
+    def test_it_is_refused_before_a_segment_is_simulated(self):
+        from fastmdxplora.simulation.resume import extend_study
+
+        root = _study()
+        (root / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink()
+        extend_study(root, more_ns=0.1)
+        self.assertFalse((root / "segment-001").exists(),
+                         "a refusal must not leave a half-run segment behind")
