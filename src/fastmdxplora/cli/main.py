@@ -1352,10 +1352,34 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         return 2
 
     config = _build_explore_config(args)
+
+    # A config that names a study to continue is a continuation, not a
+    # fresh run: the same operation `fastmdx resume` and `fastmdx extend`
+    # perform, reached from a file so the GUI and the Agent can ask for
+    # one. The study being continued supplies the systems and the phases,
+    # which is why the usual "explore requires a system" check comes after
+    # this rather than before it.
+    if config.get("continues") and not getattr(args, "dry_run", False):
+        from fastmdxplora.simulation.resume import extend_study
+
+        answer = extend_study(config["continues"],
+                              total_ns=config.get("duration_ns"),
+                              more_ns=config.get("extra_ns"))
+        if not answer.get("ok"):
+            print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
+            return 1
+        joined = answer.get("joined") or {}
+        print(f"Ran {Path(answer['segment']).name} and joined segments "
+              f"{joined.get('segments') or '?'}.")
+        if answer.get("analysed"):
+            print(f"Analyses and report rerun over {answer['trajectory']}.")
+        return 0
+
     if not config.get("systems"):
         print(
-            "fastmdx: explore requires a system — pass -s/--system PATH or a "
-            "--config file with a `systems:` list.",
+            "fastmdx: explore requires a system — pass -s/--system PATH, a "
+            "--config file with a `systems:` list, or `continues:` naming a "
+            "study to carry on from.",
             file=sys.stderr,
         )
         return 2

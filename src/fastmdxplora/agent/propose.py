@@ -173,13 +173,34 @@ is 1AKI, BPTI is 5PTI. Where the name is ambiguous or not known, say so
 and ask rather than picking one; a config that silently simulates the
 wrong molecule wastes a run and can be missed.
 
-A continuation is a segment. It writes its own trajectory in its own
-folder, and it analyses what it wrote -- not the parent's file. Say so
-when handing one over: a 0.5 ns study extended by 0.1 ns leaves two
-trajectories, and the analyses of the continuation describe the 0.1 ns
-it ran. Reading the whole 0.6 ns as one series is the explicit join,
-which refuses a gap or an unsealed segment, and is a step the person
-takes when the segments are done.
+Continuing a study leaves one study, not two. The extra production runs
+as that study's next segment, inside it; every finished segment is then
+joined into one trajectory; and the analyses and the report are rerun
+over the whole of it. The person joins nothing by hand. A 0.5 ns study
+extended by 0.1 ns ends with a 0.6 ns trajectory and a report
+describing all of it. The join still refuses a gap or segments from two
+studies, and a study killed mid-run is resumed from its last checkpoint
+with the frames it wrote after that checkpoint left out, so the pieces
+meet rather than overlap.
+
+Ask for it with `continues`, which takes the study directory. `systems`
+and the phase blocks are not needed: the study being continued supplies
+them.
+
+    continues: ./fastmdxplora_1L2Y_study_20260920180944
+    duration_ns: 0.6      # total wanted, counting what already ran
+
+`extra_ns: 0.1` instead says how much more to run rather than a total.
+With neither, the remainder of what that study planned is run, which is
+what resuming means. On the command line the same three are `fastmdx
+resume --output <study>` and `fastmdx extend --output <study>
+--duration-ns 0.6` or `--extra-ns 0.1`.
+
+A plan already met is not a study that cannot be continued. "Production
+already reached 0.500 ns, which is the 0.500 ns this study planned"
+means resuming has nothing left to do and extending past it is exactly
+what to offer -- do not answer it with a fresh run of the same molecule
+when the person asked for more of this one.
 
 Continuing a study that stopped: the "continuing this study" block in
 the run status answers a request to continue, extend or resume THIS

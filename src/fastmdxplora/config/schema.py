@@ -176,6 +176,34 @@ TOP_LEVEL = PhaseSchema(
               "Output directory for all artifacts. "
               "Default: ./fastmdxplora_<system>_study_<UTC-timestamp>.",
               example="./my_study"),
+        # A continuation in config form, so the GUI and the Agent can ask
+        # for one. `fastmdx resume` and `fastmdx extend` are these three
+        # settings on the command line; a config carrying `continues` runs
+        # the same path, which is the whole operation -- the segment, the
+        # join, and the analyses over the joined trajectory -- rather than
+        # a bare simulation the person then has to put together.
+        Field("continues", str, None,
+              "A study directory to continue. The extra production runs as "
+              "that study's next segment, every finished segment is joined "
+              "into one trajectory, and the analyses and the report are "
+              "rerun over the whole of it -- one study, not two. With "
+              "neither `duration_ns` nor `extra_ns` below it, the remainder "
+              "of what that study planned is run, which is what resuming "
+              "means. `systems` and the phase blocks are not needed: the "
+              "study being continued supplies them.",
+              example="./fastmdxplora_1L2Y_study_20260920180944"),
+        Field("duration_ns", float, None,
+              "With `continues`: total production wanted from that study, "
+              "counting what it has already written. 0.6 against a study "
+              "that ran 0.5 runs 0.1 more. Without `continues` this has no "
+              "meaning at the top level; production length for a fresh run "
+              "is `simulation.duration_ns`.",
+              example=0.6),
+        Field("extra_ns", float, None,
+              "With `continues`: additional production to run, on top of "
+              "whatever that study has already written, whether or not it "
+              "finished its plan.",
+              example=0.1),
         Field("agent_model", str, None,
               "Which model wrote this study, as provider/model. Written by "
               "`fastmdx agent`; absent when a person wrote the config. "

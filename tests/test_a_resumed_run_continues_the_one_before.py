@@ -618,7 +618,7 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
         s = self.study()
         self.assertAlmostEqual(continuation_of(s, more_ns=1.0).config["simulation"]["duration_ns"], 1.0)
         self.assertAlmostEqual(continuation_of(s).config["simulation"]["duration_ns"], 0.058, places=6)
-        self.assertIn("nothing remains", continuation_of(s, total_ns=0.4).refusal)
+        self.assertIn("already written, which is at or past", continuation_of(s, total_ns=0.4).refusal)
 
     def test_a_study_with_no_production_checkpoint_says_so(self):
         from fastmdxplora.simulation.resume import continuation_of
@@ -790,10 +790,13 @@ class TestAContinuationAnalysesWhatItWrote(unittest.TestCase):
         self.assertEqual(analysis["include"], ["rmsd", "rg"])
         self.assertEqual(analysis["scope"], "solute")
 
-    def test_the_agent_says_a_continuation_is_a_segment(self):
+    def test_the_agent_says_continuing_leaves_one_study(self):
+        # It used to say the person joins the segments themselves. The
+        # software does it, and the Agent told a user otherwise for three
+        # patches after it stopped being true.
         from fastmdxplora.agent.propose import prompt_for
 
         prompt = prompt_for("extend it")
-        self.assertIn("A continuation is a segment", prompt)
-        self.assertIn("analyses what it wrote", prompt)
-        self.assertIn("explicit join", prompt)
+        self.assertIn("leaves one study, not two", prompt)
+        self.assertIn("The person joins nothing by hand", prompt)
+        self.assertIn("continues: ./fastmdxplora", prompt)

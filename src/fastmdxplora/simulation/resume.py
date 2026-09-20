@@ -472,10 +472,24 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     else:
         remaining = planned_ns - done_ns
     if remaining <= 0:
+        # A finished plan is not a study that cannot be continued -- it is
+        # the case `fastmdx extend` exists for. Saying "cannot be
+        # continued" here sent the Agent to offer a fresh run of the same
+        # molecule instead of the hundred picoseconds that were asked for.
+        asked = total_ns is not None or more_ns is not None
+        why = (f"{done_ns:.3f} ns of production is already written, which is "
+               f"at or past the {float(total_ns):.3f} ns asked for"
+               if total_ns is not None else
+               f"production already reached {done_ns:.3f} ns, which is the "
+               f"{planned_ns:.3f} ns this study planned. Nothing remains of "
+               f"the plan, but it can still be extended past it: "
+               f"`fastmdx extend --output {root} --duration-ns <total>` or "
+               f"`--extra-ns <more>`")
+        if asked and total_ns is None:
+            why = f"{done_ns:.3f} ns is already written and no further length was asked for"
         return Continuation(parent=str(root), checkpoint=str(checkpoint),
                             production_done_ns=done_ns, production_planned_ns=planned_ns,
-                            config={}, refusal=f"production already reached "
-                            f"{done_ns:.3f} ns; nothing remains to run")
+                            config={}, refusal=why)
 
     new = {k: v for k, v in config.items() if k not in ("output", "include", "exclude")}
     # The parent's analysis block names the parent's own trajectory by
