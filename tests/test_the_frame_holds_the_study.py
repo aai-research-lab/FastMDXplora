@@ -1018,7 +1018,30 @@ class TestTheFilesPageHoldsStill(unittest.TestCase):
         css = _css()
         rule = css[css.index(".file-action {"):css.index("}", css.index(".file-action {"))]
         self.assertIn("white-space: nowrap", rule)
-        self.assertIn(".file-row .file-actions { display: flex; gap: 4px; flex-wrap: nowrap; }", css)
+        # The buttons stay whole; the row of them may wrap in a narrow cell.
+        self.assertIn(".file-row .file-actions { display: flex; gap: 4px; flex-wrap: wrap; }", css)
+
+    def test_two_across_including_the_run_record(self):
+        css = _css()
+        grid = css[css.index(".files-list {"):css.index("}", css.index(".files-list {"))]
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", grid)
+        # The rule, not the comment that explains why auto-fill is gone.
+        rules = "\n".join(line for line in grid.splitlines() if not line.strip().startswith(("/*", "*", "//")))
+        self.assertNotIn("auto-fill", rules)
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
+        # The folded group puts the same grid inside its <details>.
+        self.assertIn('<summary>${files.length} files, ${escapeHTML(humanSize(bytes))}</summary>${grid}</details>', dash)
+
+    def test_a_card_stacks_title_path_meta_then_buttons(self):
+        css = _css()
+        row = css[css.index(".file-row {"):css.index("}", css.index(".file-row {"))]
+        self.assertIn("flex-direction: column", row)
+        self.assertNotIn("grid-template-columns: 1fr auto", row)
+        self.assertIn(".file-row .file-meta .file-actions { flex-basis: 100%;", css)
 
 
 @unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
@@ -1045,6 +1068,19 @@ class TestTheRunRecordStaysOpenRendered(unittest.TestCase):
                 tall = page.eval_on_selector_all(
                     ".file-action", "els => els.filter(e => e.getBoundingClientRect().height > 28).length")
                 self.assertEqual(tall, 0, "a file action button wrapped onto two lines")
+                # Two across, and nothing leaves its card.
+                # Only grids on the page: a rebuild leaves detached ones behind
+                # that report a default three columns and are not shown.
+                cols = page.evaluate(
+                    "() => Array.from(document.querySelectorAll('.files-list'))"
+                    ".filter(e => e.offsetParent !== null)"
+                    ".map(e => getComputedStyle(e).gridTemplateColumns.split(' ').length)")
+                self.assertTrue(cols, "no visible file grids")
+                self.assertEqual(set(cols), {2})
+                over = page.eval_on_selector_all(
+                    ".file-row", "els => els.filter(e => { const r = e.getBoundingClientRect();"
+                    " return Array.from(e.querySelectorAll('.file-action, .file-title')).some(a => a.getBoundingClientRect().right > r.right + 1); }).length")
+                self.assertEqual(over, 0, "something ran out of its card")
                 browser.close()
         finally:
             session.server.shutdown()

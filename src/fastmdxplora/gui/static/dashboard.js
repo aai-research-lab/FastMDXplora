@@ -1028,16 +1028,20 @@
       const folded = key === "record";
       const bytes = files.reduce((total, item) => total + (parseInt(item.size, 10) || 0), 0);
       const rows = files.map(fileRowHtml).join("");
+      // The rows are always a two-across grid; a folded group puts that
+      // grid inside its <details>, so the run record unfolds into the
+      // same layout as every other group rather than a single column.
+      const grid = `<div class="files-list">${rows}</div>`;
       const body = folded
-        ? `<details class="file-fold" data-fold="${escapeAttr(key)}"><summary>${files.length} files, ${escapeHTML(humanSize(bytes))}</summary>${rows}</details>`
-        : rows;
+        ? `<details class="file-fold" data-fold="${escapeAttr(key)}"><summary>${files.length} files, ${escapeHTML(humanSize(bytes))}</summary>${grid}</details>`
+        : grid;
       return `
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">${escapeHTML(title)}</h2>
             <span class="muted small mono">${files.length} · ${escapeHTML(humanSize(bytes))}</span>
           </div>
-          <div class="files-list">${body}</div>
+          ${body}
         </div>`;
     }).filter(Boolean);
 

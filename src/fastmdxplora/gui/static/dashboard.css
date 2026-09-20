@@ -1063,13 +1063,20 @@ button {
 
 .files-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    /* Two across, always. auto-fill packed three on a wide screen at
+       266px each, where a name and four buttons cannot both fit, and
+       one on a narrow one. Two is the width a row needs. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
 .file-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 8px;
+    /* Title, then the path, then the size and date, then the buttons on a
+       line of their own. As a grid of "1fr auto" the meta and buttons sat
+       in the auto column beside the title, and a long title starved them
+       so the left card wrapped its buttons where the right one did not. */
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     padding: 10px 12px;
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
@@ -1094,13 +1101,24 @@ button {
 }
 .file-row .file-meta {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
     font-size: 11px;
     color: var(--text-muted);
+    margin-top: 4px;
 }
-.file-row .file-actions { display: flex; gap: 4px; flex-wrap: nowrap; }
+.file-row .file-meta .file-actions { flex-basis: 100%; margin-top: 4px; }
+/* The buttons stay whole -- "Copy path" is never "Copy" over "path" --
+   but the row of them may wrap to a second line in a narrow cell, rather
+   than run out of it. */
+.file-row .file-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.file-row { min-width: 0; }
+.file-row .file-title { overflow-wrap: anywhere; }
+.file-row .file-subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The run record's rows, once unfolded, sit in the same two-across grid. */
+.file-fold > .files-list { margin-top: 10px; }
+.card > .file-fold { display: block; }
 .file-action {
     white-space: nowrap;  /* "Copy path" is one line, not "Copy" over "path" */
     padding: 3px 8px;
