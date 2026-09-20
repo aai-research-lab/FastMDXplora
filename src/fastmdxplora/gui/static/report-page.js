@@ -29,6 +29,13 @@
       return;
     }
 
+    /* Replace the document only when it changed. The page reloaded on
+     * every poll while visible and rebuilt the DOM each time, which
+     * flickered and threw the scroll back to wherever the browser landed
+     * -- the citation, mostly. The report is finished text; it changes
+     * when the run writes a new one, not every two seconds. */
+    if (doc.dataset.rendered === data.html) return;
+    doc.dataset.rendered = data.html;
     doc.innerHTML = data.html;
     doc.hidden = false;
     empty.hidden = true;

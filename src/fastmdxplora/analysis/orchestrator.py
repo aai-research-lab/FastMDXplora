@@ -831,6 +831,10 @@ class AnalysisOrchestrator:
             "n_frames": int(self.traj.n_frames),
             "n_atoms": int(self.traj.n_atoms),
             "n_residues": int(self.traj.n_residues),
+            # Protein residues apart, so the report can say "20 protein
+            # residues and 7 ions" rather than "27 residues" for Trp-cage.
+            "n_protein_residues": int(sum(
+                1 for r in self.traj.topology.residues if r.is_protein)),
             "plan": list(self.results.keys()),
             # The same facts under the names a config uses, so the run's
             # resolved config can carry them. `include` is the one that

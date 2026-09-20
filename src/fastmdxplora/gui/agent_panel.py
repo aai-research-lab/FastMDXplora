@@ -16,6 +16,7 @@ the page runs.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 __all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
@@ -135,12 +136,19 @@ def propose_endpoint(payload: dict[str, Any],
     ][-12:]
     current = payload.get("current_config")
     current = str(current) if current else None
+    # Files attached to this message: the browser sends what read_attachment
+    # returned, name and text; the bytes never go into the transcript.
+    attachments = [
+        {"name": str(a.get("name") or "file"), "text": str(a.get("text") or ""),
+         "truncated": bool(a.get("truncated"))}
+        for a in (payload.get("attachments") or []) if isinstance(a, dict) and a.get("text")
+    ][:6]
     try:
         proposal = propose_config(
             request, complete, phases=list(phases),
             max_cycles=int(payload.get("attempts") or 4),
             history=history or None, current_config=current,
-            run_status=_run_status(runtime))
+            run_status=_run_status(runtime), attachments=attachments or None)
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
@@ -289,17 +297,77 @@ def _run_status(runtime: Any) -> str | None:
         status = read_status(runtime.active_root) or {}
         if status.get("stage"):
             lines.append(f"stage: {status['stage']}")
+        # The numbers the sidebar shows, so "how far along?" is answered
+        # with a step and a time rather than "I have only the stage". The
+        # Agent said exactly that while the sidebar read 334,000 of
+        # 350,000 and three minutes left.
+        step, total = status.get("current_step"), status.get("total_planned_steps")
+        if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
+            lines.append(f"step: {int(step):,} of {int(total):,} "
+                         f"({100.0 * step / total:.1f}% complete)")
+            elapsed = status.get("elapsed_wall_time_s")
+            if isinstance(elapsed, (int, float)) and step > 0:
+                remaining = elapsed * (total / step - 1.0)
+                lines.append(f"elapsed: {_hms(elapsed)}; about {_hms(remaining)} left")
+        sim_ns = status.get("simulation_time_completed_ns")
+        if isinstance(sim_ns, (int, float)):
+            # Equilibration included. "0.7 ns" here was read back as a
+            # production length of 0.7 ns when the config said 0.5; the
+            # config below is where the production length lives.
+            lines.append(f"simulated so far, equilibration included: {sim_ns:.3f} ns")
+        speed = status.get("ns_per_day") or status.get("speed")
+        if isinstance(speed, (int, float)) and speed > 0:
+            lines.append(f"speed: {speed:.2f} ns/day")
         health = analyze_health(status, [])
         if health.get("state"):
             lines.append(f"health: {health['state']}"
                          + (f" -- {health['message']}" if health.get("message") else ""))
     except Exception:  # noqa: BLE001
         pass
+    used = _config_the_run_used(getattr(runtime, "active_root", None))
+    if used:
+        lines.append("")
+        lines.append("the config this run used (the short form, as written):")
+        lines.append(used)
+    cont = _continuation_summary(getattr(runtime, "active_root", None))
+    if cont:
+        lines.append("")
+        lines.append(cont)
     results = _results_summary(getattr(runtime, "active_root", None))
     if results:
         lines.append("")
         lines.append(results)
     return "\n".join(lines)
+
+
+def _config_the_run_used(root: Any) -> str:
+    """The active run's own config, so "the same settings as that one" has
+    something to copy from.
+
+    The Agent lost the previous study's config the moment it wrote a new
+    one, and said "I have no chignolin study in this conversation" while
+    the chignolin run was the active study with its resolved config on
+    disk. It reads that file now. The short form, not the full dump:
+    the full one is a hundred lines of defaults, and what a person means
+    by "the same settings" is what was decided.
+    """
+    if not root:
+        return ""
+    path = Path(root) / "resolved_config.yml"
+    if not path.is_file():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    # Drop the header comments and cap the length; a config that runs to
+    # pages is not something to paste into every prompt.
+    body = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    body = body.strip()
+    if len(body) > 4000:
+        body = body[:4000] + "\n# … (truncated)"
+    return body
+
 
 
 def _results_summary(root: Any) -> str:
@@ -321,6 +389,8 @@ def _results_summary(root: Any) -> str:
     if not analysis.is_dir():
         return ""
     import json
+
+    from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
 
     rows: list[str] = []
     for options in sorted(analysis.glob("*/options.json")):
@@ -350,7 +420,7 @@ def _results_summary(root: Any) -> str:
                 piece += f" \u00b1 {se:.2g} (s.e.)"
             if isinstance(n_eff, (int, float)):
                 piece += f", {n_eff:.1f} effective samples"
-                if n_eff < 10:
+                if n_eff < MINIMUM_EFFECTIVE_SAMPLES:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):
                 piece += f", first {discard} of {n} frames discarded as unequilibrated"
@@ -377,3 +447,430 @@ def _where_the_run_is(runtime: Any) -> str:
     if stage and isinstance(step, (int, float)):
         return f"{stage} step {int(step):,}"
     return str(stage)
+
+
+def _hms(seconds: float) -> str:
+    total = max(0, int(seconds))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h {m}m" if h else f"{m}m {s}s"
+
+
+# ---------------------------------------------------------------------------
+# Conversations belong to studies.
+#
+# The model is the one Claude's users already know: a chat belongs to a
+# project, and every chat in a project sees the project's context. Here a
+# study is the project. A conversation lives inside the study folder it is
+# about, at <study>/agent/conversations/, so copying a study carries the
+# conversations that made it -- the record stays with the data. A
+# conversation about no study in particular lives at the workspace level,
+# as a chat outside any project does. Opening a conversation from another
+# study loads that study, so the thread and the Agent's context are never
+# about two different runs. A conversation that launches a run moves into
+# the study it created: how a study came to be belongs with the study.
+# ---------------------------------------------------------------------------
+
+CONVERSATIONS_SUBDIR = Path("agent") / "conversations"
+WORKSPACE_CONVERSATIONS_DIR = ".fastmdxplora_agent_conversations"
+CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"  # pre-0047 single file
+CONVERSATION_KEEP = 400
+
+
+def _is_study(path: Any) -> bool:
+    """A folder FastMDXplora wrote: a manifest or a phase directory."""
+    if not path:
+        return False
+    p = Path(path)
+    return p.is_dir() and any((p / m).exists()
+                              for m in ("manifest.json", "simulation", "analysis", "report", "setup"))
+
+
+def _store_for(workspace: Any, study: Any) -> Path:
+    """Where a scope's conversations are kept."""
+    if study is not None and _is_study(study):
+        return Path(study) / CONVERSATIONS_SUBDIR
+    return Path(workspace) / WORKSPACE_CONVERSATIONS_DIR
+
+
+def _scope(runtime: Any) -> tuple[Path, Path | None]:
+    """(workspace, study-or-None) for the runtime's current view."""
+    workspace = Path(getattr(runtime, "exploration_root", None) or ".")
+    study = getattr(runtime, "active_root", None)
+    return workspace, (Path(study) if study and _is_study(study) else None)
+
+
+def _migrate_single_file(workspace: Any) -> None:
+    """The one-file thread from before 0047 becomes a workspace conversation."""
+    import json
+    import os
+
+    old = Path(workspace) / CONVERSATION_FILE
+    if not old.is_file():
+        return
+    store = Path(workspace) / WORKSPACE_CONVERSATIONS_DIR
+    store.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(old.read_text(encoding="utf-8"))
+        entries = data.get("entries") if isinstance(data, dict) else []
+    except (OSError, ValueError):
+        entries = []
+    cid = _new_id()
+    _write_one(store, cid, entries or [])
+    (store / "current").write_text(cid, encoding="utf-8")
+    try:
+        os.replace(old, old.with_suffix(".json.migrated"))
+    except OSError:
+        pass
+
+
+def _new_id() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("conv-%Y%m%d-%H%M%S-%f")
+
+
+def _title_of(entries: list) -> str:
+    for e in entries:
+        if isinstance(e, dict) and e.get("role") == "user" and e.get("text"):
+            text = str(e["text"]).strip().splitlines()[0]
+            return text[:60] + ("\u2026" if len(text) > 60 else "")
+    return "New conversation"
+
+
+def _read_one(store: Path, cid: str) -> list:
+    import json
+
+    try:
+        data = json.loads((store / f"{cid}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entries = data.get("entries") if isinstance(data, dict) else None
+    return entries[-CONVERSATION_KEEP:] if isinstance(entries, list) else []
+
+
+def _write_one(store: Path, cid: str, entries: list) -> None:
+    import json
+    import os
+
+    clean = [e for e in entries if isinstance(e, dict) and e.get("role") in ("user", "agent")]
+    clean = clean[-CONVERSATION_KEEP:]
+    store.mkdir(parents=True, exist_ok=True)
+    path = store / f"{cid}.json"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"version": 3, "id": cid, "entries": clean}, indent=1),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _current_in(store: Path) -> str | None:
+    try:
+        cid = (store / "current").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return cid if (store / f"{cid}.json").is_file() else None
+
+
+def _valid_id(cid: Any) -> bool:
+    cid = str(cid or "")
+    return cid.startswith("conv-") and "/" not in cid and ".." not in cid
+
+
+def _study_label(study: Path) -> str:
+    """The study's system name if the manifest has it, else the folder;
+    and, for a continuation, whose."""
+    import json
+
+    label = study.name
+    try:
+        manifest = json.loads((study / "manifest.json").read_text(encoding="utf-8"))
+        system = (manifest.get("system") or {}).get("system") or manifest.get("system_input")
+        if system:
+            label = str(Path(str(system)).stem)
+    except (OSError, ValueError, AttributeError):
+        pass
+    from fastmdxplora.gui.browse import continuation_of
+
+    cont = continuation_of(study)
+    if cont:
+        label += f" (continues {Path(str(cont['study'])).name})"
+    return label
+
+
+# ---- the API the endpoints call, all scoped by the runtime's view ---------
+
+def read_conversation(runtime: Any) -> dict[str, Any]:
+    """The current conversation in the current scope, or an empty one."""
+    workspace, study = _scope(runtime)
+    _migrate_single_file(workspace)
+    store = _store_for(workspace, study)
+    cid = _current_in(store)
+    scope = {"study": str(study) if study else None,
+             "study_label": _study_label(study) if study else None}
+    if cid is None:
+        return {"ok": True, "id": None, "entries": [], **scope}
+    return {"ok": True, "id": cid, "entries": _read_one(store, cid), **scope}
+
+
+def write_conversation(runtime: Any, entries: Any) -> dict[str, Any]:
+    """Replace the current conversation with what the browser holds."""
+    if not isinstance(entries, list):
+        return {"ok": False, "error": "entries must be a list"}
+    workspace, study = _scope(runtime)
+    _migrate_single_file(workspace)
+    store = _store_for(workspace, study)
+    try:
+        cid = _current_in(store)
+        if cid is None:
+            cid = _new_id()
+            store.mkdir(parents=True, exist_ok=True)
+            (store / "current").write_text(cid, encoding="utf-8")
+        _write_one(store, cid, entries)
+    except OSError as exc:
+        return {"ok": False, "error": f"Could not save the conversation: {exc}"}
+    return {"ok": True, "id": cid, "entries": _read_one(store, cid),
+            "study": str(study) if study else None}
+
+
+def new_conversation(runtime: Any) -> dict[str, Any]:
+    """A fresh thread in the current scope. The last one stays."""
+    workspace, study = _scope(runtime)
+    store = _store_for(workspace, study)
+    try:
+        cid = _new_id()
+        _write_one(store, cid, [])
+        (store / "current").write_text(cid, encoding="utf-8")
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "id": cid, "entries": []}
+
+
+def list_conversations(runtime: Any) -> dict[str, Any]:
+    """Every conversation the workspace holds, grouped by study.
+
+    The current study's come first, then each other study's, then the
+    workspace's own. Newest first within each. Cheap: a few small files
+    per study, read once per opening of the list.
+    """
+    workspace, study = _scope(runtime)
+    _migrate_single_file(workspace)
+
+    def rows_in(store: Path, study_path: Path | None) -> list[dict[str, Any]]:
+        if not store.is_dir():
+            return []
+        current = _current_in(store)
+        out = []
+        for path in sorted(store.glob("conv-*.json"), reverse=True):
+            cid = path.stem
+            entries = _read_one(store, cid)
+            out.append({"id": cid, "title": _title_of(entries), "entries": len(entries),
+                        "current": cid == current,
+                        "study": str(study_path) if study_path else None,
+                        "study_label": _study_label(study_path) if study_path else None,
+                        "started": cid[5:13] + " " + cid[14:16] + ":" + cid[16:18]})
+        return out
+
+    groups: list[dict[str, Any]] = []
+    if study is not None:
+        groups.append({"study": str(study), "label": _study_label(study), "loaded": True,
+                       "conversations": rows_in(_store_for(workspace, study), study)})
+    for folder in sorted(workspace.iterdir() if workspace.is_dir() else [], reverse=True):
+        if study is not None and folder.resolve() == study.resolve():
+            continue
+        if _is_study(folder):
+            rows = rows_in(folder / CONVERSATIONS_SUBDIR, folder)
+            if rows:
+                groups.append({"study": str(folder), "label": _study_label(folder),
+                               "loaded": False, "conversations": rows})
+    ws_rows = rows_in(workspace / WORKSPACE_CONVERSATIONS_DIR, None)
+    if ws_rows or study is None:
+        groups.append({"study": None, "label": "No study", "loaded": study is None,
+                       "conversations": ws_rows})
+    return {"ok": True, "groups": groups}
+
+
+def open_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, Any]:
+    """Make a conversation current. If it belongs to another study, load
+    that study first, so the thread and the Agent's context agree."""
+    if not _valid_id(cid):
+        return {"ok": False, "error": "No such conversation."}
+    workspace, current_study = _scope(runtime)
+    target = Path(study) if study else None
+    if target is not None and not _is_study(target):
+        return {"ok": False, "error": "No such study."}
+    if target is not None and (current_study is None or target.resolve() != current_study.resolve()):
+        switched = runtime.switch_to(target) if hasattr(runtime, "switch_to") else {"ok": False}
+        if not switched.get("ok"):
+            return {"ok": False, "error": switched.get("error") or "Could not load that study."}
+    store = _store_for(workspace, target)
+    if not (store / f"{cid}.json").is_file():
+        return {"ok": False, "error": "No such conversation."}
+    (store / "current").write_text(str(cid), encoding="utf-8")
+    return {"ok": True, "id": str(cid), "entries": _read_one(store, str(cid)),
+            "study": str(target) if target else None, "loaded_study": target is not None}
+
+
+def attach_conversation(runtime: Any, study: Any, cid: Any = None,
+                        from_study: Any = None) -> dict[str, Any]:
+    """Move a conversation into the study it just launched.
+
+    The browser names the conversation and where it is now. It has to:
+    by the time this runs the launch has already switched the loaded
+    study to the new one, so "the current conversation in scope" is the
+    new study's, which has none -- the first version looked there, moved
+    nothing, and the next save started a fresh thread in the new study
+    from whatever the browser held. With no id given, fall back to the
+    current conversation of the given source scope.
+    """
+    import os
+
+    target = Path(study) if study else None
+    if target is None or not target.is_dir():
+        return {"ok": False, "error": "No such study."}
+    workspace, _ = _scope(runtime)
+    source_study = Path(from_study) if from_study else None
+    if source_study is not None and not _is_study(source_study):
+        return {"ok": False, "error": "No such source study."}
+    source = _store_for(workspace, source_study)
+    if cid is not None and not _valid_id(cid):
+        return {"ok": False, "error": "No such conversation."}
+    cid = str(cid) if cid else _current_in(source)
+    if cid is None or not (source / f"{cid}.json").is_file():
+        return {"ok": True, "moved": False}
+    dest = target / CONVERSATIONS_SUBDIR
+    if source.resolve() == dest.resolve():
+        return {"ok": True, "moved": False, "id": cid, "study": str(target)}
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        os.replace(source / f"{cid}.json", dest / f"{cid}.json")
+        (dest / "current").write_text(cid, encoding="utf-8")
+        if _current_in(source) is None:
+            (source / "current").unlink(missing_ok=True)
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "moved": True, "id": cid, "study": str(target)}
+
+
+def delete_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, Any]:
+    """Delete one conversation, wherever it is. Asked for, per
+    conversation, never a side effect of anything else."""
+    if not _valid_id(cid):
+        return {"ok": False, "error": "No such conversation."}
+    workspace, _ = _scope(runtime)
+    target = Path(study) if study else None
+    store = _store_for(workspace, target)
+    path = store / f"{cid}.json"
+    if not path.is_file():
+        return {"ok": False, "error": "No such conversation."}
+    try:
+        path.unlink()
+        if _current_in(store) is None:
+            (store / "current").unlink(missing_ok=True)
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True}
+
+
+def clear_conversation(runtime: Any) -> dict[str, Any]:
+    """The old endpoint: delete the current conversation in scope."""
+    workspace, study = _scope(runtime)
+    store = _store_for(workspace, study)
+    cid = _current_in(store)
+    if cid is None:
+        return {"ok": True, "entries": []}
+    answer = delete_conversation(runtime, cid, str(study) if study else None)
+    answer["entries"] = []
+    return answer
+
+
+# ---------------------------------------------------------------------------
+# Attaching a file to a message.
+#
+# The Agent reads what the run status hands it and nothing else, by
+# design. When a person wants it to see a file -- a log, a manifest, a
+# config from another study -- they attach it to a message, as one does
+# in any assistant, and it goes with that message as context. Per
+# message, explicit, and recorded: the transcript keeps the file's name,
+# path, size and digest, so the conversation stays a scientific record of
+# what was looked at, without copying the bytes into it.
+# ---------------------------------------------------------------------------
+
+ATTACHABLE_SUFFIXES = frozenset({
+    ".yml", ".yaml", ".json", ".log", ".md", ".txt", ".csv", ".tsv", ".dat",
+    ".pdb", ".cif", ".py", ".toml", ".ini", ".cfg", ".xml", ".sdf", ".mol2",
+})
+ATTACH_LIMIT_BYTES = 200_000
+ATTACH_KEEP_EACH_END = 80_000
+
+
+def read_attachment(path: Any) -> dict[str, Any]:
+    """A text file the person chose, with what a model can read of it.
+
+    Text types only: a trajectory or a checkpoint is refused with a
+    sentence rather than fed to a model as bytes. A file past the limit
+    keeps its head and its tail, which is where a log's start and its
+    failure are, and says how much went from the middle.
+    """
+    import hashlib
+
+    file = Path(str(path or "")).expanduser()
+    if not str(path or "").strip():
+        return {"ok": False, "error": "No file given."}
+    if not file.is_file():
+        return {"ok": False, "error": f"No such file: {file}"}
+    if file.suffix.lower() not in ATTACHABLE_SUFFIXES:
+        return {"ok": False,
+                "error": f"{file.name} is not a text file the Agent can read. "
+                         "Attach a config, a log, a manifest, a data table or a structure file."}
+    try:
+        raw = file.read_bytes()
+    except OSError as exc:
+        return {"ok": False, "error": f"Could not read {file.name}: {exc}"}
+    digest = hashlib.sha256(raw).hexdigest()[:12]
+    truncated = False
+    if len(raw) > ATTACH_LIMIT_BYTES:
+        head = raw[:ATTACH_KEEP_EACH_END].decode("utf-8", "replace")
+        tail = raw[-ATTACH_KEEP_EACH_END:].decode("utf-8", "replace")
+        dropped = len(raw) - 2 * ATTACH_KEEP_EACH_END
+        text = (head + f"\n\n[\u2026 {dropped:,} bytes from the middle of the file not shown \u2026]\n\n" + tail)
+        truncated = True
+    else:
+        text = raw.decode("utf-8", "replace")
+    if "\x00" in text[:4000]:
+        return {"ok": False, "error": f"{file.name} looks binary; the Agent reads text."}
+    return {"ok": True, "name": file.name, "path": str(file.resolve()),
+            "size": len(raw), "sha256": digest, "text": text, "truncated": truncated}
+
+
+def _continuation_summary(root: Any) -> str:
+    """Whether and how this study can be continued, with the ready-made
+    config, so "continue to 0.5 ns" is answered from the record.
+
+    The Agent used to write resume_from by hand -- leaving minimisation
+    and equilibration on, which the runner now refuses -- and ask for the
+    equilibration lengths it needed for the arithmetic. The planner has
+    them, and the config it makes is the one to hand back.
+    """
+    if not root:
+        return ""
+    try:
+        import yaml
+
+        from fastmdxplora.simulation.resume import continuation_of
+
+        cont = continuation_of(root)
+    except Exception:  # noqa: BLE001 - context, not load-bearing
+        return ""
+    if not cont.possible:
+        if "no checkpoint" in (cont.refusal or ""):
+            return ""
+        return f"continuing this study: {cont.as_text()}"
+    short = dict(cont.config)
+    text = yaml.safe_dump(short, sort_keys=False, default_flow_style=False).strip()
+    return (
+        f"continuing this study: {cont.as_text()}. To continue it, use this "
+        f"config as the base and set simulation.duration_ns to how much MORE "
+        f"production is wanted (the remainder of the plan is filled in); "
+        f"for a total, subtract {cont.production_done_ns:.3f} ns already done. "
+        f"Do not turn minimisation or equilibration back on:\n```yaml\n{text}\n```"
+    )

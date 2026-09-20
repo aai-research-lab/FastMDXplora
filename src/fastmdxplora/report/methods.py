@@ -227,10 +227,21 @@ def methods_paragraphs(
             )
         heterogens = _get(setup, "heterogens")
         if heterogens:
+            # Say what the policy is, not only its name. "the `auto` policy"
+            # told a reader nothing they could repeat.
+            policy = {
+                "auto": "non-standard residues were decided per component: "
+                        "any ligand that could be parameterised was kept and "
+                        "prepared, crystallographic water and buffer were "
+                        "removed, and setup stopped rather than guess where "
+                        "the structure did not determine what to simulate",
+                "drop": "all non-standard residues were removed, and what "
+                        "went is recorded",
+                "keep": "all non-standard residues were retained",
+            }.get(str(heterogens), f"heterogens were handled under the `{heterogens}` policy")
             preparation.append(
-                f"Heterogens were handled under the `{heterogens}` policy; the "
-                "decision taken for each is recorded in "
-                "`setup/setup_parameters.json`."
+                f"Heterogens: {policy}. The decision taken for each is "
+                "recorded in `setup/setup_parameters.json`."
             )
 
         resolved = setup.get("resolved_forcefield")
@@ -466,12 +477,20 @@ def methods_paragraphs(
 
     # ---- software -----------------------------------------------------
     if versions:
-        named = ", ".join(f"{name} {version}" for name, version in
-                          sorted(versions.items()))
-        parts.append(
-            "**Software.** Analysis and orchestration were performed with "
-            f"{named}."
-        )
+        # FastMDXplora did the work -- setup, simulation and analysis -- and
+        # the libraries it calls are the record of what it stood on. The
+        # two are not the same kind of thing and were listed as one.
+        ours = versions.get("FastMDXplora")
+        tools = {k: v for k, v in versions.items() if k != "FastMDXplora"}
+        if ours:
+            parts.append(
+                "**Software.** System setup, simulation and analysis were "
+                f"performed with FastMDXplora {ours}."
+            )
+        if tools:
+            named = ", ".join(f"{name} {version}" for name, version in
+                              sorted(tools.items()))
+            parts.append(f"**Tools.** FastMDXplora calls {named}.")
 
     gaps = missing_from_methods(setup, sim)
     if gaps:

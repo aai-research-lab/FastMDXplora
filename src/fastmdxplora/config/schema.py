@@ -174,7 +174,7 @@ TOP_LEVEL = PhaseSchema(
     fields=(
         Field("output", str, None,
               "Output directory for all artifacts. "
-              "Default: ./fastmdxplora_output_<UTC-timestamp>.",
+              "Default: ./fastmdxplora_<system>_study_<UTC-timestamp>.",
               example="./my_study"),
         Field("agent_model", str, None,
               "Which model wrote this study, as provider/model. Written by "

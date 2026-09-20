@@ -120,6 +120,11 @@
       );
     });
     document.documentElement.setAttribute("data-page", page);
+    // A page opens at its top. The column's scroll position carried over
+    // from the last page, so "open the report" from the foot of a long
+    // thread landed at the foot of the report.
+    const column = document.querySelector(".main");
+    if (column) column.scrollTop = 0;
     if (opts.updateHash !== false && location.hash !== `#${page}`) {
       history.replaceState(null, "", `#${page}`);
     }
@@ -372,9 +377,9 @@
 
     if (!activeRun) {
       setText("topbar-run-id", "workspace");
-      setText("topbar-run-title", "No active exploration");
+      setText("topbar-run-title", "No active study");
       setText("topbar-stage", "configure a simulation");
-      setText("sidebar-run-name", "No active exploration");
+      setText("sidebar-run-name", "No active study");
       setText("sidebar-platform", "—");
     }
     // Sections that only have content once a run exists are dimmed until one
@@ -520,9 +525,9 @@
       setText("topbar-eta", "—");
       setText("sidebar-platform", "—");
       setText("sidebar-output-folder", "—");
-      setText("sidebar-run-name", "No active exploration");
+      setText("sidebar-run-name", "No active study");
       setText("topbar-run-id", "workspace");
-      setText("topbar-run-title", "No active exploration");
+      setText("topbar-run-title", "No active study");
       return;
     }
     const statusName = String(health.state || status.status || "waiting").toLowerCase();
@@ -547,7 +552,13 @@
 
     state.runId = status.system_id || state.results?.system?.system || state.runId;
     setTextWithTooltip("topbar-run-id", state.runId || "system");
-    setTextWithTooltip("topbar-run-title", state.runTitle);
+    // The study's name is the system, not the folder it went into. The
+    // server's run_title is the output folder's name, and once a run began
+    // the title read fastmdxplora_output_20260919_021313 under the wordmark,
+    // which says nothing a person did not already choose. A name set in
+    // Display preferences still wins.
+    const chosen = (byId("setting-run-name")?.value || "").trim();
+    setTextWithTooltip("topbar-run-title", chosen || state.runId || state.runTitle);
   }
 
   function setTextWithTooltip(id, value) {

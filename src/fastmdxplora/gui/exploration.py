@@ -65,6 +65,145 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class _AdoptedProcess:
+    """A run this server did not start, held by its PID.
+
+    Everything the runtime does with a Popen -- poll, terminate, kill,
+    wait, pid -- works here through signals. The exit code of a process
+    that was never this server's child cannot be read, so once it is gone poll
+    reports 0 if the study's manifest says it completed, else 1.
+    """
+
+    def __init__(self, pid: int, root: Path) -> None:
+        self.pid = int(pid)
+        self.root = Path(root)
+        self._returncode: int | None = None
+
+    def _alive(self) -> bool:
+        """Alive, and not a zombie. A process that has exited but has not
+        been reaped answers a signal, so os.kill(pid, 0) alone reports a
+        dead run as living; that is what made Stop wait five seconds
+        twice on a child that had already gone. ps shows its state."""
+        import os
+
+        try:
+            os.kill(self.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        try:
+            state = subprocess.run(["ps", "-o", "stat=", "-p", str(self.pid)],
+                                   capture_output=True, text=True, timeout=2).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return True
+        if not state:
+            return False
+        return not state.startswith("Z")
+
+    def poll(self) -> int | None:
+        if self._returncode is not None:
+            return self._returncode
+        if self._alive():
+            return None
+        manifest = _json_mapping(self.root / "manifest.json")
+        done = str(manifest.get("status") or "").lower() in {"completed", "complete", "success"}
+        self._returncode = 0 if done else 1
+        return self._returncode
+
+    def terminate(self) -> None:
+        import os
+        import signal
+
+        try:
+            os.kill(self.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    def kill(self) -> None:
+        import os
+        import signal
+
+        try:
+            os.kill(self.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def wait(self, timeout: float | None = None) -> int:
+        import time
+
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.poll() is None:
+            if deadline is not None and time.monotonic() > deadline:
+                raise subprocess.TimeoutExpired(cmd=f"pid {self.pid}", timeout=timeout or 0)
+            time.sleep(0.1)
+        return self._returncode or 0
+
+
+def _process_is_this_run(pid: int, root: Path) -> bool:
+    """The PID is alive and its command line names this study or the
+    program. Guards against a stale record whose PID the OS has reused."""
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    line = _command_line_of(pid)
+    if line is None:
+        return True  # alive, and no way to look closer; trust the record
+    return _command_line_is_a_run(line, root)
+
+
+def _command_line_is_a_run(line: str, root: Path) -> bool:
+    """Whether a command line is FastMDXplora running this study.
+
+    Judged by what is being run, never by where the interpreter lives.
+    "fastmdx" as a substring matched the whole command line, and on a
+    machine whose conda environment is named fastmdxplora every Python
+    process carries that substring in its interpreter path: a stale PID
+    reused by any Python at all would have been adopted, and Stop would
+    have killed it. A run names the study as an argument, or runs the
+    program -- the fastmdx entry point or the fastmdxplora.cli module --
+    as a token of its own.
+    """
+    tokens = line.split()
+    study = str(root)
+    for token in tokens:
+        if token == study or token.startswith(study + "/") or token.rstrip("/") == study.rstrip("/"):
+            return True
+    for token in tokens:
+        name = token.rsplit("/", 1)[-1]
+        if name in ("fastmdx", "fastmdxplora") or token in ("fastmdxplora.cli.main", "fastmdxplora.cli"):
+            return True
+        if token.startswith("fastmdxplora.cli"):
+            return True
+    return False
+
+
+def _command_line_of(pid: int) -> str | None:
+    """The whole command line, not what fits a terminal. ps cuts its output
+    at the terminal's width, and a study's path is long enough that the
+    part naming it was cut off; the check then said a real run was not
+    this run. /proc has the full line on Linux; -ww asks ps for it
+    elsewhere."""
+    proc = Path("/proc") / str(pid) / "cmdline"
+    try:
+        raw = proc.read_bytes()
+        if raw:
+            return raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    except OSError:
+        pass
+    try:
+        out = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.strip() or None
+
+
 def _slug(value: str, fallback: str = "fastmdxplora_run") -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value).strip()).strip("._-")
     return cleaned[:96] or fallback
@@ -539,6 +678,12 @@ class DashboardRuntime:
     workspace_root: Path
     exploration_root: Path
     active_root: Path | None = None
+    #: Where the running process is writing, which is not always what is
+    #: being viewed. The two were one field, so looking at a finished
+    #: study while another ran was refused: Stop would have killed a run
+    #: nobody was looking at, and the staleness check would have measured
+    #: one study's telemetry against another's start time.
+    running_root: Path | None = None
     process: subprocess.Popen[Any] | None = None
     process_started_at: str | None = None
     process_finished_at: str | None = None
@@ -556,6 +701,7 @@ class DashboardRuntime:
         self.exploration_root.mkdir(parents=True, exist_ok=True)
         if self.active_root is not None:
             self.active_root = self.active_root.expanduser().resolve()
+            self._adopt_if_running(self.active_root)
 
     def data_root(self) -> Path:
         with self.lock:
@@ -568,8 +714,32 @@ class DashboardRuntime:
                 return self.workspace_root / _NO_CURRENT_RUN
             return self.active_root or self.workspace_root
 
+    def _progress_of(self, root: Path | None) -> dict[str, Any] | None:
+        """The running study's stage and fraction complete, for the sidebar's
+        Running line. Read from its own telemetry; nothing is guessed."""
+        if root is None:
+            return None
+        status = _json_mapping(Path(root) / "simulation" / "live_status.json")
+        step, total = status.get("current_step"), status.get("total_planned_steps")
+        out: dict[str, Any] = {"stage": status.get("stage")}
+        if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
+            out["percent"] = round(100.0 * float(step) / float(total), 1)
+        return out
+
+    def _viewing_the_running_study(self) -> bool:
+        # An unset running_root means the process belongs to whatever is
+        # viewed, which is what one field used to mean and what every
+        # caller that sets active_root and process directly still means.
+        if self.running_root is None:
+            return True
+        return self.active_root is not None and self.active_root == self.running_root
+
     def _telemetry_predates_process(self) -> bool:
         if self.active_root is None or not self.process_started_at:
+            return False
+        if not self._viewing_the_running_study():
+            # The viewed study is not the one the process is writing; its
+            # telemetry is older by definition and that says nothing.
             return False
         status = _json_mapping(self.active_root / "simulation" / "live_status.json")
         recorded = status.get("run_started_at") or status.get("last_update_timestamp")
@@ -735,14 +905,19 @@ class DashboardRuntime:
         with self.lock:
             self._refresh_process()
             running = self.process is not None and self.process.poll() is None
+            viewing_running = self._viewing_the_running_study()
             status = "idle"
-            if running:
+            if running and viewing_running:
                 status = "running"
-            elif self.completion_error:
+            elif running:
+                # A run is going, elsewhere. The viewed study is what it is
+                # on disk; the sidebar says where the live one is.
+                status = "idle"
+            elif self.completion_error and viewing_running:
                 status = "failed"
-            elif self.process is not None and self.process_returncode == 0:
+            elif self.process is not None and self.process_returncode == 0 and viewing_running:
                 status = "completed"
-            elif self.process is not None and self.process_returncode is not None:
+            elif self.process is not None and self.process_returncode is not None and viewing_running:
                 status = "failed"
             return {
                 "mode": "home" if self.active_root is None or self.data_stale else "run",
@@ -750,9 +925,13 @@ class DashboardRuntime:
                 "active_run": str(self.active_root) if self.active_root and not self.data_stale else None,
                 "workspace": str(self.workspace_root),
                 "exploration_root": str(self.exploration_root),
-                "process_running": running,
+                "process_running": running and viewing_running,
+                "running_elsewhere": (str(self.running_root)
+                                      if running and not viewing_running else None),
+                "running_elsewhere_progress": (self._progress_of(self.running_root)
+                                               if running and not viewing_running else None),
                 "returncode": self.process_returncode,
-                "error": self.completion_error,
+                "error": self.completion_error if viewing_running else None,
                 "started_at": self.process_started_at,
                 "finished_at": self.process_finished_at,
                 "log_path": str(self.log_path) if self.log_path else None,
@@ -830,6 +1009,14 @@ class DashboardRuntime:
             env["FASTMDX_DASHBOARD_URL"] = dashboard_url
         log_handle = log_path.open("a", encoding="utf-8", buffering=1)
         try:
+            # Its own session, so the run outlives the server. Without this
+            # it sat in the terminal's process group, and Ctrl-C on the
+            # server sent SIGINT to the run as well: the server shut down
+            # cleanly and a day-long simulation died mid-step, not by any
+            # decision but because the terminal delivers the signal to the
+            # whole group. A study launched at five should be there in the
+            # morning whether the GUI is or not. Stop still stops it: the
+            # server holds the handle and signals the child directly.
             process = subprocess.Popen(
                 command,
                 cwd=str(self.exploration_root),
@@ -838,6 +1025,7 @@ class DashboardRuntime:
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 shell=False,
+                start_new_session=True,
             )
         except Exception:
             log_handle.close()
@@ -846,6 +1034,7 @@ class DashboardRuntime:
         # long-lived Python file object while the child continues writing.
         log_handle.close()
         self.active_root = output_dir
+        self.running_root = output_dir
         self.process = process
         self.process_started_at = _utc_now()
         self.process_finished_at = None
@@ -899,10 +1088,9 @@ class DashboardRuntime:
                 # collided with the first: "Output folder already exists
                 # and is not empty". The refusal is right; the default
                 # should not make it fire.
-                from datetime import datetime, timezone
+                from fastmdxplora.naming import default_output_name, system_of
 
-                stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                requested = f"fastmdxplora_output_{stamp}"
+                requested = default_output_name(system_of(dict(source)))
             candidate = Path(requested).expanduser()
             if candidate.is_absolute():
                 output_dir = candidate.resolve()
@@ -1025,6 +1213,84 @@ class DashboardRuntime:
                 "modified": False,
                 **started,
             }
+
+    def _adopt_if_running(self, root: Path | None) -> bool:
+        """If the study at root has a live run this server did not start,
+        hold it as the process: it shows as running, and Stop reaches it.
+
+        A GUI reopened on a running study could watch it but not stop it,
+        and its sidebar called it idle. The run records its PID in the
+        folder; this reads it, checks the process is alive and is this
+        run, and adopts it.
+        """
+        if root is None or self.process is not None and self.process.poll() is None:
+            return False
+        from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+        record = _json_mapping(Path(root) / RUN_PROCESS_FILE)
+        pid = record.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return False
+        if not _process_is_this_run(pid, Path(root)):
+            return False
+        self.process = _AdoptedProcess(pid, Path(root))
+        self.running_root = Path(root)
+        self.process_started_at = str(record.get("started_at") or _utc_now())
+        self.process_finished_at = None
+        self.process_returncode = None
+        self.completion_error = None
+        self.log_path = Path(root) / "exploration.log"
+        self.command = [str(a) for a in (record.get("argv") or [])]
+        return True
+
+    def switch_to(self, folder: str | Path) -> dict[str, Any]:
+        """Watch a different output folder without relaunching.
+
+        The GUI was bound to the one folder given at launch. A person with
+        several finished studies had to stop the server and start it again
+        with a new --output to look at another; this makes it a control in
+        the page. Refused while a run is in progress here -- the dashboard
+        watches one study at a time, and swapping the folder under a live
+        run would read one study's telemetry against another's process.
+        """
+        with self.lock:
+            self._refresh_process()
+            path = Path(folder).expanduser().resolve()
+            if not path.is_dir():
+                return {"ok": False, "error": f"No such folder: {path}",
+                        "state": self.snapshot()}
+            # A run folder is one FastMDXplora wrote: it carries a manifest,
+            # or a simulation directory, or an analysis directory. Anything
+            # else is a wrong turn in the picker, and loading it would show
+            # an empty study rather than say so.
+            markers = ("manifest.json", "simulation", "analysis", "report")
+            if not any((path / m).exists() for m in markers):
+                return {"ok": False,
+                        "error": f"{path.name} does not look like a "
+                                 "FastMDXplora output folder.",
+                        "state": self.snapshot()}
+            # Look at the new folder. The process, if any, keeps running
+            # where it is and stays stoppable; a switch changes what is
+            # viewed, not what is happening. Only a finished process is
+            # forgotten, so its completion does not colour another study.
+            # A live process that was never pinned to a folder belongs to
+            # the folder being left.
+            if (self.process is not None and self.process.poll() is None
+                    and self.running_root is None):
+                self.running_root = self.active_root
+            self.active_root = path
+            self.data_stale = False
+            self._adopt_if_running(path)
+            if self.process is None or self.process.poll() is not None:
+                self.process = None
+                self.running_root = None
+                self.process_started_at = None
+                self.process_finished_at = None
+                self.process_returncode = None
+                self.completion_error = None
+                self.log_path = None
+                self.command = []
+            return {"ok": True, "active_run": str(path), "state": self.snapshot()}
 
     def stop(self) -> dict[str, Any]:
         with self.lock:

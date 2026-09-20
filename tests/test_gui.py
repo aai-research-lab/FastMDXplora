@@ -10,6 +10,7 @@ These tests assert:
 
 from __future__ import annotations
 
+import re
 import json
 import socket
 from pathlib import Path
@@ -3019,7 +3020,9 @@ class TestWhereTheResultsGo:
         runtime = self._runtime(tmp_path)
         try:
             started = runtime.launch_from_config(self._state(""))
-            assert (pathlib.Path(started["output"]).name ).startswith("fastmdxplora_output_")  # timestamped, so a second run does not collide
+            # Named by the one rule: the system and a timestamp, so a second
+            # run does not collide and the folder says what it holds.
+            assert re.fullmatch(r"fastmdxplora_.+_study_\d{14}", pathlib.Path(started["output"]).name)
         finally:
             runtime.stop()
 
@@ -3033,7 +3036,7 @@ class TestWhereTheResultsGo:
                 / "dashboard.html").read_text(encoding="utf-8")
         assert 'id="run-output"' in page
         marker = page[page.index('id="run-output"'):][:220]
-        assert 'placeholder="fastmdxplora_output"' in marker
+        assert 'placeholder="fastmdxplora_<system>_study_<timestamp>"' in marker
 
 
 class TestPanelsForPhasesThatAreNotRunning:
@@ -3377,11 +3380,14 @@ class TestTheWordsMatchTheSoftware:
         root = pathlib.Path(server.__file__).parent
         page = (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
         script = (root / "static" / "run-builder.js").read_text(encoding="utf-8")
-        assert 'placeholder="fastmdxplora_output"' in page
+        assert 'placeholder="fastmdxplora_<system>_study_<timestamp>"' in page
         # The default is built by a function now -- timestamped, like the
         # CLI's -- so a second run does not collide with the first. The
         # name is still the software's.
-        assert '"fastmdxplora_output_"' in script
+        # The browser no longer names the folder; the server does, by one
+        # rule. The note shows the pattern.
+        assert '"fastmdxplora_output_"' not in script
+        assert '_study_<timestamp>' in script
 
 
 class TestEveryPathFieldCanBeBrowsed:
@@ -3675,7 +3681,11 @@ class TestTheWordsOnTheRunPage:
 
     def test_the_navigation_says_what_the_page_says(self) -> None:
         page, _ = self._files()
-        assert "<span>Builder</span>" in page
+        # The tab says Config; the page says Config Builder. The tab is the
+        # thing, the page is the thing and what it does to it.
+        assert "<span>Config</span>" in page
+        assert "<h1 class=\"page-title\">Config Builder</h1>" in page
+        assert "<span>Builder</span>" not in page
         assert "New run" not in page
 
     def test_the_results_note_gives_the_path(self) -> None:
@@ -4433,23 +4443,22 @@ class TestTheGUIAsksToBeCited:
                 / "dashboard.html").read_text(encoding="utf-8")
 
     def test_cite_comes_before_the_links_that_leave(self) -> None:
-        # Documentation and GitHub live in the settings popup now; Cite is
-        # a line in the sidebar itself, on every page. What the test holds
-        # is the principle: the reminder is met before any link that
-        # leaves. The sidebar is visible; the popup is hidden until asked.
+        # In the settings popup now, by the owner's choice, with the version
+        # beside it. What the test still holds: it comes before Documentation
+        # and GitHub in that popup, and neither of those is in the sidebar.
         markup = self._markup()
-        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
-        assert 'data-view-link="cite"' in sidebar
         popup = markup[markup.index('id="settings-popup"'):]
-        assert "hidden" in popup[:80], "the popup is not hidden by default"
-        assert "readthedocs.io" in popup and "github.com/aai-research-lab" in popup
+        cite = popup.index("Cite FastMDXplora")
+        assert cite < popup.index("readthedocs.io")
+        assert cite < popup.index("github.com/aai-research-lab")
+        sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
         assert "readthedocs.io" not in sidebar and "github.com" not in sidebar
 
     def test_every_page_carries_the_reminder(self) -> None:
-        """The sidebar footer shows on all of them, so the request does too."""
+        # The popup is on every page, and Cite is in it, one click away.
         markup = self._markup()
-        footer = markup[markup.index('class="sidebar-footer"'):]
-        assert 'data-view-link="cite"' in footer[:600]
+        popup = markup[markup.index('id="settings-popup"'):markup.index('<div class="app-shell">')]
+        assert 'data-view-link="cite">Cite FastMDXplora' in popup
 
     def test_the_page_itself_carries_the_reference_and_the_doi(self) -> None:
         markup = self._markup()

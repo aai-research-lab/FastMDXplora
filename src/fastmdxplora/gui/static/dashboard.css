@@ -368,26 +368,40 @@ button {
 .page { display: block; }
 .page[hidden] { display: none; }
 
+/* One row: the title, its subtitle inline and muted, the page's actions
+   at the right. The two-line header with a rule under it took 90px of
+   every page for a title and a sentence; this takes 44. */
 .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
-    margin-bottom: 22px;
-    gap: 18px;
+    align-items: center;
+    margin-bottom: 14px;
+    gap: 14px;
     border-bottom: 1px solid var(--border-subtle);
-    padding-bottom: 16px;
+    padding-bottom: 10px;
+    min-height: 44px;
+    /* Fixed while the page scrolls under it. The centre column is the
+       scroll container, so sticky at its top is fixed to the eye; the
+       background stops the content showing through. */
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--background-primary);
+    padding-top: 8px;
 }
+.page-header > div:first-child { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .page-title {
-    font-size: 24px;
+    font-size: 19px;
     font-weight: 700;
     letter-spacing: -0.01em;
     margin: 0;
     color: var(--accent-white);
 }
 .page-subtitle {
+    display: inline;
     color: var(--text-secondary);
-    font-size: 13px;
-    margin-top: 4px;
+    font-size: 12.5px;
+    margin-top: 0;
 }
 
 /* ============================================================ */
@@ -1846,7 +1860,7 @@ body.state-ready .loading-screen {
 .analyse-picker {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.62);
+    background: var(--shadow-color);
     display: grid;
     place-items: center;
     z-index: 60;
@@ -2409,7 +2423,7 @@ body.state-ready .loading-screen {
    =========================================================================== */
 :root {
     --sidebar-width: 232px;
-    --panel-width: 700px;
+    --panel-width: 560px;
     --handle-width: 6px;
 }
 .app-shell {
@@ -2422,7 +2436,9 @@ body.panel-collapsed .app-shell {
     grid-template-columns: var(--sidebar-width) var(--handle-width) minmax(0, 1fr) 0 0;
 }
 body.panel-collapsed .side-panel,
-body.panel-collapsed .col-handle[data-handle="panel"] { display: none; }
+body.panel-collapsed .col-handle[data-handle="panel"] {
+    overflow: hidden; visibility: hidden; width: 0; min-width: 0; padding: 0; border: 0;
+}
 body.panel-collapsed .side-expand { display: inline-flex; }
 
 .col-handle {
@@ -2760,7 +2776,7 @@ body { overflow: hidden; }
    column ran to the right edge and a line of prose ran with it. The
    viewer is the exception: a 3D canvas wants every pixel it can get,
    and its own right-hand info pane fills the width beside it. */
-.page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }
+.page-shell { max-width: 900px; margin: 0 auto; width: 100%; }
 html[data-page="viewer"] .page-shell { max-width: none; }
 /* The side panel already lays its own scroll region out (.side-log,
    .side-files); the panel itself should not add a second one. */
@@ -2875,12 +2891,19 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-msg-agent .agent-actions { margin: 0; }
 .agent-composer {
     flex: none; position: sticky; bottom: 0;
-    display: flex; align-items: flex-end; gap: 8px;
     padding: 12px 0 8px;
     background: linear-gradient(180deg, transparent, var(--background-primary) 30%);
 }
+/* The send button sits inside the box at its right end, as every
+   assistant a person has used places it, rather than beside the box. */
+.agent-composer-box { position: relative; }
+.agent-composer-box textarea { padding-right: 52px; }
+.agent-composer-box .agent-send {
+    position: absolute; right: 8px; bottom: 8px;
+    width: 32px; height: 32px; border-radius: 8px; font-size: 16px;
+}
 .agent-composer textarea {
-    flex: 1; resize: none; min-height: 44px; max-height: 40vh;
+    width: 100%; box-sizing: border-box; resize: none; min-height: 48px; max-height: 40vh;
     padding: 12px 14px; border-radius: 12px;
     border: 1px solid var(--border-primary);
     background: var(--background-elevated);
@@ -2891,12 +2914,12 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-composer textarea:focus { outline: none; border-color: var(--accent-cyan); }
 .agent-send {
     flex: none; width: 40px; height: 40px; border-radius: 10px;
-    border: 1px solid var(--accent-cyan); background: var(--accent-cyan); color: #0f1114;
+    border: 1px solid var(--accent-cyan); background: var(--accent-cyan); color: var(--background-primary);
     font-size: 18px; line-height: 1; cursor: pointer;
 }
 .agent-send:disabled { opacity: .45; cursor: default; }
 /* The old single-field rules no longer apply to a composer. */
-#agent-request { min-height: 44px; padding: 12px 14px; }
+#agent-request { min-height: 44px; padding: 12px 52px 12px 46px; }  /* clear of the + and the send */
 /* The Agent's prose in a serif; the person's message in the UI sans.
    That is the pairing every assistant a person has read uses, and it
    makes the two voices in the thread tell apart at a glance. A system
@@ -2944,3 +2967,125 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 }
 .agent-msg-tools button:hover { color: var(--text-primary); background: var(--background-secondary); }
 .report-document .report-plain { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; margin: 0; }
+
+
+/* The sidebar collapses too. The same shape as the panel: a chevron in
+   the brand row folds it, a tab on the left edge brings it back, and the
+   grid gives the column no width while it is away. */
+body.sidebar-collapsed .app-shell {
+    grid-template-columns: 0 0 minmax(0, 1fr) var(--handle-width) var(--panel-width);
+}
+body.sidebar-collapsed.panel-collapsed .app-shell {
+    grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
+}
+body.sidebar-collapsed .sidebar,
+body.sidebar-collapsed .col-handle[data-handle="sidebar"] {
+    overflow: hidden; visibility: hidden; width: 0; min-width: 0; padding: 0; border: 0;
+}
+body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
+.sidebar-brand { display: flex; align-items: flex-start; gap: 8px; }
+.sidebar-brand .brand-text { flex: 1; min-width: 0; }
+.sidebar-collapse { order: 2; padding: 4px 7px; font-size: 11px; margin-top: 4px; }
+.sidebar-expand {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+    padding: 10px 6px; border: 1px solid var(--border-primary); border-left: none;
+    border-radius: 0 6px 6px 0; background: var(--background-elevated);
+    color: var(--text-secondary); cursor: pointer; z-index: 40; display: none;
+}
+
+/* The settings trigger is the name and a caret. The engine and mode
+   under it read as a standing advertisement for somebody else's product;
+   they are in the popup, where somebody choosing them is looking. */
+.sidebar-account-detail { display: none; }
+
+/* A message being edited in place. */
+.agent-msg-user > div.editing {
+    outline: 1px solid var(--accent-cyan); outline-offset: 2px;
+    background: var(--background-primary);
+}
+
+
+/* Load study sits in the study block: which study this is, is that
+   block's whole question. It had been a fourth button in the controls
+   row, beside a "Browse" the picker attaches to any data-picks input
+   -- two buttons for one action, in a row meant for three. */
+.study-switch { margin-top: 8px; }
+.study-switch .ghost-btn { padding: 5px 9px; font-size: 11px; width: 100%; }
+
+.study-running { margin-top: 10px; }
+.study-section-label {
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 4px;
+}
+.study-running-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; border-radius: 6px;
+    background: var(--background-elevated); border: 1px solid var(--border-subtle);
+    font-size: 11px; color: var(--text-secondary);
+}
+.study-running-row .status-dot { width: 6px; height: 6px; margin: 0; }
+.study-running-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.study-running-pct { color: var(--text-muted); font-size: 10.5px; }
+.study-running-row .ghost-btn { padding: 2px 7px; font-size: 10px; }
+
+.agent-conv-list {
+    margin: 0 0 12px; padding: 6px; border-radius: 10px;
+    background: var(--background-elevated); border: 1px solid var(--border-subtle);
+    max-height: 40vh; overflow-y: auto;
+}
+.agent-conv-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; font-size: 13px; }
+.agent-conv-row:hover { background: var(--background-secondary); }
+.agent-conv-row.current { color: var(--text-primary); }
+.agent-conv-row .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.agent-conv-row .when { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); }
+.agent-conv-row .del { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 4px; }
+.agent-conv-row .del:hover { color: var(--status-error, #e5484d); }
+.agent-conv-empty { padding: 10px; color: var(--text-muted); font-size: 12.5px; }
+.agent-conv-group {
+    padding: 8px 8px 4px; font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
+}
+.agent-conv-group.loaded { color: var(--accent-cyan); }
+
+/* The + at the left of the composer, and the chips above it. */
+.agent-composer-box textarea { padding-left: 46px; }
+.agent-composer-box .agent-plus {
+    position: absolute; left: 8px; bottom: 8px;
+    width: 32px; height: 32px; border-radius: 8px;
+    border: 1px solid var(--border-subtle); background: transparent;
+    color: var(--text-muted); font-size: 20px; line-height: 1; cursor: pointer;
+}
+.agent-composer-box .agent-plus:hover { color: var(--text-primary); border-color: var(--border-primary); }
+.agent-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.agent-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 8px 4px 10px; border-radius: 999px; font-size: 12px;
+    background: var(--background-elevated); border: 1px solid var(--border-subtle);
+    color: var(--text-secondary); max-width: 320px;
+}
+.agent-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11.5px; }
+.agent-chip .size { color: var(--text-muted); font-size: 10.5px; }
+.agent-chip .rm { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.agent-chip .rm:hover { color: var(--text-primary); }
+/* In a sent message, what was attached. */
+.agent-msg-user .attached { margin-top: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+
+/* The picker tells a study from a folder of structures from a folder of
+   trajectories at a glance. A study is a FastMDXplora output folder: it
+   has a manifest or a resolved config. */
+.fastmdx-picker-row .badge-study { color: var(--accent-cyan); border-color: var(--accent-cyan); }
+.fastmdx-picker-row .badge-structure { color: var(--status-success, #5fc08a); border-color: var(--status-success, #5fc08a); }
+.fastmdx-picker-row .badge-trajectory { color: var(--status-warning, #e0a45a); border-color: var(--status-warning, #e0a45a); }
+.fastmdx-picker-row.is-study .name { color: var(--accent-cyan); }
+
+/* The Agent's footer: small links under the composer, at the right. */
+.agent-footer {
+    display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+    padding: 6px 4px 0; font-size: 11.5px; color: var(--text-muted);
+}
+.agent-footer-link {
+    border: none; background: transparent; padding: 2px 4px;
+    color: var(--text-muted); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.agent-footer-link:hover { color: var(--text-primary); text-decoration: underline; }
+.agent-footer-dot { opacity: .6; }

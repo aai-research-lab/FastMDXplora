@@ -145,7 +145,9 @@ class TestReportDocument:
         text = (project_with_analysis / "report" / "report.md").read_text(encoding="utf-8")
         # We built a 25-frame, 5-residue trajectory
         assert "25 frames" in text
-        assert "5 residues" in text
+        # Protein residues apart from ions and cofactors, so a 20-residue
+        # peptide saved with "not water" does not read as 27 residues.
+        assert "5 protein residues" in text
 
     def test_report_includes_all_figures_for_multi_method(
         self, project_with_multi_method: Path
@@ -2174,7 +2176,11 @@ class TestTheBundleCarriesTheRunRecord:
         from fastmdxplora.orchestrator import FastMDXplora
 
         source = inspect.getsource(FastMDXplora)
-        order = [source.index(call) for call in (
+        # The final writes, not the first: the resolved config is written
+        # once before the phase loop too, so a running study has a record,
+        # and again at the end so what actually ran is the record the
+        # bundle carries. The bundle is added after that last write.
+        order = [source.rindex(call) for call in (
             "self._write_manifest()",
             "self._write_resolved_config()",
             "self._add_run_record_to_bundle()",
@@ -2477,3 +2483,93 @@ class TestABiasedTrajectorySaysWhatItIs:
         assert "reweighted" in metad and "reweighted" not in steered
         assert "potential of mean force" in umbrella
         assert "no reweighting" in steered and "no reweighting" not in metad
+
+
+class TestTheReportSaysWhatItMeans:
+    """Read line by line, a report of a real study turned up things a
+    reader would stumble on. Each is held here."""
+
+    def test_the_header_says_software(self):
+        from fastmdxplora.report.document import build_document  # noqa: F401
+
+        src = Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "report" / "document.py"
+        text = src.read_text(encoding="utf-8")
+        assert '"_Software: FastMDXplora_  "' in text
+        assert '"_Tool: FastMDXplora_  "' not in text
+
+    def test_see_convergence_is_a_link(self):
+        src = Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "report" / "document.py"
+        text = src.read_text(encoding="utf-8")
+        assert "see [Convergence](#convergence)" in text
+
+    def test_the_auto_policy_is_explained_not_named(self, tmp_path):
+        from fastmdxplora.report.methods import methods_paragraphs
+
+        text = methods_paragraphs(
+            tmp_path, setup={"parameters": {"heterogens": "auto", "ph": 7.4}},
+            sim={"parameters": {}}, versions={})
+        assert "decided per component" in text
+        assert "under the `auto` policy" not in text
+
+    def test_software_and_tools_are_two_sentences(self, tmp_path):
+        from fastmdxplora.report.methods import methods_paragraphs
+
+        text = methods_paragraphs(
+            tmp_path, setup={"parameters": {}}, sim={"parameters": {}},
+            versions={"FastMDXplora": "2.5", "OpenMM": "8.4", "NumPy": "2.1"})
+        assert "**Software.** System setup, simulation and analysis were performed with FastMDXplora 2.5." in text
+        assert "**Tools.** FastMDXplora calls NumPy 2.1, OpenMM 8.4." in text
+        assert "Analysis and orchestration" not in text
+
+    def test_the_tools_list_includes_what_the_arithmetic_stands_on(self):
+        from fastmdxplora.report.document import _software_versions
+
+        found = _software_versions()
+        for lib in ("NumPy", "SciPy", "matplotlib"):
+            assert lib in found
+
+    def test_determined_settings_are_filled_in(self):
+        from fastmdxplora.report.document import _resolve_derived
+
+        out = _resolve_derived({"duration_ns": 0.5, "nvt_steps": 50000, "timestep_fs": 2.0,
+                                "production_steps": None, "nvt_duration_ns": None,
+                                "pressure_bar": None, "pressure_atm": None})
+        assert out["production_steps"] == 250000
+        assert out["nvt_duration_ns"] == 0.1
+        assert out["pressure_bar"] == 1.0
+        assert abs(out["pressure_atm"] - 0.98692) < 1e-5
+
+    def test_the_ensemble_is_read_from_npt_steps_when_absent(self):
+        # Absent means "read it from npt_steps", which is how it always
+        # worked. "ensemble: None" in the record told a reader nothing.
+        from fastmdxplora.report.document import _resolve_derived
+
+        assert _resolve_derived({"npt_steps": 50000, "timestep_fs": 2.0})["ensemble"] == "npt"
+        assert _resolve_derived({"npt_steps": 0, "timestep_fs": 2.0})["ensemble"] == "nvt"
+        assert _resolve_derived({"ensemble": "nvt", "npt_steps": 50000,
+                                 "timestep_fs": 2.0})["ensemble"] == "nvt"
+
+    def test_a_given_value_is_not_overwritten(self):
+        from fastmdxplora.report.document import _resolve_derived
+
+        out = _resolve_derived({"pressure_atm": 2.0, "pressure_bar": None, "timestep_fs": 2.0})
+        assert out["pressure_atm"] == 2.0
+        assert abs(out["pressure_bar"] - 2.0265) < 1e-4
+
+    def test_every_analysis_section_says_what_it_measures(self):
+        src = Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "report" / "document.py"
+        text = src.read_text(encoding="utf-8")
+        assert 'explain_analysis(str(analysis)).get("summary")' in text
+
+    def test_the_summary_figure_takes_one_panel_per_analysis_up_to_twelve(self):
+        from fastmdxplora.report.summary_figure import EXPECTED_PANELS, MAX_PANELS
+
+        assert MAX_PANELS == 12
+        first_twelve = [p[1].split("/")[1] for p in EXPECTED_PANELS[:12]]
+        # Twelve distinct analyses before any second figure of one.
+        assert len(set(first_twelve)) == 12
+
+    def test_the_report_page_rerenders_only_on_change(self):
+        js = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+              / "static" / "report-page.js").read_text(encoding="utf-8")
+        assert "if (doc.dataset.rendered === data.html) return;" in js

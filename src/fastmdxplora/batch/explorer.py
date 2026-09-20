@@ -49,7 +49,6 @@ from concurrent.futures import (
     wait as wait_for_any,
 )
 from multiprocessing import get_context
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -714,10 +713,11 @@ class BatchExplorer:
 
         # Output root
         resolved_output = output_dir or raw.get("output")
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        from fastmdxplora.naming import default_output_name, system_of
+
         self.output_dir = (
             Path(resolved_output) if resolved_output
-            else Path(f"fastmdxplora_output_{timestamp}")
+            else Path(default_output_name(system_of(self.config)))
         )
 
         # Expand the run matrix

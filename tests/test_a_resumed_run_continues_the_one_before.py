@@ -463,3 +463,192 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
         require_segmentable(
             {"simulation": {"duration_ns": 10, "pressure_bar": 1.0}},
             segments=10)
+
+
+class TestACheckpointSaysWhatItIs(unittest.TestCase):
+    """A checkpoint carries positions, velocities and the integrator's
+    state, and nothing that says where in a run it was taken. Loading one
+    from production into a run that then minimises and equilibrates it
+    throws the velocities away and makes the continuation a new run from
+    a snapshot rather than the same trajectory; nothing refused, because
+    nothing knew. The sidecar is how the loader knows."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.d = Path(tempfile.mkdtemp())
+        self.chk = self.d / "checkpoint.chk"
+        self.chk.write_bytes(b"not a real checkpoint")
+
+    def test_the_sidecar_records_the_stage_and_the_step(self):
+        from fastmdxplora.simulation.runner import (read_checkpoint_sidecar,
+                                                     write_checkpoint_sidecar)
+
+        write_checkpoint_sidecar(self.chk, stage="production", step=321000, ensemble="npt",
+                                 temperature_K=300.0, timestep_fs=2.0, study="/s")
+        side = read_checkpoint_sidecar(self.chk)
+        self.assertEqual(side["stage"], "production")
+        self.assertEqual(side["step"], 321000)
+        self.assertEqual(side["ensemble"], "npt")
+        self.assertEqual(side["timestep_fs"], 2.0)
+        self.assertTrue((self.d / "checkpoint.chk.json").is_file())
+
+    def test_a_production_checkpoint_continues_only_into_production(self):
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.simulation.runner import check_continuation, write_checkpoint_sidecar
+
+        write_checkpoint_sidecar(self.chk, stage="production", step=1000, ensemble="npt",
+                                 temperature_K=300.0, timestep_fs=2.0)
+        self.assertIsNotNone(check_continuation(
+            self.chk, minimize=False, nvt_steps=0, npt_steps=0, timestep_fs=2.0))
+        for what, kw in (("minimise", dict(minimize=True, nvt_steps=0, npt_steps=0)),
+                         ("nvt", dict(minimize=False, nvt_steps=50000, npt_steps=0)),
+                         ("npt", dict(minimize=False, nvt_steps=0, npt_steps=50000))):
+            with self.subTest(what=what), self.assertRaises(StudyError) as caught:
+                check_continuation(self.chk, timestep_fs=2.0, **kw)
+            self.assertEqual(caught.exception.code, "simulation.resume.would_reequilibrate")
+            self.assertIn("velocities", str(caught.exception))
+            self.assertIn("nvt_steps: 0", str(caught.exception))
+
+    def test_a_different_timestep_is_refused(self):
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.simulation.runner import check_continuation, write_checkpoint_sidecar
+
+        write_checkpoint_sidecar(self.chk, stage="production", step=1000, ensemble="npt",
+                                 temperature_K=300.0, timestep_fs=2.0)
+        with self.assertRaises(StudyError) as caught:
+            check_continuation(self.chk, minimize=False, nvt_steps=0, npt_steps=0, timestep_fs=4.0)
+        self.assertEqual(caught.exception.code, "simulation.resume.timestep_differs")
+
+    def test_a_checkpoint_with_no_sidecar_loads_with_a_warning(self):
+        # A hand-made checkpoint, or one from before the sidecar existed:
+        # nothing to check it against, and refusing would lock out every
+        # checkpoint made before this.
+        from fastmdxplora.simulation.runner import check_continuation
+
+        from fastmdxplora.simulation.runner import logger
+
+        with self.assertLogs(logger, level="WARNING") as logs:
+            self.assertIsNone(check_continuation(
+                self.chk, minimize=True, nvt_steps=1, npt_steps=1, timestep_fs=2.0))
+        self.assertTrue(any("no sidecar" in line for line in logs.output))
+
+    def test_the_fence_stands_before_the_load(self):
+        import inspect
+
+        from fastmdxplora.simulation import runner
+
+        source = inspect.getsource(runner.run_simulation)
+        self.assertLess(source.index("check_continuation(resume_from"),
+                        source.index("load_checkpoint(omm, simulation, resume_from"))
+
+    def test_both_writers_carry_the_sidecar(self):
+        import inspect
+
+        from fastmdxplora.simulation import runner
+
+        source = inspect.getsource(runner.run_simulation)
+        self.assertIn('sidecar={"stage": "production"', source)
+        self.assertIn("write_checkpoint_sidecar(\n                checkpoint_path", source)
+        reporter = inspect.getsource(runner._attach_checkpoint_reporter)
+        self.assertIn("write_checkpoint_sidecar(", reporter)
+
+
+class TestContinuingAStudyThatStopped(unittest.TestCase):
+    """One new segment from a study that ran and stopped, with the
+    arithmetic done from the record. The Agent used to write resume_from
+    by hand, leaving minimisation and equilibration on, and ask the
+    person for the equilibration lengths; the parent's resolved config has
+    them, the checkpoint's sidecar has the step."""
+
+    def study(self, *, step=321000, duration=0.5, nvt=50000, npt=50000, sidecar=True):
+        import tempfile
+        from pathlib import Path
+
+        import yaml
+
+        from fastmdxplora.simulation.runner import write_checkpoint_sidecar
+
+        s = Path(tempfile.mkdtemp()) / "fastmdxplora_1UAO_study_1"
+        (s / "simulation").mkdir(parents=True)
+        (s / "resolved_config.yml").write_text(yaml.safe_dump({
+            "systems": [{"system": "1UAO", "id": "chignolin"}],
+            "simulation": {"duration_ns": duration, "nvt_steps": nvt, "npt_steps": npt,
+                           "timestep_fs": 2.0},
+            "agent": "assisted", "output": str(s)}), encoding="utf-8")
+        chk = s / "simulation" / "checkpoint.chk"
+        chk.write_bytes(b"x")
+        if sidecar:
+            write_checkpoint_sidecar(chk, stage="production", step=step, ensemble="npt",
+                                     temperature_K=300.0, timestep_fs=2.0, study=str(s))
+        return s
+
+    def test_the_arithmetic_is_done_from_the_record(self):
+        from fastmdxplora.simulation.resume import continuation_of
+
+        c = continuation_of(self.study(), total_ns=0.5)
+        self.assertTrue(c.possible)
+        # 321,000 whole-run steps, 100,000 of them equilibration: 0.442 ns done.
+        self.assertAlmostEqual(c.production_done_ns, 0.442, places=6)
+        self.assertAlmostEqual(c.config["simulation"]["duration_ns"], 0.058, places=6)
+
+    def test_the_config_is_a_true_continuation(self):
+        from fastmdxplora.simulation.resume import continuation_of
+        from fastmdxplora.simulation.runner import check_continuation
+
+        s = self.study()
+        sim = continuation_of(s).config["simulation"]
+        self.assertFalse(sim["minimize"])
+        self.assertEqual((sim["nvt_steps"], sim["npt_steps"]), (0, 0))
+        # Resolved: on macOS /var is /private/var, and a config should
+        # carry the canonical path.
+        self.assertEqual(sim["setup_from"], str(s.resolve()))
+        self.assertTrue(sim["resume_from"].endswith("checkpoint.chk"))
+        self.assertEqual(sim["ensemble"], "npt")
+        # And the fence it would face agrees.
+        self.assertIsNotNone(check_continuation(
+            s / "simulation" / "checkpoint.chk", minimize=sim["minimize"],
+            nvt_steps=sim["nvt_steps"], npt_steps=sim["npt_steps"], timestep_fs=2.0))
+
+    def test_more_and_total_and_the_remainder(self):
+        from fastmdxplora.simulation.resume import continuation_of
+
+        s = self.study()
+        self.assertAlmostEqual(continuation_of(s, more_ns=1.0).config["simulation"]["duration_ns"], 1.0)
+        self.assertAlmostEqual(continuation_of(s).config["simulation"]["duration_ns"], 0.058, places=6)
+        self.assertIn("nothing remains", continuation_of(s, total_ns=0.4).refusal)
+
+    def test_a_study_with_no_production_checkpoint_says_so(self):
+        from fastmdxplora.simulation.resume import continuation_of
+
+        s = self.study(sidecar=False)
+        self.assertIn("does not say it was written during production", continuation_of(s).refusal)
+
+    def test_the_new_study_records_its_parent(self):
+        from fastmdxplora.simulation.pipeline import _continuation_of
+
+        s = self.study()
+        cont = _continuation_of({"resume_from": str(s / "simulation" / "checkpoint.chk")})
+        self.assertEqual(cont["study"], str(s))
+        self.assertEqual(cont["from_step"], 321000)
+        self.assertTrue(cont["known_from_sidecar"])
+
+    def test_the_agent_is_handed_the_continuation(self):
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        s = self.study()
+
+        class Runtime:
+            active_root = s
+
+            def snapshot(self):
+                return {"active_run": str(s), "status": "idle"}
+
+        status = _run_status(Runtime())
+        self.assertIn("continuing this study: production done 0.442 ns", status)
+        self.assertIn("resume_from:", status)
+        self.assertIn("minimize: false", status)
+        from fastmdxplora.agent.propose import prompt_for
+
+        self.assertIn("never write `resume_from` from scratch", prompt_for("x"))

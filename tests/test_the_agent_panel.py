@@ -754,7 +754,11 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # to the builder from the Agent unless you want to change the
         # config, and that is a link, not the way out.
         panel = self.panel()
-        for action in ("Write config", "Show the config", "Download config",
+        # The send control is an arrow inside the box with a title, as every
+        # assistant places it, rather than a labelled button beside it.
+        self.assertIn('id="agent-propose"', panel)
+        self.assertIn('title="Send (Enter). Shift+Enter for a new line."', panel)
+        for action in ("Show the config", "Download config",
                        "Copy the command", "Download a script", "Run here",
                        "Write every setting"):
             with self.subTest(action=action):
@@ -1415,7 +1419,9 @@ class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "run-builder.js").read_text(encoding="utf-8")
         self.assertIn("function defaultOutput()", script)
-        self.assertIn('"fastmdxplora_output_" + d.getUTCFullYear()', script)
+        # The browser does not name the folder; the server does, by one rule.
+        self.assertNotIn('"fastmdxplora_output_"', script)
+        self.assertIn('output: el("run-output").value.trim(),', script)
 
 
 class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
@@ -1549,7 +1555,7 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         from fastmdxplora.gui import exploration
 
         source = inspect.getsource(exploration.DashboardRuntime.launch_from_config)
-        self.assertIn('f"fastmdxplora_output_{stamp}"', source)
+        self.assertIn("default_output_name(system_of(dict(source)))", source)
         self.assertNotIn('requested = "analysis_output"', source)
 
 
@@ -1608,7 +1614,9 @@ class TestRunHereActuallyRuns(unittest.TestCase):
         answer = run_endpoint({"config": {"systems": [{"system": "1UAO"}]}},
                               self.runtime())
         self.assertTrue(answer["ok"])
-        self.assertIn("fastmdxplora_output_", answer["output"])
+        import pathlib
+
+        self.assertRegex(pathlib.Path(answer["output"]).name, r"fastmdxplora_1UAO_study_\d{14}")
 
 
 class TestTheBudgetIsAConfigKey(unittest.TestCase):
@@ -1701,7 +1709,7 @@ class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
 
     def test_a_user_message_has_all_three(self):
         script = self.script()
-        say = script[script.index("function say(text)"):script.index("function reply()")]
+        say = script[script.index("function say(text, attached)"):script.index("function reply()")]
         for label in ('"Copy"', '"Edit"', '"Retry"'):
             with self.subTest(label=label):
                 self.assertIn(label, say)
@@ -1717,7 +1725,7 @@ class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
         # that point rather than with a fork in it.
         script = self.script()
         self.assertIn("function cutFrom(msg)", script)
-        cut = script[script.index("function cutFrom(msg)"):script.index("function say(text)")]
+        cut = script[script.index("function cutFrom(msg)"):script.index("function say(text, attached)")]
         self.assertIn("history.length = i;", cut)
         self.assertIn("currentConfig = null;", cut)
 
@@ -1831,7 +1839,7 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
 
     def test_the_centre_has_a_reading_width_except_the_viewer(self):
         css = self.css()
-        self.assertIn(".page-shell { max-width: 1040px; margin: 0 auto; width: 100%; }", css)
+        self.assertIn(".page-shell { max-width: 900px; margin: 0 auto; width: 100%; }", css)
         self.assertIn('html[data-page="viewer"] .page-shell { max-width: none; }', css)
 
     def test_the_panel_starts_wide(self):
@@ -1840,11 +1848,11 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
         import fastmdxplora.gui as gui
 
         css = self.css()
-        self.assertIn("--panel-width: 700px;", css)
+        self.assertIn("--panel-width: 560px;", css)
         frame = (pathlib.Path(gui.__file__).parent / "static"
                  / "frame.js").read_text(encoding="utf-8")
-        self.assertIn('store.get("panelWidth", "700")', frame)
-        self.assertIn("panel: [280, 960]", frame)
+        self.assertIn('store.get("panelWidth", "560")', frame)
+        self.assertIn("panel: [280, 640]", frame)
 
     def test_the_agents_prose_is_a_serif_and_the_persons_is_not(self):
         css = self.css()
@@ -1919,17 +1927,17 @@ class TestTheAgentsProseAndTheSidebar(unittest.TestCase):
         self.assertEqual(page.count('id="sidebar-output-folder"'), 1)
         self.assertEqual(page.count('id="topbar-run-id"'), 1)
 
-    def test_copy_path_stands_beside_output(self):
+    def test_output_is_one_button(self):
+        # Four buttons in a 232px sidebar was too many. Output opens the
+        # folder and copies the path.
         import pathlib
 
         import fastmdxplora.gui as gui
 
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn('id="copy-output-path"', page)
-        frame = (pathlib.Path(gui.__file__).parent / "static"
-                 / "frame.js").read_text(encoding="utf-8")
-        self.assertIn('el("copy-output-path")', frame)
+        self.assertNotIn('id="copy-output-path"', page)
+        self.assertIn('title="Open the output folder, and copy its path"', page)
 
     def test_the_follow_toggle_says_what_it_does(self):
         import pathlib
@@ -1940,3 +1948,764 @@ class TestTheAgentsProseAndTheSidebar(unittest.TestCase):
                 / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn("scroll to newest", page)
         self.assertIn("Keep the newest line in view as the run writes", page)
+
+
+class TestEditIsInPlace(unittest.TestCase):
+
+    def test_the_bubble_becomes_editable(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        edit = script[script.index('label: "Edit"'):script.index('label: "Retry"')]
+        self.assertIn('body.contentEditable = "true";', edit)
+        # Enter sends; Escape restores; blur restores.
+        self.assertIn('e.key === "Enter" && !e.shiftKey', edit)
+        self.assertIn('e.key === "Escape"', edit)
+        self.assertIn("body.textContent = before;", edit)
+        # Not the old detour through the composer.
+        self.assertNotIn("Put this back in the composer", edit)
+
+
+class TestSixMoreFromUsingIt(unittest.TestCase):
+
+    def test_the_agent_sees_the_step_and_the_time_left(self):
+        # It said "I do not have a step count or an elapsed time" while the
+        # sidebar read 334,000 of 350,000 and three minutes left.
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        root = Path(tempfile.mkdtemp())
+        (root / "simulation").mkdir()
+        (root / "simulation" / "live_status.json").write_text(json.dumps({
+            "stage": "production", "current_step": 334000,
+            "total_planned_steps": 350000, "elapsed_wall_time_s": 4000,
+            "simulation_time_completed_ns": 0.668}), encoding="utf-8")
+
+        class Runtime:
+            active_root = root
+
+            def snapshot(self):
+                return {"active_run": str(root), "status": "running"}
+
+        status = _run_status(Runtime())
+        self.assertIn("step: 334,000 of 350,000 (95.4% complete)", status)
+        self.assertIn("left", status)
+        self.assertIn("simulated so far, equilibration included: 0.668 ns", status)
+
+    def test_thinking_not_writing(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('note(box, "Thinking\\u2026");', script)
+        self.assertNotIn('"Writing\\u2026"', script)
+
+    def test_send_is_inside_the_box(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('<div class="agent-composer-box">', page)
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        self.assertIn(".agent-composer-box .agent-send {\n    position: absolute; right: 8px; bottom: 8px;", css)
+
+    def test_the_placeholder_is_as_general_as_the_agent(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('placeholder="Describe a study, ask a question, or tell me what to do."', page)
+
+    def test_a_page_opens_at_its_top(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "dashboard.js").read_text(encoding="utf-8")
+        nav = script[script.index("function navigate(page, options)"):script.index("function startLoadingChecklist")]
+        self.assertIn("column.scrollTop = 0;", nav)
+
+    def test_one_sampling_bar(self):
+        # convergence.py had its own, at five, while the report's prose said
+        # ten. The Convergence table counted rg at 8.3 as adequately sampled
+        # while the section above it said it was not.
+        from fastmdxplora.report import convergence
+        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+
+        self.assertEqual(convergence._ENOUGH_SAMPLES, MINIMUM_EFFECTIVE_SAMPLES)
+        self.assertEqual(MINIMUM_EFFECTIVE_SAMPLES, 10.0)
+
+
+class TestSixFromLaunchingIt(unittest.TestCase):
+
+    def test_the_browser_opens_after_the_server_answers(self):
+        # It was opened first, and on a completed-run folder reached the
+        # port before it was listening: "unable to connect" until a refresh.
+        import inspect
+
+        from fastmdxplora.gui import server
+
+        source = inspect.getsource(server.serve_dashboard)
+        self.assertIn("on_ready", source)
+        self.assertIn("urllib.request.urlopen(url", source)
+        # The CLI hands serve_dashboard an on_ready rather than opening first.
+        from fastmdxplora.cli import main as cli
+
+        whole = inspect.getsource(inspect.getmodule(cli))
+        self.assertIn("on_ready=on_ready", whole)
+
+    def test_the_sidebar_collapse_leaves_the_centre(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        # minmax(0, 1fr) for the centre when the sidebar is away: it takes
+        # the room, it does not collapse with the sidebar.
+        self.assertIn("body.sidebar-collapsed .app-shell {\n    grid-template-columns: 0 0 minmax(0, 1fr)", css)
+
+    def test_the_widths_are_smaller(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        self.assertIn("--panel-width: 560px;", css)
+        self.assertIn(".page-shell { max-width: 900px;", css)
+        frame = (pathlib.Path(gui.__file__).parent / "static"
+                 / "frame.js").read_text(encoding="utf-8")
+        self.assertIn("panel: [280, 640]", frame)
+
+    def test_an_empty_report_parameter_is_dropped(self):
+        # "state_csv: None" in the report said a file was not given, which
+        # is noise, not a setting.
+        import inspect
+
+        from fastmdxplora.report import document
+
+        source = inspect.getsource(document)
+        self.assertIn("v is not None and v != \"\"", source)
+
+
+class TestTheCentreStaysCentred(unittest.TestCase):
+    """The centre column stays visible and centred whatever is folded.
+
+    Collapsing the sidebar had pinned the page shell 24px from the left,
+    so with both columns folded the content sat hard against the edge and
+    read as gone. The shell centres in its column -- max-width and margin
+    auto -- and the column is minmax(0, 1fr) in every collapse state, so
+    it takes the freed width and the content sits in the middle of it.
+    """
+
+    def css(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "dashboard.css").read_text(encoding="utf-8")
+
+    def test_no_left_pin_when_the_sidebar_folds(self):
+        self.assertNotIn("margin-left: 24px", self.css())
+
+    def test_the_shell_centres_in_its_column(self):
+        self.assertIn(".page-shell { max-width: 900px; margin: 0 auto; width: 100%; }", self.css())
+
+    def test_the_centre_track_is_a_fraction_in_every_state(self):
+        css = self.css()
+        for sel in ("body.panel-collapsed .app-shell {",
+                    "body.sidebar-collapsed .app-shell {",
+                    "body.sidebar-collapsed.panel-collapsed .app-shell {"):
+            block = css[css.index(sel):css.index("}", css.index(sel))]
+            with self.subTest(sel=sel):
+                # The third track -- the centre -- is the fraction.
+                self.assertIn("minmax(0, 1fr)", block)
+
+
+class TestConversationsBelongToStudies(unittest.TestCase):
+    """The model Claude's users know: a chat belongs to a project, and
+    every chat in it sees the project's context. A study is the project.
+    Conversations live inside the study folder so a copied study carries
+    the conversations that made it; a conversation about no study lives
+    at the workspace level; opening one from another study loads that
+    study; a conversation that launches a run moves into the study it
+    created."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        self.ws = Path(tempfile.mkdtemp())
+
+        def study(name, system):
+            s = self.ws / name
+            (s / "simulation").mkdir(parents=True)
+            (s / "manifest.json").write_text(json.dumps({"system": {"system": system}}),
+                                             encoding="utf-8")
+            return s
+
+        self.chig, self.trp = study("run_chig", "1UAO"), study("run_trp", "1L2Y")
+
+        class Runtime:
+            def __init__(rt, ws):
+                rt.exploration_root = ws
+                rt.active_root = None
+
+            def switch_to(rt, path):
+                rt.active_root = Path(path)
+                return {"ok": True}
+
+        self.rt = Runtime(self.ws)
+
+    def test_no_study_loaded_means_the_workspace_scope(self):
+        from fastmdxplora.gui.agent_panel import WORKSPACE_CONVERSATIONS_DIR, write_conversation
+
+        write_conversation(self.rt, [{"role": "user", "text": "general question"}])
+        self.assertTrue((self.ws / WORKSPACE_CONVERSATIONS_DIR).is_dir())
+
+    def test_a_studys_conversations_live_inside_it(self):
+        from fastmdxplora.gui.agent_panel import (CONVERSATIONS_SUBDIR, read_conversation,
+                                                   write_conversation)
+
+        self.rt.active_root = self.chig
+        self.assertEqual(read_conversation(self.rt)["study_label"], "1UAO")
+        write_conversation(self.rt, [{"role": "user", "text": "simulate chignolin"}])
+        self.assertTrue((self.chig / CONVERSATIONS_SUBDIR).is_dir())
+        # And not in the workspace's own store.
+        from fastmdxplora.gui.agent_panel import WORKSPACE_CONVERSATIONS_DIR
+
+        self.assertFalse((self.ws / WORKSPACE_CONVERSATIONS_DIR).exists())
+
+    def test_loading_another_study_shows_its_own_thread(self):
+        from fastmdxplora.gui.agent_panel import read_conversation, write_conversation
+
+        self.rt.active_root = self.chig
+        write_conversation(self.rt, [{"role": "user", "text": "about chignolin"}])
+        self.rt.active_root = self.trp
+        self.assertEqual(read_conversation(self.rt)["entries"], [])
+
+    def test_a_launch_moves_the_whole_conversation_into_the_new_study(self):
+        # The sequence a person takes: a thread in chignolin writes a
+        # config; Run here launches trpcage, which switches the loaded
+        # study BEFORE the move runs. The browser names the conversation
+        # and where it was, so the move finds it. Without those the move
+        # looked in the new study, found nothing, and the config exchange
+        # was lost from the thread that landed there.
+        from fastmdxplora.gui.agent_panel import (CONVERSATIONS_SUBDIR, attach_conversation,
+                                                   read_conversation, write_conversation)
+
+        self.rt.active_root = self.chig
+        saved = write_conversation(self.rt, [
+            {"role": "user", "text": "run trpcage with the same settings"},
+            {"role": "agent", "kind": "config", "yaml": "x", "config": {}}])
+        self.rt.active_root = self.trp  # the launch already switched
+        moved = attach_conversation(self.rt, self.trp, saved["id"], saved["study"])
+        self.assertTrue(moved["moved"])
+        self.assertTrue((self.trp / CONVERSATIONS_SUBDIR / f"{moved['id']}.json").is_file())
+        self.assertFalse((self.chig / CONVERSATIONS_SUBDIR / f"{moved['id']}.json").exists())
+        kinds = [e.get("kind", "user") for e in read_conversation(self.rt)["entries"]]
+        self.assertEqual(kinds, ["user", "config"])
+
+    def test_the_old_lookup_would_have_moved_nothing(self):
+        from fastmdxplora.gui.agent_panel import attach_conversation, write_conversation
+
+        self.rt.active_root = self.chig
+        write_conversation(self.rt, [{"role": "user", "text": "x"}])
+        self.rt.active_root = self.trp
+        self.assertFalse(attach_conversation(self.rt, self.trp)["moved"])
+
+    def test_the_save_reports_its_scope(self):
+        from fastmdxplora.gui.agent_panel import write_conversation
+
+        self.rt.active_root = self.chig
+        self.assertEqual(write_conversation(self.rt, [{"role": "user", "text": "x"}])["study"],
+                         str(self.chig))
+
+    def test_the_list_groups_by_study_loaded_first(self):
+        from fastmdxplora.gui.agent_panel import list_conversations, write_conversation
+
+        self.rt.active_root = self.chig
+        write_conversation(self.rt, [{"role": "user", "text": "chig thread"}])
+        self.rt.active_root = self.trp
+        write_conversation(self.rt, [{"role": "user", "text": "trp thread"}])
+        groups = list_conversations(self.rt)["groups"]
+        self.assertEqual(groups[0]["label"], "1L2Y")
+        self.assertTrue(groups[0]["loaded"])
+        self.assertIn("1UAO", [g["label"] for g in groups])
+
+    def test_opening_across_studies_loads_that_study(self):
+        from fastmdxplora.gui.agent_panel import (open_conversation, read_conversation,
+                                                   write_conversation)
+
+        self.rt.active_root = self.chig
+        write_conversation(self.rt, [{"role": "user", "text": "chig thread"}])
+        cid = read_conversation(self.rt)["id"]
+        self.rt.active_root = self.trp
+        opened = open_conversation(self.rt, cid, str(self.chig))
+        self.assertTrue(opened["ok"])
+        self.assertTrue(opened["loaded_study"])
+        self.assertEqual(self.rt.active_root, self.chig)
+        self.assertEqual(opened["entries"][0]["text"], "chig thread")
+
+    def test_bad_ids_and_studies_are_refused(self):
+        from fastmdxplora.gui.agent_panel import delete_conversation, open_conversation
+
+        self.assertFalse(open_conversation(self.rt, "../etc", str(self.chig))["ok"])
+        self.assertFalse(open_conversation(self.rt, "conv-x", str(self.ws / "nope"))["ok"])
+        self.assertFalse(delete_conversation(self.rt, "conv-nope", None)["ok"])
+
+    def test_new_keeps_the_old_and_delete_is_one(self):
+        from fastmdxplora.gui.agent_panel import (delete_conversation, list_conversations,
+                                                   new_conversation, read_conversation,
+                                                   write_conversation)
+
+        self.rt.active_root = self.chig
+        write_conversation(self.rt, [{"role": "user", "text": "first"}])
+        first = read_conversation(self.rt)["id"]
+        new_conversation(self.rt)
+        write_conversation(self.rt, [{"role": "user", "text": "second"}])
+        rows = list_conversations(self.rt)["groups"][0]["conversations"]
+        self.assertEqual([r["title"] for r in rows][-1], "first")
+        self.assertTrue(delete_conversation(self.rt, first, str(self.chig))["ok"])
+        rows = list_conversations(self.rt)["groups"][0]["conversations"]
+        self.assertEqual([r["title"] for r in rows], ["second"])
+
+    def test_the_old_single_file_becomes_a_workspace_conversation(self):
+        from fastmdxplora.gui.agent_panel import CONVERSATION_FILE, read_conversation
+
+        (self.ws / CONVERSATION_FILE).write_text(
+            '{"entries": [{"role": "user", "text": "from before"}]}', encoding="utf-8")
+        self.assertEqual(read_conversation(self.rt)["entries"][0]["text"], "from before")
+        self.assertFalse((self.ws / CONVERSATION_FILE).exists())
+
+    def test_the_panel_groups_opens_across_and_moves_on_launch(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('post("/api/agent/conversation/open", { id: c.id, study: g.study })', script)
+        self.assertIn("if (o.loaded_study && !g.loaded) {", script)
+        self.assertIn('study: started.output, id: convId, from_study: fromStudy', script)
+        # Saved before the launch, so the move carries the last exchange.
+        run = script[script.index("runBtn.onclick = function () {"):]
+        run = run[:run.index("\n  }\n", run.index("started.error"))]
+        self.assertLess(run.index("persist().then("), run.index('post("/api/agent/run"'))
+        self.assertIn("This conversation now belongs to the new study.", script)
+
+
+
+class TestItHasAName(unittest.TestCase):
+
+    def test_asked_who_it_is_it_says_the_fastmdxplora_agent(self):
+        # It called itself "the assistant built into FastMDXplora". It has
+        # a name, and it is not the model's or the vendor's.
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("who are you?")
+        self.assertIn("You are the FastMDXplora Agent.", prompt)
+        # Asked the engine, it says: the one chosen in Settings, and names
+        # it when the config shows it. Hiding it from the person who chose
+        # it read as evasion, and the earlier "that is the whole answer"
+        # came back three times in a row.
+        self.assertIn("say it is the one chosen in Settings", prompt)
+        self.assertIn("do not repeat a phrase across turns", prompt)
+        self.assertNotIn("that is\nthe whole answer", prompt)
+
+
+class TestTheAgentSeesTheRunsOwnConfig(unittest.TestCase):
+    """"The same settings as the chignolin one" needs the chignolin
+    config. The Agent lost it the moment it wrote a new one, and read
+    "simulated so far: 0.7 ns" back as a production length of 0.7 when the
+    config said 0.5. The active run's resolved config rides with the run
+    status now, and the prompt says which number is which."""
+
+    def test_the_resolved_config_rides_with_the_status(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        root = Path(tempfile.mkdtemp())
+        (root / "resolved_config.yml").write_text(
+            "# header\nsystems:\n- system: 1UAO\nsimulation:\n  duration_ns: 0.5\n",
+            encoding="utf-8")
+
+        class Runtime:
+            active_root = root
+
+            def snapshot(self):
+                return {"active_run": str(root), "status": "idle"}
+
+        status = _run_status(Runtime())
+        self.assertIn("the config this run used", status)
+        self.assertIn("duration_ns: 0.5", status)
+        self.assertNotIn("# header", status)
+
+    def test_simulated_so_far_says_equilibration_included(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import _run_status
+
+        root = Path(tempfile.mkdtemp())
+        (root / "simulation").mkdir()
+        (root / "simulation" / "live_status.json").write_text(
+            json.dumps({"stage": "production", "simulation_time_completed_ns": 0.7}),
+            encoding="utf-8")
+
+        class Runtime:
+            active_root = root
+
+            def snapshot(self):
+                return {"active_run": str(root), "status": "running"}
+
+        self.assertIn("equilibration included: 0.700 ns", _run_status(Runtime()))
+
+    def test_the_prompt_says_where_the_same_settings_come_from(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("x")
+        self.assertIn("the config the active run used", prompt)
+        self.assertIn("is not\nthe production length", prompt)
+
+
+class TestAStopIsRecordedWhenItHappens(unittest.TestCase):
+    """A reloaded thread said "Did: stop" about a run that was only asked
+    to stop and never confirmed, and the person's "yes" then went to the
+    model as a new message. The ask is recorded as a question; the stop
+    is recorded when it is confirmed; a reload restores the pending
+    state if the ask was the last thing said."""
+
+    def script(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "static"
+                / "agent-panel.js").read_text(encoding="utf-8")
+
+    def test_the_ask_is_a_question_not_an_action(self):
+        script = self.script()
+        block = script[script.index('if (data.action === "stop") {'):script.index("act(data.action, data.where")]
+        self.assertIn('kind: "question"', block)
+        self.assertIn("? Say yes.", block)
+
+    def test_the_stop_is_recorded_on_confirmation(self):
+        script = self.script()
+        confirm = script[script.index("function confirmStop(typed, box)"):script.index("function wireActions")]
+        self.assertIn('kind: "action", action: "stop"', confirm)
+        self.assertIn('kind: "answer", text: "Not stopped."', confirm)
+
+    def test_a_reload_keeps_a_pending_stop(self):
+        script = self.script()
+        replay = script[script.index("function replay(entries)"):script.index("document.addEventListener")]
+        self.assertIn("stopPending = /^Stop the run.*\\? Say yes\\.$/.test(e.text", replay)
+        self.assertIn("var last = entries[entries.length - 1];", replay)
+
+    def test_replay_never_says_did_stop(self):
+        script = self.script()
+        self.assertIn('e.action === "stop" ? "Stopped the run." : "Did: " + e.action', script)
+
+
+class TestAFileCanBeAttachedToAMessage(unittest.TestCase):
+    """The + beside the composer. A file the person chose goes with that
+    message as context: per message, explicit, and recorded by name, path,
+    size and digest rather than by copying its bytes into the thread."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.d = Path(tempfile.mkdtemp())
+
+    def test_a_text_file_is_read_with_its_digest(self):
+        from fastmdxplora.gui.agent_panel import read_attachment
+
+        f = self.d / "setup_parameters.json"
+        f.write_text('{"ligand_pose": "auto"}', encoding="utf-8")
+        r = read_attachment(f)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["name"], "setup_parameters.json")
+        self.assertEqual(r["size"], 23)
+        self.assertEqual(len(r["sha256"]), 12)
+        self.assertIn("ligand_pose", r["text"])
+        self.assertFalse(r["truncated"])
+
+    def test_a_binary_is_refused_with_a_sentence(self):
+        from fastmdxplora.gui.agent_panel import read_attachment
+
+        f = self.d / "traj.dcd"
+        f.write_bytes(b"\\x00" * 64)
+        r = read_attachment(f)
+        self.assertFalse(r["ok"])
+        self.assertIn("not a text file", r["error"])
+
+    def test_a_long_log_keeps_its_head_and_tail(self):
+        from fastmdxplora.gui.agent_panel import ATTACH_LIMIT_BYTES, read_attachment
+
+        f = self.d / "exploration.log"
+        f.write_text("start\n" + "x" * (ATTACH_LIMIT_BYTES + 50_000) + "\nERROR at the end\n",
+                     encoding="utf-8")
+        r = read_attachment(f)
+        self.assertTrue(r["truncated"])
+        self.assertTrue(r["text"].startswith("start"))
+        self.assertTrue(r["text"].rstrip().endswith("ERROR at the end"))
+        self.assertIn("not shown", r["text"])
+
+    def test_missing_and_empty_are_refused(self):
+        from fastmdxplora.gui.agent_panel import read_attachment
+
+        self.assertFalse(read_attachment(self.d / "nope.yml")["ok"])
+        self.assertFalse(read_attachment("")["ok"])
+
+    def test_the_prompt_carries_the_file_under_its_name(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("why?", attachments=[
+            {"name": "setup_parameters.json", "text": '{"ligand_pose": "auto"}', "truncated": True}])
+        self.assertIn("## Files attached to this message", prompt)
+        self.assertIn("### setup_parameters.json (head and tail; the middle was cut)", prompt)
+        self.assertIn("ligand_pose", prompt)
+        self.assertIn("A file attached to a message is there to be read", prompt)
+
+    def test_the_endpoint_passes_attachments_through(self):
+        import os
+        import tempfile
+
+        prior = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
+        os.environ["FASTMDXPLORA_CONFIG_DIR"] = tempfile.mkdtemp()
+        self.addCleanup(lambda: (os.environ.__setitem__("FASTMDXPLORA_CONFIG_DIR", prior)
+                                 if prior is not None
+                                 else os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)))
+        import fastmdxplora.agent as agent_mod
+        from fastmdxplora.gui import agent_panel
+
+        seen = {}
+        before = agent_mod.completion_for
+        agent_mod.completion_for = lambda *a, **k: (
+            lambda prompt: (seen.__setitem__("prompt", prompt), "SAY: read it.")[1])
+        try:
+            agent_panel.propose_endpoint(
+                {"request": "look", "attachments": [{"name": "a.log", "text": "the log says"}]}, None)
+        finally:
+            agent_mod.completion_for = before
+        self.assertIn("### a.log", seen["prompt"])
+        self.assertIn("the log says", seen["prompt"])
+
+    def test_the_composer_has_the_plus_and_records_what_was_attached(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="agent-attach"', page)
+        self.assertIn('id="agent-attachments"', page)
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('post("/api/agent/attachment", { path: path })', script)
+        # Recorded by name, path, size and digest; the bytes are not kept.
+        self.assertIn("return { name: f.name, path: f.path, size: f.size, sha256: f.sha256, truncated: !!f.truncated };", script)
+        self.assertIn('{ role: "user", text: typed, attachments: record }', script)
+        # Sent with the text for the model.
+        self.assertIn("attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })", script)
+
+
+class TestThePickerServesTheAgentToo(unittest.TestCase):
+    """The picker was built for the builder: find a trajectory or a
+    structure and nothing else. Opened from the Agent to attach a log or
+    a manifest, it showed folders and no way into them. It marks a study
+    folder now, colours the three kinds, lists every readable file when
+    no kind is asked for, and opens where the conversation lives."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.ws = Path(tempfile.mkdtemp())
+        self.study = self.ws / "fastmdxplora_1UAO_study_x"
+        for d in ("setup", "simulation"):
+            (self.study / d).mkdir(parents=True)
+        (self.study / "manifest.json").write_text("{}", encoding="utf-8")
+        (self.study / "exploration.log").write_text("x", encoding="utf-8")
+        (self.study / "setup" / "system.pdb").write_text("ATOM", encoding="utf-8")
+        (self.study / "setup" / "setup_parameters.json").write_text("{}", encoding="utf-8")
+        (self.study / "simulation" / "production.dcd").write_bytes(b"0")
+
+    def test_a_study_folder_is_marked(self):
+        from fastmdxplora.gui.browse import browse
+
+        entries = {e["name"]: e for e in browse(self.ws)["entries"]}
+        self.assertTrue(entries["fastmdxplora_1UAO_study_x"]["study"])
+        (self.ws / "notes").mkdir()
+        entries = {e["name"]: e for e in browse(self.ws)["entries"]}
+        self.assertFalse(entries["notes"]["study"])
+
+    def test_no_kind_lists_what_the_agent_can_read(self):
+        from fastmdxplora.gui.browse import browse
+
+        self.assertEqual([f["name"] for f in browse(self.study)["files"]],
+                         ["exploration.log", "manifest.json"])
+        names = [f["name"] for f in browse(self.study / "setup")["files"]]
+        self.assertEqual(names, ["setup_parameters.json", "system.pdb"])
+        # A trajectory is not attachable and is not listed without a kind.
+        self.assertEqual([f["name"] for f in browse(self.study / "simulation")["files"]], [])
+
+    def test_a_kind_still_narrows_for_the_builder(self):
+        from fastmdxplora.gui.browse import browse
+
+        self.assertEqual([f["name"] for f in browse(self.study / "setup", kind="structure")["files"]],
+                         ["system.pdb"])
+        self.assertEqual([f["name"] for f in browse(self.study / "simulation", kind="trajectory")["files"]],
+                         ["production.dcd"])
+
+    def test_the_picker_colours_the_kinds_and_takes_a_start(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        js = (pathlib.Path(gui.__file__).parent / "static"
+              / "file-picker.js").read_text(encoding="utf-8")
+        self.assertIn('const kind = entry.study ? "study"', js)
+        self.assertIn('" badge-" + kind', js)
+        # The caller's start, else the workspace the picker learned itself.
+        self.assertIn('options.start || state.workspace || ""', js)
+        self.assertIn('state.workspace = s.exploration_root', js)
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        for k in ("badge-study", "badge-structure", "badge-trajectory"):
+            with self.subTest(kind=k):
+                self.assertIn(f".fastmdx-picker-row .{k}", css)
+
+    def test_the_plus_opens_where_the_conversation_lives(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('start: convStudy || workspaceRoot || ""', script)
+
+    def test_the_placeholder_clears_the_plus(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        # The ID rule outranks the class rule, so the indent lives on it.
+        self.assertIn("#agent-request { min-height: 44px; padding: 12px 52px 12px 46px; }", css)
+
+
+class TestTheWordsAndTheRows(unittest.TestCase):
+
+    def page(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        return (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+
+    def test_no_active_study(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        for name in ("dashboard.js", "frame.js"):
+            js = (pathlib.Path(gui.__file__).parent / "static" / name).read_text(encoding="utf-8")
+            with self.subTest(file=name):
+                self.assertNotIn("No active exploration", js)
+        self.assertNotIn("No active exploration", self.page())
+
+    def test_study_overview_title_and_overview_tab(self):
+        page = self.page()
+        self.assertIn('<h1 class="page-title">Study Overview</h1>', page)
+        self.assertIn("<span>Overview</span>", page)
+
+    def test_the_agent_header_is_a_title_row_and_the_controls_are_under_the_composer(self):
+        page = self.page()
+        agent = page[page.index('data-page="agent"'):page.index("</section>", page.index('data-page="agent"'))]
+        header = agent[agent.index('<div class="page-header">'):agent.index("</div>\n          </div>", agent.index('<div class="page-header">'))]
+        for gone in ("agent-settings-open", "agent-conversations", "agent-new"):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, header)
+        footer = agent[agent.index('<div class="agent-footer">'):]
+        for here in ('id="agent-settings-open"', 'id="agent-footer-mode"',
+                     'id="agent-conversations"', 'id="agent-new"'):
+            with self.subTest(here=here):
+                self.assertIn(here, footer)
+        # The footer comes after the composer box.
+        self.assertLess(agent.index('<div class="agent-composer-box">'), agent.index('<div class="agent-footer">'))
+
+    def test_the_footer_shows_the_mode(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "agent-panel.js").read_text(encoding="utf-8")
+        self.assertIn('var footer = el("agent-footer-mode");', script)
+
+    def test_page_headers_are_one_row(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        rule = css[css.index(".page-header {"):css.index("}", css.index(".page-header {"))]
+        self.assertIn("align-items: center", rule)
+        self.assertIn("min-height: 44px", rule)
+        self.assertIn(".page-subtitle {\n    display: inline;", css)
+
+
+class TestTheHeadersStayPut(unittest.TestCase):
+
+    def test_every_page_header_is_sticky(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        css = (pathlib.Path(gui.__file__).parent / "static"
+               / "dashboard.css").read_text(encoding="utf-8")
+        rule = css[css.index(".page-header {"):css.index("}", css.index(".page-header {"))]
+        self.assertIn("position: sticky", rule)
+        self.assertIn("top: 0", rule)
+        self.assertIn("background: var(--background-primary)", rule)
+
+    def test_the_config_subtitle_and_no_not_ready_reason_in_the_header(self):
+        import pathlib
+
+        import fastmdxplora.gui as gui
+
+        page = (pathlib.Path(gui.__file__).parent / "templates"
+                / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("Select what you have, what should happen to it, and anything you want to change.", page)
+        self.assertNotIn("Nothing chosen yet", page)
+        script = (pathlib.Path(gui.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        # The reason is still said at the Run button; not in the header.
+        self.assertIn('return "Choose what this run starts from.";', script)
+        summary = script[script.index('text(el("run-summary")'):script.index(";", script.index('text(el("run-summary")'))]
+        self.assertNotIn("whyNotReady", summary)

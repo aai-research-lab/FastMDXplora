@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from functools import lru_cache
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -294,6 +295,16 @@ def make_handler(
             if path == "/api/explore/defaults":
                 self._send_json(exploration_defaults())
                 return
+            if path == "/api/agent/conversation":
+                from fastmdxplora.gui.agent_panel import read_conversation
+
+                self._send_json(read_conversation(app_runtime))
+                return
+            if path == "/api/agent/conversations":
+                from fastmdxplora.gui.agent_panel import list_conversations
+
+                self._send_json(list_conversations(app_runtime))
+                return
             if path in {"/api/browse", "/api/inspect-directory"} and not allow_control:
                 # These walk the filesystem for a folder picker, which is a
                 # reasonable thing for a tool on your own machine and not for
@@ -487,6 +498,13 @@ def make_handler(
                 "/api/agent/model",
                 "/api/agent/propose",
                 "/api/agent/run",
+                "/api/agent/conversation",
+                "/api/agent/conversation/clear",
+                "/api/agent/conversation/new",
+                "/api/agent/conversation/open",
+                "/api/agent/conversation/delete",
+                "/api/agent/conversation/attach",
+                "/api/agent/attachment",
             }:
                 # Before the refusal, not after: an unread body turns the
                 # close into an RST and the caller loses the 403 it explains
@@ -640,6 +658,57 @@ def make_handler(
                 return
             if path == "/api/explore/stop":
                 self._send_json(app_runtime.stop())
+                return
+            if path == "/api/agent/conversation":
+                from fastmdxplora.gui.agent_panel import write_conversation
+
+                self._send_json(write_conversation(
+                    app_runtime, (payload or {}).get("entries")))
+                return
+            if path == "/api/agent/conversation/clear":
+                from fastmdxplora.gui.agent_panel import clear_conversation
+
+                self._send_json(clear_conversation(app_runtime))
+                return
+            if path == "/api/agent/conversation/new":
+                from fastmdxplora.gui.agent_panel import new_conversation
+
+                self._send_json(new_conversation(app_runtime))
+                return
+            if path == "/api/agent/conversation/open":
+                from fastmdxplora.gui.agent_panel import open_conversation
+
+                self._send_json(open_conversation(app_runtime,
+                                                  (payload or {}).get("id"),
+                                                  (payload or {}).get("study")))
+                return
+            if path == "/api/agent/attachment":
+                from fastmdxplora.gui.agent_panel import read_attachment
+
+                self._send_json(read_attachment((payload or {}).get("path")))
+                return
+            if path == "/api/agent/conversation/attach":
+                from fastmdxplora.gui.agent_panel import attach_conversation
+
+                self._send_json(attach_conversation(app_runtime,
+                                                    (payload or {}).get("study"),
+                                                    (payload or {}).get("id"),
+                                                    (payload or {}).get("from_study")))
+                return
+            if path == "/api/agent/conversation/delete":
+                from fastmdxplora.gui.agent_panel import delete_conversation
+
+                self._send_json(delete_conversation(app_runtime,
+                                                    (payload or {}).get("id"),
+                                                    (payload or {}).get("study")))
+                return
+            if path == "/api/explore/switch":
+                folder = str((payload or {}).get("folder") or "").strip()
+                if not folder:
+                    self._send_json({"ok": False, "error": "No folder given."},
+                                    status=400)
+                    return
+                self._send_json(app_runtime.switch_to(folder))
                 return
             self.send_error(404, "Not found")
 
@@ -905,6 +974,7 @@ def serve_dashboard(
     config: DashboardConfig | None = None,
     home_mode: bool = False,
     exploration_root: str | Path | None = None,
+    on_ready: Callable[[str], None] | None = None,
 ) -> None:
     session = start_dashboard_session(
         output=output,
@@ -915,6 +985,28 @@ def serve_dashboard(
         exploration_root=exploration_root,
     )
     print(f"FastMDXplora GUI running at {session.url}")
+    if on_ready is not None:
+        # After the socket answers, not before. One request that returns
+        # confirms the handler is serving, and only then is the browser
+        # pointed at it, so the first page it asks for is one the server
+        # can give -- a completed-run folder has more to read before the
+        # first response, which is where the race showed.
+        import threading
+        import time
+        import urllib.request
+
+        def _open_when_ready(url: str) -> None:
+            for _ in range(100):
+                try:
+                    with urllib.request.urlopen(url, timeout=0.5) as response:
+                        response.read(1)
+                    break
+                except Exception:  # noqa: BLE001 - keep polling
+                    time.sleep(0.1)
+            on_ready(url)
+
+        threading.Thread(target=_open_when_ready, args=(session.url,),
+                         daemon=True).start()
     if session.port_was_changed:
         print(
             f"Requested port {session.requested_port} was busy, "
@@ -928,6 +1020,17 @@ def serve_dashboard(
         pass
     finally:
         session.stop()
+        # The run is its own session and is not stopped by stopping the
+        # server. Say so, and say where, so nobody assumes it died with
+        # the terminal or wonders where it went.
+        runtime = getattr(session, "runtime", None)
+        proc = getattr(runtime, "process", None)
+        if proc is not None and proc.poll() is None:
+            where = getattr(runtime, "running_root", None) or getattr(runtime, "active_root", None)
+            print(
+                f"\nThe study in {where} is still running (pid {proc.pid}).\n"
+                f"Reopen the GUI on it to watch, or stop it with:  kill {proc.pid}"
+            )
 
 
 def start_dashboard_session(

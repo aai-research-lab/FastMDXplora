@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -619,7 +618,7 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
         metavar="DIR",
         help=(
             "Output directory for project artifacts "
-            "(default: ./fastmdxplora_output_<UTC-timestamp>)."
+            "(default: ./fastmdxplora_<system>_study_<UTC-timestamp>)."
         ),
     )
     src.add_argument(
@@ -1234,8 +1233,9 @@ def _resolve_dashboard_output_dir(args: argparse.Namespace, config: dict[str, An
     if not raw_output and config:
         raw_output = config.get("output")
     if not raw_output:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        raw_output = f"fastmdxplora_output_{timestamp}"
+        from fastmdxplora.naming import default_output_name, system_of
+
+        raw_output = default_output_name(system_of(config))
     return Path(raw_output).expanduser().resolve()
 
 
@@ -1346,7 +1346,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if budget is not None and not getattr(args, "dry_run", False):
         from fastmdxplora.agent import run_in_stages
 
-        output = Path(config.get("output") or args.output_dir or "fastmdxplora_output")
+        from fastmdxplora.naming import default_output_name, system_of
+
+        output = Path(config.get("output") or args.output_dir
+                      or default_output_name(system_of(config)))
         staged = run_in_stages(config, output, budget_hours=float(budget))
         for note in staged.notes:
             print(f"  {note}")
@@ -1758,20 +1761,30 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
             getattr(args, "binding_pocket_cutoff_A", 5.0) or 5.0
         ),
     )
+    # Open the browser only once the server answers. It was opened first,
+    # and on a completed-run folder -- more to read before the first
+    # response -- the browser reached the port before it was listening and
+    # showed "unable to connect" until a refresh. A short poll closes the
+    # race; the browser still opens best-effort.
+    on_ready = None
     if not getattr(args, "no_browser", False):
         import webbrowser
-        try:
-            fragment = f"#{panel}" if panel else ""
-            webbrowser.open(
-                f"http://{args.host}:{args.port}{fragment}", new=2)
-        except Exception:  # noqa: BLE001 - opening a browser is best effort
-            pass
+
+        fragment = f"#{panel}" if panel else ""
+
+        def on_ready(url: str) -> None:
+            try:
+                webbrowser.open(f"{url}{fragment}", new=2)
+            except Exception:  # noqa: BLE001 - best effort
+                pass
+
     serve_dashboard(
         output=output,
         host=args.host,
         port=args.port,
         config=config,
         home_mode=not watching_a_run,
+        on_ready=on_ready,
     )
     return 0
 
@@ -1950,7 +1963,9 @@ def _run_staged(args: Any, config: dict) -> int:
 
     from fastmdxplora.agent import run_in_stages
 
-    output = _Path(args.agent_output or "fastmdxplora_output")
+    from fastmdxplora.naming import default_output_name
+
+    output = _Path(args.agent_output or default_output_name())
     print(f"\nRunning setup, which settles the particle count "
           f"({output})...")
     staged = run_in_stages(config, output,

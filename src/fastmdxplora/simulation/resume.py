@@ -43,6 +43,7 @@ it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.refusals import Refusal, StudyError
@@ -360,3 +361,126 @@ def plan_segments(
                                config=piece, resume_from=previous,
                                steps=steps))
     return planned
+
+
+# ---------------------------------------------------------------------------
+# Continuing a study that stopped.
+#
+# plan_segments splits a run up front. This is the other direction: one
+# new segment from a study that already ran and stopped, for however much
+# more is wanted, with the arithmetic done from the record rather than
+# asked of the person. The Agent used to write resume_from by hand and ask
+# for the equilibration lengths; the parent's resolved config has them,
+# the checkpoint's sidecar has the step, and the rest is subtraction.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Continuation:
+    """What continuing a study would be, and what it would carry."""
+
+    parent: str
+    checkpoint: str
+    production_done_ns: float
+    production_planned_ns: float
+    config: dict[str, Any]
+    #: Why it cannot be continued, or None.
+    refusal: str | None = None
+
+    @property
+    def possible(self) -> bool:
+        return self.refusal is None
+
+    def as_text(self) -> str:
+        if self.refusal:
+            return f"cannot be continued: {self.refusal}"
+        return (f"production done {self.production_done_ns:.3f} ns of "
+                f"{self.production_planned_ns:.3f} ns planned; a continuation "
+                f"resumes from {Path(self.checkpoint).name} in the same solvated system, "
+                f"with no minimisation and no equilibration")
+
+
+def continuation_of(parent: str | Path, *, total_ns: float | None = None,
+                    more_ns: float | None = None) -> Continuation:
+    """The config that continues ``parent``, and the facts it rests on.
+
+    ``total_ns`` asks for that much production in all, counting what
+    already ran; ``more_ns`` asks for that much more. Given neither, the
+    config carries the remainder of what the parent planned. The config
+    is a whole study: it reuses the parent's prepared system, resumes
+    from its checkpoint, and neither minimises nor equilibrates -- the
+    three things a hand-written resume gets wrong.
+    """
+    import yaml
+
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    root = Path(parent).expanduser().resolve()
+    empty = dict(parent=str(root), checkpoint="", production_done_ns=0.0,
+                 production_planned_ns=0.0, config={})
+    resolved = root / "resolved_config.yml"
+    if not resolved.is_file():
+        return Continuation(**empty, refusal="the study has no resolved_config.yml")
+    try:
+        config = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return Continuation(**empty, refusal=f"the study's config could not be read: {exc}")
+    verdict = segmentability(config)
+    if not verdict.allowed:
+        return Continuation(**empty, refusal=verdict.reason)
+
+    checkpoint = root / "simulation" / "checkpoint.chk"
+    empty["checkpoint"] = str(checkpoint)
+    if not checkpoint.is_file():
+        return Continuation(**empty,
+                            refusal="the study has no checkpoint; checkpoints are written "
+                                    "during production, so it may not have reached it")
+    side = read_checkpoint_sidecar(checkpoint) or {}
+    if str(side.get("stage") or "") != "production":
+        return Continuation(**empty,
+                            refusal="the checkpoint does not say it was written during "
+                                    "production, so continuing from it is not safe")
+
+    sim = dict(config.get("simulation") or {})
+    dt_fs = float(sim.get("timestep_fs") or 2.0)
+    dt_ns = dt_fs * 1e-6
+    nvt = int(sim.get("nvt_steps") if sim.get("nvt_steps") is not None
+              else round(float(sim.get("nvt_duration_ns") or 0.5) / dt_ns))
+    npt = int(sim.get("npt_steps") if sim.get("npt_steps") is not None
+              else round(float(sim.get("npt_duration_ns") or 1.0) / dt_ns))
+    planned_ns = float(sim.get("duration_ns") or
+                       (int(sim.get("production_steps") or 0) * dt_ns))
+    step = int(side.get("step") or 0)
+    done_steps = max(0, step - nvt - npt)
+    done_ns = done_steps * dt_ns
+
+    if total_ns is not None:
+        remaining = float(total_ns) - done_ns
+    elif more_ns is not None:
+        remaining = float(more_ns)
+    else:
+        remaining = planned_ns - done_ns
+    if remaining <= 0:
+        return Continuation(parent=str(root), checkpoint=str(checkpoint),
+                            production_done_ns=done_ns, production_planned_ns=planned_ns,
+                            config={}, refusal=f"production already reached "
+                            f"{done_ns:.3f} ns; nothing remains to run")
+
+    new = {k: v for k, v in config.items() if k not in ("output", "include", "exclude")}
+    new_sim = {k: v for k, v in sim.items()
+               if k not in ("nvt_steps", "npt_steps", "nvt_duration_ns", "npt_duration_ns",
+                            "production_steps", "resume_from", "prepared_from", "setup_from")}
+    new_sim.update({
+        "duration_ns": round(remaining, 6),
+        "resume_from": str(checkpoint),
+        "setup_from": str(root),
+        "minimize": False,
+        "nvt_steps": 0,
+        "npt_steps": 0,
+        "ensemble": str(side.get("ensemble") or ("npt" if npt > 0 else "nvt")),
+    })
+    new["simulation"] = new_sim
+    new["exclude"] = ["setup"]
+    return Continuation(parent=str(root), checkpoint=str(checkpoint),
+                        production_done_ns=done_ns, production_planned_ns=planned_ns,
+                        config=new)

@@ -103,4 +103,11 @@ body[data-theme="paper"] {
     --accent-white: #141413;
     --accent-cyan: #2b6cb0;
     --shadow-color: rgba(0, 0, 0, 0.14);
+    /* The four tokens the first Paper block left at their dark values,
+       which is where the blacks and greys were still coming from: a soft
+       background at #151518, a white border, and two heavy shadows. */
+    --background-soft: #efeee9;
+    --border-strong: rgba(0, 0, 0, 0.22);
+    --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.08);
+    --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.16);
 }

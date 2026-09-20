@@ -35,7 +35,7 @@ Give **one** of `system`, `config` or `config_data`. Giving both a system and a
 config raises `StudyError(code="config.option.conflicting")`; giving none
 raises `StudyError(code="config.option.missing_companion")`.
 
-`output_dir` defaults to `fastmdxplora_output_<UTC timestamp>`.
+`output_dir` defaults to `fastmdxplora_<system>_study_<UTC timestamp>`, named by the first system in the config.
 
 ### Settings go in `options`, keyed by phase
 

@@ -660,3 +660,20 @@ def test_only_the_unchecked_phase_is_marked(tmp_path: Path) -> None:
     assert manifest["agent"]["checked"] == {
         "setup": True, "simulation": True, "analysis": False, "report": True,
     }
+
+
+def test_the_resolved_config_exists_before_the_first_phase_runs(tmp_path):
+    # It was written only after the phase loop, so a run in progress or one
+    # that was stopped had no resolved_config.yml: the one record of what
+    # a study was became available only once it was over, and the Agent,
+    # asked about a running study's settings, had nothing to read.
+    import inspect
+
+    from fastmdxplora import orchestrator
+
+    source = inspect.getsource(orchestrator.FastMDXplora)
+    loop = source.index("for phase in plan:")
+    first_write = source.index("self._write_resolved_config()")
+    assert first_write < loop, "the resolved config must be written before the loop"
+    # And still written at the end, so what actually ran is the final record.
+    assert source.count("self._write_resolved_config()") >= 2

@@ -227,6 +227,63 @@
    * than a study from nothing. */
   var history = [];
   var currentConfig = null;
+  /* The transcript, as it can be replayed: every entry carries enough to
+   * draw it again without asking the model. Saved to the workspace after
+   * each exchange, restored when the page opens. The thread used to live
+   * only in the browser's memory, and a refresh emptied it. */
+  var transcript = [];
+  /* Which conversation this is and where it lives, from the last save or
+   * restore, so a launch can name it exactly when moving it. */
+  var convId = null;
+  var convStudy = null;
+  /* Files attached to the next message: what read_attachment returned. */
+  var pendingFiles = [];
+
+  function fmtSize(n) {
+    return n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+  }
+
+  function renderChips() {
+    var host = el("agent-attachments");
+    if (!host) return;
+    host.innerHTML = "";
+    host.hidden = pendingFiles.length === 0;
+    pendingFiles.forEach(function (f, i) {
+      var chip = document.createElement("span");
+      chip.className = "agent-chip";
+      var name = document.createElement("span");
+      name.className = "name"; name.textContent = f.name; name.title = f.path;
+      var size = document.createElement("span");
+      size.className = "size"; size.textContent = fmtSize(f.size) + (f.truncated ? " \u00b7 cut" : "");
+      var rm = document.createElement("button");
+      rm.className = "rm"; rm.type = "button"; rm.textContent = "\u2715"; rm.title = "Remove";
+      rm.addEventListener("click", function () { pendingFiles.splice(i, 1); renderChips(); });
+      chip.appendChild(name); chip.appendChild(size); chip.appendChild(rm);
+      host.appendChild(chip);
+    });
+  }
+
+  function attachFile(path) {
+    if (!path) return;
+    post("/api/agent/attachment", { path: path }).then(function (d) {
+      if (!d || !d.ok) { window.alert((d && d.error) || "Could not attach that file."); return; }
+      if (pendingFiles.some(function (f) { return f.path === d.path; })) return;
+      if (pendingFiles.length >= 6) { window.alert("Six files at most on one message."); return; }
+      pendingFiles.push(d);
+      renderChips();
+      el("agent-request").focus();
+    }).catch(function () { window.alert("Could not reach the server."); });
+  }
+
+  function persist() {
+    return post("/api/agent/conversation", { entries: transcript }).then(function (d) {
+      if (d && d.ok) {
+        convId = d.id || convId;
+        if (d.study !== undefined) convStudy = d.study;
+      }
+      return d;
+    }).catch(function () {});
+  }
 
   function tools(msg, items) {
     var bar = document.createElement("div");
@@ -264,6 +321,12 @@
       if (history[i].role === "user") seen += 1;
       if (seen === userIndex) { history.length = i; break; }
     }
+    var seenT = -1;
+    for (var k = 0; k < transcript.length; k++) {
+      if (transcript[k].role === "user") seenT += 1;
+      if (seenT === userIndex) { transcript.length = k; break; }
+    }
+    persist();
     pending = null;
     stopPending = null;
     lastReply = null;
@@ -277,21 +340,58 @@
     }
   }
 
-  function say(text) {
+  function say(text, attached) {
     var msg = document.createElement("div");
     msg.className = "agent-msg agent-msg-user";
     var body = document.createElement("div");
     body.textContent = text;
+    if (attached && attached.length) {
+      var list = document.createElement("div");
+      list.className = "attached";
+      list.textContent = "\u{1F4CE} " + attached.map(function (a) { return a.name; }).join(", ");
+      list.title = attached.map(function (a) { return a.path + " (" + a.sha256 + ")"; }).join("\n");
+      body.appendChild(list);
+    }
     msg.appendChild(body);
     tools(msg, [
       { label: "Copy", run: function () { copyText(text); } },
-      { label: "Edit", title: "Put this back in the composer and continue from here",
+      { label: "Edit", title: "Edit this message in place and send it again",
         run: function () {
-          cutFrom(msg);
-          var area = el("agent-request");
-          area.value = text;
-          autosize(area);
-          area.focus();
+          /* In place, as every assistant a person has used does it: the
+           * bubble becomes editable, Enter sends, Escape puts it back.
+           * Copying the text down into the composer was a detour. */
+          if (body.isContentEditable) return;
+          var before = body.textContent;
+          body.contentEditable = "true";
+          body.classList.add("editing");
+          body.focus();
+          var range = document.createRange();
+          range.selectNodeContents(body);
+          range.collapse(false);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          function done(send) {
+            body.contentEditable = "false";
+            body.classList.remove("editing");
+            body.removeEventListener("keydown", onKey);
+            body.removeEventListener("blur", onBlur);
+            var edited = body.textContent.trim();
+            if (!send || !edited) {
+              body.textContent = before;
+              return;
+            }
+            cutFrom(msg);
+            el("agent-request").value = edited;
+            draft();
+          }
+          function onKey(e) {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); done(true); }
+            if (e.key === "Escape") { e.preventDefault(); done(false); }
+          }
+          function onBlur() { done(false); }
+          body.addEventListener("keydown", onKey);
+          body.addEventListener("blur", onBlur);
         } },
       { label: "Retry", title: "Send this again from here",
         run: function () {
@@ -361,8 +461,16 @@
     var request = pending ? pending + "\n" + typed : typed;
     pending = null;
 
-    say(typed);
-    history.push({ role: "user", text: typed });
+    var files = pendingFiles.slice();
+    pendingFiles = [];
+    renderChips();
+    var record = files.map(function (f) {
+      return { name: f.name, path: f.path, size: f.size, sha256: f.sha256, truncated: !!f.truncated };
+    });
+    say(typed, record);
+    var historyText = typed + (record.length ? "\n[attached: " + record.map(function (a) { return a.name; }).join(", ") + "]" : "");
+    history.push({ role: "user", text: historyText });
+    transcript.push(record.length ? { role: "user", text: typed, attachments: record } : { role: "user", text: typed });
     area.value = "";
     autosize(area);
     var r = reply();
@@ -372,7 +480,7 @@
       scrollToEnd();
       return;
     }
-    note(box, "Writing\u2026");
+    note(box, "Thinking\u2026");
     scrollToEnd();
     el("agent-propose").disabled = true;
 
@@ -380,7 +488,8 @@
       request: request,
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
-      current_config: currentConfig
+      current_config: currentConfig,
+      attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })
     }).then(function (data) {
       el("agent-propose").disabled = false;
       box.innerHTML = "";
@@ -392,6 +501,17 @@
          * uses. The thread says what was done, so nothing happens
          * silently. */
         history.push({ role: "agent", text: "DO: " + data.action });
+        if (data.action === "stop") {
+          /* Asked, not done. A stop is recorded when it is confirmed, so
+           * a reloaded thread never says "Did: stop" about a run that was
+           * never stopped -- which it did, and the person's "yes" then
+           * went to the model as a new message. */
+          transcript.push({ role: "agent", kind: "question",
+                            text: "Stop the run" + (data.where ? " at " + data.where : "") + "? Say yes." });
+        } else {
+          transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
+        }
+        persist();
         act(data.action, data.where || "", box, r);
         scrollToEnd();
         return;
@@ -403,6 +523,8 @@
         p.innerHTML = prose(data.answer);
         box.appendChild(p);
         history.push({ role: "agent", text: data.answer });
+        transcript.push({ role: "agent", kind: "answer", text: data.answer });
+        persist();
         area.focus();
         scrollToEnd();
         return;
@@ -410,6 +532,8 @@
       if (data.question) {
         note(box, data.question);
         history.push({ role: "agent", text: data.question });
+        transcript.push({ role: "agent", kind: "question", text: data.question });
+        persist();
         pending = request;
         area.focus();
         scrollToEnd();
@@ -417,6 +541,8 @@
       }
       if (!data.ok) {
         note(box, IN_THE_GUI[data.code] || data.error);
+        transcript.push({ role: "agent", kind: "error", text: IN_THE_GUI[data.code] || data.error });
+        persist();
         if (IN_THE_GUI[data.code]) openSettings();
         scrollToEnd();
         return;
@@ -426,6 +552,11 @@
         : "Accepted after " + data.cycles + " attempts.", true);
       history.push({ role: "agent", text: "Wrote a config:\n" + data.yaml });
       currentConfig = data.yaml;
+      transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
+                        cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
+                          return a.refusal ? { refusal: { message: a.refusal.message } } : {};
+                        }) });
+      persist();
       wireActions(r, data, box);
       scrollToEnd();
     }).catch(function () {
@@ -499,6 +630,8 @@
     stopPending = null;
     if (!yes) {
       note(box, "Not stopped.");
+      transcript.push({ role: "agent", kind: "answer", text: "Not stopped." });
+      persist();
       return;
     }
     fetch("/api/explore/stop", { method: "POST" })
@@ -507,6 +640,9 @@
         var stopped = d && d.ok !== false;
         note(box, stopped ? "Stopped the run." : (d && d.error) || "Could not stop it.", true);
         history.push({ role: "agent", text: stopped ? "Stopped the run." : "Could not stop the run." });
+        transcript.push(stopped ? { role: "agent", kind: "action", action: "stop", where: "" }
+                                : { role: "agent", kind: "error", text: "Could not stop the run." });
+        persist();
         if (stopped && lastReply) {
           /* The same config can run again; each launch gets its own
            * timestamped folder, so the stopped run's output stays. */
@@ -601,9 +737,18 @@
     };
     runBtn.onclick = function () {
       runBtn.disabled = true;
-      post("/api/agent/run", {
-        config: data.config,
-        budget_hours: el("agent-budget").value
+      /* The thread is saved before the launch, and the launch is told
+       * which conversation to move and where it is now. The launch
+       * switches the loaded study before the move runs, so "the current
+       * conversation" is the new study's -- none -- and the first version
+       * moved nothing; the next save then started a fresh thread in the
+       * new study from whatever the browser held, minus a race. */
+      var fromStudy = convStudy;
+      persist().then(function () {
+        return post("/api/agent/run", {
+          config: data.config,
+          budget_hours: el("agent-budget").value
+        });
       }).then(function (started) {
         if (started.ok) {
           /* Started once. A second press started it again into the same
@@ -611,6 +756,17 @@
            * button says what happened and stays put. */
           runBtn.textContent = "Running";
           note(box, "Started. Watch it in the sidebar and the Overview.", true);
+          /* The conversation that launched a study belongs with it. Without
+           * this the thread would vanish from view the moment the page
+           * switched to the new study's empty list. */
+          if (started.output) {
+            post("/api/agent/conversation/attach", {
+              study: started.output, id: convId, from_study: fromStudy
+            }).then(function (m) {
+              if (m && m.ok && m.id) { convId = m.id; convStudy = m.study || started.output; }
+              if (m && m.moved) note(box, "This conversation now belongs to the new study.", true);
+            }).catch(function () {});
+          }
         } else {
           runBtn.disabled = false;
           noteEl.textContent = started.error;
@@ -619,7 +775,166 @@
     };
   }
 
+  /* Draw a saved thread again. Each entry renders the way it rendered
+   * the first time; a config gets its actions back, wired to the stored
+   * config, so Run here on a restored thread runs what was written. */
+  function restore() {
+    fetch("/api/agent/conversation").then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.ok) { convId = d.id || null; convStudy = d.study || null; }
+      replay((d && d.entries) || []);
+    }).catch(function () {});
+  }
+
+  function replay(entries) {
+      if (!entries.length) return;
+      entries.forEach(function (e) {
+        if (e.role === "user") {
+          say(e.text || "", e.attachments || []);
+          var htext = (e.text || "") + ((e.attachments || []).length
+            ? "\n[attached: " + e.attachments.map(function (a) { return a.name; }).join(", ") + "]" : "");
+          history.push({ role: "user", text: htext });
+          transcript.push(e);
+          return;
+        }
+        var r = reply();
+        var box = r.part("attempts");
+        if (e.kind === "config") {
+          (e.attempts || []).forEach(function (a) {
+            if (a.refusal) note(box, "Refused: " + a.refusal.message);
+          });
+          note(box, e.cycles === 1 ? "Accepted first time."
+               : "Accepted after " + (e.cycles || "several") + " attempts.", true);
+          history.push({ role: "agent", text: "Wrote a config:\n" + e.yaml });
+          currentConfig = e.yaml;
+          wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles }, box);
+        } else if (e.kind === "answer") {
+          var p = document.createElement("div");
+          p.className = "agent-answer";
+          p.innerHTML = prose(e.text);
+          box.appendChild(p);
+          history.push({ role: "agent", text: e.text });
+        } else if (e.kind === "question") {
+          note(box, e.text);
+          history.push({ role: "agent", text: e.text });
+          // A stop confirmation that was the last thing said is still
+          // waiting for its yes after a reload.
+          stopPending = /^Stop the run.*\? Say yes\.$/.test(e.text || "") ? true : null;
+        } else if (e.kind === "action") {
+          note(box, e.action === "stop" ? "Stopped the run." : "Did: " + e.action + ".", true);
+          history.push({ role: "agent", text: "DO: " + e.action });
+        } else {
+          note(box, e.text || "");
+        }
+        transcript.push(e);
+      });
+      // Only a stop question that is the final entry keeps its pending
+      // state; anything said after it answered or superseded it.
+      var last = entries[entries.length - 1];
+      if (!(last && last.kind === "question" && /^Stop the run.*\? Say yes\.$/.test(last.text || ""))) {
+        stopPending = null;
+      }
+      scrollToEnd();
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
+    restore();
+    /* Start fresh: the thread on screen is already saved and stays in
+     * the list. Nothing is lost, so nothing is confirmed. */
+    function resetThread() {
+      el("agent-thread").innerHTML = "";
+      history = []; transcript = []; currentConfig = null; pending = null;
+      stopPending = null; lastReply = null;
+    }
+    var fresh = el("agent-new");
+    if (fresh) {
+      fresh.addEventListener("click", function () {
+        post("/api/agent/conversation/new", {}).then(function (d) {
+          if (d && d.ok) convId = d.id || null;
+          resetThread();
+          hideList();
+          el("agent-request").focus();
+        }).catch(function () {});
+      });
+    }
+
+    /* The list of conversations, newest first. Click a title to reopen
+     * it; the cross deletes that one, and only that one, after asking. */
+    var list = el("agent-conv-list");
+    function hideList() { if (list) list.hidden = true; }
+    function showList() {
+      fetch("/api/agent/conversations").then(function (r) { return r.json(); }).then(function (d) {
+        list.innerHTML = "";
+        var groups = (d && d.groups) || [];
+        var any = false;
+        groups.forEach(function (g) {
+          if (!g.conversations.length && !g.loaded) return;
+          var head = document.createElement("div");
+          head.className = "agent-conv-group" + (g.loaded ? " loaded" : "");
+          head.textContent = g.label + (g.loaded ? "  \u00b7 loaded" : "");
+          list.appendChild(head);
+          if (!g.conversations.length) {
+            var e = document.createElement("div");
+            e.className = "agent-conv-empty";
+            e.textContent = "No conversations yet.";
+            list.appendChild(e);
+          }
+          g.conversations.forEach(function (c) {
+            any = true;
+            var row = document.createElement("div");
+            row.className = "agent-conv-row" + (c.current && g.loaded ? " current" : "");
+            var title = document.createElement("span");
+            title.className = "title";
+            title.textContent = c.title + (c.current && g.loaded ? "  (open)" : "");
+            title.title = c.entries + " messages" + (g.loaded ? "" : " \u00b7 opens this study");
+            title.addEventListener("click", function () {
+              post("/api/agent/conversation/open", { id: c.id, study: g.study }).then(function (o) {
+                if (!o || !o.ok) { window.alert((o && o.error) || "Could not open it."); return; }
+                if (o.loaded_study && !g.loaded) {
+                  /* Another study: the page reloads so every panel reads it,
+                   * and the conversation is current there on return. */
+                  location.reload();
+                  return;
+                }
+                convId = o.id || null; convStudy = o.study || null;
+                resetThread();
+                hideList();
+                replay(o.entries || []);
+              });
+            });
+            var when = document.createElement("span");
+            when.className = "when";
+            when.textContent = c.started;
+            var del = document.createElement("button");
+            del.className = "del";
+            del.type = "button";
+            del.title = "Delete this conversation";
+            del.textContent = "\u2715";
+            del.addEventListener("click", function () {
+              if (!window.confirm("Delete \u201c" + c.title + "\u201d? This cannot be undone.")) return;
+              post("/api/agent/conversation/delete", { id: c.id, study: g.study }).then(function () {
+                if (c.current && g.loaded) resetThread();
+                showList();
+              });
+            });
+            row.appendChild(title); row.appendChild(when); row.appendChild(del);
+            list.appendChild(row);
+          });
+        });
+        if (!any && !groups.length) {
+          var none = document.createElement("div");
+          none.className = "agent-conv-empty";
+          none.textContent = "No conversations yet.";
+          list.appendChild(none);
+        }
+        list.hidden = false;
+      }).catch(function () {});
+    }
+    var convs = el("agent-conversations");
+    if (convs && list) {
+      convs.addEventListener("click", function () {
+        if (list.hidden) showList(); else hideList();
+      });
+    }
     if (!el("agent-provider")) return;
     loadEngine();
 
@@ -631,6 +946,29 @@
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
     el("agent-propose").addEventListener("click", draft);
+    var plus = el("agent-attach");
+    var attachPath = el("agent-attach-path");
+    /* The workspace, from the app state, so the picker can open there
+     * for a thread about no study. */
+    var workspaceRoot = "";
+    if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
+      window.FastMDXDashboard.on("app-state", function (s) {
+        workspaceRoot = (s && s.exploration_root) || workspaceRoot;
+      });
+    }
+    if (plus && attachPath && window.FastMDXPicker) {
+      plus.addEventListener("click", function () {
+        /* Open where this conversation lives: the study's own folder for
+         * a thread about a study, the workspace for a general one. */
+        window.FastMDXPicker.open({ into: "agent-attach-path", mode: "file",
+                                    start: convStudy || workspaceRoot || "" });
+      });
+      attachPath.addEventListener("change", function () {
+        var p = attachPath.value.trim();
+        attachPath.value = "";
+        attachFile(p);
+      });
+    }
     var area = el("agent-request");
     area.addEventListener("input", function () { autosize(area); });
     area.addEventListener("keydown", function (e) {
@@ -644,6 +982,8 @@
     function modeChanged() {
       var mode = el("agent-mode").value;
       el("agent-mode-note").textContent = MODE_NOTES[mode] || "";
+      var footer = el("agent-footer-mode");
+      if (footer) footer.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
       el("agent-budget-note").textContent = mode === "autonomous"
         ? "Required in this mode. Checked after setup, where the cost is "
           + "first known."

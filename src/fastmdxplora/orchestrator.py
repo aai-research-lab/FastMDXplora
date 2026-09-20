@@ -157,7 +157,7 @@ class FastMDXplora:
         is the same either way. Mutually exclusive with ``system``.
     output_dir : str | os.PathLike | None
         Where to write project outputs. Defaults to
-        ``./fastmdxplora_output_<timestamp>``.
+        ``./fastmdxplora_<system>_study_<timestamp>``.
     options : dict[str, dict] | None
         Per-phase keyword arguments, e.g.
         ``{"simulation": {"duration_ns": 100}}``.
@@ -260,12 +260,19 @@ class FastMDXplora:
         self._config_include: list[str] | None = include
         self._config_exclude: list[str] | None = exclude
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        from fastmdxplora.naming import default_output_name, system_of
+
         self.output_dir: Path | None = (
             Path(output_dir) if output_dir
-            else Path(f"fastmdxplora_output_{timestamp}")
+            else Path(default_output_name(system_of(self.config)))
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Which process this study is, so a GUI opened on the folder later
+        # can adopt the run: show it as running and stop it if asked. The
+        # file goes when the process exits; a crash leaves it, and an
+        # adopter checks the process is alive and is this run before
+        # believing it.
+        _record_run_process(self.output_dir)
 
         self.options: dict[str, dict[str, Any]] = options or {}
         # Study-level settings (`agent`, `agent_model`), which describe the
@@ -407,6 +414,13 @@ class FastMDXplora:
         self._resolved_options = {
             p: opts for p, opts in merged_options.items() if opts
         }
+        # Written now, before the first phase, and again at the end. A run
+        # in progress or one that was stopped had no resolved_config.yml,
+        # because it was written only after the loop: the one record of
+        # what a study was became available only once it was over, and a
+        # question about a running study's settings had nothing to read.
+        # What was decided is known here; writing it here is the record.
+        self._write_resolved_config()
 
         # Plan goes to file/audit; the presenter shows headers visually.
         logger.debug("Plan: %s", " -> ".join(plan))
@@ -1212,3 +1226,34 @@ class FastMDXplora:
         from fastmdxplora.utils.presenter import get_presenter
 
         return get_presenter()
+
+
+RUN_PROCESS_FILE = ".fastmdxplora_run.json"
+
+
+def _record_run_process(output_dir: Path) -> None:
+    import atexit
+    import json
+    import os
+    import sys
+
+    path = Path(output_dir) / RUN_PROCESS_FILE
+    try:
+        path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "argv": list(sys.argv),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }), encoding="utf-8")
+    except OSError:
+        return
+
+    def _remove(p: Path = path, pid: int = os.getpid()) -> None:
+        # Only this process's record: a child that inherited this hook must not
+        # remove the parent's.
+        try:
+            if os.getpid() == pid and p.is_file():
+                p.unlink()
+        except OSError:
+            pass
+
+    atexit.register(_remove)

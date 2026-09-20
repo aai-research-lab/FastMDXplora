@@ -508,3 +508,335 @@ class TestBuildConfigYaml:
         config = self._config(run_name="../../etc/passwd")
         doc = yaml.safe_load(build_config_yaml(config, tmp_path / "runs"))
         assert ".." not in doc["systems"][0]["id"]
+
+
+def _switch_runtime(tmp_path):
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    rt = DashboardRuntime(tmp_path / "w", tmp_path / "e")
+    return rt, tmp_path / "e"
+
+
+def _make_run(base, name):
+    run = base / name
+    (run / "simulation").mkdir(parents=True)
+    (run / "manifest.json").write_text("{}", encoding="utf-8")
+    return run
+
+
+def test_switch_between_run_folders(tmp_path):
+    # The GUI was bound to the one folder given at launch; switch_to makes
+    # loading another study a control in the page.
+    rt, base = _switch_runtime(tmp_path)
+    a, b = _make_run(base, "a"), _make_run(base, "b")
+    assert rt.switch_to(a)["ok"]
+    assert Path(rt.active_root) == a.resolve()
+    assert rt.switch_to(b)["ok"]
+    assert Path(rt.active_root) == b.resolve()
+
+
+def test_switch_forgets_the_previous_run(tmp_path):
+    rt, base = _switch_runtime(tmp_path)
+    rt.completion_error = "old failure"
+    rt.process_returncode = 1
+    rt.switch_to(_make_run(base, "a"))
+    assert rt.completion_error is None
+    assert rt.process_returncode is None
+    assert rt.process is None
+
+
+def test_switch_refuses_a_folder_that_is_not_a_run(tmp_path):
+    rt, base = _switch_runtime(tmp_path)
+    plain = base / "notes"
+    plain.mkdir()
+    answer = rt.switch_to(plain)
+    assert not answer["ok"]
+    assert "does not look like" in answer["error"]
+
+
+def test_switch_refuses_a_missing_folder(tmp_path):
+    rt, base = _switch_runtime(tmp_path)
+    assert not rt.switch_to(base / "nope")["ok"]
+
+
+def test_switch_while_running_views_another_and_keeps_the_process(tmp_path):
+    # A two-day run should not lock a person out of their other studies.
+    # The process keeps running where it is and stays stoppable; the
+    # viewed study is idle and the snapshot says where the live one is.
+    rt, base = _switch_runtime(tmp_path)
+    a, b = _make_run(base, "a"), _make_run(base, "b")
+
+    class Proc:
+        def poll(self):
+            return None
+
+    rt.active_root = a.resolve()
+    rt.running_root = a.resolve()
+    rt.process = Proc()
+    rt.process_started_at = "2026-01-01T00:00:00+00:00"
+    answer = rt.switch_to(b)
+    assert answer["ok"]
+    assert rt.process is not None
+    assert Path(rt.running_root) == a.resolve()
+    snap = rt.snapshot()
+    assert snap["status"] == "idle"
+    assert snap["process_running"] is False
+    assert snap["running_elsewhere"] == str(a.resolve())
+    # Back to the running one: its process state returns.
+    rt.switch_to(a)
+    snap = rt.snapshot()
+    assert snap["status"] == "running"
+    assert snap["running_elsewhere"] is None
+
+
+def test_the_sidebar_says_where_the_live_run_is():
+    import pathlib
+
+    import fastmdxplora.gui as gui
+
+    page = (pathlib.Path(gui.__file__).parent / "templates"
+            / "dashboard.html").read_text(encoding="utf-8")
+    assert 'id="study-elsewhere"' in page
+    assert 'id="study-elsewhere-view"' in page
+
+
+def test_the_sidebar_has_the_load_control():
+    import pathlib
+
+    import fastmdxplora.gui as gui
+
+    page = (pathlib.Path(gui.__file__).parent / "templates"
+            / "dashboard.html").read_text(encoding="utf-8")
+    assert 'id="load-study"' in page
+    # In the study block, not the controls row: which study this is, is
+    # that block's whole question, and the row holds three.
+    study = page[page.index('class="sidebar-study"'):page.index('class="sidebar-progress"')]
+    assert 'id="load-study"' in study
+    row = page[page.index('class="sidebar-controls"'):]
+    row = row[:row.index("</div>")]
+    assert row.count("<button") == 3
+    # No data-picks on the hidden input: the picker would attach a second
+    # "Browse" button for the same action.
+    assert 'id="load-study-path" data-picks' not in page
+    frame = (pathlib.Path(gui.__file__).parent / "static"
+             / "frame.js").read_text(encoding="utf-8")
+    assert 'fetch("/api/explore/switch"' in frame
+
+
+def test_the_running_study_reports_its_progress_when_viewed_from_elsewhere(tmp_path):
+    # The sidebar's Running line shows the system, its fraction complete,
+    # and a View button. The fraction is read from the running study's
+    # own telemetry; nothing is guessed.
+    import json
+
+    rt, base = _switch_runtime(tmp_path)
+    a, b = _make_run(base, "fastmdxplora_1UAO_study_20260919022007"), _make_run(base, "b")
+    (a / "simulation" / "live_status.json").write_text(json.dumps(
+        {"stage": "production", "current_step": 175000, "total_planned_steps": 350000}),
+        encoding="utf-8")
+
+    class Proc:
+        def poll(self):
+            return None
+
+    rt.active_root = a.resolve()
+    rt.running_root = a.resolve()
+    rt.process = Proc()
+    rt.process_started_at = "2026-01-01T00:00:00+00:00"
+    rt.switch_to(b)
+    snap = rt.snapshot()
+    assert snap["running_elsewhere_progress"] == {"stage": "production", "percent": 50.0}
+    rt.switch_to(a)
+    assert rt.snapshot()["running_elsewhere_progress"] is None
+
+
+def test_the_sidebar_reads_top_down():
+    import pathlib
+
+    import fastmdxplora.gui as gui
+
+    page = (pathlib.Path(gui.__file__).parent / "templates"
+            / "dashboard.html").read_text(encoding="utf-8")
+    study = page[page.index('class="sidebar-study"'):page.index('class="sidebar-progress"')]
+    # Status row, then Running, then Load available study.
+    assert study.index('id="topbar-status-text"') < study.index('id="study-elsewhere"') < study.index('id="load-study"')
+    assert 'id="study-elsewhere-pct"' in study
+    assert ">Load available study<" in study
+
+
+def test_the_run_outlives_the_server():
+    # Without start_new_session the run sat in the terminal's process
+    # group, and Ctrl-C on the server sent SIGINT to the run as well: a
+    # day-long simulation died mid-step, not by any decision but because
+    # the terminal delivers the signal to the whole group.
+    import inspect
+
+    from fastmdxplora.gui import exploration
+
+    source = inspect.getsource(exploration.DashboardRuntime._spawn)
+    assert "start_new_session=True" in source
+
+
+def test_stopping_the_server_says_what_is_still_running():
+    import inspect
+
+    from fastmdxplora.gui import server
+
+    source = inspect.getsource(server.serve_dashboard)
+    assert "is still running (pid" in source
+    assert "kill {proc.pid}" in source
+
+
+def test_a_new_session_child_leaves_the_terminals_group():
+    import os
+    import subprocess
+    import sys
+    import time
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"],
+                             start_new_session=True)
+    try:
+        time.sleep(0.2)
+        assert os.getpgid(child.pid) != os.getpgid(os.getpid())
+    finally:
+        child.terminate()
+        child.wait()
+
+
+def _fake_run(study):
+    """A process whose command line names the study, as fastmdx's does."""
+    import subprocess
+    import sys
+    import time
+
+    script = study.parent / "fake_fastmdx.py"
+    script.write_text("import time; time.sleep(60)\n", encoding="utf-8")
+    child = subprocess.Popen([sys.executable, str(script), "explore", "--output", str(study)],
+                             start_new_session=True)
+    time.sleep(0.3)
+    return child
+
+
+def test_a_fresh_server_adopts_a_running_study_and_can_stop_it(tmp_path):
+    # A GUI reopened on a running study could watch it but not stop it,
+    # and its sidebar called it idle. The run records its PID; a server
+    # opened on the folder adopts it.
+    import json
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "fastmdxplora_1UAO_study_20260919120000")
+    child = _fake_run(study)
+    try:
+        (study / RUN_PROCESS_FILE).write_text(json.dumps(
+            {"pid": child.pid, "argv": ["fastmdx", "explore"], "started_at": "2026-09-19T12:00:00+00:00"}),
+            encoding="utf-8")
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        snap = rt.snapshot()
+        assert snap["status"] == "running"
+        assert snap["process_running"] is True
+        assert rt.process.pid == child.pid
+        assert rt.stop()["stopped"] is True
+        child.wait(timeout=5)
+        assert rt.snapshot()["status"] in {"failed", "completed"}
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+
+
+def test_a_stale_pid_record_is_not_adopted(tmp_path):
+    import json
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "s")
+    (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": 2 ** 22 - 7, "argv": []}),
+                                          encoding="utf-8")
+    rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+    assert rt.process is None
+    assert rt.snapshot()["status"] == "idle"
+
+
+def test_a_process_that_is_not_this_run_is_not_adopted(tmp_path):
+    # The PID is alive but its command line names neither the study nor
+    # the program: the OS reused the number for something else.
+    import json
+    import subprocess
+    import sys
+    import time
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "s")
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        time.sleep(0.2)
+        (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": other.pid, "argv": []}),
+                                              encoding="utf-8")
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        assert rt.process is None
+    finally:
+        other.kill()
+        other.wait()
+
+
+def test_load_study_adopts_a_running_one(tmp_path):
+    import json
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = _make_run(tmp_path, "fastmdxplora_1L2Y_study_20260919120000")
+    child = _fake_run(study)
+    try:
+        (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": child.pid, "argv": []}),
+                                              encoding="utf-8")
+        rt = DashboardRuntime(workspace_root=tmp_path / "w", exploration_root=tmp_path, active_root=None)
+        assert rt.switch_to(study)["ok"]
+        assert rt.snapshot()["status"] == "running"
+    finally:
+        child.kill()
+        child.wait()
+
+
+def test_the_orchestrator_records_its_pid_and_removes_it_on_exit(tmp_path):
+    import subprocess
+    import sys
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    out = tmp_path / "study"
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    code = "\n".join([
+        f"import sys; sys.path.insert(0, {src!r})",
+        "from fastmdxplora.orchestrator import _record_run_process",
+        "from pathlib import Path",
+        f"_record_run_process(Path({str(out)!r}))",
+        f"import json, os; print(json.load(open(Path({str(out)!r}) / {RUN_PROCESS_FILE!r}))['pid'] == os.getpid())",
+    ])
+    out.mkdir()
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20)
+    assert result.stdout.strip().endswith("True"), result.stderr
+    # Gone once the process has exited.
+    assert not (out / RUN_PROCESS_FILE).exists()
+
+
+def test_a_run_is_judged_by_what_it_runs_not_where_the_interpreter_lives():
+    # "fastmdx" as a substring matched the whole command line, and on a
+    # Mac whose conda environment is named fastmdxplora every Python
+    # process carried it in its interpreter path: a stale PID reused by
+    # any Python would have been adopted, and Stop would have killed it.
+    from fastmdxplora.gui.exploration import _command_line_is_a_run
+
+    study = Path("/Users/someone/lab/fastmdxplora_1UAO_study_x")
+    env = "/Users/someone/.conda/envs/fastmdxplora/bin/python3"
+    assert not _command_line_is_a_run(f"{env} -c import time; time.sleep(30)", study)
+    assert not _command_line_is_a_run(f"{env} -m jupyter notebook", study)
+    assert _command_line_is_a_run(f"{env} /Users/someone/.conda/envs/fastmdxplora/bin/fastmdx explore", study)
+    assert _command_line_is_a_run("/usr/bin/python3 -m fastmdxplora.cli.main explore --output /tmp/s", study)
+    assert _command_line_is_a_run(f"/usr/bin/python3 fake.py --output {study}", study)
+    assert not _command_line_is_a_run("/usr/bin/python3 fake.py --output /Users/someone/lab/fastmdxplora_1UAO_study_y", study)
