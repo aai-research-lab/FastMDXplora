@@ -738,9 +738,11 @@ class TestTheFilePreviewReadsWhatTheAgentCanRead(unittest.TestCase):
         from fastmdxplora.gui.agent_panel import read_text_file
 
         f = Path(tempfile.mkdtemp()) / "resolved_config.yml"
-        f.write_text("systems:\n- system: 1UAO\n", encoding="utf-8")
+        # Bytes, not text: on Windows write_text turns each newline into
+        # two bytes and the size the reader reports is the true one.
+        f.write_bytes(b"systems:\n- system: 1UAO\n")
         answer = read_text_file(f)
-        self.assertEqual(answer["size"], len("systems:\n- system: 1UAO\n"))
+        self.assertEqual(answer["size"], 24)
         self.assertEqual(len(answer["sha256"]), 12)
         self.assertEqual(answer["lines"], 3)
         self.assertEqual(answer["suffix"], "yml")
