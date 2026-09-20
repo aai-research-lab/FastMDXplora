@@ -115,7 +115,28 @@ METHODS: tuple[Method, ...] = (
         description="five windows along the end-to-end distance",
         runs=5,
         config=_config(
-            production_steps=4000,
+            # The geometry was never the problem: four windows 0.05 nm
+            # apart at 2,000 kJ/mol/nm^2 are 1.4 spreads from each other and
+            # their distributions overlap by about 0.48, forty-eight times
+            # the threshold. What was missing was independent samples. The
+            # restrained distance decorrelates in about 2/friction, so at
+            # 1/ps and 8 ps of production each window held roughly four --
+            # and two windows that truly overlap by 0.48 read as disjoint a
+            # quarter of the time from four samples each. The overlap test
+            # was measuring the sample count rather than the windows.
+            #
+            # Friction is the lever, not length. It sets how fast the
+            # coordinate decorrelates and not what it samples: the
+            # equilibrium distribution under Langevin dynamics does not
+            # depend on it, so the free energy is untouched and only the
+            # kinetics change. At 5/ps -- still far below the 37/ps where
+            # this mode would become overdamped and start slowing again --
+            # the correlation time is 0.4 ps, and 16 ps of production is
+            # forty independent samples per window, at which a disjoint pair
+            # did not occur once in 20,000 trials. 8,000 steps over five runs
+            # is 40,000, the ceiling this suite sets for itself.
+            friction_per_ps=5.0,
+            production_steps=8000,
             trajectory_interval_steps=100,
             umbrella={
                 "collective_variable": "distance",
