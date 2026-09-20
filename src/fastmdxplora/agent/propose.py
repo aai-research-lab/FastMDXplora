@@ -173,6 +173,14 @@ is 1AKI, BPTI is 5PTI. Where the name is ambiguous or not known, say so
 and ask rather than picking one; a config that silently simulates the
 wrong molecule wastes a run and can be missed.
 
+A continuation is a segment. It writes its own trajectory in its own
+folder, and it analyses what it wrote -- not the parent's file. Say so
+when handing one over: a 0.5 ns study extended by 0.1 ns leaves two
+trajectories, and the analyses of the continuation describe the 0.1 ns
+it ran. Reading the whole 0.6 ns as one series is the explicit join,
+which refuses a gap or an unsealed segment, and is a step the person
+takes when the segments are done.
+
 Continuing a study that stopped: the "continuing this study" block in
 the run status answers a request to continue, extend or resume THIS
 study -- nothing else. A request for a new study, even of the same

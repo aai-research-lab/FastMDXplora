@@ -742,3 +742,58 @@ class TestTheAgentIsToldWhatTheBlockAnswers(unittest.TestCase):
         self.assertIn("trp-cage is 1L2Y", prompt)
         self.assertIn("chignolin is 1UAO", prompt)
         self.assertIn("say so\nand ask rather than picking one", prompt)
+
+
+class TestAContinuationAnalysesWhatItWrote(unittest.TestCase):
+    """The parent's analysis block names the parent's own trajectory by
+    absolute path. Carried across, the continuation simulated its segment
+    into a new folder and then analysed the PARENT's file, reporting the
+    parent's numbers as the new study's."""
+
+    def study(self):
+        import tempfile
+        from pathlib import Path
+
+        import yaml
+
+        from fastmdxplora.simulation.runner import write_checkpoint_sidecar
+
+        s = Path(tempfile.mkdtemp()) / "fastmdxplora_trpcage_study_x"
+        (s / "simulation").mkdir(parents=True)
+        (s / "resolved_config.yml").write_text(yaml.safe_dump({
+            "systems": [{"id": "s1", "system": "1L2Y"}],
+            "simulation": {"duration_ns": 0.5, "nvt_steps": 50000,
+                           "npt_steps": 50000, "timestep_fs": 2.0},
+            "analysis": {"trajectory": str(s / "simulation" / "production.dcd"),
+                         "topology": str(s / "simulation" / "trajectory_topology.pdb"),
+                         "include": ["rmsd", "rg"], "scope": "solute"},
+            "output": str(s)}), encoding="utf-8")
+        chk = s / "simulation" / "checkpoint.chk"
+        chk.write_bytes(b"x")
+        write_checkpoint_sidecar(chk, stage="production", step=250_000, ensemble="npt",
+                                 temperature_K=300.0, timestep_fs=2.0, study=str(s))
+        return s
+
+    def test_the_parents_trajectory_is_not_carried_across(self):
+        from fastmdxplora.simulation.resume import continuation_of
+
+        analysis = continuation_of(self.study(), total_ns=0.6).config["analysis"]
+        self.assertNotIn("trajectory", analysis)
+        self.assertNotIn("topology", analysis)
+
+    def test_the_analysis_settings_survive(self):
+        # What to analyse and how is the person's choice and is kept; only
+        # the parent's file paths go.
+        from fastmdxplora.simulation.resume import continuation_of
+
+        analysis = continuation_of(self.study(), total_ns=0.6).config["analysis"]
+        self.assertEqual(analysis["include"], ["rmsd", "rg"])
+        self.assertEqual(analysis["scope"], "solute")
+
+    def test_the_agent_says_a_continuation_is_a_segment(self):
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("extend it")
+        self.assertIn("A continuation is a segment", prompt)
+        self.assertIn("analyses what it wrote", prompt)
+        self.assertIn("explicit join", prompt)

@@ -478,6 +478,19 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
                             f"{done_ns:.3f} ns; nothing remains to run")
 
     new = {k: v for k, v in config.items() if k not in ("output", "include", "exclude")}
+    # The parent's analysis block names the parent's own trajectory by
+    # absolute path. Carried across, the continuation would simulate its
+    # segment into a new folder and then analyse the PARENT's file,
+    # reporting the parent's numbers as the new study's. Those paths go;
+    # the continuation analyses what it wrote. Analysing the two together
+    # is the explicit join, which refuses gaps and unsealed segments and
+    # is not something a resume should do silently.
+    analysis = {k: v for k, v in (config.get("analysis") or {}).items()
+                if k not in ("trajectory", "topology")}
+    if analysis:
+        new["analysis"] = analysis
+    else:
+        new.pop("analysis", None)
     new_sim = {k: v for k, v in sim.items()
                if k not in ("nvt_steps", "npt_steps", "nvt_duration_ns", "npt_duration_ns",
                             "production_steps", "resume_from", "prepared_from", "setup_from")}
