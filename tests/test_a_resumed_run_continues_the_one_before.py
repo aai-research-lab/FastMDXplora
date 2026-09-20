@@ -562,7 +562,7 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
     person for the equilibration lengths; the parent's resolved config has
     them, the checkpoint's sidecar has the step."""
 
-    def study(self, *, step=321000, duration=0.5, nvt=50000, npt=50000, sidecar=True):
+    def study(self, *, step=221000, duration=0.5, nvt=50000, npt=50000, sidecar=True):
         import tempfile
         from pathlib import Path
 
@@ -589,7 +589,8 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
 
         c = continuation_of(self.study(), total_ns=0.5)
         self.assertTrue(c.possible)
-        # 321,000 whole-run steps, 100,000 of them equilibration: 0.442 ns done.
+        # The checkpoint's step is a production step: 221,000 of them at
+        # 2 fs is 0.442 ns of production done.
         self.assertAlmostEqual(c.production_done_ns, 0.442, places=6)
         self.assertAlmostEqual(c.config["simulation"]["duration_ns"], 0.058, places=6)
 
@@ -631,7 +632,7 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
         s = self.study()
         cont = _continuation_of({"resume_from": str(s / "simulation" / "checkpoint.chk")})
         self.assertEqual(cont["study"], str(s))
-        self.assertEqual(cont["from_step"], 321000)
+        self.assertEqual(cont["from_step"], 221000)
         self.assertTrue(cont["known_from_sidecar"])
 
     def test_the_agent_is_handed_the_continuation(self):
@@ -652,3 +653,92 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
         from fastmdxplora.agent.propose import prompt_for
 
         self.assertIn("never write `resume_from` from scratch", prompt_for("x"))
+
+
+class TestProductionStepsAreProductionSteps(unittest.TestCase):
+    """The runner resets the step counter to zero before production, so
+    every statistic from the energy log measures production alone, and
+    the checkpoints are written after that reset. Subtracting the
+    equilibration from a checkpoint's step subtracted it twice: a 0.5 ns
+    production read as 0.3 ns, and "extend to 0.6 ns in all" asked for
+    0.3 ns more instead of 0.1 -- a run a fifth longer than the number
+    it was labelled with."""
+
+    def study(self, step, *, duration=0.5, nvt=50000, npt=50000):
+        import tempfile
+        from pathlib import Path
+
+        import yaml
+
+        from fastmdxplora.simulation.runner import write_checkpoint_sidecar
+
+        s = Path(tempfile.mkdtemp()) / "fastmdxplora_trpcage_study_x"
+        (s / "simulation").mkdir(parents=True)
+        (s / "resolved_config.yml").write_text(yaml.safe_dump({
+            "systems": [{"system": "1L2Y"}],
+            "simulation": {"duration_ns": duration, "nvt_steps": nvt,
+                           "npt_steps": npt, "timestep_fs": 2.0}}), encoding="utf-8")
+        chk = s / "simulation" / "checkpoint.chk"
+        chk.write_bytes(b"x")
+        write_checkpoint_sidecar(chk, stage="production", step=step, ensemble="npt",
+                                 temperature_K=300.0, timestep_fs=2.0, study=str(s))
+        return s
+
+    def test_the_counter_starts_at_zero_for_production(self):
+        import inspect
+
+        from fastmdxplora.simulation import runner
+
+        source = inspect.getsource(runner.run_simulation)
+        self.assertIn("simulation.currentStep = 0", source)
+
+    def test_a_finished_half_nanosecond_reads_as_half(self):
+        from fastmdxplora.simulation.resume import continuation_of
+
+        c = continuation_of(self.study(250_000))
+        self.assertAlmostEqual(c.production_done_ns, 0.5, places=6)
+
+    def test_extend_to_six_tenths_asks_for_one_tenth(self):
+        from fastmdxplora.simulation.resume import continuation_of
+
+        c = continuation_of(self.study(250_000), total_ns=0.6)
+        self.assertAlmostEqual(c.config["simulation"]["duration_ns"], 0.1, places=6)
+
+    def test_part_way_through_production(self):
+        from fastmdxplora.simulation.resume import continuation_of
+
+        c = continuation_of(self.study(120_000), total_ns=0.5)
+        self.assertAlmostEqual(c.production_done_ns, 0.24, places=6)
+        self.assertAlmostEqual(c.config["simulation"]["duration_ns"], 0.26, places=6)
+
+    def test_a_sidecar_with_a_whole_run_step_is_still_read_right(self):
+        # One written before this was understood: a step past the plan is
+        # recognised as a whole-run counter and converted.
+        from fastmdxplora.simulation.resume import continuation_of
+
+        c = continuation_of(self.study(350_000), total_ns=0.6)
+        self.assertAlmostEqual(c.production_done_ns, 0.5, places=6)
+        self.assertAlmostEqual(c.config["simulation"]["duration_ns"], 0.1, places=6)
+
+
+class TestTheAgentIsToldWhatTheBlockAnswers(unittest.TestCase):
+
+    def test_the_continuation_block_answers_only_a_continuation(self):
+        # Asked to simulate trp-cage, the Agent answered that the study
+        # could not be continued: the block in the run status spoke for a
+        # request that was not about it.
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("simulate trpcage for 0.5ns")
+        self.assertIn("answers a request to continue, extend or resume THIS", prompt)
+        self.assertIn("A request for a new study, even of the same", prompt)
+
+    def test_a_system_named_in_words_is_written_as_its_identifier(self):
+        # "trpcage" became 1UAO, which is chignolin. The identifier is
+        # named back so a wrong one is visible.
+        from fastmdxplora.agent.propose import prompt_for
+
+        prompt = prompt_for("simulate trpcage")
+        self.assertIn("trp-cage is 1L2Y", prompt)
+        self.assertIn("chignolin is 1UAO", prompt)
+        self.assertIn("say so\nand ask rather than picking one", prompt)

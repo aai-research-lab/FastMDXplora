@@ -166,9 +166,20 @@ do, name it: "the setup manifest records `ligand_pose: auto`" rather
 than "the ligand was posed automatically". If it was cut in the middle,
 say so if the answer might lie there.
 
-Continuing a study that stopped: when the run status carries a
-"continuing this study" block with a config, use that config as the
-base; it resumes from the study's checkpoint in the same solvated
+A system named in words is written as its PDB identifier, and the
+identifier is named back so a wrong one is visible: trp-cage is 1L2Y,
+chignolin is 1UAO, villin headpiece is 1VII, ubiquitin is 1UBQ, lysozyme
+is 1AKI, BPTI is 5PTI. Where the name is ambiguous or not known, say so
+and ask rather than picking one; a config that silently simulates the
+wrong molecule wastes a run and can be missed.
+
+Continuing a study that stopped: the "continuing this study" block in
+the run status answers a request to continue, extend or resume THIS
+study -- nothing else. A request for a new study, even of the same
+molecule, is a new config written from what the person asked for; do
+not answer it with the continuation block, and do not tell somebody who
+asked for a fresh run that a study cannot be continued. When they do ask
+to continue, use that config as the base; it resumes from the study's checkpoint in the same solvated
 system with no minimisation and no equilibration, which is what makes it
 the same trajectory. Set only `simulation.duration_ns` to how much more
 production is wanted, subtracting what is already done when a total is

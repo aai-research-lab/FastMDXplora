@@ -450,8 +450,19 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
               else round(float(sim.get("npt_duration_ns") or 1.0) / dt_ns))
     planned_ns = float(sim.get("duration_ns") or
                        (int(sim.get("production_steps") or 0) * dt_ns))
+    # The checkpoint's step is a production step. The runner resets the
+    # counter to zero before production so that every statistic computed
+    # from the energy log measures production alone; the checkpoints are
+    # written after that reset. Subtracting the equilibration here
+    # subtracted it a second time: a 0.5 ns production read as 0.3 ns,
+    # and "extend to 0.6 ns in all" asked for 0.3 ns more instead of 0.1.
+    # A sidecar written before this was understood may carry a whole-run
+    # step; one larger than the plan is recognised and converted.
     step = int(side.get("step") or 0)
-    done_steps = max(0, step - nvt - npt)
+    planned_steps = int(round(planned_ns / dt_ns)) if dt_ns else 0
+    if planned_steps and step > planned_steps + nvt + npt - 1:
+        step = max(0, step - nvt - npt)
+    done_steps = max(0, step)
     done_ns = done_steps * dt_ns
 
     if total_ns is not None:
