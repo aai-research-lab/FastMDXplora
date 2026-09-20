@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import unittest
 from urllib.request import urlopen
 
@@ -46,9 +47,17 @@ class TestTheColumns(unittest.TestCase):
 
     def test_the_handles_are_separators_a_screen_reader_can_name(self):
         page = _page()
-        self.assertEqual(page.count('role="separator"'), 2)
+        # Every separator is named, whatever the count: the two column
+        # seams and the one between the file list and its preview.
+        separators = re.findall(r'<div[^>]*role="separator"[^>]*>', page)
+        self.assertGreaterEqual(len(separators), 3)
+        for sep in separators:
+            with self.subTest(sep=sep[:60]):
+                self.assertIn("aria-label=", sep)
+                self.assertIn("aria-orientation=", sep)
         self.assertIn('aria-label="Resize sidebar"', page)
         self.assertIn('aria-label="Resize side panel"', page)
+        self.assertIn('aria-label="Resize the file list"', page)
 
     def test_widths_are_tokens_the_grid_reads(self):
         css = _css()
@@ -119,11 +128,18 @@ class TestTheSidePanel(unittest.TestCase):
         self.assertIn("wasAtBottom", _script())
 
     def test_a_file_opens_in_place_by_kind(self):
+        # Images and PDFs are shown by the browser and named here; text is
+        # asked of the server, which reads it over one list of types the
+        # Agent's + shares, rather than a second list kept in the page.
         script = _script()
         self.assertIn("function preview(item)", script)
-        for kind in ('"png"', '"pdf"', '"yml"'):
+        for kind in ('"png"', '"pdf"'):
             with self.subTest(kind=kind):
                 self.assertIn(kind, script)
+        self.assertIn('fetch("/api/file-text?path="', script)
+        from fastmdxplora.gui.agent_panel import ATTACHABLE_SUFFIXES
+
+        self.assertIn(".yml", ATTACHABLE_SUFFIXES)
 
     def test_every_file_can_be_downloaded_or_opened(self):
         page = _page()
@@ -663,3 +679,98 @@ class TestTheCentreIsCentredInEveryStateRendered(unittest.TestCase):
                 browser.close()
         finally:
             session.server.shutdown()
+
+
+class TestTheFilePreviewReadsWhatTheAgentCanRead(unittest.TestCase):
+    """The preview had a shorter list of types than the Agent's + and a
+    512 KB cliff with no explanation. One reader, one list, and a View
+    and Code mode: Code is the bytes and the default for anything
+    scientific, View is the convenience and means something different per
+    type. The seam between the list and the preview drags, and either can
+    take the whole panel."""
+
+    def test_one_reader_over_one_list_of_types(self):
+        import inspect
+
+        from fastmdxplora.gui.agent_panel import ATTACHABLE_SUFFIXES, read_attachment, read_text_file
+
+        # The attachment reader delegates, so the two cannot drift.
+        self.assertIn("return read_text_file(path", inspect.getsource(read_attachment))
+        self.assertIn("ATTACHABLE_SUFFIXES", inspect.getsource(read_text_file))
+        for suffix in (".yml", ".json", ".log", ".md", ".csv", ".pdb", ".cif", ".py"):
+            self.assertIn(suffix, ATTACHABLE_SUFFIXES)
+
+    def test_a_read_is_confined_to_the_study(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import read_text_file
+
+        root = Path(tempfile.mkdtemp())
+        (root / "run").mkdir()
+        (root / "run" / "a.yml").write_text("a: 1", encoding="utf-8")
+        (root / "secret.yml").write_text("not yours", encoding="utf-8")
+        self.assertTrue(read_text_file(root / "run" / "a.yml", within=root / "run")["ok"])
+        for escape in (root / "secret.yml", str(root / "run" / ".." / "secret.yml")):
+            answer = read_text_file(escape, within=root / "run")
+            self.assertFalse(answer["ok"])
+            self.assertIn("outside this study", answer["error"])
+
+    def test_a_long_file_keeps_its_head_and_tail_and_says_so(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import PREVIEW_LIMIT_BYTES, read_text_file
+
+        f = Path(tempfile.mkdtemp()) / "exploration.log"
+        f.write_text("start\n" + "x" * (PREVIEW_LIMIT_BYTES + 50_000) + "\nERROR at the end\n",
+                     encoding="utf-8")
+        answer = read_text_file(f)
+        self.assertTrue(answer["truncated"])
+        self.assertTrue(answer["text"].startswith("start"))
+        self.assertTrue(answer["text"].rstrip().endswith("ERROR at the end"))
+        self.assertIn("not shown", answer["text"])
+
+    def test_the_facts_make_it_a_record(self):
+        import tempfile
+        from pathlib import Path
+
+        from fastmdxplora.gui.agent_panel import read_text_file
+
+        f = Path(tempfile.mkdtemp()) / "resolved_config.yml"
+        f.write_text("systems:\n- system: 1UAO\n", encoding="utf-8")
+        answer = read_text_file(f)
+        self.assertEqual(answer["size"], len("systems:\n- system: 1UAO\n"))
+        self.assertEqual(len(answer["sha256"]), 12)
+        self.assertEqual(answer["lines"], 3)
+        self.assertEqual(answer["suffix"], "yml")
+
+    def test_code_is_the_default_and_the_choice_is_remembered(self):
+        script = _script()
+        self.assertIn('store.get("previewMode", "code")', script)
+        self.assertIn('store.set("previewMode", mode)', script)
+
+    def test_view_means_something_different_per_type(self):
+        script = _script()
+        for kind in ("renderTable", "renderTree", "renderLog", "renderStructure", "renderDoc"):
+            with self.subTest(kind=kind):
+                self.assertIn(f"function {kind}(", script)
+        # Markdown is escaped before it is rendered, so a file cannot put
+        # markup in the page.
+        doc = script[script.index("function renderDoc("):script.index("function showText(")]
+        self.assertIn("escapeText(text)", doc)
+
+    def test_the_seam_drags_resets_and_is_remembered(self):
+        page = _page()
+        self.assertIn('id="side-seam"', page)
+        script = _script()
+        self.assertIn('store.set("sideFilesHeight"', script)
+        self.assertIn('seam.addEventListener("dblclick"', script)
+        css = _css()
+        self.assertIn("flex: 0 0 var(--side-files-height, 45%)", css)
+        # Either side can take the whole panel: the bound is 0 to 100.
+        self.assertIn("Math.max(0, Math.min(100, pct))", script)
+
+    def test_the_preview_header_stays_put(self):
+        css = _css()
+        self.assertIn(".side-preview-head { position: sticky; top: 0;", css)

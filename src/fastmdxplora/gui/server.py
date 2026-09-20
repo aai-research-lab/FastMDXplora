@@ -300,6 +300,18 @@ def make_handler(
 
                 self._send_json(read_conversation(app_runtime))
                 return
+            if path == "/api/file-text":
+                # A run's own text file, for the Files tab's preview.
+                # Confined to the run root, over the same list of types
+                # the Agent's + accepts.
+                from fastmdxplora.gui.agent_panel import read_text_file
+
+                wanted = (parse_qs(parsed.query).get("path") or [""])[0]
+                root = app_runtime.active_root or app_runtime.workspace_root
+                self._send_json(read_text_file(
+                    Path(str(root)) / wanted if not Path(str(wanted)).is_absolute() else wanted,
+                    within=root))
+                return
             if path == "/api/agent/conversations":
                 from fastmdxplora.gui.agent_panel import list_conversations
 

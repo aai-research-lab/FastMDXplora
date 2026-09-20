@@ -803,43 +803,71 @@ ATTACH_LIMIT_BYTES = 200_000
 ATTACH_KEEP_EACH_END = 80_000
 
 
-def read_attachment(path: Any) -> dict[str, Any]:
-    """A text file the person chose, with what a model can read of it.
+PREVIEW_LIMIT_BYTES = 200_000
+PREVIEW_KEEP_EACH_END = 80_000
 
-    Text types only: a trajectory or a checkpoint is refused with a
-    sentence rather than fed to a model as bytes. A file past the limit
-    keeps its head and its tail, which is where a log's start and its
-    failure are, and says how much went from the middle.
+
+def read_text_file(path: Any, *, within: Any = None,
+                   limit: int = PREVIEW_LIMIT_BYTES) -> dict[str, Any]:
+    """A text file, with what can be shown of it, and what it is.
+
+    One reader for the Agent's attachments and the Files tab's preview,
+    over one list of types: a file you can attach is a file you can read.
+    ``within`` confines the read to a folder, for the preview, which
+    takes its path from a URL; the attachment picker is the person's own
+    choice and needs no fence beyond the type.
     """
     import hashlib
 
     file = Path(str(path or "")).expanduser()
     if not str(path or "").strip():
         return {"ok": False, "error": "No file given."}
+    if within is not None:
+        root = Path(str(within)).expanduser().resolve()
+        try:
+            resolved = file.resolve()
+            resolved.relative_to(root)
+        except (OSError, ValueError):
+            return {"ok": False, "error": "That file is outside this study."}
+        file = resolved
     if not file.is_file():
         return {"ok": False, "error": f"No such file: {file}"}
     if file.suffix.lower() not in ATTACHABLE_SUFFIXES:
         return {"ok": False,
-                "error": f"{file.name} is not a text file the Agent can read. "
-                         "Attach a config, a log, a manifest, a data table or a structure file."}
+                "error": f"{file.name} is not a text file. It can be downloaded "
+                         "or opened, but not read here."}
     try:
         raw = file.read_bytes()
     except OSError as exc:
         return {"ok": False, "error": f"Could not read {file.name}: {exc}"}
     digest = hashlib.sha256(raw).hexdigest()[:12]
     truncated = False
-    if len(raw) > ATTACH_LIMIT_BYTES:
-        head = raw[:ATTACH_KEEP_EACH_END].decode("utf-8", "replace")
-        tail = raw[-ATTACH_KEEP_EACH_END:].decode("utf-8", "replace")
-        dropped = len(raw) - 2 * ATTACH_KEEP_EACH_END
-        text = (head + f"\n\n[\u2026 {dropped:,} bytes from the middle of the file not shown \u2026]\n\n" + tail)
+    keep = min(PREVIEW_KEEP_EACH_END, max(1, limit // 2))
+    if len(raw) > limit:
+        head = raw[:keep].decode("utf-8", "replace")
+        tail = raw[-keep:].decode("utf-8", "replace")
+        dropped = len(raw) - 2 * keep
+        text = (head + f"\n\n[\u2026 {dropped:,} bytes from the middle of the file "
+                       f"not shown \u2026]\n\n" + tail)
         truncated = True
     else:
         text = raw.decode("utf-8", "replace")
     if "\x00" in text[:4000]:
-        return {"ok": False, "error": f"{file.name} looks binary; the Agent reads text."}
-    return {"ok": True, "name": file.name, "path": str(file.resolve()),
-            "size": len(raw), "sha256": digest, "text": text, "truncated": truncated}
+        return {"ok": False, "error": f"{file.name} looks binary; this reads text."}
+    return {"ok": True, "name": file.name, "path": str(file),
+            "suffix": file.suffix.lower().lstrip("."),
+            "size": len(raw), "sha256": digest, "text": text,
+            "truncated": truncated, "lines": text.count("\n") + 1}
+
+
+def read_attachment(path: Any) -> dict[str, Any]:
+    """A text file the person chose, for the Agent to read.
+
+    The same reader the Files tab uses, over the same list of types, so a
+    file you can attach is a file you can read and adding a type adds it
+    in both places.
+    """
+    return read_text_file(path, limit=ATTACH_LIMIT_BYTES)
 
 
 def _continuation_summary(root: Any) -> str:

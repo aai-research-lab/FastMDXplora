@@ -1023,10 +1023,19 @@
 
       <div class="side-pane" data-side-pane="files" role="tabpanel" hidden>
         <div class="side-files" id="side-files"></div>
+        <!-- The seam between the list and the preview: drag it, and
+             either can take the whole panel. Double-click resets. -->
+        <div class="side-seam" id="side-seam" role="separator" aria-orientation="horizontal"
+             aria-label="Resize the file list" hidden></div>
         <div class="side-preview" id="side-preview" hidden>
           <div class="side-preview-head">
             <span class="mono side-preview-name" id="side-preview-name"></span>
+            <span class="mono side-preview-facts" id="side-preview-facts"></span>
             <span class="side-panel-spacer"></span>
+            <div class="side-preview-modes" id="side-preview-modes" hidden role="group" aria-label="How to show this file">
+              <button type="button" class="mode-btn" data-mode="view">View</button>
+              <button type="button" class="mode-btn" data-mode="code">Code</button>
+            </div>
             <a class="ghost-btn side-preview-download" id="side-preview-download" href="#" download>Download</a>
             <a class="ghost-btn" id="side-preview-open" href="#" target="_blank" rel="noopener">Open</a>
           </div>

@@ -197,15 +197,190 @@
     return (n / 1048576).toFixed(1) + " MB";
   }
 
+  /* ---- The file preview ------------------------------------------------
+   *
+   * Two modes. Code is the bytes, with line numbers, and it is the
+   * default for anything scientific: a person checking a config wants
+   * the file, not a rendering of it. View is the convenience, and means
+   * something different per type -- a table for CSV, structure for JSON
+   * and YAML, a document for Markdown, a header summary for a structure
+   * file, levels coloured for a log. The choice is remembered.
+   * -------------------------------------------------------------------- */
+
+  var VIEWABLE = {
+    md: "doc", markdown: "doc",
+    csv: "table", tsv: "table", dat: "table",
+    json: "tree", yml: "tree", yaml: "tree", toml: "tree", ini: "tree", cfg: "tree",
+    log: "log", txt: "log",
+    pdb: "structure", cif: "structure",
+  };
+
+  function escapeText(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function renderCode(host, data) {
+    var wrap = document.createElement("div");
+    wrap.className = "file-code";
+    var lines = String(data.text || "").split("\n");
+    var gutter = document.createElement("div");
+    gutter.className = "gutter";
+    gutter.textContent = lines.map(function (_, i) { return i + 1; }).join("\n");
+    var pre = document.createElement("pre");
+    pre.className = "lines";
+    pre.textContent = data.text || "";
+    wrap.appendChild(gutter);
+    wrap.appendChild(pre);
+    host.appendChild(wrap);
+  }
+
+  function renderTable(host, text, sep) {
+    var rows = text.trim().split("\n").slice(0, 2000).map(function (r) { return r.split(sep); });
+    if (!rows.length) return false;
+    var table = document.createElement("table");
+    var head = document.createElement("tr");
+    rows[0].forEach(function (c) {
+      var th = document.createElement("th"); th.textContent = c.trim(); head.appendChild(th);
+    });
+    table.appendChild(head);
+    rows.slice(1).forEach(function (r) {
+      var tr = document.createElement("tr");
+      r.forEach(function (c) {
+        var td = document.createElement("td"); td.textContent = c.trim(); tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    host.appendChild(table);
+    return true;
+  }
+
+  function renderTree(host, text, suffix) {
+    /* JSON as key and value; YAML and the ini family as they are, which
+     * is already the structure. Neither is reformatted: what is shown is
+     * what the file says. */
+    if (suffix === "json") {
+      try {
+        var data = JSON.parse(text);
+        var dl = document.createElement("dl");
+        dl.className = "kv";
+        Object.keys(data).forEach(function (k) {
+          var dt = document.createElement("dt"); dt.textContent = k;
+          var dd = document.createElement("dd");
+          var v = data[k];
+          dd.textContent = (v && typeof v === "object") ? JSON.stringify(v) : String(v);
+          dl.appendChild(dt); dl.appendChild(dd);
+        });
+        host.appendChild(dl);
+        return true;
+      } catch (e) { return false; }
+    }
+    var pre = document.createElement("pre");
+    pre.textContent = text;
+    host.appendChild(pre);
+    return true;
+  }
+
+  function renderLog(host, text) {
+    text.split("\n").slice(0, 5000).forEach(function (line) {
+      var div = document.createElement("div");
+      var upper = line.toUpperCase();
+      div.className = "log-line" + (/ERROR|REFUS|FAIL|TRACEBACK/.test(upper) ? " error"
+        : /WARN/.test(upper) ? " warn"
+        : /\u2713|DONE|COMPLETE|WROTE/.test(upper) ? " ok" : "");
+      div.textContent = line;
+      host.appendChild(div);
+    });
+  }
+
+  function renderStructure(host, text) {
+    /* What the file holds, before the file: atoms, residues, chains,
+     * models. A structure file is thousands of lines that all look the
+     * same, and the counts are what a person is checking. */
+    var atoms = 0, models = 0;
+    var residues = {}, chains = {};
+    text.split("\n").forEach(function (line) {
+      if (line.indexOf("ATOM") === 0 || line.indexOf("HETATM") === 0) {
+        atoms += 1;
+        chains[line.substr(21, 1)] = true;
+        residues[line.substr(21, 1) + line.substr(22, 5)] = true;
+      } else if (line.indexOf("MODEL") === 0) { models += 1; }
+    });
+    if (atoms) {
+      var note = document.createElement("div");
+      note.className = "summary";
+      note.textContent = atoms.toLocaleString() + " atoms \u00b7 "
+        + Object.keys(residues).length.toLocaleString() + " residues \u00b7 "
+        + Object.keys(chains).length + " chain(s)"
+        + (models > 1 ? " \u00b7 " + models + " models" : "");
+      host.appendChild(note);
+    }
+    var pre = document.createElement("pre");
+    pre.textContent = text;
+    host.appendChild(pre);
+  }
+
+  function renderDoc(host, text) {
+    /* Markdown, the little of it a report uses: headings, bold, italic,
+     * code, links. Escaped first, so a file cannot put markup in the
+     * page. */
+    var html = escapeText(text)
+      .replace(/^### (.*)$/gm, "<h4>$1</h4>")
+      .replace(/^## (.*)$/gm, "<h3>$1</h3>")
+      .replace(/^# (.*)$/gm, "<h2>$1</h2>")
+      .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*(\S(?:[^*\n]*\S)?)\*(?!\*)/g, "$1<em>$2</em>")
+      .replace(/\n{2,}/g, "<br><br>");
+    var div = document.createElement("div");
+    div.innerHTML = html;
+    host.appendChild(div);
+  }
+
+  function showText(body, data, mode) {
+    body.innerHTML = "";
+    if (data.truncated) {
+      var cut = document.createElement("div");
+      cut.className = "cut";
+      cut.textContent = "Shown: the start and the end of the file. The middle is "
+        + "not here; download it to read the whole.";
+      body.appendChild(cut);
+    }
+    if (mode === "code") { renderCode(body, data); return; }
+    var host = document.createElement("div");
+    host.className = "file-view";
+    var kind = VIEWABLE[data.suffix] || "log";
+    var text = data.text || "";
+    if (kind === "table") {
+      if (!renderTable(host, text, data.suffix === "tsv" ? "\t" : data.suffix === "dat" ? /\s+/ : ",")) {
+        renderLog(host, text);
+      }
+    } else if (kind === "tree") {
+      if (!renderTree(host, text, data.suffix)) renderLog(host, text);
+    } else if (kind === "structure") {
+      renderStructure(host, text);
+    } else if (kind === "doc") {
+      renderDoc(host, text);
+    } else {
+      renderLog(host, text);
+    }
+    body.appendChild(host);
+  }
+
   function preview(item) {
     var pane = el("side-preview");
     var body = el("side-preview-body");
     if (!pane || !body) return;
     pane.hidden = false;
+    var seam = el("side-seam");
+    if (seam) seam.hidden = false;
     el("side-preview-name").textContent = item.path;
+    el("side-preview-facts").textContent = "";
     el("side-preview-download").href = item.download_href || item.href;
     el("side-preview-open").href = item.href;
     body.innerHTML = "";
+    var modes = el("side-preview-modes");
+    if (modes) modes.hidden = true;
     var ext = (item.name || "").split(".").pop().toLowerCase();
     if (["png", "jpg", "jpeg", "gif", "svg", "webp"].indexOf(ext) !== -1) {
       var img = document.createElement("img");
@@ -221,24 +396,49 @@
       body.appendChild(frame);
       return;
     }
-    if (["yml", "yaml", "json", "md", "txt", "log", "csv", "pdb", "dat"].indexOf(ext) !== -1
-        && Number(item.size || 0) < 512 * 1024) {
-      fetch(item.href).then(function (r) { return r.text(); }).then(function (text) {
-        var pre = document.createElement("pre");
-        pre.textContent = text;
-        body.appendChild(pre);
-      }).catch(function () {
+    /* Everything the Agent's + accepts, read by the same reader over the
+     * same list of types. The old preview had a shorter list of its own
+     * and a 512 KB cliff with no explanation. */
+    fetch("/api/file-text?path=" + encodeURIComponent(item.path))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || !data.ok) {
+          var note = document.createElement("div");
+          note.className = "side-preview-note";
+          note.textContent = (data && data.error)
+            || "Could not read it here. Open or download it instead.";
+          body.appendChild(note);
+          return;
+        }
+        el("side-preview-facts").textContent =
+          (data.size < 1024 ? data.size + " B"
+           : data.size < 1048576 ? (data.size / 1024).toFixed(1) + " KB"
+           : (data.size / 1048576).toFixed(1) + " MB")
+          + " \u00b7 " + data.lines.toLocaleString() + " lines \u00b7 " + data.sha256;
+        var canView = Object.prototype.hasOwnProperty.call(VIEWABLE, data.suffix);
+        var mode = canView ? (store.get("previewMode", "code") === "view" ? "view" : "code") : "code";
+        if (modes && canView) {
+          modes.hidden = false;
+          Array.prototype.forEach.call(modes.querySelectorAll(".mode-btn"), function (b) {
+            b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+            b.onclick = function () {
+              mode = b.dataset.mode;
+              store.set("previewMode", mode);
+              Array.prototype.forEach.call(modes.querySelectorAll(".mode-btn"), function (o) {
+                o.setAttribute("aria-pressed", String(o.dataset.mode === mode));
+              });
+              showText(body, data, mode);
+            };
+          });
+        }
+        showText(body, data, mode);
+      })
+      .catch(function () {
         var note = document.createElement("div");
         note.className = "side-preview-note";
         note.textContent = "Could not read it here. Open or download it instead.";
         body.appendChild(note);
       });
-      return;
-    }
-    var note = document.createElement("div");
-    note.className = "side-preview-note";
-    note.textContent = "No preview for this kind of file. Open or download it.";
-    body.appendChild(note);
   }
 
   function renderFiles(items) {
@@ -454,6 +654,38 @@
           }).then(function () { location.reload(); });
         });
       }
+    }
+
+    /* The seam between the file list and the preview. Drag it; either
+     * side can take the whole panel. Double-click resets. Remembered,
+     * as the column seams are. */
+    var seam = el("side-seam");
+    var files = el("side-files");
+    if (seam && files) {
+      function setFilesHeight(pct) {
+        var bounded = Math.max(0, Math.min(100, pct));
+        document.documentElement.style.setProperty("--side-files-height", bounded + "%");
+        store.set("sideFilesHeight", String(bounded));
+      }
+      setFilesHeight(parseFloat(store.get("sideFilesHeight", "45")) || 45);
+      seam.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        seam.classList.add("dragging");
+        var pane = files.parentElement;
+        function move(ev) {
+          var box = pane.getBoundingClientRect();
+          if (box.height <= 0) return;
+          setFilesHeight(((ev.clientY - box.top) / box.height) * 100);
+        }
+        function up() {
+          seam.classList.remove("dragging");
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+        }
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+      });
+      seam.addEventListener("dblclick", function () { setFilesHeight(45); });
     }
 
     var version = el("settings-version");
