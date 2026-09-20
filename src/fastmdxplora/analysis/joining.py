@@ -56,7 +56,7 @@ class SegmentPiece:
         return self.finished and self.trajectory is not None
 
 
-def _config_digest(directory: Path) -> str:
+def _config_digest(directory: Path, *, _depth: int = 0) -> str:
     """What study this segment was, from its own resolved config.
 
     Reads the settings that define the study rather than hashing the file:
@@ -87,12 +87,40 @@ def _config_digest(directory: Path) -> str:
         return ""
 
     simulation = dict(data.get("simulation") or {})
+    # A segment that reuses another study's prepared system IS that study:
+    # the same solvated box, the same water placement, the same atoms, on
+    # disk. Its identity is the parent's, which is a stronger statement
+    # than any comparison of settings -- and true where a comparison is
+    # not, since resolving a config materialises defaults unevenly and a
+    # ligand name can appear for a study that has no ligand.
+    reuses = simulation.get("prepared_from") or simulation.get("setup_from")
+    if reuses and _depth < 4:
+        parent = Path(str(reuses))
+        if parent.is_dir() and parent.resolve() != directory.resolve():
+            inherited = _config_digest(parent, _depth=_depth + 1)
+            if inherited:
+                return inherited
     for varies_by_design in ("production_steps", "duration_ns", "minimize",
                              "nvt_steps", "npt_steps", "resume_from",
-                             "nvt_duration_ns", "npt_duration_ns"):
+                             "nvt_duration_ns", "npt_duration_ns",
+                             # A continuation states the ensemble the parent
+                             # left implicit, and names the parent it reuses
+                             # the prepared system from. Both say the two are
+                             # the same study rather than different ones.
+                             "ensemble", "setup_from", "prepared_from"):
         simulation.pop(varies_by_design, None)
-    identity = {"setup": data.get("setup"), "systems": data.get("systems"),
-                "simulation": simulation}
+
+    def decided(block: Any) -> dict[str, Any]:
+        """What was decided. A setting absent and a setting explicitly
+        null are the same decision; resolving a config materialises some
+        defaults and not others, and a digest that called those two
+        studies different would refuse to join a run to its own
+        continuation."""
+        return {k: v for k, v in dict(block or {}).items() if v is not None}
+
+    identity = {"setup": decided(data.get("setup")),
+                "systems": data.get("systems"),
+                "simulation": decided(simulation)}
     return hashlib.sha256(
         json.dumps(identity, sort_keys=True, default=str).encode()
     ).hexdigest()[:16]
@@ -111,6 +139,20 @@ def survey_segments(root: Path | str, *,
 
     base = Path(root)
     pieces: list[SegmentPiece] = []
+    # A study that ran in one piece and was then extended keeps its first
+    # trajectory where it wrote it. Its own simulation/ is segment zero --
+    # the index a campaign's first segment has -- and the extensions are
+    # segment-001 onward, so nothing a run wrote is moved to make the
+    # numbering tidy. A campaign that has its own segment-000 is untouched.
+    own = base / "simulation"
+    if own.is_dir() and not (base / "segment-000").is_dir():
+        own_trajectory = own / trajectory_name
+        if own_trajectory.is_file():
+            own_seal = (own / "checkpoint.chk").with_suffix(
+                ".chk" + CHECKPOINT_DIGEST_SUFFIX)
+            pieces.append(SegmentPiece(
+                index=0, directory=base, trajectory=own_trajectory,
+                finished=own_seal.is_file(), config_digest=_config_digest(base)))
     for directory in sorted(base.glob("segment-*")):
         if not directory.is_dir():
             continue

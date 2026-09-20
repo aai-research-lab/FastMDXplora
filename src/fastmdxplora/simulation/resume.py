@@ -508,3 +508,171 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     return Continuation(parent=str(root), checkpoint=str(checkpoint),
                         production_done_ns=done_ns, production_planned_ns=planned_ns,
                         config=new)
+
+
+# ---------------------------------------------------------------------------
+# Extending a study, without leaving the joining to the person.
+#
+# A continuation is more of the same study, not a new one: the same
+# system, the same water, the same velocities carried through a
+# checkpoint. So it belongs inside the study, as its next segment, and
+# the pieces are put together and re-analysed by the software rather
+# than by hand. What the join refuses -- a gap, an unsealed segment,
+# segments from two studies -- it still refuses; automatic does not mean
+# unchecked.
+# ---------------------------------------------------------------------------
+
+
+def next_segment_index(study: str | Path) -> int:
+    """The next free segment number. A study that ran in one piece is its
+    own segment zero, the index a campaign's first segment has, so its
+    first extension is one."""
+    root = Path(study)
+    used = {0} if (root / "simulation").is_dir() else set()
+    for directory in root.glob("segment-*"):
+        try:
+            used.add(int(directory.name.split("-", 1)[1]))
+        except (IndexError, ValueError):
+            continue
+    return (max(used) + 1) if used else 0
+
+
+def segments_so_far(study: str | Path) -> list[int]:
+    from fastmdxplora.analysis.joining import survey_segments
+
+    return sorted(piece.index for piece in survey_segments(study))
+
+
+def production_done_ns(study: str | Path) -> float:
+    """Production across every finished segment of this study."""
+    import yaml
+
+    root = Path(study)
+    total = 0.0
+    for index in segments_so_far(root):
+        folder = root if index == 0 else root / f"segment-{index:03d}"
+        resolved = folder / "resolved_config.yml"
+        try:
+            config = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        piece = continuation_of(folder)
+        total += piece.production_done_ns if piece.production_done_ns else float(
+            (config.get("simulation") or {}).get("duration_ns") or 0.0)
+    return round(total, 9)
+
+
+def extension_of(study: str | Path, *, total_ns: float | None = None,
+                 more_ns: float | None = None) -> Continuation:
+    """The next segment of ``study``, written inside it.
+
+    The same continuation as before -- resumed from the checkpoint, no
+    minimisation, no equilibration -- but its output is the study's next
+    segment folder and it runs the simulation only. Analysis and the
+    report come after the join, over the whole trajectory.
+    """
+    done = production_done_ns(study)
+    if total_ns is not None:
+        wanted = float(total_ns) - done
+    elif more_ns is not None:
+        wanted = float(more_ns)
+    else:
+        wanted = None
+
+    plan = continuation_of(study, more_ns=wanted) if wanted is not None \
+        else continuation_of(study)
+    if not plan.possible:
+        return plan
+    index = next_segment_index(study)
+    config = dict(plan.config)
+    config["output"] = str(Path(study) / f"segment-{index:03d}")
+    # The segment simulates. The study's analysis and report are rerun
+    # over the joined trajectory once it exists.
+    config["include"] = ["simulation"]
+    config.pop("exclude", None)
+    return Continuation(parent=plan.parent, checkpoint=plan.checkpoint,
+                        production_done_ns=done,
+                        production_planned_ns=plan.production_planned_ns,
+                        config=config)
+
+
+def extend_study(study: str | Path, *, total_ns: float | None = None,
+                 more_ns: float | None = None,
+                 analyse: bool = True) -> dict[str, Any]:
+    """Run the next segment, join the study, and analyse the whole.
+
+    Three steps, so that asking for more sampling is one instruction
+    rather than three: simulate the segment into the study; join every
+    finished segment into one trajectory; rerun the analyses and the
+    report over that trajectory. The join refuses a gap, an unsealed
+    segment or segments from two studies, and a refusal stops the step
+    rather than being worked around -- an automatic join that papers over
+    a discontinuity is worse than one that never ran.
+    """
+    import yaml
+
+    from fastmdxplora.analysis.joining import join_segments
+
+    root = Path(study).expanduser().resolve()
+    plan = extension_of(root, total_ns=total_ns, more_ns=more_ns)
+    if not plan.possible:
+        return {"ok": False, "error": plan.refusal, "stage": "planning"}
+
+    segment = Path(plan.config["output"])
+    config_path = segment.with_name(segment.name + ".yml")
+    segment.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.safe_dump(plan.config, sort_keys=False),
+                           encoding="utf-8")
+
+    from fastmdxplora import FastMDXplora
+
+    study_run = FastMDXplora(config_data=plan.config, output_dir=str(segment))
+    study_run.explore()
+
+    # Every finished segment, in one trajectory, in the study's own folder.
+    joined_dir = root / "joined"
+    joined_dir.mkdir(parents=True, exist_ok=True)
+    # The trajectory's own topology, not the system's. A run that saved a
+    # selection -- "not water", almost always -- writes frames of those
+    # atoms and a matching trajectory_topology.pdb beside them; joining
+    # against the full solvated system asks MDTraj to read 37 atoms into
+    # 1369 and it refuses, rightly.
+    topology = root / "simulation" / "trajectory_topology.pdb"
+    try:
+        record = join_segments(root, joined_dir / "production.dcd",
+                               topology=topology if topology.is_file() else None)
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        from fastmdxplora.refusals import refusal_of
+
+        return {"ok": False, "stage": "joining", "segment": str(segment),
+                "error": str(exc), "refusal": refusal_of(exc).as_dict()}
+    (joined_dir / "joined.json").write_text(
+        json_dumps(record), encoding="utf-8")
+
+    if not analyse:
+        return {"ok": True, "segment": str(segment), "joined": record,
+                "analysed": False}
+
+    # The study's analyses and report, over the whole trajectory.
+    whole = dict(plan.config)
+    whole["output"] = str(root)
+    whole["include"] = ["analysis", "report"]
+    analysis = dict(whole.get("analysis") or {})
+    analysis["trajectory"] = str(joined_dir / "production.dcd")
+    topology = root / "simulation" / "trajectory_topology.pdb"
+    if topology.is_file():
+        analysis["topology"] = str(topology)
+    whole["analysis"] = analysis
+    # The study's own analysis and report are replaced on purpose: they
+    # described a shorter trajectory than the study now has, and leaving
+    # them would leave a report whose numbers are for a run that is no
+    # longer the whole of it. The segments themselves are never touched.
+    FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+    return {"ok": True, "segment": str(segment), "joined": record,
+            "analysed": True, "trajectory": str(joined_dir / "production.dcd")}
+
+
+def json_dumps(value: Any) -> str:
+    import json
+
+    return json.dumps(value, indent=1, default=str)

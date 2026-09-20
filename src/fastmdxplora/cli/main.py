@@ -860,6 +860,26 @@ def _build_parser() -> argparse.ArgumentParser:
         _attach_phase_options(pp, opts, group_title=f"{phase} options",
                               phase=phase)
 
+    ex = sub.add_parser(
+        "extend",
+        help="Run more production on a finished study, joined and reanalysed.",
+        description=(
+            "Continue a study from its checkpoint and leave one study behind, "
+            "not two. The extra production runs as the study's next segment, "
+            "every finished segment is joined into one trajectory, and the "
+            "analyses and the report are rerun over the whole of it. The join "
+            "refuses a gap, an unsealed segment or segments from two studies."
+        ),
+    )
+    ex.add_argument("study", help="The study directory to extend.")
+    group = ex.add_mutually_exclusive_group(required=True)
+    group.add_argument("--to", type=float, metavar="NS",
+                       help="Total production wanted, counting what already ran.")
+    group.add_argument("--more", type=float, metavar="NS",
+                       help="Additional production to run.")
+    ex.add_argument("--no-analysis", action="store_true",
+                    help="Simulate and join, but leave the analyses alone.")
+
     sub.add_parser(
         "info",
         help="Print FastMDXplora environment information.",
@@ -2096,6 +2116,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     # removed. The decision is here, in one place, and nothing half-implements
     # its opposite. If the fail-fast policy is wanted instead, it is a change
     # to this comment and a call on the next line, not a resurrection.
+
+    if args.command == "extend":
+        from fastmdxplora.simulation.resume import extend_study
+
+        answer = extend_study(args.study, total_ns=args.to, more_ns=args.more,
+                              analyse=not args.no_analysis)
+        if not answer.get("ok"):
+            print(f"fastmdx: {answer.get('error')}")
+            return 1
+        joined = answer.get("joined") or {}
+        pieces = joined.get("segments") or joined.get("joined") or "?"
+        print(f"Ran {Path(answer['segment']).name} and joined {pieces} segments.")
+        if answer.get("analysed"):
+            print(f"Analyses and report rerun over {answer['trajectory']}.")
+        return 0
 
     if args.command == "agent":
         return _run_agent(args)
