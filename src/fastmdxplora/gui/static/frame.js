@@ -281,7 +281,7 @@
     return true;
   }
 
-  function renderLog(host, text) {
+  function renderFileLog(host, text) {
     text.split("\n").slice(0, 5000).forEach(function (line) {
       var div = document.createElement("div");
       var upper = line.toUpperCase();
@@ -353,16 +353,16 @@
     var text = data.text || "";
     if (kind === "table") {
       if (!renderTable(host, text, data.suffix === "tsv" ? "\t" : data.suffix === "dat" ? /\s+/ : ",")) {
-        renderLog(host, text);
+        renderFileLog(host, text);
       }
     } else if (kind === "tree") {
-      if (!renderTree(host, text, data.suffix)) renderLog(host, text);
+      if (!renderTree(host, text, data.suffix)) renderFileLog(host, text);
     } else if (kind === "structure") {
       renderStructure(host, text);
     } else if (kind === "doc") {
       renderDoc(host, text);
     } else {
-      renderLog(host, text);
+      renderFileLog(host, text);
     }
     body.appendChild(host);
   }

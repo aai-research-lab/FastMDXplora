@@ -847,3 +847,66 @@ class TestTheSidePanelTabsRendered(unittest.TestCase):
                 browser.close()
         finally:
             session.server.shutdown()
+
+
+class TestNoFunctionInTheFrameIsDefinedTwice(unittest.TestCase):
+    """The file viewer's log renderer was named renderLog, the same as the
+    panel's event-log renderer. In one scope the second definition
+    replaces the first, so every call meant to draw the event log drew a
+    file with the wrong arguments, and the Log went blank. A reading of
+    the code would not have caught it; this does."""
+
+    def test_every_function_name_is_defined_once(self):
+        import re
+
+        script = _script()
+        # The module's own scope: functions at two-space indent inside the
+        # IIFE. Inner helpers -- a drag handler's move and up -- live in
+        # their own scope and may share names.
+        names = re.findall(r"^  function (\w+)\(", script, flags=re.M)
+        seen = {}
+        for n in names:
+            seen[n] = seen.get(n, 0) + 1
+        twice = sorted(n for n, c in seen.items() if c > 1)
+        self.assertEqual(twice, [], f"defined more than once in frame.js: {twice}")
+
+    def test_the_viewer_has_its_own_log_renderer(self):
+        script = _script()
+        self.assertIn("function renderFileLog(host, text)", script)
+        self.assertEqual(script.count("function renderLog("), 1)
+
+
+@unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
+class TestTheLogRendersLines(unittest.TestCase):
+
+    def test_the_event_log_shows_the_runs_narration(self):
+        import sys
+
+        from playwright.sync_api import sync_playwright
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        session = start_dashboard_session(output="/tmp/sh7/whole", host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto(session.url, wait_until="domcontentloaded")
+                page.wait_for_selector(".side-panel", timeout=20000)
+                page.evaluate("() => window.FastMDXFrame.showTab('log')")
+                page.wait_for_selector("#side-log .side-log-line, #side-log .side-log-empty", timeout=20000)
+                lines = page.eval_on_selector_all("#side-log .side-log-line", "els => els.length")
+                self.assertGreater(lines, 5, "a finished run narrates more than five lines")
+                # Code mode draws its line numbers down, not across.
+                page.evaluate("() => window.FastMDXFrame.showTab('files')")
+                page.wait_for_selector("#side-files button.side-file", timeout=20000)
+                page.eval_on_selector_all("#side-files button.side-file", "els => els[0].click()")
+                page.wait_for_selector("#side-preview-modes:not([hidden])", timeout=20000)
+                page.click('#side-preview-modes .mode-btn[data-mode="code"]')
+                page.wait_for_selector("#side-preview-body .file-code", state="attached", timeout=20000)
+                ws = page.eval_on_selector(".file-code .gutter", "el => getComputedStyle(el).whiteSpace")
+                self.assertEqual(ws, "pre")
+                browser.close()
+        finally:
+            session.server.shutdown()

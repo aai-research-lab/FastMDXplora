@@ -3127,7 +3127,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .side-preview-modes .mode-btn[aria-pressed="true"] { background: var(--background-elevated); color: var(--text-primary); }
 /* Code: the bytes, with line numbers. */
 .file-code { display: flex; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; }
-.file-code .gutter { flex: none; padding: 8px 8px 8px 10px; text-align: right; color: var(--text-muted); user-select: none; border-right: 1px solid var(--border-subtle); }
+.file-code .gutter { flex: none; padding: 8px 8px 8px 10px; text-align: right; color: var(--text-muted); user-select: none; border-right: 1px solid var(--border-subtle); white-space: pre; }
+.file-code { align-items: flex-start; }
 .file-code .lines { flex: 1; padding: 8px 10px; margin: 0; white-space: pre; overflow-x: auto; }
 /* View: rendered per type. */
 .file-view { padding: 10px 12px; font-size: 12.5px; line-height: 1.6; }
@@ -3142,3 +3143,12 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .file-view .log-line.ok { color: var(--status-success, #5fc08a); }
 .file-view .summary { margin: 0 0 8px; padding: 6px 8px; border-radius: 6px; background: var(--background-elevated); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 .file-view .cut { margin: 8px 0; padding: 4px 8px; border-left: 2px solid var(--border-primary); color: var(--text-muted); font-size: 11px; }
+
+/* The preview head, in two rows: the name and its facts, then the
+   controls. In one row a 560px panel cut the name to "resolved_conf…"
+   and clipped the Code button. */
+.side-preview-head { flex-wrap: wrap; row-gap: 6px; }
+.side-preview-head .side-preview-name { flex: 1 1 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-preview-head .side-preview-facts { flex: 1 1 auto; }
+.side-preview-head .side-panel-spacer { display: none; }
+.side-preview-head .side-preview-modes { margin-left: auto; }
