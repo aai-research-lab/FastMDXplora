@@ -35,18 +35,7 @@ def report_payload(root: Path | str) -> dict[str, Any]:
     # was written, which is legible Markdown. CI installs the base
     # package and found this: five failures where a Mac with the extra
     # had passed.
-    try:
-        import markdown
-    except ImportError:
-        html = '<pre class="report-plain">' + _escape(text) + "</pre>"
-        rendered = "plain"
-    else:
-        html = markdown.markdown(
-            text,
-            extensions=["tables", "fenced_code", "toc"],
-            output_format="html5",
-        )
-        rendered = "html"
+    html, rendered = render_markdown(text)
 
     not_produced: list[dict[str, str]] = []
     record = report_dir / "not_produced.json"
@@ -93,3 +82,17 @@ def _generated_line(text: str) -> str:
 def _escape(text: str) -> str:
     return (text.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
+
+
+def render_markdown(text: str) -> tuple[str, str]:
+    """Markdown to HTML, or the text as written where the library is not
+    installed. One renderer for the report page and the Files tab's
+    preview, so a .md file reads the same on both and there is nothing
+    vendored: the browser has no Markdown of its own, and the Python
+    library is the one this software already trusts for its report."""
+    try:
+        import markdown
+    except ImportError:
+        return '<pre class="report-plain">' + _escape(text) + "</pre>", "plain"
+    return (markdown.markdown(text, extensions=["tables", "fenced_code", "toc"],
+                              output_format="html5"), "html")

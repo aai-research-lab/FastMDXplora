@@ -235,52 +235,6 @@
     host.appendChild(wrap);
   }
 
-  function renderTable(host, text, sep) {
-    var rows = text.trim().split("\n").slice(0, 2000).map(function (r) { return r.split(sep); });
-    if (!rows.length) return false;
-    var table = document.createElement("table");
-    var head = document.createElement("tr");
-    rows[0].forEach(function (c) {
-      var th = document.createElement("th"); th.textContent = c.trim(); head.appendChild(th);
-    });
-    table.appendChild(head);
-    rows.slice(1).forEach(function (r) {
-      var tr = document.createElement("tr");
-      r.forEach(function (c) {
-        var td = document.createElement("td"); td.textContent = c.trim(); tr.appendChild(td);
-      });
-      table.appendChild(tr);
-    });
-    host.appendChild(table);
-    return true;
-  }
-
-  function renderTree(host, text, suffix) {
-    /* JSON as key and value; YAML and the ini family as they are, which
-     * is already the structure. Neither is reformatted: what is shown is
-     * what the file says. */
-    if (suffix === "json") {
-      try {
-        var data = JSON.parse(text);
-        var dl = document.createElement("dl");
-        dl.className = "kv";
-        Object.keys(data).forEach(function (k) {
-          var dt = document.createElement("dt"); dt.textContent = k;
-          var dd = document.createElement("dd");
-          var v = data[k];
-          dd.textContent = (v && typeof v === "object") ? JSON.stringify(v) : String(v);
-          dl.appendChild(dt); dl.appendChild(dd);
-        });
-        host.appendChild(dl);
-        return true;
-      } catch (e) { return false; }
-    }
-    var pre = document.createElement("pre");
-    pre.textContent = text;
-    host.appendChild(pre);
-    return true;
-  }
-
   function renderFileLog(host, text) {
     text.split("\n").slice(0, 5000).forEach(function (line) {
       var div = document.createElement("div");
@@ -320,21 +274,179 @@
     host.appendChild(pre);
   }
 
-  function renderDoc(host, text) {
-    /* Markdown, the little of it a report uses: headings, bold, italic,
-     * code, links. Escaped first, so a file cannot put markup in the
-     * page. */
-    var html = escapeText(text)
-      .replace(/^### (.*)$/gm, "<h4>$1</h4>")
-      .replace(/^## (.*)$/gm, "<h3>$1</h3>")
-      .replace(/^# (.*)$/gm, "<h2>$1</h2>")
-      .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[^*])\*(\S(?:[^*\n]*\S)?)\*(?!\*)/g, "$1<em>$2</em>")
-      .replace(/\n{2,}/g, "<br><br>");
+  function renderDoc(host, data) {
+    /* The server renders Markdown with the same library the report page
+     * uses, so a .md reads the same on both and nothing is vendored. On
+     * an install without the library the text is shown as written,
+     * exactly as the report page does. */
     var div = document.createElement("div");
-    div.innerHTML = html;
+    div.className = "report-document";
+    if (data.html) {
+      div.innerHTML = data.html;
+    } else {
+      var pre = document.createElement("pre");
+      pre.textContent = data.text || "";
+      div.appendChild(pre);
+    }
     host.appendChild(div);
+  }
+
+  /* ---- A collapsible tree for JSON, and for YAML by its indentation ---- */
+
+  function treeNode(key, value, depth) {
+    var row = document.createElement("div");
+    row.className = "tree-row";
+    row.style.paddingLeft = (depth * 14 + 4) + "px";
+    var isObj = value && typeof value === "object";
+    var isArr = Array.isArray(value);
+    if (isObj) {
+      var n = isArr ? value.length : Object.keys(value).length;
+      var toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "tree-toggle";
+      toggle.textContent = depth < 1 ? "\u25be" : "\u25b8";
+      var label = document.createElement("span");
+      label.className = "tree-key";
+      label.textContent = key === null ? "" : key;
+      var meta = document.createElement("span");
+      meta.className = "tree-meta";
+      meta.textContent = (isArr ? "[" + n + "]" : "{" + n + "}");
+      row.appendChild(toggle); row.appendChild(label); row.appendChild(meta);
+      var kids = document.createElement("div");
+      kids.className = "tree-kids";
+      kids.hidden = depth >= 1;
+      (isArr ? value.map(function (v, i) { return [i, v]; })
+             : Object.keys(value).map(function (k) { return [k, value[k]]; }))
+        .forEach(function (pair) { kids.appendChild(treeNode(pair[0], pair[1], depth + 1)); });
+      toggle.addEventListener("click", function () {
+        kids.hidden = !kids.hidden;
+        toggle.textContent = kids.hidden ? "\u25b8" : "\u25be";
+      });
+      var wrap = document.createElement("div");
+      wrap.appendChild(row); wrap.appendChild(kids);
+      return wrap;
+    }
+    var k = document.createElement("span");
+    k.className = "tree-key";
+    k.textContent = key === null ? "" : key;
+    var v = document.createElement("span");
+    v.className = "tree-val " + (value === null ? "null" : typeof value);
+    v.textContent = value === null ? "null" : typeof value === "string" ? value : String(value);
+    row.appendChild(k); row.appendChild(v);
+    return row;
+  }
+
+  function renderJsonTree(host, text) {
+    var data;
+    try { data = JSON.parse(text); } catch (e) { return false; }
+    var tree = document.createElement("div");
+    tree.className = "file-tree";
+    if (data && typeof data === "object") {
+      (Array.isArray(data) ? data.map(function (v, i) { return [i, v]; })
+                           : Object.keys(data).map(function (k) { return [k, data[k]]; }))
+        .forEach(function (pair) { tree.appendChild(treeNode(pair[0], pair[1], 0)); });
+    } else {
+      tree.appendChild(treeNode(null, data, 0));
+    }
+    host.appendChild(tree);
+    return true;
+  }
+
+  function renderYamlTree(host, text) {
+    /* YAML is its indentation. Each line becomes a row at its depth; a
+     * line whose next line is deeper gets a toggle that folds what is
+     * under it. No parser, so what is shown is what the file says. */
+    var lines = text.split("\n");
+    var tree = document.createElement("div");
+    tree.className = "file-tree";
+    var rows = [];
+    lines.forEach(function (line, i) {
+      if (!line.trim() || line.trim().indexOf("#") === 0) return;
+      var indent = line.match(/^ */)[0].length;
+      var next = null;
+      for (var j = i + 1; j < lines.length; j++) {
+        if (lines[j].trim() && lines[j].trim().indexOf("#") !== 0) { next = lines[j].match(/^ */)[0].length; break; }
+      }
+      rows.push({ text: line.trim(), depth: indent, parent: next !== null && next > indent });
+    });
+    var stack = [];
+    rows.forEach(function (r) {
+      while (stack.length && stack[stack.length - 1].depth >= r.depth) stack.pop();
+      var row = document.createElement("div");
+      row.className = "tree-row";
+      row.style.paddingLeft = (r.depth * 7 + 4) + "px";  /* a space of YAML is 7px of tree */
+      var parts = r.text.match(/^(-?\s*[^:]+?:)(\s.*)?$/);
+      if (r.parent) {
+        var toggle = document.createElement("button");
+        toggle.type = "button"; toggle.className = "tree-toggle"; toggle.textContent = "\u25be";
+        row.appendChild(toggle);
+      }
+      var k = document.createElement("span"); k.className = "tree-key";
+      var v = document.createElement("span"); v.className = "tree-val string";
+      if (parts) { k.textContent = parts[1]; v.textContent = (parts[2] || "").trim(); }
+      else { k.textContent = r.text; }
+      row.appendChild(k); row.appendChild(v);
+      var kids = document.createElement("div");
+      kids.className = "tree-kids";
+      var wrap = document.createElement("div");
+      wrap.appendChild(row); wrap.appendChild(kids);
+      (stack.length ? stack[stack.length - 1].kids : tree).appendChild(wrap);
+      if (r.parent) {
+        var t = row.querySelector(".tree-toggle");
+        t.addEventListener("click", function () {
+          kids.hidden = !kids.hidden; t.textContent = kids.hidden ? "\u25b8" : "\u25be";
+        });
+        stack.push({ depth: r.depth, kids: kids });
+      }
+    });
+    host.appendChild(tree);
+    return true;
+  }
+
+  /* ---- A table that sorts on a click of its header ---------------------- */
+
+  function renderTable(host, text, sep) {
+    var rows = text.trim().split("\n").slice(0, 5000).map(function (r) { return r.split(sep); });
+    if (!rows.length) return false;
+    var table = document.createElement("table");
+    table.className = "file-table";
+    var thead = document.createElement("thead");
+    var head = document.createElement("tr");
+    var body = document.createElement("tbody");
+    var data = rows.slice(1);
+    function fill() {
+      body.innerHTML = "";
+      data.forEach(function (r) {
+        var tr = document.createElement("tr");
+        r.forEach(function (c) { var td = document.createElement("td"); td.textContent = String(c).trim(); tr.appendChild(td); });
+        body.appendChild(tr);
+      });
+    }
+    rows[0].forEach(function (c, i) {
+      var th = document.createElement("th");
+      th.textContent = String(c).trim();
+      th.title = "Sort by " + th.textContent;
+      var asc = true;
+      th.addEventListener("click", function () {
+        data.sort(function (a, b) {
+          var x = a[i], y = b[i];
+          var nx = parseFloat(x), ny = parseFloat(y);
+          var cmp = (!isNaN(nx) && !isNaN(ny)) ? nx - ny : String(x).localeCompare(String(y));
+          return asc ? cmp : -cmp;
+        });
+        asc = !asc;
+        Array.prototype.forEach.call(head.children, function (h) { h.classList.remove("sorted"); });
+        th.classList.add("sorted");
+        fill();
+      });
+      head.appendChild(th);
+    });
+    thead.appendChild(head);
+    table.appendChild(thead);
+    table.appendChild(body);
+    fill();
+    host.appendChild(table);
+    return true;
   }
 
   function showText(body, data, mode) {
@@ -356,11 +468,12 @@
         renderFileLog(host, text);
       }
     } else if (kind === "tree") {
-      if (!renderTree(host, text, data.suffix)) renderFileLog(host, text);
+      var ok = data.suffix === "json" ? renderJsonTree(host, text) : renderYamlTree(host, text);
+      if (!ok) renderFileLog(host, text);
     } else if (kind === "structure") {
       renderStructure(host, text);
     } else if (kind === "doc") {
-      renderDoc(host, text);
+      renderDoc(host, data);
     } else {
       renderFileLog(host, text);
     }
@@ -382,6 +495,12 @@
     var modes = el("side-preview-modes");
     if (modes) modes.hidden = true;
     var ext = (item.name || "").split(".").pop().toLowerCase();
+    /* Open shows the file the way the browser would: a PDF in its
+     * viewer, an image at full size, an HTML report. For text it is
+     * pointless -- you are reading it -- so it is offered only where it
+     * means something. Download stays: the study may be on a machine
+     * the browser is not. */
+    el("side-preview-open").hidden = ["png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"].indexOf(ext) === -1;
     if (["png", "jpg", "jpeg", "gif", "svg", "webp"].indexOf(ext) !== -1) {
       var img = document.createElement("img");
       img.src = item.href;

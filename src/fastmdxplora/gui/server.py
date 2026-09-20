@@ -308,9 +308,14 @@ def make_handler(
 
                 wanted = (parse_qs(parsed.query).get("path") or [""])[0]
                 root = app_runtime.active_root or app_runtime.workspace_root
-                self._send_json(read_text_file(
+                answer = read_text_file(
                     Path(str(root)) / wanted if not Path(str(wanted)).is_absolute() else wanted,
-                    within=root))
+                    within=root)
+                if answer.get("ok") and answer.get("suffix") in ("md", "markdown"):
+                    from fastmdxplora.gui.report_page import render_markdown
+
+                    answer["html"], answer["rendered"] = render_markdown(answer["text"])
+                self._send_json(answer)
                 return
             if path == "/api/agent/conversations":
                 from fastmdxplora.gui.agent_panel import list_conversations

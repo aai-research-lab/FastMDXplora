@@ -3152,3 +3152,19 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .side-preview-head .side-preview-facts { flex: 1 1 auto; }
 .side-preview-head .side-panel-spacer { display: none; }
 .side-preview-head .side-preview-modes { margin-left: auto; }
+
+/* The tree, for JSON and YAML in View mode. */
+.file-tree { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; }
+.tree-row { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.tree-toggle { border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0 2px; font-size: 10px; width: 14px; }
+.tree-key { color: var(--accent-cyan); }
+.tree-meta { color: var(--text-muted); font-size: 10.5px; }
+.tree-val { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
+.tree-val.number { color: var(--status-warning, #e0a45a); }
+.tree-val.boolean { color: var(--status-success, #5fc08a); }
+.tree-val.null { color: var(--text-muted); font-style: italic; }
+/* The table, for CSV and friends: sortable, header stays. */
+.file-table th { cursor: pointer; user-select: none; }
+.file-table th.sorted { color: var(--accent-cyan); }
+/* A Markdown file rendered in the preview uses the report's own styles. */
+.side-preview-body .report-document { font-size: 12.5px; }

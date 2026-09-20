@@ -752,13 +752,45 @@ class TestTheFilePreviewReadsWhatTheAgentCanRead(unittest.TestCase):
 
     def test_view_means_something_different_per_type(self):
         script = _script()
-        for kind in ("renderTable", "renderTree", "renderLog", "renderStructure", "renderDoc"):
+        for kind in ("renderTable", "renderJsonTree", "renderYamlTree", "renderFileLog",
+                     "renderStructure", "renderDoc"):
             with self.subTest(kind=kind):
                 self.assertIn(f"function {kind}(", script)
-        # Markdown is escaped before it is rendered, so a file cannot put
-        # markup in the page.
-        doc = script[script.index("function renderDoc("):script.index("function showText(")]
-        self.assertIn("escapeText(text)", doc)
+
+    def test_markdown_is_rendered_by_the_server_with_the_reports_renderer(self):
+        # One renderer for the report page and the preview, on the server;
+        # nothing vendored. On an install without the library the text is
+        # shown as written, as the report page does.
+        import inspect
+
+        from fastmdxplora.gui import report_page, server
+
+        self.assertTrue(callable(report_page.render_markdown))
+        self.assertIn("html, rendered = render_markdown(text)", inspect.getsource(report_page.report_payload))
+        self.assertIn("render_markdown(answer[\"text\"])", inspect.getsource(server))
+        html, kind = report_page.render_markdown("# A title\n\nSome **bold**.")
+        if kind == "html":
+            self.assertIn("<h1", html)
+            self.assertIn("<strong>bold</strong>", html)
+        else:
+            self.assertIn('<pre class="report-plain">', html)
+        script = _script()
+        doc = script[script.index("function renderDoc("):script.index("function treeNode(")]
+        self.assertIn("if (data.html)", doc)
+        self.assertNotIn("escapeText", doc)
+
+    def test_the_json_tree_folds_and_the_table_sorts(self):
+        script = _script()
+        tree = script[script.index("function treeNode("):script.index("function renderJsonTree(")]
+        self.assertIn('kids.hidden = !kids.hidden', tree)
+        table = script[script.index("function renderTable("):]
+        table = table[:table.index("\n  }\n") + 4]
+        self.assertIn("data.sort(function (a, b)", table)
+        self.assertIn('th.classList.add("sorted")', table)
+
+    def test_open_is_offered_only_where_it_means_something(self):
+        script = _script()
+        self.assertIn('el("side-preview-open").hidden = ["png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"].indexOf(ext) === -1', script)
 
     def test_the_seam_drags_resets_and_is_remembered(self):
         page = _page()
