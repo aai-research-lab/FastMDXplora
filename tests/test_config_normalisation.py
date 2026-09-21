@@ -54,7 +54,7 @@ class TestACommaSeparatedListIsAList:
         data = {"systems": [{"system": "1UBQ"}],
                 "include": ["setup,simulation,analysis,report"]}
         validate_config(data)
-        assert data["include"] == ["setup", "simulation", "analysis", "report"]
+        assert data["include_phase"] == ["setup", "simulation", "analysis", "report"]
 
     def test_a_bare_string_is_taken_as_one_item_list(self) -> None:
         assert normalise_config({"include": "setup,report"})["include"] == [
@@ -74,7 +74,7 @@ class TestACommaSeparatedListIsAList:
     def test_exclude_is_treated_the_same(self) -> None:
         data = {"systems": [{"system": "1UBQ"}], "exclude": ["analysis,report"]}
         validate_config(data)
-        assert data["exclude"] == ["analysis", "report"]
+        assert data["exclude_phase"] == ["analysis", "report"]
 
     def test_a_proper_list_is_left_alone(self) -> None:
         data = {"include": ["setup", "simulation"]}

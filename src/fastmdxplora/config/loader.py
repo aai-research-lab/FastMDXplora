@@ -80,6 +80,7 @@ def load_config_file(path: str | Path) -> dict[str, Any]:
             path=str(p), found_type=type(data).__name__,
         )
 
+    canonical_phase_keys(data)
     # Settled here as well as in `validate_config`, so a caller that loads a
     # file and reads it without validating still sees the expanded windows,
     # as it always did. `normalise_config` is idempotent -- `expand_umbrella`
@@ -508,7 +509,7 @@ def normalise_config(data: dict[str, Any]) -> dict[str, Any]:
         if phase in data and data[phase] is None:
             data[phase] = {}
 
-    for field in ("include", "exclude"):
+    for field in ("include_phase", "exclude_phase", "include", "exclude"):
         if field in data:
             data[field] = _split_on_commas(data[field])
 
@@ -565,6 +566,7 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
         mismatches, mutually-exclusive include/exclude, a missing
         ``systems`` list (when required), or a malformed execution block.
     """
+    canonical_phase_keys(data)
     # Spellings with one meaning are settled first, so the checks below judge
     # what the author meant rather than how they typed it.
     normalise_config(data)
@@ -593,15 +595,15 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
     _validate_block(top_scalars, TOP_LEVEL, context="top-level")
 
     # include / exclude mutual exclusion
-    if data.get("include") and data.get("exclude"):
+    if data.get("include_phase") and data.get("exclude_phase"):
         raise ConfigError(
             "Config sets both 'include' and 'exclude' at the top level; "
             "they are mutually exclusive.",
             code="config.option.conflicting",
-            options=["include", "exclude"], context="top-level",
+            options=["include_phase", "exclude_phase"], context="top-level",
         )
-    _validate_phase_list(data.get("include"), field_name="include")
-    _validate_phase_list(data.get("exclude"), field_name="exclude")
+    _validate_phase_list(data.get("include_phase"), field_name="include_phase")
+    _validate_phase_list(data.get("exclude_phase"), field_name="exclude_phase")
 
     # `systems` is the canonical (and required) way to specify input.
     if require_systems and not data.get("systems"):
@@ -768,3 +770,31 @@ def study_options(data: dict[str, Any]) -> dict[str, Any]:
         for key in STUDY_LEVEL_KEYS
         if data.get(key) is not None
     }
+
+
+def canonical_phase_keys(data: dict[str, Any]) -> dict[str, Any]:
+    """Settle the top-level phase lists on their current names, in place.
+
+    They were `include` and `exclude`, which is also what the analysis
+    block calls the list of analyses to run: a config reading
+    ``exclude: [setup]`` above ``analysis.exclude: [dimred]`` invites the
+    reader to think the two are the same kind of thing.
+
+    The earlier spellings are converted rather than refused. Every config
+    written before this uses them, and a rename that breaks all of them on
+    the day it lands is one nobody can adopt; the same courtesy
+    `prepared_from` gets for `setup_from`. They go in the release that
+    breaks compatibility deliberately.
+
+    In place, and returning the same dict: `validate_config` settles
+    umbrella windows and other normalisation by mutating what it is given,
+    so handing back a copy would throw all of that away.
+    """
+    for earlier, current in (("include", "include_phase"),
+                             ("exclude", "exclude_phase")):
+        if earlier in data:
+            value = data.pop(earlier)
+            # Both spellings present: the current one wins, and the earlier
+            # is dropped rather than left for something that still reads it.
+            data.setdefault(current, value)
+    return data

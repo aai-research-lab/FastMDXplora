@@ -170,6 +170,14 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
     With ``full``, every setting is named at whatever value it would take,
     default or chosen. Without it, only what differs from the default.
     """
+    # The state arrives from the browser, not through the loader, so a
+    # study written with the earlier `include` is settled before anything
+    # reads it: the top-level keys are copied out before the phase list is
+    # consulted, and canonicalising later left the earlier spelling
+    # uncopied and every phase reading as running.
+    from fastmdxplora.config.loader import canonical_phase_keys
+
+    state = canonical_phase_keys(dict(state))
     config: dict[str, Any] = {}
 
     # Who wrote the study, carried through rather than dropped. The form
@@ -189,7 +197,7 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
             if value is not None:
                 config[key] = value
 
-    for key in ("output", "include", "exclude", "verbose"):
+    for key in ("output", "include_phase", "exclude_phase", "verbose"):
         value = state.get(key)
         if value not in (None, "", [], {}):
             config[key] = value
@@ -210,7 +218,7 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
     # A full config records what the run will use, so it names every phase the
     # run includes -- not only the ones the form happened to touch. A phase
     # left entirely alone still runs, and still uses values worth recording.
-    running = set(config.get("include") or PHASE_SCHEMAS.keys())
+    running = set(config.get("include_phase") or PHASE_SCHEMAS.keys())
 
     # Settings that belong to the run rather than a phase. The form keeps them
     # under a sentinel key so one control builder draws everything; here they
@@ -460,7 +468,7 @@ def check_config(data: dict[str, Any]) -> dict[str, Any]:
     except ConfigError as exc:
         return {"ok": False, "error": str(exc)}
 
-    phases = data.get("include")
+    phases = data.get("include_phase")
     if not isinstance(phases, list) or not phases:
         phases = [name for name in PHASE_SCHEMAS if isinstance(data.get(name), dict)]
     systems = data.get("systems") or []
@@ -507,6 +515,12 @@ def state_from_config(
     do this called a global that does not exist, so it silently did
     nothing.
     """
+    # Read directly rather than through the validator, so a study written
+    # with the earlier `include` is settled before the phases are read --
+    # otherwise the form opens with every phase ticked.
+    from fastmdxplora.config.loader import canonical_phase_keys
+
+    data = canonical_phase_keys(dict(data))
     if checked is None:
         checked = check_config(data)
         if not checked["ok"]:
@@ -520,7 +534,7 @@ def state_from_config(
         "system": str(first.get("system") or "") if isinstance(first, dict) else "",
         "system_id": str(first.get("id") or "") if isinstance(first, dict) else "",
         "output": str(data.get("output") or ""),
-        "include": checked["phases"],
+        "include_phase": checked["phases"],
         # A config naming a trajectory was written to analyse one; a config
         # naming only a structure was written to build one. The page needs to
         # know which so it can ask the right questions.
@@ -555,8 +569,8 @@ def state_from_config(
     # and whether there was a barostat. A config the validator accepts and
     # `fastmdx explore` runs then arrived in the form unrunnable.
     ordered = [str(p) for p in PHASE_SCHEMAS]
-    include = data.get("include")
-    exclude = data.get("exclude")
+    include = data.get("include_phase")
+    exclude = data.get("exclude_phase")
     if isinstance(include, list) and include:
         running = [p for p in ordered if p in {str(x) for x in include}]
     elif isinstance(exclude, list) and exclude:
@@ -579,7 +593,7 @@ def state_from_config(
     # and the form went on ticking from `checked["phases"]` -- which is
     # the blocks present, the very thing this replaces. Both fields say
     # the same thing now, from the same derivation.
-    state["include"] = list(running)
+    state["include_phase"] = list(running)
 
     included = analysis.get("include")
     if isinstance(included, str):

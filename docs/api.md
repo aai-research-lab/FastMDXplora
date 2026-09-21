@@ -26,8 +26,8 @@ FastMDXplora(
     output_dir=None,      # str | PathLike | None
     options=None,         # dict[str, dict] | None — settings, by phase
     verbose=False,
-    include=None,         # list[str] | None
-    exclude=None,         # list[str] | None
+    include_phase=None,   # list[str] | None
+    exclude_phase=None,   # list[str] | None
 )
 ```
 
@@ -97,8 +97,8 @@ except ConfigError as exc:
 
 ```python
 study.explore(
-    include=None,       # list[str] | None
-    exclude=None,       # list[str] | None
+    include_phase=None, # list[str] | None
+    exclude_phase=None, # list[str] | None
     options=None,       # dict[str, dict] | None — merged over the constructor's
     report=True,        # False drops the report phase
     dry_run=False,      # plan only; writes nothing
@@ -108,9 +108,16 @@ study.explore(
 
 ```python
 study = fastmdx.FastMDXplora(system="1UBQ", output_dir="runs/study")
-study.explore(include=["setup", "simulation"])   # stop after the trajectory
-study.explore(exclude=["report"])                # everything but the write-up
+study.explore(include_phase=["setup", "simulation"])   # stop after the trajectory
+study.explore(exclude_phase=["report"])                # everything but the write-up
 ```
+
+`include_phase` and `exclude_phase` are the same names the config file,
+the command line (`--include-phase`) and the GUI use, so one spelling
+serves all four. `include=` and `exclude=` are still accepted for
+existing scripts; giving both spellings with different values is refused
+rather than guessed at. `study.analyze(include=...)` is a different list
+-- the analyses to run -- and keeps its name.
 
 Or one phase at a time. Each takes the same settings as its Config block and
 returns a `PhaseResult`:

@@ -557,7 +557,7 @@ def build_config_yaml(config: Mapping[str, Any], output_dir: Path | str) -> str:
     document: dict[str, Any] = {
         "systems": [{"id": run_name, "system": str(config["system"])}],
         "output": str(output_dir),
-        "include": phases,
+        "include_phase": phases,
         "setup": setup_block,
         "simulation": simulation_block,
     }

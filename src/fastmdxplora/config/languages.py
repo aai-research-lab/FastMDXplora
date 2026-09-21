@@ -155,6 +155,12 @@ def cli_command(config: dict[str, Any]) -> str:
     express, naming the setting -- the config file is the fallback spelling,
     and it always works.
     """
+    # The dict arrives from a caller rather than through the loader, so a
+    # study written with the earlier `include` is settled before the
+    # command or the script is spelled out of it.
+    from fastmdxplora.config.loader import canonical_phase_keys
+
+    config = canonical_phase_keys(dict(config))
     options = _explore_options()
     parts: list[str] = ["fastmdx", "explore"]
 
@@ -175,10 +181,11 @@ def cli_command(config: dict[str, Any]) -> str:
         parts += ["--system", shlex.quote(str(system))]
     if config.get("output"):
         parts += ["--output", shlex.quote(str(config["output"]))]
-    for key in ("include", "exclude"):
+    for key in ("include_phase", "exclude_phase"):
         names = config.get(key)
+        flag = "--" + key.replace("_", "-")
         if names:
-            parts += [f"--{key}", *(shlex.quote(str(n)) for n in names)]
+            parts += [flag, *(shlex.quote(str(n)) for n in names)]
 
     for block, verb in _BLOCK_TO_VERB.items():
         settings = config.get(block)
@@ -222,6 +229,12 @@ def python_script(config: dict[str, Any]) -> str:
     own defaults and passing them explicitly says nothing the call does
     not already do.
     """
+    # The dict arrives from a caller rather than through the loader, so a
+    # study written with the earlier `include` is settled before the
+    # command or the script is spelled out of it.
+    from fastmdxplora.config.loader import canonical_phase_keys
+
+    config = canonical_phase_keys(dict(config))
     blocks = {}
     for name, settings in config.items():
         if name not in _BLOCK_TO_VERB or not isinstance(settings, dict):
@@ -254,7 +267,9 @@ def python_script(config: dict[str, Any]) -> str:
     lines.append(")")
     call = "study.explore("
     arguments = []
-    for key in ("include", "exclude"):
+    # The config key, the flag and the API's parameter are one name, so
+    # the script says what the config says.
+    for key in ("include_phase", "exclude_phase"):
         if config.get(key):
             arguments.append(f"{key}={list(config[key])!r}")
     lines += ["", f"runs = {call}{', '.join(arguments)})", ""]

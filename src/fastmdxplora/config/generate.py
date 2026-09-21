@@ -155,7 +155,7 @@ def generate_template(*, minimal: bool = False) -> str:
     # Top-level scalars (output, verbose, include, exclude) at column 0.
     for fld in TOP_LEVEL.fields:
         # `exclude` stays commented because include/exclude are exclusive
-        commented = fld.name in ("exclude",)
+        commented = fld.name in ("exclude_phase",)
         lines.extend(_field_template_lines(fld, commented=commented, indent=0))
 
     # Per-phase blocks: fully commented so the file is valid as-is
@@ -333,10 +333,10 @@ def write_resolved_config(
         doc["output"] = str(merged["output"])
     if merged.get("verbose"):
         doc["verbose"] = bool(merged["verbose"])
-    if merged.get("include"):
-        doc["include"] = list(merged["include"])
-    if merged.get("exclude"):
-        doc["exclude"] = list(merged["exclude"])
+    if merged.get("include_phase"):
+        doc["include_phase"] = list(merged["include_phase"])
+    if merged.get("exclude_phase"):
+        doc["exclude_phase"] = list(merged["exclude_phase"])
 
     # Study-level provenance, written before the phase blocks so it reads
     # as a statement about the study rather than a setting of the last

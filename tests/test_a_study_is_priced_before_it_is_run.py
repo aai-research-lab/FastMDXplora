@@ -32,12 +32,12 @@ class TestTheOrderOfOperations(unittest.TestCase):
         self.calls: list[dict] = []
 
     def explore(self, *, config, output_dir):
-        self.calls.append({"include": config.get("include"),
-                           "exclude": config.get("exclude"),
+        self.calls.append({"include_phase": config.get("include_phase"),
+                           "exclude_phase": config.get("exclude_phase"),
                            "setup_from": (config.get("simulation") or {}
                                           ).get("setup_from")})
         # Stand in for what setup writes, so the count is findable.
-        if config.get("include") == ["setup"]:
+        if config.get("include_phase") == ["setup"]:
             import json
 
             where = Path(output_dir) / "setup"
@@ -60,7 +60,7 @@ class TestTheOrderOfOperations(unittest.TestCase):
         self.calibrated()
         run_in_stages(self.config(), self.root, budget_hours=1000,
                       platform_name="CUDA", explore=self.explore)
-        self.assertEqual(self.calls[0]["include"], ["setup"])
+        self.assertEqual(self.calls[0]["include_phase"], ["setup"])
 
     def test_the_rest_excludes_setup_and_reuses_it(self):
         # Rerunning setup would solvate a second time and give a different
@@ -68,7 +68,7 @@ class TestTheOrderOfOperations(unittest.TestCase):
         self.calibrated()
         run_in_stages(self.config(), self.root, budget_hours=1000,
                       platform_name="CUDA", explore=self.explore)
-        self.assertEqual(self.calls[1]["exclude"], ["setup"])
+        self.assertEqual(self.calls[1]["exclude_phase"], ["setup"])
         self.assertIn("setup", self.calls[1]["setup_from"])
 
     def test_setup_from_goes_in_the_simulation_block(self):
@@ -159,7 +159,7 @@ class TestWhenThereIsNoNumber(unittest.TestCase):
         os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(Path(tempfile.mkdtemp()))
         try:
             def explore(*, config, output_dir):
-                if config.get("include") == ["setup"]:
+                if config.get("include_phase") == ["setup"]:
                     where = Path(output_dir) / "setup"
                     where.mkdir(parents=True, exist_ok=True)
                     (where / "setup_parameters.json").write_text(

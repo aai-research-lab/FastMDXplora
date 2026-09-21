@@ -532,10 +532,16 @@ class SessionPresenter:
             only = subcommand_phase()
             if only:
                 return phase == only
-            included = argv_list("--include") or from_config.get("include")
+            # The config is read from the file, not through the loader, so
+            # a study written with the earlier `include` is settled here.
+            included = (argv_list("--include-phase") or argv_list("--include")
+                        or from_config.get("include_phase")
+                        or from_config.get("include"))
             if isinstance(included, list) and included:
                 return phase in included
-            excluded = argv_list("--exclude") or from_config.get("exclude")
+            excluded = (argv_list("--exclude-phase") or argv_list("--exclude")
+                        or from_config.get("exclude_phase")
+                        or from_config.get("exclude"))
             if isinstance(excluded, list) and excluded:
                 return phase not in excluded
             return True

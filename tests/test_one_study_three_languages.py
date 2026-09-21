@@ -262,7 +262,7 @@ class TestThePythonSpelling:
         assert "system='181L.pdb'" in script
         assert "output_dir='runs/t4'" in script
         assert "'ligand_pose': 'file'" in script
-        assert "explore(include=['setup'])" in script
+        assert "explore(include_phase=['setup'])" in script
 
     def test_the_batch_shape_yields_its_one_system(self) -> None:
         script = python_script({"systems": [{"system": "1UBQ"}]})

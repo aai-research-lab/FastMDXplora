@@ -138,7 +138,7 @@ def run_in_stages(
     runner = explore or _explore
 
     setup_only = dict(config)
-    setup_only["include"] = ["setup"]
+    setup_only["include_phase"] = ["setup"]
     try:
         runner(config=setup_only, output_dir=str(out))
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
@@ -188,7 +188,7 @@ def run_in_stages(
         return staged
 
     rest = dict(config)
-    rest["exclude"] = ["setup"]
+    rest["exclude_phase"] = ["setup"]
     # `setup_from` is a simulation setting, not a top-level one. Put at the
     # top level the loader refused it and named the right place, which is
     # the guardrail working on the code that was written to use it.

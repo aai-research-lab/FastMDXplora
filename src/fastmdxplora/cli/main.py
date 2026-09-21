@@ -784,7 +784,8 @@ def _build_parser() -> argparse.ArgumentParser:
             ),
             description=(
                 "Run the full FastMDXplora pipeline end-to-end on the given "
-                "system. Use --include or --exclude to run a subset of phases. "
+                "system. Use --include-phase or --exclude-phase to run a subset "
+                "of phases. "
                 "Each phase's flags are available under a per-phase prefix "
                 "(--setup-*, --simulate-*, --analyze-*, --report-*)."
             ),
@@ -801,19 +802,25 @@ def _build_parser() -> argparse.ArgumentParser:
                 "overwriting them. Without this a second run is refused."
             ),
         )
+        # The setting is `include_phase`, so the flag is too. `--include`
+        # and `--exclude` still work: they are what every script and every
+        # set of notes already says, and breaking them to rename a flag
+        # would cost more than the confusion it removes.
         ep.add_argument(
-            "--include",
+            "--include-phase", "--include",
+            dest="include",
             nargs="+",
             action=_Accumulate,
             metavar="PHASE",
             help="Subset of phases to run: setup, simulation, analysis, report.",
         )
         ep.add_argument(
-            "--exclude",
+            "--exclude-phase", "--exclude",
+            dest="exclude",
             nargs="+",
             action=_Accumulate,
             metavar="PHASE",
-            help="Phases to skip (mutually exclusive with --include).",
+            help="Phases to skip (mutually exclusive with --include-phase).",
         )
         ep.add_argument(
             "--no-report",
@@ -1207,9 +1214,9 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
         wanted = False
     set_explain(wanted)
     if args.include:
-        config["include"] = args.include
+        config["include_phase"] = args.include
     if args.exclude:
-        config["exclude"] = args.exclude
+        config["exclude_phase"] = args.exclude
 
     return config
 
@@ -1311,7 +1318,8 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     from fastmdxplora import FastMDXplora
 
     if args.include and args.exclude:
-        print("fastmdx: --include and --exclude are mutually exclusive.", file=sys.stderr)
+        print("fastmdx: --include-phase and --exclude-phase are mutually "
+                  "exclusive.", file=sys.stderr)
         return 2
 
     config = _build_explore_config(args)
@@ -1353,10 +1361,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
     # --no-report removes report from the plan via exclude (unless the user
     # already constrained phases with include).
-    if getattr(args, "no_report", False) and not config.get("include"):
-        existing = config.get("exclude") or []
+    if getattr(args, "no_report", False) and not config.get("include_phase"):
+        existing = config.get("exclude_phase") or []
         if "report" not in existing:
-            config["exclude"] = [*existing, "report"]
+            config["exclude_phase"] = [*existing, "report"]
 
     if _dashboard_requested(args):
         _enable_dashboard_telemetry(config, args)

@@ -225,12 +225,19 @@ TOP_LEVEL = PhaseSchema(
               "familiar."),
         Field("verbose", bool, False,
               "Stream debug logging to the terminal in addition to the log file."),
-        Field("include", list, None,
+        # Named for what they select. `include` and `exclude` also name
+        # the analyses inside the analysis block, and a config reading
+        # `exclude: [setup]` above `analysis.exclude: [dimred]` invites the
+        # reader to think the two are the same kind of thing. The earlier
+        # spellings are still accepted and converted when a config is read.
+        Field("include_phase", list, None,
               "Subset of phases to run, in order. "
-              "Mutually exclusive with `exclude`.",
+              "Mutually exclusive with `exclude_phase`. The earlier name "
+              "`include` is still accepted.",
               example=["setup", "simulation", "analysis", "report"]),
-        Field("exclude", list, None,
-              "Phases to skip. Mutually exclusive with `include`.",
+        Field("exclude_phase", list, None,
+              "Phases to skip. Mutually exclusive with `include_phase`. The "
+              "earlier name `exclude` is still accepted.",
               example=["report"]),
     ),
 )
@@ -968,7 +975,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Which phases run",
          "A study is setup, simulation, analysis and report. Either list "
          "picks a subset; naming both is refused.",
-         ("include", "exclude")),
+         ("include_phase", "exclude_phase")),
         ("Where it goes",
          "One directory holds everything a study wrote.",
          ("output",)),

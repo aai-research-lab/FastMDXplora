@@ -517,7 +517,7 @@ class TestAConfigThatWasNeverOnDiskCanBeOpened(unittest.TestCase):
         # And back out again, the way the form sends it.
         rebuilt = build_config({
             "system": loaded["state"]["system"],
-            "include": loaded["state"]["include"],
+            "include_phase": loaded["state"]["include_phase"],
             "__run__": loaded["state"]["study"],
             **{"setup": loaded["state"]["phases"]["setup"]},
         })
@@ -1278,7 +1278,7 @@ class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
         # while the form still showed only Simulate. A test that checks
         # the field the code fills rather than the field the consumer
         # reads is a test of the wrong thing.
-        self.assertEqual(state["include"],
+        self.assertEqual(state["include_phase"],
                          ["setup", "simulation", "analysis", "report"])
 
     def test_the_two_fields_agree_in_every_case(self):
@@ -1290,7 +1290,7 @@ class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
                  "analysis": {"trajectory": "t.dcd", "topology": "t.pdb"}}):
             with self.subTest(config=config):
                 state = self.load(config)
-                self.assertEqual(state["include"], list(state["phases"]))
+                self.assertEqual(state["include_phase"], list(state["phases"]))
 
     def test_the_browser_ticks_from_include(self):
         # Which is why both fields have to say the same thing.

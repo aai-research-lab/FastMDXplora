@@ -455,7 +455,7 @@ class TestBuildConfigYaml:
         from fastmdxplora.gui.exploration import build_config_yaml
 
         full = yaml.safe_load(build_config_yaml(self._config(), tmp_path))
-        assert full["include"] == ["setup", "simulation", "analysis", "report"]
+        assert full["include_phase"] == ["setup", "simulation", "analysis", "report"]
 
         sim_only = yaml.safe_load(
             build_config_yaml(
@@ -465,7 +465,7 @@ class TestBuildConfigYaml:
                 tmp_path,
             )
         )
-        assert sim_only["include"] == ["setup", "simulation"]
+        assert sim_only["include_phase"] == ["setup", "simulation"]
         assert "analysis" not in sim_only
         assert "report" not in sim_only
 

@@ -192,9 +192,13 @@ class FastMDXplora:
         options: dict[str, dict[str, Any]] | None = None,
         study_options: dict[str, Any] | None = None,
         verbose: bool = False,
+        include_phase: list[str] | None = None,
+        exclude_phase: list[str] | None = None,
         include: list[str] | None = None,
         exclude: list[str] | None = None,
     ) -> None:
+        include, exclude = _phase_selection(
+            include_phase, exclude_phase, include, exclude)
         # FastMDXplora is the single user-facing entry point. Ways to
         # construct it:
         #   - config=...      : a YAML config path (one system or many, with
@@ -322,12 +326,14 @@ class FastMDXplora:
     def explore(
         self,
         *,
-        include: list[str] | None = None,
-        exclude: list[str] | None = None,
+        include_phase: list[str] | None = None,
+        exclude_phase: list[str] | None = None,
         options: dict[str, dict[str, Any]] | None = None,
         report: bool = True,
         dry_run: bool = False,
         force: bool = False,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
     ) -> list[RunResult]:
         """Run the full pipeline, end to end.
 
@@ -362,6 +368,8 @@ class FastMDXplora:
         config file passed to the constructor, the config-file values are
         used. Explicit arguments to this method always win.
         """
+        include, exclude = _phase_selection(
+            include_phase, exclude_phase, include, exclude)
         # This call's results, and only this call's. `self.results` was set
         # in __init__ and appended to here, so a second explore() on the same
         # object inherited the first one's phase records -- and since the
@@ -509,15 +517,15 @@ class FastMDXplora:
         )
         # explore()-level phase overrides win over the config file.
         if include is not None:
-            batch._raw["include"] = include
-            batch._raw["exclude"] = None
+            batch._raw["include_phase"] = include
+            batch._raw["exclude_phase"] = None
         elif exclude is not None:
-            batch._raw["exclude"] = exclude
-            batch._raw["include"] = None
+            batch._raw["exclude_phase"] = exclude
+            batch._raw["include_phase"] = None
         if not report:
-            existing = batch._raw.get("exclude") or []
-            if "report" not in existing and not batch._raw.get("include"):
-                batch._raw["exclude"] = [*existing, "report"]
+            existing = batch._raw.get("exclude_phase") or []
+            if "report" not in existing and not batch._raw.get("include_phase"):
+                batch._raw["exclude_phase"] = [*existing, "report"]
 
         if dry_run:
             run_results = batch.dry_run()
@@ -1171,8 +1179,8 @@ class FastMDXplora:
             "system": self.system,
             "output": str(self.output_dir),
             "verbose": self.verbose,
-            "include": getattr(self, "_resolved_include", None) or self._config_include,
-            "exclude": getattr(self, "_resolved_exclude", None) or self._config_exclude,
+            "include_phase": getattr(self, "_resolved_include", None) or self._config_include,
+            "exclude_phase": getattr(self, "_resolved_exclude", None) or self._config_exclude,
             "options": getattr(self, "_resolved_options", None) or self.options,
             # How the study was written travels with it. The config that
             # comes back out has to say the same thing the one that went in
@@ -1257,3 +1265,41 @@ def _record_run_process(output_dir: Path) -> None:
             pass
 
     atexit.register(_remove)
+
+
+def _phase_selection(
+    include_phase: list[str] | None,
+    exclude_phase: list[str] | None,
+    include: list[str] | None,
+    exclude: list[str] | None,
+) -> tuple[list[str] | None, list[str] | None]:
+    """Which phases to run, from either spelling of the argument.
+
+    `include_phase` and `exclude_phase` are the names the config, the
+    command line and the GUI use, so they are the Python API's names too:
+    somebody who learns one door has learnt all four. `include` and
+    `exclude` still work, the way they do in a config and on the command
+    line, and go in the release that removes every earlier spelling at
+    once.
+
+    Given both spellings with different values, this refuses -- with the
+    same named refusal the config gives for two conflicting settings --
+    rather than picking one. A call that says two things does not say which it meant,
+    and a guess here decides whether a simulation runs.
+    """
+    for current, earlier, name in ((include_phase, include, "include_phase"),
+                                   (exclude_phase, exclude, "exclude_phase")):
+        if (current is not None and earlier is not None
+                and list(current) != list(earlier)):
+            from fastmdxplora.config.loader import ConfigError
+
+            # A named refusal, like every other in the package, so a caller
+            # can tell this one from the rest without reading the sentence.
+            raise ConfigError(
+                f"`{name}` and its earlier spelling `{name[:-6]}` were both "
+                f"given, with different values ({list(current)} and "
+                f"{list(earlier)}). Give one; `{name}` is the current name.",
+                code="config.option.conflicting",
+                options=[name, name[:-6]], context="explore")
+    return (include_phase if include_phase is not None else include,
+            exclude_phase if exclude_phase is not None else exclude)

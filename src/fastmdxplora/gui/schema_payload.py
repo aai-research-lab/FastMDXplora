@@ -185,8 +185,8 @@ def _analysis_options() -> dict[str, Any]:
 #: where the run goes, and which phases run.
 _STRUCTURAL_TOP_LEVEL = {
     "output": "the output directory has its own field with a file picker",
-    "include": "the phase checkboxes",
-    "exclude": "the phase checkboxes",
+    "include_phase": "the phase checkboxes",
+    "exclude_phase": "the phase checkboxes",
 }
 
 

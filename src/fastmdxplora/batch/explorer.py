@@ -528,7 +528,8 @@ def _execute_run(
             # A single-system explore() returns a one-element list of
             # RunResult; take its phases and re-stamp the run's identity.
             inner = fmdx.explore(
-                include=include, exclude=exclude, report=True, force=force
+                include_phase=include, exclude_phase=exclude, report=True,
+                force=force,
             )
         phases = inner[0].phases if inner else []
         status = "error" if any(p.status == "error" for p in phases) else "ok"
@@ -810,8 +811,8 @@ class BatchExplorer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         n = len(self.run_specs)
-        include = self._raw.get("include")
-        exclude = self._raw.get("exclude")
+        include = self._raw.get("include_phase")
+        exclude = self._raw.get("exclude_phase")
 
         # Checked here, before anything starts. Each run also refuses to
         # overwrite its own directory, but that refusal is raised inside a
@@ -1538,8 +1539,8 @@ class BatchExplorer:
         """
         from fastmdxplora.orchestrator import RunResult, PHASES
 
-        include = self._raw.get("include")
-        exclude = self._raw.get("exclude")
+        include = self._raw.get("include_phase")
+        exclude = self._raw.get("exclude_phase")
         # Compute the phase plan the same way the orchestrator would.
         if include:
             plan = [p for p in PHASES if p in include]

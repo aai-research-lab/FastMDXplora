@@ -79,7 +79,7 @@ class TestTheExtensionIsPlannedInsideTheStudy(unittest.TestCase):
         self.assertTrue(plan.possible)
         self.assertEqual(Path(plan.config["output"]).name, "segment-001")
         self.assertEqual(Path(plan.config["output"]).parent, root)
-        self.assertEqual(plan.config["include"], ["simulation"])
+        self.assertEqual(plan.config["include_phase"], ["simulation"])
 
     def test_the_arithmetic_counts_what_the_study_has(self):
         from fastmdxplora.simulation.resume import extension_of, production_done_ns
@@ -133,7 +133,7 @@ class TestTheDriverDoesAllThree(unittest.TestCase):
 
         source = inspect.getsource(extend_study)
         self.assertIn("join_segments(root", source)
-        self.assertIn('whole["include"] = ["analysis", "report"]', source)
+        self.assertIn('whole["include_phase"] = ["analysis", "report"]', source)
         # The join is against the trajectory's own topology, not the
         # solvated system's, and the study's report is replaced on purpose.
         self.assertIn("trajectory_topology.pdb", source)

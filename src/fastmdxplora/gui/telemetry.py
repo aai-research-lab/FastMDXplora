@@ -330,10 +330,15 @@ def run_phases(project_root: str | Path) -> list[str]:
             continue
         if not isinstance(data, dict):
             continue
-        included = data.get("include")
+        # Canonicalised here because the timeline reads the config file directly, not through the loader, so a study
+        # written with the earlier `include` is read the same way.
+        from fastmdxplora.config.loader import canonical_phase_keys
+
+        canonical_phase_keys(data)
+        included = data.get("include_phase")
         if isinstance(included, list) and included:
             return [str(phase) for phase in included]
-        excluded = data.get("exclude")
+        excluded = data.get("exclude_phase")
         if isinstance(excluded, list) and excluded:
             names = {str(phase) for phase in excluded}
             return [phase for phase in PHASE_STAGES if phase not in names]

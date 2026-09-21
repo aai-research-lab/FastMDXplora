@@ -491,7 +491,7 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
                             production_done_ns=done_ns, production_planned_ns=planned_ns,
                             config={}, refusal=why)
 
-    new = {k: v for k, v in config.items() if k not in ("output", "include", "exclude")}
+    new = {k: v for k, v in config.items() if k not in ("output", "include_phase", "exclude_phase")}
     # The parent's analysis block names the parent's own trajectory by
     # absolute path. Carried across, the continuation would simulate its
     # segment into a new folder and then analyse the PARENT's file,
@@ -518,7 +518,7 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
         "ensemble": str(side.get("ensemble") or ("npt" if npt > 0 else "nvt")),
     })
     new["simulation"] = new_sim
-    new["exclude"] = ["setup"]
+    new["exclude_phase"] = ["setup"]
     return Continuation(parent=str(root), checkpoint=str(checkpoint),
                         production_done_ns=done_ns, production_planned_ns=planned_ns,
                         config=new)
@@ -602,8 +602,8 @@ def extension_of(study: str | Path, *, total_ns: float | None = None,
     config["output"] = str(Path(study) / f"segment-{index:03d}")
     # The segment simulates. The study's analysis and report are rerun
     # over the joined trajectory once it exists.
-    config["include"] = ["simulation"]
-    config.pop("exclude", None)
+    config["include_phase"] = ["simulation"]
+    config.pop("exclude_phase", None)
     return Continuation(parent=plan.parent, checkpoint=plan.checkpoint,
                         production_done_ns=done,
                         production_planned_ns=plan.production_planned_ns,
@@ -713,7 +713,7 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     # The study's analyses and report, over the whole trajectory.
     whole = dict(plan.config)
     whole["output"] = str(root)
-    whole["include"] = ["analysis", "report"]
+    whole["include_phase"] = ["analysis", "report"]
     analysis = dict(whole.get("analysis") or {})
     analysis["trajectory"] = str(joined_dir / "production.dcd")
     topology = root / "simulation" / "trajectory_topology.pdb"
