@@ -111,3 +111,25 @@ def a_prepared_water_box(tmp_path) -> dict:
         PDBFile.writeFile(modeller.topology, modeller.positions, handle)
     return {"system_xml": str(setup / "system.xml"), "state_xml": str(setup / "state.xml"),
             "topology_pdb": str(setup / "topology.pdb")}
+
+
+def what_plumed_is_given(root: Path, monkeypatch, **bias: Any) -> tuple[dict, Path]:
+    """Run the runner on a small system with `bias` -- a metadynamics block,
+    a pull -- and record what is handed to PLUMED, stopping there, so neither
+    PLUMED nor a real run is needed. Returns that and the run's folder."""
+    from fastmdxplora.simulation import plumed
+    from fastmdxplora.simulation.runner import run_simulation
+
+    given: dict = {}
+
+    def stand_in(omm, system, plumed_config, output_dir, **kwargs):
+        given.update(config=dict(plumed_config), output_dir=Path(output_dir))
+        raise Reached
+
+    monkeypatch.setattr(plumed, "add_plumed_force", stand_in)
+    out = root / "out"
+    with pytest.raises(Reached):
+        run_simulation(**a_prepared_water_box(root), output_dir=str(out),
+                       production_steps=10, nvt_steps=0, npt_steps=0,
+                       minimize=False, platform="CPU", **bias)
+    return given, out

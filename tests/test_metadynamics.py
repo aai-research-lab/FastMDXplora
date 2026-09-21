@@ -202,34 +202,12 @@ class TestItReachesTheRunner:
         received = what_the_runner_receives(tmp_path, monkeypatch, metadynamics=self.HILLS)
         assert received["metadynamics"] == self.HILLS
 
-    @classmethod
-    def _what_plumed_is_given(cls, tmp_path, monkeypatch):
-        """Run the runner on a small system and record what reaches PLUMED,
-        stopping there -- so neither PLUMED nor a real run is needed."""
-        from pathlib import Path
-
-        from fastmdxplora.simulation import plumed
-        from fastmdxplora.simulation.runner import run_simulation
-        from tests._the_phase import Reached, a_prepared_water_box
-
-        given: dict = {}
-
-        def stand_in(omm, system, plumed_config, output_dir, **kwargs):
-            given.update(config=dict(plumed_config), output_dir=Path(output_dir))
-            raise Reached
-
-        monkeypatch.setattr(plumed, "add_plumed_force", stand_in)
-        out = tmp_path / "out"
-        with pytest.raises(Reached):
-            run_simulation(**a_prepared_water_box(tmp_path), output_dir=str(out),
-                           production_steps=10, nvt_steps=0, npt_steps=0,
-                           minimize=False, platform="CPU", metadynamics=cls.HILLS)
-        return given, out
-
     def test_the_runner_writes_the_script_where_it_can_be_read(self, tmp_path, monkeypatch) -> None:
         """It decides what the run measures, so it belongs beside the results
         rather than in memory."""
-        _, out = self._what_plumed_is_given(tmp_path, monkeypatch)
+        from tests._the_phase import what_plumed_is_given
+
+        _, out = what_plumed_is_given(tmp_path, monkeypatch, metadynamics=self.HILLS)
         script = out / "metadynamics.plumed"
         assert script.is_file()
         assert "METAD" in script.read_text(encoding="utf-8")
@@ -238,7 +216,9 @@ class TestItReachesTheRunner:
         """The existing integration does the biasing; this is a shorter way to
         describe it, not a second mechanism. PLUMED is handed the script the
         run wrote, and nothing else biases it."""
-        given, out = self._what_plumed_is_given(tmp_path, monkeypatch)
+        from tests._the_phase import what_plumed_is_given
+
+        given, out = what_plumed_is_given(tmp_path, monkeypatch, metadynamics=self.HILLS)
         assert given["config"]["enabled"] is True
         assert given["config"]["script"] == str(out / "metadynamics.plumed")
 class TestBoundingWhereTheLigandGoes:

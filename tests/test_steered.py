@@ -191,31 +191,39 @@ class TestItReachesTheRunner:
         table, _prefix = _PHASE_SPEC["simulate"]
         assert "steered" in {dest for _flag, dest, _kw in table}
 
-    def test_the_pipeline_passes_it(self) -> None:
-        import inspect
+    PULL = {"collective_variable": "distance", "selection_a": "index 0",
+                "selection_b": "index 3", "from": 0.3, "to": 0.6, "steps": 10}
 
-        from fastmdxplora.simulation import pipeline
+    def test_the_pipeline_passes_it(self, tmp_path, monkeypatch) -> None:
+        from tests._the_phase import what_the_runner_receives
 
-        assert "steered=params.get" in inspect.getsource(pipeline)
+        assert what_the_runner_receives(tmp_path, monkeypatch, steered=self.PULL)["steered"] == self.PULL
 
-    def test_steering_and_metadynamics_together_are_refused(self) -> None:
-        """Two ways of moving the same coordinate, whose forces would add."""
-        import inspect
+    def test_steering_and_metadynamics_together_are_refused(self, tmp_path) -> None:
+        """Two ways of moving the same coordinate, whose forces would add.
+        Asked of the runner, before a step is run."""
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.simulation.runner import run_simulation
+        from tests._the_phase import a_prepared_water_box
 
-        from fastmdxplora.simulation import runner
+        hills = {"collective_variable": "distance", "selection_a": "index 0",
+                 "selection_b": "index 3", "sigma": 0.02, "height_kjmol": 1.0,
+                 "pace_steps": 100}
+        with pytest.raises(StudyError) as caught:
+            run_simulation(**a_prepared_water_box(tmp_path), output_dir=str(tmp_path / "out"),
+                           production_steps=10, nvt_steps=0, npt_steps=0,
+                           minimize=False, platform="CPU", steered=self.PULL, metadynamics=hills)
+        assert caught.value.code == "config.option.conflicting"
+        assert "forces would add" in str(caught.value)
 
-        source = inspect.getsource(runner.run_simulation)
-        assert "steered and metadynamics" in source
-        assert "their\n            \"forces would add" in source or \
-               "forces would add" in source
+    def test_the_script_is_written_where_it_can_be_read(self, tmp_path, monkeypatch) -> None:
+        # Beside the results, and the one PLUMED is handed.
+        from tests._the_phase import what_plumed_is_given
 
-    def test_the_script_is_written_where_it_can_be_read(self) -> None:
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        assert "steered.plumed" in inspect.getsource(runner.run_simulation)
-
+        given, out = what_plumed_is_given(tmp_path, monkeypatch, steered=self.PULL)
+        script = out / "steered.plumed"
+        assert script.is_file()
+        assert given["config"]["script"] == str(script)
 
 class TestAPullReportsItsWork:
     """Umbrella sampling goes from a config block to a curve or a refusal,
@@ -287,16 +295,27 @@ class TestAPullReportsItsWork:
         (tmp_path / "COLVAR").write_text("nonsense\n", encoding="utf-8")
         assert _write_steered_work(tmp_path, {"steered": {}}, None) is None
 
-    def test_the_run_asks_for_it(self, tmp_path) -> None:
-        """Wired in beside the metadynamics writer, on the same condition."""
-        import inspect
-
+    def test_the_run_asks_for_it(self, tmp_path, monkeypatch) -> None:
+        """Wired in beside the metadynamics writer, on the same condition:
+        a steered run asks for its work, and no other run does."""
         from fastmdxplora.simulation import pipeline
+        from tests._the_phase import run_the_phase
 
-        source = inspect.getsource(pipeline)
-        assert 'if params.get("steered"):' in source
-        assert "_write_steered_work(output_dir, params, presenter)" in source
-
+        between = {"collective_variable": "distance",
+                   "selection_a": "index 0", "selection_b": "index 3"}
+        pull = {**between, "from": 0.3, "to": 0.6, "steps": 10}
+        for index, (options, wanted) in enumerate((
+                ({"steered": pull}, 1),
+                ({}, 0),
+                ({"umbrella": {**between, "centre": 0.5, "force_constant": 1000.0}}, 0))):
+            calls: list = []
+            monkeypatch.setattr(pipeline, "_write_steered_work",
+                                lambda output_dir, params, presenter, calls=calls:
+                                calls.append(params) or None)
+            run_the_phase(tmp_path / f"run{index}", monkeypatch, **options)
+            assert len(calls) == wanted, sorted(options) or "an ordinary run"
+            if wanted:
+                assert calls[0]["steered"] == pull
 
 class TestAPullThatWroteNoRecordSaysWhy:
     """`_write_steered_work` returned None in three places and said nothing
