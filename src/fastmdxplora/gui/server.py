@@ -265,6 +265,13 @@ def make_handler(
         def do_GET(self) -> None:  # noqa: N802 - stdlib API
             try:
                 self._dispatch()
+            except ConnectionError:
+                # The caller hung up: a tab closed, a page reloaded. Not a
+                # fault, and nobody is left to answer -- writing a 500 to the
+                # closed socket only fails a second time. Same policy as the
+                # server's own handle_error, which never saw these because
+                # the route caught them first.
+                logger.debug("dashboard caller %s hung up mid-request", self.client_address)
             except Exception as exc:  # noqa: BLE001 — dashboard must never crash the sim
                 logger.warning("dashboard route failed: %s", exc)
                 self.send_error(500, "Dashboard internal error")
@@ -272,6 +279,8 @@ def make_handler(
         def do_POST(self) -> None:  # noqa: N802 - stdlib API
             try:
                 self._dispatch_post()
+            except ConnectionError:
+                logger.debug("dashboard caller %s hung up mid-request", self.client_address)
             except Exception as exc:  # noqa: BLE001 - exploration errors stay local
                 logger.warning("dashboard POST route failed: %s", exc)
                 # Whatever went wrong, the body may not have been read -- and
