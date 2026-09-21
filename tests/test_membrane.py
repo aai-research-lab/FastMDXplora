@@ -223,14 +223,15 @@ class TestTheSettingsReachEveryInterface:
         offered = {dest for _flag, dest, _kw in table}
         assert {"membrane", "membrane_orientation_checked"} <= offered
 
-    def test_the_pipeline_passes_them(self) -> None:
-        import inspect
+    def test_the_pipeline_passes_them(self, tmp_path, monkeypatch) -> None:
+        from tests._the_phase import what_preparation_receives
 
-        from fastmdxplora.setup import pipeline
-
-        source = inspect.getsource(pipeline)
-        assert "membrane=params.get" in source
-
+        received = what_preparation_receives(
+            tmp_path, monkeypatch, membrane="POPC", membrane_orient=True,
+            membrane_orientation_checked=True)
+        assert received["membrane"] == "POPC"
+        assert received["membrane_orient"] is True
+        assert received["membrane_orientation_checked"] is True
 
 class TestOrientingAStructureThatIsInTheWrongFrame:
     """The alternative offered was to fetch an oriented structure from OPM,
@@ -306,20 +307,20 @@ class TestOrientingAStructureThatIsInTheWrongFrame:
         assert "membrane_orient: true" in problem
         assert "opm.phar.umich.edu" in problem
 
-    def test_the_log_says_what_it_is_about_to_do(self) -> None:
+    def test_the_log_says_what_it_is_about_to_do(self, tmp_path, monkeypatch) -> None:
         """It announced "Solvating" and then refused to solvate, because the
-        message printed before the branch chose."""
-        import inspect
+        message printed before the branch chose. One message now chooses
+        what to say, and says only that."""
+        membrane = _prepared(tmp_path / "bilayer", monkeypatch, membrane="POPC",
+                             membrane_orientation_checked=True)
+        assert membrane.placed_by == "addMembrane"
+        assert any("Embedding in a POPC bilayer" in m for m in membrane.said)
+        assert not any("Solvating" in m for m in membrane.said)
 
-        from fastmdxplora.setup import prepare
-
-        source = inspect.getsource(prepare.prepare_system)
-        assert "Embedding in a" in source
-        # One message that chooses what to say, rather than one announcing
-        # solvation before the branch has decided.
-        assert source.count("Embedding in a") == 1
-        assert "Solvating in a" in source
-
+        water = _prepared(tmp_path / "water", monkeypatch)
+        assert water.placed_by == "addSolvent"
+        assert any("Solvating in a cube box" in m for m in water.said)
+        assert not any("Embedding" in m for m in water.said)
 
 class TestItHandlesWhatThePipelineActuallyPasses:
     """The tests above pass plain numpy arrays, which is convenient and is not
@@ -480,21 +481,91 @@ class TestWhetherTheRotationCanBeTrusted:
         topology, positions = self._helix(["LEU", "LYS"])
         assert check_hydrophobic_belt(topology, positions) is None
 
-    def test_both_checks_run_in_the_setup_phase(self) -> None:
-        import inspect
+    def test_both_checks_run_in_the_setup_phase(self, tmp_path, monkeypatch) -> None:
+        # Whether the axis can be trusted before rotating, and whether what
+        # came out looks like a membrane protein -- both, for a membrane, and
+        # neither for a box of water.
+        bilayer = _prepared(tmp_path / "bilayer", monkeypatch, membrane="POPC",
+                            membrane_orient=True)
+        assert {"check_axis_is_well_defined", "check_hydrophobic_belt"} <= set(bilayer.checked)
+        water = _prepared(tmp_path / "water", monkeypatch, membrane_orient=True)
+        assert water.checked == []
 
-        from fastmdxplora.setup import prepare
-
-        source = inspect.getsource(prepare.prepare_system)
-        assert "check_axis_is_well_defined" in source
-        assert "check_hydrophobic_belt" in source
-
-    def test_and_can_be_overridden_deliberately(self) -> None:
+    def test_and_can_be_overridden_deliberately(self, tmp_path, monkeypatch) -> None:
         """Somebody who knows their structure should not be blocked by a
         coarse test -- but has to say so."""
-        import inspect
+        from fastmdxplora.refusals import StudyError
 
-        from fastmdxplora.setup import prepare
+        for check in ("check_axis_is_well_defined", "check_hydrophobic_belt"):
+            with pytest.raises(StudyError) as caught:
+                _prepared(tmp_path / f"refused-{check}", monkeypatch, membrane="POPC",
+                          membrane_orient=True, failing=check)
+            assert caught.value.code == "setup.membrane.orientation_unchecked", check
+            assert "found wanting" in str(caught.value), check
 
-        source = inspect.getsource(prepare.prepare_system)
-        assert "if membrane_orient and not membrane_orientation_checked" in source
+            said_so = _prepared(tmp_path / f"said-{check}", monkeypatch, membrane="POPC",
+                                membrane_orient=True, membrane_orientation_checked=True,
+                                failing=check)
+            assert said_so.placed_by == "addMembrane", check
+            assert check not in said_so.checked, check
+
+
+class _Placed(Exception):
+    """Raised in place of packing lipids or water, which takes minutes."""
+
+
+def _prepared(where, monkeypatch, *, failing=None, **options):
+    """Prepare a small peptide with `options`, stopping where the bilayer or
+    the water would be placed. The orientation checks are recorded and pass
+    -- a tripeptide is not a membrane protein -- except `failing`, which
+    reports a problem. Returns what was placed, what was checked, and what
+    was logged."""
+    import logging
+    from types import SimpleNamespace
+
+    from openmm.app import Modeller
+
+    from fastmdxplora.setup import membrane
+    from fastmdxplora.setup.prepare import prepare_system
+    from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
+
+    where.mkdir(parents=True, exist_ok=True)
+    structure = where / "peptide.pdb"
+    structure.write_text(TRI_ALANINE, encoding="utf-8")
+    checked: list = []
+
+    def stand_in(name):
+        def check(*args, **kwargs):
+            checked.append(name)
+            return "The orientation was found wanting." if name == failing else None
+        return check
+
+    for name in ("check_axis_is_well_defined", "check_orientation",
+                 "check_hydrophobic_belt", "check_chains_point_the_same_way"):
+        monkeypatch.setattr(membrane, name, stand_in(name))
+    def placing(method):
+        def place(self, *args, **kwargs):
+            raise _Placed(method)
+        return place
+
+    for method in ("addMembrane", "addSolvent"):
+        monkeypatch.setattr(Modeller, method, placing(method))
+    said: list = []
+
+    class Heard(logging.Handler):
+        def emit(self, record):
+            said.append(record.getMessage())
+
+    log = logging.getLogger("fastmdx")
+    heard, level = Heard(), log.level
+    log.addHandler(heard)
+    log.setLevel(logging.INFO)
+    try:
+        prepare_system(prepared_pdb=str(structure), output_dir=str(where / "setup"), **options)
+        placed_by = None
+    except _Placed as placed:
+        placed_by = str(placed)
+    finally:
+        log.removeHandler(heard)
+        log.setLevel(level)
+    return SimpleNamespace(placed_by=placed_by, checked=checked, said=said)

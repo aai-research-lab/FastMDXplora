@@ -133,3 +133,30 @@ def what_plumed_is_given(root: Path, monkeypatch, **bias: Any) -> tuple[dict, Pa
                        production_steps=10, nvt_steps=0, npt_steps=0,
                        minimize=False, platform="CPU", **bias)
     return given, out
+
+
+def what_preparation_receives(root: Path, monkeypatch, **options: Any) -> dict:
+    """The arguments the setup phase hands prepare_system, stopping there.
+
+    The structure is a small peptide handed over as already fixed, so the
+    phase goes straight from reading it to preparing it."""
+    from fastmdxplora.setup import pipeline, prepare
+    from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
+
+    root.mkdir(parents=True, exist_ok=True)
+    structure = root / "peptide.pdb"
+    structure.write_text(TRI_ALANINE, encoding="utf-8")
+    received: dict = {}
+
+    def stand_in(*args, **kwargs):
+        received.update(kwargs)
+        raise Reached
+
+    monkeypatch.setattr(prepare, "prepare_system", stand_in)
+    orchestrator = SimpleNamespace(system=str(structure), _structure_provenance=None,
+                                   _presenter=None)
+    (root / "setup").mkdir(exist_ok=True)
+    with pytest.raises(Reached):
+        pipeline.run(orchestrator=orchestrator, output_dir=root / "setup",
+                     fixed_pdb=str(structure), **options)
+    return received
