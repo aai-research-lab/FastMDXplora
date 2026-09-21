@@ -738,8 +738,12 @@ def test_a_fresh_server_adopts_a_running_study_and_can_stop_it(tmp_path):
             {"pid": child.pid, "argv": ["fastmdx", "explore"], "started_at": "2026-09-19T12:00:00+00:00"}),
             encoding="utf-8")
         rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        # Adopted once its identity is confirmed. On a loaded Windows runner
+        # the first PowerShell lookup can miss its timeout; the retry then
+        # adopts it, so this waits inside the retry window rather than
+        # requiring the first answer to be the one.
+        assert _until(lambda: rt.snapshot()["status"] == "running", seconds=45)
         snap = rt.snapshot()
-        assert snap["status"] == "running"
         assert snap["process_running"] is True
         assert rt.process.pid == child.pid
         assert rt.stop()["stopped"] is True
@@ -802,7 +806,7 @@ def test_load_study_adopts_a_running_one(tmp_path):
                                               encoding="utf-8")
         rt = DashboardRuntime(workspace_root=tmp_path / "w", exploration_root=tmp_path, active_root=None)
         assert rt.switch_to(study)["ok"]
-        assert rt.snapshot()["status"] == "running"
+        assert _until(lambda: rt.snapshot()["status"] == "running", seconds=45)
     finally:
         child.kill()
         child.wait()
@@ -886,3 +890,158 @@ def test_an_unreadable_command_line_is_not_trusted(monkeypatch):
     monkeypatch.setattr(exploration, "_command_line_of", lambda pid: None)
     assert exploration._process_is_this_run(os.getpid(), Path("/nowhere")) is False
 
+
+
+# ---------------------------------------------------------------------------
+# A run whose identity cannot be read yet is asked about again.
+#
+# On Windows the command line is read by starting PowerShell, which on a
+# loaded machine can miss its ten-second timeout the first time and answer
+# the next. Adoption was tried once, so a running study opened on such a
+# machine read `idle`, with no Stop, until it was reopened -- the problem
+# adoption was built to fix, surviving on the slow path. These pin the
+# retry without depending on PowerShell's timing, which is what made the
+# original test flaky.
+# ---------------------------------------------------------------------------
+
+
+def _adoption_runtime(tmp_path, monkeypatch, answers):
+    """A study with a live run, whose command line answers from `answers`."""
+    import json
+
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    monkeypatch.setattr(exploration, "ADOPTION_RETRY_INTERVAL", 0.05)
+    monkeypatch.setattr(exploration, "ADOPTION_RETRY_SECONDS", 5.0)
+    study = _make_run(tmp_path, "fastmdxplora_1UAO_study_20260919120000")
+    child = _fake_run(study)
+    (study / RUN_PROCESS_FILE).write_text(json.dumps(
+        {"pid": child.pid, "argv": ["fastmdx", "explore"],
+         "started_at": "2026-09-19T12:00:00+00:00"}), encoding="utf-8")
+    replies = iter(answers)
+    last = [None]
+
+    def command_line(pid):
+        try:
+            last[0] = next(replies)
+        except StopIteration:
+            pass
+        return last[0](study) if callable(last[0]) else last[0]
+
+    monkeypatch.setattr(exploration, "_command_line_of", command_line)
+    return study, child
+
+
+def _until(predicate, seconds=5.0):
+    import time
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return predicate()
+
+
+def test_a_run_that_cannot_be_identified_yet_is_asked_again(tmp_path, monkeypatch):
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    ours = lambda study: f"python -m fastmdxplora.cli explore --output {study}"  # noqa: E731
+    study, child = _adoption_runtime(tmp_path, monkeypatch, [None, None, ours])
+    try:
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        # Not adopted on "cannot tell" -- the safety rule is unchanged.
+        assert rt.process is None
+        assert _until(lambda: rt.snapshot()["status"] == "running")
+        assert rt.process.pid == child.pid
+    finally:
+        child.kill(); child.wait()
+
+
+def test_a_run_found_not_to_be_ours_is_never_adopted(tmp_path, monkeypatch):
+    # The reason the rule exists: a PID the OS has reused for something
+    # else. A slow first answer must not turn into adopting it.
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    study, child = _adoption_runtime(tmp_path, monkeypatch,
+                                     [None, "notepad.exe C:\\notes.txt"])
+    try:
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        assert _until(lambda: rt._adoption_thread is not None
+                      and not rt._adoption_thread.is_alive())
+        assert rt.process is None
+        assert rt.snapshot()["status"] == "idle"
+    finally:
+        child.kill(); child.wait()
+
+
+def test_a_run_that_stays_unidentifiable_is_given_up_on(tmp_path, monkeypatch):
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    study, child = _adoption_runtime(tmp_path, monkeypatch, [None])
+    # After the helper, which sets its own window, and before the runtime
+    # starts the retry that reads it.
+    monkeypatch.setattr(exploration, "ADOPTION_RETRY_SECONDS", 0.3)
+    try:
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        assert _until(lambda: not rt._adoption_thread.is_alive(), seconds=3)
+        assert rt.process is None
+    finally:
+        child.kill(); child.wait()
+
+
+def test_opening_another_study_cancels_the_retry(tmp_path, monkeypatch):
+    # A retry must never adopt the run of a study the person has left.
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    ours = lambda study: f"python -m fastmdxplora.cli explore --output {study}"  # noqa: E731
+    study, child = _adoption_runtime(tmp_path, monkeypatch, [None] * 5 + [ours])
+    other = _make_run(tmp_path, "fastmdxplora_1L2Y_study_20260919130000")
+    try:
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        rt.switch_to(other)
+        assert _until(lambda: not rt._adoption_thread.is_alive())
+        assert rt.process is None
+    finally:
+        child.kill(); child.wait()
+
+
+def test_a_slow_answer_does_not_hold_up_the_page(tmp_path, monkeypatch):
+    # The retry reads the command line outside the lock, so the page's own
+    # requests do not wait behind a PowerShell that takes its time.
+    import time
+
+    def slow(study):
+        time.sleep(1.5)
+        return None
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    study, child = _adoption_runtime(tmp_path, monkeypatch, [None, slow])
+    try:
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        time.sleep(0.2)  # let the retry reach its slow read
+        started = time.monotonic()
+        rt.snapshot()
+        assert time.monotonic() - started < 0.5, "snapshot waited behind the retry"
+    finally:
+        child.kill(); child.wait()
+
+
+def test_a_study_is_retried_by_one_thread_not_many(tmp_path, monkeypatch):
+    # Asking again for a study already being retried starts nothing new.
+    # Without this, reopening a slow study repeatedly would pile up
+    # threads, each starting its own PowerShell.
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    study, child = _adoption_runtime(tmp_path, monkeypatch, [None])
+    try:
+        rt = DashboardRuntime(workspace_root=study, exploration_root=tmp_path, active_root=study)
+        first = rt._adoption_thread
+        assert first is not None and first.is_alive()
+        rt._retry_adoption(study.resolve())
+        assert rt._adoption_thread is first
+    finally:
+        child.kill(); child.wait()

@@ -180,21 +180,38 @@ class _AdoptedProcess:
         return self._returncode or 0
 
 
-def _process_is_this_run(pid: int, root: Path) -> bool:
-    """The PID is alive and its command line names this study or the
-    program. Guards against a stale record whose PID the OS has reused."""
+#: How long a run whose command line cannot yet be read is retried, and how
+#: often. Reading it on Windows starts PowerShell, which on a loaded machine
+#: can take longer than its ten-second timeout the first time and be quick
+#: the next. Module-level so a test can shorten them.
+ADOPTION_RETRY_SECONDS = 60.0
+ADOPTION_RETRY_INTERVAL = 2.0
+
+
+def _identify_run(pid: int, root: Path) -> bool | None:
+    """Whether the PID is this study's run: True, False, or None for cannot
+    tell yet.
+
+    False is definite -- the process is gone, or its command line was read
+    and names something else, which is what guards against a stale record
+    whose PID the OS has reused. None is not: the process is alive and its
+    command line could not be read, which on Windows means PowerShell did
+    not answer in time. Adopting on None would let Stop kill a process the
+    OS gave the number to, so it is never adopted on None -- but it is
+    asked again, rather than taken as a final answer.
+    """
     if not _process_alive(pid):
         return False
     line = _command_line_of(pid)
     if line is None:
-        # Alive, and no way to see what it is. Adopting it would mean Stop
-        # could kill a process the OS reused the number for. Not adopted;
-        # the record is a guess and the sidebar says idle, which is the
-        # honest word for "cannot tell".
-        logger.warning("Process %s is alive but its command line could not be read; "
-                       "not adopting it.", pid)
-        return False
+        return None
     return _command_line_is_a_run(line, root)
+
+
+def _process_is_this_run(pid: int, root: Path) -> bool:
+    """The PID is alive and its command line names this study or the
+    program. "Cannot tell" is not "yes": undetermined is not adopted."""
+    return _identify_run(pid, root) is True
 
 
 def _command_line_is_a_run(line: str, root: Path) -> bool:
@@ -746,6 +763,11 @@ class DashboardRuntime:
     log_path: Path | None = None
     command: list[str] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    # A study whose run could not yet be identified, and the thread asking
+    # again. Cleared when a different study is opened, so a retry never
+    # adopts the run of a study the person has already left.
+    _adoption_root: Path | None = field(default=None, repr=False)
+    _adoption_thread: threading.Thread | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.workspace_root = self.workspace_root.expanduser().resolve()
@@ -1276,6 +1298,8 @@ class DashboardRuntime:
         folder; this reads it, checks the process is alive and is this
         run, and adopts it.
         """
+        # Whatever study was being retried, this one replaces it.
+        self._adoption_root = None
         if root is None or self.process is not None and self.process.poll() is None:
             return False
         from fastmdxplora.orchestrator import RUN_PROCESS_FILE
@@ -1284,8 +1308,22 @@ class DashboardRuntime:
         pid = record.get("pid")
         if not isinstance(pid, int) or pid <= 0:
             return False
-        if not _process_is_this_run(pid, Path(root)):
+        identity = _identify_run(pid, Path(root))
+        if identity is None:
+            # Alive, and not yet identifiable. Not adopted -- the sidebar
+            # says idle, which is the honest word for "cannot tell" -- but
+            # asked again, so a slow first answer is not the last one.
+            logger.info("Process %s is alive but its command line could not be read "
+                        "yet; asking again.", pid)
+            self._retry_adoption(Path(root))
             return False
+        if not identity:
+            return False
+        self._hold(Path(root), record, pid)
+        return True
+
+    def _hold(self, root: Path, record: Mapping[str, Any], pid: int) -> None:
+        """Take a run this server did not start as the one it is watching."""
         self.process = _AdoptedProcess(pid, Path(root))
         self.running_root = Path(root)
         self.process_started_at = str(record.get("started_at") or _utc_now())
@@ -1294,7 +1332,51 @@ class DashboardRuntime:
         self.completion_error = None
         self.log_path = Path(root) / "exploration.log"
         self.command = [str(a) for a in (record.get("argv") or [])]
-        return True
+
+    def _retry_adoption(self, root: Path) -> None:
+        """Ask again, in the background, until the run is identified, is
+        found not to be this study's, ends, or the window closes."""
+        with self.lock:
+            thread = self._adoption_thread
+            if thread is not None and thread.is_alive() and self._adoption_root == root:
+                return
+            self._adoption_root = root
+            self._adoption_thread = threading.Thread(
+                target=self._keep_trying_to_adopt, args=(root,),
+                name="fastmdx-adopt", daemon=True)
+            self._adoption_thread.start()
+
+    def _keep_trying_to_adopt(self, root: Path) -> None:
+        import time
+
+        from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+        deadline = time.monotonic() + ADOPTION_RETRY_SECONDS
+        while time.monotonic() < deadline:
+            time.sleep(ADOPTION_RETRY_INTERVAL)
+            with self.lock:
+                if self._adoption_root != root:
+                    return  # the person has opened a different study
+                if self.process is not None and self.process.poll() is None:
+                    return  # already watching a run
+            record = _json_mapping(root / RUN_PROCESS_FILE)
+            pid = record.get("pid")
+            if not isinstance(pid, int) or pid <= 0:
+                return  # the run finished and took its record with it
+            # Outside the lock: on Windows this can take ten seconds, and
+            # the page's own requests must not wait behind it.
+            identity = _identify_run(pid, root)
+            if identity is False:
+                return
+            if identity is True:
+                with self.lock:
+                    if (self._adoption_root == root
+                            and (self.process is None or self.process.poll() is not None)):
+                        self._hold(root, record, pid)
+                        self._adoption_root = None
+                return
+        logger.warning("Process for %s stayed unidentifiable for %.0f s; not adopting it. "
+                       "Reopen the study to try again.", root, ADOPTION_RETRY_SECONDS)
 
     def switch_to(self, folder: str | Path) -> dict[str, Any]:
         """Watch a different output folder without relaunching.

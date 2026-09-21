@@ -52,10 +52,20 @@ class TestEveryDoorSpeaksTheSameName(unittest.TestCase):
                 self.assertLess(names.index("include_phase"), names.index("include"))
 
     def test_the_gui(self):
-        from fastmdxplora.gui import schema_payload
+        # The phase lists are drawn as the phase checkboxes rather than as
+        # generic fields, so they are absent from the payload's fields on
+        # purpose. What must hold is that every top-level setting reaches
+        # the form one way or the other -- a setting no door can set is the
+        # drift this whole change was about.
+        from fastmdxplora.config.schema import all_schemas
+        from fastmdxplora.gui.schema_payload import _STRUCTURAL_TOP_LEVEL, schema_payload
 
-        source = inspect.getsource(schema_payload)
-        self.assertIn('"include_phase": "the phase checkboxes"', source)
+        top = {f.name for f in all_schemas()["(top-level)"].fields}
+        fields = {f["name"] for f in schema_payload()["run_options"]}
+        self.assertIn("include_phase", _STRUCTURAL_TOP_LEVEL)
+        self.assertIn("exclude_phase", _STRUCTURAL_TOP_LEVEL)
+        self.assertEqual(top - fields - set(_STRUCTURAL_TOP_LEVEL), set(),
+                         "a top-level setting the GUI cannot set")
 
     def test_the_generated_script_and_command_agree_with_the_config(self):
         from fastmdxplora.config.languages import cli_command, python_script

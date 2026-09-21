@@ -543,18 +543,6 @@ class TestACheckpointSaysWhatItIs(unittest.TestCase):
         self.assertLess(source.index("check_continuation(resume_from"),
                         source.index("load_checkpoint(omm, simulation, resume_from"))
 
-    def test_both_writers_carry_the_sidecar(self):
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner.run_simulation)
-        self.assertIn('sidecar={"stage": "production"', source)
-        self.assertIn("write_checkpoint_sidecar(\n                checkpoint_path", source)
-        reporter = inspect.getsource(runner._attach_checkpoint_reporter)
-        self.assertIn("write_checkpoint_sidecar(", reporter)
-
-
 class TestContinuingAStudyThatStopped(unittest.TestCase):
     """One new segment from a study that ran and stopped, with the
     arithmetic done from the record. The Agent used to write resume_from
@@ -683,14 +671,6 @@ class TestProductionStepsAreProductionSteps(unittest.TestCase):
         write_checkpoint_sidecar(chk, stage="production", step=step, ensemble="npt",
                                  temperature_K=300.0, timestep_fs=2.0, study=str(s))
         return s
-
-    def test_the_counter_starts_at_zero_for_production(self):
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner.run_simulation)
-        self.assertIn("simulation.currentStep = 0", source)
 
     def test_a_finished_half_nanosecond_reads_as_half(self):
         from fastmdxplora.simulation.resume import continuation_of

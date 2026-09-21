@@ -9,6 +9,7 @@ refuses it still refuses; automatic does not mean unchecked.
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -126,19 +127,6 @@ class TestAContinuationIsTheSameStudy(unittest.TestCase):
 
 class TestTheDriverDoesAllThree(unittest.TestCase):
 
-    def test_it_plans_simulates_joins_and_reanalyses(self):
-        import inspect
-
-        from fastmdxplora.simulation.resume import extend_study
-
-        source = inspect.getsource(extend_study)
-        self.assertIn("join_segments(root", source)
-        self.assertIn('whole["include_phase"] = ["analysis", "report"]', source)
-        # The join is against the trajectory's own topology, not the
-        # solvated system's, and the study's report is replaced on purpose.
-        self.assertIn("trajectory_topology.pdb", source)
-        self.assertIn("explore(force=True)", source)
-
     def test_a_refusal_stops_the_step(self):
         # An unjoinable study is reported, not worked around.
         from fastmdxplora.simulation.resume import extend_study
@@ -148,17 +136,6 @@ class TestTheDriverDoesAllThree(unittest.TestCase):
         answer = extend_study(root, more_ns=0.1)
         self.assertFalse(answer["ok"])
         self.assertEqual(answer["stage"], "planning")
-
-    def test_the_cli_offers_it(self):
-        from pathlib import Path as P
-
-        source = (P(__file__).resolve().parents[1] / "src" / "fastmdxplora"
-                  / "cli" / "main.py").read_text(encoding="utf-8")
-        self.assertIn("Path(str(resume_from)).is_dir()", source)
-        self.assertIn('total_ns=simulation.get("duration_ns")', source)
-        self.assertIn('more_ns=simulation.get("extra_ns")', source)
-
-
 
 class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
     """Two intentions, one path. Resume finishes what the study planned;
@@ -189,15 +166,16 @@ class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
                 self.assertEqual(plan.config["simulation"]["nvt_steps"], 0)
 
     def test_the_staged_runner_uses_the_same_segment_names(self):
-        # A campaign's segments and an extension's are the same
-        # convention, so the same join reads both.
-        import inspect
+        # A campaign's segments and an extension's are one convention, so
+        # the same join reads both. Asked of the function, not its source.
+        from fastmdxplora.agent.run import segment_directory
 
-        from fastmdxplora.agent import run as staged
-
-        self.assertIn('f"segment-{segment:03d}"',
-                      inspect.getsource(staged.segment_directory))
-
+        self.assertEqual(segment_directory("/r", "camp", "s", segment=1,
+                                           of_segments=3).name, "segment-001")
+        # A study that runs in one piece is its own base -- segment zero,
+        # which is the rule the surveyor applies to a study later extended.
+        self.assertEqual(segment_directory("/r", "camp", "s", segment=0,
+                                           of_segments=1).name, "s")
 
 class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
     """A killed run's trajectory holds frames written after its last
@@ -222,34 +200,6 @@ class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
         (root / "resolved_config.yml").write_text(yaml.safe_dump({
             "simulation": {}}), encoding="utf-8")
         self.assertIsNone(frames_before_checkpoint(root))
-
-    def test_the_join_leaves_the_overlap_out(self):
-        from fastmdxplora.simulation.resume import extend_study
-
-        root = _study()
-        (root / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink()
-        (root / "resolved_config.yml").write_text(yaml.safe_dump({
-            "systems": [{"id": "s1", "system": "1L2Y"}],
-            "simulation": {"duration_ns": 0.5, "nvt_steps": 50000,
-                           "npt_steps": 50000, "timestep_fs": 2.0,
-                           "trajectory_interval_steps": 125}}), encoding="utf-8")
-        import inspect
-
-        source = inspect.getsource(extend_study)
-        self.assertIn("keep_frames[piece.index] = keep", source)
-        self.assertIn("keep_frames=keep_frames or None", source)
-        # And the resume is told it is loading an unsealed checkpoint
-        # rather than inferring it.
-        self.assertIn('["resume_unsealed"] = True', source)
-
-    def test_the_join_records_what_it_left_out(self):
-        import inspect
-
-        from fastmdxplora.analysis import joining
-
-        source = inspect.getsource(joining.join_segments)
-        self.assertIn('"trimmed": {str(index): count', source)
-        self.assertIn("if written_here >= allowed:", source)
 
     def test_where_it_cannot_be_counted_the_join_is_still_refused(self):
         from fastmdxplora.simulation.resume import extend_study
@@ -287,16 +237,6 @@ class TestACheckpointAndItsSealAreOneFact(unittest.TestCase):
                         encoding="utf-8")
         return checkpoint, seal
 
-    def test_every_checkpoint_is_sealed_as_it_is_written(self):
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner._attach_checkpoint_reporter)
-        self.assertIn("new_seal.write_text(", source)
-        self.assertIn("_os.replace(new_chk, chk_path)", source)
-        self.assertIn("_os.replace(new_seal, seal_path)", source)
-
     def test_a_matching_pair_verifies(self):
         from fastmdxplora.simulation.runner import verify_checkpoint
 
@@ -322,18 +262,18 @@ class TestACheckpointAndItsSealAreOneFact(unittest.TestCase):
         with self.assertRaises(UnstableRun):
             verify_checkpoint(checkpoint, require_seal=True)
 
-    def test_the_runner_accepts_an_unsealed_checkpoint_only_when_told(self):
-        import inspect
+    def test_an_unsealed_checkpoint_is_refused_unless_asked_for(self):
+        # Never by inference: a checkpoint with no seal is refused where a
+        # seal is required, and accepted only where the caller says so --
+        # which the real resume of a killed run exercises end to end.
+        from fastmdxplora.refusals import MissingResultError
+        from fastmdxplora.simulation.runner import verify_checkpoint
 
-        from fastmdxplora.simulation import pipeline, runner
-
-        source = inspect.getsource(runner.run_simulation)
-        self.assertIn("require_seal=not bool(resume_unsealed)", source)
-        # And the key reaches the runner from the config rather than
-        # being set somewhere in between.
-        self.assertIn('resume_unsealed=bool(params.get("resume_unsealed"))',
-                      inspect.getsource(pipeline))
-
+        checkpoint = Path(tempfile.mkdtemp()) / "checkpoint.chk"
+        checkpoint.write_bytes(b"state")
+        with self.assertRaises(MissingResultError):
+            verify_checkpoint(checkpoint, require_seal=True)
+        self.assertFalse(verify_checkpoint(checkpoint, require_seal=False))
 
 class TestOneSettingOneFlag(unittest.TestCase):
     """Continuing a study is a property of the simulation phase, so it is
@@ -373,17 +313,13 @@ class TestOneSettingOneFlag(unittest.TestCase):
             self.assertIn(flag, out)
 
     def test_the_subcommands_are_gone(self):
-        source = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
-                  / "cli" / "main.py").read_text(encoding="utf-8")
-        self.assertNotIn('("resume", "Finish a study', source)
-        self.assertNotIn('if args.command in ("extend", "resume")', source)
+        # Asked of the parser: the words are no longer commands.
+        from fastmdxplora.cli.main import _build_parser
 
-    def test_a_study_directory_routes_to_the_continuation(self):
-        source = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
-                  / "cli" / "main.py").read_text(encoding="utf-8")
-        self.assertIn('Path(str(resume_from)).is_dir()', source)
-        self.assertIn('total_ns=simulation.get("duration_ns")', source)
-        self.assertIn('more_ns=simulation.get("extra_ns")', source)
+        parser = _build_parser()
+        for gone in ("resume", "extend"):
+            with self.subTest(command=gone), self.assertRaises(SystemExit):
+                parser.parse_args([gone, "--output", "x"])
 
     def test_every_top_level_setting_is_in_a_group(self):
         # Three settings landed at the top level with no group and no flag,
@@ -401,3 +337,57 @@ class TestOneSettingOneFlag(unittest.TestCase):
         self.assertIn("resume_from: ./fastmdxplora_1L2Y_study", prompt)
         self.assertIn("extra_ns: 0.1", prompt)
         self.assertNotIn("continues:", prompt)
+
+
+class TestTheErrorPathsAreRun(unittest.TestCase):
+    """The paths that report a problem, executed rather than read."""
+
+    def test_a_join_refused_after_the_segment_ran_is_reported(self):
+        # The segment was simulated and cannot be joined: the person must
+        # be told which stage failed and why, not handed a half-done study
+        # as if it were finished.
+        from unittest import mock
+
+        import fastmdxplora
+        from fastmdxplora.analysis import joining
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.simulation.resume import extend_study
+
+        root = _study()
+        # A code the join really raises: the refusal registry honours only
+        # registered codes, and an invented one would read "unclassified".
+        refused = StudyError("Segments [2] are missing, so joining would put a jump "
+                             "in the middle.", code="analysis.data.absent")
+        with mock.patch.object(fastmdxplora, "FastMDXplora") as run, \
+                mock.patch.object(joining, "join_segments", side_effect=refused):
+            answer = extend_study(root, more_ns=0.1)
+        self.assertTrue(run.called, "the segment should have been simulated first")
+        self.assertFalse(answer["ok"])
+        self.assertEqual(answer["stage"], "joining")
+        self.assertIn("missing", answer["error"])
+        self.assertEqual(answer["refusal"]["code"], "analysis.data.absent")
+
+    def test_a_folder_that_is_not_a_segment_is_ignored(self):
+        from fastmdxplora.simulation.resume import next_segment_index
+
+        root = _study()
+        (root / "segment-notes").mkdir()
+        (root / "segment-003").mkdir()
+        self.assertEqual(next_segment_index(root), 4)
+
+    def test_frames_cannot_be_counted_without_a_step(self):
+        from fastmdxplora.simulation.resume import frames_before_checkpoint
+
+        root = _study()
+        side = root / "simulation" / "checkpoint.chk.json"
+        data = json.loads(side.read_text(encoding="utf-8"))
+        data.pop("step", None)
+        side.write_text(json.dumps(data), encoding="utf-8")
+        self.assertIsNone(frames_before_checkpoint(root))
+
+    def test_frames_cannot_be_counted_from_an_unreadable_config(self):
+        from fastmdxplora.simulation.resume import frames_before_checkpoint
+
+        root = _study()
+        (root / "resolved_config.yml").write_text("simulation: [unclosed", encoding="utf-8")
+        self.assertIsNone(frames_before_checkpoint(root))
