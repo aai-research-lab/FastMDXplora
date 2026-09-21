@@ -192,41 +192,55 @@ class TestItReachesTheRunner:
         table, _prefix = _PHASE_SPEC["simulate"]
         assert "metadynamics" in {dest for _flag, dest, _kw in table}
 
-    def test_the_pipeline_passes_it(self) -> None:
-        import inspect
+    HILLS = {"collective_variable": "distance", "selection_a": "index 0",
+             "selection_b": "index 3", "sigma": 0.02, "height_kjmol": 1.0,
+             "pace_steps": 100}
 
-        from fastmdxplora.simulation import pipeline
+    def test_the_pipeline_passes_it(self, tmp_path, monkeypatch) -> None:
+        from tests._the_phase import what_the_runner_receives
 
-        assert "metadynamics=params.get" in inspect.getsource(pipeline)
+        received = what_the_runner_receives(tmp_path, monkeypatch, metadynamics=self.HILLS)
+        assert received["metadynamics"] == self.HILLS
 
-    def test_the_runner_writes_the_script_where_it_can_be_read(self) -> None:
+    @classmethod
+    def _what_plumed_is_given(cls, tmp_path, monkeypatch):
+        """Run the runner on a small system and record what reaches PLUMED,
+        stopping there -- so neither PLUMED nor a real run is needed."""
+        from pathlib import Path
+
+        from fastmdxplora.simulation import plumed
+        from fastmdxplora.simulation.runner import run_simulation
+        from tests._the_phase import Reached, a_prepared_water_box
+
+        given: dict = {}
+
+        def stand_in(omm, system, plumed_config, output_dir, **kwargs):
+            given.update(config=dict(plumed_config), output_dir=Path(output_dir))
+            raise Reached
+
+        monkeypatch.setattr(plumed, "add_plumed_force", stand_in)
+        out = tmp_path / "out"
+        with pytest.raises(Reached):
+            run_simulation(**a_prepared_water_box(tmp_path), output_dir=str(out),
+                           production_steps=10, nvt_steps=0, npt_steps=0,
+                           minimize=False, platform="CPU", metadynamics=cls.HILLS)
+        return given, out
+
+    def test_the_runner_writes_the_script_where_it_can_be_read(self, tmp_path, monkeypatch) -> None:
         """It decides what the run measures, so it belongs beside the results
         rather than in memory."""
-        import inspect
+        _, out = self._what_plumed_is_given(tmp_path, monkeypatch)
+        script = out / "metadynamics.plumed"
+        assert script.is_file()
+        assert "METAD" in script.read_text(encoding="utf-8")
 
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner.run_simulation)
-        assert "metadynamics.plumed" in source
-        assert "script_path.write_text" in source
-
-    def test_it_becomes_a_plumed_run(self) -> None:
+    def test_it_becomes_a_plumed_run(self, tmp_path, monkeypatch) -> None:
         """The existing integration does the biasing; this is a shorter way to
-        describe it, not a second mechanism."""
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner.run_simulation)
-        block = source[source.index("if metadynamics:"):]
-        # The whole block rather than its first two thousand characters:
-        # the window was an arbitrary bound that failed the moment the
-        # block grew a branch for two variables, which is a change to the
-        # length of the code and not to what this test is about. The string
-        # appears once after the slice, so the assertion is still specific.
-        assert block.count('plumed = {"enabled": True') == 1
-
-
+        describe it, not a second mechanism. PLUMED is handed the script the
+        run wrote, and nothing else biases it."""
+        given, out = self._what_plumed_is_given(tmp_path, monkeypatch)
+        assert given["config"]["enabled"] is True
+        assert given["config"]["script"] == str(out / "metadynamics.plumed")
 class TestBoundingWhereTheLigandGoes:
     """A metadynamics run on a ligand's distance will, given time, push the
     ligand into bulk solvent -- where the landscape is flat and unbounded, so

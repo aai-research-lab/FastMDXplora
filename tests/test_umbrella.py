@@ -13,6 +13,8 @@ import re
 import numpy as np
 import pytest
 
+from tests._the_phase import a_prepared_water_box, what_the_runner_receives
+
 from fastmdxplora.simulation.umbrella import KB_KJ
 
 #: A double well with a barrier of exactly 10 kJ/mol, so the recovered value
@@ -366,7 +368,7 @@ class TestOneWindowInTheRunner:
         # naming it is in the pipeline's source.
         window = {"collective_variable": "distance", "selection_a": "index 0",
                   "selection_b": "index 3", "centre": 0.5, "force_constant": 1000.0}
-        received = _what_the_runner_receives(tmp_path, monkeypatch, umbrella=window)
+        received = what_the_runner_receives(tmp_path, monkeypatch, umbrella=window)
         assert received["umbrella"] == window
 
     def test_only_one_way_of_moving_a_coordinate_at_a_time(self, tmp_path) -> None:
@@ -375,7 +377,7 @@ class TestOneWindowInTheRunner:
         from fastmdxplora.refusals import StudyError
         from fastmdxplora.simulation.runner import run_simulation
 
-        files = _a_prepared_water_box(tmp_path)
+        files = a_prepared_water_box(tmp_path)
         # Each block as the schema describes it, and each valid on its own,
         # so the only thing wrong with a pair is that it is a pair.
         between = {"collective_variable": "distance",
@@ -397,7 +399,7 @@ class TestOneWindowInTheRunner:
         from fastmdxplora.refusals import StudyError
         from fastmdxplora.simulation.runner import run_simulation
 
-        files = _a_prepared_water_box(tmp_path)
+        files = a_prepared_water_box(tmp_path)
         with pytest.raises(StudyError) as caught:
             run_simulation(**files, output_dir=str(tmp_path / "out"),
                            production_steps=10, nvt_steps=0, npt_steps=0,
@@ -1726,68 +1728,3 @@ class TestAnUnsampledBinIsNotAMeasurement:
         result = self._pmf(gap=True)
         values = [v for v in result["pmf"]["free_energy_kjmol"] if v is not None]
         assert min(values) == pytest.approx(0.0, abs=1e-9)
-
-
-
-def _a_prepared_water_box(tmp_path) -> dict:
-    """The smallest prepared system the runner will load: one water,
-    solvated into a small box. Enough to reach the checks that follow
-    loading, without preparing a protein."""
-    openmm = pytest.importorskip("openmm")
-    from openmm import unit
-    from openmm.app import PME, ForceField, HBonds, Modeller, PDBFile
-
-    seed = tmp_path / "seed.pdb"
-    seed.write_text(
-        "CRYST1   20.000   20.000   20.000  90.00  90.00  90.00 P 1\n"
-        "ATOM      1  O   HOH A   1      10.000  10.000  10.000  1.00  0.00           O\n"
-        "ATOM      2  H1  HOH A   1      10.800  10.500  10.000  1.00  0.00           H\n"
-        "ATOM      3  H2  HOH A   1       9.200  10.500  10.000  1.00  0.00           H\n"
-        "END\n")
-    pdb = PDBFile(str(seed))
-    forcefield = ForceField("amber14-all.xml", "amber14/tip3pfb.xml")
-    modeller = Modeller(pdb.topology, pdb.positions)
-    modeller.addSolvent(forcefield, padding=1.0 * unit.nanometer)
-    system = forcefield.createSystem(modeller.topology, nonbondedMethod=PME,
-                                     nonbondedCutoff=0.9 * unit.nanometer,
-                                     constraints=HBonds)
-    context = openmm.Context(system, openmm.VerletIntegrator(0.001 * unit.picoseconds))
-    context.setPositions(modeller.positions)
-    state = context.getState(getPositions=True, getVelocities=True)
-    setup = tmp_path / "setup"
-    setup.mkdir()
-    (setup / "system.xml").write_text(openmm.XmlSerializer.serialize(system))
-    (setup / "state.xml").write_text(openmm.XmlSerializer.serialize(state))
-    with (setup / "topology.pdb").open("w") as handle:
-        PDBFile.writeFile(modeller.topology, modeller.positions, handle)
-    return {"system_xml": str(setup / "system.xml"), "state_xml": str(setup / "state.xml"),
-            "topology_pdb": str(setup / "topology.pdb")}
-
-
-class _Reached(Exception):
-    """Raised by a stand-in runner once it has recorded its arguments."""
-
-
-def _what_the_runner_receives(tmp_path, monkeypatch, **options) -> dict:
-    """Drive the simulation pipeline with `options` and return what it hands
-    run_simulation, stopping there. The pipeline imports the runner when it
-    runs, so the stand-in is found."""
-    from types import SimpleNamespace
-
-    from fastmdxplora.simulation import pipeline, runner
-
-    _a_prepared_water_box(tmp_path)          # where the pipeline looks: setup/
-    # The orchestrator makes the phase's folder before running it, and the
-    # pipeline writes its record there -- on a failure as well.
-    (tmp_path / "simulation").mkdir()
-    received: dict = {}
-
-    def stand_in(**kwargs):
-        received.update(kwargs)
-        raise _Reached
-
-    monkeypatch.setattr(runner, "run_simulation", stand_in)
-    with pytest.raises(_Reached):
-        pipeline.run(orchestrator=SimpleNamespace(output_dir=tmp_path, _presenter=None),
-                     output_dir=tmp_path / "simulation", production_steps=10, **options)
-    return received
