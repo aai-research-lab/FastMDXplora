@@ -324,10 +324,12 @@ def healed_trajectory(run_dir: Path, traj: Path, top: Path) -> Path:  # pragma: 
     healed = run_dir / "benchmark_healed.dcd"
     if not healed.exists():
         import mdtraj as md
+
+        from fastmdxplora.analysis.loading import image_whole
         print("[healing] imaging molecules whole via mdtraj "
               "(one-time, cached)...")
         t = md.load(str(traj), top=str(top))
-        t.image_molecules(inplace=True)
+        image_whole(t, inplace=True)
         t.save_dcd(str(healed))
     else:
         print(f"[healing] using cached {healed.name}")

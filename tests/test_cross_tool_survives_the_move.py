@@ -83,7 +83,7 @@ class TestTheLessonsAreStillInIt:
         assert module.cavity_contacts({("PHE200", "pi_stacking"): (40.0, 60.0)}, {}, cavity) == []
 
 
-def _a_chain_split_across_the_box(*, box: float):
+def _a_chain_split_across_the_box(*, box: float, waters: int = 20, ligand: bool = False):
     """Six alanines among twenty waters, the chain wrapped so it straddles
     the periodic boundary. Waters because mdtraj images around the largest
     molecules by comparing them with the rest: a molecule alone in a box is
@@ -103,10 +103,23 @@ def _a_chain_split_across_the_box(*, box: float):
             topology.add_atom(name, element, residue)
             xyz.append([px, py, 0.0])
     n_chain = len(xyz)
-    waters = topology.add_chain()
+    if ligand:
+        # A second molecule large enough to be anchored alongside the chain,
+        # as a bound ligand is.
+        partner = topology.add_chain()
+        for index in range(2):
+            residue = topology.add_residue("ALA", partner, resSeq=50 + index)
+            x = 1.2 + index * 0.38
+            for name, element, (px, py) in (
+                    ("N", md.element.nitrogen, (x - 0.12, 1.0)), ("CA", md.element.carbon, (x, 1.0)),
+                    ("C", md.element.carbon, (x + 0.12, 1.0)), ("O", md.element.oxygen, (x + 0.12, 1.12)),
+                    ("CB", md.element.carbon, (x, 0.85))):
+                topology.add_atom(name, element, residue)
+                xyz.append([px, py, 0.0])
+    solvent = topology.add_chain()
     rng = np.random.default_rng(0)
-    for index in range(20):
-        residue = topology.add_residue("HOH", waters, resSeq=100 + index)
+    for index in range(waters):
+        residue = topology.add_residue("HOH", solvent, resSeq=100 + index)
         for name, element in (("O", md.element.oxygen), ("H1", md.element.hydrogen),
                               ("H2", md.element.hydrogen)):
             topology.add_atom(name, element, residue)

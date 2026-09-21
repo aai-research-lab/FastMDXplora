@@ -684,7 +684,9 @@ def write_seeds(prepared: Path | str,
 
     reference = _potential_of_prepared(context, prepared, XmlSerializer, unit)
 
-    whole = trajectory.image_molecules(inplace=False)
+    from fastmdxplora.analysis.loading import image_whole
+
+    whole = image_whole(trajectory, inplace=False)
 
     seeds: list[Seed] = []
     for index, ((frame, measured), centre) in enumerate(zip(chosen, centres)):
@@ -819,7 +821,9 @@ def seed_windows(pull_directory: Path | str,
     # taken. A ligand split across the boundary has a centre of mass halfway
     # across the box, and every distance computed from it is wrong in a way
     # that looks like data.
-    whole = trajectory.image_molecules(inplace=False)
+    from fastmdxplora.analysis.loading import image_whole
+
+    whole = image_whole(trajectory, inplace=False)
 
     measured = measure_along(whole, ligand_resname, site_selection)
     _check_against_colvar(pull, measured, whole)

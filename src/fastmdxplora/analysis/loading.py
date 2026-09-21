@@ -139,6 +139,24 @@ def _resolve_topology(
     )
 
 
+def image_whole(trajectory: md.Trajectory, *, inplace: bool) -> md.Trajectory:
+    """Molecules made whole across the periodic boundary, anchored as MDTraj
+    would choose -- or, where its heuristic finds nothing, on the largest.
+
+    MDTraj anchors on molecules larger than the one a tenth of the way down
+    a size ranking. A molecule alone in the box is that molecule, never
+    larger than itself, so it found no anchor and raised. Passing the
+    anchors it would have guessed is the call it makes without them, so a
+    solvated system is imaged exactly as before.
+    """
+    try:
+        anchors = trajectory.topology.guess_anchor_molecules()
+    except ValueError:
+        molecules = trajectory.topology.find_molecules()
+        anchors = [max(molecules, key=len)] if molecules else None
+    return trajectory.image_molecules(inplace=inplace, anchor_molecules=anchors)
+
+
 def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
     """Molecules put back together across the periodic boundary, once.
 
@@ -153,10 +171,10 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
 
     Anchored on the solute where there is one, so the protein stays whole
     and the ligand is imaged into the protein's copy rather than each being
-    made whole in its own. This is the same call, with the same anchor, that
-    ``validation/cross_tool`` has been applying successfully to these
-    trajectories all along -- it lived in the benchmark helper and never in
-    the pipeline it was checking.
+    made whole in its own. The benchmark helper in ``validation/cross_tool``
+    had been imaging these trajectories before the pipeline did, with
+    MDTraj's own choice of anchor through :func:`image_whole` rather than
+    this one.
 
     Failure is not fatal: a topology without bonds cannot be made whole, and
     an analysis of what was loaded beats refusing to load it. The reason is
