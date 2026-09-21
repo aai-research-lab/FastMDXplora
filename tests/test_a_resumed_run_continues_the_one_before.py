@@ -63,18 +63,22 @@ def _a_small_system():
 #: steps, and the line the constant-pressure case has to cross.
 #:
 #: One number for both, because the pair is a contrast and two unrelated
-#: tolerances would let it drift into meaninglessness. Measured on a
-#: quiet machine with the thread count pinned: constant volume drifts
-#: 8.3e-8 nm, constant pressure 0.92 nm. Seven orders of magnitude apart,
-#: so anything between them draws the line and this sits a hundredfold
-#: clear of the noise on one side and five orders clear of the signal on
-#: the other.
+#: tolerances would let it drift into meaninglessness. Measured with the
+#: thread count and the seeds fixed: constant volume drifts 1.7e-7 nm,
+#: constant pressure 0.58 nm, the same in every run. Six orders of
+#: magnitude apart, so this sits sixtyfold clear of the one and more than
+#: four orders clear of the other.
 #:
-#: The 8.3e-8 is the checkpoint's own precision rather than chaos, and it
-#: does not grow with load once the arithmetic is deterministic -- which
-#: is what `_a_simulation` pins. Before that it was 1.2e-5 and rising
-#: with whatever else the runner was doing.
+#: The constant-volume figure is chaos, not the checkpoint's precision: the
+#: two runs start from the same state, checked to 1e-9 below, and a
+#: thousand Langevin steps amplify whatever last-digit difference remains
+#: by an amount that depends on the trajectory. Pinning the threads made
+#: the arithmetic repeatable and left the trajectory free: with a new seed
+#: in every run, about one run in 150 amplified past this bound, on an idle
+#: machine and a loaded one alike, which is how this failed again after the
+#: threads were pinned. `_a_simulation` and the barostat now fix the seed.
 _RESUME_DRIFT_NM = 1e-5
+_SEED = 20240521
 
 
 def _a_simulation(system, topology, positions):
@@ -96,6 +100,14 @@ def _a_simulation(system, topology, positions):
     """
     integrator = mm.LangevinMiddleIntegrator(
         300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtosecond)
+    # And the seed, for the same reason. Left at zero, OpenMM draws a new one
+    # for every context, so every run follows a different trajectory, and
+    # the tiny difference between a straight run and a resumed one is
+    # amplified by a different amount each time. Measured over 150 runs, one
+    # in about 150 landed past the bound -- with the machine idle and with
+    # every core busy alike. A fixed seed makes it one trajectory and one
+    # number, every run.
+    integrator.setRandomNumberSeed(_SEED)
     simulation = app.Simulation(topology, system, integrator,
                                 mm.Platform.getPlatformByName("CPU"),
                                 {"Threads": "1"})
@@ -304,8 +316,9 @@ def _a_periodic_system(n: int = 64, *, barostat: bool = False):
                               0.996 * unit.kilojoule_per_mole)
     system.addForce(nonbonded)
     if barostat:
-        system.addForce(
-            mm.MonteCarloBarostat(1.0 * unit.bar, 300 * unit.kelvin, 5))
+        pressure = mm.MonteCarloBarostat(1.0 * unit.bar, 300 * unit.kelvin, 5)
+        pressure.setRandomNumberSeed(_SEED)
+        system.addForce(pressure)
     grid = int(round(n ** (1 / 3))) + 1
     positions = [mm.Vec3(0.45 * (i % grid), 0.45 * ((i // grid) % grid),
                          0.45 * (i // grid ** 2)) for i in range(n)]
@@ -404,14 +417,13 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
         """And the consequence: having started from the same state, the
         two runs track each other.
 
-        Measured at 8.3e-8 nm, a hundredfold inside the bound, and the
-        figure is the checkpoint's own precision rather than chaos: with
-        the thread count pinned the arithmetic is deterministic, so it
-        does not grow with load. Before it was pinned this drifted to
-        1.2e-5 on a busy CI runner and failed a test that asserted 1e-5
-        and called itself "resumes exactly" -- three numbers out of a
-        hundred and ninety-two, which is chaos arriving on schedule
-        rather than a defect.
+        Measured at 1.7e-7 nm with the thread count and the seeds fixed,
+        sixtyfold inside the bound and the same in every run. The figure
+        depends on the trajectory, so a free seed made it a lottery: 1.2e-5
+        on a busy CI runner, and after the threads were pinned, 1.6e-5 once
+        in a local run -- about one run in 150, loaded or not. A number out
+        of a hundred and ninety-two past the line, which is chaos arriving
+        on schedule rather than a defect.
 
         Exactness is the test above, which compares a checkpoint with
         what loading it produced and has nothing in between to amplify.
@@ -429,8 +441,8 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
         #
         # Against the same bound the constant-volume case is held to, so
         # the two read as the contrast they are. It is not a close thing:
-        # 0.92 nm measured against 8.3e-8 for constant volume, five orders
-        # past the line. An earlier version compared against a number that
+        # 0.58 nm measured against 1.7e-7 for constant volume, with the
+        # seeds fixed -- more than four orders past the line. An earlier version compared against a number that
         # sat below what an unpinned thread count could produce on its
         # own, which would have let this pass on rounding alone.
         #
