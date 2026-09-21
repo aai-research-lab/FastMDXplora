@@ -203,7 +203,12 @@ class TestItSitsBehindTheOverlapGate:
     def test_the_campaign_uses_the_rule_rather_than_repeating_it(self):
         """Both places the decision is made go through the one predicate, so
         the gate and the error bar cannot come to disagree about which studies
-        get a binding free energy."""
+        get a binding free energy.
+
+        Read from the source on purpose. What the predicate decides is run
+        by the tests above; this asks only that the campaign calls it rather
+        than keeping a second copy of the rule, which a run could not tell
+        apart until the two copies differed."""
         import inspect
 
         from fastmdxplora.batch import explorer

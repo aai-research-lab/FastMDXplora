@@ -425,11 +425,47 @@ class TestAnUmbrellaStudyIsOneExperiment:
         text = "\n".join(_umbrella_preamble(*_umbrella_result(md)))
         assert "1.9%" in text and "windows 1 and 2" in text
 
-    def test_the_drawing_is_cleared_before_a_study_draws(self) -> None:
-        import inspect
+    def test_the_drawing_is_cleared_before_a_study_draws(self, tmp_path) -> None:
+        """Rebuilt over an earlier study, the figure is the new one; and a
+        rebuild that is refused leaves no figure at all, rather than the last
+        successful one sitting beside a refusal as though it still held.
+        Cleared before drawing, since cleared after it would take the new
+        figure with it."""
+        earlier = b"the earlier study's figure"
 
-        from fastmdxplora.batch import explorer
+        figure, record = _rebuilt_over(tmp_path / "drawn", earlier)
+        assert record["refused"] is None
+        assert figure.is_file() and figure.read_bytes() != earlier
 
-        source = inspect.getsource(explorer.BatchExplorer._maybe_build_pmf)
-        assert "_clear_previous_drawing()" in source
-        assert source.index("_clear_previous_drawing") < source.index("_draw_pmf")
+        figure, record = _rebuilt_over(tmp_path / "refused", earlier, a_window_missing=True)
+        assert record["refused"]
+        assert not figure.exists(), "the earlier figure outlived a refused rebuild"
+
+
+def _rebuilt_over(where, earlier: bytes, *, a_window_missing: bool = False):
+    """Recombine a real umbrella layout over a figure an earlier study left,
+    with every window's samples or with the first window's missing. Returns
+    the figure's path and what the study recorded."""
+    import json
+
+    import tests.test_umbrella as umbrella
+
+    where.mkdir(parents=True)
+    explorer = umbrella.TestItLooksWhereTheRunsActuallyWent()._explorer(where)
+    for spec in explorer.run_specs:
+        block = spec.options["simulation"]["umbrella"]
+        if a_window_missing and block["index"] == 0:
+            continue
+        simulation = explorer._run_output_dir(spec) / "simulation"
+        simulation.mkdir(parents=True)
+        values = umbrella._sample(block["centre"], block["force_constant"],
+                                  n=3000, seed=block["index"])
+        simulation.joinpath("COLVAR").write_text(
+            "#! FIELDS time cv bias\n"
+            + "\n".join(f"{i * 0.1:.1f} {v:.6f} 0.0" for i, v in enumerate(values)),
+            encoding="utf-8")
+    figure = where / "out" / "free_energy" / "pmf" / "pmf.png"
+    figure.parent.mkdir(parents=True)
+    figure.write_bytes(earlier)
+    explorer._maybe_build_pmf(bootstrap_resamples=8)
+    return figure, json.loads((where / "out" / "pmf.json").read_text(encoding="utf-8"))
