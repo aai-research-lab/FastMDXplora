@@ -1351,39 +1351,39 @@ class TestWhatTheRunResolvedIsRecorded:
     could not say what pressure it held.
     """
 
-    def test_preparation_reports_the_system_size(self) -> None:
-        import inspect
+    def test_preparation_reports_the_system_size(self, a_real_setup) -> None:
+        # The size it reports is the size of the system it wrote.
+        openmm = pytest.importorskip("openmm")
 
-        from fastmdxplora.setup import prepare
+        written = openmm.XmlSerializer.deserialize(
+            (a_real_setup.root / "setup" / "system.xml").read_text(encoding="utf-8"))
+        assert a_real_setup.returned["n_atoms_solvated"] == written.getNumParticles()
 
-        returned = inspect.getsource(prepare.prepare_system).rsplit("return", 1)[-1]
-        assert "n_atoms_solvated" in returned
+    def test_the_setup_manifest_records_it(self, a_real_setup) -> None:
+        record = json.loads((a_real_setup.root / "setup" / "setup_parameters.json")
+                            .read_text(encoding="utf-8"))
+        assert _found(record, "n_atoms_solvated") == a_real_setup.returned["n_atoms_solvated"]
 
-    def test_the_setup_manifest_records_it(self) -> None:
-        import inspect
+    @pytest.mark.parametrize("asked, resolved", [
+        ({"pressure_atm": 2.0}, 2.0 * 1.01325),   # atmospheres, converted
+        ({"pressure_bar": 1.5}, 1.5),             # bar, as given
+        ({}, 1.0),                                # nothing: one bar
+    ])
+    def test_the_runner_reports_the_pressure_it_used(self, tmp_path, monkeypatch,
+                                                     asked, resolved) -> None:
+        """What it resolved, not what it was passed -- and what it resolved is
+        what the barostat was built with, so the report and the run agree."""
+        returned, barostat = _a_short_npt_run(tmp_path, monkeypatch, **asked)
+        assert returned.pressure_bar_used == pytest.approx(resolved)
+        assert barostat == [pytest.approx(resolved)]
 
-        from fastmdxplora.setup import pipeline
-
-        source = inspect.getsource(pipeline._write_manifest)
-        assert '"n_atoms_solvated"' in source
-
-    def test_the_runner_reports_the_pressure_it_used(self) -> None:
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner)
-        assert "pressure_bar_used" in source
-        assert "pressure_bar_used=resolved_pressure_bar" in source, (
-            "it should report what it resolved, not what it was passed"
-        )
-
-    def test_the_simulation_manifest_records_it(self) -> None:
-        import inspect
-
-        from fastmdxplora.simulation import pipeline
-
-        assert '"pressure_bar_used"' in inspect.getsource(pipeline._write_manifest)
+    def test_the_simulation_manifest_records_it(self, tmp_path, monkeypatch) -> None:
+        returned, _ = _a_short_npt_run(tmp_path, monkeypatch, through_the_phase=True,
+                                       pressure_atm=2.0)
+        record = json.loads((tmp_path / "simulation" / "simulation_parameters.json")
+                            .read_text(encoding="utf-8"))
+        assert _found(record, "pressure_bar_used") == pytest.approx(returned.pressure_bar_used)
+        assert _found(record, "pressure_bar_used") == pytest.approx(2.0 * 1.01325)
 
     def test_the_methods_section_prefers_what_ran(self) -> None:
         """A run asked for nothing and held one bar. Reporting the request
@@ -2573,3 +2573,90 @@ class TestTheReportSaysWhatItMeans:
         js = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
               / "static" / "report-page.js").read_text(encoding="utf-8")
         assert "if (doc.dataset.rendered === data.html) return;" in js
+
+
+
+@pytest.fixture(scope="module")
+def a_real_setup(tmp_path_factory):
+    """The setup phase, run on a peptide as it runs on anything -- PDBFixer,
+    hydrogens, solvent: what prepare_system returned, and where it wrote."""
+    from types import SimpleNamespace
+
+    pytest.importorskip("openmm")
+    from fastmdxplora.setup import pipeline, prepare
+    from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
+
+    root = tmp_path_factory.mktemp("setup_run")
+    structure = root / "peptide.pdb"
+    structure.write_text(TRI_ALANINE, encoding="utf-8")
+    (root / "setup").mkdir()
+    returned: dict = {}
+    real = prepare.prepare_system
+
+    def watched(*args, **kwargs):
+        produced = real(*args, **kwargs)
+        returned.update(produced)
+        return produced
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(prepare, "prepare_system", watched)
+        pipeline.run(orchestrator=SimpleNamespace(system=str(structure),
+                                                  _structure_provenance=None, _presenter=None),
+                     output_dir=root / "setup",
+                     # A peptide this small needs the padding to fit the
+                     # cutoff inside half the box, as the end-to-end run has.
+                     solvent_padding_nm=1.2, nonbonded_cutoff_nm=0.9)
+    return SimpleNamespace(root=root, returned=returned)
+
+
+def _a_short_npt_run(root, monkeypatch, *, through_the_phase=False, **pressure):
+    """Ten steps at constant pressure on a small water box. Returns what the
+    runner returned and the pressure each barostat was built with."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.simulation import pipeline, runner
+    from tests._the_phase import a_prepared_water_box
+
+    built: list = []
+    add_barostat, run_simulation = runner._add_barostat, runner.run_simulation
+
+    def recording_barostat(*args, **kwargs):
+        built.append(kwargs["pressure_bar"])
+        return add_barostat(*args, **kwargs)
+
+    returned: list = []
+
+    def recording_run(**kwargs):
+        result = run_simulation(**kwargs)
+        returned.append(result)
+        return result
+
+    monkeypatch.setattr(runner, "_add_barostat", recording_barostat)
+    monkeypatch.setattr(runner, "run_simulation", recording_run)
+    files = a_prepared_water_box(root)
+    settings = dict(production_steps=10, nvt_steps=0, npt_steps=0, minimize=False,
+                    platform="CPU", ensemble="npt", **pressure)
+    if through_the_phase:
+        (root / "simulation").mkdir()
+        pipeline.run(orchestrator=SimpleNamespace(output_dir=root, _presenter=None),
+                     output_dir=root / "simulation", **settings)
+    else:
+        runner.run_simulation(**files, output_dir=str(root / "out"), **settings)
+    return returned[0], built
+
+
+def _found(record, key):
+    """The value under `key` wherever it sits in a written record."""
+    if isinstance(record, dict):
+        if key in record:
+            return record[key]
+        for value in record.values():
+            hit = _found(value, key)
+            if hit is not None:
+                return hit
+    elif isinstance(record, list):
+        for value in record:
+            hit = _found(value, key)
+            if hit is not None:
+                return hit
+    return None
