@@ -418,49 +418,37 @@ class TestTheRunnerReleasesThemInStages:
         assert {"restrain", "restraint_release",
                 "restrain_production"} <= offered
 
-    def test_the_pipeline_passes_them_to_the_runner(self) -> None:
-        import inspect
+    def test_the_pipeline_passes_them_to_the_runner(self, tmp_path, monkeypatch) -> None:
+        from tests._the_phase import what_the_runner_receives
 
-        from fastmdxplora.simulation import pipeline
+        wanted = {"restrain": "protein and not element H",
+                  "restraint_release": [1000.0, 500.0, 100.0, 0.0],
+                  "restrain_production": True}
+        received = what_the_runner_receives(tmp_path, monkeypatch, **wanted)
+        for name, value in wanted.items():
+            assert received[name] == value, name
 
-        source = inspect.getsource(pipeline)
-        for name in ("restrain=", "restraint_release=", "restrain_production="):
-            assert name in source, name
-
-    def test_they_are_at_full_strength_for_nvt(self) -> None:
+    def test_they_are_at_full_strength_for_nvt(self, schedules) -> None:
         """Which is the stage they exist for: the solvent is finding its
         arrangement and the solute should not be moving while it does."""
-        import inspect
+        for mode in ("plain", "live"):
+            steps, _ = schedules[mode]
+            assert _just_before(steps, "NVT equilibration") == 1000.0, mode
+            assert _during(steps, "NVT equilibration")[0] == 1000.0, mode
 
-        from fastmdxplora.simulation import runner
+    def test_they_are_gone_before_production(self, schedules) -> None:
+        for mode in ("plain", "live"):
+            steps, _ = schedules[mode]
+            assert _just_before(steps, "Production") == 0.0, mode
 
-        source = inspect.getsource(runner.run_simulation)
-        nvt = source.index("Stage 2: NVT")
-        npt = source.index("Stage 3: NPT")
-        assert "_hold_at(0.0)" in source[nvt:npt]
-
-    def test_they_are_gone_before_production(self) -> None:
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner.run_simulation)
-        before = source[source.index("Stage 3: NPT"):source.index("Stage 4: Production")]
-        assert "_hold_at(1.0)" in before
-        assert "restrain_production" in before, (
-            "keeping them has to be asked for by name"
-        )
-
-    def test_keeping_them_warns_about_what_it_costs(self) -> None:
+    def test_keeping_them_warns_about_what_it_costs(self, schedules) -> None:
         """A reader comparing a restrained trajectory against a free one
-        otherwise has no way to know which they have."""
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner.run_simulation)
-        assert "measures of flexibility" in source
-        assert "RMSF" in source
+        otherwise has no way to know which they have. Keeping them has to be
+        asked for by name, and then they are held at full strength."""
+        steps, said = schedules["kept"]
+        assert _just_before(steps, "Production") == 1000.0
+        warning = " ".join(said)
+        assert "measures of flexibility" in warning and "RMSF" in warning
 
     @pytest.mark.slow
     def test_a_run_with_restraints_completes_and_records_them(self, tmp_path) -> None:
@@ -638,29 +626,32 @@ class TestTheLadderStepsAcrossEquilibration:
             assert self._reached(nvt, npt)[-1] == 0.0
 
     def test_the_stage_reports_how_far_through_it_is(self) -> None:
-        import inspect
+        # After every chunk, not once at the end: the ladder steps inside
+        # the loop or it steps once.
+        from types import SimpleNamespace
 
-        from fastmdxplora.simulation.runner import (
-            _run_md_stage_with_live_metrics,
-        )
+        from fastmdxplora.simulation.runner import _run_md_stage
 
-        assert "on_fraction" in inspect.signature(
-            _run_md_stage_with_live_metrics).parameters
-        body = inspect.getsource(_run_md_stage_with_live_metrics)
-        loop = body.index("while remaining > 0:")
-        assert body.index("on_fraction(") > loop, (
-            "the ladder has to step inside the loop, or it steps once")
+        told: list = []
+        _run_md_stage(SimpleNamespace(step=lambda n: None), n_steps=100,
+                      label="NVT equilibration", on_fraction=told.append)
+        assert len(told) > 1
+        assert told == sorted(told) and told[-1] == 1.0
 
-    def test_both_stages_drive_it(self) -> None:
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner)
-        assert source.count("on_fraction=_ladder_over(") == 2
-        # And the boundary sample that jumped it is gone.
-        assert "_hold_at(0.5)" not in source
-
+    def test_both_stages_drive_it(self, schedules) -> None:
+        """Stepped down through NVT and NPT together, and the same whether or
+        not the run is watched. Without live telemetry the restraints were
+        held at full strength through both stages and let go of all at once
+        at production -- what the release is there to prevent."""
+        for mode in ("plain", "live"):
+            steps, _ = schedules[mode]
+            for stage in ("NVT equilibration", "NPT equilibration"):
+                during = _during(steps, stage)
+                assert len(set(during)) > 1, f"{mode}: nothing released during {stage}"
+            released = [s for s in steps if isinstance(s, float)]
+            assert released == sorted(released, reverse=True), mode
+            assert {1000.0, 500.0, 100.0, 0.0} <= set(released), mode
+        assert schedules["plain"][0] == schedules["live"][0]
 
 class TestProductionCountsFromZero:
     """Equilibration steps are not simulation steps.
@@ -736,3 +727,73 @@ class TestProductionCountsFromZero:
         assert [int(r["Step"]) for r in read_energy_csv(equilibration)], (
             "the equilibration log is empty"
         )
+
+
+@pytest.fixture(scope="module")
+def schedules(tmp_path_factory):
+    """The restraint strength through a short real run: without live
+    telemetry, with it, and with the restraints kept for production."""
+    return {
+        "plain": _schedule(tmp_path_factory.mktemp("plain"), live_telemetry=False),
+        "live": _schedule(tmp_path_factory.mktemp("live"), live_telemetry=True),
+        "kept": _schedule(tmp_path_factory.mktemp("kept"), live_telemetry=False,
+                          restrain_production=True),
+    }
+
+
+def _schedule(root, **options):
+    """Every restraint strength the simulation is given, and the stages
+    between them, in order, with repeats collapsed; and what was logged."""
+    import logging
+
+    pytest.importorskip("openmm")
+    import openmm
+
+    from fastmdxplora.simulation import runner
+    from tests._the_phase import a_prepared_water_box
+
+    steps: list = []
+    said: list = []
+    original_set = openmm.Context.setParameter
+
+    def recording_set(context, name, value):
+        if name.startswith("restraint_k"):
+            steps.append(round(float(value), 3))
+        return original_set(context, name, value)
+
+    class Heard(logging.Handler):
+        def emit(self, record):
+            said.append(record.getMessage())
+
+    heard = Heard(level=logging.WARNING)
+    logging.getLogger("fastmdx").addHandler(heard)
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(openmm.Context, "setParameter", recording_set)
+            for name in ("_run_md_stage", "_run_md_stage_with_live_metrics"):
+                stage = getattr(runner, name)
+                patch.setattr(runner, name, lambda *a, _stage=stage, **k:
+                              steps.append(k.get("label")) or _stage(*a, **k))
+            runner.run_simulation(
+                **a_prepared_water_box(root), output_dir=str(root / "out"),
+                production_steps=10, nvt_steps=100, npt_steps=100, minimize=False,
+                platform="CPU", restrain="index 0 to 2",
+                restraint_release=[1000.0, 500.0, 100.0, 0.0], telemetry_interval=10,
+                **options)
+    finally:
+        logging.getLogger("fastmdx").removeHandler(heard)
+    collapsed = [s for i, s in enumerate(steps) if i == 0 or s != steps[i - 1]]
+    return collapsed, said
+
+
+def _just_before(steps, stage):
+    """The strength the simulation held as `stage` began."""
+    before = steps[:steps.index(stage)]
+    return [s for s in before if isinstance(s, float)][-1]
+
+
+def _during(steps, stage):
+    """The strengths set while `stage` ran, up to the next stage."""
+    after = steps[steps.index(stage) + 1:]
+    until = next((i for i, s in enumerate(after) if isinstance(s, str)), len(after))
+    return [s for s in after[:until] if isinstance(s, float)]

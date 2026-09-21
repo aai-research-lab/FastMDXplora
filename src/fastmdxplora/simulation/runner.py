@@ -1049,8 +1049,16 @@ def _run_md_stage(
     on_explain: Callable[[str | None], None] | None = None,
     on_step_progress: Callable[..., None] | None = None,
     timestep_fs: float | None = None,
+    on_fraction: Callable[[float], None] | None = None,
 ) -> None:
-    """Run ``n_steps`` of MD. Skips cleanly if ``n_steps <= 0``."""
+    """Run ``n_steps`` of MD. Skips cleanly if ``n_steps <= 0``.
+
+    ``on_fraction`` is told how far through the stage it is after each
+    chunk, exactly as the live-metrics stage tells it -- which is what steps
+    the restraints down during equilibration. Only that stage used to take
+    it, so a run without live telemetry held its restraints at full strength
+    through NVT and NPT and let go of them all at once at production.
+    """
     if n_steps <= 0:
         return
     if on_progress:
@@ -1079,6 +1087,8 @@ def _run_md_stage(
                 label, f"OpenMM integration failed ({exc})",
                 topology=failed_topology, positions=failed_positions) from exc
         done += this
+        if on_fraction is not None:
+            on_fraction(done / total)
         if on_step_progress is not None:
             elapsed = _time.monotonic() - started
             rate = None
@@ -2274,6 +2284,7 @@ def run_simulation(
                 on_explain=on_explain,
                 on_step_progress=_bar,
                 timestep_fs=timestep_fs,
+                on_fraction=_ladder_over(plan["nvt_steps"], 0),
             )
             current_step += plan["nvt_steps"]
         _validate_state_finite(omm, simulation, stage="NVT equilibration")
@@ -2368,9 +2379,11 @@ def run_simulation(
                     n_steps=plan["npt_steps"],
                     label="NPT equilibration",
                     on_progress=_log_step,
-                on_explain=on_explain,
+                    on_explain=on_explain,
                     on_step_progress=_bar,
                     timestep_fs=timestep_fs,
+                    on_fraction=_ladder_over(
+                        plan["npt_steps"], plan["nvt_steps"]),
                 )
                 current_step += plan["npt_steps"]
             _validate_state_finite(omm, simulation, stage="NPT equilibration")
