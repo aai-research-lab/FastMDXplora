@@ -226,14 +226,50 @@ class TestItIsNotSoldAsAnAccuracy:
 
 class TestTheBFactorAnchorGainedTheSameStatistic:
 
-    def test_the_module_computes_a_rank_correlation(self) -> None:
+    def test_the_bfactor_comparison_reports_a_rank_correlation(self, tmp_path) -> None:
         """Both anchors are per-residue comparisons against a measurement
         whose relationship to a simulated ensemble is model-dependent, and
-        one reported only Pearson while the other reported none."""
-        import inspect
+        one reported only Pearson while the other reported none.
 
-        from fastmdxplora.analysis import bfactor_comparison
+        The tests above are the order-parameter anchor's. This is the
+        B-factor one, run: each residue fluctuates more than the one before,
+        and the deposited B-factors rise exponentially along the chain, so
+        the two agree in order and not in shape. Spearman is then exactly
+        one and Pearson is not -- which Pearson reported under Spearman's
+        name would not give."""
+        import mdtraj as md
 
-        source = inspect.getsource(bfactor_comparison)
-        assert "spearman_rho" in source
-        assert "spearmanr" in source
+        from fastmdxplora.analysis.bfactor_comparison import BFactorComparison
+
+        # A stable core to align on, as a real protein has, and mobile
+        # residues to compare. Aligned on the mobile residues themselves, the
+        # most mobile would dominate the fit and reshuffle the rest.
+        core, mobile, n_frames = 12, 8, 400
+        topology = md.Topology()
+        chain = topology.add_chain()
+        for index in range(core + mobile):
+            residue = topology.add_residue("ALA", chain, resSeq=index + 1)
+            topology.add_atom("CA", md.element.carbon, residue)
+        rng = np.random.default_rng(0)
+        turn = np.linspace(0, 3 * np.pi, core + mobile)
+        rest = np.column_stack([np.cos(turn), np.sin(turn), np.linspace(0, 2.0, core + mobile)])
+        spread = np.r_[np.full(core, 0.005), 0.02 * (1 + np.arange(mobile))]
+        xyz = rest + rng.normal(0, 1, (n_frames, core + mobile, 3)) * spread[None, :, None]
+        traj = md.Trajectory(xyz, topology)
+
+        # B-factors for the mobile residues only, rising exponentially: the
+        # core has none, so it is left out of the comparison.
+        deposited = tmp_path / "deposited.pdb"
+        deposited.write_text("".join(
+            f"ATOM  {i + 1:5d}  CA  ALA A{i + 1:4d}    "
+            f"{10 * rest[i, 0]:8.3f}{10 * rest[i, 1]:8.3f}{10 * rest[i, 2]:8.3f}"
+            f"  1.00{5.0 * 2.0 ** (i - core):6.2f}           C\n"
+            for i in range(core, core + mobile)) + "END\n", encoding="utf-8")
+
+        analysis = BFactorComparison(output_dir=tmp_path / "bfactor", structure=str(deposited),
+                                     align_selection=f"index 0 to {core - 1}")
+        analysis.compute(traj)
+        got = analysis.findings["bfactor_comparison"]
+        assert got["residues_compared"] == mobile
+        assert got["spearman_rho"] == pytest.approx(1.0)
+        assert got["pearson_r"] < 0.99

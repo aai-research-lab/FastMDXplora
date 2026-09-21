@@ -348,13 +348,23 @@ class TestEveryPerFrameAnalysisSaysWhatItsMeanIsWorth:
     def test_the_frame_number_is_not_averaged(self, tmp_path) -> None:
         """Two analyses return a frame of (frame, value). Averaging the first
         column gives the middle of the run, to three decimal places, and it
-        would look like a measurement."""
-        import inspect
+        would look like a measurement.
 
-        from fastmdxplora.analysis.base import Analysis
+        Here the values sit near 5 and the frame numbers average 199.5: the
+        mean recorded is the values', and a mean is recorded at all -- with
+        the frame column counted there would be two columns and no mean."""
+        import pandas as pd
 
-        source = inspect.getsource(Analysis._record_what_the_mean_is_worth)
-        assert 'str(c).lower() != "frame"' in source
+        from fastmdxplora.analysis import get_analysis_class
+
+        traj = self._trajectory()
+        rng = np.random.default_rng(1)
+        analysis = get_analysis_class("rg")(output_dir=tmp_path / "rg")
+        analysis.result = pd.DataFrame({
+            "frame": np.arange(traj.n_frames),
+            "value": 5.0 + rng.normal(0, 0.05, traj.n_frames)})
+        analysis._record_what_the_mean_is_worth(traj)
+        assert analysis.findings["mean"]["mean"] == pytest.approx(5.0, abs=0.05)
 
     def test_the_declarations_match_what_the_analyses_return(
         self, tmp_path

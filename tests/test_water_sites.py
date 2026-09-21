@@ -210,16 +210,22 @@ def test_finding_nothing_is_a_finding_not_a_crash(tmp_path) -> None:
 def test_both_empty_paths_produce_the_same_shape(tmp_path) -> None:
     """There are two ways to find nothing -- no water came near at all, and
     water came near but nothing was held. They were built separately, which is
-    how one of them lost its columns."""
-    import inspect
+    how one of them lost its columns. Each is reached here, and known to be
+    reached by the reason it gives."""
+    from fastmdxplora.analysis.water_sites import WaterSites
 
-    from fastmdxplora.analysis import water_sites
+    never_near = WaterSites(output_dir=str(tmp_path / "a"), site_selection="name CA",
+                            cutoff_nm=0.01)
+    none_near = never_near.compute(_trajectory(_system(), lambda frame: -1, n_frames=30))
+    assert never_near.findings["not_found"].startswith("No water came within")
 
-    source = inspect.getsource(water_sites.WaterSites.compute)
-    assert source.count("pd.DataFrame(columns=list(self.COLUMNS))") == 2, (
-        "both empty paths should name the same column list"
-    )
+    not_held = WaterSites(output_dir=str(tmp_path / "b"), site_selection="name CA",
+                          cutoff_nm=0.6, minimum_occupancy=0.9)
+    passing = not_held.compute(
+        _trajectory(_system(), lambda frame: 0 if frame % 2 else -1, n_frames=30))
+    assert not_held.findings["not_found"].startswith("Water came near")
 
+    assert list(none_near.columns) == list(passing.columns) == list(WaterSites.COLUMNS)
 
 def test_it_says_when_it_chose_the_site_itself(tmp_path) -> None:
     """"auto" is a value, not an absence. A truthiness check called it
@@ -323,22 +329,40 @@ class TestAHydrationShellIsNotASite:
         assert analysis.findings["rejected_as_too_spread_out"] >= 1
 
 
-def test_one_long_stay_does_not_make_a_cluster_one_molecule() -> None:
+def test_one_long_stay_does_not_make_a_cluster_one_molecule(tmp_path) -> None:
     """Eight hundred and fifty-four waters were described as "mostly one
     molecule, exchanging occasionally", because one of them happened to have a
     run of a hundred frames. Dominance has to be measured over the whole
     cluster, not from the longest run in it.
-    """
-    import inspect
 
-    from fastmdxplora.analysis import water_sites
+    Here one water never leaves, and three others crowd in beside it every
+    frame, taken in turn from the rest: the longest run there could be, and a
+    quarter of the observations. That is a favoured position."""
+    from fastmdxplora.analysis.water_sites import WaterSites
 
-    source = inspect.getsource(water_sites.WaterSites.compute)
-    assert "dominant_share" in source
-    assert "dominant_share >= 0.5" in source, (
-        "the dominant molecule must hold most of the observations"
-    )
+    n_waters, n_frames = 40, 60
+    top = _system(n_waters)
+    rng = np.random.RandomState(7)
+    xyz = np.zeros((n_frames, top.n_atoms, 3), dtype=np.float32)
+    for frame in range(n_frames):
+        xyz[frame, :4] = [[0, 0, 0], [0.15, 0, 0], [0.3, 0, 0], [0.3, 0.12, 0]]
+        crowd = {0} | {1 + (3 * frame + k) % (n_waters - 1) for k in range(3)}
+        for index in range(n_waters):
+            point = (np.array([0.15, 0.30, 0.0]) + rng.normal(scale=0.02, size=3)
+                     if index in crowd else rng.uniform(-3, 3, size=3))
+            base = 4 + index * 3
+            xyz[frame, base:base + 3] = [point, point + [0.01, 0, 0], point + [0, 0.01, 0]]
+    import mdtraj as md
+    traj = md.Trajectory(xyz=xyz, topology=top)
+    traj.unitcell_lengths = np.tile([8.0, 8.0, 8.0], (n_frames, 1))
+    traj.unitcell_angles = np.tile([90.0, 90.0, 90.0], (n_frames, 1))
 
+    found = WaterSites(output_dir=str(tmp_path), site_selection="name CA",
+                       cutoff_nm=0.6, minimum_occupancy=0.5).compute(traj)
+    assert len(found) >= 1
+    described = list(found["interpretation"])
+    assert not any(d.startswith("mostly one molecule") for d in described), described
+    assert any(d.startswith("a favoured position") for d in described), described
 
 class TestARunTooShortToShowResidence:
     """Ubiquitin over ten picoseconds produced a site occupied in every frame
