@@ -90,46 +90,46 @@ class TestItSaysWhatTheWorkIsNot:
                  / "steered_work.dat").read_text(encoding="utf-8")
         assert "not a free energy" in table
 
-    def test_the_figure_says_it_too(self) -> None:
-        import inspect
+    def test_the_figure_says_it_too(self, tmp_path) -> None:
+        # Said where it is seen: the figure's own title, beside the total.
+        with _drawn(tmp_path) as ax:
+            title = ax.get_title()
+        assert "(a pathway, not a free energy)" in title
+        assert "67.5 kJ/mol" in title and "1.35 per ns" in title
 
-        source = inspect.getsource(SteeredWork.plot)
-        assert "a pathway, not a free energy" in source
+    def test_the_data_file_says_why(self, tmp_path) -> None:
+        """Dissipated work does not cancel, and Jarzynski needs many pulls.
 
-    def test_the_module_explains_why(self) -> None:
-        """Dissipated work does not cancel, and Jarzynski needs many pulls."""
-        import inspect
-
-        from fastmdxplora.analysis import steered_work
-
-        source = inspect.getsource(steered_work)
-        assert "Jarzynski" in source
-        assert "how fast the anchor moved" in source
-
+        Said where the numbers are read: someone who opens the data file and
+        not the figure is told what the work depends on and what it is not.
+        The longer reasoning, Jarzynski's included, is the module's own
+        documentation."""
+        _record(tmp_path)
+        analysis = SteeredWork(output_dir=tmp_path / "analysis")
+        written = analysis.save_data(analysis.compute(None), tmp_path / "work.dat")
+        text = written.read_text(encoding="utf-8")
+        assert "how fast the anchor moved" in text
+        assert "pathway, not a free energy" in text
 
 class TestTheGapBetweenAskedAndReached:
     """The anchor travels the whole way and the system lags behind it; that
     lag is the dissipation. A tripeptide asked to 1.0 nm reached 0.769."""
 
     def test_it_is_marked_where_they_differ(self, tmp_path) -> None:
-        import inspect
-
-        _record(tmp_path, requested=1.0, reached=0.769)
-        analysis = SteeredWork(output_dir=tmp_path / "analysis")
-        analysis.run(None)
-
-        assert analysis._requested == 1.0
-        source = inspect.getsource(SteeredWork.plot)
-        assert "asked for" in source and "reached" in source
+        # The anchor went to 1.0 and the system lagged to 0.769: the gap is
+        # the dissipation, so it is drawn and named.
+        with _drawn(tmp_path, requested=1.0, reached=0.769) as ax:
+            marks = _vertical_lines(ax)
+            labels = [text.get_text() for text in ax.get_legend().get_texts()]
+        assert marks == [1.0]
+        assert "asked for 1, reached 0.769" in labels
 
     def test_nothing_is_marked_where_the_pull_arrived(self, tmp_path) -> None:
-        import inspect
-
-        source = inspect.getsource(SteeredWork.plot)
         # Only drawn where they differ, so a pull that arrived is not
         # annotated with a line on top of its own endpoint.
-        assert "abs(requested - reached) > 1e-6" in source
-
+        with _drawn(tmp_path, requested=0.769, reached=0.769) as ax:
+            assert _vertical_lines(ax) == []
+            assert ax.get_legend() is None
 
 class TestItIsAnAnalysisLikeAnyOther:
     def test_it_is_registered(self) -> None:
@@ -138,16 +138,58 @@ class TestItIsAnAnalysisLikeAnyOther:
 
         assert "steered_work" in available_analyses()
 
-    def test_it_runs_only_where_a_pull_produced_one(self) -> None:
+    def test_it_runs_only_where_a_pull_produced_one(self, tmp_path) -> None:
+        # Planned beside a single pulled run and beside each run of a set,
+        # and left out of an ordinary run, where it could only fail.
+        from types import SimpleNamespace
+
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator
+
+        def planned(analysis_dir):
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+            runner = SimpleNamespace(output_dir=analysis_dir, ligand_resname=None, traj=None)
+            return AnalysisOrchestrator._build_plan(runner, None, None)
+
         assert SteeredWork.requires_steered is True
-
-        import inspect
-
-        from fastmdxplora.analysis import orchestrator
-
-        assert "_steered_ok" in inspect.getsource(orchestrator)
+        assert "steered_work" not in planned(tmp_path / "ordinary" / "analysis")
+        single = tmp_path / "single"
+        _record(single)
+        assert "steered_work" in planned(single / "analysis")
+        one_of_a_set = tmp_path / "study" / "runs" / "run-01"
+        _record(one_of_a_set)
+        assert "steered_work" in planned(one_of_a_set / "analysis")
 
     def test_a_run_without_a_pull_says_so(self, tmp_path) -> None:
         with pytest.raises(FileNotFoundError) as caught:
             SteeredWork(output_dir=tmp_path / "analysis").compute(None)
         assert "steered" in str(caught.value)
+
+
+class _drawn:
+    """The steered figure for a record, drawn onto a fresh axes and closed
+    afterwards."""
+
+    def __init__(self, where, **record):
+        self.where, self.record = where, record
+
+    def __enter__(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        _record(self.where, **self.record)
+        analysis = SteeredWork(output_dir=self.where / "analysis")
+        self.figure, ax = plt.subplots()
+        analysis.plot(analysis.compute(None), ax)
+        return ax
+
+    def __exit__(self, *exc):
+        import matplotlib.pyplot as plt
+
+        plt.close(self.figure)
+        return False
+
+
+def _vertical_lines(ax) -> list:
+    return sorted(round(float(line.get_xdata()[0]), 6) for line in ax.lines
+                  if len(set(line.get_xdata())) == 1)
