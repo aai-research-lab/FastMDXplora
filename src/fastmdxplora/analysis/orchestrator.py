@@ -278,7 +278,7 @@ class AnalysisOrchestrator:
             Mapping from analysis name to result, in execution order.
             Also stored on ``self.results``.
         """
-        plan = self._build_plan(include, exclude)
+        plan = self._build_plan(include, exclude, options)
         merged_options = self._merge_options(plan, options)
 
         logger.debug("Plan: %s", ", ".join(plan))
@@ -427,6 +427,7 @@ class AnalysisOrchestrator:
         self,
         include: list[str] | None,
         exclude: list[str] | None,
+        options: dict[str, dict[str, Any]] | None = None,
     ) -> list[str]:
         all_names = list(_REGISTRY.keys())
         has_ligand = bool(self.ligand_resname)
@@ -506,7 +507,13 @@ class AnalysisOrchestrator:
             traj = getattr(self, "traj", None)
             if traj is None:
                 return True
-            separation = int(getattr(cls, "min_seq_separation", 4) or 4)
+            # The separation the analysis will run with -- the one asked for,
+            # else its own default. The plan was built before the options
+            # were read, so the gate took a class attribute no analysis
+            # declares and fell back to 4: a separation of 10 on six residues
+            # was planned and then failed, and a separation of 2 on four was
+            # left out though it would have run.
+            separation = _separation_for(cls, (options or {}).get(name) or {})
 
             # The solute's residues, not the box's. A solvated tripeptide has
             # 529 residues counting water, so counting them all let the gate
@@ -858,3 +865,18 @@ class AnalysisOrchestrator:
         with path.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2)
         logger.debug("Wrote analysis manifest: %s", path)
+
+
+def _separation_for(cls: type, asked: dict[str, Any]) -> int:
+    """The minimum sequence separation an analysis will use: the one asked
+    for, else the default its constructor declares -- one source for that
+    default rather than a copy of it here."""
+    if asked.get("min_seq_separation") is not None:
+        return int(asked["min_seq_separation"])
+    import inspect
+
+    try:
+        declared = inspect.signature(cls.__init__).parameters["min_seq_separation"].default
+    except (KeyError, TypeError, ValueError):
+        return 4
+    return 4 if declared is inspect.Parameter.empty else int(declared)

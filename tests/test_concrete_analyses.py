@@ -2196,17 +2196,28 @@ class TestSettingsThatWereFixedInPlace:
     def test_they_reach_both_places_that_use_them(self) -> None:
         """They were written in two places -- passed to MDTraj to propose the
         bonds, and again to count them frame by frame. A setting reaching one
-        would leave the count disagreeing with the bonds it was counting."""
-        import inspect
+        would leave the count disagreeing with the bonds it was counting.
 
-        from fastmdxplora.analysis import hbonds
+        Here the only bond sits 0.28 nm from its acceptor: outside the
+        default 0.25, inside a chosen 0.30. With 0.30 it must be proposed
+        and counted in every frame; reaching only one of the two places
+        leaves it unproposed or uncounted, and the count at zero."""
+        from fastmdxplora.analysis.hbonds import HBonds, _per_frame_baker_hubbard
 
-        source = inspect.getsource(hbonds._per_frame_baker_hubbard)
-        mask = next(line for line in source.splitlines() if "present = " in line)
-        assert "distance_cutoff" in mask and "angle_cutoff" in mask, mask
-        assert "0.25" not in mask and "120" not in mask, (
-            f"a threshold is still written into the comparison: {mask}"
-        )
+        traj = _one_bond_at(0.28, n_frames=20)
+        assert HBonds().compute(traj)["n_hbonds"].to_numpy().tolist() == [0] * 20
+        counted = HBonds(distance_cutoff=0.30).compute(traj)["n_hbonds"].to_numpy()
+        assert counted.tolist() == [1] * 20
+
+        # And the per-frame mask takes what it is given, for both cutoffs.
+        triple = np.array([[0, 1, 2]])
+        within, _ = _per_frame_baker_hubbard(traj, triple, periodic=False, distance_cutoff=0.30)
+        beyond, _ = _per_frame_baker_hubbard(traj, triple, periodic=False, distance_cutoff=0.25)
+        assert within.tolist() == [1] * 20 and beyond.tolist() == [0] * 20
+        bent = _one_bond_at(0.20, n_frames=5, angle_deg=110.0)
+        loose, _ = _per_frame_baker_hubbard(bent, triple, periodic=False, angle_cutoff=100.0)
+        strict, _ = _per_frame_baker_hubbard(bent, triple, periodic=False, angle_cutoff=120.0)
+        assert loose.tolist() == [1] * 5 and strict.tolist() == [0] * 5
 
     def test_a_cutoff_that_would_be_ignored_is_refused(self) -> None:
         """Wernet-Nilsson uses an angle-dependent distance of its own.
@@ -2907,14 +2918,46 @@ class TestAPeptideTooShortToFoldIsNotAFailure:
 
     def test_the_gate_uses_the_analysis_own_separation(self) -> None:
         """A user who sets `min_seq_separation: 10` needs eleven residues,
-        not five."""
-        import inspect
+        not five.
 
-        from fastmdxplora.analysis import orchestrator
+        The plan was built before the options were read, so the gate fell
+        back to 4 whatever was asked: a separation of 10 on six residues was
+        planned and then failed as an error, and a separation of 2 on four
+        was left out though it would have run."""
+        from types import SimpleNamespace
 
-        source = inspect.getsource(orchestrator)
-        assert 'getattr(cls, "min_seq_separation", 4)' in source
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator
 
+        def planned(n_residues, separation=None):
+            runner = SimpleNamespace(output_dir="unused", ligand_resname=None,
+                                     traj=_a_chain(n_residues))
+            asked = {} if separation is None else {"qvalue": {"min_seq_separation": separation}}
+            return "qvalue" in AnalysisOrchestrator._build_plan(runner, None, None, asked)
+
+        assert planned(6) and not planned(4)               # the default, 4
+        assert not planned(6, separation=10)                # needs eleven
+        assert planned(12, separation=10)
+        assert planned(4, separation=2)                     # allowed, so kept
+
+    def test_the_options_reach_the_plan(self, monkeypatch) -> None:
+        # The gate can only honour a setting the plan is given.
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator
+
+        seen: list = []
+
+        class Planned(Exception):
+            pass
+
+        def planning(self, include, exclude, options=None):
+            seen.append(options)
+            raise Planned
+
+        monkeypatch.setattr(AnalysisOrchestrator, "_build_plan", planning)
+        runner = AnalysisOrchestrator.__new__(AnalysisOrchestrator)
+        asked = {"qvalue": {"min_seq_separation": 10}}
+        with pytest.raises(Planned):
+            AnalysisOrchestrator.run(runner, options=asked)
+        assert seen == [asked]
 
     def test_a_solvated_tripeptide_is_still_too_short(self, tmp_path) -> None:
         """The case that got through: 3 protein residues in 526 waters is
@@ -2946,3 +2989,31 @@ class TestAPeptideTooShortToFoldIsNotAFailure:
         from pathlib import Path
 
         return self._planned(Path(tempfile.mkdtemp()), residues, waters)
+
+
+def _one_bond_at(distance_nm: float, *, n_frames: int, angle_deg: float = 180.0) -> md.Trajectory:
+    """A donor, its hydrogen and an acceptor, the hydrogen `distance_nm` from
+    the acceptor and the donor-hydrogen-acceptor angle `angle_deg`."""
+    top = md.Topology()
+    chain = top.add_chain()
+    donor_residue = top.add_residue("ALA", chain, resSeq=1)
+    n = top.add_atom("N", md.element.nitrogen, donor_residue)
+    h = top.add_atom("H", md.element.hydrogen, donor_residue)
+    acceptor_residue = top.add_residue("ALA", chain, resSeq=2)
+    top.add_atom("O", md.element.oxygen, acceptor_residue)
+    top.add_bond(n, h)
+    turn = np.deg2rad(180.0 - angle_deg)
+    xyz = np.zeros((n_frames, 3, 3), dtype=np.float32)
+    xyz[:, 1] = [0.10, 0.0, 0.0]
+    xyz[:, 2] = [0.10 + distance_nm * np.cos(turn), distance_nm * np.sin(turn), 0.0]
+    return md.Trajectory(xyz=xyz, topology=top, time=np.arange(n_frames) * 1.0)
+
+
+def _a_chain(n_residues: int) -> md.Trajectory:
+    top = md.Topology()
+    chain = top.add_chain()
+    for index in range(n_residues):
+        residue = top.add_residue("ALA", chain, resSeq=index + 1)
+        for name in ("N", "CA", "C", "O"):
+            top.add_atom(name, md.element.carbon, residue)
+    return md.Trajectory(np.zeros((2, top.n_atoms, 3), dtype=np.float32), top)
