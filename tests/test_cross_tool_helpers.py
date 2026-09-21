@@ -439,26 +439,21 @@ class TestTheReferenceToolsResolve:
         assert plf.__name__ == "prolif"
 
     def test_it_does_not_call_itself(self):
-        """Asked directly, because the failure mode is a recursion that
-        looks like a correct implementation in every static reading."""
-        import inspect
-        from pathlib import Path
+        """Called, which is the only way to see it. With the reference
+        installed it returns the tools; without it, it says how to get them.
+        A version that calls itself raises RecursionError either way, so
+        this runs where the test above is skipped -- which is everywhere the
+        [validation] extra is not installed, CI included."""
+        from fastmdxplora.refusals import BackendUnavailable
+        from fastmdxplora.validation.cross_tool import _reference_tools
 
-        from fastmdxplora.validation import cross_tool
-
-        # From disk: `inspect.getsource` answers out of `linecache` and
-        # returns a stale copy of a module edited in the same session,
-        # which made this fail against a file that was already correct.
-        text = Path(inspect.getfile(cross_tool)).read_text(encoding="utf-8")
-        start = text.index("def _reference_tools(")
-        whole = text[start:text.index("\ndef ", start + 1)]
-        # Past the signature, which names the function and would match.
-        body = whole[whole.index("\n"):]
-
-        assert "_reference_tools()" not in body, (
-            "the helper calls itself: it must import, not recurse")
-        assert "import MDAnalysis" in body and "import prolif" in body
-
+        try:
+            tools = _reference_tools()
+        except BackendUnavailable as refused:
+            assert refused.code == "environment.backend.missing"
+            assert "pip install" in str(refused)
+        else:
+            assert [tool.__name__ for tool in tools] == ["MDAnalysis", "prolif"]
 
 class TestTheExactResidueTableIsPreferred:
     """A bracket against another tool's point compares different things.

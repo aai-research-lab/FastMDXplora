@@ -712,6 +712,28 @@ def _numeric_column(path: Path, prefer: str):
     return data[:, names.index(col)]
 
 
+def cavity_contacts(ours: dict, ref: dict, cavity) -> list[tuple[str, str, float, str]]:
+    """The contacts that fail a negative control: a cavity residue held above
+    NEGATIVE_OCCUPANCY_MAX_PCT, by either tool.
+
+    FastMDXplora is judged on the FLOOR: the measured max-pair occupancy. The
+    ceiling once convicted a passing control on the summed flicker of
+    correlated ring-carbon grazes; a graze-union artifact must not fail a
+    negative. Its own name for the judgment, apart from the command that
+    needs ProLIF and a finished run, so the rule can be run where they are
+    not.
+    """
+    judged = [(res, fam, (v[0] if isinstance(v, tuple) else v), "fastmdx")
+              for (res, fam), v in ours.items()]
+    judged += [(res, fam, v, "prolif") for (res, fam), v in ref.items()]
+    bad = []
+    for res, fam, pct, tool in judged:
+        resnum = "".join(ch for ch in res if ch.isdigit())
+        if resnum in cavity and pct > NEGATIVE_OCCUPANCY_MAX_PCT:
+            bad.append((res, fam, pct, tool))
+    return bad
+
+
 def cmd_negative(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a finished run
     run_dir = Path(args.run_dir)
     manifest = load_manifest(run_dir)
@@ -743,11 +765,8 @@ def cmd_negative(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a fini
     ours = our_occupancy(run_dir, manifest)
     traj = healed_trajectory(run_dir, traj, top)
     ref = prolif_occupancy(traj, top, resname, harmonized=True)
-    bad = []
-    # FastMDXplora is judged on the FLOOR: the measured max-pair occupancy. The
-    # ceiling once convicted a passing control on the summed flicker of
-    # correlated ring-carbon grazes; a graze-union artifact must not
-    # fail a negative. Both bounds and both tools are printed either way.
+    # Both bounds and both tools are printed either way; the verdict is
+    # cavity_contacts's, which judges FastMDXplora on its floor.
     print("cavity report (fastmdx [lo, hi] | prolif):")
     for resnum in sorted(cavity, key=int):
         for (res, fam), v in sorted(ours.items()):
@@ -756,13 +775,7 @@ def cmd_negative(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a fini
                 b = ref.get((res, fam), 0.0)
                 print(f"  {res:>7} {fam:<12} fastmdx [{a_lo:4.1f}, "
                       f"{a_hi:5.1f}] | prolif {b:4.1f}")
-    judged = [(res, fam, (v[0] if isinstance(v, tuple) else v), "fastmdx")
-              for (res, fam), v in ours.items()]
-    judged += [(res, fam, v, "prolif") for (res, fam), v in ref.items()]
-    for res, fam, pct, tool in judged:
-        resnum = "".join(ch for ch in res if ch.isdigit())
-        if resnum in cavity and pct > NEGATIVE_OCCUPANCY_MAX_PCT:
-            bad.append((res, fam, pct, tool))
+    bad = cavity_contacts(ours, ref, cavity)
     if bad:
         print("[verdict] NEGATIVE CONTROL FAILED -- persistent cavity "
               "contacts found:")
