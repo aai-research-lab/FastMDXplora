@@ -76,18 +76,19 @@ class TestItDrawsWhatTheRunComputed:
                     if p.is_file()}
         assert {".dat", ".png", ".svg"} <= produced
 
-    def test_it_does_not_recompute_the_hills(self) -> None:
+    def test_it_does_not_recompute_the_hills(self, tmp_path) -> None:
         """Summing them twice would invite two answers, and the trajectory
-        of a metadynamics run is not a Boltzmann ensemble anyway."""
-        import inspect
+        of a metadynamics run is not a Boltzmann ensemble anyway.
 
-        from fastmdxplora.analysis import metad_surface
-
-        # The module, not the class: `getsource` on a class does not reach
-        # the module docstring where the reasoning lives.
-        source = inspect.getsource(metad_surface)
-        assert "recompute it" in source
-        assert "not a Boltzmann ensemble" in source
+        So it reports exactly the surface the simulation phase stored, with
+        no HILLS file beside it to recompute from."""
+        run = _record(tmp_path / "run")
+        stored = json.loads((run / "simulation" / "metadynamics_surface.json")
+                            .read_text(encoding="utf-8"))
+        assert not list(run.rglob("HILLS*"))
+        result = MetadynamicsSurface(output_dir=run / "analysis").compute(None)
+        assert list(result["coordinate"]) == stored["grid"]
+        assert list(result["free_energy_kjmol"]) == stored["free_energy_kjmol"]
 
     def test_a_run_without_metadynamics_says_so(self, tmp_path) -> None:
         analysis = MetadynamicsSurface(output_dir=tmp_path / "analysis")
@@ -172,24 +173,73 @@ class TestItIsAnAnalysisLikeAnyOther:
 
         assert "metad_surface" in available_analyses()
 
-    def test_it_runs_only_where_a_run_produced_one(self) -> None:
+    def test_it_runs_only_where_a_run_produced_one(self, tmp_path) -> None:
+        # Planned where a run left a surface -- beside a single run, and
+        # beside each run of a set -- and left out of an ordinary run, where
+        # it would only fail and turn a missing surface into a failed phase.
+        from types import SimpleNamespace
+
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator
+
+        def planned(analysis_dir):
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+            runner = SimpleNamespace(output_dir=analysis_dir, ligand_resname=None, traj=None)
+            return AnalysisOrchestrator._build_plan(runner, None, None)
+
         assert MetadynamicsSurface.requires_metadynamics is True
-
-        import inspect
-
-        from fastmdxplora.analysis import orchestrator
-
-        assert "_metadynamics_ok" in inspect.getsource(orchestrator)
+        assert "metad_surface" not in planned(tmp_path / "ordinary" / "analysis")
+        assert "metad_surface" in planned(_record(tmp_path / "single") / "analysis")
+        one_of_a_set = _record(tmp_path / "study" / "runs" / "run-01")
+        assert "metad_surface" in planned(one_of_a_set / "analysis")
 
     def test_it_marks_where_the_surface_is_trustworthy(self, tmp_path) -> None:
         """Above the drift ceiling the estimate moves by several kJ/mol
-        however long the run, so the shape is read rather than the points."""
-        import inspect
+        however long the run, so the shape is read rather than the points.
 
-        source = inspect.getsource(MetadynamicsSurface.plot)
-        assert "drift_ceiling_kjmol" in source
-        assert "axhline" in source
+        The line sits the ceiling above the surface's own floor, not at the
+        ceiling's value: raised by 7 kJ/mol, the two differ, and a line at
+        20 would say the wrong part of the curve can be trusted."""
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
+        record = _record(tmp_path / "run") / "simulation" / "metadynamics_surface.json"
+        data = json.loads(record.read_text(encoding="utf-8"))
+        data["free_energy_kjmol"] = [e + 7.0 for e in data["free_energy_kjmol"]]
+        record.write_text(json.dumps(data), encoding="utf-8")
+
+        analysis = MetadynamicsSurface(output_dir=tmp_path / "run" / "analysis")
+        result = analysis.compute(None)
+        figure, ax = plt.subplots()
+        try:
+            analysis.plot(result, ax)
+            flat = [line for line in ax.lines if len(set(line.get_ydata())) == 1
+                    and len(line.get_ydata()) > 1]
+            floor = float(np.nanmin(result["free_energy_kjmol"]))
+            assert floor == pytest.approx(7.0, abs=0.01)
+            assert [pytest.approx(floor + 20.0)] == [float(line.get_ydata()[0]) for line in flat]
+            labels = [t.get_text() for t in ax.get_legend().get_texts()]
+            assert "judged below 20 kJ/mol" in labels
+        finally:
+            plt.close(figure)
+
+    def test_and_no_such_line_where_no_ceiling_was_judged(self, tmp_path) -> None:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        record = _record(tmp_path / "run") / "simulation" / "metadynamics_surface.json"
+        data = json.loads(record.read_text(encoding="utf-8"))
+        data["evidence"] = {}
+        record.write_text(json.dumps(data), encoding="utf-8")
+        analysis = MetadynamicsSurface(output_dir=tmp_path / "run" / "analysis")
+        figure, ax = plt.subplots()
+        try:
+            analysis.plot(analysis.compute(None), ax)
+            assert not [line for line in ax.lines if len(set(line.get_ydata())) == 1
+                        and len(line.get_ydata()) > 1]
+        finally:
+            plt.close(figure)
 
 class TestTheConvergenceBandTravelsWithTheSurface:
     """The simulation phase measures how much the surface still moved over
