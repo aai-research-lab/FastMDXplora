@@ -195,10 +195,11 @@ class TestTheStudyDrawsItsOwnFreeEnergy:
         step because the figure could not be drawn -- and the numbers it
         already wrote must be left exactly as they were.
 
-        Two ways the drawing can fail: inside the analysis, where its own
-        run catches it, and before the analysis can start, where the study
-        catches it and says the numbers are unaffected. Neither may break
-        the study or touch the numbers."""
+        Two ways the drawing can fail: inside the analysis, which catches it
+        and records it off the console, and before the analysis can start.
+        Either way the study says so where it will be read, and says that
+        the free energy is safe: the analysis's own "Analysis 'pmf' failed"
+        reads as if the result had failed rather than its picture."""
         import logging
         from types import SimpleNamespace
 
@@ -214,18 +215,16 @@ class TestTheStudyDrawsItsOwnFreeEnergy:
         for where in ("plot", "run"):
             monkeypatch.setattr(PMF, where, fails)
             caplog.clear()
-            with caplog.at_level(logging.WARNING):
+            with caplog.at_level(logging.WARNING, logger="fastmdx.batch"):
                 drawn = BatchExplorer._draw_pmf(study, written)
             monkeypatch.undo()
             assert drawn is None, where
             assert written.read_bytes() == before, where
-            assert caplog.records, f"a failure in {where} went unreported"
-        # And when the analysis cannot start, the study says why it matters.
-        monkeypatch.setattr(PMF, "run", fails)
-        caplog.clear()
-        with caplog.at_level(logging.WARNING):
-            BatchExplorer._draw_pmf(study, written)
-        assert any("The numbers are unaffected" in r.getMessage() for r in caplog.records)
+            said = [r.getMessage() for r in caplog.records
+                    if r.name == "fastmdx.batch"]
+            assert any("The numbers are unaffected" in m for m in said), where
+            assert any("the figure could not be made" in m for m in said), \
+                f"the reason is not given when {where} fails"
 
     def test_it_produces_the_same_three_files_as_any_analysis(
         self, tmp_path

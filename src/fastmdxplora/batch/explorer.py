@@ -1462,18 +1462,29 @@ class BatchExplorer:
         Best effort, like the comparison report beside it: a study whose
         windows all succeeded must not fail here.
         """
+        def unaffected(reason: object) -> None:
+            logger.warning(
+                "The free energy was computed and written to %s but could "
+                "not be drawn (%s). The numbers are unaffected.",
+                pmf_json.name, reason)
+
         try:
             from fastmdxplora.analysis.pmf import PMF
 
             analysis = PMF(output_dir=Path(self.output_dir) / "free_energy")
             result = analysis.run(None)
-            return getattr(result, "figure_path", None)
         except Exception as exc:  # noqa: BLE001 -- never break the study
-            logger.warning(
-                "The free energy was computed and written to %s but could "
-                "not be drawn (%s). The numbers are unaffected.",
-                pmf_json.name, exc)
+            unaffected(exc)
             return None
+        # The analysis catches a failure of its own and records it in the log
+        # file, off the console, because in the analysis phase its row in the
+        # results table says so. Drawn here there is no table, so the failure
+        # passed in silence, and the log's "Analysis 'pmf' failed" read as if
+        # the free energy had failed rather than its picture.
+        if getattr(result, "status", "ok") != "ok":
+            unaffected(getattr(result, "message", None) or "the analysis reported an error")
+            return None
+        return getattr(result, "figure_path", None)
 
     @contextmanager
     def _marking_for_comparison(self):
