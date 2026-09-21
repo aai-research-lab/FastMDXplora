@@ -183,18 +183,22 @@ studies, and a study killed mid-run is resumed from its last checkpoint
 with the frames it wrote after that checkpoint left out, so the pieces
 meet rather than overlap.
 
-Ask for it with `continues`, which takes the study directory. `systems`
-and the phase blocks are not needed: the study being continued supplies
-them.
+Ask for it in the simulation block, with `resume_from` naming the study
+directory. `systems` and the other blocks are not needed: the study
+being continued supplies them.
 
-    continues: ./fastmdxplora_1L2Y_study_20260920180944
-    duration_ns: 0.6      # total wanted, counting what already ran
+    simulation:
+      resume_from: ./fastmdxplora_1L2Y_study_20260920180944
+      duration_ns: 0.6      # the total production the study should end with
 
-`extra_ns: 0.1` instead says how much more to run rather than a total.
-With neither, the remainder of what that study planned is run, which is
-what resuming means. On the command line the same three are `fastmdx
-resume --output <study>` and `fastmdx extend --output <study>
---duration-ns 0.6` or `--extra-ns 0.1`.
+`extra_ns: 0.1` instead says how much more to run. With neither, the
+remainder of what that study planned is run, which is what resuming
+means, and an absent length there never means the default.
+
+`resume_from` naming a CHECKPOINT FILE rather than a study is the raw
+mechanism underneath: the run starts from those coordinates and writes
+its own trajectory, joining and analysing nothing. Name the study
+unless somebody asked for a single segment.
 
 A plan already met is not a study that cannot be continued. "Production
 already reached 0.500 ns, which is the 0.500 ns this study planned"

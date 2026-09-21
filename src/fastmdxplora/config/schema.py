@@ -182,28 +182,6 @@ TOP_LEVEL = PhaseSchema(
         # the same path, which is the whole operation -- the segment, the
         # join, and the analyses over the joined trajectory -- rather than
         # a bare simulation the person then has to put together.
-        Field("continues", str, None,
-              "A study directory to continue. The extra production runs as "
-              "that study's next segment, every finished segment is joined "
-              "into one trajectory, and the analyses and the report are "
-              "rerun over the whole of it -- one study, not two. With "
-              "neither `duration_ns` nor `extra_ns` below it, the remainder "
-              "of what that study planned is run, which is what resuming "
-              "means. `systems` and the phase blocks are not needed: the "
-              "study being continued supplies them.",
-              example="./fastmdxplora_1L2Y_study_20260920180944"),
-        Field("duration_ns", float, None,
-              "With `continues`: total production wanted from that study, "
-              "counting what it has already written. 0.6 against a study "
-              "that ran 0.5 runs 0.1 more. Without `continues` this has no "
-              "meaning at the top level; production length for a fresh run "
-              "is `simulation.duration_ns`.",
-              example=0.6),
-        Field("extra_ns", float, None,
-              "With `continues`: additional production to run, on top of "
-              "whatever that study has already written, whether or not it "
-              "finished its plan.",
-              example=0.1),
         Field("agent_model", str, None,
               "Which model wrote this study, as provider/model. Written by "
               "`fastmdx agent`; absent when a person wrote the config. "
@@ -572,6 +550,15 @@ SIMULATION = PhaseSchema(
               "is what this package calls the automated first phase, so "
               "`setup_from` is what a directory that phase wrote is called.",
               example="runs/reference"),
+        Field("extra_ns", float, None,
+              "With `resume_from` naming a study: production to run on top "
+              "of what that study already has, whether or not it finished "
+              "its plan. `duration_ns` beside `resume_from` says the total "
+              "the study should end with instead; with neither, the "
+              "remainder of what it planned is run, which is what resuming "
+              "means. Absent here never means the default length -- a "
+              "continuation with no length asked for finishes the plan.",
+              example=0.1),
         Field("resume_unsealed", bool, False,
               "Accept a checkpoint with no seal -- a run that was killed "
               "rather than one that finished cleanly. `fastmdx resume` sets "
@@ -579,6 +566,16 @@ SIMULATION = PhaseSchema(
               "are left out of the join, so the pieces meet at the "
               "checkpoint rather than overlapping it."),
         Field("resume_from", str, None,
+              "What this run continues from, and how much it does depends "
+              "on what you name. A STUDY DIRECTORY continues that study: "
+              "the production runs as its next segment, every finished "
+              "segment is joined into one trajectory, and the analyses and "
+              "the report are rerun over the whole of it -- one study, not "
+              "two, and nothing to join by hand. A CHECKPOINT FILE is the "
+              "raw mechanism underneath: the run starts from those "
+              "coordinates and writes its own trajectory wherever it was "
+              "told, joining and analysing nothing, which is what a "
+              "segmented campaign wants. "
               "Path to a checkpoint this run continues from. Set on every "
               "segment after the first when a long run is split; leave it "
               "out for a run that starts at the beginning. A checkpoint is "
@@ -963,6 +960,30 @@ EXECUTION = PhaseSchema(
 #: declarations. A setting left out of every group is caught by a test, not by
 #: somebody noticing it missing from the page.
 SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
+    "(top-level)": (
+        ("What to study",
+         "The runs this config produces. A single study names none of "
+         "this and describes its system in `setup`.",
+         ("systems",)),
+        ("Which phases run",
+         "A study is setup, simulation, analysis and report. Either list "
+         "picks a subset; naming both is refused.",
+         ("include", "exclude")),
+        ("Where it goes",
+         "One directory holds everything a study wrote.",
+         ("output",)),
+        ("How it was written",
+         "Whether a model was involved and which one, so the record "
+         "identifies the software rather than the category.",
+         ("agent", "agent_model")),
+        ("What it may spend",
+         "A ceiling for a study nobody is watching, checked after setup "
+         "when the particle count -- and so the cost -- is first known.",
+         ("budget_hours",)),
+        ("What you see while it runs",
+         "How much the software says for itself as it works.",
+         ("explain", "verbose")),
+    ),
     "setup": (
         ("How this phase was written",
          "Whether a person wrote it, a model drafted it, or it went "
@@ -1005,7 +1026,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("agent",)),
         ("How long it runs",
          "Production length, and the equilibration before it.",
-         ("duration_ns", "nvt_duration_ns", "npt_duration_ns",
+         ("duration_ns", "extra_ns", "nvt_duration_ns", "npt_duration_ns",
           "production_steps", "nvt_steps", "npt_steps", "ensemble")),
         ("Where it starts",
          "A system prepared here or elsewhere, where the run picks up from "

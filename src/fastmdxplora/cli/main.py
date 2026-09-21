@@ -860,43 +860,6 @@ def _build_parser() -> argparse.ArgumentParser:
         _attach_phase_options(pp, opts, group_title=f"{phase} options",
                               phase=phase)
 
-    # Two names for one operation, because they are two intentions.
-    # `resume` finishes what a study planned; `extend` runs past it. The
-    # mechanism is identical -- resume from the checkpoint, land inside
-    # the study as its next segment, join, reanalyse -- and the only
-    # difference is how much is asked for.
-    for name, blurb in (
-        ("resume", "Finish a study that stopped before its planned duration."),
-        ("extend", "Run more production on a study, joined and reanalysed."),
-    ):
-        cmd = sub.add_parser(
-            name,
-            help=blurb,
-            description=(
-                f"{blurb} The extra production runs as the study's next "
-                "segment, every finished segment is joined into one "
-                "trajectory, and the analyses and the report are rerun over "
-                "the whole of it -- one study, not two. With neither "
-                "--duration-ns nor --extra-ns, the remainder of what the "
-                "study already planned is run, which is what resuming means. "
-                "A study that was killed is resumed from its last checkpoint, "
-                "and the frames it wrote after that checkpoint are left out of "
-                "the join so the pieces meet rather than overlap. A gap "
-                "between segments, or segments from two studies, is refused."
-            ),
-        )
-        cmd.add_argument("--output", required=True, metavar="DIR",
-                         help="The study directory to resume or extend.")
-        wanted = cmd.add_mutually_exclusive_group()
-        wanted.add_argument("--duration-ns", type=float, metavar="NS",
-                            dest="duration_ns",
-                            help="Total production wanted, counting what already ran.")
-        wanted.add_argument("--extra-ns", type=float, metavar="NS",
-                            dest="extra_ns",
-                            help="Additional production to run, on top of what ran.")
-        cmd.add_argument("--no-analysis", action="store_true",
-                         help="Simulate and join, but leave the analyses alone.")
-
     sub.add_parser(
         "info",
         help="Print FastMDXplora environment information.",
@@ -1353,18 +1316,22 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
     config = _build_explore_config(args)
 
-    # A config that names a study to continue is a continuation, not a
-    # fresh run: the same operation `fastmdx resume` and `fastmdx extend`
-    # perform, reached from a file so the GUI and the Agent can ask for
-    # one. The study being continued supplies the systems and the phases,
+    # `simulation.resume_from` naming a STUDY DIRECTORY is a continuation of
+    # that study: its next segment, the join, and the analyses over the
+    # joined trajectory. Naming a checkpoint file is the raw mechanism and
+    # runs as an ordinary simulation, which is what a segmented campaign
+    # wants. The study being continued supplies the systems and the phases,
     # which is why the usual "explore requires a system" check comes after
     # this rather than before it.
-    if config.get("continues") and not getattr(args, "dry_run", False):
+    simulation = config.get("simulation") or {}
+    resume_from = simulation.get("resume_from")
+    continuing = bool(resume_from) and Path(str(resume_from)).is_dir()
+    if continuing and not getattr(args, "dry_run", False):
         from fastmdxplora.simulation.resume import extend_study
 
-        answer = extend_study(config["continues"],
-                              total_ns=config.get("duration_ns"),
-                              more_ns=config.get("extra_ns"))
+        answer = extend_study(resume_from,
+                              total_ns=simulation.get("duration_ns"),
+                              more_ns=simulation.get("extra_ns"))
         if not answer.get("ok"):
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
             return 1
@@ -1378,8 +1345,8 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if not config.get("systems"):
         print(
             "fastmdx: explore requires a system — pass -s/--system PATH, a "
-            "--config file with a `systems:` list, or `continues:` naming a "
-            "study to carry on from.",
+            "--config file with a `systems:` list, or "
+            "`simulation.resume_from` naming a study to carry on from.",
             file=sys.stderr,
         )
         return 2
@@ -2157,27 +2124,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     # removed. The decision is here, in one place, and nothing half-implements
     # its opposite. If the fail-fast policy is wanted instead, it is a change
     # to this comment and a call on the next line, not a resurrection.
-
-    if args.command in ("extend", "resume"):
-        from fastmdxplora.simulation.resume import extend_study
-
-        answer = extend_study(args.output, total_ns=args.duration_ns,
-                              more_ns=args.extra_ns,
-                              analyse=not args.no_analysis)
-        if not answer.get("ok"):
-            print(f"fastmdx: {answer.get('error')}")
-            return 1
-        joined = answer.get("joined") or {}
-        pieces = joined.get("segments") or "?"
-        print(f"Ran {Path(answer['segment']).name} and joined segments {pieces}.")
-        trimmed = joined.get("trimmed") or {}
-        for index, frames in trimmed.items():
-            where = "the study's own run" if index == "0" else f"segment-{int(index):03d}"
-            print(f"{where} was killed: kept its first {frames:,} frames, "
-                  "up to its last checkpoint.")
-        if answer.get("analysed"):
-            print(f"Analyses and report rerun over {answer['trajectory']}.")
-        return 0
 
     if args.command == "agent":
         return _run_agent(args)

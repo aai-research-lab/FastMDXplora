@@ -154,10 +154,10 @@ class TestTheDriverDoesAllThree(unittest.TestCase):
 
         source = (P(__file__).resolve().parents[1] / "src" / "fastmdxplora"
                   / "cli" / "main.py").read_text(encoding="utf-8")
-        self.assertIn('("extend", "Run more production on a study', source)
-        self.assertIn('wanted.add_argument("--duration-ns"', source)
-        self.assertIn('wanted.add_argument("--extra-ns"', source)
-        self.assertIn('if args.command in ("extend", "resume"):', source)
+        self.assertIn("Path(str(resume_from)).is_dir()", source)
+        self.assertIn('total_ns=simulation.get("duration_ns")', source)
+        self.assertIn('more_ns=simulation.get("extra_ns")', source)
+
 
 
 class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
@@ -187,21 +187,6 @@ class TestResumeAndExtendAreOneMechanism(unittest.TestCase):
                 self.assertEqual(Path(plan.config["output"]), root / "segment-001")
                 self.assertFalse(plan.config["simulation"]["minimize"])
                 self.assertEqual(plan.config["simulation"]["nvt_steps"], 0)
-
-    def test_the_cli_offers_both_names_with_the_flags_optional(self):
-        source = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
-                  / "cli" / "main.py").read_text(encoding="utf-8")
-        # Two names for one operation, because they are two intentions.
-        self.assertIn('("resume", "Finish a study that stopped', source)
-        self.assertIn('("extend", "Run more production on a study', source)
-        self.assertIn('if args.command in ("extend", "resume"):', source)
-        # The study is named by --output, and the amounts are optional so
-        # the plain resume can be asked for.
-        self.assertIn('cmd.add_argument("--output", required=True', source)
-        self.assertIn('wanted.add_argument("--duration-ns"', source)
-        self.assertIn('wanted.add_argument("--extra-ns"', source)
-        self.assertNotIn('"--to"', source)
-        self.assertNotIn('"--more"', source)
 
     def test_the_staged_runner_uses_the_same_segment_names(self):
         # A campaign's segments and an extension's are the same
@@ -350,81 +335,69 @@ class TestACheckpointAndItsSealAreOneFact(unittest.TestCase):
                       inspect.getsource(pipeline))
 
 
-class TestAContinuationCanBeAskedForInConfig(unittest.TestCase):
-    """`fastmdx resume` and `fastmdx extend` are three settings on the
-    command line. A config carrying `continues` runs the same path, so
-    the GUI and the Agent can ask for one -- the whole operation, not a
-    bare simulation the person then has to put together."""
+class TestOneSettingOneFlag(unittest.TestCase):
+    """Continuing a study is a property of the simulation phase, so it is
+    asked for the way every simulation setting is: one setting, one flag
+    generated from it, one GUI field. It was three top-level settings the
+    CLI could not express and two subcommands the config could not."""
 
-    def test_the_settings_exist_and_validate(self):
-        import tempfile as tf
+    def test_the_top_level_settings_are_gone(self):
+        from fastmdxplora.config.schema import all_schemas
 
-        import yaml as y
+        top = {f.name for f in all_schemas()["(top-level)"].fields}
+        for gone in ("continues", "duration_ns", "extra_ns"):
+            self.assertNotIn(gone, top)
 
-        from fastmdxplora.config.loader import load_config_file
+    def test_the_settings_live_in_the_simulation_block(self):
+        from fastmdxplora.config.schema import all_schemas
 
-        path = Path(tf.mkdtemp()) / "c.yml"
-        path.write_text(y.safe_dump({"continues": "/tmp/study",
-                                     "duration_ns": 0.6}), encoding="utf-8")
-        config = load_config_file(path)
-        self.assertEqual(config["continues"], "/tmp/study")
-        self.assertEqual(config["duration_ns"], 0.6)
+        simulation = all_schemas()["simulation"]
+        self.assertIsNotNone(simulation.get("extra_ns"))
+        self.assertIsNotNone(simulation.get("resume_from"))
 
-    def test_explore_routes_it_to_the_continuation(self):
+    def test_resume_from_says_what_a_study_does_and_what_a_file_does(self):
+        from fastmdxplora.config.schema import all_schemas
+
+        help_text = all_schemas()["simulation"].get("resume_from").help
+        self.assertIn("STUDY DIRECTORY", help_text)
+        self.assertIn("CHECKPOINT FILE", help_text)
+
+    def test_the_flags_are_generated_from_the_schema(self):
+        import subprocess
+        import sys
+
+        for flag in ("--resume-from", "--extra-ns"):
+            out = subprocess.run([sys.executable, "-m", "fastmdxplora.cli.main",
+                                  "simulate", "--help"],
+                                 capture_output=True, text=True, timeout=120).stdout
+            self.assertIn(flag, out)
+
+    def test_the_subcommands_are_gone(self):
         source = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
                   / "cli" / "main.py").read_text(encoding="utf-8")
-        self.assertIn('if config.get("continues")', source)
-        self.assertIn('total_ns=config.get("duration_ns")', source)
-        self.assertIn('more_ns=config.get("extra_ns")', source)
-        # And a config that continues needs no systems list.
-        self.assertIn("`continues:` naming a", source)
+        self.assertNotIn('("resume", "Finish a study', source)
+        self.assertNotIn('if args.command in ("extend", "resume")', source)
 
-    def test_a_config_that_continues_reaches_the_continuation(self):
-        import tempfile as tf
+    def test_a_study_directory_routes_to_the_continuation(self):
+        source = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
+                  / "cli" / "main.py").read_text(encoding="utf-8")
+        self.assertIn('Path(str(resume_from)).is_dir()', source)
+        self.assertIn('total_ns=simulation.get("duration_ns")', source)
+        self.assertIn('more_ns=simulation.get("extra_ns")', source)
 
-        import yaml as y
+    def test_every_top_level_setting_is_in_a_group(self):
+        # Three settings landed at the top level with no group and no flag,
+        # and nothing checked. Now nothing can.
+        from fastmdxplora.config.schema import SETTING_GROUPS, all_schemas
 
-        from fastmdxplora.cli.main import main
+        top = {f.name for f in all_schemas()["(top-level)"].fields}
+        grouped = {n for _t, _w, names in SETTING_GROUPS["(top-level)"] for n in names}
+        self.assertEqual(top - grouped, set())
 
-        path = Path(tf.mkdtemp()) / "c.yml"
-        path.write_text(y.safe_dump({"continues": str(Path(tf.mkdtemp()) / "absent"),
-                                     "duration_ns": 0.6}), encoding="utf-8")
-        # It refuses for the continuation's reason, not for a missing
-        # `systems` list, which is what says it took that path.
-        self.assertEqual(main(["explore", "--config", str(path)]), 1)
-
-
-class TestTheAgentIsToldWhatContinuingDoesNow(unittest.TestCase):
-
-    def test_it_no_longer_describes_a_join_the_person_runs(self):
-        from fastmdxplora.agent.propose import prompt_for
-
-        prompt = prompt_for("extend it to 0.6 ns")
-        self.assertIn("leaves one study, not two", prompt)
-        self.assertIn("The person joins nothing by hand", prompt)
-        self.assertNotIn("is a step the person\ntakes when the segments are done", prompt)
-
-    def test_it_is_given_the_config_form(self):
+    def test_the_agent_is_given_the_simulation_form(self):
         from fastmdxplora.agent.propose import prompt_for
 
         prompt = prompt_for("extend it")
-        self.assertIn("continues: ./fastmdxplora", prompt)
+        self.assertIn("resume_from: ./fastmdxplora_1L2Y_study", prompt)
         self.assertIn("extra_ns: 0.1", prompt)
-        self.assertIn("fastmdx extend --output <study>", prompt)
-
-    def test_a_met_plan_is_not_a_study_that_cannot_be_continued(self):
-        from fastmdxplora.agent.propose import prompt_for
-
-        prompt = prompt_for("extend it")
-        self.assertIn("A plan already met is not a study that cannot be", prompt)
-
-    def test_the_refusal_says_what_can_still_be_done(self):
-        # It said "nothing remains to run", and the Agent offered a fresh
-        # run of the same molecule instead of the 0.1 ns that was asked for.
-        from fastmdxplora.simulation.resume import continuation_of
-
-        root = _study()
-        refusal = continuation_of(root).refusal
-        self.assertIn("Nothing remains of the plan", refusal)
-        self.assertIn("it can still be extended past it", refusal)
-        self.assertIn("--duration-ns", refusal)
+        self.assertNotIn("continues:", prompt)

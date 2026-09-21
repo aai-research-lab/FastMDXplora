@@ -799,4 +799,4 @@ class TestAContinuationAnalysesWhatItWrote(unittest.TestCase):
         prompt = prompt_for("extend it")
         self.assertIn("leaves one study, not two", prompt)
         self.assertIn("The person joins nothing by hand", prompt)
-        self.assertIn("continues: ./fastmdxplora", prompt)
+        self.assertIn("resume_from: ./fastmdxplora_1L2Y_study", prompt)

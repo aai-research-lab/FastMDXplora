@@ -31,6 +31,10 @@ from fastmdxplora.simulation.runner import run_simulation
 #: Settings the simulation phase declares and the runner never sees,
 #: because something else consumes them. Each needs a reason.
 CONSUMED_ELSEWHERE = {
+    "extra_ns": "read by the continuation planner, not the runner: it says "
+                "how much more production to run on top of what a study "
+                "already has, which resume_from naming a study settles "
+                "before a runner is built at all",
     # Not a setting about the science. It says how the phase was written,
     # and `config.agent_modes` reads it to decide which artifacts carry the
     # unchecked mark. The runner does not need it and should not: a phase
