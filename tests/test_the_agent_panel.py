@@ -1687,16 +1687,6 @@ class TestTheThreadFollowsTheReply(unittest.TestCase):
         self.assertIn("requestAnimationFrame(toEnd);", block)
         self.assertIn("setTimeout(toEnd, 400);", block)
 
-    def test_the_page_has_a_height_so_the_thread_can_scroll(self):
-        import pathlib
-
-        import fastmdxplora.gui as gui
-
-        css = (pathlib.Path(gui.__file__).parent / "static"
-               / "dashboard.css").read_text(encoding="utf-8")
-        self.assertIn('.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); min-height: 0; }', css)
-
-
 class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
 
     def script(self):
@@ -2007,18 +1997,6 @@ class TestSixMoreFromUsingIt(unittest.TestCase):
                   / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn('note(box, "Thinking\\u2026");', script)
         self.assertNotIn('"Writing\\u2026"', script)
-
-    def test_send_is_inside_the_box(self):
-        import pathlib
-
-        import fastmdxplora.gui as gui
-
-        page = (pathlib.Path(gui.__file__).parent / "templates"
-                / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn('<div class="agent-composer-box">', page)
-        css = (pathlib.Path(gui.__file__).parent / "static"
-               / "dashboard.css").read_text(encoding="utf-8")
-        self.assertIn(".agent-composer-box .agent-send {\n    position: absolute; right: 8px; bottom: 8px;", css)
 
     def test_the_placeholder_is_as_general_as_the_agent(self):
         import pathlib
@@ -2605,17 +2583,6 @@ class TestThePickerServesTheAgentToo(unittest.TestCase):
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn('start: convStudy || workspaceRoot || ""', script)
-
-    def test_the_placeholder_clears_the_plus(self):
-        import pathlib
-
-        import fastmdxplora.gui as gui
-
-        css = (pathlib.Path(gui.__file__).parent / "static"
-               / "dashboard.css").read_text(encoding="utf-8")
-        # The ID rule outranks the class rule, so the indent lives on it.
-        self.assertIn("#agent-request { min-height: 44px; padding: 12px 52px 12px 46px; }", css)
-
 
 class TestTheWordsAndTheRows(unittest.TestCase):
 

@@ -359,7 +359,9 @@ button {
 /* Page shell                          */
 /* ============================================================ */
 .page-shell {
-    padding: 24px 28px 64px;
+    --shell-pad-top: 24px;
+    --shell-pad-bottom: 64px;
+    padding: var(--shell-pad-top) 28px var(--shell-pad-bottom);
     min-width: 0;
     max-width: 1600px;
     margin: 0 auto;
@@ -1355,7 +1357,7 @@ body.state-ready .loading-screen {
     .metric-cluster { gap: 8px; }
     .metric { min-width: 60px; }
     .stage-timeline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .page-shell { padding: 16px; }
+    .page-shell { --shell-pad-top: 16px; --shell-pad-bottom: 16px; padding: 16px; }
 }
 /* Functional dashboard additions */
 .mini-preview-canvas {
@@ -2361,13 +2363,6 @@ body.state-ready .loading-screen {
     white-space: pre;
     overflow-x: auto;
 }
-#agent-request {
-    font-family: inherit;
-    font-size: 14px;
-    line-height: 1.5;
-    resize: vertical;
-    min-height: 120px;
-}
 
 /* Agent settings, shaped like the file picker but not one of them --
    test_there_is_only_one_picker asserts there is exactly one, which is a
@@ -2412,17 +2407,6 @@ body.state-ready .loading-screen {
 }
 
 
-/* The Agent's request box and the button under it. A textarea with a
-   control immediately beneath it reads as one object; the gap says they
-   are two. */
-#agent-request {
-    font-family: inherit;
-    font-size: 14px;
-    line-height: 1.55;
-    resize: vertical;
-    min-height: 160px;
-    padding: 12px 14px;
-}
 /* By the page rather than by sibling selector: the textarea sits inside a
    label, so `#agent-request + .control-row` never matches, and `:has()`
    would be doing work a plain descendant rule does. */
@@ -2904,7 +2888,12 @@ html[data-page="viewer"] .page-shell { max-width: none; }
    thread and the main column scrolled instead of the thread, so the
    composer left the foot and scrollToEnd moved nothing. The 88px is
    the page shell's own padding, top and bottom. */
-.page[data-page="agent"] { display: flex; flex-direction: column; height: calc(100vh - 88px); min-height: 0; }
+.page[data-page="agent"] {
+    --agent-foot: 12px;
+    display: flex; flex-direction: column; min-height: 0;
+    height: calc(100vh - var(--shell-pad-top, 24px) - var(--agent-foot));
+    margin-bottom: calc(var(--agent-foot) - var(--shell-pad-bottom, 64px));
+}
 .page[data-page="agent"] .page-header { flex: none; }
 .agent-thread {
     flex: 1; min-height: 0; overflow-y: auto;
@@ -2934,6 +2923,10 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-msg-agent .agent-result { margin: 0; }
 .agent-msg-agent .agent-actions { margin: 0; }
 .agent-composer {
+    /* One line of text is this tall, and the buttons this big, so the
+       buttons centre on a single line and stay at the foot as it grows. */
+    --composer-min: 48px;
+    --composer-btn: 32px;
     flex: none; position: sticky; bottom: 0;
     padding: 12px 0 8px;
     background: linear-gradient(180deg, transparent, var(--background-primary) 30%);
@@ -2943,27 +2936,30 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-composer-box { position: relative; }
 .agent-composer-box textarea { padding-right: 52px; }
 .agent-composer-box .agent-send {
-    position: absolute; right: 8px; bottom: 8px;
-    width: 32px; height: 32px; border-radius: 8px; font-size: 16px;
+    position: absolute; right: 8px;
+    bottom: calc((var(--composer-min) - var(--composer-btn)) / 2);
+    width: var(--composer-btn); height: var(--composer-btn);
+    border-radius: 8px; font-size: 16px;
 }
-.agent-composer textarea {
-    width: 100%; box-sizing: border-box; resize: none; min-height: 48px; max-height: 40vh;
-    padding: 12px 14px; border-radius: 12px;
+#agent-request {
+    display: block;
+    width: 100%; box-sizing: border-box; resize: none;
+    min-height: var(--composer-min); max-height: 40vh;
+    /* Clear of the + on the left and the send on the right. */
+    padding: 12px 52px 12px 46px; border-radius: 12px;
     border: 1px solid var(--border-primary);
     background: var(--background-elevated);
     color: var(--text-primary);
-    font: 400 14px/1.5 inherit; font-family: inherit;
+    font-family: inherit; font-weight: 400; font-size: 14.5px; line-height: 1.5;
     overflow-y: auto;
 }
-.agent-composer textarea:focus { outline: none; border-color: var(--accent-cyan); }
+#agent-request:focus { outline: none; border-color: var(--accent-cyan); }
 .agent-send {
     flex: none; width: 40px; height: 40px; border-radius: 10px;
     border: 1px solid var(--accent-cyan); background: var(--accent-cyan); color: var(--background-primary);
     font-size: 18px; line-height: 1; cursor: pointer;
 }
 .agent-send:disabled { opacity: .45; cursor: default; }
-/* The old single-field rules no longer apply to a composer. */
-#agent-request { min-height: 44px; padding: 12px 52px 12px 46px; }  /* clear of the + and the send */
 /* The Agent's prose in a serif; the person's message in the UI sans.
    That is the pairing every assistant a person has read uses, and it
    makes the two voices in the thread tell apart at a glance. A system
@@ -2986,7 +2982,6 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-msg-agent .agent-attempt { font-size: 14.5px; }
 .agent-msg-agent .agent-attempt.ok { font-family: inherit; font-size: 12px; }
 .agent-msg-user > div:first-child { font-size: 14.5px; }
-.agent-composer textarea { font-size: 14.5px; }
 
 /* Copy / edit / retry on a message, shown on hover. Every assistant a
    person has used has these; a thread without them is one you cannot
@@ -3094,8 +3089,9 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 /* The + at the left of the composer, and the chips above it. */
 .agent-composer-box textarea { padding-left: 46px; }
 .agent-composer-box .agent-plus {
-    position: absolute; left: 8px; bottom: 8px;
-    width: 32px; height: 32px; border-radius: 8px;
+    position: absolute; left: 8px;
+    bottom: calc((var(--composer-min) - var(--composer-btn)) / 2);
+    width: var(--composer-btn); height: var(--composer-btn); border-radius: 8px;
     border: 1px solid var(--border-subtle); background: transparent;
     color: var(--text-muted); font-size: 20px; line-height: 1; cursor: pointer;
 }

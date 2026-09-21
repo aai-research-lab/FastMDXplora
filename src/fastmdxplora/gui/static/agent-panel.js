@@ -450,8 +450,12 @@
   }
 
   function autosize(area) {
+    // scrollHeight leaves the border out, and the box is border-box, so
+    // setting it alone made every line two pixels short -- the text was
+    // clipped and the box jittered as it grew. The border is added back.
     area.style.height = "auto";
-    area.style.height = Math.min(area.scrollHeight, window.innerHeight * 0.4) + "px";
+    var border = area.offsetHeight - area.clientHeight;
+    area.style.height = Math.min(area.scrollHeight + border, window.innerHeight * 0.4) + "px";
   }
 
   function draft() {
