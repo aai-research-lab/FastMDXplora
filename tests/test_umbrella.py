@@ -282,19 +282,52 @@ class TestReadingTheSamplingBack:
         f = np.array(result["pmf"]["free_energy_kjmol"])
         assert f[np.argmin(np.abs(x))] == pytest.approx(10.0, abs=1.5)
 
-    def test_the_approach_to_each_window_is_discarded(self) -> None:
+    @staticmethod
+    def _window(tmp_path, rows) -> dict:
+        """One window whose COLVAR holds `rows` of (time, value)."""
+        directory = tmp_path / "window-00"
+        (directory / "simulation").mkdir(parents=True)
+        (directory / "simulation" / "COLVAR").write_text(
+            "#! FIELDS time d\n" + "".join(f"{t} {v}\n" for t, v in rows),
+            encoding="utf-8")
+        return {0: directory}
+
+    def test_the_approach_to_each_window_is_discarded(self, tmp_path) -> None:
         """A window begins away from where it will settle, and counting the
-        approach biases the histogram towards where the run started."""
-        import inspect
+        approach biases the histogram towards where the run started.
 
-        from fastmdxplora.simulation import umbrella
+        The first fifth of this window sits at 5.0, far from where it
+        settles at 1.0. None of it may reach the histogram."""
+        from fastmdxplora.simulation.umbrella import collect_samples
 
-        source = inspect.getsource(umbrella.collect_samples)
-        assert "equilibration_fraction" in source
-        # Flattened, because the sentence wraps and a substring check
-        # across a line break tests the layout rather than the meaning.
-        prose = " ".join(inspect.getdoc(umbrella.collect_samples).split())
-        assert "biases the histogram" in prose
+        rows = [(t, 5.0) for t in range(20)] + [(t, 1.0) for t in range(20, 100)]
+        kept = collect_samples(self._window(tmp_path, rows))[0]
+        assert 5.0 not in kept, "the approach reached the histogram"
+        assert len(kept) == 80
+        assert np.all(kept == 1.0)
+
+    def test_how_much_is_discarded_is_the_fraction_asked_for(self, tmp_path) -> None:
+        from fastmdxplora.simulation.umbrella import collect_samples
+
+        rows = [(t, float(t)) for t in range(100)]
+        window = self._window(tmp_path, rows)
+        for fraction, first_kept in ((0.0, 0.0), (0.2, 20.0), (0.5, 50.0)):
+            kept = collect_samples(window, equilibration_fraction=fraction)[0]
+            assert kept[0] == first_kept
+            assert len(kept) == 100 - int(100 * fraction)
+
+    def test_a_window_held_through_equilibration_counts_production_only(
+            self, tmp_path) -> None:
+        # A window held from the first step writes its settling too, then
+        # production restarts the clock at zero. Everything before that
+        # jump is the window arriving, and is dropped before the fraction.
+        from fastmdxplora.simulation.umbrella import collect_samples
+
+        settling = [(t, 9.0) for t in range(50)]
+        production = [(t, 1.0) for t in range(100)]
+        kept = collect_samples(self._window(tmp_path, settling + production))[0]
+        assert 9.0 not in kept, "the settling reached the histogram"
+        assert len(kept) == 80   # the fraction is of production's 100 rows
 
     def test_a_missing_window_stops_it(self, tmp_path) -> None:
         """The windows either side of a missing one have nothing between them
@@ -328,29 +361,52 @@ class TestOneWindowInTheRunner:
         table, _prefix = _PHASE_SPEC["simulate"]
         assert "umbrella" in {dest for _flag, dest, _kw in table}
 
-    def test_the_pipeline_passes_it(self) -> None:
-        import inspect
+    def test_the_pipeline_passes_it(self, tmp_path, monkeypatch) -> None:
+        # What reaches the runner, recorded, rather than whether a line
+        # naming it is in the pipeline's source.
+        window = {"collective_variable": "distance", "selection_a": "index 0",
+                  "selection_b": "index 3", "centre": 0.5, "force_constant": 1000.0}
+        received = _what_the_runner_receives(tmp_path, monkeypatch, umbrella=window)
+        assert received["umbrella"] == window
 
-        from fastmdxplora.simulation import pipeline
-
-        assert "umbrella=params.get" in inspect.getsource(pipeline)
-
-    def test_only_one_way_of_moving_a_coordinate_at_a_time(self) -> None:
+    def test_only_one_way_of_moving_a_coordinate_at_a_time(self, tmp_path) -> None:
         """Steering, metadynamics and an umbrella restraint would add their
-        forces."""
-        import inspect
+        forces. Asked of the runner, with each pair, before a step is run."""
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.simulation.runner import run_simulation
 
-        from fastmdxplora.simulation import runner
+        files = _a_prepared_water_box(tmp_path)
+        # Each block as the schema describes it, and each valid on its own,
+        # so the only thing wrong with a pair is that it is a pair.
+        between = {"collective_variable": "distance",
+                   "selection_a": "index 0", "selection_b": "index 3"}
+        window = {**between, "centre": 0.5, "force_constant": 1000.0}
+        hills = {**between, "sigma": 0.02, "height_kjmol": 1.0, "pace_steps": 100}
+        pull = {**between, "from": 0.3, "to": 0.6, "steps": 10}
+        for pair in ({"umbrella": window, "metadynamics": hills},
+                     {"umbrella": window, "steered": pull},
+                     {"steered": pull, "metadynamics": hills}):
+            with pytest.raises(StudyError) as caught:
+                run_simulation(**files, output_dir=str(tmp_path / "out"),
+                               production_steps=10, nvt_steps=0, npt_steps=0,
+                               minimize=False, platform="CPU", **pair)
+            assert caught.value.code == "config.option.conflicting", sorted(pair)
+            assert "not more than one" in str(caught.value)
 
-        source = inspect.getsource(runner.run_simulation)
-        assert "not more than one" in source or "not more than one" in source.replace("\n", " ")
+    def test_a_window_needs_a_position(self, tmp_path) -> None:
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.simulation.runner import run_simulation
 
-    def test_a_window_needs_a_position(self) -> None:
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        assert "needs a `centre`" in inspect.getsource(runner.run_simulation)
+        files = _a_prepared_water_box(tmp_path)
+        with pytest.raises(StudyError) as caught:
+            run_simulation(**files, output_dir=str(tmp_path / "out"),
+                           production_steps=10, nvt_steps=0, npt_steps=0,
+                           minimize=False, platform="CPU",
+                           umbrella={"collective_variable": "distance",
+                                     "selection_a": "index 0", "selection_b": "index 3",
+                                     "force_constant": 1000.0})
+        assert caught.value.code == "simulation.bias.parameter_missing"
+        assert "needs a `centre`" in str(caught.value)
 
 
 class TestItIsActuallyReached:
@@ -1670,3 +1726,68 @@ class TestAnUnsampledBinIsNotAMeasurement:
         result = self._pmf(gap=True)
         values = [v for v in result["pmf"]["free_energy_kjmol"] if v is not None]
         assert min(values) == pytest.approx(0.0, abs=1e-9)
+
+
+
+def _a_prepared_water_box(tmp_path) -> dict:
+    """The smallest prepared system the runner will load: one water,
+    solvated into a small box. Enough to reach the checks that follow
+    loading, without preparing a protein."""
+    openmm = pytest.importorskip("openmm")
+    from openmm import unit
+    from openmm.app import PME, ForceField, HBonds, Modeller, PDBFile
+
+    seed = tmp_path / "seed.pdb"
+    seed.write_text(
+        "CRYST1   20.000   20.000   20.000  90.00  90.00  90.00 P 1\n"
+        "ATOM      1  O   HOH A   1      10.000  10.000  10.000  1.00  0.00           O\n"
+        "ATOM      2  H1  HOH A   1      10.800  10.500  10.000  1.00  0.00           H\n"
+        "ATOM      3  H2  HOH A   1       9.200  10.500  10.000  1.00  0.00           H\n"
+        "END\n")
+    pdb = PDBFile(str(seed))
+    forcefield = ForceField("amber14-all.xml", "amber14/tip3pfb.xml")
+    modeller = Modeller(pdb.topology, pdb.positions)
+    modeller.addSolvent(forcefield, padding=1.0 * unit.nanometer)
+    system = forcefield.createSystem(modeller.topology, nonbondedMethod=PME,
+                                     nonbondedCutoff=0.9 * unit.nanometer,
+                                     constraints=HBonds)
+    context = openmm.Context(system, openmm.VerletIntegrator(0.001 * unit.picoseconds))
+    context.setPositions(modeller.positions)
+    state = context.getState(getPositions=True, getVelocities=True)
+    setup = tmp_path / "setup"
+    setup.mkdir()
+    (setup / "system.xml").write_text(openmm.XmlSerializer.serialize(system))
+    (setup / "state.xml").write_text(openmm.XmlSerializer.serialize(state))
+    with (setup / "topology.pdb").open("w") as handle:
+        PDBFile.writeFile(modeller.topology, modeller.positions, handle)
+    return {"system_xml": str(setup / "system.xml"), "state_xml": str(setup / "state.xml"),
+            "topology_pdb": str(setup / "topology.pdb")}
+
+
+class _Reached(Exception):
+    """Raised by a stand-in runner once it has recorded its arguments."""
+
+
+def _what_the_runner_receives(tmp_path, monkeypatch, **options) -> dict:
+    """Drive the simulation pipeline with `options` and return what it hands
+    run_simulation, stopping there. The pipeline imports the runner when it
+    runs, so the stand-in is found."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.simulation import pipeline, runner
+
+    _a_prepared_water_box(tmp_path)          # where the pipeline looks: setup/
+    # The orchestrator makes the phase's folder before running it, and the
+    # pipeline writes its record there -- on a failure as well.
+    (tmp_path / "simulation").mkdir()
+    received: dict = {}
+
+    def stand_in(**kwargs):
+        received.update(kwargs)
+        raise _Reached
+
+    monkeypatch.setattr(runner, "run_simulation", stand_in)
+    with pytest.raises(_Reached):
+        pipeline.run(orchestrator=SimpleNamespace(output_dir=tmp_path, _presenter=None),
+                     output_dir=tmp_path / "simulation", production_steps=10, **options)
+    return received
