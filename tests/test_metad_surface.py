@@ -9,6 +9,8 @@ curve or a refusal; metadynamics went to a pair of PLUMED files.
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -351,62 +353,80 @@ class TestTheRunActuallyProducesIt:
     is the same defect.
     """
 
-    def test_the_simulation_phase_builds_one(self, monkeypatch) -> None:
-        """Observed rather than matched against the source.
+    HILLS = {"collective_variable": "distance", "selection_a": "index 0",
+             "selection_b": "index 3", "sigma": 0.02, "height_kjmol": 1.0,
+             "pace_steps": 100}
 
-        This read `'_write_metadynamics_surface(output_dir' in source`, so
-        it broke the moment the call gained a second argument and wrapped
-        onto two lines -- a legitimate change failing a test about wiring
-        that the change did not touch. Recorded here because the class's own
-        docstring is about a call site that was never made: the thing worth
-        asserting is that the phase calls it, which is what this now does.
-        """
+    @staticmethod
+    def _watch_the_writer(monkeypatch) -> list:
+        """Each call's temperature, recorded, in place of the real writer."""
         from fastmdxplora.simulation import pipeline
 
-        seen: dict[str, object] = {}
+        seen: list = []
 
         def recorder(output_dir, presenter, temperature_K=300.0):
-            seen["called"] = True
-            seen["temperature_K"] = temperature_K
+            seen.append(temperature_K)
             return None
 
-        monkeypatch.setattr(
-            pipeline, "_write_metadynamics_surface", recorder)
+        monkeypatch.setattr(pipeline, "_write_metadynamics_surface", recorder)
+        return seen
 
-        import inspect
-        source = inspect.getsource(pipeline.run)
-        assert "_write_metadynamics_surface(" in source, (
-            "the simulation phase does not build a surface at all"
-        )
+    def test_the_simulation_phase_builds_one(self, tmp_path, monkeypatch) -> None:
+        """Observed: the phase is run and the writer is seen to be called.
 
-    def test_it_is_given_the_run_temperature(self) -> None:
+        This test once said as much in its docstring while still searching
+        the source for the call, with a recorder set up and never used."""
+        from tests._the_phase import run_the_phase
+
+        seen = self._watch_the_writer(monkeypatch)
+        run_the_phase(tmp_path, monkeypatch, metadynamics=self.HILLS)
+        assert seen, "the simulation phase does not build a surface at all"
+
+    def test_it_is_given_the_run_temperature(self, tmp_path, monkeypatch) -> None:
         """`marginal_profile` integrates a dimension out through exp(-F/kT),
         so a 300 K default on a 350 K run misstates a basin difference by an
         entropic amount -- which is the part the marginal exists to capture.
         The one-dimensional path always passed it; the two-dimensional one
         did not."""
-        import inspect
+        from tests._the_phase import run_the_phase
 
-        from fastmdxplora.simulation import pipeline
+        seen = self._watch_the_writer(monkeypatch)
+        run_the_phase(tmp_path, monkeypatch, metadynamics=self.HILLS, temperature_K=350.0)
+        assert seen == [350.0]
 
-        signature = inspect.signature(pipeline._write_metadynamics_surface)
-        assert "temperature_K" in signature.parameters
+    def test_and_the_calculation_uses_it(self, tmp_path) -> None:
+        # Given 350 K, the writer computes at 350 K. Recording the number is
+        # not enough: a writer that wrote down 350 and integrated at 300 would
+        # record it correctly and get the marginals wrong, which is how the
+        # 0.81 kJ/mol error hid.
+        from fastmdxplora.simulation.pipeline import _write_metadynamics_surface
 
-        source = inspect.getsource(pipeline.run)
-        call = source[source.index("_write_metadynamics_surface("):]
-        assert "temperature_K" in call[:200]
-        assert 'params.get("metadynamics")' in source
+        records = {}
+        for kelvin in (300.0, 350.0):
+            where = tmp_path / f"at{kelvin:g}"
+            where.mkdir()
+            run = TestTheRunWritesATwoVariableSurface._run_dir(where)
+            _write_metadynamics_surface(run, None, temperature_K=kelvin)
+            records[kelvin] = json.loads((run / "metadynamics_surface.json")
+                                         .read_text(encoding="utf-8"))
+        assert records[350.0]["evidence"]["temperature_K"] == 350.0
+        assert (records[350.0]["evidence"]["per_dimension"]
+                != records[300.0]["evidence"]["per_dimension"])
 
-    def test_and_only_for_a_metadynamics_run(self) -> None:
+    def test_and_only_for_a_metadynamics_run(self, tmp_path, monkeypatch) -> None:
         """A steered or umbrella run writes a COLVAR too, and summing hills
         that are not there is not a question worth asking."""
-        import inspect
+        from tests._the_phase import run_the_phase
 
-        from fastmdxplora.simulation import pipeline
-
-        source = inspect.getsource(pipeline.run)
-        guarded = source[source.index('if params.get("metadynamics")'):]
-        assert "_write_metadynamics_surface" in guarded.split("\n\n")[0]
+        between = {"collective_variable": "distance",
+                   "selection_a": "index 0", "selection_b": "index 3"}
+        for index, other in enumerate((
+                {},
+                {"umbrella": {**between, "centre": 0.5, "force_constant": 1000.0}},
+                {"steered": {**between, "from": 0.3, "to": 0.6, "steps": 10}})):
+            seen = self._watch_the_writer(monkeypatch)
+            run_the_phase(tmp_path / f"run{index}", monkeypatch, **other)
+            assert seen == [], sorted(other) or "an ordinary run"
 
     def test_a_refusal_is_written_down_too(self, tmp_path) -> None:
         """A refusal that leaves no trace is a run that looks as though the
@@ -446,25 +466,19 @@ class TestARefusalIsPrintedWhole:
     surface". What went missing was the clause saying the output is still a
     usable snapshot of the filling."""
 
-    def test_nothing_clips_it(self) -> None:
-        import inspect
+    def test_nothing_clips_it(self, tmp_path) -> None:
+        # A refusal several hundred characters long reaches the reader whole.
+        said = _what_a_refused_run_says(tmp_path)
+        record = json.loads((tmp_path / "metadynamics_surface.json").read_text(encoding="utf-8"))
+        reason = record["refused"].split(":", 1)[-1].strip()
+        assert len(reason) > 160, "not long enough to show a cut"
+        assert said == ["No free energy surface: " + reason]
 
-        from fastmdxplora.simulation import pipeline
-
-        source = inspect.getsource(pipeline)
-        refusal = source.split('"No free energy surface: "', 1)[1][:300]
-        assert "[:160]" not in refusal
-        assert "[:" not in refusal.split("presenter.step")[0]
-
-    def test_the_reason_says_the_snapshot_is_still_there(self) -> None:
-        """The clause the cut removed."""
-        import inspect
-
-        from fastmdxplora.simulation import metad_surface
-
-        source = inspect.getsource(metad_surface)
-        assert "is a snapshot of that filling" in source
-
+    def test_the_reason_says_the_snapshot_is_still_there(self, tmp_path) -> None:
+        """The clause the cut removed, now reaching the reader: the output
+        beside a refusal is still a usable snapshot of the filling."""
+        said = _what_a_refused_run_says(tmp_path)
+        assert "is a snapshot of that filling" in said[0]
 
 class TestTheRecrossingCountSaysWhatItCounts:
     """"Recrossings" is a word whose definition changes the number. A run
@@ -495,16 +509,27 @@ class TestTheRecrossingCountSaysWhatItCounts:
             np.concatenate([np.full(20, -3.0), np.full(20, 3.0)]), 10)
         assert recrossings(back_and_forth, low=-1.5, high=1.5) == 19
 
-    def test_the_record_carries_the_definition(self) -> None:
-        import inspect
+    def test_the_record_carries_the_definition(self, tmp_path) -> None:
+        # It quotes the basins and the rule, so the number can be reproduced
+        # -- and reproducing it from them gives the number recorded. A count
+        # made one way and described another is the 61-against-97 confusion.
+        from fastmdxplora.simulation.metad_surface import compute_surface, recrossings
 
-        from fastmdxplora.simulation import metad_surface
-
-        source = inspect.getsource(metad_surface)
-        assert '"recrossings_definition"' in source
-        # It quotes the band, so the number can be reproduced.
-        assert "low_edge" in source and "high_edge" in source
-
+        grid = _grid()
+        hills = _written(tmp_path, _hills_reaching(_double_well(grid), grid))
+        # Two paths the rule tells apart: one that reaches each basin, and
+        # one that swings between them without getting within a quarter of
+        # either -- counted by a wider band, it would score as many.
+        for sampled in (np.tile([0.0, 1.0], 20), np.tile([0.25, 0.75], 20)):
+            evidence = compute_surface(hills, sampled)["evidence"]
+            definition = evidence["recrossings_definition"]
+            low, high = sorted(evidence["basins"])
+            for basin in (low, high):
+                assert f"{basin:.3g}" in definition
+            assert "a quarter of their separation" in definition
+            quarter = (high - low) / 4
+            assert evidence["recrossings"] == recrossings(
+                sampled, low=low + quarter, high=high - quarter), sampled[:2]
 
 class TestDriftIsJudgedWhereTheSurfaceMeansSomething:
     """Comparing every point on the grid makes the number the worst point
@@ -589,17 +614,13 @@ class TestARefusedRunStillHandsBackWhatItHas:
         """`provisional` is what tells a reader whether the numbers beside it
         are an answer or a progress report, so it has to be present either
         way rather than only when it is true."""
-        result = self._refused(tmp_path)
-        assert "provisional" in result
-        assert isinstance(result["provisional"], bool)
+        from fastmdxplora.simulation.metad_surface import compute_surface
 
-        import inspect
-
-        from fastmdxplora.simulation import metad_surface
-
-        source = inspect.getsource(metad_surface.compute_surface)
-        # Set on the accepted path too, not only the refused one.
-        assert source.count('"provisional"') >= 2
+        refused = self._refused(tmp_path)
+        assert refused["refused"] and refused["provisional"] is True
+        accepted = compute_surface(*_hills_that_settle(tmp_path / "accepted"))
+        assert accepted["refused"] is None
+        assert accepted["provisional"] is False
 
     def test_a_coordinate_that_never_moved_still_has_nothing(
         self, tmp_path
@@ -973,3 +994,38 @@ class TestTheStoredHeightsAreAlreadyTempered:
         surface = surface_from_hills(hills, grid, periodic=True)
 
         assert (surface.max() - surface.min()) == pytest.approx(20.0, abs=0.3)
+
+
+def _what_a_refused_run_says(where):
+    """Write a run the surface is refused for, and return what the phase
+    tells the reader about it. The hills keep arriving at their first
+    height, so the bias is still filling; the coordinate never moved."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.simulation.pipeline import _write_metadynamics_surface
+
+    grid = _grid()
+    _written(where, _hills_reaching(_double_well(grid), grid))
+    (where / "COLVAR").write_text(
+        "#! FIELDS time cv\n" + "\n".join(f"{i} 0.3" for i in range(50)), encoding="utf-8")
+    said: list = []
+    _write_metadynamics_surface(
+        where, SimpleNamespace(step=lambda message, **_: said.append(message)))
+    return said
+
+
+def _hills_that_settle(where):
+    """Hills whose height decays, as a well-tempered run's does, over a
+    coordinate that visits both basins -- a surface that is accepted.
+    Returns the arguments for compute_surface."""
+    rng = np.random.RandomState(0)
+    n = 1200
+    visited = (np.where(rng.rand(n) < 0.5, -1.0, 1.0) + rng.normal(scale=0.25, size=n))
+    heights = 1.2 * np.exp(-np.linspace(0, 3.5, n))
+    where.mkdir(parents=True, exist_ok=True)
+    path = where / "HILLS"
+    with open(path, "w") as handle:
+        handle.write("#! FIELDS time cv sigma_cv height biasf\n")
+        for step, (centre, height) in enumerate(zip(visited, heights)):
+            handle.write(f"{step * 0.5:.3f} {centre:.5f} 0.2000 {height:.6f} 10.0\n")
+    return path, visited
