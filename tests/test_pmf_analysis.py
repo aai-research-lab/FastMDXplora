@@ -48,15 +48,18 @@ class TestItReadsWhatTheStudyComputed:
         assert len(result["coordinate"]) == 40
         assert np.isfinite(result["free_energy_kjmol"]).all()
 
-    def test_it_does_not_recompute_the_stitching(self) -> None:
+    def test_it_does_not_recompute_the_stitching(self, tmp_path) -> None:
         """Stitching windows is delicate -- they have to overlap, and where
         they do not the gap is reported rather than bridged. Doing it twice
-        would invite two answers to one question."""
-        import inspect
+        would invite two answers to one question.
 
-        source = inspect.getsource(PMF)
-        assert "does not recompute" in source
-        assert "WHAM" not in source
+        So it reports exactly what the umbrella phase stored, with nothing
+        beside it to recompute from: no window, no COLVAR."""
+        stored = json.loads(_written(tmp_path).read_text(encoding="utf-8"))["pmf"]
+        (tmp_path / "analysis").mkdir()
+        result = PMF(output_dir=tmp_path / "analysis").compute(None)
+        assert list(result["coordinate"]) == stored["coordinate"]
+        assert list(result["free_energy_kjmol"]) == stored["free_energy_kjmol"]
 
     def test_a_run_without_an_umbrella_study_says_so(self, tmp_path) -> None:
         analysis = PMF(output_dir=tmp_path / "analysis")
@@ -101,18 +104,35 @@ class TestItIsAnAnalysisLikeAnyOther:
 
         assert "pmf" in available_analyses()
 
-    def test_it_runs_only_where_a_study_produced_one(self) -> None:
+    def test_it_runs_only_where_a_study_produced_one(self, tmp_path) -> None:
         """An analysis that failed on every unbiased trajectory would turn a
-        missing study into a failed phase."""
-        assert PMF.requires_umbrella is True
+        missing study into a failed phase -- so it is left out of an ordinary
+        run's plan, and kept in every layout an umbrella study uses.
 
-        import inspect
+        The search once stopped two folders up, and an umbrella study's
+        windows sit three below it, so every such study dropped the PMF in
+        silence. The windowed layout below is that case."""
+        from types import SimpleNamespace
 
-        from fastmdxplora.analysis import orchestrator
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator
 
-        source = inspect.getsource(orchestrator)
-        assert "_umbrella_ok" in source
-        assert 'requires_umbrella' in source
+        def planned(analysis_dir):
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+            runner = SimpleNamespace(output_dir=analysis_dir, ligand_resname=None, traj=None)
+            return AnalysisOrchestrator._build_plan(runner, None, None)
+
+        ordinary = tmp_path / "ordinary" / "analysis"
+        assert "pmf" not in planned(ordinary)
+
+        flat = tmp_path / "flat"
+        (flat).mkdir()
+        _written(flat)
+        assert "pmf" in planned(flat / "analysis")
+
+        study = tmp_path / "study"
+        study.mkdir()
+        _written(study)
+        assert "pmf" in planned(study / "runs" / "window-00" / "analysis")
 
     def test_it_does_not_take_a_selection(self) -> None:
         """The coordinate was chosen when the windows were planned; a
@@ -124,14 +144,32 @@ class TestItIsAnAnalysisLikeAnyOther:
         it would be a mean over positions rather than over a run."""
         assert PMF.time_series is False
 
-    def test_it_draws_the_minimum_and_the_windows(self) -> None:
-        import inspect
+    def test_it_draws_the_minimum_and_the_windows(self, tmp_path) -> None:
+        # The minimum is marked where the curve is lowest among the bins
+        # that were sampled, and every window's centre is drawn, so a
+        # feature on a seam between two windows can be judged.
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
-        source = inspect.getsource(PMF.plot)
-        assert "nanargmin" in source
-        # The window centres, so a feature sitting on a seam can be judged.
-        assert "centres" in source
-
+        analysis = PMF(output_dir=tmp_path / "analysis")
+        (tmp_path / "analysis").mkdir()
+        _written(tmp_path, unsampled=3)
+        result = analysis.compute(None)
+        figure, ax = plt.subplots()
+        try:
+            analysis.plot(result, ax)
+            verticals = sorted({round(float(line.get_xdata()[0]), 6) for line in ax.lines
+                                if len(set(line.get_xdata())) == 1})
+            energy = result["free_energy_kjmol"]
+            lowest = float(result["coordinate"][np.nanargmin(energy)])
+            assert round(lowest, 6) in verticals, "the minimum is not marked"
+            assert f"minimum at {lowest:.3g}" in ax.get_legend().get_texts()[0].get_text()
+            for centre in (0.6, 0.7, 0.8):
+                assert round(centre, 6) in verticals, f"window centre {centre} not drawn"
+            assert "3 bins unsampled" in ax.get_title()
+        finally:
+            plt.close(figure)
 
 class TestTheStudyDrawsItsOwnFreeEnergy:
     """Putting the drawing in the per-run analysis phase left it undrawn.
@@ -141,26 +179,53 @@ class TestTheStudyDrawsItsOwnFreeEnergy:
     restrained trajectory, and the one result the study existed for had
     none."""
 
-    def test_the_study_draws_it_after_writing_it(self) -> None:
-        import inspect
+    def test_the_study_draws_it_after_writing_it(self, tmp_path) -> None:
+        # The study draws its own free energy, beside itself, from the
+        # numbers it has just written.
+        from types import SimpleNamespace
 
-        from fastmdxplora.batch import explorer
+        from fastmdxplora.batch.explorer import BatchExplorer
 
-        source = inspect.getsource(explorer.BatchExplorer._maybe_build_pmf)
-        assert "_draw_pmf(destination)" in source
-        # After the numbers are on disk, so a drawing failure cannot lose them.
-        assert source.index("destination.write_text") < source.index("_draw_pmf")
+        drawn = BatchExplorer._draw_pmf(SimpleNamespace(output_dir=tmp_path), _written(tmp_path))
+        assert drawn is not None and Path(drawn).is_file()
+        assert Path(drawn).is_relative_to(tmp_path / "free_energy")
 
-    def test_drawing_cannot_fail_the_study(self) -> None:
+    def test_drawing_cannot_fail_the_study(self, tmp_path, monkeypatch, caplog) -> None:
         """A study whose windows all succeeded must not fail at the last
-        step, for the same reason the comparison report beside it cannot."""
-        import inspect
+        step because the figure could not be drawn -- and the numbers it
+        already wrote must be left exactly as they were.
 
-        from fastmdxplora.batch import explorer
+        Two ways the drawing can fail: inside the analysis, where its own
+        run catches it, and before the analysis can start, where the study
+        catches it and says the numbers are unaffected. Neither may break
+        the study or touch the numbers."""
+        import logging
+        from types import SimpleNamespace
 
-        source = inspect.getsource(explorer.BatchExplorer._draw_pmf)
-        assert "except Exception" in source
-        assert "The numbers are unaffected" in source
+        from fastmdxplora.batch.explorer import BatchExplorer
+
+        written = _written(tmp_path)
+        before = written.read_bytes()
+        study = SimpleNamespace(output_dir=tmp_path)
+
+        def fails(*args, **kwargs):
+            raise RuntimeError("the figure could not be made")
+
+        for where in ("plot", "run"):
+            monkeypatch.setattr(PMF, where, fails)
+            caplog.clear()
+            with caplog.at_level(logging.WARNING):
+                drawn = BatchExplorer._draw_pmf(study, written)
+            monkeypatch.undo()
+            assert drawn is None, where
+            assert written.read_bytes() == before, where
+            assert caplog.records, f"a failure in {where} went unreported"
+        # And when the analysis cannot start, the study says why it matters.
+        monkeypatch.setattr(PMF, "run", fails)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            BatchExplorer._draw_pmf(study, written)
+        assert any("The numbers are unaffected" in r.getMessage() for r in caplog.records)
 
     def test_it_produces_the_same_three_files_as_any_analysis(
         self, tmp_path
