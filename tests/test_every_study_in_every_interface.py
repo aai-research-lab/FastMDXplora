@@ -76,7 +76,7 @@ KNOWN_GAPS = {'cli': {'(study).systems': 'undescribed in the schema, so nothing 
                                                    'for it',
                  'simulation.resume_unsealed': 'refused by name: the command line has no flag for '
                                                'it'},
- 'gui': {'(study).sweep': 'undescribed in the schema, so nothing is generated from it',
+ 'gui': {
          '(study).systems': 'undescribed in the schema, so nothing is generated from it',
          '(top-level).output': 'by design: the server places each study in its workspace'},
  'python_script': {'(top-level).agent': 'a top-level field wired by hand; the command line and '

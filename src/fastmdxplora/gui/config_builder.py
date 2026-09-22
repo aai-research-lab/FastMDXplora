@@ -260,6 +260,22 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
         if kept:
             config["execution"] = {**(config.get("execution") or {}), **kept}
 
+    # A sweep, as the page's rows give it: a setting and the values typed for
+    # it, read by the rule the command line's --sweep uses.
+    rows = state.get("sweep")
+    if rows:
+        from fastmdxplora.batch.sweep import normalize_sweep, values_from_text
+
+        pairs = rows.items() if isinstance(rows, dict) else (
+            (row.get("axis"), row.get("values")) for row in rows if isinstance(row, dict))
+        axes: dict[str, Any] = {}
+        for axis, values in pairs:
+            if not axis or values in (None, "", []):
+                continue
+            axes[str(axis)] = list(values) if isinstance(values, list) else values_from_text(values)
+        if axes:
+            config["sweep"] = normalize_sweep(axes)
+
     for phase, group in PHASE_SCHEMAS.items():
         block = state.get(phase)
         if not isinstance(block, dict):
@@ -312,9 +328,16 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
 
 
 def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
-    """The config as text, from the builder's form state."""
-    return render_config(build_config(state, full=full), full=full,
-                         short=build_config(state, full=False) if full else None)
+    """The config as text, from the builder's form state. A sweep row that
+    cannot be read is said under the form rather than failing the request."""
+    from fastmdxplora.batch.sweep import SweepError
+
+    try:
+        config = build_config(state, full=full)
+        short = build_config(state, full=False) if full else None
+    except SweepError as exc:
+        return {"ok": False, "error": str(exc), "yaml": ""}
+    return render_config(config, full=full, short=short)
 
 
 def render_config(config: dict[str, Any], *, full: bool = False,
@@ -608,4 +631,10 @@ def state_from_config(
             if isinstance(values, dict)
         }
 
+    # The sweep, one row per setting, its values written as they are typed.
+    if data.get("sweep"):
+        from fastmdxplora.batch.sweep import normalize_sweep, text_from_values
+
+        state["sweep"] = [{"axis": axis, "values": text_from_values(values)}
+                          for axis, values in normalize_sweep(data["sweep"]).items()]
     return {"ok": True, "error": None, "state": state, "summary": checked}

@@ -90,6 +90,55 @@ class RunSpec:
         }
 
 
+def values_from_text(text: Any) -> list[Any]:
+    """An axis's values as someone typed them: separated by commas, or in
+    brackets where a value holds a comma. Each is read the way the config
+    file reads a value, so 300 is a number and true is a truth value. The
+    command line's --sweep and the GUI's sweep rows both read through here,
+    so the two cannot come to disagree about what was meant.
+    """
+    import yaml
+
+    written = str(text).strip()
+    if not written:
+        raise SweepError("A sweep axis needs at least one value.")
+    if written.startswith("["):
+        values = yaml.safe_load(written)
+        if not isinstance(values, list):
+            raise SweepError(f"Could not read {written!r} as a list of values.")
+        return values
+    return [yaml.safe_load(part.strip()) for part in written.split(",")]
+
+
+def text_from_values(values: list[Any]) -> str:
+    """Values written back as `values_from_text` reads them: separated by
+    commas where that reads back the same, in brackets where a value holds a
+    comma or is itself a list or mapping."""
+    import json
+
+    if any(isinstance(v, (list, dict)) or (isinstance(v, str) and "," in v) for v in values):
+        return json.dumps(list(values))
+    return ", ".join(_written(v) for v in values)
+
+
+def _written(value: Any) -> str:
+    """One value as it must be typed to read back as itself: a string that
+    YAML would read as a number or a truth value is quoted."""
+    import json
+
+    import yaml
+
+    plain = {True: "true", False: "false", None: "null"}.get(value, str(value)) \
+        if isinstance(value, (bool, type(None))) else str(value)
+    try:
+        back = yaml.safe_load(plain)
+        if back == value and type(back) is type(value):
+            return plain
+    except yaml.YAMLError:
+        pass
+    return json.dumps(value)
+
+
 def _slug(value: Any) -> str:
     """Make a value safe for a directory-name fragment."""
     s = str(value)

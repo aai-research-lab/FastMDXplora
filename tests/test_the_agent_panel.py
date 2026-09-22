@@ -1730,14 +1730,29 @@ class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
     """
 
     def test_render_config_is_the_one_renderer(self):
-        import inspect
+        # Both doors render through render_config: the form's preview and
+        # the config the Agent hands over. Watched, not read from the source,
+        # which a rewording of either function would fail without a change
+        # in what it does.
+        import tempfile
+        from unittest import mock
 
         from fastmdxplora.gui import config_builder, run_from_config
 
-        self.assertIn("return render_config(build_config(state, full=full)",
-                      inspect.getsource(config_builder.config_yaml))
-        self.assertIn("built = render_config(dict(config)",
-                      inspect.getsource(run_from_config.prepare_run))
+        rendered = []
+        real = config_builder.render_config
+
+        def watched(config, **kwargs):
+            rendered.append(dict(config))
+            return real(config, **kwargs)
+
+        config = {"systems": [{"system": "1UBQ"}], "simulation": {"duration_ns": 2.0}}
+        with mock.patch.object(config_builder, "render_config", watched), \
+                mock.patch.object(run_from_config, "render_config", watched):
+            config_builder.config_yaml({"system": "1UBQ", "simulation": {"duration_ns": 2.0}})
+            run_from_config.prepare_run(None, tempfile.mkdtemp(), config=config)
+        self.assertEqual(len(rendered), 2)
+        self.assertEqual({r.get("simulation", {}).get("duration_ns") for r in rendered}, {2.0})
 
     def test_the_agent_does_not_go_through_form_state(self):
         import inspect

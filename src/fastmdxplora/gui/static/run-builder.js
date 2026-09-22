@@ -85,6 +85,7 @@
     found: null,
     configVerdict: null,
     loadedFrom: null,
+    sweep: [],             // [{ axis, values }] -- values as typed
   };
 
   const el = (id) => document.getElementById(id);
@@ -257,6 +258,7 @@
     }
 
     host.appendChild(runOptionsSection());
+    host.appendChild(sweepSection());
     host.appendChild(executionSection());
 
     chosen.forEach((phase) => {
@@ -354,6 +356,127 @@
       section.appendChild(grid);
     }
     return section;
+  }
+
+  /* Run the study once for every value of a setting. A sweep reached the
+     config file and the command line and not this form, so the browser was
+     the one interface that could not say it. Each row is a setting and the
+     values typed for it, read on the server by the same rule --sweep uses. */
+  const SWEEP_KEY = "__sweep__";
+
+  function sweepRuns() {
+    return state.sweep.reduce((runs, row) => {
+      if (!row.axis || !row.values.trim()) return runs;
+      // Commas outside quotes separate values; one inside a quoted value,
+      // in the bracketed form, does not. The server reads the values; this
+      // only counts them.
+      const text = row.values.trim().replace(/^\[|\]$/g, "");
+      let count = 0, quoted = null, seen = "";
+      for (const ch of text) {
+        if (quoted) { if (ch === quoted) quoted = null; seen += ch; continue; }
+        if (ch === '"' || ch === "'") { quoted = ch; seen += ch; continue; }
+        if (ch === ",") { if (seen.trim()) count += 1; seen = ""; continue; }
+        seen += ch;
+      }
+      if (seen.trim()) count += 1;
+      return runs * Math.max(1, count);
+    }, 1);
+  }
+
+  function sweepSection() {
+    const section = document.createElement("div");
+    section.className = "run-section";
+    section.id = "run-sweep";
+    const axes = (state.schema && state.schema.sweep_axes) || [];
+    if (!axes.length) return section;
+
+    const live = state.sweep.filter((row) => row.axis && row.values.trim()).length;
+    const runs = sweepRuns();
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "run-section-head";
+    head.setAttribute("aria-expanded", String(state.open.has(SWEEP_KEY)));
+    head.innerHTML =
+      '<span class="run-section-name">Sweep a setting</span>' +
+      `<span class="run-section-count">${
+        live ? `${live} setting${live === 1 ? "" : "s"}, ${runs} runs` : "one run"
+      }</span>`;
+    head.addEventListener("click", () => {
+      if (state.open.has(SWEEP_KEY)) state.open.delete(SWEEP_KEY);
+      else state.open.add(SWEEP_KEY);
+      renderSettings();
+    });
+    section.appendChild(head);
+    if (!state.open.has(SWEEP_KEY)) return section;
+
+    const body = document.createElement("div");
+    body.className = "run-section-body run-sweep-body";
+    const note = document.createElement("p");
+    note.className = "builder-card-note run-section-note";
+    note.textContent =
+      "The study runs once for every combination. Separate values with " +
+      "commas; where a value holds a comma, write the list in brackets.";
+    body.appendChild(note);
+    state.sweep.forEach((row, index) => body.appendChild(sweepRow(row, index, axes)));
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "run-sweep-add";
+    add.textContent = "Add a setting";
+    add.addEventListener("click", () => {
+      state.sweep.push({ axis: "", values: "" });
+      renderSettings();
+    });
+    body.appendChild(add);
+    section.appendChild(body);
+    return section;
+  }
+
+  function sweepRow(row, index, axes) {
+    const line = document.createElement("div");
+    line.className = "run-sweep-row";
+    const select = document.createElement("select");
+    select.className = "run-sweep-axis";
+    select.setAttribute("aria-label", "Setting to sweep");
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Choose a setting";
+    select.appendChild(blank);
+    axes.forEach((axis) => {
+      const option = document.createElement("option");
+      option.value = axis;
+      option.textContent = axis;
+      select.appendChild(option);
+    });
+    select.value = row.axis || "";
+    select.addEventListener("change", () => {
+      row.axis = select.value;
+      updateSummary();
+      renderSettings();
+    });
+    const values = document.createElement("input");
+    values.type = "text";
+    values.className = "run-sweep-values";
+    values.placeholder = "300, 310, 320";
+    values.setAttribute("aria-label", "Values to sweep");
+    values.value = row.values || "";
+    values.addEventListener("input", () => {
+      row.values = values.value;
+      updateSummary();
+    });
+    values.addEventListener("change", renderSettings);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "run-sweep-remove";
+    remove.setAttribute("aria-label", "Remove this setting");
+    remove.textContent = "\u00d7";
+    remove.addEventListener("click", () => {
+      state.sweep.splice(index, 1);
+      renderSettings();
+    });
+    line.appendChild(select);
+    line.appendChild(values);
+    line.appendChild(remove);
+    return line;
   }
 
   function settingsSection(phase) {
@@ -870,6 +993,8 @@
     const config = {
       output: el("run-output").value.trim(),
       include_phase: PHASES.filter((p) => state.phases.has(p.name)).map((p) => p.name),
+      sweep: state.sweep.filter((row) => row.axis && row.values.trim())
+        .map((row) => ({ axis: row.axis, values: row.values.trim() })),
     };
 
     if (state.start === "structure") {
@@ -993,7 +1118,10 @@
       // was shown here too, and "Choose what this run starts from" in the
       // page header read as a heading rather than a note; it is said at
       // the Run button, where it can be acted on.
-      text(el("run-summary"), doing.length ? doing.join(" → ") : "");
+      const runs = sweepRuns();
+      const chain = doing.join(" → ");
+      text(el("run-summary"),
+           !doing.length ? "" : runs > 1 ? `${chain}, ${runs} runs` : chain);
     }
     const can = ready();
     ["run-start-button", "run-download", "run-copy-command",
@@ -1148,6 +1276,10 @@
     state.values = from.phases || {};
     state.analyses = new Set(from.analyses || []);
     state.analysisOptions = from.analysis_options || {};
+    state.sweep = (from.sweep || []).map((row) => ({
+      axis: String(row.axis || ""), values: String(row.values || ""),
+    }));
+    if (state.sweep.length) state.open.add(SWEEP_KEY);
     // How the study was written belongs to the run rather than a phase, so
     // it goes where the "This run" controls read from. Dropped before, so
     // an agent-written config opened here came back claiming a person
@@ -1308,6 +1440,7 @@
     state.values = {};
     state.analyses.clear();
     state.analysisOptions = {};
+    state.sweep = [];
     state.open.clear();
     const output = el("run-output");
     if (output) output.value = "";

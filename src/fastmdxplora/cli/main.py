@@ -1213,9 +1213,7 @@ def _sweep_from_flags(given: list[str]) -> dict[str, list[Any]]:
     a number and true is a truth value, and the axes are checked by the same
     rule the file's are.
     """
-    import yaml
-
-    from fastmdxplora.batch.sweep import SweepError, normalize_sweep
+    from fastmdxplora.batch.sweep import SweepError, normalize_sweep, values_from_text
 
     axes: dict[str, list[Any]] = {}
     for item in given:
@@ -1224,9 +1222,10 @@ def _sweep_from_flags(given: list[str]) -> dict[str, list[Any]]:
             raise SystemExit(
                 "fastmdx: --sweep takes AXIS=VALUES, as in "
                 f"--sweep simulation.temperature_K=300,310; got {item!r}.")
-        text = values.strip()
-        axes[axis.strip()] = (yaml.safe_load(text) if text.startswith("[")
-                              else [yaml.safe_load(v.strip()) for v in text.split(",")])
+        try:
+            axes[axis.strip()] = values_from_text(values)
+        except SweepError as exc:
+            raise SystemExit(f"fastmdx: {exc}") from exc
     try:
         return normalize_sweep(axes)
     except SweepError as exc:

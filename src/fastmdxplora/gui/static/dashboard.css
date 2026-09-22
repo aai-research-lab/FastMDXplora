@@ -2095,6 +2095,25 @@ body.state-ready .loading-screen {
     grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
     padding: 16px;
 }
+.run-sweep-body { grid-template-columns: 1fr; gap: 10px; }
+.run-sweep-body .run-section-note { margin: 0; }
+.run-sweep-row {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) auto;
+}
+.run-sweep-add { justify-self: start; }
+.run-sweep-remove {
+    background: none;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    line-height: 1;
+    padding: 6px 9px;
+}
+.run-sweep-remove:hover { color: var(--text-primary); }
 .run-analyses { display: grid; gap: 1px; background: var(--border-subtle); }
 .run-section .analyse-row { border-radius: 0; }
 

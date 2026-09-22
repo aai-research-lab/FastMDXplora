@@ -223,9 +223,14 @@ def schema_payload() -> dict[str, Any]:
     # nothing else: no flag, no control, which is the same gap the comment
     # above records closing for the top-level settings.
     execution_options = [field_payload(field) for field in EXECUTION.fields]
+    # Every setting a sweep can vary, by its dotted name: any phase setting
+    # that takes one value. A block of settings is not one value.
+    sweep_axes = [f"{phase}.{field.name}" for phase, group in PHASE_SCHEMAS.items()
+                  for field in group.fields if field.type is not dict]
     return {
         "phases": phases,
         "run_options": run_options,
         "execution_options": execution_options,
+        "sweep_axes": sweep_axes,
         "analysis_options": _analysis_options(),
     }

@@ -45,7 +45,7 @@ class TestALoadedStudyKeepsItsPhases(unittest.TestCase):
                 # The builder is usable once it has read the settings it draws.
                 page.wait_for_function(
                     "window.FastMDXRun && window.FastMDXRun.state && window.FastMDXRun.state.schema",
-                    timeout=8000)
+                    timeout=20000)   # the first /api/schema builds the whole payload
                 # What loadConfigIntoForm does: ask the server, hand the page its answer.
                 after = page.evaluate("""async (path) => {
                     const response = await fetch('/api/load-config', {method: 'POST',

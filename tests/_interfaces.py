@@ -231,6 +231,9 @@ def the_form() -> dict[str, set[str]]:
     # each study in its workspace.
     if payload.get("phases"):
         blocks["(top-level)"] |= {"include_phase", "exclude_phase"}
+    # A sweep is offered as rows over the settings the payload lists.
+    if payload.get("sweep_axes"):
+        blocks["(study)"] = {"sweep"}
     return blocks
 
 
