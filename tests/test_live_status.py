@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 
 import pytest
+
+from fastmdxplora.setup.prepare import NPT_CONTRACTION_MARGIN
 from urllib.request import urlopen
 
 from fastmdxplora.gui import protein_preview
@@ -524,42 +526,36 @@ class TestTheFrameCountIsCountedNotPlanned:
         assert _frames_written(0, 250) == 0
         assert _frames_written(50_000, None) == 0
 
-    def test_the_sampler_reports_it_while_the_run_goes(self) -> None:
-        """It used to arrive once, when production ended, so a page watching a
-        run showed a dash where the frame count goes for the whole of it."""
-        import inspect
+    def test_the_sampler_reports_it_while_the_run_goes(self, a_watched_run) -> None:
+        """It used to arrive once, when production ended, so a page watching
+        a run showed a frame count of none for the whole of it. Reported at
+        every telemetry sample through production, and rising."""
+        counts = [m["frame_count"] for m in a_watched_run.metrics
+                  if m["stage"].lower() == "production"]
+        assert len(counts) > 3
+        assert counts == sorted(counts) and counts[-1] > counts[0]
 
-        from fastmdxplora.simulation import runner
-
-        signature = inspect.signature(runner._run_md_stage_with_live_metrics)
-        assert "trajectory_interval_steps" in signature.parameters
-
-        body = inspect.getsource(runner._run_md_stage_with_live_metrics)
-        assert "frame_count=frames_written" in body
-
-    def test_equilibration_reports_no_count_rather_than_zero(self) -> None:
+    def test_equilibration_reports_no_count_rather_than_zero(self, a_watched_run) -> None:
         """No trajectory is being written there, so a zero would be a claim."""
-        import inspect
+        # The run's closing sample is labelled "production" in lower case.
+        during_equilibration = [m["frame_count"] for m in a_watched_run.metrics
+                                if m["stage"].lower() != "production"]
+        assert during_equilibration and all(c is None for c in during_equilibration)
 
-        from fastmdxplora.simulation import runner
+    def test_the_recorded_total_is_not_the_plan_restated(self, a_watched_run) -> None:
+        # The planned frame count is the production steps over the frame
+        # interval, not the whole plan's steps: equilibration writes none.
+        run = a_watched_run
+        assert run.planned_frames == run.production_steps // run.frame_interval
+        assert run.planned_frames < (run.production_steps + run.equilibration_steps) // run.frame_interval
+        last = [m["frame_count"] for m in run.metrics if m["stage"].lower() == "production"][-1]
+        assert last == run.planned_frames
+        # And the file holds that many frames: the count is counted, not planned.
+        import mdtraj as md
 
-        source = inspect.getsource(runner.run_simulation)
-        passes = source.count("trajectory_interval_steps=trajectory_interval_steps")
-        assert passes == 1, passes
-
-    def test_the_recorded_total_is_not_the_plan_restated(self) -> None:
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        source = inspect.getsource(runner.run_simulation)
-        # Once, and only as the denominator: what was planned is the right
-        # source for `planned_frames`, and the wrong one for what was written.
-        assert source.count('plan["production_steps"] // trajectory_interval_steps') == 1
-        planned = source.split("planned_frames = ", 1)[1].split(")", 1)[0]
-        assert 'plan["production_steps"] // trajectory_interval_steps' in planned
-        assert "production_start_step" in source
-
+        dcd = next(run.out.rglob("*.dcd"))
+        top = next(run.out.rglob("topology.pdb"))
+        assert md.load(str(dcd), top=str(top)).n_frames == last
 
 class TestARunThatFinishedSaysSo:
     """The project-level writer marks setup, marks analysis and report, and
@@ -1591,35 +1587,31 @@ class TestTheDefaultBoxIsNotACube:
         # ...and when a cube is still the right answer.
         assert "orthorhombic" in help_text
 
-    def test_a_default_box_that_the_shape_made_invalid_is_adjusted(self) -> None:
+    def test_a_default_box_that_the_shape_made_invalid_is_adjusted(self, caplog) -> None:
         """A dodecahedron's smallest dimension is shorter than a cube's for
-        the same padding, so a small solute at the default 1.0 nm padding and
-        1.0 nm cutoff fell under the minimum-image limit where a cube did
-        not. A few tenths of a nanometre fixes it."""
-        import inspect
+        the same padding, so the default padding that suits a cube leaves a
+        dodecahedron under twice the cutoff. Solvated with a stand-in that
+        builds the box the shape would: the loop re-solvates once, at a
+        padding that reaches the target, and says so."""
+        box = _a_box_builder(shape="dodecahedron", extent_nm=0.8)
+        _solvate(box, cutoff_nm=1.0, padding_nm=1.2, caplog=caplog)
+        assert box.solvations == 2
+        assert "Re-solvating" in caplog.text
+        # Reaches the target, not 1/sqrt(2) of it: the cube's arithmetic
+        # undershot every dodecahedron by that factor, and this run's box
+        # came out at 2.05 nm against a 2.20 nm floor and died in NPT.
+        assert box.smallest >= 2.0 * 1.0 * NPT_CONTRACTION_MARGIN
 
-        from fastmdxplora.setup import prepare
-
-        body = inspect.getsource(prepare._solvate_with_room_for_the_cutoff)
-        assert "Re-solvating" in body
-        assert "most_it_may_grow_nm" in body
-
-    def test_but_contradictory_settings_are_reported_not_absorbed(self) -> None:
+    def test_but_contradictory_settings_are_reported_not_absorbed(self, caplog) -> None:
         """0.4 nm of padding with a 1.5 nm cutoff needs four times the box.
-        Somebody who asked for both is better told than handed a system four
-        times the size."""
-        import inspect
-
-        from fastmdxplora.setup import prepare
-
-        signature = inspect.signature(prepare._solvate_with_room_for_the_cutoff)
-        assert signature.parameters["most_it_may_grow_nm"].default == 0.5
-
-        # Split across two f-string literals in the source, so match the part
-        # that is contiguous.
-        guard = inspect.getsource(prepare)
-        assert "half the smallest periodic box dimension" in guard
-
+        Somebody who asked for both has made a mistake, and is told, rather
+        than handed a system four times the size: the loop stops short of
+        the growth it would take, and the check further down refuses."""
+        box = _a_box_builder(shape="cube", extent_nm=0.8)
+        _solvate(box, cutoff_nm=1.5, padding_nm=0.4, caplog=caplog)
+        assert box.solvations == 1                        # not grown
+        assert box.smallest < 2.0 * 1.5
+        assert "Stopping at" in caplog.text
 
 class TestATerminusIsNotALoop:
     """`findMissingResidues` schedules every residue SEQRES declares and the
@@ -1819,25 +1811,26 @@ class TestCopiesOfAChainFaceTheSameWay:
         ) == []
 
     def test_the_message_says_what_to_do(self) -> None:
-        import inspect
+        # Two chains pointing opposite ways across a bilayer: the refusal
+        # names the database to check against and the alternative, not only
+        # the symptom.
+        from fastmdxplora.setup.membrane import check_chains_point_the_same_way
 
-        from fastmdxplora.setup import membrane
+        problem = check_chains_point_the_same_way(*_two_antiparallel_helices())
+        assert problem is not None
+        assert "opm.phar.umich.edu" in problem
+        assert "building one copy" in problem
 
-        source = inspect.getsource(membrane.check_chains_point_the_same_way)
-        assert "opm.phar.umich.edu" in source
-        assert "building one copy" in source
+    def test_it_runs_inside_the_membrane_path(self, tmp_path, monkeypatch) -> None:
+        # Asked for a membrane, and not for water. Run through prepare_system
+        # with the checks recorded, as the membrane tests do.
+        from tests.test_membrane import _prepared
 
-    def test_it_runs_inside_the_membrane_path(self) -> None:
-        import inspect
-
-        from fastmdxplora.setup import prepare
-
-        source = inspect.getsource(prepare)
-        assert "check_chains_point_the_same_way" in source
-        assert source.index("check_hydrophobic_belt") < source.index(
-            "check_chains_point_the_same_way"
-        )
-
+        bilayer = _prepared(tmp_path / "bilayer", monkeypatch, membrane="POPC",
+                            membrane_orient=True)
+        assert "check_chains_point_the_same_way" in bilayer.checked
+        water = _prepared(tmp_path / "water", monkeypatch)
+        assert "check_chains_point_the_same_way" not in water.checked
 
 class TestTheWordmarkIsDrawnOnce:
     """The class held three `_GLYPHS` sets in a row -- a mixed-case one, then
@@ -1845,6 +1838,9 @@ class TestTheWordmarkIsDrawnOnce:
     never once been used, and the banner printed in capitals regardless."""
 
     def test_there_is_one_glyph_set(self) -> None:
+        # Read from the source on purpose: one definition of the glyphs and
+        # one of the wordmark, so an edit cannot leave two that disagree.
+        # What the glyphs are is checked by the tests beside this one.
         import inspect
 
         from fastmdxplora.utils import presenter
@@ -2184,22 +2180,16 @@ class TestTheBeltIsMeasuredOnTheSurface:
         hydrophobic, charged, ratio = surface_belt_ratio(points, kinds)
         assert ratio == pytest.approx(hydrophobic / charged)
 
-    def test_giving_up_is_said_out_loud(self) -> None:
+    def test_giving_up_is_said_out_loud(self, caplog) -> None:
         """The check further down reports the padding the config asked for
         and knows nothing of what was tried. Silent, this advised raising
-        0.80 nm without mentioning that 1.19 had already been attempted and
-        was still short -- so the obvious next guess fails the same way."""
-        import inspect
-
-        from fastmdxplora.setup import prepare
-
-        body = inspect.getsource(prepare._solvate_with_room_for_the_cutoff)
-        # The comparison, not the signature: the parameter is annotated
-        # `most_it_may_grow_nm: float` and splitting on that lands above.
-        stopping = body.split("> most_it_may_grow_nm:", 1)[1].split("return", 1)[0]
-        assert "logger.info" in stopping
-        assert "Stopping at" in stopping
-
+        0.80 nm without mentioning that a larger value had already been
+        tried; the message names the padding it would take."""
+        box = _a_box_builder(shape="cube", extent_nm=0.8)
+        _solvate(box, cutoff_nm=1.5, padding_nm=0.4, caplog=caplog)
+        said = next(m for m in caplog.messages if m.startswith("Stopping at"))
+        assert "0.40 nm padding" in said and "1.50 nm" in said
+        assert "would need about" in said
 
 class TestEveryStageShowsProgress:
     """`_run_md_stage` took `on_step_progress` and drove the bar;
@@ -2233,27 +2223,136 @@ class TestEveryStageShowsProgress:
         source = self._runner()
         assert source.count("on_step_progress=_bar") == 6
 
-    def test_the_bar_is_driven_from_inside_the_chunk_loop(self) -> None:
+    def test_the_bar_is_driven_from_inside_the_chunk_loop(self, a_watched_run) -> None:
         """Where the work happens: a callback outside it would fire once."""
-        import inspect
+        production = [p for p in a_watched_run.progress if p["stage"] == "Production"]
+        assert len(production) > 3
+        done = [p["done"] for p in production]
+        assert done == sorted(done) and done[-1] == a_watched_run.production_steps
 
-        from fastmdxplora.simulation.runner import (
-            _run_md_stage_with_live_metrics,
-        )
-
-        body = inspect.getsource(_run_md_stage_with_live_metrics)
-        loop = body.index("while remaining > 0:")
-        call = body.index("on_step_progress(label, done")
-        assert call > loop
-
-    def test_it_reports_a_rate_and_a_time_left(self) -> None:
+    def test_it_reports_a_rate_and_a_time_left(self, a_watched_run) -> None:
         """A percentage alone does not say whether to wait or to stop."""
-        import inspect
+        production = [p for p in a_watched_run.progress if p["stage"] == "Production"]
+        with_numbers = [p for p in production if p["rate"] is not None]
+        assert with_numbers
+        assert all(p["rate"] > 0 for p in with_numbers)
+        assert all(p["left"] >= 0 for p in with_numbers)
+        assert with_numbers[-1]["left"] == pytest.approx(0.0, abs=1e-9)
 
-        from fastmdxplora.simulation.runner import (
-            _run_md_stage_with_live_metrics,
-        )
+class _a_box_builder:
+    """A modeller whose addSolvent builds the box the shape would, from the
+    padding it is given. A cube is the solute's extent plus twice the
+    padding. A rhombic dodecahedron follows what OpenMM built on the run
+    the growth loop was fixed for: the smallest perpendicular width came
+    out at root two times the padding, 1.70 nm at 1.20, the solute's own
+    0.76 nm extent contributing almost nothing. Records how many times it
+    was asked."""
 
-        body = inspect.getsource(_run_md_stage_with_live_metrics)
-        assert "rate" in body and "left" in body
-        assert "_time.monotonic()" in body
+    def __init__(self, *, shape: str, extent_nm: float):
+        self.shape, self.extent, self.solvations = shape, extent_nm, 0
+        self.smallest = None
+        self.topology = self
+
+    def addSolvent(self, ff, **kwargs):
+        import math
+
+        unit = pytest.importorskip("openmm").unit
+
+        padding = kwargs["padding"].value_in_unit(unit.nanometer)
+        if self.shape == "cube":
+            self.smallest = self.extent + 2.0 * padding
+        else:
+            self.smallest = math.sqrt(2.0) * padding
+        self.solvations += 1
+
+    def deleteWater(self):
+        pass
+
+    def getPeriodicBoxVectors(self):
+        openmm = pytest.importorskip("openmm")
+        Vec3, unit = openmm.Vec3, openmm.unit
+
+        s = self.smallest
+        return [Vec3(s, 0, 0), Vec3(0, s, 0), Vec3(0, 0, s)] * unit.nanometer
+
+
+def _solvate(box, *, cutoff_nm, padding_nm, caplog):
+    import logging
+
+    unit = pytest.importorskip("openmm").unit
+
+    from fastmdxplora.setup.prepare import _solvate_with_room_for_the_cutoff
+
+    with caplog.at_level(logging.INFO, logger="fastmdx"):
+        _solvate_with_room_for_the_cutoff(
+            box, None, {"padding": padding_nm * unit.nanometer,
+                        "boxShape": box.shape},
+            nonbonded_cutoff_nm=cutoff_nm, padding_nm=padding_nm,
+            nonbonded_method="PME", unit=unit)
+
+
+def _two_antiparallel_helices():
+    """Two copies of one chain, one embedded upside down: each a long axis
+    along the membrane normal with a bulky head at one end, as a receptor
+    has its soluble domain, so its direction along the normal is defined;
+    the second is the first mirrored in z. Over 100 atoms each, which is
+    the size below which the check does not judge a chain."""
+    import numpy as np
+    openmm = pytest.importorskip("openmm")
+    app, unit = openmm.app, openmm.unit
+
+    rng = np.random.default_rng(0)
+    topology = app.Topology()
+    positions = []
+    for chain_index, flip in enumerate((1.0, -1.0)):
+        chain = topology.addChain()
+        for i in range(60):
+            residue = topology.addResidue("ALA", chain)
+            z = i * 0.15 - 4.5
+            # A head: the last twelve residues fan out wide, so the mass
+            # sits at one end and the axis has a direction.
+            spread = 0.23 if i < 48 else 1.2
+            for name in ("N", "CA", "C"):
+                topology.addAtom(name, app.element.carbon, residue)
+                x = spread * np.cos(i * 1.7) + chain_index * 4.0 + rng.normal(0, 0.02)
+                y = spread * np.sin(i * 1.7) + rng.normal(0, 0.02)
+                positions.append((x, y, flip * z))
+    return topology, positions * unit.nanometer
+
+
+@pytest.fixture(scope="module")
+def a_watched_run(tmp_path_factory):
+    """A short real run with live telemetry on, its samples and its progress
+    reports recorded as the stages made them."""
+    from types import SimpleNamespace
+
+    pytest.importorskip("openmm")
+    from fastmdxplora.simulation import runner
+    from tests._the_phase import a_prepared_water_box
+
+    root = tmp_path_factory.mktemp("watched")
+    metrics: list = []
+    progress: list = []
+    real_append = runner._append_live_metric
+
+    def recording_append(omm, simulation, telemetry, **kwargs):
+        metrics.append({"stage": kwargs.get("stage"), "frame_count": kwargs.get("frame_count"),
+                        "step": kwargs.get("step")})
+        return real_append(omm, simulation, telemetry, **kwargs)
+
+    def on_bar(label, done, total, rate, left):
+        progress.append({"stage": label, "done": done, "total": total, "rate": rate, "left": left})
+
+    production_steps, equilibration_steps, frame_interval = 100, 40, 10
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runner, "_append_live_metric", recording_append)
+        result = runner.run_simulation(
+            **a_prepared_water_box(root), output_dir=str(root / "out"),
+            production_steps=production_steps, nvt_steps=equilibration_steps, npt_steps=0,
+            minimize=False, platform="CPU", live_telemetry=True, telemetry_interval=10,
+            trajectory_interval_steps=frame_interval, on_step_progress=on_bar)
+    status = json.loads((root / "out" / "live_status.json").read_text(encoding="utf-8"))
+    return SimpleNamespace(metrics=metrics, progress=progress, result=result, out=root / "out",
+                           production_steps=production_steps,
+                           equilibration_steps=equilibration_steps, frame_interval=frame_interval,
+                           planned_frames=status.get("planned_frame_count"))
