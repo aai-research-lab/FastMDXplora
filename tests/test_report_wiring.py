@@ -1217,18 +1217,12 @@ class TestTheReportWritesAMethodsSection:
         assert found, "nothing reported a version"
         assert all(version for version in found.values())
 
-    def test_the_report_puts_the_prose_before_the_settings(self) -> None:
-        import inspect
-
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document._methods_section)
-        prose = source.index("methods_paragraphs")
-        settings = source.index("### System preparation")
-        assert prose < settings, (
-            "the settings list should follow the paragraph, not replace it"
-        )
-
+    def test_the_report_puts_the_prose_before_the_settings(self, tmp_path) -> None:
+        # The settings list follows the paragraph rather than replacing it.
+        text = _methods_of_a_study(tmp_path)
+        settings = text.index("### System preparation")
+        assert "181L" in text[:settings], "no paragraph before the settings"
+        assert text.index("### Every setting used") < settings
 
 class TestTheMethodsSectionReadsTheRealManifests:
     """The first version read only ``parameters`` and produced a methods
@@ -1328,17 +1322,14 @@ class TestTheMethodsSectionReadsTheRealManifests:
         text = self._text()
         assert "Not recorded" not in text
 
-    def test_the_report_passes_the_whole_manifest(self) -> None:
-        import inspect
-
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document._methods_section)
-        call = source[source.index("methods_paragraphs("):][:300]
-        assert "project_root, setup, sim" in call, (
-            "passing only `parameters` loses the system and the resolution"
-        )
-
+    def test_the_report_passes_the_whole_manifest(self, tmp_path) -> None:
+        """Passing only `parameters` loses the system and the resolution: the
+        first version said the coordinates came from "the input structure"."""
+        text = _methods_of_a_study(tmp_path)
+        prose = text[:text.index("### Every setting used")]
+        assert "181L" in prose
+        assert "amber14-all.xml" in prose            # what the run resolved to
+        assert "the input structure" not in text
 
 class TestWhatTheRunResolvedIsRecorded:
     """Twice the methods section had to report something as unrecorded that
@@ -1596,15 +1587,18 @@ class TestTheReportSaysHowMuchTheRunSupports:
 
         assert _convergence_section(tmp_path) == ""
 
-    def test_it_sits_after_the_results(self) -> None:
-        import inspect
+    def test_it_sits_after_the_results(self, tmp_path) -> None:
+        from types import SimpleNamespace
 
-        from fastmdxplora.report import document
+        from fastmdxplora.report.document import build_document
 
-        source = inspect.getsource(document)
-        assert (source.index("_results_section(project_root))")
-                < source.index("_convergence_section(project_root)"))
-
+        root = _a_reported_run(tmp_path, n_frames=400)
+        (root / "report").mkdir()
+        build_document(orchestrator=SimpleNamespace(output_dir=root), output_dir=root / "report",
+                       title="t", author=None, include_methods=False,
+                       include_reproducibility=False)
+        report = (root / "report" / "report.md").read_text(encoding="utf-8")
+        assert report.index("## Results") < report.index("## Convergence")
 
 class TestTheReportIsAlsoAPDF:
     """A Markdown file is not a document somebody sends on.
@@ -1751,14 +1745,16 @@ class TestAShortSeriesSaysWhatItCannotJudge:
                          duration_ns=0.004, n_atoms=100)
         assert any("integration" in f for f in out["findings"])
 
-    def test_the_report_says_too_short_rather_than_yes(self) -> None:
-        import inspect
+    def test_the_report_says_too_short_rather_than_yes(self, tmp_path) -> None:
+        # Three frames cannot be judged, and the table says so rather than
+        # "yes"; four hundred can, and it says "yes".
+        from fastmdxplora.report.document import _convergence_section
 
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document._convergence_section)
-        assert "too short to say" in source
-
+        run = TestTheReportSaysHowMuchTheRunSupports._a_run
+        short = _rows(_convergence_section(run(tmp_path / "short", n_frames=3)))
+        assert short and all(row.endswith("| too short to say |") for row in short), short
+        long = _rows(_convergence_section(run(tmp_path / "long", n_frames=400)))
+        assert long and all(row.endswith("| yes |") for row in long), long
 
 class TestFindingsAreSummarisedNotDumped:
     """The report printed two pages of raw tuples of atom indices.
@@ -2262,20 +2258,23 @@ class TestTheResultsCarryTheMeasurement:
         assert _findings_notes({"mean": {}}) == []
 
     def test_default_options_are_not_claimed_beside_a_list_of_options(
-        self
+        self, tmp_path
     ) -> None:
         """A `for ... else` runs its else when the loop finishes without a
         break, which is every time: the report listed an analysis's parameters
         and then said it had run with the defaults."""
-        import inspect
+        from fastmdxplora.report.document import _results_section
 
-        from fastmdxplora.report import document
+        root = _a_reported_run(tmp_path, n_frames=40)
+        cleared = root / "analysis" / "rg" / "options.json"
+        record = json.loads(cleared.read_text(encoding="utf-8"))
+        record.update(options={}, selection=None, findings={})
+        cleared.write_text(json.dumps(record), encoding="utf-8")
 
-        source = inspect.getsource(document)
-        assert "if not (opts or selection or notes):" in source
-        assert "        else:\n            lines.append(\"_Ran with default options._\")" \
-            not in source
-
+        blocks = _blocks(_results_section(root))
+        assert "**Parameters:**" in blocks["rmsd"]
+        assert "_Ran with default options._" not in blocks["rmsd"]
+        assert "_Ran with default options._" in blocks["rg"]
 
 class TestOneMeanPerObservable:
     """A real study reported the RMSD twice in one document: 0.08895 in the
@@ -2329,14 +2328,24 @@ class TestOneMeanPerObservable:
         assert "_drift_in_noise(series)" in source, (
             "drift must see the series it is asked about")
 
-    def test_the_table_says_what_it_discarded(self) -> None:
-        import inspect
+    def test_the_table_says_what_it_discarded(self, tmp_path) -> None:
+        # A series that relaxes before it settles: the table carries how many
+        # frames were set aside, which is neither none nor all of them.
+        from fastmdxplora.report.convergence import assess_run
+        from fastmdxplora.report.document import _convergence_section
 
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document)
-        assert "| measure | frames | discarded | independent" in source
-
+        root = TestTheReportSaysHowMuchTheRunSupports._a_run(tmp_path, n_frames=400)
+        frames = np.arange(400)
+        relaxing = 0.2 + np.exp(-frames / 40.0) + np.random.RandomState(3).normal(0, 0.01, 400)
+        (root / "analysis" / "rmsd" / "rmsd.dat").write_text(
+            "# frame rmsd\n" + "".join(f"{i} {v:.6f}\n" for i, v in zip(frames, relaxing)),
+            encoding="utf-8")
+        text = _convergence_section(root)
+        assert "| measure | frames | discarded | independent" in text
+        row = next(r for r in _rows(text) if r.startswith("| rmsd |"))
+        shown = int(row.split("|")[3].strip().replace(",", ""))
+        expected = assess_run({"rmsd": list(relaxing)})["observables"]["rmsd"]["discard"]
+        assert shown == expected and 0 < shown < 400, (shown, expected)
 
 class TestEquilibratedIsNotTheSameAsSampled:
     """The summary said "All 5 observables assessed had settled" for a run
@@ -2391,36 +2400,22 @@ class TestReproducibilitySaysWhatItReproduces:
     section otherwise implies the file is enough.
     """
 
-    def test_the_section_says_what_a_rerun_gives(self) -> None:
-        import inspect
+    def test_the_section_says_what_a_rerun_gives(self, tmp_path) -> None:
+        text = _reproducibility_of(tmp_path, prepared=True)
+        assert "equivalent study and" in text and "cannot be seeded" in text
 
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document._reproducibility_section)
-        assert "equivalent study and" in source
-        assert "cannot be seeded" in source
-
-    def test_and_names_the_way_to_repeat_it_exactly(self) -> None:
+    def test_and_names_the_way_to_repeat_it_exactly(self, tmp_path) -> None:
         """Which the software supports: simulate from the prepared system
-        rather than preparing another."""
-        import inspect
+        rather than preparing another -- named by the setting's current
+        name, not the earlier spelling that is on its way out."""
+        text = _reproducibility_of(tmp_path, prepared=True)
+        assert "`simulation.setup_from` at its `setup/`" in text
+        assert "prepared_from" not in text
 
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document._reproducibility_section)
-        assert "prepared_from" in source
-
-    def test_it_is_only_said_where_a_system_was_prepared(self) -> None:
+    def test_it_is_only_said_where_a_system_was_prepared(self, tmp_path) -> None:
         """An analysis of a supplied trajectory did not solvate anything."""
-        import inspect
-
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document._reproducibility_section)
-        source[source.index("What rerunning") - 200:]
-        assert "phase_context.setup_present" in source[:source.index("What rerunning")]
-
-
+        assert "What rerunning" in _reproducibility_of(tmp_path / "a", prepared=True)
+        assert "What rerunning" not in _reproducibility_of(tmp_path / "b", prepared=False)
 
 class TestABiasedTrajectorySaysWhatItIs:
     """The restraint case said this well and the three enhanced-sampling
@@ -2660,3 +2655,60 @@ def _found(record, key):
             if hit is not None:
                 return hit
     return None
+
+
+
+def _methods_of_a_study(root):
+    """The methods section of a study whose manifests are the shape a real
+    run writes, built the way the report builds it."""
+    from fastmdxplora.report.context import load_phase_context
+    from fastmdxplora.report.document import _methods_section
+
+    setup, sim = TestTheMethodsSectionReadsTheRealManifests._manifests()
+    for phase, record in (("setup", setup), ("simulation", sim)):
+        (root / phase).mkdir(parents=True)
+        (root / phase / f"{phase}_parameters.json").write_text(json.dumps(record), encoding="utf-8")
+    return _methods_section(root, load_phase_context(root))
+
+
+def _reproducibility_of(root, *, prepared):
+    """The reproducibility section of a study that prepared its own system,
+    or of an analysis of a trajectory it was given."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.report.context import load_phase_context
+    from fastmdxplora.report.document import _reproducibility_section
+
+    for phase in (("setup", "simulation", "analysis") if prepared else ("analysis",)):
+        (root / phase).mkdir(parents=True)
+    return _reproducibility_section(SimpleNamespace(system="181L", output_dir=root),
+                                    load_phase_context(root))
+
+
+def _rows(section: str) -> list[str]:
+    """The data rows of a markdown table, header and rule left out."""
+    rows = [line.strip() for line in section.splitlines() if line.strip().startswith("|")]
+    return [row for row in rows[2:]]
+
+
+def _blocks(section: str) -> dict[str, str]:
+    """Each analysis's part of the results section, by the analysis it is."""
+    blocks: dict[str, str] = {}
+    name = None
+    for line in section.splitlines():
+        if line.startswith("### "):
+            name = line[4:].strip().split()[0].strip("`").lower()
+            blocks[name] = ""
+        elif name is not None:
+            blocks[name] += line + "\n"
+    return blocks
+
+
+def _a_reported_run(root, *, n_frames):
+    """A run's analyses, with the manifest the analysis phase writes beside
+    them -- the plan the results section reads to know what ran."""
+    run = TestTheReportSaysHowMuchTheRunSupports._a_run(root, n_frames=n_frames)
+    (run / "analysis" / "analysis_manifest.json").write_text(json.dumps({
+        "plan": ["rmsd", "rg"],
+        "results": {"rmsd": {"status": "ok"}, "rg": {"status": "ok"}}}), encoding="utf-8")
+    return run

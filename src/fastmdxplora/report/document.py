@@ -771,7 +771,7 @@ def _reproducibility_section(
             "with a slightly different atom count each time, and a fixed "
             "`random_seed` fixes the dynamics rather than the solvent. To "
             "repeat this study exactly, simulate from the system it prepared "
-            "by pointing `simulation.prepared_from` at its `setup/` "
+            "by pointing `simulation.setup_from` at its `setup/` "
             "directory."
         )
     else:
