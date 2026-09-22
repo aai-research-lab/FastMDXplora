@@ -35,7 +35,7 @@
    * a command is a GUI that has given up. */
   var KEY_HELP = {
     anthropic: "Get one at platform.claude.com, under Settings \u2192 API " +
-               "keys. A developer account \u2014 a Claude subscription is " +
+               "keys. A developer account \u2014 a chat subscription is " +
                "not the same thing.",
     openai: "Get one at platform.openai.com, under API keys.",
     compatible: "A local server usually needs none \u2014 leave this blank."

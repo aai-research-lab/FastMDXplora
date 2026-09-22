@@ -459,13 +459,11 @@ def _hms(seconds: float) -> str:
 # ---------------------------------------------------------------------------
 # Conversations belong to studies.
 #
-# The model is the one Claude's users already know: a chat belongs to a
-# project, and every chat in a project sees the project's context. Here a
-# study is the project. A conversation lives inside the study folder it is
-# about, at <study>/agent/conversations/, so copying a study carries the
+# A conversation belongs to the study it is about, and sees that study's
+# context. It lives inside the study folder, at <study>/agent/conversations/, so copying a study carries the
 # conversations that made it -- the record stays with the data. A
-# conversation about no study in particular lives at the workspace level,
-# as a chat outside any project does. Opening a conversation from another
+# conversation about no study in particular lives at the workspace level.
+# Opening a conversation from another
 # study loads that study, so the thread and the Agent's context are never
 # about two different runs. A conversation that launches a run moves into
 # the study it created: how a study came to be belongs with the study.

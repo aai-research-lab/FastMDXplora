@@ -2117,9 +2117,8 @@ class TestTheCentreStaysCentred(unittest.TestCase):
 
 
 class TestConversationsBelongToStudies(unittest.TestCase):
-    """The model Claude's users know: a chat belongs to a project, and
-    every chat in it sees the project's context. A study is the project.
-    Conversations live inside the study folder so a copied study carries
+    """A conversation belongs to the study it is about, and sees that
+    study's context. Conversations live inside the study folder so a copied study carries
     the conversations that made it; a conversation about no study lives
     at the workspace level; opening one from another study loads that
     study; a conversation that launches a run moves into the study it

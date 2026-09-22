@@ -345,13 +345,12 @@ in the URL fragment, which the page reads on load to decide where to start. Two
 commands that started two servers would be two things to learn for one thing to
 use.
 
-**Conversations belong to studies.** The model is the one Claude's users
-know: a chat belongs to a project, and every chat in a project sees the
-project's context. A study is the project. A conversation lives inside the
-study folder it is about, at `<study>/agent/conversations/`, so copying a
+**Conversations belong to studies.** A conversation belongs to the study
+it is about, and sees that study's context. It lives inside the study
+folder, at `<study>/agent/conversations/`, so copying a
 study carries the conversations that made it — the record stays with the
-data. A conversation about no study lives at the workspace level, as a chat
-outside any project does. Under the composer, at the right: the mode, which
+data. A conversation about no study lives at the workspace level. Under the
+composer, at the right: the mode, which
 opens the Agent's settings; *Conversations*, a list grouped by study with
 the loaded one first, where opening a conversation from another study loads
 that study; and *New*, which starts a fresh thread and keeps the last. Every
