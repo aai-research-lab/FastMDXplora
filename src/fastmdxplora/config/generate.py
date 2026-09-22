@@ -354,7 +354,11 @@ def write_resolved_config(
 
     for key in STUDY_LEVEL_KEYS:
         if merged.get(key) is not None:
-            doc[key] = str(merged[key])
+            # A number stays a number: written through str(), the budget of a
+            # study read back as the text '0.5'.
+            value = merged[key]
+            numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+            doc[key] = value if numeric else str(value)
 
     options = merged.get("options") or {}
     if full:

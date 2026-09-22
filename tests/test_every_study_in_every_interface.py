@@ -71,17 +71,11 @@ KNOWN_GAPS = {'cli': {'(study).systems': 'undescribed in the schema, so nothing 
                                                              'has no flag for it',
                  'simulation.live_telemetry': 'refused by name: the command line has no flag for '
                                               'it',
-                 'simulation.metadynamics': 'written as a Python dict; the command line takes it '
-                                            'as text (defect)',
                  'simulation.plumed': 'refused by name: the command line has no flag for it',
                  'simulation.restrain_production': 'refused by name: the command line has no flag '
                                                    'for it',
                  'simulation.resume_unsealed': 'refused by name: the command line has no flag for '
-                                               'it',
-                 'simulation.steered': 'written as a Python dict; the command line takes it as '
-                                       'text (defect)',
-                 'simulation.umbrella': 'written as a Python dict; the command line takes it as '
-                                        'text (defect)'},
+                                               'it'},
  'gui': {'(study).sweep': 'undescribed in the schema, so nothing is generated from it',
          '(study).systems': 'undescribed in the schema, so nothing is generated from it',
          '(top-level).output': 'by design: the server places each study in its workspace'},
@@ -93,10 +87,7 @@ KNOWN_GAPS = {'cli': {'(study).systems': 'undescribed in the schema, so nothing 
                                                'and Python do not take it',
                    '(top-level).explain': 'presentation; not carried by this interface',
                    '(top-level).verbose': 'presentation; not carried by this interface'},
- 'resolved_config': {
-                     '(top-level).explain': 'presentation; not carried by this interface',
-                     'simulation.umbrella': "each window's run writes its own file; none "
-                                            'reproduces the study'}}
+ 'resolved_config': {'(top-level).explain': 'presentation; not carried by this interface'}}
 
 #: Command-line flags whose name is not the config's by the one rule a flag
 #: follows (the phase prefix, then the setting with `_` as `-`, negated with

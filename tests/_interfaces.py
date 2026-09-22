@@ -94,12 +94,11 @@ def a_value_other_than_the_default(block: str, name: str) -> Any:
 
 
 def a_config(block: str, name: str, value: Any) -> dict[str, Any]:
-    """The smallest study that sets this one setting."""
-    config: dict[str, Any] = {"system": "1UBQ"}
+    """The smallest study that sets this one setting, in the shape a config
+    file takes: its input named under `systems`, as a config must."""
+    config: dict[str, Any] = {"systems": [{"system": "1UBQ"}]}
     if block == "(study)":
         config[name] = value
-        if name == "systems":
-            config.pop("system")
     elif block == "(top-level)":
         config[name] = value
     else:
@@ -126,10 +125,14 @@ def same(a: Any, b: Any) -> bool:
         return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
-    try:
-        return a == b or float(a) == float(b)
-    except (TypeError, ValueError):
-        return False
+    # A number only matches a number: "310" arriving for 310 is a setting
+    # the interface carried as text, not the same setting.
+    numbers = (int, float)
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a is b
+    if isinstance(a, numbers) and isinstance(b, numbers):
+        return float(a) == float(b)
+    return a == b
 
 
 # --------------------------------------------------------------- interfaces

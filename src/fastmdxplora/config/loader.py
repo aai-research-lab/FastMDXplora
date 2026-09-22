@@ -461,6 +461,16 @@ def _settle_the_words_that_mean_one_thing(data: dict[str, Any]) -> None:
         return
     for name in _BIASING_BLOCKS:
         block = simulation.get(name)
+        if block not in (None, False) and not isinstance(block, dict):
+            # Named, rather than read on as if it were a mapping -- which
+            # listed a string's characters as unknown settings.
+            raise ConfigError(
+                f"`simulation.{name}` is a block of settings and was given "
+                f"{type(block).__name__} {str(block)[:60]!r}. Write it as a "
+                "mapping: in a config, its settings indented under it; on the "
+                f"command line, --simulate-{name} "
+                "'{collective_variable: distance, from: 0.3, to: 1.5}'.",
+                code="config.option.wrong_type")
         if not isinstance(block, dict):
             continue
         for established, general in _ONE_THING_TWO_WORDS_IN_A_BIASING_BLOCK:

@@ -145,6 +145,11 @@ def _rendered(value: Any) -> list[str]:
         return ["true" if value else "false"]
     if isinstance(value, (list, tuple)):
         return [shlex.quote(str(item)) for item in value]
+    if isinstance(value, dict):
+        # JSON is YAML, and reads back exactly; a Python repr does not.
+        import json
+
+        return [shlex.quote(json.dumps(value))]
     return [shlex.quote(str(value))]
 
 
@@ -271,7 +276,10 @@ def python_script(config: dict[str, Any]) -> str:
     # config it is. `config_data=` is the API's own form for that.
     shaped = [key for key in ("sweep", "execution") if config.get(key)]
     several = len(config.get("systems") or []) > 1
-    if shaped or several:
+    # An umbrella block is a set of windows, expanded as a whole study is;
+    # given to the keyword form, which runs one study directly, it ran one.
+    windows = isinstance((config.get("simulation") or {}).get("umbrella"), dict)
+    if shaped or several or windows:
         # `systems`, always: a whole study is validated as a config file is,
         # and a config file names its inputs as a list.
         study: dict[str, Any] = {}

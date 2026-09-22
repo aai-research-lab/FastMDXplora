@@ -326,16 +326,64 @@ def _generated_options(phase: str, written: list[tuple]) -> list[tuple]:
             options["nargs"] = "+"
             options["metavar"] = "VALUE"
         else:
-            options["type"] = (field.type
-                               if field.type in (int, float, str) else str)
-            options["metavar"] = _METAVAR.get(field.type, "VALUE")
+            options["type"] = _parser_for(field.type)
+            options["metavar"] = _METAVAR.get(options["type"], "VALUE")
         generated.append((flag, field.name, options))
     return list(written) + generated
 
 
-#: What to call the value in help, by what it is. Cosmetic, and derived rather
-#: than written per flag so a new setting does not need a decision.
-_METAVAR = {int: "N", float: "X", str: "TEXT"}
+from fastmdxplora.refusals import CodedError  # noqa: E402
+
+
+def number(text: str) -> int | float:
+    """A setting the schema lets be whole or not: whole where it is written
+    whole. Read as text before, so `--setup-temperature-K 310` reached the
+    study as the string "310"."""
+    try:
+        return int(text)
+    except ValueError:
+        return float(text)
+
+
+class NotTheTypeItTakes(CodedError, argparse.ArgumentTypeError):
+    """A flag's value that is not the type its setting takes. argparse reports
+    it as the flag's error; the code says which refusal it is."""
+
+    default_code = "config.option.wrong_type"
+
+
+def mapping(text: str) -> dict[str, Any]:
+    """A block of settings, written as a YAML mapping. Read as text before, so
+    a block could not be given on the command line at all: what arrived was a
+    string, and the validator named its characters as unknown settings."""
+    import yaml
+
+    try:
+        value = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise NotTheTypeItTakes(
+            f"not a mapping: {str(exc).splitlines()[0]}") from exc
+    if not isinstance(value, dict):
+        raise NotTheTypeItTakes(
+            "expects a mapping of settings, as in "
+            "'{collective_variable: distance, from: 0.3, to: 1.5}'")
+    return value
+
+
+def _parser_for(kind: Any) -> Any:
+    """How the command line reads a value, from the type the schema declares."""
+    if kind in (int, float, str):
+        return kind
+    if kind is dict:
+        return mapping
+    if isinstance(kind, tuple) and set(kind) <= {int, float}:
+        return number
+    return str
+
+
+#: What to call the value in help, by how it is read. Cosmetic, and derived
+#: rather than written per flag so a new setting does not need a decision.
+_METAVAR = {int: "N", float: "X", str: "TEXT", number: "X", mapping: "YAML"}
 
 
 # Map: phase -> (options-list, explore-prefix)
