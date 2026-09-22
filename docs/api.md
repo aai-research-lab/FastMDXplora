@@ -413,7 +413,7 @@ __version__, __author__, __license__, __expansion__, __citation__, __doi__
 `AnalysisOrchestrator` resolves lazily, so `import fastmdxplora` does not pull
 in MDTraj, matplotlib and scikit-learn.
 
-Python 3.9 to 3.13.
+Python 3.10 to 3.13.
 
 ---
 

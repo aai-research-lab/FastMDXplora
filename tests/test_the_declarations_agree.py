@@ -159,7 +159,7 @@ class TestTheDeclaredPythonFloorIsReal:
     """`requires-python` is a promise, and one import can break it silently.
 
     `tests/test_the_declarations_agree.py` imported `tomllib` at module
-    scope. `tomllib` is stdlib from 3.11; the floor here is 3.9. Every
+    scope. `tomllib` is stdlib from 3.11; the floor here is 3.10. Every
     local run and eight of nine CI legs were green, because they all run
     3.11 or newer. The 3.9 leg reported `3414/3519 tests collected ... 1
     error` and stopped -- one import, and 3,414 tests did not run.
@@ -209,3 +209,37 @@ class TestTheDeclaredPythonFloorIsReal:
         from tests._toml import load_toml
 
         assert load_toml(PYPROJECT)["project"]["name"] == "fastmdxplora"
+
+
+class TestEveryDeclarationOfTheFloorAgrees:
+    """The floor is said in six places, and they drifted: the floor moved
+    to 3.10 because OpenMM stopped publishing wheels for 3.9, and each
+    place had to be found by hand. Read from `requires-python`, checked
+    everywhere else it is written."""
+
+    def test_the_classifiers_start_at_the_floor(self) -> None:
+        major, minor = _declared_python_floor()
+        listed = sorted(
+            tuple(int(x) for x in c.rsplit("::", 1)[1].strip().split("."))
+            for c in _pyproject()["project"]["classifiers"]
+            if c.startswith("Programming Language :: Python :: 3.")
+        )
+        assert listed[0] == (major, minor), listed
+
+    def test_the_ci_matrix_starts_at_the_floor(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8"))
+        versions = workflow["jobs"]["test"]["strategy"]["matrix"]["python-version"]
+        lowest = min(tuple(int(x) for x in str(v).split(".")) for v in versions)
+        assert lowest == _declared_python_floor(), versions
+
+    def test_the_environment_file_and_the_docs_say_the_floor(self) -> None:
+        major, minor = _declared_python_floor()
+        floor = f"{major}.{minor}"
+        assert f"python>={floor}" in (ROOT / "environment.yml").read_text(encoding="utf-8")
+        assert f"python-{floor}%2B" in (ROOT / "README.md").read_text(encoding="utf-8")
+        for doc in ("docs/installation.md", "docs/api.md"):
+            assert f"Python {floor} to " in (ROOT / doc).read_text(encoding="utf-8"), doc
+        assert f"Python ≥ {floor}." in (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")

@@ -32,7 +32,7 @@ name: fastmdxplora
 channels:
   - conda-forge
 dependencies:
-  - python>=3.9,<3.14
+  - python>=3.10,<3.14
   - pip
   # Core (analysis + report)
   # See the note in pyproject.toml: np.trapezoid needs 2.0.

@@ -99,7 +99,7 @@ environment for it.
 
 ## Coding conventions
 
-- **Python ≥ 3.9.** Use modern type hints and the standard library where possible.
+- **Python ≥ 3.10.** Use modern type hints and the standard library where possible.
 - **`src/` layout.** All package code lives under `src/fastmdxplora/`.
 - **Docstrings.** Public functions and classes get NumPy-style docstrings.
 - **Tests required for new functionality.** Smoke tests at minimum; full

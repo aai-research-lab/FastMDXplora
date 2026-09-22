@@ -96,7 +96,7 @@ software rather than two stacks wearing one name.
 | **macOS** | Everything. Apple Silicon runs on the CPU platform; OpenCL is not usable, and FastMDXplora falls back automatically and says so. |
 | **Windows** | Analysis and reporting run natively. Simulation needs WSL2, for the reasons in the next section. |
 
-Python 3.9 to 3.13.
+Python 3.10 to 3.13.
 
 ---
 
@@ -111,7 +111,7 @@ and it is worth knowing which before you start rather than after.
 
 **What works natively.** The analysis, reporting and GUI layers, and the
 whole test suite: continuous integration runs it on `windows-latest` for
-Python 3.9, 3.11 and 3.13 alongside Linux and macOS. If your trajectories
+Python 3.10, 3.11 and 3.13 alongside Linux and macOS. If your trajectories
 come from somewhere else -- a cluster, a collaborator, GROMACS -- and you
 want the measures, the report and the GUI, install the base
 package and stop there:
@@ -121,8 +121,8 @@ py -m pip install fastmdxplora
 fastmdx info
 ```
 
-**What needs Python 3.10 or newer.** Running dynamics needs OpenMM, and
-OpenMM publishes no Windows wheel for Python 3.9. On 3.10 and above:
+**Running dynamics.** OpenMM has Windows wheels for every supported
+Python:
 
 ```powershell
 py -m pip install "fastmdxplora[md]"

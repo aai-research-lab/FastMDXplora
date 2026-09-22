@@ -1,11 +1,11 @@
 """One TOML parser for the suite, on every Python this package supports.
 
 `tomllib` is in the standard library from 3.11. This package declares
-`requires-python = ">=3.9, <3.14"` and CI runs a 3.9 leg, where
+`requires-python = ">=3.10, <3.14"` and CI runs a 3.10 leg, where
 `import tomllib` at module scope is not one failing test: it is a
 collection error, and pytest abandons the whole run. Four test modules
 read `pyproject.toml`; one of them imported `tomllib` at module scope, and
-the 3.9 leg reported `3414/3519 tests collected ... 1 error` and stopped.
+the 3.9 leg, when there was one, reported `3414/3519 tests collected ... 1 error` and stopped.
 3,414 tests did not run because of one import.
 
 `tomli` is the same parser under its pre-stdlib name, declared in the

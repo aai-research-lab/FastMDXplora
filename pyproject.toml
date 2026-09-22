@@ -9,7 +9,10 @@ description = "Software for Automated Molecular Dynamics Exploration"
 readme = "README.md"
 # 3.14 is held back by PROPKA, not by this tree: see the ceiling
 # comment in .github/workflows/tests.yml.
-requires-python = ">=3.9, <3.14"
+# The floor is 3.10: OpenMM's last release with a 3.9 wheel was 8.1.1, so
+# a 3.9 install could not simulate, and 3.9 reached end of life in October
+# 2025. Refusing at install is clearer than installing what cannot run.
+requires-python = ">=3.10, <3.14"
 license = { text = "MIT" }
 authors = [
     { name = "Adekunle Aina" },
@@ -36,7 +39,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -146,9 +148,9 @@ test = [
     # the docs describe -- including CI's own test job.
     "ruff>=0.5.0",
     # Four tests read this file, and `tomllib` is stdlib only from 3.11
-    # while requires-python starts at 3.9. `tomli` is the same parser
+    # while requires-python starts at 3.10. `tomli` is the same parser
     # under its pre-stdlib name. Not skipping below 3.11: that would have
-    # hidden those four on two of the five supported versions, and a skip
+    # hidden those four on one of the four supported versions, and a skip
     # is invisible in a green run -- the same reasoning as RDKit below.
     # The import is made once, in tests/_toml.py.
     "tomli>=2.0; python_version < '3.11'",

@@ -8,7 +8,7 @@
 [![PyPI](https://img.shields.io/pypi/v/fastmdxplora?label=pypi&labelColor=black)](https://pypi.org/project/fastmdxplora/)
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/fastmdxplora?label=conda-forge&color=44A833&labelColor=black)](https://anaconda.org/conda-forge/fastmdxplora)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/fastmdxplora?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/fastmdxplora)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue?labelColor=black)](https://pypi.org/project/fastmdxplora/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue?labelColor=black)](https://pypi.org/project/fastmdxplora/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?labelColor=black)](https://opensource.org/licenses/MIT)
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/aai-research-lab/FastMDXplora/tests.yml?branch=main&label=tests&labelColor=black)](https://github.com/aai-research-lab/FastMDXplora/actions/workflows/tests.yml)
