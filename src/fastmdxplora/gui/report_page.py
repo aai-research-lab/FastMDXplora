@@ -20,8 +20,11 @@ __all__ = ["report_payload"]
 
 
 def report_payload(root: Path | str) -> dict[str, Any]:
-    """What the Report page needs, or why there is nothing to show."""
+    """What the Report page needs, or why there is nothing to show. For a
+    study of several runs, the comparison across them."""
     base = Path(root)
+    if (base / "batch_manifest.json").is_file():
+        return _study_of_runs_payload(base)
     report_dir = base / "report"
     source = report_dir / "report.md"
     if not source.is_file():
@@ -96,3 +99,82 @@ def render_markdown(text: str) -> tuple[str, str]:
         return '<pre class="report-plain">' + _escape(text) + "</pre>", "plain"
     return (markdown.markdown(text, extensions=["tables", "fenced_code", "toc"],
                               output_format="html5"), "html")
+
+
+def _study_of_runs_payload(base: Path) -> dict[str, Any]:
+    """The report of a study of several runs: the comparison the batch
+    writes once every run has finished, with its figures served from
+    comparison/; before that, what the finished runs say so far, and how
+    many are still to come. Neither is a run's own report, which each run
+    keeps under runs/<id>/report/."""
+    from fastmdxplora.gui.exploration import runs_of_a_study
+
+    runs = runs_of_a_study(base) or []
+    finished = [r for r in runs if r["state"] == "finished"]
+    pending = len(runs) - len(finished)
+    comparison = base / "comparison" / "comparison_report.md"
+    if comparison.is_file():
+        text = comparison.read_text(encoding="utf-8", errors="replace")
+        html, rendered = render_markdown(text)
+        downloads = {}
+        for key, name in (("markdown", "comparison_report.md"),
+                          ("summary", "comparison_summary.csv")):
+            if (comparison.parent / name).is_file():
+                downloads[key] = f"/artifacts/comparison/{name}?download=1"
+        return {"ok": True, "html": html, "not_produced": [], "downloads": downloads,
+                "generated": _generated_line(text), "rendered": rendered,
+                "figures_under": "comparison", "runs": len(runs), "pending": pending}
+    if not finished:
+        return {"ok": False, "reason": f"none of {len(runs)} runs finished yet",
+                "html": "", "not_produced": [], "downloads": {},
+                "runs": len(runs), "pending": pending}
+    html, rendered = render_markdown(_so_far(base, runs, finished))
+    return {"ok": True, "html": html, "not_produced": [], "downloads": {},
+            "generated": "", "rendered": rendered, "figures_under": "comparison",
+            "runs": len(runs), "pending": pending}
+
+
+def _so_far(base: Path, runs: list[dict[str, Any]], finished: list[dict[str, Any]]) -> str:
+    """A table of what each finished run settled on, one row per run and
+    one column per measure with a mean, read from the runs' own findings.
+    The comparison across them, with its figures, comes when the last run
+    finishes."""
+    from fastmdxplora.batch.aggregate import read_member_findings
+
+    axes: list[str] = sorted({axis for r in runs for axis in (r.get("values") or {})})
+    short = {axis: axis.split(".")[-1] for axis in axes}
+    means: dict[str, dict[str, Any]] = {}
+    measures: list[str] = []
+    for run in finished:
+        found = read_member_findings(Path(run["path"]))
+        row = {}
+        for analysis, findings in found.items():
+            mean = findings.get("mean") if isinstance(findings, dict) else None
+            if isinstance(mean, dict) and isinstance(mean.get("mean"), (int, float)):
+                row[analysis] = mean
+                if analysis not in measures:
+                    measures.append(analysis)
+        means[run["run_id"]] = row
+    pending = len(runs) - len(finished)
+    lines = [f"# {base.name}: {len(finished)} of {len(runs)} runs finished", ""]
+    if pending:
+        lines += [f"_{pending} still to run. The comparison across all of them, with its "
+                  "figures, is written when the last one finishes._", ""]
+    if not measures:
+        lines += ["No run has reported a settled mean yet.", ""]
+        return "\n".join(lines)
+    head = [short[a] for a in axes] + [f"{m} mean" for m in measures]
+    lines.append("| run | " + " | ".join(head) + " |")
+    lines.append("|---|" + "---|" * len(head))
+    for run in finished:
+        cells = [str((run.get("values") or {}).get(axis, "")) for axis in axes]
+        for measure in measures:
+            record = means[run["run_id"]].get(measure)
+            if record is None:
+                cells.append("")
+            else:
+                sd = record.get("uncertainty") or record.get("sem") or record.get("std")
+                unit = f" {record['unit']}" if record.get("unit") else ""
+                cells.append(f"{record['mean']:.4g}" + (f" ± {sd:.2g}" if isinstance(sd, (int, float)) else "") + unit)
+        lines.append(f"| {run['run_id']} | " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"

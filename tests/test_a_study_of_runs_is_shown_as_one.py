@@ -47,6 +47,13 @@ def _a_sweep_study(where: Path) -> Path:
         run = study._run_output_dir(spec)
         shutil.copytree(finished, run, dirs_exist_ok=True)
         (run / "simulation" / "live_status.json").write_text(json.dumps(status), encoding="utf-8")
+        # What each run settled on, as an analysis records it.
+        for name, mean in (("rmsd", 0.15 + 0.01 * spec.sweep_values["simulation.temperature_K"] / 300),
+                           ("rg", 1.2)):
+            (run / "analysis" / name / "options.json").write_text(json.dumps({
+                "analysis": name, "options": {},
+                "findings": {"mean": {"mean": mean, "uncertainty": 0.005, "unit": "nm"}}}),
+                encoding="utf-8")
     return root
 
 
@@ -132,3 +139,105 @@ class TestTheDashboardShowsTheRuns(unittest.TestCase):
                 browser.close()
         finally:
             session.server.shutdown()
+
+
+class TestTheRootReportsTheCollective(unittest.TestCase):
+    def test_before_the_comparison_it_says_what_the_finished_runs_settled_on(self):
+        import sys
+        import tempfile
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.gui.report_page import report_payload
+
+        root = _a_sweep_study(Path(tempfile.mkdtemp()))
+        page = report_payload(root)
+        self.assertTrue(page["ok"])
+        self.assertEqual((page["runs"], page["pending"]), (2, 1))
+        self.assertIn("1 of 2 runs finished", page["html"])
+        self.assertIn("1 still to run", page["html"])
+        self.assertIn("rmsd mean", page["html"])
+        self.assertIn("0.16", page["html"])          # the finished run's mean, 300 K
+        self.assertNotIn("0.1603", page["html"])     # the running one's is not there
+
+    def test_once_every_run_has_finished_it_is_the_comparison(self):
+        import sys
+        import tempfile
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.batch.compare import build_comparison_report
+        from fastmdxplora.gui.report_page import report_payload
+
+        root = _a_sweep_study(Path(tempfile.mkdtemp()))
+        manifest = json.loads((root / "batch_manifest.json").read_text(encoding="utf-8"))
+        manifest["runs"] = [dict(entry, status="ok", output_dir=str(root / "runs" / entry["run_id"]))
+                            for entry in manifest["planned"]]
+        (root / "batch_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        for entry in manifest["planned"]:
+            (root / "runs" / entry["run_id"] / "simulation" / "live_status.json").write_text(
+                json.dumps({"stage": "finished", "current_step": 500, "total_planned_steps": 500}),
+                encoding="utf-8")
+        self.assertIsNotNone(build_comparison_report(root))
+        page = report_payload(root)
+        self.assertTrue(page["ok"])
+        self.assertEqual(page["pending"], 0)
+        self.assertEqual(page["figures_under"], "comparison")
+        self.assertIn("overlay_rmsd.png", page["html"])
+        self.assertIn("comparison_summary.csv", page["downloads"]["summary"])
+
+    def test_with_no_run_finished_it_says_how_many_are_to_come(self):
+        import sys
+        import tempfile
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.gui.report_page import report_payload
+
+        root = _a_sweep_study(Path(tempfile.mkdtemp()))
+        for run in (root / "runs").iterdir():
+            (run / "simulation" / "live_status.json").write_text(
+                json.dumps({"stage": "Production", "current_step": 10, "total_planned_steps": 500}),
+                encoding="utf-8")
+        page = report_payload(root)
+        self.assertFalse(page["ok"])
+        self.assertEqual(page["reason"], "none of 2 runs finished yet")
+        self.assertEqual(page["pending"], 2)
+
+
+@unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
+class TestTheComparisonRendersOnTheReportPage(unittest.TestCase):
+    def test_its_figures_are_served_from_the_comparison_folder(self):
+        import sys
+        import tempfile
+
+        sys.path.insert(0, "src")
+        from playwright.sync_api import sync_playwright
+
+        from fastmdxplora.batch.compare import build_comparison_report
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        root = _a_sweep_study(Path(tempfile.mkdtemp()))
+        manifest = json.loads((root / "batch_manifest.json").read_text(encoding="utf-8"))
+        manifest["runs"] = [dict(entry, status="ok", output_dir=str(root / "runs" / entry["run_id"]))
+                            for entry in manifest["planned"]]
+        (root / "batch_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        for entry in manifest["planned"]:
+            (root / "runs" / entry["run_id"] / "simulation" / "live_status.json").write_text(
+                json.dumps({"stage": "finished", "current_step": 500, "total_planned_steps": 500}),
+                encoding="utf-8")
+        build_comparison_report(root)
+        session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto(session.url + "#report", wait_until="domcontentloaded")
+                page.wait_for_selector("#report-document:not([hidden]) img", timeout=20000)
+                images = page.eval_on_selector_all(
+                    "#report-document img",
+                    "imgs => imgs.map(i => [i.getAttribute('src'), i.naturalWidth > 0])")
+                browser.close()
+        finally:
+            session.server.shutdown()
+        self.assertTrue(images)
+        for src, drawn in images:
+            self.assertTrue(src.startswith("/artifacts/comparison/"), src)
+            self.assertTrue(drawn, f"{src} did not load")

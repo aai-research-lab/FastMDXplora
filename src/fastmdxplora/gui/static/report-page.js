@@ -26,6 +26,9 @@
       empty.hidden = false;
       notices.hidden = true;
       downloads.innerHTML = "";
+      /* A study of runs says which of them are still to come. */
+      var why = el("report-empty-reason");
+      if (why) why.textContent = data && data.reason && data.pending ? data.reason : "";
       return;
     }
 
@@ -70,16 +73,19 @@
 
     /* Figures the report refers to by relative path live under
      * report/ or analysis/; point them at the artifacts route. */
+    /* A study of runs keeps its comparison, and its figures, under
+     * comparison/ rather than report/; the payload says which. */
+    var under = "/artifacts/" + (data.figures_under || "report") + "/";
     Array.prototype.forEach.call(doc.querySelectorAll("img"), function (img) {
       var src = img.getAttribute("src") || "";
       if (src && !/^(https?:|\/|data:)/.test(src)) {
-        img.src = "/artifacts/report/" + src.replace(/^\.\//, "");
+        img.src = under + src.replace(/^\.\//, "");
       }
     });
     Array.prototype.forEach.call(doc.querySelectorAll("a[href]"), function (a) {
       var href = a.getAttribute("href") || "";
       if (href && !/^(https?:|#|\/|mailto:)/.test(href)) {
-        a.href = "/artifacts/report/" + href.replace(/^\.\//, "");
+        a.href = under + href.replace(/^\.\//, "");
         a.target = "_blank";
         a.rel = "noopener";
       }

@@ -146,8 +146,42 @@ class TestThePage(unittest.TestCase):
     def test_relative_figures_are_pointed_at_the_run(self):
         # The report refers to its figures by bare name; the page resolves
         # them through the artifacts route rather than the page's own URL.
-        script = self.script()
-        self.assertIn('"/artifacts/report/" + src', script)
+        # Rendered: a check of the script's text pinned one spelling of the
+        # route, and the figures of a study of runs come from another folder.
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright not installed")
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        root = Path(tempfile.mkdtemp()) / "study"
+        (root / "report").mkdir(parents=True)
+        (root / "simulation").mkdir()
+        (root / "report" / "report.md").write_text("# Report\n\n![figure](figure.png)\n",
+                                                   encoding="utf-8")
+        import base64
+
+        (root / "report" / "figure.png").write_bytes(base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="))
+        session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page()
+                page.goto(session.url + "#report", wait_until="domcontentloaded")
+                page.wait_for_selector("#report-document:not([hidden]) img", timeout=20000)
+                src, drawn = page.eval_on_selector(
+                    "#report-document img", "i => [i.getAttribute('src'), i.naturalWidth > 0]")
+                browser.close()
+        finally:
+            session.server.shutdown()
+        self.assertEqual(src, "/artifacts/report/figure.png")
+        self.assertTrue(drawn, "the figure did not load through the artifacts route")
 
     def test_a_missing_report_shows_the_empty_state_not_an_error(self):
         script = self.script()
