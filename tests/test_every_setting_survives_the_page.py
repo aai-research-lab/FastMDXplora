@@ -26,21 +26,17 @@ except ImportError:
 #: off here; a setting newly lost fails.
 KNOWN_GAPS: dict[str, str] = {
     "(study).systems": "the form takes one system",
-    "(top-level).exclude_phase": "loaded as the include_phase it amounts to; the same study, "
-                                "which the comparison here does not credit",
-    "(top-level).explain": "offered as a control, but a loaded study does not fill it",
-    "(top-level).verbose": "offered as a control, but a loaded study does not fill it",
-    "analysis.exclude": "the form's loader wants a list where the config loader also takes "
-                        "one name",
-    "analysis.include": "the form's loader wants a list where the config loader also takes "
-                        "one name",
     "analysis.topology": "only meaningful for a study that starts from a trajectory; "
                          "dropped beside a structure, which is right",
-    "execution.continue_on_error": "offered as a control, but a loaded study does not fill it",
-    "execution.devices": "offered as a control, but a loaded study does not fill it",
-    "execution.mode": "offered as a control, but a loaded study does not fill it",
-    "execution.workers": "offered as a control, but a loaded study does not fill it",
 }
+
+
+def _phases_run(config: dict) -> list[str]:
+    from fastmdxplora.config.schema import PHASE_KEYS
+
+    included = config.get("include_phase") or list(PHASE_KEYS)
+    excluded = set(config.get("exclude_phase") or [])
+    return [phase for phase in PHASE_KEYS if phase in included and phase not in excluded]
 
 
 def _measure() -> dict[str, bool]:
@@ -88,9 +84,15 @@ def _measure() -> dict[str, bool]:
                 try:
                     wanted = normalise_config(copy.deepcopy(config))
                     produced = normalise_config(yaml.safe_load(built["yaml"])) if built.get("ok") else {}
-                    ok = built.get("ok", False) and same(
-                        read_back(produced, block, name), read_back(wanted, block, name)) and (
-                        name not in BECOME_RUNS or same(the_runs(produced), the_runs(wanted)))
+                    if name in ("include_phase", "exclude_phase"):
+                        # The phases that run, however the study says it:
+                        # "exclude report" and "include the other three" are
+                        # the same plan, and the form holds the plan.
+                        ok = built.get("ok", False) and _phases_run(produced) == _phases_run(wanted)
+                    else:
+                        ok = built.get("ok", False) and same(
+                            read_back(produced, block, name), read_back(wanted, block, name)) and (
+                            name not in BECOME_RUNS or same(the_runs(produced), the_runs(wanted)))
                 except Exception:  # noqa: BLE001 -- not surviving is the finding
                     ok = False
                 survived[f"{block}.{name}"] = bool(ok)

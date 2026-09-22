@@ -1289,6 +1289,12 @@
         {}, state.values[RUN_OPTIONS_KEY] || {}, from.study
       );
     }
+    // And how the runs are scheduled, into the execution controls.
+    if (from.execution && Object.keys(from.execution).length) {
+      state.values[EXECUTION_KEY] = Object.assign(
+        {}, state.values[EXECUTION_KEY] || {}, from.execution
+      );
+    }
     // Only set where there is a file behind it. A config that was never on
     // disk has nothing to be "left as it is".
     if (origin) state.loadedFrom = origin;

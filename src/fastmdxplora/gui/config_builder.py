@@ -477,6 +477,21 @@ def check_config_file(path: str) -> dict[str, Any]:
     return {**check_config(data), "path": str(target)}
 
 
+def _lists_as_lists(data: dict[str, Any]) -> dict[str, Any]:
+    """The analysis lists as lists. A bare name, or names separated by
+    commas, is what the config file accepts for them; the form checked the
+    raw text and refused it, so a study the command line opens failed to
+    open here."""
+    analysis = data.get("analysis")
+    if isinstance(analysis, dict):
+        analysis = dict(analysis)
+        for key in ("include", "exclude"):
+            if isinstance(analysis.get(key), str):
+                analysis[key] = [part.strip() for part in analysis[key].split(",") if part.strip()]
+        data["analysis"] = analysis
+    return data
+
+
 def check_config(data: dict[str, Any]) -> dict[str, Any]:
     """The same verdict, for a config that is not on disk.
 
@@ -486,6 +501,10 @@ def check_config(data: dict[str, Any]) -> dict[str, Any]:
     file. The alternative was a second implementation in JavaScript of the
     mapping below, which is where the two would drift.
     """
+    # Validated in place: the validator settles the older spellings into
+    # the current ones as it goes, and the summary below reads the settled
+    # form. The analysis lists are given their shape first.
+    data.update(_lists_as_lists(dict(data)))
     try:
         validate_config(data)
     except ConfigError as exc:
@@ -543,7 +562,7 @@ def state_from_config(
     # otherwise the form opens with every phase ticked.
     from fastmdxplora.config.loader import canonical_phase_keys
 
-    data = canonical_phase_keys(dict(data))
+    data = _lists_as_lists(canonical_phase_keys(dict(data)))
     if checked is None:
         checked = check_config(data)
         if not checked["ok"]:
@@ -575,11 +594,18 @@ def state_from_config(
         # anyway; `budget_hours` is a number, and str() on it produced a
         # config the validator refused -- "should be number, got str" --
         # on the way from the Agent's Run here to the launch.
+        # Every run option the form offers, not only how the study was
+        # written: `explain` and `verbose` are run options too, and were
+        # left at their defaults by a loaded study that set them.
         "study": {
             key: data[key]
-            for key in STUDY_LEVEL_KEYS
+            for key in (*STUDY_LEVEL_KEYS, "explain", "verbose")
             if data.get(key) is not None
         },
+        # How the runs are scheduled, for the form's execution controls,
+        # which a loaded study never filled: a study with `mode: parallel`
+        # opened here and started again ran sequentially.
+        "execution": dict(data["execution"]) if isinstance(data.get("execution"), dict) else {},
     }
 
     # Which phases run is `include`/`exclude`, defaulting to all of them.
