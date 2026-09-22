@@ -103,15 +103,15 @@ def render_markdown(text: str) -> tuple[str, str]:
 
 def _study_of_runs_payload(base: Path) -> dict[str, Any]:
     """The report of a study of several runs: the comparison the batch
-    writes once every run has finished, with its figures served from
-    comparison/; before that, what the finished runs say so far, and how
+    writes once every run has completed, with its figures served from
+    comparison/; before that, what the completed runs say so far, and how
     many are still to come. Neither is a run's own report, which each run
     keeps under runs/<id>/report/."""
     from fastmdxplora.gui.exploration import runs_of_a_study
 
     runs = runs_of_a_study(base) or []
-    finished = [r for r in runs if r["state"] == "finished"]
-    pending = len(runs) - len(finished)
+    completed = [r for r in runs if r["state"] == "completed"]
+    pending = len(runs) - len(completed)
     comparison = base / "comparison" / "comparison_report.md"
     if comparison.is_file():
         text = comparison.read_text(encoding="utf-8", errors="replace")
@@ -124,18 +124,18 @@ def _study_of_runs_payload(base: Path) -> dict[str, Any]:
         return {"ok": True, "html": html, "not_produced": [], "downloads": downloads,
                 "generated": _generated_line(text), "rendered": rendered,
                 "figures_under": "comparison", "runs": len(runs), "pending": pending}
-    if not finished:
-        return {"ok": False, "reason": f"none of {len(runs)} runs finished yet",
+    if not completed:
+        return {"ok": False, "reason": f"none of {len(runs)} runs completed yet",
                 "html": "", "not_produced": [], "downloads": {},
                 "runs": len(runs), "pending": pending}
-    html, rendered = render_markdown(_so_far(base, runs, finished))
+    html, rendered = render_markdown(_so_far(base, runs, completed))
     return {"ok": True, "html": html, "not_produced": [], "downloads": {},
             "generated": "", "rendered": rendered, "figures_under": "comparison",
             "runs": len(runs), "pending": pending}
 
 
-def _so_far(base: Path, runs: list[dict[str, Any]], finished: list[dict[str, Any]]) -> str:
-    """A table of what each finished run settled on, one row per run and
+def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, Any]]) -> str:
+    """A table of what each completed run settled on, one row per run and
     one column per measure with a mean, read from the runs' own findings.
     The comparison across them, with its figures, comes when the last run
     finishes."""
@@ -145,7 +145,7 @@ def _so_far(base: Path, runs: list[dict[str, Any]], finished: list[dict[str, Any
     short = {axis: axis.split(".")[-1] for axis in axes}
     means: dict[str, dict[str, Any]] = {}
     measures: list[str] = []
-    for run in finished:
+    for run in completed:
         found = read_member_findings(Path(run["path"]))
         row = {}
         for analysis, findings in found.items():
@@ -155,8 +155,8 @@ def _so_far(base: Path, runs: list[dict[str, Any]], finished: list[dict[str, Any
                 if analysis not in measures:
                     measures.append(analysis)
         means[run["run_id"]] = row
-    pending = len(runs) - len(finished)
-    lines = [f"# {base.name}: {len(finished)} of {len(runs)} runs finished", ""]
+    pending = len(runs) - len(completed)
+    lines = [f"# {base.name}: {len(completed)} of {len(runs)} runs completed", ""]
     if pending:
         lines += [f"_{pending} still to run. The comparison across all of them, with its "
                   "figures, is written when the last one finishes._", ""]
@@ -166,7 +166,7 @@ def _so_far(base: Path, runs: list[dict[str, Any]], finished: list[dict[str, Any
     head = [short[a] for a in axes] + [f"{m} mean" for m in measures]
     lines.append("| run | " + " | ".join(head) + " |")
     lines.append("|---|" + "---|" * len(head))
-    for run in finished:
+    for run in completed:
         cells = [str((run.get("values") or {}).get(axis, "")) for axis in axes]
         for measure in measures:
             record = means[run["run_id"]].get(measure)

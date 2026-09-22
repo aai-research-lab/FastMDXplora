@@ -828,15 +828,28 @@
       }).join(", ");
     }
     if (runsBlock && runOfBlock && window.FastMDXDashboard) {
-      window.FastMDXDashboard.on("app-state", function (s) {
+      var lastState = null;
+      var showRuns = function (s) {
+        lastState = s;
         var runs = (s && s.runs) || null;
         runsBlock.hidden = !runs;
         if (runs) {
-          var done = runs.filter(function (r) { return r.state === "finished"; }).length;
-          el("study-runs-label").textContent = "Runs, " + done + " of " + runs.length + " finished";
+          var done = runs.filter(function (r) { return r.state === "completed"; }).length;
+          el("study-runs-label").textContent = "Runs, " + done + " of " + runs.length + " completed";
           var list = el("study-runs-list");
           list.innerHTML = "";
-          runs.forEach(function (r) {
+          /* Seven at first, then three more per click of More until all are
+           * shown, and Less folds back to seven: a sweep of forty runs would
+           * otherwise push everything below it off the sidebar. The running
+           * ones come first, so what is happening is always in view; how
+           * many are shown is remembered across polls. */
+          var FIRST = 7, STEP = 3;
+          var ordered = runs.slice().sort(function (a, b) {
+            var rank = { running: 0, waiting: 1, failed: 2, completed: 3 };
+            return (rank[a.state] - rank[b.state]) || (runs.indexOf(a) - runs.indexOf(b));
+          });
+          var shown = Math.min(ordered.length, parseInt(runsBlock.dataset.shown, 10) || FIRST);
+          ordered.slice(0, shown).forEach(function (r) {
             var row = document.createElement("div");
             row.className = "study-running-row study-run-row";
             row.dataset.state = r.state;
@@ -860,6 +873,36 @@
             row.appendChild(dot); row.appendChild(name); row.appendChild(pct); row.appendChild(view);
             list.appendChild(row);
           });
+          if (ordered.length > FIRST) {
+            var controls = document.createElement("div");
+            controls.className = "study-runs-more";
+            if (shown < ordered.length) {
+              var more = document.createElement("button");
+              more.className = "ghost-btn";
+              more.type = "button";
+              more.id = "study-runs-more";
+              var next = Math.min(STEP, ordered.length - shown);
+              more.textContent = "More (" + next + " of " + (ordered.length - shown) + ")";
+              more.addEventListener("click", function () {
+                runsBlock.dataset.shown = String(shown + STEP);
+                showRuns(lastState);
+              });
+              controls.appendChild(more);
+            }
+            if (shown > FIRST) {
+              var less = document.createElement("button");
+              less.className = "ghost-btn";
+              less.type = "button";
+              less.id = "study-runs-less";
+              less.textContent = "Less";
+              less.addEventListener("click", function () {
+                runsBlock.dataset.shown = String(FIRST);
+                showRuns(lastState);
+              });
+              controls.appendChild(less);
+            }
+            list.appendChild(controls);
+          }
         }
         var of = (s && s.run_of) || null;
         runOfBlock.hidden = !of;
@@ -869,7 +912,8 @@
           el("study-run-of-values").textContent = valuesText(of.values);
           el("study-run-of-back").onclick = function () { switchTo(of.path); };
         }
-      });
+      };
+      window.FastMDXDashboard.on("app-state", showRuns);
     }
 
     /* The seam between the file list and the preview. Drag it; either

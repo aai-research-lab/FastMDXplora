@@ -3075,6 +3075,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
     color: var(--text-muted); margin-bottom: 4px;
 }
+.study-runs-more { display: flex; gap: 8px; padding: 4px 0; }
 .study-running-row {
     display: flex; align-items: center; gap: 6px;
     padding: 5px 8px; border-radius: 6px;

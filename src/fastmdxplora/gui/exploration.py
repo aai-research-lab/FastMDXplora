@@ -190,7 +190,7 @@ ADOPTION_RETRY_INTERVAL = 2.0
 
 def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
     """Each run a study of several will make, with where it stands: waiting,
-    running, finished or failed, and the fraction of its steps done. From the
+    running, completed or failed, and the fraction of its steps done. From the
     plan the batch manifest records before any run starts, and each run's own
     telemetry. None where the folder is a study of one run."""
     manifest = _json_mapping(Path(root) / "batch_manifest.json")
@@ -208,8 +208,8 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
         result = results.get(run_id) or {}
         state = "waiting"
         fraction = None
-        if result.get("status") in ("ok", "success", "completed", "finished"):
-            state, fraction = "finished", 1.0
+        if result.get("status") in ("ok", "success", "completed"):
+            state, fraction = "completed", 1.0
         elif result.get("status") in ("failed", "error"):
             state = "failed"
         elif live:
@@ -217,8 +217,9 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
             step, total = live.get("current_step"), live.get("total_planned_steps")
             if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
                 fraction = min(1.0, float(step) / float(total))
-            if stage in ("finished", "completed", "complete") or fraction == 1.0:
-                state, fraction = "finished", 1.0
+            # `completed` is what the orchestrator records when a run ends.
+            if stage in ("completed", "complete") or fraction == 1.0:
+                state, fraction = "completed", 1.0
             elif stage in ("failed", "error"):
                 state = "failed"
             else:
@@ -848,20 +849,20 @@ class DashboardRuntime:
         """The running study's stage and fraction complete, for the sidebar's
         Running line. Read from its own telemetry; nothing is guessed. A
         study of several runs has no telemetry of its own: its stage is how
-        many of its runs are finished, and its fraction is theirs summed."""
+        many of its runs are completed, and its fraction is theirs summed."""
         if root is None:
             return None
         runs = runs_of_a_study(Path(root))
         if runs is not None:
-            done = sum(1 for r in runs if r["state"] == "finished")
+            done = sum(1 for r in runs if r["state"] == "completed")
             going = sum(1 for r in runs if r["state"] == "running")
             failed = sum(1 for r in runs if r["state"] == "failed")
-            stage = f"{done} of {len(runs)} finished"
+            stage = f"{done} of {len(runs)} completed"
             if going:
                 stage += f", {going} running"
             if failed:
                 stage += f", {failed} failed"
-            out: dict[str, Any] = {"stage": stage, "runs": len(runs), "finished": done}
+            out: dict[str, Any] = {"stage": stage, "runs": len(runs), "completed": done}
             fractions = [r.get("fraction") for r in runs if r.get("fraction") is not None]
             if runs:
                 out["percent"] = round(100.0 * sum(fractions) / len(runs), 1)

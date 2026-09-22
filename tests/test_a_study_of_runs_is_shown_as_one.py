@@ -23,8 +23,8 @@ except ImportError:
     _HAVE_PLAYWRIGHT = False
 
 
-def _a_sweep_study(where: Path) -> Path:
-    """A two-run sweep over temperature, its runs finished and running."""
+def _a_sweep_study(where: Path, temperatures=(300, 310)) -> Path:
+    """A sweep over temperature: its first run completed, the rest running."""
     import sys
 
     sys.path.insert(0, "src")
@@ -34,16 +34,17 @@ def _a_sweep_study(where: Path) -> Path:
     root = where / "sweep"
     study = BatchExplorer(config_data={"systems": [{"system": "1UBQ"}],
                                        "simulation": {"duration_ns": 1.0},
-                                       "sweep": {"simulation.temperature_K": [300, 310]}},
+                                       "sweep": {"simulation.temperature_K": list(temperatures)}},
                           output_dir=str(root))
     root.mkdir(parents=True)
     (root / "runs").mkdir()
     study._write_study_config()
     study._write_batch_manifest()
     finished = Path(_a_finished_study())
-    for spec, status in zip(study.run_specs, (
-            {"stage": "finished", "current_step": 500, "total_planned_steps": 500},
-            {"stage": "Production", "current_step": 200, "total_planned_steps": 500})):
+    # `completed` is what the orchestrator records when a run ends.
+    statuses = [{"stage": "completed", "current_step": 500, "total_planned_steps": 500}] + [
+        {"stage": "Production", "current_step": 200, "total_planned_steps": 500}] * (len(temperatures) - 1)
+    for spec, status in zip(study.run_specs, statuses):
         run = study._run_output_dir(spec)
         shutil.copytree(finished, run, dirs_exist_ok=True)
         (run / "simulation" / "live_status.json").write_text(json.dumps(status), encoding="utf-8")
@@ -93,7 +94,7 @@ class TestTheBrowserTellsThemApart(unittest.TestCase):
 
         root = _a_sweep_study(Path(tempfile.mkdtemp()))
         runs = runs_of_a_study(root)
-        self.assertEqual([r["state"] for r in runs], ["finished", "running"])
+        self.assertEqual([r["state"] for r in runs], ["completed", "running"])
         self.assertEqual(runs[1]["fraction"], 0.4)
         # A run not yet started is waiting, not absent.
         shutil.rmtree(Path(runs[1]["path"]))
@@ -123,12 +124,13 @@ class TestTheDashboardShowsTheRuns(unittest.TestCase):
                     "#study-runs .study-run-row",
                     "rs => rs.map(r => [r.querySelector('.study-running-name').textContent,"
                     " r.dataset.state, r.querySelector('.study-running-pct').textContent])")
-                self.assertEqual(rows, [["temperature_K = 300", "finished", "finished"],
-                                        ["temperature_K = 310", "running", "40%"]])
-                self.assertIn("1 of 2 finished", page.text_content("#study-runs-label"))
+                # The running run first, so what is happening is in view.
+                self.assertEqual(rows, [["temperature_K = 310", "running", "40%"],
+                                        ["temperature_K = 300", "completed", "completed"]])
+                self.assertIn("1 of 2 completed", page.text_content("#study-runs-label"))
                 self.assertTrue(page.eval_on_selector("#study-run-of", "e => e.hidden"))
                 # Into the running run, and back.
-                page.click("#study-runs .study-run-row:nth-child(2) button")
+                page.click("#study-runs .study-run-row:nth-child(1) button")
                 page.wait_for_selector("#study-run-of:not([hidden])", timeout=20000)
                 self.assertEqual(page.text_content("#study-run-of-name"), "sweep")
                 self.assertEqual(page.text_content("#study-run-of-values"), "temperature_K = 310")
@@ -153,7 +155,7 @@ class TestTheRootReportsTheCollective(unittest.TestCase):
         page = report_payload(root)
         self.assertTrue(page["ok"])
         self.assertEqual((page["runs"], page["pending"]), (2, 1))
-        self.assertIn("1 of 2 runs finished", page["html"])
+        self.assertIn("1 of 2 runs completed", page["html"])
         self.assertIn("1 still to run", page["html"])
         self.assertIn("rmsd mean", page["html"])
         self.assertIn("0.16", page["html"])          # the finished run's mean, 300 K
@@ -174,7 +176,7 @@ class TestTheRootReportsTheCollective(unittest.TestCase):
         (root / "batch_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         for entry in manifest["planned"]:
             (root / "runs" / entry["run_id"] / "simulation" / "live_status.json").write_text(
-                json.dumps({"stage": "finished", "current_step": 500, "total_planned_steps": 500}),
+                json.dumps({"stage": "completed", "current_step": 500, "total_planned_steps": 500}),
                 encoding="utf-8")
         self.assertIsNotNone(build_comparison_report(root))
         page = report_payload(root)
@@ -198,7 +200,7 @@ class TestTheRootReportsTheCollective(unittest.TestCase):
                 encoding="utf-8")
         page = report_payload(root)
         self.assertFalse(page["ok"])
-        self.assertEqual(page["reason"], "none of 2 runs finished yet")
+        self.assertEqual(page["reason"], "none of 2 runs completed yet")
         self.assertEqual(page["pending"], 2)
 
 
@@ -221,7 +223,7 @@ class TestTheComparisonRendersOnTheReportPage(unittest.TestCase):
         (root / "batch_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         for entry in manifest["planned"]:
             (root / "runs" / entry["run_id"] / "simulation" / "live_status.json").write_text(
-                json.dumps({"stage": "finished", "current_step": 500, "total_planned_steps": 500}),
+                json.dumps({"stage": "completed", "current_step": 500, "total_planned_steps": 500}),
                 encoding="utf-8")
         build_comparison_report(root)
         session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
@@ -241,3 +243,49 @@ class TestTheComparisonRendersOnTheReportPage(unittest.TestCase):
         for src, drawn in images:
             self.assertTrue(src.startswith("/artifacts/comparison/"), src)
             self.assertTrue(drawn, f"{src} did not load")
+
+
+@unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
+class TestTheSidebarShowsSevenThenThreeMoreAtATime(unittest.TestCase):
+    def test_seven_then_more_by_three_then_less(self):
+        import sys
+        import tempfile
+
+        sys.path.insert(0, "src")
+        from playwright.sync_api import sync_playwright
+
+        from fastmdxplora.gui.server import start_dashboard_session
+
+        root = _a_sweep_study(Path(tempfile.mkdtemp()), temperatures=tuple(range(300, 420, 10)))
+        session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+        rows = "#study-runs .study-run-row"
+
+        def shown(page, n):
+            page.wait_for_function(
+                f"document.querySelectorAll('{rows}').length === {n}", timeout=5000)
+
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto(session.url, wait_until="domcontentloaded")
+                page.wait_for_selector("#study-runs-more", timeout=20000)
+                shown(page, 7)
+                self.assertEqual(page.text_content("#study-runs-more"), "More (3 of 5)")
+                self.assertEqual(page.query_selector("#study-runs-less"), None)
+                # The completed run is last, so it is among those out of view.
+                self.assertEqual(page.eval_on_selector_all(rows, "rs => rs.map(r => r.dataset.state)"),
+                                 ["running"] * 7)
+                page.click("#study-runs-more")
+                shown(page, 10)
+                self.assertEqual(page.text_content("#study-runs-more"), "More (2 of 2)")
+                self.assertEqual(page.text_content("#study-runs-less"), "Less")
+                page.click("#study-runs-more")
+                shown(page, 12)
+                self.assertEqual(page.query_selector("#study-runs-more"), None)
+                page.click("#study-runs-less")
+                shown(page, 7)
+                self.assertEqual(page.query_selector("#study-runs-less"), None)
+                browser.close()
+        finally:
+            session.server.shutdown()
