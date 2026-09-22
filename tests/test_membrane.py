@@ -523,6 +523,7 @@ def _prepared(where, monkeypatch, *, failing=None, **options):
     import logging
     from types import SimpleNamespace
 
+    pytest.importorskip("openmm")
     from openmm.app import Modeller
 
     from fastmdxplora.setup import membrane

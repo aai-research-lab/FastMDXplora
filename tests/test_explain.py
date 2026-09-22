@@ -341,8 +341,22 @@ def test_a_class_importing_openmm_is_guarded() -> None:
                     return True
         return False
 
+    def tries_the_import(node: ast.AST) -> bool:
+        """Every openmm import in it sits in a try that catches its absence."""
+        catching = [t for t in ast.walk(node) if isinstance(t, ast.Try) and any(
+            h.type is None or any(name in ast.dump(h.type) for name in
+                                  ("ImportError", "ModuleNotFoundError", "Exception"))
+            for h in t.handlers)]
+        inside = {id(c) for t in catching for statement in t.body for c in ast.walk(statement)}
+        imports = [c for c in ast.walk(node) if imports_openmm(c) and isinstance(
+            c, (ast.Import, ast.ImportFrom))]
+        return bool(imports) and all(id(i) in inside for i in imports)
+
     unguarded = []
-    for path in sorted(Path(__file__).resolve().parent.glob("test_*.py")):
+    here = Path(__file__).resolve().parent
+    # The shared helpers too: a helper that needs openmm fails every test
+    # that calls it, wherever it lives.
+    for path in sorted(here.glob("test_*.py")) + sorted(here.glob("_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in tree.body:
             if not isinstance(node, (ast.ClassDef, ast.FunctionDef)):
@@ -350,8 +364,12 @@ def test_a_class_importing_openmm_is_guarded() -> None:
             if not imports_openmm(node):
                 continue
             # A helper whose whole job is to try the import is the guard, not
-            # something needing one.
-            if isinstance(node, ast.FunctionDef) and not node.name.startswith("test_"):
+            # something needing one. Only that kind: a helper that imports it
+            # to use it fails whatever calls it, and exempting every helper by
+            # its name let one through that failed three tests on a machine
+            # without openmm.
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("test_") \
+                    and (tries_the_import(node) or guarded(node)):
                 continue
             if guarded(node):
                 continue
