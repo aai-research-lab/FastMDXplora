@@ -158,7 +158,13 @@ def _rendered(value: Any) -> list[str]:
         # the words the config file uses.
         return ["true" if value else "false"]
     if isinstance(value, (list, tuple)):
-        return [shlex.quote(str(item)) for item in value]
+        # An item that is itself a block goes as JSON, which is YAML and
+        # reads back exactly; str() of a dict is a Python repr, which YAML
+        # tolerates and nobody should have to read.
+        import json
+
+        return [shlex.quote(json.dumps(item) if isinstance(item, (dict, list)) else str(item))
+                for item in value]
     if isinstance(value, dict):
         # JSON is YAML, and reads back exactly; a Python repr does not.
         import json
@@ -207,9 +213,10 @@ def cli_command(config: dict[str, Any]) -> str:
             parts += [flag, *(shlex.quote(str(n)) for n in names)]
     # The two presentation settings the command line has flags for. Their
     # dests are their own names, not a phase's.
+    from fastmdxplora.config.loader import STUDY_LEVEL_KEYS
     from fastmdxplora.config.schema import TOP_LEVEL
 
-    for key in ("verbose", "explain"):
+    for key in ("verbose", "explain", *STUDY_LEVEL_KEYS):
         value = config.get(key)
         if value is None or value == TOP_LEVEL.get(key).default:
             continue
@@ -242,6 +249,13 @@ def cli_command(config: dict[str, Any]) -> str:
         for axis, values in normalize_sweep(config["sweep"]).items():
             parts += ["--sweep", shlex.quote(f"{axis}={json.dumps(values)}")]
     return " ".join(parts)
+
+
+def _top_level_default(key: str) -> Any:
+    from fastmdxplora.config.schema import TOP_LEVEL
+
+    field = TOP_LEVEL.get(key)
+    return field.default if field is not None else None
 
 
 def _literal(value: Any, indent: int = 8) -> str:
@@ -301,6 +315,11 @@ def python_script(config: dict[str, Any]) -> str:
     # system, how the runs are scheduled -- is handed over whole, as the
     # config it is. `config_data=` is the API's own form for that.
     shaped = [key for key in ("sweep", "execution") if config.get(key)]
+    # And the study-level settings the keyword form has no place for: how
+    # the study was written, its budget, and the two presentation settings.
+    shaped += [key for key in ("agent", "agent_model", "budget_hours", "verbose", "explain")
+               if config.get(key) is not None
+               and config.get(key) != _top_level_default(key)]
     several = len(config.get("systems") or []) > 1
     # An umbrella block is a set of windows, expanded as a whole study is;
     # given to the keyword form, which runs one study directly, it ran one.
@@ -313,8 +332,9 @@ def python_script(config: dict[str, Any]) -> str:
             study["systems"] = list(config["systems"])
         elif system is not None:
             study["systems"] = [{"system": system}]
-        for key in ("output", "include_phase", "exclude_phase"):
-            if config.get(key):
+        for key in ("output", "include_phase", "exclude_phase",
+                    "verbose", "explain", "agent", "agent_model", "budget_hours"):
+            if config.get(key) is not None:
                 study[key] = config[key]
         study.update(blocks)
         for key in shaped:

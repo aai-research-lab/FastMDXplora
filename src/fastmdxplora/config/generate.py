@@ -335,6 +335,11 @@ def write_resolved_config(
         doc["output"] = str(merged["output"])
     if merged.get("verbose"):
         doc["verbose"] = bool(merged["verbose"])
+    # Only where it is off: on is the default, and a study that said
+    # nothing explained. Left out before, so a study run with --no-explain
+    # was recorded as one that explained.
+    if merged.get("explain") is False:
+        doc["explain"] = False
     if merged.get("include_phase"):
         doc["include_phase"] = list(merged["include_phase"])
     if merged.get("exclude_phase"):

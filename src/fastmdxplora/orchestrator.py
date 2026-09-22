@@ -1174,11 +1174,13 @@ class FastMDXplora:
         reproduces the run.
         """
         from fastmdxplora.config import write_resolved_config
+        from fastmdxplora.utils.presenter import get_presenter
 
         resolved = {
             "system": self.system,
             "output": str(self.output_dir),
             "verbose": self.verbose,
+            "explain": bool(getattr(get_presenter(), "explain", True)),
             "include_phase": getattr(self, "_resolved_include", None) or self._config_include,
             "exclude_phase": getattr(self, "_resolved_exclude", None) or self._config_exclude,
             "options": getattr(self, "_resolved_options", None) or self.options,

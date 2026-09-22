@@ -209,13 +209,11 @@ _REPORT_OPTIONS: list[tuple[str, str, dict[str, Any]]] = [
 #: block a command line cannot express, and the reason is recorded so this
 #: does not become a place to hide a setting nobody wired up.
 _NO_FLAG_OF_ITS_OWN: dict[str, str] = {
-    # A mapping of per-analysis settings, which a flag cannot carry: give it
-    # in a config file, or use the convenience flags for the common ones
-    # (--analyze-cluster-n-clusters and the rest).
-    "options": "a mapping; give it in a config file",
-    # A list of blocks, which a flag cannot carry.
-    "region_highlights": "a list of blocks; give it in a config file",
-    "comparison": "a list of runs; give it in a config file",
+    # A mapping, and a list of blocks, were withheld as things a flag cannot
+    # carry. A flag reads a mapping as YAML now, and each item of a list the
+    # same way, so `--analyze-options '{cluster: {n_clusters: 5}}'` and
+    # `--report-region-highlights '{label: helix, start: 3, end: 7}'` carry
+    # them; the config file is still the readable place for either.
     # Named differently on the command line, for the reason given.
     "plumed": "reached by --simulate-plumed-script, which takes a path",
     "force_field": "reached by --setup-forcefield, which resolves a name",
@@ -637,6 +635,26 @@ def _normalize_analysis_options(kwargs: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Parser construction
 # ---------------------------------------------------------------------------
+def _study_level_args(p: argparse.ArgumentParser) -> None:
+    """The three study-level settings the config file carries and the study
+    records: how it was written, by which model, and its budget. On
+    `explore` only: a single-phase command attaches that phase's own
+    `agent` field without a prefix, so `--agent` there means the phase's.
+    Generated from the schema, as the phase settings are."""
+    from fastmdxplora.config.loader import STUDY_LEVEL_KEYS
+    from fastmdxplora.config.schema import TOP_LEVEL
+
+    study = p.add_argument_group("study")
+    for name in STUDY_LEVEL_KEYS:
+        field = TOP_LEVEL.get(name)
+        options: dict[str, Any] = {"dest": name, "default": None, "help": field.help}
+        if field.choices:
+            options["choices"] = list(field.choices)
+        options["type"] = _parser_for(field.type)
+        options["metavar"] = _METAVAR.get(options["type"], "VALUE")
+        study.add_argument("--" + name.replace("_", "-"), **options)
+
+
 def _common_input_args(p: argparse.ArgumentParser) -> None:
     """Arguments shared by all subcommands that accept a system input.
 
@@ -852,6 +870,7 @@ def _build_parser() -> argparse.ArgumentParser:
             formatter_class=_PercentSafeHelp,
         )
         _common_input_args(ep)
+        _study_level_args(ep)
         ep.add_argument(
             "--sweep", action="append", dest="sweep", metavar="AXIS=VALUES",
             help=(
@@ -1302,6 +1321,11 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
         config["output"] = args.output_dir
     if getattr(args, "verbose", False):
         config["verbose"] = True
+    from fastmdxplora.config.loader import STUDY_LEVEL_KEYS
+
+    for name in STUDY_LEVEL_KEYS:
+        if getattr(args, name, None) is not None:
+            config[name] = getattr(args, name)
 
     # The presenter exists before the arguments are read, so it is told
     # afterwards. A config file's `explain` is honoured where the flag was

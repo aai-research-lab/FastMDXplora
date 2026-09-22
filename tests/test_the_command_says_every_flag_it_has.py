@@ -69,3 +69,70 @@ def test_a_list_flag_reads_each_item_as_the_config_would():
         ["explore", "--system", "x", "--setup-chains", "A", "B", "--execution-devices", "0", "1"]))
     assert parsed["setup"]["chains"] == ["A", "B"]
     assert parsed["execution"]["devices"] == [0, 1]
+
+
+def test_a_mapping_and_a_list_of_blocks_are_said_and_read_back():
+    # Withheld as things a flag cannot carry, before a flag read YAML.
+    settings = {"analysis": {"options": {"cluster": {"n_clusters": 5}}},
+                "report": {"region_highlights": [{"label": "helix", "start": 3, "end": 7}]}}
+    command, back = _round_trip(settings)
+    assert "--analyze-options" in command and "--report-region-highlights" in command
+    assert "{'" not in command                       # JSON, not a Python repr
+    assert back["analysis"]["options"] == settings["analysis"]["options"]
+    assert back["report"]["region_highlights"] == settings["report"]["region_highlights"]
+
+
+def test_how_the_study_was_written_is_said_and_read_back():
+    study = {"agent": "assisted", "agent_model": "some-model", "budget_hours": 0.5}
+    command, back = _round_trip(study)
+    assert "--agent assisted" in command and "--budget-hours 0.5" in command
+    assert {k: back[k] for k in study} == study
+
+
+def test_the_study_flags_are_on_explore_and_the_phase_agent_stays_the_phases():
+    from fastmdxplora.cli.main import _build_parser
+
+    parser = _build_parser()
+    args = parser.parse_args(["setup", "--system", "x", "--agent", "assisted"])
+    assert args.agent == "assisted"                   # the setup phase's own field
+    with pytest.raises(SystemExit):                   # no study flag on a phase command
+        parser.parse_args(["setup", "--system", "x", "--budget-hours", "1"])
+    explore = parser.parse_args(["explore", "--system", "x", "--agent", "assisted",
+                                 "--budget-hours", "1"])
+    assert (explore.agent, explore.budget_hours) == ("assisted", 1.0)
+
+
+def test_a_script_carries_how_the_study_was_written():
+    import types
+
+    from fastmdxplora.config.languages import python_script
+
+    given = {}
+    stand_in = types.ModuleType("fastmdxplora")
+
+    class Study:
+        def __init__(self, **kwargs):
+            given.update(kwargs)
+
+        def explore(self, **kwargs):
+            return []
+
+    stand_in.FastMDXplora = Study
+    script = python_script({"systems": [{"system": "1UBQ"}], "agent": "assisted",
+                            "budget_hours": 0.5, "verbose": True})
+    exec(compile(script.replace("import fastmdxplora as fastmdx", ""), "<script>", "exec"),
+         {"fastmdx": stand_in})
+    study = given["config_data"]
+    assert (study["agent"], study["budget_hours"], study["verbose"]) == ("assisted", 0.5, True)
+
+
+def test_the_resolved_config_records_that_a_run_did_not_explain(tmp_path):
+    import yaml
+
+    from fastmdxplora.config import write_resolved_config
+
+    written = write_resolved_config({"system": "1UBQ", "explain": False, "options": {}}, tmp_path)
+    assert yaml.safe_load(written.read_text(encoding="utf-8"))["explain"] is False
+    kept_on = write_resolved_config({"system": "1UBQ", "explain": True, "options": {}},
+                                    tmp_path / "on")
+    assert "explain" not in yaml.safe_load(kept_on.read_text(encoding="utf-8"))

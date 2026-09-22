@@ -29,29 +29,11 @@ from tests._interfaces import INTERFACES, measure  # noqa: E402
 #: interface -> setting -> why it does not survive. Closing one means taking
 #: it off here.
 KNOWN_GAPS = {'cli': {'(study).systems': 'undescribed in the schema, so nothing is generated from it',
-         '(top-level).agent': 'a top-level field wired by hand; the command line and Python do not '
-                              'take it',
-         '(top-level).agent_model': 'a top-level field wired by hand; the command line and Python '
-                                    'do not take it',
-         '(top-level).budget_hours': 'a top-level field wired by hand; the command line and Python '
-                                     'do not take it',
-         'analysis.options': 'the command line has no flag for it',
-         'report.comparison': 'the command line has no flag for it',
-         'report.region_highlights': 'the command line has no flag for it',
          'simulation.dashboard_binding_pocket_cutoff_A': 'the command line has no flag for it',
          'simulation.dashboard_ligand_resname': 'the command line has no flag for it',
          'simulation.dashboard_max_playback_frames': 'the command line has no flag for it',
          'simulation.plumed': 'the command line has no flag for it'},
  'cli_command': {'(study).systems': 'undescribed in the schema, so nothing is generated from it',
-                 '(top-level).agent': 'a top-level field wired by hand; the command line and '
-                                      'Python do not take it',
-                 '(top-level).agent_model': 'a top-level field wired by hand; the command line and '
-                                            'Python do not take it',
-                 '(top-level).budget_hours': 'a top-level field wired by hand; the command line '
-                                             'and Python do not take it',
-                 'analysis.options': 'refused by name: the command line has no flag for it',
-                 'report.comparison': 'refused by name: the command line has no flag for it',
-                 'report.region_highlights': 'refused by name: the command line has no flag for it',
                  'simulation.dashboard_binding_pocket_cutoff_A': 'refused by name: the command '
                                                                  'line has no flag for it',
                  'simulation.dashboard_ligand_resname': 'refused by name: the command line has no '
@@ -61,15 +43,8 @@ KNOWN_GAPS = {'cli': {'(study).systems': 'undescribed in the schema, so nothing 
                  'simulation.plumed': 'refused by name: the command line has no flag for it'},
  'gui': {'(study).systems': 'undescribed in the schema, so nothing is generated from it',
          '(top-level).output': 'by design: the server places each study in its workspace'},
- 'python_script': {'(top-level).agent': 'a top-level field wired by hand; the command line and '
-                                        'Python do not take it',
-                   '(top-level).agent_model': 'a top-level field wired by hand; the command line '
-                                              'and Python do not take it',
-                   '(top-level).budget_hours': 'a top-level field wired by hand; the command line '
-                                               'and Python do not take it',
-                   '(top-level).explain': 'presentation; not carried by this interface',
-                   '(top-level).verbose': 'presentation; not carried by this interface'},
- 'resolved_config': {'(top-level).explain': 'presentation; not carried by this interface'}}
+ 'python_script': {},
+ 'resolved_config': {}}
 
 #: Command-line flags whose name is not the config's by the one rule a flag
 #: follows (the phase prefix, then the setting with `_` as `-`, negated with
