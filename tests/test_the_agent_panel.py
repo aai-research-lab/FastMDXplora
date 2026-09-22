@@ -1292,15 +1292,10 @@ class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
                 state = self.load(config)
                 self.assertEqual(state["include_phase"], list(state["phases"]))
 
-    def test_the_browser_ticks_from_include(self):
-        # Which is why both fields have to say the same thing.
-        import pathlib
-
-        import fastmdxplora.gui as gui
-
-        script = (pathlib.Path(gui.__file__).parent / "static"
-                  / "run-builder.js").read_text(encoding="utf-8")
-        self.assertIn("state.phases = new Set(from.include)", script)
+    # Which field the browser ticks its boxes from is checked in the browser,
+    # by tests/test_a_loaded_study_keeps_its_phases.py. A check of the page's
+    # source stood here and pinned `from.include` while the server sent
+    # `include_phase`: it passed with every phase coming up unticked.
 
     def test_a_phase_with_no_block_still_runs_with_defaults(self):
         state = self.load({"systems": [{"system": "1UAO"}],

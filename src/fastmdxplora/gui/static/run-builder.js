@@ -869,7 +869,7 @@
   function currentState() {
     const config = {
       output: el("run-output").value.trim(),
-      include: PHASES.filter((p) => state.phases.has(p.name)).map((p) => p.name),
+      include_phase: PHASES.filter((p) => state.phases.has(p.name)).map((p) => p.name),
     };
 
     if (state.start === "structure") {
@@ -1141,7 +1141,10 @@
   function applyLoadedState(from, { from: origin, note } = {}) {
     if (!from) return;
     state.start = from.start;
-    state.phases = new Set(from.include);
+    // `include_phase` is what the server sends since the phase lists took one
+    // name; reading `include` alone left every phase unticked on load, and the
+    // Agent's configs arrive through here too. The old name is still read.
+    state.phases = new Set(from.include_phase || from.include || []);
     state.values = from.phases || {};
     state.analyses = new Set(from.analyses || []);
     state.analysisOptions = from.analysis_options || {};
