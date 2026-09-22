@@ -793,6 +793,16 @@ def _build_parser() -> argparse.ArgumentParser:
         )
         _common_input_args(ep)
         ep.add_argument(
+            "--sweep", action="append", dest="sweep", metavar="AXIS=VALUES",
+            help=(
+                "Run the study once for every value of a setting: "
+                "--sweep simulation.temperature_K=300,310,320. Give it once "
+                "per axis; the runs are every combination. Where a value "
+                "holds a comma, write the list in brackets: "
+                "--sweep 'setup.ligand=[\"a.sdf\", \"b.sdf\"]'."
+            ),
+        )
+        ep.add_argument(
             "--force-overwrite",
             "--force",
             dest="force",
@@ -1147,6 +1157,34 @@ def _make_orchestrator(args: argparse.Namespace, *, phase: str | None = None) ->
     )
 
 
+def _sweep_from_flags(given: list[str]) -> dict[str, list[Any]]:
+    """`--sweep AXIS=VALUES`, once per axis, as the config's `sweep` block.
+
+    VALUES is a comma-separated list, or a bracketed one where a value holds
+    a comma. Each value is read the way the config file reads it, so 300 is
+    a number and true is a truth value, and the axes are checked by the same
+    rule the file's are.
+    """
+    import yaml
+
+    from fastmdxplora.batch.sweep import SweepError, normalize_sweep
+
+    axes: dict[str, list[Any]] = {}
+    for item in given:
+        axis, sep, values = item.partition("=")
+        if not sep or not axis.strip() or not values.strip():
+            raise SystemExit(
+                "fastmdx: --sweep takes AXIS=VALUES, as in "
+                f"--sweep simulation.temperature_K=300,310; got {item!r}.")
+        text = values.strip()
+        axes[axis.strip()] = (yaml.safe_load(text) if text.startswith("[")
+                              else [yaml.safe_load(v.strip()) for v in text.split(",")])
+    try:
+        return normalize_sweep(axes)
+    except SweepError as exc:
+        raise SystemExit(f"fastmdx: {exc}") from exc
+
+
 def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
     """Assemble the config dict that drives an `explore` run.
 
@@ -1197,6 +1235,8 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
     # -s/--system builds (or replaces) a one-element systems list.
     if args.system:
         config["systems"] = [{"id": "s1", "system": args.system}]
+    if getattr(args, "sweep", None):
+        config["sweep"] = {**(config.get("sweep") or {}), **_sweep_from_flags(args.sweep)}
 
     # Top-level scalars from flags.
     if args.output_dir:

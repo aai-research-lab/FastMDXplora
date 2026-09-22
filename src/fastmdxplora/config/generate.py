@@ -329,6 +329,8 @@ def write_resolved_config(
     if merged.get("system") is not None:
         sid = merged.get("system_id") or "s1"
         doc["systems"] = [{"id": sid, "system": str(merged["system"])}]
+    elif merged.get("systems"):
+        doc["systems"] = [dict(entry) for entry in merged["systems"]]
     if merged.get("output") is not None:
         doc["output"] = str(merged["output"])
     if merged.get("verbose"):
@@ -337,6 +339,12 @@ def write_resolved_config(
         doc["include_phase"] = list(merged["include_phase"])
     if merged.get("exclude_phase"):
         doc["exclude_phase"] = list(merged["exclude_phase"])
+    # The study's shape, where it has one: axes to sweep and how its runs are
+    # scheduled. A run of a sweep is handed neither, so its own file is that
+    # run; a study written with them reproduces every run it made.
+    for key in ("sweep", "execution"):
+        if merged.get(key):
+            doc[key] = merged[key]
 
     # Study-level provenance, written before the phase blocks so it reads
     # as a statement about the study rather than a setting of the last

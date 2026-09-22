@@ -838,6 +838,7 @@ class BatchExplorer:
             logger.info("Exploring 1 molecular system in %s", self.output_dir)
         else:
             (self.output_dir / "runs").mkdir(exist_ok=True)
+            self._write_study_config()
             logger.info(
                 "Exploring %d molecular systems in %s (mode=%s)", n, self.output_dir, self.mode
             )
@@ -1808,6 +1809,23 @@ class BatchExplorer:
         return results
 
     # ------------------------------------------------------------------
+    def _write_study_config(self) -> None:
+        """The whole study as a config: every run it makes, not one of them.
+
+        Each run writes its own resolved config under `runs/<id>/`, and that
+        file is that run. A study of several -- a sweep, several systems, an
+        umbrella's windows -- is written here as well, before any run starts,
+        so one file repeats all of it and survives a study that stops
+        part-way. A study of one run is its own run's file, at the root.
+        """
+        from fastmdxplora.config import write_resolved_config
+        from fastmdxplora.config.schema import PHASE_KEYS
+
+        study = {key: value for key, value in self._raw.items() if key not in PHASE_KEYS}
+        study["options"] = {key: value for key, value in self._raw.items() if key in PHASE_KEYS}
+        study["output"] = str(self.output_dir)
+        write_resolved_config(study, self.output_dir)
+
     def _write_batch_manifest(self) -> None:
         from fastmdxplora import __citation__, __doi__, __version__
 

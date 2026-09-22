@@ -28,8 +28,7 @@ from tests._interfaces import INTERFACES, measure  # noqa: E402
 
 #: interface -> setting -> why it does not survive. Closing one means taking
 #: it off here.
-KNOWN_GAPS = {'cli': {'(study).sweep': 'undescribed in the schema, so nothing is generated from it',
-         '(study).systems': 'undescribed in the schema, so nothing is generated from it',
+KNOWN_GAPS = {'cli': {'(study).systems': 'undescribed in the schema, so nothing is generated from it',
          '(top-level).agent': 'a top-level field wired by hand; the command line and Python do not '
                               'take it',
          '(top-level).agent_model': 'a top-level field wired by hand; the command line and Python '
@@ -43,8 +42,7 @@ KNOWN_GAPS = {'cli': {'(study).sweep': 'undescribed in the schema, so nothing is
          'simulation.dashboard_ligand_resname': 'the command line has no flag for it',
          'simulation.dashboard_max_playback_frames': 'the command line has no flag for it',
          'simulation.plumed': 'the command line has no flag for it'},
- 'cli_command': {'(study).sweep': 'undescribed in the schema, so nothing is generated from it',
-                 '(study).systems': 'undescribed in the schema, so nothing is generated from it',
+ 'cli_command': {'(study).systems': 'undescribed in the schema, so nothing is generated from it',
                  '(top-level).agent': 'a top-level field wired by hand; the command line and '
                                       'Python do not take it',
                  '(top-level).agent_model': 'a top-level field wired by hand; the command line and '
@@ -87,28 +85,16 @@ KNOWN_GAPS = {'cli': {'(study).sweep': 'undescribed in the schema, so nothing is
  'gui': {'(study).sweep': 'undescribed in the schema, so nothing is generated from it',
          '(study).systems': 'undescribed in the schema, so nothing is generated from it',
          '(top-level).output': 'by design: the server places each study in its workspace'},
- 'python_script': {'(study).sweep': 'undescribed in the schema, so nothing is generated from it',
-                   '(study).systems': 'undescribed in the schema, so nothing is generated from it',
-                   '(top-level).agent': 'a top-level field wired by hand; the command line and '
+ 'python_script': {'(top-level).agent': 'a top-level field wired by hand; the command line and '
                                         'Python do not take it',
                    '(top-level).agent_model': 'a top-level field wired by hand; the command line '
                                               'and Python do not take it',
                    '(top-level).budget_hours': 'a top-level field wired by hand; the command line '
                                                'and Python do not take it',
                    '(top-level).explain': 'presentation; not carried by this interface',
-                   '(top-level).verbose': 'presentation; not carried by this interface',
-                   'execution.continue_on_error': 'not carried by this interface',
-                   'execution.devices': 'not carried by this interface',
-                   'execution.mode': 'not carried by this interface',
-                   'execution.workers': 'not carried by this interface'},
- 'resolved_config': {'(study).sweep': 'undescribed in the schema, so nothing is generated from it',
-                     '(study).systems': 'undescribed in the schema, so nothing is generated from '
-                                        'it',
+                   '(top-level).verbose': 'presentation; not carried by this interface'},
+ 'resolved_config': {
                      '(top-level).explain': 'presentation; not carried by this interface',
-                     'execution.continue_on_error': 'not carried by this interface',
-                     'execution.devices': 'not carried by this interface',
-                     'execution.mode': 'not carried by this interface',
-                     'execution.workers': 'not carried by this interface',
                      'simulation.umbrella': "each window's run writes its own file; none "
                                             'reproduces the study'}}
 

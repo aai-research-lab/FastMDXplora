@@ -202,6 +202,14 @@ def cli_command(config: dict[str, Any]) -> str:
             parts.append(flag)
             if rendered_value is not None:
                 parts += _rendered(rendered_value)
+    # The axes, bracketed, which read back unambiguously whatever the values.
+    if config.get("sweep"):
+        import json
+
+        from fastmdxplora.batch.sweep import normalize_sweep
+
+        for axis, values in normalize_sweep(config["sweep"]).items():
+            parts += ["--sweep", shlex.quote(f"{axis}={json.dumps(values)}")]
     return " ".join(parts)
 
 
@@ -257,6 +265,31 @@ def python_script(config: dict[str, Any]) -> str:
         "",
         "import fastmdxplora as fastmdx",
         "",
+    ]
+    # What the keyword form cannot carry -- axes to sweep, more than one
+    # system, how the runs are scheduled -- is handed over whole, as the
+    # config it is. `config_data=` is the API's own form for that.
+    shaped = [key for key in ("sweep", "execution") if config.get(key)]
+    several = len(config.get("systems") or []) > 1
+    if shaped or several:
+        # `systems`, always: a whole study is validated as a config file is,
+        # and a config file names its inputs as a list.
+        study: dict[str, Any] = {}
+        if several:
+            study["systems"] = list(config["systems"])
+        elif system is not None:
+            study["systems"] = [{"system": system}]
+        for key in ("output", "include_phase", "exclude_phase"):
+            if config.get(key):
+                study[key] = config[key]
+        study.update(blocks)
+        for key in shaped:
+            study[key] = config[key]
+        lines += [f"study = fastmdx.FastMDXplora(config_data={_literal(study, 4)})", "",
+                  "runs = study.explore()", "", "for run in runs:",
+                  "    print(run.output_dir)", ""]
+        return "\n".join(lines)
+    lines += [
         "study = fastmdx.FastMDXplora(",
         f"    system={system!r},",
     ]

@@ -185,8 +185,15 @@ def through_the_script(config: dict[str, Any]) -> dict[str, Any]:
     for key, value in seen.items():
         if key != "options":
             rebuilt["output" if key == "output_dir" else key] = value
-    config_given = seen.get("config")
+    config_given = seen.get("config_data") or seen.get("config")
     if isinstance(config_given, dict):
+        # Checked the way the API checks a whole study before it runs one, so
+        # a script that would be refused is not counted as carrying anything.
+        import copy
+
+        from fastmdxplora.config.loader import validate_config
+
+        validate_config(copy.deepcopy(config_given), require_systems=True)
         rebuilt.update(config_given)
     return rebuilt
 
