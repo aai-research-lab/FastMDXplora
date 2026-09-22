@@ -226,6 +226,14 @@ class TestTheComparisonRendersOnTheReportPage(unittest.TestCase):
                 json.dumps({"stage": "completed", "current_step": 500, "total_planned_steps": 500}),
                 encoding="utf-8")
         build_comparison_report(root)
+        # Without the markdown library (the pdf extra) the page shows the
+        # report as the text it was written in, and there are no figures to
+        # resolve; the plain form is checked in
+        # test_the_report_is_read_where_the_study_ran. Here, the rendered one.
+        from fastmdxplora.gui.report_page import report_payload
+
+        if report_payload(root)["rendered"] != "html":
+            self.skipTest("the markdown library is not installed; the report is shown plain")
         session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
         try:
             with sync_playwright() as pw:

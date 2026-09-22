@@ -168,20 +168,34 @@ class TestThePage(unittest.TestCase):
 
         (root / "report" / "figure.png").write_bytes(base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="))
+        # With the markdown library the figure is an image, resolved through
+        # the artifacts route; without it the report is the text it was
+        # written in, figure reference and all. Each is checked where it is.
+        from fastmdxplora.gui.report_page import report_payload
+
+        rendered = report_payload(root)["rendered"]
         session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch()
                 page = browser.new_page()
                 page.goto(session.url + "#report", wait_until="domcontentloaded")
-                page.wait_for_selector("#report-document:not([hidden]) img", timeout=20000)
-                src, drawn = page.eval_on_selector(
-                    "#report-document img", "i => [i.getAttribute('src'), i.naturalWidth > 0]")
+                if rendered == "html":
+                    page.wait_for_selector("#report-document:not([hidden]) img", timeout=20000)
+                    src, drawn = page.eval_on_selector(
+                        "#report-document img", "i => [i.getAttribute('src'), i.naturalWidth > 0]")
+                else:
+                    page.wait_for_selector("#report-document:not([hidden]) pre.report-plain",
+                                           timeout=20000)
+                    shown = page.text_content("#report-document pre.report-plain")
                 browser.close()
         finally:
             session.server.shutdown()
-        self.assertEqual(src, "/artifacts/report/figure.png")
-        self.assertTrue(drawn, "the figure did not load through the artifacts route")
+        if rendered == "html":
+            self.assertEqual(src, "/artifacts/report/figure.png")
+            self.assertTrue(drawn, "the figure did not load through the artifacts route")
+        else:
+            self.assertIn("![figure](figure.png)", shown)
 
     def test_a_missing_report_shows_the_empty_state_not_an_error(self):
         script = self.script()
