@@ -1706,28 +1706,60 @@ class TestTheReportIsAlsoAPDF:
         assert written is None
         assert reason and "No report to convert" in reason
 
-    def test_the_reason_names_what_to_install(self) -> None:
+    def test_the_reason_names_what_to_install(self, tmp_path, monkeypatch) -> None:
         """Somebody told a shared library is missing has been told the
-        symptom, not the remedy."""
-        import inspect
+        symptom, not the remedy. Asked with the library absent."""
+        import builtins
 
-        from fastmdxplora.report import pdf
+        from fastmdxplora.report.pdf import try_render_pdf
 
-        source = inspect.getsource(pdf)
-        assert "fastmdxplora[pdf]" in source
-        assert "conda-forge" in source
-        assert "Pango" in source and "Cairo" in source
+        real_import = builtins.__import__
 
-    def test_it_converts_the_document_not_the_dashboard(self) -> None:
+        def without_weasyprint(name, *args, **kwargs):
+            if name.startswith("weasyprint"):
+                raise ImportError("No module named 'weasyprint'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", without_weasyprint)
+        (tmp_path / "report.md").write_text("# R\n", encoding="utf-8")
+        path, reason = try_render_pdf(tmp_path / "report.md", title="t")
+        assert path is None
+        assert "fastmdxplora[pdf]" in reason and "conda-forge" in reason
+        assert "Pango" in reason and "Cairo" in reason
+
+    def test_it_converts_the_document_not_the_dashboard(self, tmp_path, monkeypatch) -> None:
         """A PDF of the browser dashboard would be a picture of an interface.
-        The report is a document, and a document is what a PDF should be."""
-        import inspect
+        The report is a document, and a document is what a PDF should be:
+        what reaches the renderer is report.md's text, and nothing else."""
+        import sys
+        import types
 
         from fastmdxplora.report import pdf
 
-        source = inspect.getsource(pdf)
-        assert "report.md" in source
-        assert "dashboard.html" not in source
+        given = {}
+
+        class HTML:
+            def __init__(self, string="", base_url=None):
+                given["html"] = string
+                given["base_url"] = base_url
+
+            def write_pdf(self, target, stylesheets=None):
+                Path(target).write_bytes(b"%PDF-1.4 stand-in")
+
+        class CSS:
+            def __init__(self, string=""):
+                pass
+
+        stand_in = types.ModuleType("weasyprint")
+        stand_in.HTML, stand_in.CSS = HTML, CSS
+        monkeypatch.setitem(sys.modules, "weasyprint", stand_in)
+        monkeypatch.setattr(pdf, "_markdown_to_html", lambda text, title: f"<body>{text}</body>")
+        (tmp_path / "report.md").write_text("# The document\n\nA sentence.\n", encoding="utf-8")
+        (tmp_path / "dashboard.html").write_text("<h1>the interface</h1>", encoding="utf-8")
+        target = pdf.render_pdf(tmp_path / "report.md", title="t")
+        assert target.is_file()
+        assert "A sentence." in given["html"] and "the interface" not in given["html"]
+        assert given["base_url"] == str(tmp_path)          # figures resolve beside the document
 
     def test_the_setting_is_declared_like_the_others(self) -> None:
         from fastmdxplora.config.schema import PHASE_SCHEMAS
@@ -1736,15 +1768,28 @@ class TestTheReportIsAlsoAPDF:
         assert field is not None and field.default is True
         assert field.help and "WeasyPrint" in field.help
 
-    def test_the_phase_asks_for_it(self) -> None:
-        import inspect
+    def test_the_phase_asks_for_it(self, tmp_path, monkeypatch) -> None:
+        # Asked when the setting is on, which is the default; not asked when
+        # it is off. Where the run's document goes, with the run's title.
+        from types import SimpleNamespace
 
-        from fastmdxplora.report import run
+        import importlib
 
-        source = inspect.getsource(run)
-        assert "try_render_pdf" in source
-        assert 'params.get("pdf"' in source
-
+        # The function is re-exported over the module of the same name.
+        report_run_module = importlib.import_module("fastmdxplora.report.run")
+        asked = []
+        monkeypatch.setattr(
+            "fastmdxplora.report.pdf.try_render_pdf",
+            lambda markdown_path, *, title: asked.append((markdown_path, title)) or (None, "stood down"))
+        for switch, expected in ((True, 1), (False, 0)):
+            asked.clear()
+            root = _a_reported_run(tmp_path / f"pdf_{switch}", n_frames=40)
+            report_run_module.run(orchestrator=SimpleNamespace(output_dir=root, system="1UBQ"),
+                                  output_dir=root / "report", pdf=switch, slides=False,
+                                  bundle=False, title="The study")
+            assert len(asked) == expected, switch
+            if switch:
+                assert asked[0] == (root / "report" / "report.md", "The study")
 
 class TestAShortSeriesSaysWhatItCannotJudge:
     """A real run reported "settled: yes" for a two-point series, beside "too
@@ -1844,15 +1889,22 @@ class TestFindingsAreSummarisedNotDumped:
         assert "what_it_worked_out" in written["findings"]
         assert "what_it_worked_out" not in written["options"]
 
-    def test_the_interaction_analysis_records_them_as_findings(self) -> None:
-        import inspect
+    def test_the_interaction_analysis_records_them_as_findings(self, tmp_path) -> None:
+        """What the analysis worked out (the ligand's chemistry, the binding
+        modes, how they changed) is a finding, kept apart from the settings
+        it was given: the report lists settings as parameters and findings
+        as results. Run on a bound complex; needs the chemistry stack."""
+        pytest.importorskip("rdkit")
+        from fastmdxplora.analysis.pl_interactions import ProteinLigandInteractions
+        from tests.test_analyses_do_not_disturb_each_other import _system
 
-        from fastmdxplora.analysis import pl_interactions
-
-        source = inspect.getsource(pl_interactions)
+        analysis = ProteinLigandInteractions(ligand_resname="BEN", kinds=("hydrophobic",),
+                                             periodic=True, output_dir=tmp_path / "pl")
+        analysis.compute(_system()[:])
         for name in ("ligand_chemistry", "binding_modes", "mode_transitions"):
-            assert f'self.findings["{name}"]' in source, name
-            assert f'self.options["{name}"]' not in source, name
+            assert name in analysis.findings, name
+            assert name not in analysis.options, name
+        assert isinstance(analysis.findings["binding_modes"], list)
 
     def test_the_report_says_what_they_amount_to(self) -> None:
         from fastmdxplora.report.document import _findings_notes
@@ -2037,17 +2089,22 @@ class TestARequestedOutputThatCouldNotBeMadeIsRecorded:
     not. Read from its files afterwards, the run showed four formats where
     five were asked for, with nothing to say the fifth had been attempted."""
 
-    def test_the_reason_is_written_beside_the_outputs(self) -> None:
-        import inspect
+    def test_the_reason_is_written_beside_the_outputs(self, tmp_path, monkeypatch) -> None:
+        # A PDF that could not be made is recorded beside what was, with
+        # its reason, and named among the artifacts.
+        from types import SimpleNamespace
 
-        # `fastmdxplora.report.run` is the function, re-exported over the
-        # module of the same name.
-        import fastmdxplora.report.run as report_run_module
+        import importlib
 
-        source = inspect.getsource(report_run_module)
-        assert 'not_produced.append(("report.pdf", reason))' in source
-        assert '"not_produced.json"' in source
-
+        report_run_module = importlib.import_module("fastmdxplora.report.run")
+        monkeypatch.setattr("fastmdxplora.report.pdf.try_render_pdf",
+                            lambda markdown_path, *, title: (None, "WeasyPrint is not installed."))
+        root = _a_reported_run(tmp_path, n_frames=40)
+        artifacts = report_run_module.run(orchestrator=SimpleNamespace(output_dir=root, system="1UBQ"),
+                                          output_dir=root / "report", slides=False, bundle=False)
+        record = json.loads((root / "report" / "not_produced.json").read_text(encoding="utf-8"))
+        assert record == [{"artifact": "report.pdf", "reason": "WeasyPrint is not installed."}]
+        assert "not_produced.json" in artifacts and "report.md" in artifacts
 
 class TestTheSummarySaysWhatTheStudyWas:
     """The first section a reader reads said "This report was generated
@@ -2091,20 +2148,24 @@ class TestTheSummarySaysWhatTheStudyWas:
 
         assert _study_in_one_paragraph(tmp_path) is None
 
-    def test_the_convergence_counts_add_up(self) -> None:
+    def test_the_convergence_counts_add_up(self, tmp_path, monkeypatch) -> None:
         """A first version counted settled and unjudged from overlapping
-        conditions, and reported three and six out of six."""
+        conditions, and reported three and six out of six. The three states
+        are exclusive: with two equilibrated, one drifting and one that could
+        not be judged, the summary says two, one and one of four."""
+        from fastmdxplora.report import document
 
-        from fastmdxplora.report.document import _what_the_run_supports
-
-        text = _what_the_run_supports.__doc__
-        assert text  # the behaviour is checked below against a real run
-
-        import inspect
-        source = inspect.getsource(_what_the_run_supports)
-        assert "unjudged = total - equilibrated - drifting" in source, (
-            "the three states must be exclusive or the counts do not sum")
-
+        assessed = {"observables": {
+            "rmsd": {"equilibrated": True, "sampled_enough": True},
+            "rg": {"equilibrated": True, "sampled_enough": True},
+            "sasa": {"equilibrated": False, "sampled_enough": True},
+            "potential": {"equilibrated": None, "sampled_enough": True},
+        }}
+        monkeypatch.setattr(document, "_assess_this_run", lambda root: assessed)
+        text = document._what_the_run_supports(tmp_path)
+        assert text.startswith("Of 4 observables assessed, ")
+        assert "2 had equilibrated" in text and "1 had not" in text
+        assert "1 could not be judged" in text
 
 class TestTheSlidesArePresentable:
     """Twenty-one slides, twelve figures, not one number; three of them
@@ -2135,13 +2196,19 @@ class TestTheSlidesArePresentable:
                                "constraints": "HBonds", "random_seed": 7},
             }), encoding="utf-8")
 
-    def test_the_deck_is_widescreen(self) -> None:
-        import inspect
+    def test_the_deck_is_widescreen(self, tmp_path) -> None:
+        # 4:3 shows black bands on a projector. Built, then opened.
+        from types import SimpleNamespace
 
-        from fastmdxplora.report import slides
+        pptx = pytest.importorskip("pptx")
+        from fastmdxplora.report.slides import _build_pptx
 
-        source = inspect.getsource(slides._build_pptx)
-        assert "Inches(13.333)" in source, "4:3 shows black bands on a projector"
+        self._recorded(tmp_path)
+        deck = tmp_path / "slides.pptx"
+        _build_pptx(SimpleNamespace(output_dir=tmp_path, system="1UBQ"), "A study", deck)
+        opened = pptx.Presentation(str(deck))
+        assert opened.slide_width / opened.slide_height == pytest.approx(16 / 9, rel=1e-3)
+        assert opened.slide_width == pptx.util.Inches(13.333)
 
     def test_the_setup_slide_states_the_system_not_a_path(self, tmp_path) -> None:
         from fastmdxplora.report.slides import _setup_bullets
@@ -2171,14 +2238,23 @@ class TestTheSlidesArePresentable:
     def test_the_outline_does_not_also_point_at_the_json(self, tmp_path) -> None:
         """`list.extend` returns None, so "extend(...) or append(fallback)"
         ran the fallback every time: the outline carried the bullets and then
-        told the reader to go and look at the manifest anyway."""
-        import inspect
+        told the reader to go and look at the manifest anyway. Where a
+        section has bullets, it has no fallback line; where it has none,
+        the fallback is the whole section."""
+        from types import SimpleNamespace
 
-        from fastmdxplora.report import slides
+        from fastmdxplora.report.slides import _outline_markdown
 
-        source = inspect.getsource(slides)
-        assert ") or lines.append(" not in source
-
+        self._recorded(tmp_path)
+        outline = _outline_markdown(SimpleNamespace(output_dir=tmp_path, system="1UBQ"), "A study")
+        built = outline[outline.index("How the system was built"):]
+        built = built[:built.index("\n## ")] if "\n## " in built else built
+        assert "37,098 atoms" in built
+        assert "See `setup/setup_parameters.json`" not in built
+        # And a run with nothing recorded for a section falls back to the file.
+        (tmp_path / "setup" / "setup_parameters.json").write_text("{}", encoding="utf-8")
+        again = _outline_markdown(SimpleNamespace(output_dir=tmp_path, system="1UBQ"), "A study")
+        assert "See `setup/setup_parameters.json`" in again
 
 class TestTheBundleCarriesTheRunRecord:
     """The archive is the thing a study is sent as. It carried the outputs,
@@ -2210,23 +2286,34 @@ class TestTheBundleCarriesTheRunRecord:
         assert "resolved_config.yml" in inside
         assert "analysis/rmsd/rmsd.dat" in inside, "nothing already there is lost"
 
-    def test_it_is_added_after_they_are_written(self) -> None:
-        """Which is the whole point: called earlier, there is nothing to add."""
-        import inspect
+    def test_it_is_added_after_they_are_written(self, tmp_path, monkeypatch) -> None:
+        """Which is the whole point: called earlier, there is nothing to add.
+        A study is run with its phases stood in, the report phase building a
+        bundle as the real one does. The manifest inside the bundle has to
+        be the one written once every phase has finished, phases and all,
+        not the one written before the loop so a running study has a
+        record."""
+        import zipfile
 
-        from fastmdxplora.orchestrator import FastMDXplora
+        from fastmdxplora.orchestrator import FastMDXplora, PhaseResult
 
-        source = inspect.getsource(FastMDXplora)
-        # The final writes, not the first: the resolved config is written
-        # once before the phase loop too, so a running study has a record,
-        # and again at the end so what actually ran is the record the
-        # bundle carries. The bundle is added after that last write.
-        order = [source.rindex(call) for call in (
-            "self._write_manifest()",
-            "self._write_resolved_config()",
-            "self._add_run_record_to_bundle()",
-        )]
-        assert order == sorted(order)
+        root = tmp_path / "run"
+        fmdx = FastMDXplora(system="1L2Y", output_dir=root)
+
+        def stood_in(self, phase, kwargs):
+            (root / phase).mkdir(parents=True, exist_ok=True)
+            if phase == "report":
+                with zipfile.ZipFile(root / "report" / "project_bundle.zip", "w") as z:
+                    z.writestr("report/report.md", "# R\n")
+            return PhaseResult(name=phase, status="ok", output_dir=root / phase)
+
+        monkeypatch.setattr(FastMDXplora, "_run_phase", stood_in)
+        fmdx.explore(include_phase=["setup", "report"], report=True)
+        on_disk = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        with zipfile.ZipFile(root / "report" / "project_bundle.zip") as z:
+            inside = json.loads(z.read("manifest.json"))
+        assert [p["name"] for p in on_disk["phases"]] == ["setup", "report"]
+        assert inside == on_disk
 
     def test_a_missing_bundle_is_not_an_error(self, tmp_path) -> None:
         """Bundles are optional, and a study that finished should not fail for
@@ -2364,14 +2451,22 @@ class TestOneMeanPerObservable:
     def test_drift_is_still_measured_over_the_whole_run(self) -> None:
         """It is the question of whether the run was still relaxing, and
         discarding the relaxation before asking would answer it by
-        construction."""
-        import inspect
+        construction. A series that relaxes and then settles: measured over
+        the whole run its drift stands well clear of the noise; measured
+        over the settled part alone it would vanish."""
+        from fastmdxplora.report.convergence import _drift_in_noise, assess_series
 
-        from fastmdxplora.report import convergence
-
-        source = inspect.getsource(convergence.assess_series)
-        assert "_drift_in_noise(series)" in source, (
-            "drift must see the series it is asked about")
+        series = self._relaxing(n=200)
+        assessed = assess_series("rmsd", series)
+        assert assessed.discard > 0                          # the relaxation was set aside
+        over_the_whole_run = _drift_in_noise(series)
+        over_the_settled_part = _drift_in_noise(series[assessed.discard:])
+        assert assessed.drift_in_noise == pytest.approx(over_the_whole_run)
+        # Signed: it decays. Over the whole run it is several noise widths;
+        # over the settled part it is within one, which "no drift" means.
+        assert abs(over_the_whole_run) > 2.0
+        assert abs(over_the_settled_part) < 1.0
+        assert abs(over_the_whole_run) > 2 * abs(over_the_settled_part)
 
     def test_the_table_says_what_it_discarded(self, tmp_path) -> None:
         # A series that relaxes before it settles: the table carries how many
