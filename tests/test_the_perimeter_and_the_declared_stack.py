@@ -153,7 +153,7 @@ class TestARefusalReachesTheCallerItRefuses:
 
     @pytest.mark.parametrize("path", [
         "/api/run", "/api/run-config", "/api/load-config", "/api/check-config",
-        "/api/explore/validate", "/api/explore/start", "/api/explore/stop",
+        "/api/explore/stop",
     ])
     def test_every_refused_endpoint_answers_a_body_it_will_not_read(
             self, address, path: str) -> None:

@@ -10,126 +10,17 @@ from unittest.mock import patch
 
 import pytest
 
-from fastmdxplora.dependencies import MissingDependency
 from fastmdxplora.gui.exploration import (
     DashboardRuntime,
     _json_mapping,
-    build_exploration_command,
-    exploration_environment_error,
-    exploration_defaults,
-    validate_exploration_payload,
 )
 from fastmdxplora.gui.server import start_dashboard_session, start_test_server
-
-
-def _payload() -> dict:
-    return {
-        "system": "1L2Y",
-        "run_name": "trpcage_test",
-        "setup": {
-            "ph": 7.4,
-            "forcefield": "charmm36",
-            "water_model": "auto",
-            "ion_concentration_M": 0.15,
-            "solvent_padding_nm": 1.0,
-        },
-        "simulation": {
-            "minimize": True,
-            "nvt_steps": 1000,
-            "npt_steps": 1000,
-            "production_steps": 10000,
-            "timestep_fs": 2.0,
-            "temperature_K": 300,
-            "friction_per_ps": 1.0,
-            "integrator": "langevin_middle",
-            "platform": "CPU",
-            "precision": "mixed",
-            "trajectory_interval_steps": 100,
-            "checkpoint_interval_steps": 1000,
-            "telemetry_interval": 100,
-        },
-        "workflow": {
-            "run_analysis": True,
-            "run_report": True,
-            "analyses": ["rmsd", "rg"],
-            "report_document": True,
-            "report_slides": True,
-            "report_bundle": True,
-        },
-    }
-
-
-def test_exploration_defaults_are_backend_derived() -> None:
-    defaults = exploration_defaults()
-    assert defaults["setup"]["forcefield"] == "auto"
-    assert defaults["simulation"]["nvt_steps"] == 250_000
-    assert "CPU" in defaults["choices"]["platforms"]
-
-
-def test_exploration_validation_computes_durations() -> None:
-    result = validate_exploration_payload(_payload())
-    assert result["valid"] is True
-    assert result["summary"]["production_ns"] == 0.02
-    assert result["summary"]["trajectory_frames"] == 100
-
-
-def test_exploration_validation_rejects_bad_values() -> None:
-    payload = _payload()
-    payload["system"] = ""
-    payload["simulation"]["production_steps"] = 0
-    result = validate_exploration_payload(payload)
-    assert result["valid"] is False
-    assert "system" in result["errors"]
-    assert "simulation.production_steps" in result["errors"]
-
-
-def test_exploration_command_uses_module_entrypoint(tmp_path: Path) -> None:
-    result = validate_exploration_payload(_payload())
-    command = build_exploration_command(result["config"], tmp_path / "out")
-    assert command[1:4] == ["-m", "fastmdxplora.cli.main", "explore"]
-    assert "--simulate-live-telemetry" in command
-    assert "--dashboard" not in command
-    assert "--analyze-analyses" in command
-
-
-def test_exploration_environment_preflight_is_workflow_aware() -> None:
-    missing = [MissingDependency("PDBFixer", "pdbfixer", "pdbfixer")]
-    with patch("fastmdxplora.gui.exploration.missing_dependencies", return_value=missing):
-        detail = exploration_environment_error(_payload())
-
-    assert detail is not None
-    assert "PDBFixer" in detail
-    assert "MDTraj" not in detail
-
-    payload = _payload()
-    payload["workflow"]["run_analysis"] = False
-    with patch("fastmdxplora.gui.exploration.missing_dependencies", return_value=missing) as probe:
-        exploration_environment_error(payload)
-    probe.assert_called_once_with(include_analysis=False)
 
 
 def test_exploration_json_mapping_handles_invalid_json(tmp_path: Path) -> None:
     path = tmp_path / "invalid.json"
     path.write_text("not-json", encoding="utf-8")
     assert _json_mapping(path) == {}
-
-
-def test_runtime_launches_without_shell(tmp_path: Path) -> None:
-    runtime = DashboardRuntime(
-        workspace_root=tmp_path / "workspace",
-        exploration_root=tmp_path / "runs",
-    )
-    fake_process = SimpleNamespace(pid=42, poll=lambda: None, terminate=lambda: None)
-    with (
-        patch("fastmdxplora.gui.exploration.exploration_environment_error", return_value=None),
-        patch("fastmdxplora.gui.exploration.subprocess.Popen", return_value=fake_process) as popen,
-    ):
-        result = runtime.launch(_payload(), dashboard_url="http://127.0.0.1:8765")
-    assert result["launched"] is True
-    kwargs = popen.call_args.kwargs
-    assert kwargs["shell"] is False
-    assert kwargs["env"]["FASTMDX_DASHBOARD_ACTIVE"] == "1"
-    assert runtime.data_root().name == "trpcage_test"
 
 
 def test_config_launch_clears_stale_data_state(tmp_path: Path) -> None:
@@ -241,26 +132,6 @@ def test_runtime_stop_escalates_after_terminate_timeout(tmp_path: Path) -> None:
     assert calls == ["terminate", "wait:5", "kill", "wait:5"]
 
 
-def test_runtime_refuses_launch_when_simulation_dependencies_are_missing(
-    tmp_path: Path,
-) -> None:
-    runtime = DashboardRuntime(
-        workspace_root=tmp_path / "workspace",
-        exploration_root=tmp_path / "runs",
-    )
-    detail = "Simulation dependencies are unavailable: OpenMM, PDBFixer."
-    with (
-        patch("fastmdxplora.gui.exploration.exploration_environment_error", return_value=detail),
-        patch("fastmdxplora.gui.exploration.subprocess.Popen") as popen,
-    ):
-        result = runtime.launch(_payload())
-    assert result["valid"] is False
-    assert result["error"] == detail
-    assert result["errors"]["run"] == detail
-    popen.assert_not_called()
-    assert not (runtime.exploration_root / "trpcage_test").exists()
-
-
 def test_runtime_rejects_zero_exit_without_simulation_outputs(tmp_path: Path) -> None:
     runtime = DashboardRuntime(
         workspace_root=tmp_path / "workspace",
@@ -320,65 +191,39 @@ def test_runtime_accepts_zero_exit_with_completed_simulation(tmp_path: Path) -> 
     assert state["error"] is None
 
 
-def test_home_server_exposes_exploration_apis(tmp_path: Path) -> None:
+def test_home_server_exposes_the_run_page_and_its_apis(tmp_path: Path) -> None:
     server, url = start_test_server(tmp_path / "workspace", home_mode=True)
     try:
         with urllib.request.urlopen(url + "/") as response:
             html = response.read().decode("utf-8")
         assert "Builder" in html  # the run page, renamed with its nav entry
-        # The builder that page carried has been retired; the run page took
-        # its place and is what the dashboard now loads.
         assert "/static/run-builder.js" in html
         with urllib.request.urlopen(url + "/api/app-state") as response:
             state = json.load(response)
         assert state["active_run"] is None
-        with urllib.request.urlopen(url + "/api/explore/defaults") as response:
-            defaults = json.load(response)
-        assert defaults["simulation"]["temperature_K"] == 300.0
-
         with urllib.request.urlopen(url + "/api/status") as response:
             status = json.load(response)
         assert status["status"] == {}
         with urllib.request.urlopen(url + "/api/structure-info") as response:
             structure = json.load(response)
         assert structure["valid"] is False
-
-        request = urllib.request.Request(
-            url + "/api/explore/validate",
-            data=json.dumps(_payload()).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request) as response:
-            validated = json.load(response)
-        assert validated["valid"] is True
-        assert "command" in validated
+        # The form's own routes: the schema it is built from, and the config
+        # it builds. The explore/* family they replaced is gone.
+        with urllib.request.urlopen(url + "/api/schema") as response:
+            assert "phases" in json.load(response)
+        for gone in ("/api/explore/defaults", "/api/explore/validate", "/api/explore/config",
+                     "/api/explore/start"):
+            request = urllib.request.Request(url + gone, data=b"{}",
+                                             headers={"Content-Type": "application/json"},
+                                             method="POST")
+            try:
+                urllib.request.urlopen(request)
+            except urllib.error.HTTPError as exc:
+                assert exc.code == 404, gone
+            else:
+                raise AssertionError(f"{gone} still answers")
     finally:
         server.shutdown()
-        server.server_close()
-
-
-def test_home_validation_reports_missing_backend_install_command(tmp_path: Path) -> None:
-    server, url = start_test_server(tmp_path / "workspace", home_mode=True)
-    try:
-        request = urllib.request.Request(
-            url + "/api/explore/validate",
-            data=json.dumps(_payload()).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        missing = [MissingDependency("OpenMM", "openmm.app", "openmm")]
-        with patch(
-            "fastmdxplora.gui.server.missing_dependencies",
-            return_value=missing,
-        ):
-            with urllib.request.urlopen(request) as response:
-                validated = json.load(response)
-        assert validated["valid"] is True
-        assert "conda install -c conda-forge openmm" in validated["environment_error"]
-    finally:
-        server.shutdown()
-        server.server_close()
 
 
 def test_remote_dashboard_disables_workflow_control_and_path_leak(tmp_path: Path) -> None:
@@ -388,7 +233,7 @@ def test_remote_dashboard_disables_workflow_control_and_path_leak(tmp_path: Path
     session = start_dashboard_session(output=run, host="0.0.0.0", port=0)
     try:
         request = urllib.request.Request(
-            f"http://127.0.0.1:{session.port}/api/explore/start",
+            f"http://127.0.0.1:{session.port}/api/run",
             data=b"{}",
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -413,103 +258,6 @@ def test_remote_dashboard_disables_workflow_control_and_path_leak(tmp_path: Path
 # ---------------------------------------------------------------------------
 # Config-file generation (GUI "Save config file")
 # ---------------------------------------------------------------------------
-class TestBuildConfigYaml:
-    """The GUI builder can emit a config file instead of launching.
-
-    This is what makes a study designed in the browser usable on a cluster,
-    where the GUI itself cannot run.
-    """
-
-    @staticmethod
-    def _config(*, setup=None, simulation=None, workflow=None, **top):
-        from fastmdxplora.gui.exploration import validate_exploration_payload
-
-        payload = {"system": "1L2Y", **top}
-        if setup:
-            payload["setup"] = setup
-        if simulation:
-            payload["simulation"] = simulation
-        if workflow:
-            payload["workflow"] = workflow
-        result = validate_exploration_payload(payload)
-        assert not result.get("errors"), result.get("errors")
-        return result["config"]
-
-    def test_generated_yaml_loads_through_the_config_loader(self, tmp_path: Path) -> None:
-        from fastmdxplora.config.loader import load_config_file
-        from fastmdxplora.gui.exploration import build_config_yaml
-
-        text = build_config_yaml(self._config(run_name="round trip"), tmp_path / "out")
-        target = tmp_path / "study.yml"
-        target.write_text(text, encoding="utf-8")
-
-        loaded = load_config_file(target)
-        assert loaded["systems"][0]["system"] == "1L2Y"
-        assert loaded["systems"][0]["id"] == "round_trip"
-        assert loaded["setup"]["ph"] == 7.0
-        assert "production_steps" in loaded["simulation"]
-
-    def test_phases_follow_the_workflow_selection(self, tmp_path: Path) -> None:
-        import yaml
-
-        from fastmdxplora.gui.exploration import build_config_yaml
-
-        full = yaml.safe_load(build_config_yaml(self._config(), tmp_path))
-        assert full["include_phase"] == ["setup", "simulation", "analysis", "report"]
-
-        sim_only = yaml.safe_load(
-            build_config_yaml(
-                self._config(
-                    workflow={"run_analysis": False, "run_report": False}
-                ),
-                tmp_path,
-            )
-        )
-        assert sim_only["include_phase"] == ["setup", "simulation"]
-        assert "analysis" not in sim_only
-        assert "report" not in sim_only
-
-    def test_non_default_options_are_written(self, tmp_path: Path) -> None:
-        import yaml
-
-        from fastmdxplora.gui.exploration import build_config_yaml
-
-        config = self._config(
-            setup={
-                "ph": 6.5,
-                "forcefield": "amber14",
-                "keep_heterogens": True,
-                "keep_water": True,
-            },
-            simulation={"minimize": False},
-            workflow={"analyses": ["rmsd", "rg"], "report_slides": False},
-        )
-        doc = yaml.safe_load(build_config_yaml(config, tmp_path))
-        assert doc["setup"]["ph"] == 6.5
-        assert doc["setup"]["forcefield"] == "amber14"
-        assert doc["setup"]["keep_heterogens"] is True
-        assert doc["setup"]["keep_water"] is True
-        assert doc["simulation"]["minimize"] is False
-        assert doc["analysis"]["include"] == ["rmsd", "rg"]
-        assert doc["report"]["slides"] is False
-
-    def test_header_documents_how_to_run_it(self, tmp_path: Path) -> None:
-        from fastmdxplora.gui.exploration import build_config_yaml
-
-        text = build_config_yaml(self._config(), tmp_path)
-        assert text.startswith("# FastMDXplora study configuration")
-        assert "fastmdx explore --config" in text
-
-    def test_run_name_cannot_escape_the_output_root(self, tmp_path: Path) -> None:
-        import yaml
-
-        from fastmdxplora.gui.exploration import build_config_yaml
-
-        config = self._config(run_name="../../etc/passwd")
-        doc = yaml.safe_load(build_config_yaml(config, tmp_path / "runs"))
-        assert ".." not in doc["systems"][0]["id"]
-
-
 def _switch_runtime(tmp_path):
     from fastmdxplora.gui.exploration import DashboardRuntime
 
@@ -1045,3 +793,57 @@ def test_a_study_is_retried_by_one_thread_not_many(tmp_path, monkeypatch):
         assert rt._adoption_thread is first
     finally:
         child.kill(); child.wait()
+
+
+def test_the_launch_is_without_a_shell_and_carries_the_dashboard_flag(tmp_path: Path) -> None:
+    runtime = DashboardRuntime(workspace_root=tmp_path / "workspace",
+                               exploration_root=tmp_path / "runs")
+    fake_process = SimpleNamespace(pid=42, poll=lambda: None, terminate=lambda: None)
+    (tmp_path / "new-run").mkdir()
+    (tmp_path / "run.yml").write_text("systems:\n  - system: 1UBQ\n", encoding="utf-8")
+    prepared = {"ok": True, "command": ["python", "-m", "fastmdxplora.cli.main", "explore"],
+                "config_path": str(tmp_path / "run.yml")}
+    with (
+        patch("fastmdxplora.gui.run_from_config.prepare_run", return_value=prepared),
+        patch("fastmdxplora.gui.exploration.exploration_environment_error", return_value=None),
+        patch("fastmdxplora.gui.exploration.subprocess.Popen", return_value=fake_process) as popen,
+    ):
+        result = runtime.launch_from_config({"output": str(tmp_path / "new-run")},
+                                            dashboard_url="http://127.0.0.1:8765")
+    assert result["ok"] is True
+    kwargs = popen.call_args.kwargs
+    assert kwargs["shell"] is False
+    assert kwargs["env"]["FASTMDX_DASHBOARD_ACTIVE"] == "1"
+
+
+def test_a_launch_is_refused_before_a_process_when_the_stack_is_missing(tmp_path: Path) -> None:
+    """The phase would fail inside the run with the same message, minutes
+    later and off screen. The old launch path checked this; the one the
+    form and the Agent use did not."""
+    runtime = DashboardRuntime(workspace_root=tmp_path / "workspace",
+                               exploration_root=tmp_path / "runs")
+    (tmp_path / "new-run").mkdir()
+    (tmp_path / "run.yml").write_text("systems:\n  - system: 1UBQ\n", encoding="utf-8")
+    prepared = {"ok": True, "command": ["python", "-m", "fastmdxplora.cli.main", "explore"],
+                "config_path": str(tmp_path / "run.yml")}
+    detail = "Simulation dependencies are unavailable: OpenMM, PDBFixer."
+    with (
+        patch("fastmdxplora.gui.run_from_config.prepare_run", return_value=prepared),
+        patch("fastmdxplora.gui.exploration.exploration_environment_error", return_value=detail),
+        patch("fastmdxplora.gui.exploration.subprocess.Popen") as popen,
+    ):
+        result = runtime.launch_from_config({"output": str(tmp_path / "new-run")})
+    assert result["ok"] is False and result["error"] == detail
+    popen.assert_not_called()
+
+
+def test_the_preflight_reads_the_plan_from_the_config_itself() -> None:
+    from fastmdxplora.gui import exploration
+
+    asked = []
+    with patch("fastmdxplora.gui.exploration.missing_dependencies",
+               side_effect=lambda include_analysis: asked.append(include_analysis) or []):
+        exploration.exploration_environment_error({"systems": [{"system": "x"}]})
+        exploration.exploration_environment_error({"include_phase": ["setup", "simulation"]})
+        exploration.exploration_environment_error({"include_phase": ["analysis"]})
+    assert asked == [True, False, True]

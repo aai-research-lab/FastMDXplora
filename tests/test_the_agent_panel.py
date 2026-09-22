@@ -342,8 +342,8 @@ class TestTheEndpointsNeedTheMachinesTrust(unittest.TestCase):
         # these stopped being gated, the agent ones passing would prove
         # nothing.
         port = self.serve("0.0.0.0")
-        self.assertEqual(self.post(port, "/api/explore/start"), 403)
 
+        self.assertEqual(self.post(port, "/api/explore/stop"), 403)
     def test_on_loopback_they_work(self):
         # The gate must not be a way of switching the feature off.
         port = self.serve("127.0.0.1")

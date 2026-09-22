@@ -103,7 +103,6 @@ def _process_alive(pid: int) -> bool:
             return code.value == STILL_ACTIVE
         finally:
             kernel32.CloseHandle(handle)
-    import os
 
     try:
         os.kill(pid, 0)
@@ -124,7 +123,6 @@ def _process_alive(pid: int) -> bool:
 def _terminate_process(pid: int, *, force: bool = False) -> None:
     """Ask a process to stop; with force, make it. On Windows both are
     TerminateProcess, which is the only end the platform offers."""
-    import os
     import signal
 
     try:
@@ -354,402 +352,6 @@ def _number(
     return value
 
 
-def exploration_defaults() -> dict[str, Any]:
-    """Return UI defaults from the same Python sources used by the CLI."""
-    from fastmdxplora.setup.pipeline import DEFAULTS as setup_defaults
-    from fastmdxplora.simulation.pipeline import DEFAULTS as sim_defaults
-    from fastmdxplora.simulation.runner import (
-        DEFAULT_NPT_STEPS,
-        DEFAULT_NVT_STEPS,
-        DEFAULT_PRODUCTION_STEPS,
-        DEFAULT_TRAJECTORY_INTERVAL_STEPS,
-    )
-
-    return {
-        "system": "1L2Y",
-        "run_name": "",
-        "setup": {
-            "ph": float(setup_defaults.get("ph", 7.0)),
-            "forcefield": str(setup_defaults.get("forcefield", "auto")),
-            "water_model": setup_defaults.get("water_model") or "auto",
-            "ion_concentration_M": float(setup_defaults.get("ion_concentration_M", 0.15)),
-            "solvent_padding_nm": float(setup_defaults.get("solvent_padding_nm", 1.0)),
-            "heterogens": str(setup_defaults.get("heterogens", "drop")),
-            "keep_heterogens": bool(setup_defaults.get("keep_heterogens", False)),
-            "keep_water": bool(setup_defaults.get("keep_water", False)),
-        },
-        "simulation": {
-            "minimize": bool(sim_defaults.get("minimize", True)),
-            "nvt_steps": int(DEFAULT_NVT_STEPS),
-            "npt_steps": int(DEFAULT_NPT_STEPS),
-            "production_steps": int(DEFAULT_PRODUCTION_STEPS),
-            "timestep_fs": float(sim_defaults.get("timestep_fs", 2.0)),
-            "temperature_K": float(sim_defaults.get("temperature_K", 300.0)),
-            "friction_per_ps": float(sim_defaults.get("friction_per_ps", 1.0)),
-            "integrator": str(sim_defaults.get("integrator", "langevin_middle")),
-            "platform": str(sim_defaults.get("platform", "auto")),
-            "precision": str(sim_defaults.get("precision", "mixed")),
-            "trajectory_interval_steps": int(DEFAULT_TRAJECTORY_INTERVAL_STEPS),
-            "checkpoint_interval_steps": int(sim_defaults.get("checkpoint_interval_steps", 10000)),
-            "telemetry_interval": int(sim_defaults.get("telemetry_interval", 1000)),
-        },
-        "workflow": {
-            "run_analysis": True,
-            "run_report": True,
-            "analyses": list(_ANALYSES),
-            "report_document": True,
-            "report_slides": True,
-            "report_bundle": True,
-        },
-        "choices": {
-            "forcefields": list(_FORCEFIELDS),
-            "platforms": list(_PLATFORMS),
-            "precisions": list(_PRECISIONS),
-            "integrators": list(_INTEGRATORS),
-            "analyses": list(_ANALYSES),
-        },
-    }
-
-
-def validate_exploration_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Validate and normalize one dashboard launch request.
-
-    The returned mapping is safe to translate into a list-form subprocess
-    command.  Validation is intentionally stricter than argparse so bad form
-    values are reported next to their fields instead of failing after launch.
-    """
-    errors: dict[str, str] = {}
-    warnings: list[str] = []
-
-    system = str(payload.get("system") or "").strip()
-    if not system:
-        errors["system"] = "Enter a PDB ID, sequence, or local PDB/CIF path."
-    elif len(system) > 4096:
-        errors["system"] = "System input is too long."
-
-    run_name_raw = str(payload.get("run_name") or "").strip()
-    default_name = f"{_slug(system, 'system')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    run_name = _slug(run_name_raw, default_name)
-
-    setup_in = payload.get("setup") if isinstance(payload.get("setup"), Mapping) else {}
-    sim_in = payload.get("simulation") if isinstance(payload.get("simulation"), Mapping) else {}
-    workflow_in = payload.get("workflow") if isinstance(payload.get("workflow"), Mapping) else {}
-
-    setup: dict[str, Any] = {}
-    simulation: dict[str, Any] = {}
-    workflow: dict[str, Any] = {}
-
-    try:
-        setup["ph"] = _number(setup_in, "ph", default=7.0, minimum=0.0, maximum=14.0)
-    except ValueError as exc:
-        errors["setup.ph"] = str(exc)
-    forcefield = str(setup_in.get("forcefield") or "auto")
-    if forcefield not in _FORCEFIELDS:
-        errors["setup.forcefield"] = "Choose a supported force field."
-    else:
-        setup["forcefield"] = forcefield
-    water_model = str(setup_in.get("water_model") or "auto").strip()
-    setup["water_model"] = water_model
-    try:
-        setup["ion_concentration_M"] = _number(
-            setup_in,
-            "ion_concentration_M",
-            default=0.15,
-            minimum=0.0,
-            maximum=5.0,
-        )
-    except ValueError as exc:
-        errors["setup.ion_concentration_M"] = str(exc)
-    try:
-        setup["solvent_padding_nm"] = _number(
-            setup_in,
-            "solvent_padding_nm",
-            default=1.0,
-            minimum=0.1,
-            maximum=10.0,
-        )
-    except ValueError as exc:
-        errors["setup.solvent_padding_nm"] = str(exc)
-    heterogens = str(setup_in.get("heterogens", "drop")).strip().lower()
-    if heterogens not in {"drop", "keep", "auto"}:
-        errors["setup.heterogens"] = (
-            f"expected drop, keep, or auto; got {heterogens!r}"
-        )
-    else:
-        setup["heterogens"] = heterogens
-    setup["keep_heterogens"] = bool(setup_in.get("keep_heterogens", False))
-    setup["keep_water"] = bool(setup_in.get("keep_water", False))
-
-    numeric_fields = (
-        ("nvt_steps", 250000, 0, 10_000_000_000, True),
-        ("npt_steps", 500000, 0, 10_000_000_000, True),
-        ("production_steps", 1000000, 1, 100_000_000_000, True),
-        ("timestep_fs", 2.0, 0.01, 20.0, False),
-        ("temperature_K", 300.0, 1.0, 5000.0, False),
-        ("friction_per_ps", 1.0, 0.0, 1000.0, False),
-        ("trajectory_interval_steps", 1000, 1, 10_000_000_000, True),
-        ("checkpoint_interval_steps", 10000, 0, 10_000_000_000, True),
-        ("telemetry_interval", 1000, 1, 10_000_000_000, True),
-    )
-    for key, default, low, high, integer in numeric_fields:
-        try:
-            simulation[key] = _number(
-                sim_in,
-                key,
-                default=default,
-                minimum=low,
-                maximum=high,
-                integer=integer,
-            )
-        except ValueError as exc:
-            errors[f"simulation.{key}"] = str(exc)
-
-    simulation["minimize"] = bool(sim_in.get("minimize", True))
-    integrator = str(sim_in.get("integrator") or "langevin_middle")
-    platform = str(sim_in.get("platform") or "auto")
-    precision = str(sim_in.get("precision") or "mixed")
-    if integrator not in _INTEGRATORS:
-        errors["simulation.integrator"] = "Choose a supported integrator."
-    else:
-        simulation["integrator"] = integrator
-    if platform not in _PLATFORMS:
-        errors["simulation.platform"] = "Choose a supported OpenMM platform."
-    else:
-        simulation["platform"] = platform
-    if precision not in _PRECISIONS:
-        errors["simulation.precision"] = "Choose a supported precision mode."
-    else:
-        simulation["precision"] = precision
-
-    workflow["run_analysis"] = bool(workflow_in.get("run_analysis", True))
-    workflow["run_report"] = bool(workflow_in.get("run_report", True))
-    requested_analyses = workflow_in.get("analyses", list(_ANALYSES))
-    if not isinstance(requested_analyses, list):
-        requested_analyses = list(_ANALYSES)
-    analyses = [str(item) for item in requested_analyses if str(item) in _ANALYSES]
-    workflow["analyses"] = analyses
-    workflow["report_document"] = bool(workflow_in.get("report_document", True))
-    workflow["report_slides"] = bool(workflow_in.get("report_slides", True))
-    workflow["report_bundle"] = bool(workflow_in.get("report_bundle", True))
-
-    if workflow["run_report"] and not workflow["run_analysis"]:
-        warnings.append("Reports can be generated without analysis, but they will contain fewer scientific results.")
-
-    timestep = float(simulation.get("timestep_fs", 2.0))
-    nvt_steps = int(simulation.get("nvt_steps", 0))
-    npt_steps = int(simulation.get("npt_steps", 0))
-    production_steps = int(simulation.get("production_steps", 0))
-    trajectory_interval = int(simulation.get("trajectory_interval_steps", 1))
-    telemetry_interval = int(simulation.get("telemetry_interval", 1))
-
-    durations = {
-        "nvt_ns": nvt_steps * timestep / 1_000_000.0,
-        "npt_ns": npt_steps * timestep / 1_000_000.0,
-        "production_ns": production_steps * timestep / 1_000_000.0,
-        "total_ns": (nvt_steps + npt_steps + production_steps) * timestep / 1_000_000.0,
-        "trajectory_frames": (production_steps + trajectory_interval - 1) // trajectory_interval,
-        "dashboard_frames": (
-            nvt_steps + npt_steps + production_steps + telemetry_interval - 1
-        ) // telemetry_interval,
-    }
-    if durations["production_ns"] < 1.0:
-        warnings.append(
-            f"Production time is {durations['production_ns']:.4g} ns; this is suitable for testing, not strong scientific conclusions."
-        )
-
-    return {
-        "valid": not errors,
-        "errors": errors,
-        "warnings": warnings,
-        "config": {
-            "system": system,
-            "run_name": run_name,
-            "setup": setup,
-            "simulation": simulation,
-            "workflow": workflow,
-        },
-        "summary": durations,
-    }
-
-
-
-def build_config_yaml(config: Mapping[str, Any], output_dir: Path | str) -> str:
-    """Render an exploration config as a FastMDXplora YAML study file.
-
-    The GUI builder collects the same options the CLI accepts. This turns
-    that selection into the canonical config format so a study designed in
-    the GUI can be saved, reviewed, version-controlled, and submitted
-    anywhere, including on a cluster where the GUI cannot run.
-
-    The output is accepted by ``fastmdx explore --config``.
-    """
-    import yaml
-
-    setup = dict(config["setup"])
-    sim = dict(config["simulation"])
-    workflow = dict(config["workflow"])
-    run_name = str(config.get("run_name") or "fastmdxplora_run")
-
-    phases = ["setup", "simulation"]
-    if workflow.get("run_analysis"):
-        phases.append("analysis")
-    if workflow.get("run_report"):
-        phases.append("report")
-
-    setup_block: dict[str, Any] = {
-        "ph": setup["ph"],
-        "forcefield": setup["forcefield"],
-        "solvent_padding_nm": setup["solvent_padding_nm"],
-        "ion_concentration_M": setup["ion_concentration_M"],
-    }
-    if setup.get("water_model") and setup["water_model"] != "auto":
-        setup_block["water_model"] = setup["water_model"]
-    if setup.get("heterogens") and setup["heterogens"] != "drop":
-        setup_block["heterogens"] = setup["heterogens"]
-    if setup.get("keep_heterogens"):
-        setup_block["keep_heterogens"] = True
-    if setup.get("keep_water"):
-        setup_block["keep_water"] = True
-
-    simulation_block: dict[str, Any] = {
-        "nvt_steps": sim["nvt_steps"],
-        "npt_steps": sim["npt_steps"],
-        "production_steps": sim["production_steps"],
-        "timestep_fs": sim["timestep_fs"],
-        "temperature_K": sim["temperature_K"],
-        "friction_per_ps": sim["friction_per_ps"],
-        "integrator": sim["integrator"],
-        "platform": sim["platform"],
-        "precision": sim["precision"],
-        "trajectory_interval_steps": sim["trajectory_interval_steps"],
-        "checkpoint_interval_steps": sim["checkpoint_interval_steps"],
-    }
-    if not sim.get("minimize", True):
-        simulation_block["minimize"] = False
-
-    document: dict[str, Any] = {
-        "systems": [{"id": run_name, "system": str(config["system"])}],
-        "output": str(output_dir),
-        "include_phase": phases,
-        "setup": setup_block,
-        "simulation": simulation_block,
-    }
-
-    if workflow.get("run_analysis"):
-        analyses = list(workflow.get("analyses") or [])
-        analysis_block: dict[str, Any] = {}
-        if analyses and set(analyses) != set(_ANALYSES):
-            analysis_block["include"] = analyses
-        if analysis_block:
-            document["analysis"] = analysis_block
-
-    if workflow.get("run_report"):
-        report_block: dict[str, Any] = {"title": run_name}
-        for key, flag in (
-            ("document", "report_document"),
-            ("slides", "report_slides"),
-            ("bundle", "report_bundle"),
-        ):
-            if not workflow.get(flag, True):
-                report_block[key] = False
-        document["report"] = report_block
-
-    body = yaml.safe_dump(document, sort_keys=False, default_flow_style=False)
-    header = (
-        "# FastMDXplora study configuration\n"
-        "#\n"
-        "# Generated by the FastMDXplora GUI. Run it with:\n"
-        "#\n"
-        "#     fastmdx explore --config <this file>\n"
-        "#\n"
-        "# Command-line flags override values set here, so the same file can\n"
-        "# be reused with per-run overrides. Every option is documented at\n"
-        "# https://fastmdxplora.readthedocs.io/en/latest/configuration.html\n"
-        "\n"
-    )
-    return header + body
-
-def build_exploration_command(config: Mapping[str, Any], output_dir: Path) -> list[str]:
-    """Translate a normalized exploration config into the canonical CLI."""
-    setup = config["setup"]
-    sim = config["simulation"]
-    workflow = config["workflow"]
-    command = [
-        sys.executable,
-        "-m",
-        "fastmdxplora.cli.main",
-        "explore",
-        "--system",
-        str(config["system"]),
-        "--output",
-        str(output_dir),
-        "--setup-ph",
-        str(setup["ph"]),
-        "--setup-forcefield",
-        str(setup["forcefield"]),
-        "--setup-ion-concentration-M",
-        str(setup["ion_concentration_M"]),
-        "--setup-solvent-padding-nm",
-        str(setup["solvent_padding_nm"]),
-        "--simulate-nvt-steps",
-        str(sim["nvt_steps"]),
-        "--simulate-npt-steps",
-        str(sim["npt_steps"]),
-        "--simulate-production-steps",
-        str(sim["production_steps"]),
-        "--simulate-timestep-fs",
-        str(sim["timestep_fs"]),
-        "--simulate-temperature-K",
-        str(sim["temperature_K"]),
-        "--simulate-friction-per-ps",
-        str(sim["friction_per_ps"]),
-        "--simulate-integrator",
-        str(sim["integrator"]),
-        "--simulate-platform",
-        str(sim["platform"]),
-        "--simulate-precision",
-        str(sim["precision"]),
-        "--simulate-trajectory-interval-steps",
-        str(sim["trajectory_interval_steps"]),
-        "--simulate-checkpoint-interval-steps",
-        str(sim["checkpoint_interval_steps"]),
-        "--simulate-live-telemetry",
-        "--simulate-telemetry-interval",
-        str(sim["telemetry_interval"]),
-    ]
-    if setup.get("water_model") and setup["water_model"] != "auto":
-        command.extend(["--setup-water-model", str(setup["water_model"])])
-    if setup.get("heterogens") and setup["heterogens"] != "drop":
-        command.extend(["--setup-heterogens", str(setup["heterogens"])])
-    if setup.get("keep_heterogens"):
-        command.append("--setup-keep-heterogens")
-    if setup.get("keep_water"):
-        command.append("--setup-keep-water")
-    if not sim.get("minimize", True):
-        command.append("--simulate-no-minimize")
-
-    phases = ["setup", "simulation"]
-    if workflow.get("run_analysis"):
-        phases.append("analysis")
-    if workflow.get("run_report"):
-        phases.append("report")
-    if phases != ["setup", "simulation", "analysis", "report"]:
-        command.extend(["--include", *phases])
-
-    analyses = list(workflow.get("analyses") or [])
-    if workflow.get("run_analysis") and analyses and set(analyses) != set(_ANALYSES):
-        command.extend(["--analyze-analyses", *analyses])
-    if workflow.get("run_report"):
-        if not workflow.get("report_document", True):
-            command.append("--report-no-document")
-        if not workflow.get("report_slides", True):
-            command.append("--report-no-slides")
-        if not workflow.get("report_bundle", True):
-            command.append("--report-no-bundle")
-        command.extend(["--report-title", str(config.get("run_name") or "FastMDXplora Run")])
-    return command
-
-
 def exploration_environment_error(config: Mapping[str, Any]) -> str | None:
     """Return an actionable error when the dashboard cannot run the workflow.
 
@@ -759,16 +361,25 @@ def exploration_environment_error(config: Mapping[str, Any]) -> str | None:
     installations, but it is misleading for the dashboard's *Run Simulation*
     action: the child exits successfully without producing a simulation.
     """
-    workflow = config.get("workflow")
-    missing = missing_dependencies(
-        include_analysis=(
-            isinstance(workflow, Mapping) and bool(workflow.get("run_analysis"))
-        )
-    )
+    # Analysis is in the plan unless the phase list leaves it out.
+    phases = config.get("include_phase")
+    runs_analysis = not isinstance(phases, list) or "analysis" in phases
+    missing = missing_dependencies(include_analysis=runs_analysis)
 
     if not missing:
         return None
     return dependency_error_message(missing)
+
+
+def _json_mapping_or_yaml(path: Path) -> dict[str, Any]:
+    """A config as written, for the preflight: the file the launch wrote."""
+    import yaml
+
+    try:
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _json_mapping(path: Path) -> dict[str, Any]:
@@ -1093,56 +704,6 @@ class DashboardRuntime:
                 "can_launch": not running,
             }
 
-    def launch(self, payload: Mapping[str, Any], *, dashboard_url: str | None = None) -> dict[str, Any]:
-        result = validate_exploration_payload(payload)
-        if not result["valid"]:
-            return result
-        config = result["config"]
-        with self.lock:
-            self._refresh_process()
-            if self.process is not None and self.process.poll() is None:
-                return {
-                    **result,
-                    "valid": False,
-                    "errors": {"run": "A FastMDXplora workflow is already running."},
-                }
-
-            environment_error = exploration_environment_error(config)
-            if environment_error:
-                return {
-                    **result,
-                    "valid": False,
-                    "error": environment_error,
-                    "errors": {"run": environment_error},
-                }
-
-            run_name = _slug(config["run_name"])
-            output_dir = (self.exploration_root / run_name).resolve()
-            try:
-                output_dir.relative_to(self.exploration_root)
-            except ValueError:
-                return {
-                    **result,
-                    "valid": False,
-                    "errors": {"run_name": "Run name resolves outside the launch directory."},
-                }
-            if output_dir.exists() and any(output_dir.iterdir()):
-                detail = f"Output folder already exists and is not empty: {output_dir}. Choose a new output folder to start a new simulation."
-                self.data_stale = True
-                self.completion_error = detail
-                return {
-                    **result,
-                    "valid": False,
-                    "error": detail,
-                    "errors": {"run_name": detail},
-                    "next_action": "Choose a new output folder; the previous run was preserved.",
-                }
-            output_dir.mkdir(parents=True, exist_ok=True)
-            self.data_stale = False
-            command = build_exploration_command(config, output_dir)
-            started = self._spawn(command, output_dir, dashboard_url)
-            return {**result, **started}
-
     def _spawn(
         self,
         command: list[str],
@@ -1289,6 +850,14 @@ class DashboardRuntime:
                                    config=dict(config) if config is not None else None)
             if not prepared["ok"]:
                 return prepared
+            # Refused here, before a process is spawned, when the chemistry
+            # stack it needs is not installed: the phase would fail inside
+            # the run with the same message, minutes later and off screen.
+            environment_error = exploration_environment_error(
+                _json_mapping_or_yaml(Path(prepared["config_path"])))
+            if environment_error:
+                return {"ok": False, "error": environment_error,
+                        "config_path": prepared["config_path"], "command": None}
 
             # A previous rejected launch may have hidden its old telemetry.
             # This is a new process and must become the current run even when

@@ -27,13 +27,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from fastmdxplora.dependencies import dependency_error_message, missing_dependencies
 from fastmdxplora.gui.exploration import (
     DashboardRuntime,
-    build_config_yaml,
-    build_exploration_command,
-    exploration_defaults,
-    validate_exploration_payload,
 )
 from fastmdxplora.ligand_detection import detect_ligands, normalise_ligand_resname
 from fastmdxplora.gui.live_frames import live_frame_exists, read_live_frame_index
@@ -301,9 +296,6 @@ def make_handler(
             if path == "/api/app-state" or path == "/api/explore/state":
                 self._send_json(app_runtime.snapshot())
                 return
-            if path == "/api/explore/defaults":
-                self._send_json(exploration_defaults())
-                return
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import read_conversation
 
@@ -502,8 +494,6 @@ def make_handler(
             parsed = urlparse(self.path)
             path = parsed.path
             if not allow_control and path in {
-                "/api/explore/validate",
-                "/api/explore/start",
                 "/api/explore/stop",
                 "/api/run",
                 "/api/run-config",
@@ -648,39 +638,6 @@ def make_handler(
                 self._send_json(
                     config_yaml(request, full=bool(request.get("full")))
                 )
-                return
-            if path == "/api/explore/validate":
-                result = validate_exploration_payload(payload)
-                if result.get("valid"):
-                    config_payload = result["config"]
-                    output_dir = app_runtime.exploration_root / str(config_payload["run_name"])
-                    result["output"] = str(output_dir)
-                    result["command"] = build_exploration_command(config_payload, output_dir)
-                    workflow = config_payload.get("workflow", {})
-                    missing = missing_dependencies(
-                        include_analysis=bool(workflow.get("run_analysis"))
-                    )
-                    if missing:
-                        result["environment_error"] = dependency_error_message(missing)
-                self._send_json(result, status=200 if result.get("valid") else 422)
-                return
-            if path == "/api/explore/config":
-                result = validate_exploration_payload(payload)
-                if not result.get("valid", True) or result.get("errors"):
-                    self._send_json(result, status=422)
-                    return
-                config_payload = result["config"]
-                run_name = str(config_payload["run_name"])
-                output_dir = app_runtime.exploration_root / run_name
-                self._send_json({
-                    "filename": f"{run_name}.yml",
-                    "yaml": build_config_yaml(config_payload, output_dir),
-                })
-                return
-            if path == "/api/explore/start":
-                dashboard_url = self.headers.get("Origin")
-                result = app_runtime.launch(payload, dashboard_url=dashboard_url)
-                self._send_json(result, status=201 if result.get("launched") else 422)
                 return
             if path == "/api/explore/stop":
                 self._send_json(app_runtime.stop())

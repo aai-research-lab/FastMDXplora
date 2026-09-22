@@ -183,29 +183,11 @@ def test_playback_error_branches_and_neighborhood(tmp_path: Path) -> None:
     assert unreadable["reason"] == "not-enough-readable-history-frames"
 
 
-def test_exploration_validation_command_and_runtime_branches(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(launch, "exploration_environment_error", lambda _config: None)
-    bad = _launch_payload()
-    bad.update(system="x" * 4097)
-    bad["setup"].update(ph="bad", forcefield="bad", ion_concentration_M="bad", solvent_padding_nm=99)
-    bad["simulation"].update(integrator="bad", platform="bad", precision="bad", nvt_steps="bad")
-    bad["workflow"].update(run_analysis=False, run_report=True, analyses="bad")
-    result = launch.validate_exploration_payload(bad)
-    assert not result["valid"] and result["warnings"]
-    assert {"system", "setup.ph", "setup.forcefield", "simulation.integrator"} <= result["errors"].keys()
-
-    cfg = launch.validate_exploration_payload(_launch_payload())["config"]
-    cfg["setup"].update(water_model="tip3p", keep_heterogens=True, keep_water=True)
-    cfg["simulation"]["minimize"] = False
-    cfg["workflow"].update(run_analysis=False, report_document=False, report_slides=False, report_bundle=False)
-    command = launch.build_exploration_command(cfg, tmp_path / "out")
-    for flag in ("--setup-water-model", "--setup-keep-heterogens", "--setup-keep-water",
-                 "--simulate-no-minimize", "--include", "--report-no-document",
-                 "--report-no-slides", "--report-no-bundle"):
-        assert flag in command
-
+def test_runtime_status_and_stop_branches(tmp_path: Path) -> None:
+    # What the runtime says of its process, and that Stop terminates it.
+    # The validation and command checks that stood here belonged to the
+    # explore/* launch, which the run page replaced and which is gone.
     runtime = launch.DashboardRuntime(tmp_path / "workspace", tmp_path / "runs")
-    assert runtime.launch({"system": ""})["valid"] is False
     runtime.process = SimpleNamespace(poll=lambda: 0)
     assert runtime.snapshot()["status"] == "completed"
     runtime.process = SimpleNamespace(poll=lambda: 2)
@@ -215,18 +197,6 @@ def test_exploration_validation_command_and_runtime_branches(tmp_path: Path, mon
     terminated = []
     runtime.process = SimpleNamespace(poll=lambda: None, terminate=lambda: terminated.append(True))
     assert runtime.stop()["stopped"] and terminated
-    assert runtime.launch(_launch_payload())["errors"]["run"]
-
-    occupied = launch.DashboardRuntime(tmp_path / "w2", tmp_path / "runs2")
-    target = occupied.exploration_root / "run"
-    target.mkdir()
-    (target / "file").write_text("x", encoding="utf-8")
-    assert "not empty" in occupied.launch(_launch_payload())["errors"]["run_name"]
-
-    failing = launch.DashboardRuntime(tmp_path / "w3", tmp_path / "runs3")
-    monkeypatch.setattr(launch.subprocess, "Popen", lambda *_a, **_k: (_ for _ in ()).throw(OSError("no")))
-    with pytest.raises(OSError):
-        failing.launch(_launch_payload())
 
 
 def test_live_frame_failure_fallbacks_and_bounded_archive(tmp_path: Path, monkeypatch) -> None:
@@ -425,10 +395,8 @@ def test_server_error_and_exploration_routes(tmp_path: Path, monkeypatch) -> Non
         get("/artifacts/missing.txt", 404)
         get("/static/missing.txt", 404)
         get("/not-found", 404)
-        post("/api/explore/start", {"system": ""}, 422)
         post("/api/explore/stop", {}, 200)
         post("/not-found", {}, 404)
-        post("/api/explore/validate", [], 500)
 
         monkeypatch.setattr(live_server, "_results_payload", lambda _root: (_ for _ in ()).throw(RuntimeError("route")))
         get("/api/results", 500)
