@@ -224,31 +224,62 @@ class TestThePageCarriesIt(unittest.TestCase):
 
     def test_the_panel_lands_by_url_fragment(self):
         # One browser and one server: `fastmdx agent` with no request opens
-        # the same page at #agent rather than starting a second app.
-        import inspect
+        # the same page at #agent rather than starting a second app. And
+        # the browser opens only when the server calls back, never before.
+        import argparse
+        from unittest import mock
 
         from fastmdxplora.cli.main import _cmd_gui
 
-        self.assertIn("panel", inspect.signature(_cmd_gui).parameters)
-        self.assertIn("fragment", inspect.getsource(_cmd_gui))
+        handed = {}
+        opened = []
+        args = argparse.Namespace(output=None, host="127.0.0.1", port=0, no_browser=False,
+                                  ligand_resname=None, binding_pocket_cutoff_A=5.0)
+        with mock.patch("fastmdxplora.gui.server.serve_dashboard",
+                        side_effect=lambda **kw: handed.update(kw)), \
+                mock.patch("webbrowser.open", side_effect=lambda url, new=0: opened.append(url)):
+            _cmd_gui(args, panel="agent")
+            self.assertEqual(opened, [], "the browser opened before the server answered")
+            handed["on_ready"]("http://127.0.0.1:8765/")
+        self.assertEqual(opened, ["http://127.0.0.1:8765/#agent"])
 
     def test_no_mode_promises_a_run_the_panel_does_not_start(self):
         """`autonomous` offered "draft it and run it" and drafted.
-
         `propose_endpoint` returns a config in every mode and starts
         nothing, and the panel has no budget field -- which is the one
         thing `--autonomous` refuses to run without, because approving an
         unknown duration is not a decision. A dropdown promising a run is
         the interface saying something the code does not do.
         """
-        import inspect
+        from unittest import mock
 
-        from fastmdxplora.gui import agent_panel
+        import fastmdxplora.agent as agent
+        from fastmdxplora.orchestrator import FastMDXplora
 
-        source = inspect.getsource(agent_panel.propose_endpoint)
-        self.assertNotIn("explore", source)
-        self.assertNotIn("FastMDXplora(", source)
+        from fastmdxplora.gui.exploration import DashboardRuntime
 
+        started = []
+        original = agent.completion_for
+        agent.completion_for = lambda *a, **k: (
+            lambda prompt: "systems:\n  - {id: a, system: 1UBQ}\n")
+        try:
+            with tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(FastMDXplora, "explore",
+                                      side_effect=lambda *a, **kw: started.append("explore")), \
+                    mock.patch.object(DashboardRuntime, "launch_from_config",
+                                      side_effect=lambda *a, **kw: started.append("launch")), \
+                    mock.patch.object(DashboardRuntime, "_spawn",
+                                      side_effect=lambda *a, **kw: started.append("spawn")):
+                runtime = DashboardRuntime(workspace_root=Path(tmp),
+                                           exploration_root=Path(tmp) / "runs")
+                for mode in ("assisted", "autonomous", "unvalidated"):
+                    with self.subTest(mode=mode):
+                        answer = propose_endpoint({"request": "x", "agent": mode}, runtime)
+                        self.assertTrue(answer["ok"])
+                        self.assertEqual(answer["config"]["agent"], mode)
+        finally:
+            agent.completion_for = original
+        self.assertEqual(started, [], "proposing started a run")
         page = self.page()
         start = page.index('<select id="agent-mode">')
         options = page[start:page.index("</select>", start)]
@@ -1063,16 +1094,27 @@ class TestAFailedRunSaysWhy(unittest.TestCase):
     """
 
     def test_the_last_error_line_is_preferred_over_the_last_line(self):
-        import inspect
+        # The reason is the last ERROR line, not the last line, which is
+        # usually a traceback's closing frame or a shutdown message; and it
+        # leads, because "exited with code 1" is true of every failure and
+        # says nothing about this one.
+        from fastmdxplora.gui.exploration import DashboardRuntime
 
-        from fastmdxplora.gui import exploration
-
-        source = inspect.getsource(exploration.DashboardRuntime
-                                   ._process_failure_message)
-        self.assertIn(' - ERROR - ', source)
-        # And the reason leads, because "exited with code 1" is true of
-        # every failure and says nothing about this one.
-        self.assertIn("exit code", source)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "exploration.log"
+            log.write_text(
+                "2026-09-22 10:00:00 - fastmdx - INFO - Setup phase started\n"
+                "2026-09-22 10:00:01 - fastmdx - ERROR - An early problem\n"
+                "2026-09-22 10:00:02 - fastmdx - ERROR - The force field has no template for LIG\n"
+                "Traceback (most recent call last):\n"
+                "  File \"x.py\", line 1, in <module>\n", encoding="utf-8")
+            runtime = DashboardRuntime(workspace_root=root, exploration_root=root / "runs")
+            runtime.log_path, runtime.process_returncode = log, 1
+            message = runtime._process_failure_message()
+        self.assertTrue(message.startswith("The force field has no template for LIG"), message)
+        self.assertIn("(exit code 1;", message)
+        self.assertNotIn("An early problem", message)
 
     def test_stop_follows_the_process_and_not_the_directory(self):
         """`active_run` means there is a run to look at, which stays true
@@ -1090,15 +1132,26 @@ class TestAFailedRunSaysWhy(unittest.TestCase):
         self.assertNotIn("Boolean(detail && detail.active_run)", watcher)
 
     def test_the_runtime_reports_both_separately(self):
-        # The fix only works because the payload distinguishes them.
-        import inspect
+        # The fix only works because the payload distinguishes them: a
+        # finished run is still a run to look at, and has no process.
+        from types import SimpleNamespace
 
-        from fastmdxplora.gui import exploration
+        from fastmdxplora.gui.exploration import DashboardRuntime
 
-        source = inspect.getsource(exploration.DashboardRuntime.snapshot)
-        self.assertIn('"process_running"', source)
-        self.assertIn('"active_run"', source)
-
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            study = root / "study"
+            (study / "simulation").mkdir(parents=True)
+            runtime = DashboardRuntime(workspace_root=root, exploration_root=root / "runs")
+            runtime.active_root = study
+            finished = runtime.snapshot()
+            runtime.process = SimpleNamespace(poll=lambda: None, pid=1)
+            runtime.running_root = study
+            running = runtime.snapshot()
+        self.assertTrue(finished["active_run"])
+        self.assertFalse(finished["process_running"])
+        self.assertTrue(running["active_run"])
+        self.assertTrue(running["process_running"])
 
 class TestTheModelListIsAskedForRatherThanGuessed(unittest.TestCase):
     """A guessed name in a dropdown is worse than no dropdown.
@@ -1378,18 +1431,31 @@ class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
     def test_the_companion_pdb_makes_its_directory(self):
         # `_atomic_text` did; the PDB writer beside it did not, and a
         # playback built for a run whose simulation/ did not yet exist
-        # failed on the write rather than the rename.
-        import inspect
+        # failed on the write rather than the rename. Written into a folder
+        # that is not there, from a real DCD.
+        import mdtraj as md
+        import numpy as np
 
-        from fastmdxplora.gui import trajectory_playback
+        from fastmdxplora.gui.trajectory_playback import _generate_from_dcd
 
-        source = inspect.getsource(trajectory_playback)
-        writer = source[source.index('tmp = companion_pdb.with_suffix'):]
-        before = source[:source.index('tmp = companion_pdb.with_suffix')]
-        self.assertIn("companion_pdb.parent.mkdir", before[-200:])
-        self.assertIn("_replace_or_yield(tmp, companion_pdb)", writer[:200])
-
-
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            topology = md.Topology()
+            residue = topology.add_residue("ALA", topology.add_chain())
+            for name in ("N", "CA", "C"):
+                topology.add_atom(name, md.element.carbon, residue)
+            xyz = np.random.default_rng(0).normal(size=(6, 3, 3)).astype(np.float32)
+            md.Trajectory(xyz, topology).save_dcd(str(root / "production.dcd"))
+            md.Trajectory(xyz[:1], topology).save_pdb(str(root / "topology.pdb"))
+            companion = root / "not" / "yet" / "there" / "playback.pdb"
+            _generate_from_dcd(md=md, topology_path=root / "topology.pdb",
+                               dcd_path=root / "production.dcd", companion_pdb=companion,
+                               companion_idx=companion.with_suffix(".json"),
+                               max_browser_frames=10, simulation_time_ns_total=None,
+                               source_signature="s")
+            self.assertTrue(companion.is_file())
+            self.assertFalse(companion.with_suffix(".pdb.tmp").exists())
+            self.assertEqual(md.load(str(companion)).n_frames, 6)
 
 class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
     """The header names the author the config records.
@@ -1560,14 +1626,24 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         self.assertIn('runBtn.textContent = "Running";', script)
 
     def test_the_servers_default_output_is_timestamped(self):
-        import inspect
+        # A study started with no output folder gets the same timestamped
+        # name the command line gives, never one shared name that the
+        # second study would find occupied.
+        from unittest import mock
 
-        from fastmdxplora.gui import exploration
+        from fastmdxplora.gui.exploration import DashboardRuntime
 
-        source = inspect.getsource(exploration.DashboardRuntime.launch_from_config)
-        self.assertIn("default_output_name(system_of(dict(source)))", source)
-        self.assertNotIn('requested = "analysis_output"', source)
-
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = DashboardRuntime(workspace_root=root, exploration_root=root / "runs")
+            with mock.patch.object(DashboardRuntime, "_spawn",
+                                   return_value={"launched": True, "pid": 1}):
+                result = runtime.launch_from_config(
+                    None, config={"systems": [{"system": "1UBQ"}]})
+            self.assertTrue(result["ok"], result)
+            where = Path(result["config_path"]).parent
+        self.assertRegex(where.name, r"^fastmdxplora_1UBQ_study_\d{14}$")
+        self.assertNotEqual(where.name, "analysis_output")
 
 class TestRunHereActuallyRuns(unittest.TestCase):
     """The button said Running and nothing ran.
@@ -1648,14 +1724,36 @@ class TestTheBudgetIsAConfigKey(unittest.TestCase):
         self.assertIn("budget_hours", STUDY_LEVEL_KEYS)
 
     def test_explore_routes_a_budgeted_config_through_the_staged_runner(self):
-        import inspect
+        # A study carrying a budget runs in stages -- setup, a price, the
+        # rest only if it fits -- and never straight through the orchestrator.
+        from types import SimpleNamespace
+        from unittest import mock
 
-        from fastmdxplora.cli import main as cli
+        from fastmdxplora.cli.main import _build_parser, _cmd_explore
 
-        module = inspect.getmodule(cli)
-        source = inspect.getsource(module._cmd_explore)
-        self.assertIn('budget = config.get("budget_hours")', source)
-        self.assertIn("run_in_stages(config, output, budget_hours=float(budget))", source)
+        import importlib
+
+        # By the module itself: `fastmdxplora.cli.main` also names the
+        # function re-exported from the package, and a dotted patch target
+        # resolves to that on some Pythons.
+        cli_module = importlib.import_module("fastmdxplora.cli.main")
+        staged = []
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("fastmdxplora.agent.run_in_stages",
+                           side_effect=lambda config, output, *, budget_hours: staged.append(
+                               (config.get("budget_hours"), budget_hours, Path(output)))
+                           or SimpleNamespace(notes=[], refusal=None, setup_done=True)), \
+                mock.patch.object(cli_module, "FastMDXplora",
+                                  side_effect=AssertionError("ran without the staged runner")):
+            # From a config file, where a whole number of hours is an int:
+            # the staged runner is handed hours as a number of hours, 2.0.
+            study = Path(tmp) / "study.yml"
+            study.write_text("systems:\n  - system: 1UBQ\nbudget_hours: 2\n", encoding="utf-8")
+            args = _build_parser().parse_args(
+                ["explore", "--config", str(study), "--output", str(Path(tmp) / "study")])
+            self.assertEqual(_cmd_explore(args), 0)
+            self.assertEqual(staged, [(2, 2.0, Path(tmp) / "study")])
+            self.assertIsInstance(staged[0][1], float)
 
     def test_run_here_is_the_builders_primary_button(self):
         import pathlib
@@ -1770,23 +1868,34 @@ class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
         self.assertEqual({r.get("simulation", {}).get("duration_ns") for r in rendered}, {2.0})
 
     def test_the_agent_does_not_go_through_form_state(self):
-        import inspect
+        # The config the Agent wrote is the config that runs: handed to the
+        # runtime whole, with no form state built from it on the way.
+        from unittest import mock
 
         from fastmdxplora.gui import agent_panel
 
-        source = inspect.getsource(agent_panel.run_endpoint)
-        self.assertNotIn("state_from_config", source)
-        self.assertIn("launch_from_config(None, config=config", source)
+        runtime = mock.Mock()
+        runtime.launch_from_config.return_value = {"ok": True}
+        config = {"systems": [{"system": "1UBQ"}], "simulation": {"duration_ns": 2.0},
+                  "agent": "assisted"}
+        with mock.patch("fastmdxplora.gui.config_builder.state_from_config",
+                        side_effect=AssertionError("went through form state")):
+            answer = agent_panel.run_endpoint({"config": config}, runtime)
+        self.assertTrue(answer["ok"])
+        (state,), kwargs = runtime.launch_from_config.call_args
+        self.assertIsNone(state)
+        self.assertEqual(kwargs["config"]["simulation"], {"duration_ns": 2.0})
 
     def test_build_config_reads_one_shape(self):
         # The both-shapes patch is gone: the browser's flat shape is the
-        # only form state build_config ever sees.
-        import inspect
+        # only form state build_config reads. A phase's settings under
+        # "phases" are not settings.
+        from fastmdxplora.gui.config_builder import build_config
 
-        from fastmdxplora.gui import config_builder
-
-        source = inspect.getsource(config_builder.build_config)
-        self.assertNotIn('nested = state.get("phases")', source)
+        flat = build_config({"system": "1UBQ", "simulation": {"duration_ns": 7.0}})
+        nested = build_config({"system": "1UBQ", "phases": {"simulation": {"duration_ns": 7.0}}})
+        self.assertEqual(flat["simulation"]["duration_ns"], 7.0)
+        self.assertNotEqual((nested.get("simulation") or {}).get("duration_ns"), 7.0)
 
     def test_the_file_the_run_reads_carries_every_field(self):
         import tempfile
@@ -2058,18 +2167,64 @@ class TestSixFromLaunchingIt(unittest.TestCase):
     def test_the_browser_opens_after_the_server_answers(self):
         # It was opened first, and on a completed-run folder reached the
         # port before it was listening: "unable to connect" until a refresh.
-        import inspect
+        # A server that starts listening only after a delay: when on_ready
+        # is called, the page answers.
+        import socket
+        import threading
+        import urllib.request
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from unittest import mock
 
         from fastmdxplora.gui import server
 
-        source = inspect.getsource(server.serve_dashboard)
-        self.assertIn("on_ready", source)
-        self.assertIn("urllib.request.urlopen(url", source)
-        # The CLI hands serve_dashboard an on_ready rather than opening first.
-        from fastmdxplora.cli import main as cli
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        answered = threading.Event()
+        called = []
 
-        whole = inspect.getsource(inspect.getmodule(cli))
-        self.assertIn("on_ready=on_ready", whole)
+        class Page(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *args):
+                pass
+
+        class LateSession:
+            url, port_was_changed, runtime = f"http://127.0.0.1:{port}/", False, None
+            root = Path(".")
+            httpd = None
+
+            def __init__(self):
+                threading.Timer(0.8, self.listen).start()
+
+            def listen(self):
+                LateSession.httpd = HTTPServer(("127.0.0.1", port), Page)
+                threading.Thread(target=LateSession.httpd.serve_forever, daemon=True).start()
+
+            def wait_forever(self):
+                answered.wait(10)
+
+            def stop(self):
+                if LateSession.httpd is not None:
+                    LateSession.httpd.shutdown()
+
+        def on_ready(url):
+            try:
+                with urllib.request.urlopen(url, timeout=1) as response:
+                    called.append(response.status)
+            except OSError as exc:
+                called.append(exc)
+            answered.set()
+
+        with mock.patch.object(server, "start_dashboard_session",
+                               side_effect=lambda **kw: LateSession()):
+            server.serve_dashboard(output=Path("."), host="127.0.0.1", port=port,
+                                   on_ready=on_ready)
+        self.assertEqual(called, [200])
 
     def test_the_sidebar_collapse_leaves_the_centre(self):
         import pathlib
@@ -2097,14 +2252,25 @@ class TestSixFromLaunchingIt(unittest.TestCase):
 
     def test_an_empty_report_parameter_is_dropped(self):
         # "state_csv: None" in the report said a file was not given, which
-        # is noise, not a setting.
-        import inspect
+        # is noise, not a setting; and a block left with nothing but empties
+        # is dropped whole.
+        from fastmdxplora.report.document import _results_section
 
-        from fastmdxplora.report import document
-
-        source = inspect.getsource(document)
-        self.assertIn("v is not None and v != \"\"", source)
-
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name, options in (("rmsd", {"state_csv": None, "label": "", "reference_frame": 0}),
+                                  ("rg", {"state_csv": None, "label": ""})):
+                (root / "analysis" / name).mkdir(parents=True)
+                (root / "analysis" / name / "options.json").write_text(
+                    json.dumps({"analysis": name, "options": options}), encoding="utf-8")
+            (root / "analysis" / "analysis_manifest.json").write_text(json.dumps({
+                "plan": ["rmsd", "rg"],
+                "results": {"rmsd": {"status": "ok"}, "rg": {"status": "ok"}}}), encoding="utf-8")
+            text = _results_section(root)
+        self.assertIn("reference_frame", text)
+        self.assertNotIn("state_csv", text)
+        self.assertNotIn("`label`", text)
+        self.assertEqual(text.count("**Parameters:**"), 1)
 
 class TestTheCentreStaysCentred(unittest.TestCase):
     """The centre column stays visible and centred whatever is folded.
