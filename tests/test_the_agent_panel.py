@@ -19,7 +19,22 @@ import json
 import os
 import tempfile
 import unittest
+
+import pytest
 from pathlib import Path
+
+
+@pytest.fixture(autouse=True)
+def _the_stack_is_taken_as_installed(monkeypatch):
+    """These tests launch and then stop a child at once, so they never
+    reached the phase that would have failed without OpenMM. The launch
+    now refuses up front where the chemistry stack is missing, as it
+    should for a person; here the stack is declared present so a launch
+    test tests the launch, on the CI legs without OpenMM as well. The
+    preflight itself is tested in test_exploration.py."""
+    from fastmdxplora.gui import exploration
+
+    monkeypatch.setattr(exploration, "exploration_environment_error", lambda _config: None)
 
 from fastmdxplora.gui.agent_panel import model_endpoint, propose_endpoint
 
