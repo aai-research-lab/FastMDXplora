@@ -638,6 +638,51 @@ except ImportError:
     _HAVE_PLAYWRIGHT = False
 
 
+
+def _a_finished_study() -> str:
+    """A small finished study, written fresh: a dozen events, a few analysis
+    and report files, and a manifest. The four browser tests below opened
+    `/tmp/sh7/whole`, a real study that existed on one machine, so on CI
+    they opened an empty workspace: no log lines and no files.
+    """
+    import json
+    import tempfile
+    from pathlib import Path
+
+    root = Path(tempfile.mkdtemp()) / "whole"
+    sim = root / "simulation"
+    sim.mkdir(parents=True)
+    stamp = "2026-09-15T19:12:5{0}.000000+00:00"
+    events = ["Workflow timeline initialized", "Setup phase started",
+              "Setup phase completed", "Simulation phase started",
+              "Minimisation finished", "NVT equilibration finished",
+              "NPT equilibration finished", "Production finished",
+              "Simulation phase completed", "Analysis phase started",
+              "Analysis phase completed", "Report phase completed"]
+    sim.joinpath("live_events.log").write_text(
+        "".join(f"{stamp.format(i % 10)}\tinfo\t{line}\n" for i, line in enumerate(events)),
+        encoding="utf-8")
+    sim.joinpath("energy.csv").write_text("step,potential\n0,-1.0\n100,-1.1\n", encoding="utf-8")
+    for name in ("rmsd", "rg"):
+        folder = root / "analysis" / name
+        folder.mkdir(parents=True)
+        folder.joinpath(f"{name}.dat").write_text("# frame value\n0 0.1\n1 0.2\n", encoding="utf-8")
+        folder.joinpath(f"{name}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (root / "analysis" / "analysis_manifest.json").write_text(
+        json.dumps({"plan": ["rmsd", "rg"], "results": {"rmsd": {"status": "ok"},
+                                                         "rg": {"status": "ok"}}}), encoding="utf-8")
+    report = root / "report"
+    report.mkdir()
+    report.joinpath("report.md").write_text("# Report\n\nA finished run.\n", encoding="utf-8")
+    root.joinpath("resolved_config.yml").write_text(
+        "systems:\n  - system: 1UBQ\nsimulation:\n  duration_ns: 1.0\n", encoding="utf-8")
+    root.joinpath("manifest.json").write_text(json.dumps({"phases": ["setup", "simulation",
+                                                                    "analysis", "report"]}),
+                                             encoding="utf-8")
+    root.joinpath("fastmdxplora.log").write_text("".join(f"{line}\n" for line in events),
+                                                 encoding="utf-8")
+    return str(root)
+
 @unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
 class TestTheCentreIsCentredInEveryStateRendered(unittest.TestCase):
     """Rendered, not read: the centre column keeps a positive width and
@@ -650,7 +695,7 @@ class TestTheCentreIsCentredInEveryStateRendered(unittest.TestCase):
 
         from fastmdxplora.gui.server import start_dashboard_session
 
-        session = start_dashboard_session(output="/tmp/sh7/whole",
+        session = start_dashboard_session(output=_a_finished_study(),
                                           host="127.0.0.1", port=0)
         try:
             with sync_playwright() as pw:
@@ -845,7 +890,7 @@ class TestTheSidePanelTabsRendered(unittest.TestCase):
         sys.path.insert(0, "src")
         from fastmdxplora.gui.server import start_dashboard_session
 
-        session = start_dashboard_session(output="/tmp/sh7/whole", host="127.0.0.1", port=0)
+        session = start_dashboard_session(output=_a_finished_study(), host="127.0.0.1", port=0)
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch()
@@ -921,7 +966,7 @@ class TestTheLogRendersLines(unittest.TestCase):
         sys.path.insert(0, "src")
         from fastmdxplora.gui.server import start_dashboard_session
 
-        session = start_dashboard_session(output="/tmp/sh7/whole", host="127.0.0.1", port=0)
+        session = start_dashboard_session(output=_a_finished_study(), host="127.0.0.1", port=0)
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch()
@@ -1055,7 +1100,7 @@ class TestTheRunRecordStaysOpenRendered(unittest.TestCase):
         sys.path.insert(0, "src")
         from fastmdxplora.gui.server import start_dashboard_session
 
-        session = start_dashboard_session(output="/tmp/sh7/whole", host="127.0.0.1", port=0)
+        session = start_dashboard_session(output=_a_finished_study(), host="127.0.0.1", port=0)
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch()
