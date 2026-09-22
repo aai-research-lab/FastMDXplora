@@ -1355,6 +1355,51 @@ class TestWhatTheRunResolvedIsRecorded:
                             .read_text(encoding="utf-8"))
         assert _found(record, "n_atoms_solvated") == a_real_setup.returned["n_atoms_solvated"]
 
+    def test_the_setup_manifest_records_the_box_it_built(self, a_real_setup) -> None:
+        """The periodic cell, as the system it wrote holds it. Computed on
+        every setup and read by nothing, so a methods section took it from
+        CRYST1 by hand; and in the terms the cutoff is judged against, so
+        the smallest perpendicular width is at least twice the cutoff, which
+        is the check the setup made when it built the box."""
+        import numpy as np
+        openmm = pytest.importorskip("openmm")
+
+        record = json.loads((a_real_setup.root / "setup" / "setup_parameters.json")
+                            .read_text(encoding="utf-8"))
+        box = record["box"]
+        system = openmm.XmlSerializer.deserialize(
+            (a_real_setup.root / "setup" / "system.xml").read_text(encoding="utf-8"))
+        vectors = np.array([[float(c.value_in_unit(openmm.unit.nanometer)) for c in v]
+                            for v in system.getDefaultPeriodicBoxVectors()])
+        assert np.allclose(box["vectors_nm"], vectors, atol=1e-6)
+        assert np.allclose(box["perpendicular_widths_nm"], np.diag(vectors), atol=1e-6)
+        assert box["smallest_width_nm"] == pytest.approx(float(np.diag(vectors).min()))
+        assert box["volume_nm3"] == pytest.approx(abs(float(np.linalg.det(vectors))))
+        cutoff = _found(record, "nonbonded_cutoff_nm")
+        assert cutoff is not None and box["smallest_width_nm"] >= 2 * cutoff
+
+    def test_the_box_record_reads_a_dodecahedron_by_its_perpendicular_widths(self) -> None:
+        """A cube's edge and its perpendicular width are the same number, so
+        the setup above cannot tell them apart. A rhombic dodecahedron's are
+        not: the smallest perpendicular width is the edge over root two, and
+        reading the edge overstates the room for the cutoff by 40%. The
+        volume is the determinant, which for OpenMM's reduced vectors is
+        the product of the diagonal."""
+        import numpy as np
+        openmm = pytest.importorskip("openmm")
+        from types import SimpleNamespace
+
+        from fastmdxplora.setup.prepare import _box_record
+
+        edge = 4.0
+        vectors = [openmm.Vec3(edge, 0, 0), openmm.Vec3(0, edge, 0),
+                   openmm.Vec3(edge / 2, edge / 2, edge * np.sqrt(2) / 2)] * openmm.unit.nanometer
+        topology = SimpleNamespace(getPeriodicBoxVectors=lambda: vectors)
+        box = _box_record(SimpleNamespace(topology=topology))
+        assert box["smallest_width_nm"] == pytest.approx(edge / np.sqrt(2))
+        assert box["perpendicular_widths_nm"] == pytest.approx([edge, edge, edge / np.sqrt(2)])
+        assert box["volume_nm3"] == pytest.approx(edge ** 3 / np.sqrt(2))
+
     @pytest.mark.parametrize("asked, resolved", [
         ({"pressure_atm": 2.0}, 2.0 * 1.01325),   # atmospheres, converted
         ({"pressure_bar": 1.5}, 1.5),             # bar, as given

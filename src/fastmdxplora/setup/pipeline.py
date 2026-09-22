@@ -1045,6 +1045,7 @@ def run(
     # ---- Stage 4: Manifest --------------------------------------------
     _write_manifest(setup_dir, orchestrator, input_form, params, artifacts, notes,
                     n_atoms_solvated=(produced or {}).get("n_atoms_solvated"),
+                    box=(produced or {}).get("box"),
                     resolved=(produced or {}).get("resolved"))
     artifacts.append("setup_parameters.json")
 
@@ -1106,6 +1107,7 @@ def _write_manifest(
     artifacts: list[str],
     notes: list[str],
     n_atoms_solvated: int | None = None,
+    box: dict[str, Any] | None = None,
     resolved: dict[str, Any] | None = None,
 ) -> None:
     """Write ``setup_parameters.json`` with the full provenance record.
@@ -1181,6 +1183,11 @@ def _write_manifest(
         # it was only ever logged -- so the report had to say it was not
         # recorded, of a number the run had printed to the terminal.
         "n_atoms_solvated": n_atoms_solvated,
+        # The periodic cell, in the terms the cutoff is judged against: the
+        # vectors, their perpendicular widths, the smallest of them and the
+        # volume. Computed on every setup and, until now, read by nothing,
+        # so a methods section had to take it from CRYST1 by hand.
+        "box": box,
         "resolved_forcefield": resolved_ff,
         # Settings this phase decided, under their config names, for
         # `resolved_config.yml` to carry. The force field resolution above
