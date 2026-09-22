@@ -839,6 +839,11 @@ class BatchExplorer:
         else:
             (self.output_dir / "runs").mkdir(exist_ok=True)
             self._write_study_config()
+            # The plan, before any run starts: the manifest's `runs` are
+            # results and fill in as runs finish, so until then nothing said
+            # which runs the study would make. The dashboard reads this to
+            # list them, with their status, while they run.
+            self._write_batch_manifest()
             logger.info(
                 "Exploring %d molecular systems in %s (mode=%s)", n, self.output_dir, self.mode
             )
@@ -1848,6 +1853,7 @@ class BatchExplorer:
                 for s in normalize_systems(self._raw["systems"])
             ],
             "sweep": self._raw.get("sweep") or {},
+            "planned": [spec.to_dict() for spec in self.run_specs],
             "runs": [r.to_dict() for r in self.results],
         }
         path = self.output_dir / "batch_manifest.json"

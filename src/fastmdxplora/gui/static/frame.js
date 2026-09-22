@@ -812,6 +812,66 @@
       }
     }
 
+    /* A study of several runs lists them; a run inside one names it. */
+    var runsBlock = el("study-runs");
+    var runOfBlock = el("study-run-of");
+    function switchTo(folder) {
+      fetch("/api/explore/switch", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folder: folder })
+      }).then(function () { location.reload(); });
+    }
+    function shortAxis(axis) { return String(axis).split(".").pop(); }
+    function valuesText(values) {
+      return Object.keys(values || {}).map(function (axis) {
+        return shortAxis(axis) + " = " + values[axis];
+      }).join(", ");
+    }
+    if (runsBlock && runOfBlock && window.FastMDXDashboard) {
+      window.FastMDXDashboard.on("app-state", function (s) {
+        var runs = (s && s.runs) || null;
+        runsBlock.hidden = !runs;
+        if (runs) {
+          var done = runs.filter(function (r) { return r.state === "finished"; }).length;
+          el("study-runs-label").textContent = "Runs, " + done + " of " + runs.length + " finished";
+          var list = el("study-runs-list");
+          list.innerHTML = "";
+          runs.forEach(function (r) {
+            var row = document.createElement("div");
+            row.className = "study-running-row study-run-row";
+            row.dataset.state = r.state;
+            var dot = document.createElement("span");
+            dot.className = "status-dot" + (r.state === "running" ? " status-dot-live" : "");
+            dot.setAttribute("aria-hidden", "true");
+            var name = document.createElement("span");
+            name.className = "study-running-name mono";
+            name.textContent = valuesText(r.values) || r.run_id;
+            name.title = r.path;
+            var pct = document.createElement("span");
+            pct.className = "study-running-pct mono";
+            pct.textContent = r.state === "running" && typeof r.fraction === "number"
+              ? (100 * r.fraction).toFixed(0) + "%" : r.state;
+            var view = document.createElement("button");
+            view.className = "ghost-btn";
+            view.type = "button";
+            view.textContent = "View";
+            view.title = "View this run";
+            view.addEventListener("click", function () { switchTo(r.path); });
+            row.appendChild(dot); row.appendChild(name); row.appendChild(pct); row.appendChild(view);
+            list.appendChild(row);
+          });
+        }
+        var of = (s && s.run_of) || null;
+        runOfBlock.hidden = !of;
+        if (of) {
+          el("study-run-of-name").textContent = of.study;
+          el("study-run-of-name").title = of.path;
+          el("study-run-of-values").textContent = valuesText(of.values);
+          el("study-run-of-back").onclick = function () { switchTo(of.path); };
+        }
+      });
+    }
+
     /* The seam between the file list and the preview. Drag it; either
      * side can take the whole panel. Double-click resets. Remembered,
      * as the column seams are. */

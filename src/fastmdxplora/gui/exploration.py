@@ -188,6 +188,61 @@ ADOPTION_RETRY_SECONDS = 60.0
 ADOPTION_RETRY_INTERVAL = 2.0
 
 
+def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
+    """Each run a study of several will make, with where it stands: waiting,
+    running, finished or failed, and the fraction of its steps done. From the
+    plan the batch manifest records before any run starts, and each run's own
+    telemetry. None where the folder is a study of one run."""
+    manifest = _json_mapping(Path(root) / "batch_manifest.json")
+    planned = manifest.get("planned") or manifest.get("runs") or []
+    if not manifest or not isinstance(planned, list):
+        return None
+    results = {r.get("run_id"): r for r in (manifest.get("runs") or []) if isinstance(r, dict)}
+    out = []
+    for entry in planned:
+        if not isinstance(entry, dict) or not entry.get("run_id"):
+            continue
+        run_id = str(entry["run_id"])
+        folder = Path(root) / "runs" / run_id
+        live = _json_mapping(folder / "simulation" / "live_status.json")
+        result = results.get(run_id) or {}
+        state = "waiting"
+        fraction = None
+        if result.get("status") in ("ok", "success", "completed", "finished"):
+            state, fraction = "finished", 1.0
+        elif result.get("status") in ("failed", "error"):
+            state = "failed"
+        elif live:
+            stage = str(live.get("stage") or live.get("status") or "").lower()
+            step, total = live.get("current_step"), live.get("total_planned_steps")
+            if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
+                fraction = min(1.0, float(step) / float(total))
+            if stage in ("finished", "completed", "complete") or fraction == 1.0:
+                state, fraction = "finished", 1.0
+            elif stage in ("failed", "error"):
+                state = "failed"
+            else:
+                state = "running"
+        elif folder.exists():
+            state = "running"
+        out.append({"run_id": run_id, "path": str(folder), "system": entry.get("system"),
+                    "values": entry.get("sweep_values") or {}, "state": state,
+                    "fraction": fraction, "stage": live.get("stage") if live else None})
+    return out
+
+
+def study_a_run_belongs_to(root: Path) -> dict[str, Any] | None:
+    """For a run under a study of several: that study's folder and this run's
+    swept values, so the page can say where it belongs and go back."""
+    from fastmdxplora.gui.browse import run_of
+
+    member = run_of(Path(root))
+    if not member:
+        return None
+    return {"path": str(Path(root).parent.parent), "study": member["study"],
+            "values": member.get("values") or {}}
+
+
 def _identify_run(pid: int, root: Path) -> bool | None:
     """Whether the PID is this study's run: True, False, or None for cannot
     tell yet.
@@ -791,9 +846,26 @@ class DashboardRuntime:
 
     def _progress_of(self, root: Path | None) -> dict[str, Any] | None:
         """The running study's stage and fraction complete, for the sidebar's
-        Running line. Read from its own telemetry; nothing is guessed."""
+        Running line. Read from its own telemetry; nothing is guessed. A
+        study of several runs has no telemetry of its own: its stage is how
+        many of its runs are finished, and its fraction is theirs summed."""
         if root is None:
             return None
+        runs = runs_of_a_study(Path(root))
+        if runs is not None:
+            done = sum(1 for r in runs if r["state"] == "finished")
+            going = sum(1 for r in runs if r["state"] == "running")
+            failed = sum(1 for r in runs if r["state"] == "failed")
+            stage = f"{done} of {len(runs)} finished"
+            if going:
+                stage += f", {going} running"
+            if failed:
+                stage += f", {failed} failed"
+            out: dict[str, Any] = {"stage": stage, "runs": len(runs), "finished": done}
+            fractions = [r.get("fraction") for r in runs if r.get("fraction") is not None]
+            if runs:
+                out["percent"] = round(100.0 * sum(fractions) / len(runs), 1)
+            return out
         status = _json_mapping(Path(root) / "simulation" / "live_status.json")
         step, total = status.get("current_step"), status.get("total_planned_steps")
         out: dict[str, Any] = {"stage": status.get("stage")}
@@ -1010,6 +1082,12 @@ class DashboardRuntime:
                 "started_at": self.process_started_at,
                 "finished_at": self.process_finished_at,
                 "log_path": str(self.log_path) if self.log_path else None,
+                # The runs of a study of several, each with its state, so the
+                # page can list them and open one. None for a study of one.
+                "runs": (runs_of_a_study(self.active_root)
+                         if self.active_root and not self.data_stale else None),
+                "run_of": (study_a_run_belongs_to(self.active_root)
+                           if self.active_root and not self.data_stale else None),
                 "command": list(self.command),
                 "can_launch": not running,
             }
@@ -1394,12 +1472,13 @@ class DashboardRuntime:
             if not path.is_dir():
                 return {"ok": False, "error": f"No such folder: {path}",
                         "state": self.snapshot()}
-            # A run folder is one FastMDXplora wrote: it carries a manifest,
-            # or a simulation directory, or an analysis directory. Anything
-            # else is a wrong turn in the picker, and loading it would show
-            # an empty study rather than say so.
-            markers = ("manifest.json", "simulation", "analysis", "report")
-            if not any((path / m).exists() for m in markers):
+            # A study folder is one FastMDXplora wrote, by the same rule the
+            # file browser uses -- which includes a study of several runs.
+            # Anything else is a wrong turn in the picker, and loading it
+            # would show an empty study rather than say so.
+            from fastmdxplora.gui.browse import is_study
+
+            if not is_study(path):
                 return {"ok": False,
                         "error": f"{path.name} does not look like a "
                                  "FastMDXplora output folder.",

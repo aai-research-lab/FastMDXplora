@@ -15,6 +15,22 @@
 
   const state = { target: null, kind: null, mode: "folder", at: null };
 
+  function studyLabel(entry) {
+    const short = (axis) => String(axis).split(".").pop();
+    if (entry.runs) {
+      const swept = (entry.swept || []).map(short);
+      return swept.length
+        ? `sweep over ${swept.join(", ")}, ${entry.runs} runs`
+        : `study of ${entry.runs} runs`;
+    }
+    if (entry.run_of) {
+      const values = Object.entries(entry.values || {})
+        .map(([axis, value]) => `${short(axis)} = ${value}`).join(", ");
+      return values ? `run of ${entry.run_of}, ${values}` : `run of ${entry.run_of}`;
+    }
+    return entry.continues ? "continues " + entry.continues : "study";
+  }
+
   function el(id) { return document.getElementById(id); }
   function text(node, value) { if (node) node.textContent = value; }
 
@@ -116,10 +132,13 @@
        * the picker from the Agent is looking for most of the time, and
        * it is told apart from a folder of structures or trajectories by
        * colour as well as by word. */
+      /* A study of several runs, and a run inside one, are studies too,
+       * qualified: "sweep over temperature_K, 4 runs", "run of my_sweep,
+       * temperature_K = 310". One kind of folder wherever a study can go. */
       const kind = entry.study ? "study"
         : entry.trajectories ? "trajectory"
         : entry.structures ? "structure" : null;
-      const holds = entry.study ? (entry.continues ? "continues " + entry.continues : "study")
+      const holds = entry.study ? studyLabel(entry)
         : entry.trajectories ? `${entry.trajectories} trajectory`
         : entry.structures ? `${entry.structures} structure` : null;
       list.appendChild(row(entry.name, entry.path, holds, true, kind));

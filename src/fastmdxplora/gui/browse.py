@@ -109,6 +109,17 @@ def _interesting(directory: Path, depth: int = _LOOK_DEPTH) -> dict[str, Any]:
             # Shown as a continuation of its parent, by the parent's name.
             out["continues"] = Path(str(cont["study"])).name
             out["from_step"] = cont.get("from_step")
+        # A study of several runs, and a run inside one, say so the same
+        # way: one kind of folder, qualified, so wherever a study can go a
+        # study of runs can be offered and told apart.
+        of_runs = study_of_runs(directory)
+        if of_runs:
+            out.update(of_runs)
+        member = run_of(directory)
+        if member:
+            out["run_of"] = member["study"]
+            if member.get("values"):
+                out["values"] = member["values"]
     return out
 
 
@@ -125,12 +136,66 @@ def continuation_of(directory: Path) -> dict[str, Any] | None:
     return cont if isinstance(cont, dict) and cont.get("study") else None
 
 
-def _is_study(directory: Path) -> bool:
+#: What a FastMDXplora study leaves at its root, whatever phases it ran, or
+#: whatever it is a study of. One rule, shared with the dashboard's switch:
+#: the two had different lists, and a study of several runs was a study to
+#: the browser and not to the dashboard, which refused to open it.
+STUDY_MARKERS = ("manifest.json", "resolved_config.yml", "exploration.yml",
+                 "batch_manifest.json", "simulation", "analysis", "report")
+
+
+def is_study(directory: Path) -> bool:
     try:
-        return any((directory / m).exists()
-                   for m in ("manifest.json", "resolved_config.yml", "exploration.yml"))
+        return any((directory / m).exists() for m in STUDY_MARKERS)
     except OSError:
         return False
+
+
+_is_study = is_study
+
+
+def study_of_runs(directory: Path) -> dict[str, Any] | None:
+    """What a study of several runs is, from its batch manifest: how many
+    runs, and the settings swept, if any. None for a study of one run."""
+    import json
+
+    try:
+        data = json.loads((directory / "batch_manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    planned = data.get("planned") or data.get("runs") or []
+    sweep = data.get("sweep") if isinstance(data.get("sweep"), dict) else {}
+    swept = sorted(sweep.keys())
+    out: dict[str, Any] = {"runs": int(data.get("n_runs") or len(planned))}
+    if swept:
+        out["swept"] = swept
+    return out
+
+
+def run_of(directory: Path) -> dict[str, Any] | None:
+    """The study a run belongs to, and the values it was given, when the
+    folder sits under a study of several runs. Read from the parent's batch
+    manifest, which records each run by its id."""
+    import json
+
+    parent = directory.parent
+    if parent.name != "runs":
+        return None
+    root = parent.parent
+    try:
+        data = json.loads((root / "batch_manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    entries = (data.get("planned") or data.get("runs") or []) if isinstance(data, dict) else []
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("run_id") == directory.name:
+            out: dict[str, Any] = {"study": root.name}
+            if isinstance(entry.get("sweep_values"), dict) and entry["sweep_values"]:
+                out["values"] = dict(entry["sweep_values"])
+            return out
+    return {"study": root.name}
 
 
 def browse(

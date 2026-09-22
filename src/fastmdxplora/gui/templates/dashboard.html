@@ -159,6 +159,21 @@
             <button class="ghost-btn" type="button" id="study-elsewhere-view" title="View the running study">View</button>
           </div>
         </div>
+        <!-- A study of several runs: each one, with where it stands, and a
+             way into it. A run inside one: the study it belongs to, and the
+             way back. Both hidden for a study of one run. -->
+        <div class="study-running" id="study-runs" hidden>
+          <div class="study-section-label mono" id="study-runs-label">Runs</div>
+          <div id="study-runs-list"></div>
+        </div>
+        <div class="study-running" id="study-run-of" hidden>
+          <div class="study-section-label mono">Run of</div>
+          <div class="study-running-row">
+            <span class="study-running-name mono" id="study-run-of-name"></span>
+            <span class="study-running-pct mono" id="study-run-of-values"></span>
+            <button class="ghost-btn" type="button" id="study-run-of-back" title="Back to the study">Back</button>
+          </div>
+        </div>
         <div class="study-switch">
           <button class="ghost-btn" type="button" id="load-study" title="Open another study from this workspace">Load available study</button>
           <input type="hidden" id="load-study-path">
