@@ -59,58 +59,42 @@ def _a_small_system():
     return system, topology, positions
 
 
-#: How far a resumed run may sit from a straight one after a thousand
-#: steps, and the line the constant-pressure case has to cross.
+#: How far a resumed run may sit from a straight one, and the line every way
+#: of getting a resume wrong has to cross.
 #:
-#: One number for both, because the pair is a contrast and two unrelated
-#: tolerances would let it drift into meaninglessness. Measured with the
-#: thread count and the seeds fixed: constant volume drifts 1.7e-7 nm,
-#: constant pressure 0.58 nm, the same in every run. Six orders of
-#: magnitude apart, so this sits sixtyfold clear of the one and more than
-#: four orders clear of the other.
-#:
-#: The constant-volume figure is chaos, not the checkpoint's precision: the
-#: two runs start from the same state, checked to 1e-9 below, and a
-#: thousand Langevin steps amplify whatever last-digit difference remains
-#: by an amount that depends on the trajectory. Pinning the threads made
-#: the arithmetic repeatable and left the trajectory free: with a new seed
-#: in every run, about one run in 150 amplified past this bound, on an idle
-#: machine and a loaded one alike, which is how this failed again after the
-#: threads were pinned. `_a_simulation` and the barostat now fix the seed.
+#: Measured 2026-09-22 over _HORIZON_STEPS steps after the checkpoint, across
+#: random trajectories: a resume at the same thread count stays within
+#: 1.2e-9 nm. Every way of getting it wrong lands past 2e-2 -- a resume that
+#: restores positions and velocities but not the thermostat's random stream
+#: (2.4e-2), a resume at a different thread count (2.2e-2), and constant
+#: pressure (2.7e-2). One bound for all of them, four orders clear of the
+#: first and three short of the rest, so the tests below read as the contrast
+#: they are.
 _RESUME_DRIFT_NM = 1e-5
-_SEED = 20240521
+
+#: Short enough that chaos cannot carry a last-digit difference to the bound,
+#: long enough that a lost random stream shows. Over a thousand steps a
+#: correct resume drifted 1.3e-7 on a typical trajectory and past 1e-5 on
+#: about one in 150 -- a Lyapunov lottery, not a defect -- which the pinned
+#: thread count and fixed seeds this replaces were holding still.
+_HORIZON_STEPS = 50
 
 
-def _a_simulation(system, topology, positions):
-    """One simulation, on one thread.
+def _a_simulation(system, topology, positions, *, threads=None):
+    """One simulation on the CPU platform, at `threads` threads if given.
 
-    The thread count is pinned because these tests compare two runs
-    number for number. OpenMM's CPU platform splits force evaluation
-    across as many threads as it finds cores, and the order a sum is
-    accumulated in decides its last bit -- so two contexts built moments
-    apart on a busy machine can take different thread counts and differ
-    by an ulp before either has taken a step.
-
-    An ulp would not matter if this were a measurement. It is dynamics:
-    Langevin trajectories separate exponentially, so a difference in the
-    sixteenth decimal reaches the fifth within a thousand steps. That is
-    not a defect being caught, it is chaos being rediscovered, and it
-    arrives as a test that passes on a quiet machine and fails on a
-    loaded one.
+    Not pinned by default: a test that passes only at a particular thread
+    count measures the platform. Given where a test's claim depends on it.
+    OpenMM's CPU platform hands out the Langevin random numbers by thread,
+    so a checkpoint loaded at another thread count carries on with a
+    different noise sequence: the same trajectory continues only at the same
+    count, whichever count that is.
     """
     integrator = mm.LangevinMiddleIntegrator(
         300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtosecond)
-    # And the seed, for the same reason. Left at zero, OpenMM draws a new one
-    # for every context, so every run follows a different trajectory, and
-    # the tiny difference between a straight run and a resumed one is
-    # amplified by a different amount each time. Measured over 150 runs, one
-    # in about 150 landed past the bound -- with the machine idle and with
-    # every core busy alike. A fixed seed makes it one trajectory and one
-    # number, every run.
-    integrator.setRandomNumberSeed(_SEED)
+    properties = {"Threads": str(threads)} if threads else {}
     simulation = app.Simulation(topology, system, integrator,
-                                mm.Platform.getPlatformByName("CPU"),
-                                {"Threads": "1"})
+                                mm.Platform.getPlatformByName("CPU"), properties)
     simulation.context.setPositions(positions)
     return simulation
 
@@ -316,9 +300,8 @@ def _a_periodic_system(n: int = 64, *, barostat: bool = False):
                               0.996 * unit.kilojoule_per_mole)
     system.addForce(nonbonded)
     if barostat:
-        pressure = mm.MonteCarloBarostat(1.0 * unit.bar, 300 * unit.kelvin, 5)
-        pressure.setRandomNumberSeed(_SEED)
-        system.addForce(pressure)
+        system.addForce(
+            mm.MonteCarloBarostat(1.0 * unit.bar, 300 * unit.kelvin, 5))
     grid = int(round(n ** (1 / 3))) + 1
     positions = [mm.Vec3(0.45 * (i % grid), 0.45 * ((i // grid) % grid),
                          0.45 * (i // grid ** 2)) for i in range(n)]
@@ -332,28 +315,41 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
 
-    def _continue_and_resume(self, *, barostat):
+    def _continue_and_resume(self, *, barostat, threads=None, resumed_threads=None,
+                             restore="checkpoint"):
+        """Run on, checkpoint, then continue for _HORIZON_STEPS both straight
+        and from the checkpoint. `resumed_threads` runs the second segment at
+        another count; `restore="state"` rebuilds it from positions,
+        velocities and box alone, which is a resume that lost the random
+        stream."""
         system, topology, positions = _a_periodic_system(barostat=barostat)
-        first = _a_simulation(system, topology, positions)
+        first = _a_simulation(system, topology, positions, threads=threads)
         first.minimizeEnergy(maxIterations=50)
         first.context.setVelocitiesToTemperature(300 * unit.kelvin, 99)
         first.step(1000)
 
         checkpoint = self.root / f"{'npt' if barostat else 'nvt'}.chk"
         checkpoint.write_bytes(first.context.createCheckpoint())
+        state = first.context.getState(getPositions=True, getVelocities=True)
         box_at_checkpoint = first.context.getState().getPeriodicBoxVectors(
             asNumpy=True).value_in_unit(unit.nanometer)
 
-        first.step(1000)
+        first.step(_HORIZON_STEPS)
         straight = first.context.getState(getPositions=True).getPositions(
             asNumpy=True).value_in_unit(unit.nanometer)
 
         system2, topology2, _ = _a_periodic_system(barostat=barostat)
-        second = _a_simulation(system2, topology2, positions)
-        second.context.loadCheckpoint(checkpoint.read_bytes())
+        second = _a_simulation(system2, topology2, positions,
+                               threads=resumed_threads or threads)
+        if restore == "checkpoint":
+            second.context.loadCheckpoint(checkpoint.read_bytes())
+        else:
+            second.context.setPeriodicBoxVectors(*state.getPeriodicBoxVectors())
+            second.context.setPositions(state.getPositions())
+            second.context.setVelocities(state.getVelocities())
         box_after_load = second.context.getState().getPeriodicBoxVectors(
             asNumpy=True).value_in_unit(unit.nanometer)
-        second.step(1000)
+        second.step(_HORIZON_STEPS)
         resumed = second.context.getState(getPositions=True).getPositions(
             asNumpy=True).value_in_unit(unit.nanometer)
         return box_at_checkpoint, box_after_load, straight, resumed
@@ -413,24 +409,35 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
                 unit.nanometer / unit.picosecond),
             velocities, atol=1e-9)
 
-    def test_constant_volume_stays_together_for_a_thousand_steps(self):
-        """And the consequence: having started from the same state, the
-        two runs track each other.
+    def test_constant_volume_continues_the_same_trajectory(self):
+        """Having started from the same state, the two runs stay together --
+        at any thread count, so long as both segments use the same one.
 
-        Measured at 1.7e-7 nm with the thread count and the seeds fixed,
-        sixtyfold inside the bound and the same in every run. The figure
-        depends on the trajectory, so a free seed made it a lottery: 1.2e-5
-        on a busy CI runner, and after the threads were pinned, 1.6e-5 once
-        in a local run -- about one run in 150, loaded or not. A number out
-        of a hundred and ninety-two past the line, which is chaos arriving
-        on schedule rather than a defect.
+        The state being exact is the test above. This is the thermostat's
+        random stream carrying on, which is what makes a resume the run it
+        continues rather than another run from the same place."""
+        for threads in (1, 4):
+            _, _, straight, resumed = self._continue_and_resume(
+                barostat=False, threads=threads)
+            np.testing.assert_allclose(straight, resumed, atol=_RESUME_DRIFT_NM,
+                                       err_msg=f"at {threads} thread(s) each")
 
-        Exactness is the test above, which compares a checkpoint with
-        what loading it produced and has nothing in between to amplify.
-        This one says the two runs then track each other.
-        """
-        _, _, straight, resumed = self._continue_and_resume(barostat=False)
-        np.testing.assert_allclose(straight, resumed, atol=_RESUME_DRIFT_NM)
+    def test_a_resume_that_loses_the_random_stream_is_caught(self):
+        # Why the comparison exists: positions and velocities restored
+        # exactly, as the state test checks, and the noise begun again. The
+        # same ensemble and a different trajectory -- past the bound.
+        _, _, straight, resumed = self._continue_and_resume(
+            barostat=False, restore="state")
+        self.assertFalse(np.allclose(straight, resumed, atol=_RESUME_DRIFT_NM))
+
+    def test_at_another_thread_count_it_continues_the_ensemble_not_the_trajectory(self):
+        # The condition on the claim above. If a future OpenMM draws the same
+        # noise at every thread count, this fails and the condition can go.
+        _, _, straight, resumed = self._continue_and_resume(
+            barostat=False, threads=2, resumed_threads=4)
+        self.assertFalse(
+            np.allclose(straight, resumed, atol=_RESUME_DRIFT_NM),
+            "a resume at another thread count now continues the trajectory")
 
     def test_constant_pressure_does_not_and_that_is_why_it_is_qualified(self):
         # The finding the qualification exists for. The barostat's adaptive
@@ -441,10 +448,11 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
         #
         # Against the same bound the constant-volume case is held to, so
         # the two read as the contrast they are. It is not a close thing:
-        # 0.58 nm measured against 1.7e-7 for constant volume, with the
-        # seeds fixed -- more than four orders past the line. An earlier version compared against a number that
-        # sat below what an unpinned thread count could produce on its
-        # own, which would have let this pass on rounding alone.
+        # 2.7e-2 nm or more over _HORIZON_STEPS, against 1.2e-9 for constant
+        # volume at a matched thread count -- three orders past the line. An
+        # earlier version compared against a number an unpinned thread count
+        # could produce on its own, which would have let this pass on
+        # rounding alone.
         #
         # If a future OpenMM starts carrying that state, this test fails
         # and the qualification should come off rather than be kept out of

@@ -139,8 +139,13 @@ def segmentability(config: dict[str, Any] | None) -> Segmentability:
             code="simulation.resume.bias_not_carried")
 
     # Measured rather than assumed, on the CPU platform with argon in a
-    # periodic box. A constant-volume run resumed from a checkpoint
-    # reproduces the run it continued to within 8e-8 nm. The same run at
+    # periodic box. A constant-volume run resumed from a checkpoint at the
+    # same thread count reproduces the run it continued to within 1e-9 nm
+    # over fifty steps. At another thread count the thermostat draws a
+    # different noise sequence, so it continues the ensemble rather than the
+    # trajectory -- which needs no qualification, because Langevin noise
+    # carries no memory and the joined run is a sample of the same dynamics.
+    # The same run at
     # constant pressure does not, and seeding the barostat does not fix
     # it: positions, velocities and box vectors all come back exactly, but
     # the Monte Carlo barostat's adaptive volume-move size is not in the
