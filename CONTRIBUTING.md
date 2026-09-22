@@ -28,6 +28,19 @@ python -c "import fastmdxplora; print(fastmdxplora.__file__)"
 pytest
 ```
 
+### The browser tests
+
+The tests that check the GUI page itself, such as the composer's layout and
+the study frame, drive a real browser through Playwright and skip when it is
+not installed. To run them locally:
+
+```bash
+pip install playwright
+python -m playwright install chromium
+```
+
+CI runs them on one job, Ubuntu with Python 3.11.
+
 ### If you install a released version into the same environment
 
 Don't, unless you mean to. `pip install -U fastmdxplora` replaces an editable

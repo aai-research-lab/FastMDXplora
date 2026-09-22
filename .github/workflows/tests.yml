@@ -184,6 +184,20 @@ jobs:
           # the physics lines are counted from the platforms that run them.
           python -m pip install -e ".[md]" || echo "::notice::the [md] extra has no wheels here; physics-dependent tests will skip"
 
+      - name: Install a browser for the GUI tests
+        # The GUI is a web page, and what its scripts do can only be checked
+        # in a browser: the composer's layout, the study frame, what the run
+        # builder submits. Those tests drive Chromium through Playwright and
+        # skip where it is absent, which was every job here, so they had only
+        # ever run on machines that happened to have it. One job holds them,
+        # the one coverage is measured on. A test tool, not a dependency:
+        # nobody installing FastMDXplora gets it.
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+
       - name: Run tests
         # bash for the same pwsh reason as the install step above.
         #
