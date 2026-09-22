@@ -242,9 +242,11 @@ class TestTheSchedulingBlockIsReachable:
         ])
         harvested = main._harvest_phase_options(
             args, main._EXECUTION_OPTIONS, dest_prefix="execution")
+        # Devices as numbers: the flag reads each item as the config file
+        # would. As text before, which is what this test had pinned.
         assert harvested == {
             "mode": "parallel", "workers": 3,
-            "devices": ["0", "1"], "continue_on_error": False,
+            "devices": [0, 1], "continue_on_error": False,
         }
 
     def test_the_form_reaches_the_config(self) -> None:

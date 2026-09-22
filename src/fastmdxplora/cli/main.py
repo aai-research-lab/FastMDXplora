@@ -134,8 +134,6 @@ _SIMULATION_OPTIONS: list[tuple[str, str, dict[str, Any]]] = [
         "help": "GPU device index for multi-GPU machines (e.g. '0' or '0,1')."}),
     ("checkpoint-interval-steps", "checkpoint_interval_steps", {"type": int,
         "help": "Checkpoint (.chk) interval in steps; 0 disables."}),
-    ("live-telemetry", "live_telemetry", {"action": "store_true", "default": None,
-        "help": "Write lightweight live dashboard telemetry during simulation."}),
     ("telemetry-interval", "telemetry_interval", {"type": int,
         "help": "Minimum step interval for live telemetry updates."}),
     ("trajectory-interval-steps", "trajectory_interval_steps", {"type": int,
@@ -325,6 +323,10 @@ def _generated_options(phase: str, written: list[tuple]) -> list[tuple]:
         if field.type is list:
             options["nargs"] = "+"
             options["metavar"] = "VALUE"
+            # Each item as the config file would read it, so `--execution-devices
+            # 0 1` is a list of numbers and `--setup-chains A B` of names. Read
+            # as text before, so the devices arrived as the strings "0" and "1".
+            options["type"] = item
         else:
             options["type"] = _parser_for(field.type)
             options["metavar"] = _METAVAR.get(options["type"], "VALUE")
@@ -350,6 +352,16 @@ class NotTheTypeItTakes(CodedError, argparse.ArgumentTypeError):
     it as the flag's error; the code says which refusal it is."""
 
     default_code = "config.option.wrong_type"
+
+
+def item(text: str) -> Any:
+    """One item of a list setting, read as the config file reads a value."""
+    import yaml
+
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
+        return text
 
 
 def mapping(text: str) -> dict[str, Any]:
@@ -1300,6 +1312,11 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
     if wanted and config.get("explain") is False:
         wanted = False
     set_explain(wanted)
+    # And into the study, as --verbose goes: the flag was acted on and then
+    # dropped, so a command written with --no-explain built a config that
+    # explained, and the resolved config recorded that it did.
+    if not wanted:
+        config["explain"] = False
     if args.include:
         config["include_phase"] = args.include
     if args.exclude:

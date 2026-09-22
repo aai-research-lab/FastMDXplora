@@ -49,35 +49,17 @@ KNOWN_GAPS = {'cli': {'(study).systems': 'undescribed in the schema, so nothing 
                                             'Python do not take it',
                  '(top-level).budget_hours': 'a top-level field wired by hand; the command line '
                                              'and Python do not take it',
-                 '(top-level).explain': 'presentation; not carried by this interface',
-                 '(top-level).verbose': 'presentation; not carried by this interface',
                  'analysis.options': 'refused by name: the command line has no flag for it',
-                 'execution.continue_on_error': 'not carried by this interface',
-                 'execution.devices': 'not carried by this interface',
-                 'execution.mode': 'not carried by this interface',
-                 'execution.workers': 'not carried by this interface',
                  'report.comparison': 'refused by name: the command line has no flag for it',
                  'report.region_highlights': 'refused by name: the command line has no flag for it',
-                 'setup.build_missing_termini': 'refused by name: the command line has no flag for '
-                                                'it',
-                 'setup.membrane_orient': 'refused by name: the command line has no flag for it',
-                 'setup.membrane_orientation_checked': 'refused by name: the command line has no '
-                                                       'flag for it',
                  'simulation.dashboard_binding_pocket_cutoff_A': 'refused by name: the command '
                                                                  'line has no flag for it',
                  'simulation.dashboard_ligand_resname': 'refused by name: the command line has no '
                                                         'flag for it',
                  'simulation.dashboard_max_playback_frames': 'refused by name: the command line '
                                                              'has no flag for it',
-                 'simulation.live_telemetry': 'refused by name: the command line has no flag for '
-                                              'it',
-                 'simulation.plumed': 'refused by name: the command line has no flag for it',
-                 'simulation.restrain_production': 'refused by name: the command line has no flag '
-                                                   'for it',
-                 'simulation.resume_unsealed': 'refused by name: the command line has no flag for '
-                                               'it'},
- 'gui': {
-         '(study).systems': 'undescribed in the schema, so nothing is generated from it',
+                 'simulation.plumed': 'refused by name: the command line has no flag for it'},
+ 'gui': {'(study).systems': 'undescribed in the schema, so nothing is generated from it',
          '(top-level).output': 'by design: the server places each study in its workspace'},
  'python_script': {'(top-level).agent': 'a top-level field wired by hand; the command line and '
                                         'Python do not take it',

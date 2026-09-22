@@ -39,6 +39,10 @@ _BLOCK_TO_VERB = {
     "simulation": "simulate",
     "analysis": "analyze",
     "report": "report",
+    # How the runs are scheduled: not a phase, and its flags carry its own
+    # name. Left out of this table, a study's execution block was dropped
+    # from its command without a word.
+    "execution": "execution",
 }
 
 
@@ -98,7 +102,15 @@ def _worth_saying(phase: str, name: str, value: Any) -> bool:
 
 
 def _explore_options() -> dict[str, tuple[str, Any]]:
-    """dest -> (canonical option string, the action), from the real parser."""
+    """Each flag's long spelling -> (that spelling, its action), from the
+    real parser.
+
+    Keyed by the flag rather than by its dest: a boolean has two flags on
+    one dest, `--x` and `--no-x`, and a table keyed by dest kept whichever
+    came last and then reported the other direction as having no flag. So
+    every command for a study that set a boolean against its default was
+    refused as untranslatable.
+    """
     from fastmdxplora.cli.main import _build_parser
 
     explore = _build_parser()._subparsers._group_actions[0].choices["explore"]
@@ -107,8 +119,12 @@ def _explore_options() -> dict[str, tuple[str, Any]]:
         if not action.option_strings:
             continue
         # The last spelling is the long one (`-s`, `-system`, `--system`).
-        table[action.dest] = (action.option_strings[-1], action)
+        table[action.option_strings[-1]] = (action.option_strings[-1], action)
     return table
+
+
+def _flags_for_dest(options, dest: str) -> list[tuple[str, Any]]:
+    return [(flag, action) for flag, action in options.values() if action.dest == dest]
 
 
 def _flag_for(options, dest: str, value: Any) -> tuple[str, Any]:
@@ -118,19 +134,17 @@ def _flag_for(options, dest: str, value: Any) -> tuple[str, Any]:
     ``--setup-x`` needs its ``--setup-no-x`` twin; where no spelling exists
     the setting is untranslatable and this says so rather than dropping it.
     """
-    if dest in options:
-        flag, action = options[dest]
-        if action.nargs == 0:
-            if value == action.const:
-                return flag, None
-            # The other constant lives on the twin flag, found by dest+value.
-            for other_flag, other in options.values():
-                if other.dest == dest and other.nargs == 0 and other.const == value:
-                    return other_flag, None
+    flags = _flags_for_dest(options, dest)
+    if flags:
+        if all(action.nargs == 0 for _flag, action in flags):
+            for flag, action in flags:
+                if action.const == value:
+                    return flag, None
             raise UntranslatableSetting(
                 f"The command line has no flag that sets {dest.replace('__', '.')} "
                 f"to {value!r}; keep this study as a config file."
             )
+        flag, _action = flags[-1]
         return flag, value
     raise UntranslatableSetting(
         f"The command line has no flag for {dest.replace('__', '.')}; "
@@ -191,6 +205,18 @@ def cli_command(config: dict[str, Any]) -> str:
         flag = "--" + key.replace("_", "-")
         if names:
             parts += [flag, *(shlex.quote(str(n)) for n in names)]
+    # The two presentation settings the command line has flags for. Their
+    # dests are their own names, not a phase's.
+    from fastmdxplora.config.schema import TOP_LEVEL
+
+    for key in ("verbose", "explain"):
+        value = config.get(key)
+        if value is None or value == TOP_LEVEL.get(key).default:
+            continue
+        flag, rendered_value = _flag_for(options, key, value)
+        parts.append(flag)
+        if rendered_value is not None:
+            parts += _rendered(rendered_value)
 
     for block, verb in _BLOCK_TO_VERB.items():
         settings = config.get(block)
