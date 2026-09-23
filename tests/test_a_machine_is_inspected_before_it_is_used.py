@@ -21,6 +21,7 @@ import pytest
 from fastmdxplora.refusals import refusal_of
 from fastmdxplora.remote import (
     DEFAULT_CUDA_VERSION,
+    CodeIdentity,
     PROBE_SCRIPT,
     Environment,
     Gpu,
@@ -36,9 +37,14 @@ from fastmdxplora.remote import (
     machine_names,
     parse_inspection,
     readiness,
+    same_code,
     save_machine,
 )
 from fastmdxplora.remote.describe import describe_unloadable, overview
+
+RELEASE = CodeIdentity("2.5.6")
+CHECKOUT = CodeIdentity("2.5.6.dev172+g64f17c43b", commit="eae609edbbf9",
+                        dirty=False, checkout="/src/FastMDXplora")
 
 REPO = Path(__file__).resolve().parents[1]
 SH = shutil.which("sh")
@@ -66,7 +72,19 @@ def _laid_out_machine(tmp_path: Path) -> tuple[Path, Path]:
     (env / "bin").mkdir(parents=True)
     (home / "miniforge3" / "bin").mkdir(parents=True)
     _tool(home / "miniforge3" / "bin", "conda", "exit 0")
-    _tool(env / "bin", "python", 'echo 9.9.9')
+    _tool(env / "bin", "python", "echo '9.9.9|||'")
+    _tool(env / "bin", "fastmdx", "exit 0")
+    # Where conda puts an environment when its base is not the user's to
+    # write, as on a workstation with conda in /opt: found by what it holds,
+    # whatever it is called.
+    own = home / ".conda" / "envs" / "working"
+    (own / "bin").mkdir(parents=True)
+    _tool(own / "bin", "python",
+          f"echo '9.9.9.dev1+gold|eae609edbbf9|no|{home}/src/FastMDXplora'")
+    _tool(own / "bin", "fastmdx", "exit 0")
+    # An environment without FastMDXplora is not one.
+    (home / ".conda" / "envs" / "other" / "bin").mkdir(parents=True)
+    _tool(home / ".conda" / "envs" / "other" / "bin", "python", "echo nope")
     (home / "images").mkdir()
     (home / "images" / "fastmdx-9.9.9.sif").write_text("", encoding="utf-8")
 
@@ -107,10 +125,17 @@ def test_the_probe_finds_what_an_installer_left(tmp_path):
     assert found.cuda_driver == "12.7"
     # Found where installers put it, though nothing put it on PATH.
     assert f"{home}/miniforge3" in found.conda_roots
-    assert found.environments == [
-        Environment(f"{home}/miniforge3/envs/fastmdx-9.9.9", "9.9.9")]
-    assert found.environment_for("9.9.9") is not None
-    assert found.environment_for("9.9.8") is None
+    assert sorted(found.environments, key=lambda e: e.path) == sorted([
+        Environment(f"{home}/.conda/envs/working", "9.9.9.dev1+gold",
+                    "eae609edbbf9", "no", f"{home}/src/FastMDXplora"),
+        Environment(f"{home}/miniforge3/envs/fastmdx-9.9.9", "9.9.9"),
+    ], key=lambda e: e.path)
+    # The release environment and the release image hold the same code.
+    assert [e.path for e in found.holding(CodeIdentity("9.9.9"))] == [
+        f"{home}/miniforge3/envs/fastmdx-9.9.9",
+        f"{home}/images/fastmdx-9.9.9.sif"]
+    assert [e.path for e in found.holding(CHECKOUT)] == [
+        f"{home}/.conda/envs/working"]
     assert found.kind == "slurm"
     assert found.partitions == [
         {"name": "gpu", "time_limit": "2-00:00:00", "gres": "gpu:l40s:2"}]
@@ -150,7 +175,7 @@ def _machine(**fields) -> Inspection:
 
 def test_a_conda_that_is_there_is_used():
     plan = install_plan(_machine(conda={"mamba": "/opt/mf/bin/mamba"},
-                                 cuda_driver="13.2"), "2.5.6", "box")
+                                 cuda_driver="13.2"), RELEASE, "box")
     assert plan.route == "conda"
     assert [s.where for s in plan.steps] == ["host"]
     assert plan.steps[0].command == (
@@ -162,14 +187,14 @@ def test_a_conda_that_is_there_is_used():
 def test_the_package_brings_its_own_stack():
     # conda-forge's fastmdxplora declares OpenFF, openmmforcefields, PLUMED
     # and the rest; naming them again is a second list that can drift.
-    plan = install_plan(_machine(conda={"conda": "/c/bin/conda"}), "2.5.6", "b")
+    plan = install_plan(_machine(conda={"conda": "/c/bin/conda"}), RELEASE, "b")
     command = plan.steps[0].command
     for extra in ("openff", "openmmforcefields", "plumed", "weasyprint"):
         assert extra not in command
 
 
 def test_without_conda_micromamba_is_placed_in_the_users_space():
-    plan = install_plan(_machine(), "2.5.6", "box")
+    plan = install_plan(_machine(), RELEASE, "box")
     assert plan.route == "micromamba"
     commands = "\n".join(s.command for s in plan.steps)
     assert "linux-64" in commands
@@ -179,7 +204,7 @@ def test_without_conda_micromamba_is_placed_in_the_users_space():
 
 def test_offline_with_apptainer_the_release_image_is_carried_over():
     plan = install_plan(_machine(internet="no", container="/usr/bin/apptainer",
-                                 scratch="/scratch/me"), "2.5.6", "lab-hpc")
+                                 scratch="/scratch/me"), RELEASE, "lab-hpc")
     assert plan.route == "image"
     where = [s.where for s in plan.steps]
     assert where[0] == "here"      # fetched where there is a network
@@ -189,15 +214,35 @@ def test_offline_with_apptainer_the_release_image_is_carried_over():
 
 
 def test_offline_without_apptainer_there_is_no_route():
-    plan = install_plan(_machine(internet="no"), "2.5.6", "box")
+    plan = install_plan(_machine(internet="no"), RELEASE, "box")
     assert not plan.possible and "no internet" in plan.blocked
 
 
-def test_a_development_build_is_not_offered_from_conda_forge():
+def test_a_checkout_is_not_offered_from_conda_forge():
     plan = install_plan(_machine(conda={"conda": "/c/bin/conda"}),
-                        "2.5.7.dev121+gc07cf6190", "box")
+                        CHECKOUT, "box")
     assert not plan.possible
-    assert "development build" in plan.blocked
+    assert "eae609edbbf9" in plan.blocked and "releases only" in plan.blocked
+
+
+def test_a_checkout_there_is_brought_to_this_commit_with_git():
+    there = Environment("/home/me/.conda/envs/fastmdx-gpu", "2.5.7.dev105",
+                        "13aa8d71c0de", "no", "/home/me/FastMDXplora")
+    plan = install_plan(_machine(environments=[there]), CHECKOUT, "aailab01")
+    assert plan.route == "checkout"
+    assert [s.command for s in plan.steps] == [
+        "git -C /home/me/FastMDXplora fetch origin",
+        "git -C /home/me/FastMDXplora merge --ff-only eae609edbbf9",
+    ]
+    assert plan.check.command == (
+        "/home/me/.conda/envs/fastmdx-gpu/bin/fastmdx info --json")
+    assert any("push it" in note for note in plan.notes)
+
+
+def test_uncommitted_changes_here_have_no_plan():
+    dirty = CodeIdentity("x", commit="eae609edbbf9", dirty=True)
+    plan = install_plan(_machine(), dirty, "box")
+    assert not plan.possible and "uncommitted" in plan.blocked
 
 
 def test_the_cuda_pin_never_exceeds_the_driver():
@@ -209,7 +254,7 @@ def test_the_cuda_pin_never_exceeds_the_driver():
 
 def test_an_image_newer_than_the_driver_is_refused():
     plan = install_plan(_machine(internet="no", container="/usr/bin/apptainer",
-                                 cuda_driver="12.2"), "2.5.6", "box")
+                                 cuda_driver="12.2"), RELEASE, "box")
     assert not plan.possible and "CPU" in plan.blocked
 
 
@@ -219,6 +264,45 @@ def test_the_cuda_default_is_the_containers():
         encoding="utf-8")
     assert f"CUDA_VERSION:-{DEFAULT_CUDA_VERSION}" in definition
     assert f"|| '{DEFAULT_CUDA_VERSION}'" in workflow
+
+
+# ---------------------------------------------------------------------------
+# Which code an installation holds
+# ---------------------------------------------------------------------------
+def test_a_checkout_is_known_by_its_commit_not_its_version_string():
+    # The Mac that found this reported 64f17c4 in its version string while
+    # running eae609e: an editable install keeps the string it was given.
+    stale = CodeIdentity("2.5.6.dev172+g64f17c43b", commit="eae609edbbf9")
+    fresh = CodeIdentity("2.5.7.dev121+gc07cf6190", commit="eae609edbbf9")
+    assert same_code(stale, fresh)[0]
+    moved = CodeIdentity("2.5.6.dev172+g64f17c43b", commit="64f17c43b000")
+    assert not same_code(stale, moved)[0]
+
+
+def test_uncommitted_changes_are_never_the_same_code():
+    clean = CodeIdentity("x", commit="eae609edbbf9", dirty=False)
+    for state in (True, None):
+        other = CodeIdentity("x", commit="eae609edbbf9", dirty=state)
+        assert not same_code(clean, other)[0]
+        assert not same_code(other, clean)[0]
+
+
+def test_a_release_and_a_checkout_are_not_the_same_code():
+    assert same_code(RELEASE, CodeIdentity("2.5.6"))[0]
+    assert not same_code(RELEASE, CodeIdentity("2.5.6", commit="eae609edbbf9"))[0]
+    assert not same_code(RELEASE, CodeIdentity("2.5.4"))[0]
+
+
+def test_this_computer_is_identified_the_same_way(monkeypatch):
+    from fastmdxplora import provenance
+    from fastmdxplora.remote import identity
+
+    monkeypatch.setattr(provenance, "source_provenance",
+                        lambda: {"commit": "eae609edbbf9", "dirty": False})
+    monkeypatch.setattr(provenance, "source_checkout", lambda: Path("/src"))
+    assert identity.this_code().commit == "eae609edbbf9"
+    monkeypatch.setattr(provenance, "source_provenance", lambda: None)
+    assert not identity.this_code().is_checkout
 
 
 # ---------------------------------------------------------------------------
@@ -289,13 +373,15 @@ def test_an_inspection_records_the_installation_and_what_it_loads(
         return subprocess.CompletedProcess(
             command, 0, "a banner\n" + json.dumps(_ready_info()), "")
 
-    machine = inspect_machine("box", version="9.9.9",
+    machine = inspect_machine("box", code=CodeIdentity("9.9.9"),
                               transport=Transport("box", runner=runner,
                                                   interactive=False))
-    assert asked[1] == (f"{home}/miniforge3/envs/fastmdx-9.9.9/bin/fastmdx "
-                        "info --json")
-    assert readiness(machine, "9.9.9").ready
-    assert not readiness(machine, "9.9.10").ready
+    # Only the installation holding this code is asked what it loads.
+    assert asked[1:] == [
+        f"{home}/miniforge3/envs/fastmdx-9.9.9/bin/fastmdx info --json"]
+    assert readiness(machine, CodeIdentity("9.9.9")).ready
+    assert not readiness(machine, CodeIdentity("9.9.10")).ready
+    assert not readiness(machine, CHECKOUT).ready
     assert load_machine("box").inspection == machine.inspection
     assert machine_names() == ["box"]
 
@@ -304,14 +390,24 @@ def test_an_installation_that_cannot_load_openmm_is_not_ready(settings):
     info = _ready_info()
     info["backends"]["openmm"] = {"name": "OpenMM", "state": "missing",
                                   "install": "conda install -c conda-forge openmm"}
+    env = Environment("/e/fastmdx-1.0", "1.0")
     machine = Machine(
         name="box", inspected_at="2026-09-23T00:00:00Z",
-        inspection=_machine(environments=[Environment("/e/fastmdx-1.0", "1.0")]),
-        info={"1.0": info}, installation="/e/fastmdx-1.0")
-    verdict = readiness(machine, "1.0")
+        inspection=_machine(environments=[env]), info={env.path: info})
+    verdict = readiness(machine, CodeIdentity("1.0"))
     assert not verdict.ready and "OpenMM" in verdict.summary
-    advice = "\n".join(describe_unloadable(machine, "1.0"))
+    advice = "\n".join(describe_unloadable(machine, verdict))
     assert "conda install -c conda-forge openmm" in advice
+
+
+def test_a_dirty_checkout_here_is_never_ready_anywhere(settings):
+    env = Environment("/e/w", "x", "eae609edbbf9", "no", "/src")
+    machine = Machine("box", "2026-09-23T00:00:00Z",
+                      _machine(environments=[env]), {env.path: _ready_info()})
+    assert readiness(machine, CHECKOUT).ready
+    dirty = CodeIdentity("x", commit="eae609edbbf9", dirty=True)
+    verdict = readiness(machine, dirty)
+    assert not verdict.ready and "uncommitted" in verdict.summary
 
 
 def test_forgetting_removes_the_record_and_nothing_else(settings):
@@ -327,7 +423,7 @@ def test_forgetting_removes_the_record_and_nothing_else(settings):
 
 def test_the_overview_connects_to_nothing(settings):
     save_machine(Machine("box", "2026-09-23T10:00:00Z", _machine()))
-    lines = overview([load_machine("box")], "1.0")
+    lines = overview([load_machine("box")], CodeIdentity("1.0"))
     assert lines[0] == "Machines"
     assert "box" in lines[1] and "not ready" in lines[1]
 

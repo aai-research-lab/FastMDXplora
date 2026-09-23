@@ -1,7 +1,7 @@
 """Running studies on another machine, reached over SSH.
 
 What exists so far is the first half: naming a machine, finding out what it
-has, and saying how FastMDXplora would be installed there. Sending a study,
+has, whether it holds the code this computer runs, and how it would come to. Sending a study,
 watching it and bringing the results back come next, and build on this.
 
 A study's config never names a machine. The config is what runs anywhere;
@@ -11,6 +11,7 @@ kept with their other per-user settings.
 
 from __future__ import annotations
 
+from fastmdxplora.remote.identity import CodeIdentity, same_code, this_code
 from fastmdxplora.remote.machines import (
     Machine,
     Readiness,
@@ -45,6 +46,7 @@ __all__ = [
     "DEFAULT_CUDA_VERSION",
     "PROBE_SCRIPT",
     "Answer",
+    "CodeIdentity",
     "Environment",
     "Gpu",
     "InstallPlan",
@@ -66,5 +68,7 @@ __all__ = [
     "machines_dir",
     "parse_inspection",
     "readiness",
+    "same_code",
     "save_machine",
+    "this_code",
 ]

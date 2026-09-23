@@ -20,6 +20,10 @@ the machine:
     No internet, and Apptainer is there. The release's image, which is the
     same conda-forge stack solved once into one file, is fetched on this
     computer and copied across.
+``checkout``
+    This computer runs a source checkout rather than a release. conda-forge
+    cannot supply that, so the plan brings a checkout already on the
+    machine to the same commit, with git, and nothing else.
 
 A machine offline without Apptainer has no route yet, and the plan says so
 rather than improvising one.
@@ -33,6 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from fastmdxplora.remote.identity import CodeIdentity
 from fastmdxplora.remote.probe import HOST_HOME, Inspection
 
 __all__ = [
@@ -167,18 +172,61 @@ def _conda_executable(inspection: Inspection) -> str:
     return ""
 
 
-def install_plan(inspection: Inspection, version: str,
+def _checkout_plan(inspection: Inspection, code: CodeIdentity,
+                   machine: str) -> InstallPlan:
+    """Bring a checkout on the machine to this computer's commit."""
+    plan = InstallPlan(version=code.commit)
+    if code.dirty is not False:
+        plan.blocked = (
+            f"This computer's checkout at {code.commit} has uncommitted "
+            "changes, so no installation elsewhere can be shown to hold the "
+            "same code. Commit them, then inspect again.")
+        return plan
+    checkouts = [env for env in inspection.installations()
+                 if env.commit and env.checkout]
+    if not checkouts:
+        plan.blocked = (
+            f"This computer runs a source checkout at {code.commit}, and "
+            f"conda-forge carries releases only. {machine} holds no checkout "
+            "to bring to that commit. Clone the repository there, install it "
+            "into a conda environment that has the release's stack, and "
+            "inspect again.")
+        return plan
+    env = checkouts[0]
+    plan.route = "checkout"
+    plan.steps += [
+        Step("host", f"git -C {env.checkout} fetch origin"),
+        Step("host", f"git -C {env.checkout} merge --ff-only {code.commit}"),
+    ]
+    plan.check = Step("host", f"{env.path}/bin/fastmdx info --json")
+    plan.notes.append(
+        f"{env.path} is installed from the checkout at {env.checkout}, "
+        f"now at {env.commit}. The fetch finds {code.commit} only once it "
+        "is on origin, so push it from this computer first if it is not.")
+    if env.dirty != "no":
+        plan.notes.append(
+            f"{env.checkout} has uncommitted changes. Commit or discard "
+            "them: until then its commit does not describe its code.")
+    plan.notes.append(
+        "--ff-only refuses rather than mixing in commits of its own. If "
+        "the dependencies changed between the two commits, update the "
+        "environment as well.")
+    return plan
+
+
+def install_plan(inspection: Inspection, code: CodeIdentity,
                  machine: str) -> InstallPlan:
-    """The plan that would put exactly ``version`` on ``machine``."""
+    """The plan that would put exactly ``code`` on ``machine``."""
+    if code.is_checkout:
+        return _checkout_plan(inspection, code, machine)
+
+    version = code.version
     plan = InstallPlan(version=version)
     name = environment_name(version)
-
     if not is_release(version):
         plan.blocked = (
-            f"This computer runs a development build ({version}), and "
-            "conda-forge carries releases only. Install the same commit on "
-            "the machine yourself, into a conda environment with the "
-            "release's stack, so both ends run the same code.")
+            f"This computer runs {version}, which is not a release, and "
+            "conda-forge carries releases only.")
         return plan
 
     pin, why = cuda_pin(inspection)

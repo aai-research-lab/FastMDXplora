@@ -75,6 +75,7 @@ FastMDXplora/
 │       │   └── templates/         # dashboard.html
 │       ├── remote/
 │       │   ├── probe.py           # The read-only inspection script, and reading its answer
+│       │   ├── identity.py        # Which code an installation holds: a release's version, a checkout's commit
 │       │   ├── transport.py       # The user's own ssh, with one login per session
 │       │   ├── survey.py          # Inspecting a machine and asking its installation what loads
 │       │   ├── machines.py        # Per-user machine records, and readiness for this version

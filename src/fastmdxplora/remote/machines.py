@@ -8,9 +8,9 @@ calibration, in :func:`~fastmdxplora.user_dir.user_config_dir`, one file
 per machine under ``machines/``.
 
 A record holds what the last inspection found and when. It does not hold
-a verdict. Whether a machine is ready depends on the version running on
-*this* computer, which changes on every upgrade, so readiness is worked out
-when it is asked for, from the record and the version then.
+a verdict. Whether a machine is ready depends on the code running on *this*
+computer, which changes with every upgrade and every commit, so readiness
+is worked out when it is asked for, from the record and the code then.
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.refusals import StudyError
-from fastmdxplora.remote.probe import Inspection
+from fastmdxplora.remote.identity import CodeIdentity
+from fastmdxplora.remote.probe import Environment, Inspection
 from fastmdxplora.remote.transport import check_machine_name
 from fastmdxplora.user_dir import user_config_dir
 
@@ -36,6 +37,7 @@ __all__ = [
     "machines_dir",
     "readiness",
     "save_machine",
+    "unloadable",
 ]
 
 #: Backends a machine must load for a study to run there: the ones the
@@ -57,11 +59,9 @@ class Machine:
     name: str
     inspected_at: str
     inspection: Inspection
-    #: ``fastmdx info --json`` from the installation matching this computer's
-    #: version at the time, keyed by that version. Empty where there was none.
+    #: ``fastmdx info --json`` from each installation asked, keyed by its path:
+    #: the one holding this computer's code when the machine was inspected.
     info: dict[str, Any] = field(default_factory=dict)
-    #: Where that installation is: an environment or an image path.
-    installation: str = ""
 
     def as_record(self) -> dict[str, Any]:
         return {
@@ -69,7 +69,6 @@ class Machine:
             "inspected_at": self.inspected_at,
             "inspection": self.inspection.as_record(),
             "info": self.info,
-            "installation": self.installation,
         }
 
     @classmethod
@@ -79,7 +78,6 @@ class Machine:
             inspected_at=str(record.get("inspected_at", "")),
             inspection=Inspection.from_record(record.get("inspection") or {}),
             info=dict(record.get("info") or {}),
-            installation=str(record.get("installation", "")),
         )
 
 
@@ -153,36 +151,50 @@ def forget_machine(name: str) -> Path:
 
 @dataclass(frozen=True)
 class Readiness:
-    """Whether a study from this computer can run on the machine, and why."""
+    """Whether a study from this computer can run on the machine, and why.
+
+    ``installation`` is the one that would run it, where one holds the code.
+    """
 
     ready: bool
     summary: str
+    installation: Environment | None = None
 
 
-def readiness(machine: Machine, version: str) -> Readiness:
-    """Whether the machine holds exactly ``version`` with its backends.
+def unloadable(machine: Machine, env: Environment) -> list[dict[str, str]]:
+    """The required backends ``env`` reported it cannot load."""
+    backends = (machine.info.get(env.path) or {}).get("backends") or {}
+    return [dict(backends.get(name) or {}, import_name=name)
+            for name in REQUIRED_BACKENDS
+            if (backends.get(name) or {}).get("state") != "installed"]
+
+
+def readiness(machine: Machine, code: CodeIdentity) -> Readiness:
+    """Whether the machine holds exactly ``code``, with its backends loading.
 
     Exactly, because two versions can resolve a study's defaults
-    differently, and a run that resolved differently from the config it
-    was sent is the failure the environment comparison exists to catch.
+    differently, and a run that resolved differently from the config it was
+    sent is the failure the environment comparison exists to catch.
     """
-    found = machine.inspection
-    matching = found.environment_for(version) or (
-        found.on_path if found.on_path and found.on_path.version == version
-        else None)
-    image = found.image_for(version)
-    if matching is None and not image:
-        others = sorted({e.version for e in found.environments if e.version})
-        if found.on_path and found.on_path.version:
-            others = sorted(set(others) | {found.on_path.version})
-        held = f"holds {', '.join(others)}" if others else "has no FastMDXplora"
-        return Readiness(False, f"needs {version} ({held})")
-    backends = (machine.info.get(version) or {}).get("backends") or {}
-    if not backends:
-        return Readiness(False, f"{version} found, backends not checked")
-    missing = [(backends.get(name) or {}).get("name", name)
-               for name in REQUIRED_BACKENDS
-               if (backends.get(name) or {}).get("state") != "installed"]
-    if missing:
-        return Readiness(False, f"{version} found, missing {', '.join(missing)}")
-    return Readiness(True, f"{version}, backends load")
+    if code.is_checkout and code.dirty is not False:
+        return Readiness(False, "this computer's checkout has uncommitted "
+                                "changes, so nothing elsewhere can be shown "
+                                "to hold the same code")
+    holding = machine.inspection.holding(code)
+    if not holding:
+        held = [f"{env.path.rsplit('/', 1)[-1]} {env.identity.describe()}"
+                for env in machine.inspection.installations()]
+        what = ("it holds " + "; ".join(held)) if held else "it has no FastMDXplora"
+        return Readiness(False, f"needs {code.describe()}, and {what}")
+    for env in holding:
+        if env.path in machine.info and not unloadable(machine, env):
+            return Readiness(True, f"{env.path} holds this code and its "
+                                   "backends load", env)
+    env = holding[0]
+    if env.path not in machine.info:
+        return Readiness(False, f"{env.path} holds this code; what it can "
+                                "load was not checked", env)
+    missing = [entry.get("name", entry["import_name"])
+               for entry in unloadable(machine, env)]
+    return Readiness(False, f"{env.path} holds this code and cannot load "
+                            f"{', '.join(missing)}", env)

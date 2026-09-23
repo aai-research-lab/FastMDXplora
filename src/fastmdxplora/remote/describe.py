@@ -6,9 +6,10 @@ interface can show the same machine the same way.
 
 from __future__ import annotations
 
-from fastmdxplora.remote.machines import REQUIRED_BACKENDS, Machine, readiness
+from fastmdxplora.remote.identity import CodeIdentity
+from fastmdxplora.remote.machines import Machine, Readiness, readiness, unloadable
 from fastmdxplora.remote.plan import InstallPlan, install_plan
-from fastmdxplora.remote.probe import Inspection
+from fastmdxplora.remote.probe import Environment, Inspection
 
 __all__ = ["describe_machine", "describe_plan", "describe_unloadable",
            "overview", "plan_for"]
@@ -50,17 +51,17 @@ def _short(kind: Inspection) -> str:
     return "no GPU here" if kind.kind == "slurm" else "no GPU"
 
 
-def describe_machine(machine: Machine, version: str) -> list[str]:
-    """The machine as inspected, and whether it is ready for ``version``."""
+def _installation_line(env: Environment) -> str:
+    line = f"{env.path}: {env.identity.describe()}"
+    return line + (f" (source {env.checkout})" if env.checkout else "")
+
+
+def describe_machine(machine: Machine, code: CodeIdentity) -> list[str]:
+    """The machine as inspected, and the code this computer runs."""
     found = machine.inspection
     conda = next(iter(found.conda.values()), "") or (
         found.conda_roots[0] if found.conda_roots else "not found")
-    held = [f"{env.version or 'unreadable'} in {env.path}"
-            for env in found.environments]
-    if found.on_path is not None:
-        held.append(f"{found.on_path.version or 'unreadable'} on PATH "
-                    f"({found.on_path.path})")
-    held += [f"image {image}" for image in found.images]
+    held = [_installation_line(env) for env in found.installations()]
     scheduler = "SLURM" if found.kind == "slurm" else "none"
     if found.partitions:
         scheduler += " (partitions " + ", ".join(
@@ -80,7 +81,10 @@ def describe_machine(machine: Machine, version: str) -> list[str]:
         ("fastmdx", held[0] if held else "not installed"),
     ]
     rows += [("", more) for more in held[1:]]
-    rows.append(("this computer", version))
+    here = code.describe()
+    if code.checkout:
+        here += f" ({code.checkout})"
+    rows.append(("this computer", here))
     lines = [f"{machine.name}   {found.kind}"]
     lines += [f"  {label:<13} {value}" for label, value in rows]
     return lines
@@ -90,7 +94,9 @@ def describe_plan(plan: InstallPlan, machine: str) -> list[str]:
     """How to install, in the words someone would copy from."""
     if plan.blocked:
         return ["No install route:", f"  {plan.blocked}"]
-    lines = [f"Install plan ({plan.route}, inside your account only):"]
+    what = ("To bring it to this computer's commit" if plan.route == "checkout"
+            else f"Install plan ({plan.route}, inside your account only)")
+    lines = [f"{what}:"]
     for step in plan.steps:
         where = "on this computer" if step.where == "here" else f"on {machine}"
         lines.append(f"  [{where}]")
@@ -105,38 +111,33 @@ def describe_plan(plan: InstallPlan, machine: str) -> list[str]:
     return lines
 
 
-def plan_for(machine: Machine, version: str) -> InstallPlan:
-    return install_plan(machine.inspection, version, machine.name)
+def plan_for(machine: Machine, code: CodeIdentity) -> InstallPlan:
+    return install_plan(machine.inspection, code, machine.name)
 
 
-def describe_unloadable(machine: Machine, version: str) -> list[str]:
-    """What an installation that is present cannot load, and how to add it.
+def describe_unloadable(machine: Machine, verdict: Readiness) -> list[str]:
+    """What an installation holding this code cannot load, and how to add it.
 
-    An empty list where the installation loads everything, or where there is
-    no installation of ``version`` to speak of, in which case the install
+    Empty where no installation holds the code, in which case the install
     plan is the answer instead.
     """
-    backends = (machine.info.get(version) or {}).get("backends") or {}
-    if not machine.installation:
+    env = verdict.installation
+    if env is None:
         return []
-    if not backends:
-        return [f"{machine.installation} holds {version} and did not say "
-                "what it can load. Run `fastmdx info` there to see why."]
-    lines = []
-    for name in REQUIRED_BACKENDS:
-        entry = backends.get(name) or {}
-        if entry.get("state") != "installed":
-            lines.append(f"  {entry.get('name', name):<20} "
-                         f"{entry.get('state', 'unknown'):<9} "
-                         f"{entry.get('install', '')}".rstrip())
-    if not lines:
+    if env.path not in machine.info:
+        return [f"{env.path} holds this code and did not say what it can "
+                "load. Run `fastmdx info` there to see why."]
+    rows = [f"  {entry.get('name', entry['import_name']):<20} "
+            f"{entry.get('state', 'unknown'):<9} "
+            f"{entry.get('install', '')}".rstrip()
+            for entry in unloadable(machine, env)]
+    if not rows:
         return []
-    return [f"{machine.installation} holds {version} and cannot load:",
-            *lines,
+    return [f"{env.path} holds this code and cannot load:", *rows,
             "Install those into that environment, then inspect again."]
 
 
-def overview(machines: list[Machine], version: str) -> list[str]:
+def overview(machines: list[Machine], code: CodeIdentity) -> list[str]:
     """One line per machine, from what was recorded. Connects to nothing."""
     if not machines:
         return ["No machines yet. Inspect one from your ~/.ssh/config:",
@@ -144,13 +145,13 @@ def overview(machines: list[Machine], version: str) -> list[str]:
     width = max(len(m.name) for m in machines)
     lines = ["Machines"]
     for machine in machines:
-        verdict = readiness(machine, version)
+        verdict = readiness(machine, code)
         mark = "ready" if verdict.ready else "not ready"
         when = machine.inspected_at.replace("T", " ").replace("Z", " UTC")
         lines.append(
             f"  {machine.name:<{width}}  {machine.inspection.kind:<11} "
             f"{_short(machine.inspection):<11} {mark}: {verdict.summary}"
             f"  (inspected {when})")
-    lines += ["", f"This computer runs {version}. The list is as last "
+    lines += ["", f"This computer runs {code.describe()}. The list is as last "
               "inspected; inspect a machine again to refresh it."]
     return lines

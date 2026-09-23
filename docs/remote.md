@@ -34,10 +34,10 @@ gpu-box   workstation
   scratch       not found
   home          412 GB free
   internet      yes
-  fastmdx       2.5.6 in /home/me/miniforge3/envs/fastmdx-2.5.6
-  this computer 2.5.6
+  fastmdx       /home/me/miniforge3/envs/fastmdx-2.5.6: 2.5.6 (release)
+  this computer 2.5.6 (release)
 
-  ✓ Ready: 2.5.6, backends load.
+  ✓ Ready: /home/me/miniforge3/envs/fastmdx-2.5.6 holds this code and its backends load.
 ```
 
 The inspection only reads. It creates nothing, installs nothing and leaves no
@@ -46,19 +46,32 @@ file behind on the machine. It looks for:
 - the CPUs, memory and GPUs, and the newest CUDA the GPU driver supports;
 - conda, mamba or micromamba, including where installers put them but a
   non-interactive shell does not see them;
-- environments named `fastmdx-*`, and which FastMDXplora version each holds;
+- every conda environment holding a `fastmdx` command, whatever it is called,
+  in the base's `envs`, in `~/.conda/envs` (where conda puts yours when the
+  base is not yours to write, as with `/opt/conda`) and in any `envs_dirs` in
+  `~/.condarc`; and which code each holds;
 - Apptainer, and any `fastmdx-<version>.sif` release image;
 - SLURM and its partitions, a scratch directory, free space, and whether
   conda-forge can be reached.
 
-Where it finds the version running on this computer, it asks that installation
-what it can load, with `fastmdx info --json`, the same answer `fastmdx info`
-gives a person there.
+Where an installation holds the code running on this computer, it is asked what
+it can load, with `fastmdx info --json`, the same answer `fastmdx info` gives a
+person there.
 
-**A machine is ready when it holds exactly this computer's version and that
-installation loads OpenMM, PDBFixer and the ligand stack.** Exactly, because two
+**A machine is ready when an installation there holds exactly this computer's
+code and loads OpenMM, PDBFixer and the ligand stack.** Exactly, because two
 versions can resolve a study's defaults differently, and a run that resolved
 differently from the Config it was given is not a run of that Config.
+
+### Which code, for a source checkout
+
+A release is known by its version. A source checkout is known by its **commit**,
+because the version string of an editable install is written when it is
+installed and stays that way as the checkout moves on: a checkout can report
+`2.5.6.dev172+g64f17c43b` while it runs a commit two hundred later. So two
+checkouts hold the same code when their commits match and neither has
+uncommitted changes. With uncommitted changes the commit does not describe the
+code, and nothing elsewhere can be shown to hold it; commit first.
 
 ### On a cluster
 
@@ -112,9 +125,23 @@ Nothing in a plan goes outside your own account: no `sudo`, no edits to your
 shell's startup files, no shared environments. Each version gets its own
 environment, so a newer one never replaces the one an older study ran on.
 
-**A development build has no plan.** conda-forge carries releases only, so if
-this computer runs something like `2.5.7.dev121+gc07cf6190`, install the same
-commit on the machine by hand.
+**A source checkout is brought to the same commit with git.** conda-forge
+carries releases only, so where this computer runs a checkout, the plan finds a
+checkout on the machine and moves it:
+
+```
+To bring it to this computer's commit:
+  [on aailab01]
+    git -C /home/me/FastMDXplora fetch origin
+  [on aailab01]
+    git -C /home/me/FastMDXplora merge --ff-only eae609edbbf9
+  then check it:
+    /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx info --json
+```
+
+The commit has to be on `origin` for the fetch to find it, so push first.
+`--ff-only` refuses rather than mix in commits of the machine's own. Where the
+machine holds no checkout, the inspection says to clone one there.
 
 ---
 

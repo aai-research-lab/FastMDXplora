@@ -13,6 +13,17 @@ shell that reads no startup files, and conda's ``init`` block lives in
 ``.bashrc``. So a machine with a working conda reports ``command not found``.
 The script looks in the places installers put conda as well as on ``PATH``.
 
+**Conda keeps environments in more than one place.** Where its base is
+not the user's to write -- ``/opt/conda``, a site install -- ``conda create``
+puts a new environment in ``~/.conda/envs`` instead, and ``~/.condarc`` may
+name others. All of them are searched, and an environment counts because
+it holds a ``fastmdx`` command, not because of what it is called.
+
+**A version string does not say which code a checkout holds.** An editable
+install keeps the string it was installed with. So each installation also
+reports its commit, where it is a checkout, read the way the manifest reads
+it.
+
 **A cluster's login node usually has no GPU.** ``nvidia-smi`` is absent
 there even when every compute node carries four. The partitions say what
 the nodes hold, and the driver is known only once a job runs on one; the
@@ -27,6 +38,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from fastmdxplora.remote.identity import CodeIdentity, same_code
 
 __all__ = [
     "PROBE_SCRIPT",
@@ -83,22 +96,55 @@ for root in __CONDA_ROOTS__; do
 done
 [ -d "__HOST_HOME__/mamba" ] && say conda_root "__HOST_HOME__/mamba"
 
+ident() {
+  "$1" -c '
+import fastmdxplora
+version = getattr(fastmdxplora, "__version__", "")
+commit = dirty = checkout = ""
+try:
+    from fastmdxplora.provenance import source_checkout, source_provenance
+    record = source_provenance() or {}
+    commit = record.get("commit") or ""
+    if commit:
+        dirty = {True: "yes", False: "no"}.get(record.get("dirty"), "unknown")
+        checkout = str(source_checkout() or "")
+except Exception:
+    pass
+print("|".join((version, commit, dirty, checkout)))
+' 2>/dev/null
+}
+
 roots="__CONDA_ROOTS__ $HOME/micromamba __HOST_HOME__/mamba"
 for tool in mamba conda micromamba; do
   found=$(command -v "$tool" 2>/dev/null) && roots="$roots ${found%/bin/*}"
 done
 [ -n "$CONDA_EXE" ] && roots="$roots ${CONDA_EXE%/bin/*}"
 [ -n "$MAMBA_ROOT_PREFIX" ] && roots="$roots $MAMBA_ROOT_PREFIX"
-for root in $roots; do
-  for env in "$root"/envs/fastmdx-*; do
-    [ -x "$env/bin/python" ] || continue
-    version=$("$env/bin/python" -c \
-      'import fastmdxplora; print(fastmdxplora.__version__)' 2>/dev/null)
-    say environment "$env|$version"
+places="$HOME/.conda/envs"
+for root in $roots; do places="$places $root/envs"; done
+if [ -r "$HOME/.condarc" ]; then
+  for dir in $(awk '/^envs_dirs:/ {on = 1; next}
+      on && /^[ \t]*-/ {sub(/^[ \t]*-[ \t]*/, ""); gsub(/"/, ""); print; next}
+      on && /^[^ \t]/ {on = 0}' "$HOME/.condarc"); do
+    case "$dir" in "~"*) dir="$HOME${dir#"~"}" ;; esac
+    places="$places $dir"
+  done
+fi
+[ -n "$CONDA_ENVS_PATH" ] && places="$places $(printf '%s' "$CONDA_ENVS_PATH" | tr ':' ' ')"
+for place in $places; do
+  for env in "$place"/*; do
+    [ -x "$env/bin/fastmdx" ] && [ -x "$env/bin/python" ] || continue
+    say environment "$env|$(ident "$env/bin/python")"
   done
 done
-found=$(command -v fastmdx 2>/dev/null) &&
-  say on_path "$found|$(fastmdx --version 2>/dev/null | awk '{print $2}')"
+found=$(command -v fastmdx 2>/dev/null) && {
+  python=$(sed -n '1s/^#![ \t]*//p' "$found" 2>/dev/null | awk '{print $1}')
+  if [ -n "$python" ] && [ -x "$python" ]; then
+    say on_path "$found|$(ident "$python")"
+  else
+    say on_path "$found|$(fastmdx --version 2>/dev/null | awk '{print $2}')|||"
+  fi
+}
 
 for tool in apptainer singularity; do
   found=$(command -v "$tool" 2>/dev/null) &&
@@ -151,10 +197,25 @@ class Gpu:
 
 @dataclass(frozen=True)
 class Environment:
-    """A conda environment holding FastMDXplora, and which version."""
+    """An installation of FastMDXplora on the machine, and what it holds.
+
+    ``path`` is a conda environment, the ``fastmdx`` command on PATH, or a
+    release image. ``commit``, ``dirty`` and ``checkout`` are filled where the
+    installation is a source checkout.
+    """
 
     path: str
     version: str
+    commit: str = ""
+    dirty: str = ""  # "yes", "no" or "unknown"; empty for a release
+    checkout: str = ""
+
+    @property
+    def identity(self) -> CodeIdentity:
+        return CodeIdentity(
+            version=self.version, commit=self.commit,
+            dirty={"no": False, "yes": True}.get(self.dirty),
+            checkout=self.checkout)
 
 
 @dataclass
@@ -190,20 +251,26 @@ class Inspection:
         """``slurm`` where jobs go through a scheduler, else ``workstation``."""
         return "slurm" if self.sbatch else "workstation"
 
-    def environment_for(self, version: str) -> Environment | None:
-        """The environment holding exactly this version, if there is one."""
-        for env in self.environments:
-            if env.version == version:
-                return env
-        return None
+    def installations(self) -> list[Environment]:
+        """Every installation found: environments, PATH, release images.
 
-    def image_for(self, version: str) -> str:
-        """The release image for exactly this version, if one was found."""
-        name = f"fastmdx-{version}.sif"
+        A release image is named for its version and built from a tag, so
+        its name is its identity.
+        """
+        found = list(self.environments)
+        if self.on_path is not None and all(
+                env.path != self.on_path.path for env in found):
+            found.append(self.on_path)
         for image in self.images:
-            if image.rsplit("/", 1)[-1] == name:
-                return image
-        return ""
+            name = image.rsplit("/", 1)[-1]
+            version = name[len("fastmdx-"):-len(".sif")]
+            found.append(Environment(path=image, version=version))
+        return found
+
+    def holding(self, code: CodeIdentity) -> list[Environment]:
+        """The installations holding exactly ``code``."""
+        return [env for env in self.installations()
+                if same_code(code, env.identity)[0]]
 
     def as_record(self) -> dict[str, Any]:
         return asdict(self)
@@ -225,6 +292,13 @@ def _integer(text: str) -> int | None:
         return int(text.strip())
     except ValueError:
         return None
+
+
+def _installation(value: str) -> Environment:
+    """``path|version|commit|dirty|checkout``, with the tail optional."""
+    parts = (value.split("|") + [""] * 5)[:5]
+    return Environment(path=parts[0], version=parts[1], commit=parts[2],
+                       dirty=parts[3], checkout=parts[4])
 
 
 def parse_inspection(text: str) -> Inspection | None:
@@ -264,13 +338,11 @@ def parse_inspection(text: str) -> Inspection | None:
             if value not in found.conda_roots:
                 found.conda_roots.append(value)
         elif key == "environment":
-            path, _, version = value.partition("|")
-            env = Environment(path=path, version=version)
-            if env not in found.environments:
+            env = _installation(value)
+            if all(env.path != known.path for known in found.environments):
                 found.environments.append(env)
         elif key == "on_path":
-            path, _, version = value.partition("|")
-            found.on_path = Environment(path=path, version=version)
+            found.on_path = _installation(value)
         elif key == "container":
             path, _, version = value.partition("|")
             if not found.container:

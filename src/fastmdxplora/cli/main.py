@@ -2008,6 +2008,7 @@ def _cmd_remote(args: argparse.Namespace) -> int:
         machine_names,
         machines_dir,
         readiness,
+        this_code,
     )
     from fastmdxplora.remote.describe import (
         describe_machine,
@@ -2024,23 +2025,23 @@ def _cmd_remote(args: argparse.Namespace) -> int:
         return 0
 
     if args.machine:
+        code = this_code()
         print(f"Inspecting {args.machine} over ssh...")
-        machine = inspect_machine(args.machine)
+        machine = inspect_machine(args.machine, code=code)
         print()
-        for line in describe_machine(machine, __version__):
+        for line in describe_machine(machine, code):
             print(line)
         print()
-        verdict = readiness(machine, __version__)
+        verdict = readiness(machine, code)
         if verdict.ready:
             print(f"  \u2713 Ready: {verdict.summary}.")
         else:
             print(f"  \u2717 Not ready: {verdict.summary}.")
             print()
-            # An installation that is there and cannot load something needs
-            # that something, not a second installation beside it.
-            advice = (describe_unloadable(machine, __version__)
-                      or describe_plan(plan_for(machine, __version__),
-                                       machine.name))
+            # An installation that holds the code and cannot load something
+            # needs that something, not a second installation beside it.
+            advice = (describe_unloadable(machine, verdict)
+                      or describe_plan(plan_for(machine, code), machine.name))
             for line in advice:
                 print(line)
         print()
@@ -2048,7 +2049,7 @@ def _cmd_remote(args: argparse.Namespace) -> int:
         return 0
 
     machines = [load_machine(name) for name in machine_names()]
-    for line in overview(machines, __version__):
+    for line in overview(machines, this_code()):
         print(line)
     return 0
 
