@@ -286,6 +286,15 @@ CODES: tuple[Code, ...] = (
          "An external service answered with something unreadable.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
          detail_keys=("url", "resource")),
+    Code("environment.service.machine_unreachable",
+         "A machine did not answer over SSH.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
+         detail_keys=("machine", "reason")),
+    Code("environment.service.machine_unreadable",
+         "A machine answered an inspection with something that could not "
+         "be read.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
+         detail_keys=("machine",)),
     Code("environment.path.not_found",
          "A file the study names is not on disk.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
@@ -665,6 +674,17 @@ CODES: tuple[Code, ...] = (
          "A report format was asked for that this environment cannot write.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("format", "install_command")),
+
+    # -- remote -------------------------------------------------------------
+    Code("remote.machine.unknown",
+         "A machine was named that has no record on this computer.",
+         Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,
+         detail_keys=("given", "permitted")),
+    Code("remote.machine.unusable_name",
+         "A machine name that cannot be passed to ssh as a destination "
+         "safely.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("given",)),
 
     # -- last resort --------------------------------------------------------
     # A raise site that has not been classified yet. Present so that

@@ -144,6 +144,7 @@ agent
 
 production
 clusters
+remote
 ```
 
 ```{toctree}

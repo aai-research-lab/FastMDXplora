@@ -15,7 +15,7 @@ FastMDXplora/
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
-│       │                          #   analyze/report/gui/info/init-config)
+│       │                          #   analyze/report/gui/info/init-config/remote)
 │       ├── setup/
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
 │       │   ├── prepare.py         # Modeller assembly, ligand merge, clash checks
@@ -73,6 +73,13 @@ FastMDXplora/
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css/js,
 │       │   │                      #   molecule-viewer.js, charts.js, vendored 3Dmol.js
 │       │   └── templates/         # dashboard.html
+│       ├── remote/
+│       │   ├── probe.py           # The read-only inspection script, and reading its answer
+│       │   ├── transport.py       # The user's own ssh, with one login per session
+│       │   ├── survey.py          # Inspecting a machine and asking its installation what loads
+│       │   ├── machines.py        # Per-user machine records, and readiness for this version
+│       │   ├── plan.py            # How FastMDXplora would be installed there, from conda-forge
+│       │   └── describe.py        # What `fastmdx remote` prints
 │       ├── batch/
 │       │   ├── explorer.py        # Multi-run driver (sequential/parallel)
 │       │   ├── sweep.py           # Parameter cross-product expansion

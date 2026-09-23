@@ -9,6 +9,7 @@ Subcommands
   analyze            Run only the analysis phase
   report             Run only the report phase
   info               Print environment and component info
+  remote             Inspect other machines, reached over SSH
 
 Each per-phase subcommand exposes the phase's own options (e.g.
 ``--ph`` for setup, ``--duration-ns`` for simulate). The ``explore``
@@ -956,13 +957,19 @@ def _build_parser() -> argparse.ArgumentParser:
         _attach_phase_options(pp, opts, group_title=f"{phase} options",
                               phase=phase)
 
-    sub.add_parser(
+    info = sub.add_parser(
         "info",
         help="Print FastMDXplora environment information.",
         description=(
             "Print the installed FastMDXplora version, the detected backends "
             "for each phase, and the citation."
         ),
+    )
+    info.add_argument(
+        "--json",
+        action="store_true",
+        help=("Print the same information as JSON, for a program to read. "
+              "This is how `fastmdx remote` learns what a machine has."),
     )
 
     sel = sub.add_parser(
@@ -1137,6 +1144,39 @@ def _build_parser() -> argparse.ArgumentParser:
             "three without it."
         ),
     )
+
+    # ---------- remote: other machines, reached over SSH --------------------
+    rm = sub.add_parser(
+        "remote",
+        help="Inspect other machines, reached over SSH, to run studies on.",
+        description=(
+            "Machines a study can run on, reached with your own ssh and "
+            "~/.ssh/config. With no arguments, lists the machines inspected "
+            "so far, from what was recorded, without connecting. With "
+            "--machine, connects, finds out what the machine has, records "
+            "it, and says whether FastMDXplora is ready there or how it "
+            "would be installed. Nothing on the machine is changed. A "
+            "study's config never names a machine: the records are kept "
+            "with your other settings, not in any study."
+        ),
+        formatter_class=_PercentSafeHelp,
+    )
+    rm.add_argument(
+        "--machine",
+        metavar="NAME",
+        help=("The machine: an alias from ~/.ssh/config, or user@host. "
+              "Inspects it and records what it has."),
+    )
+    actions = rm.add_subparsers(dest="remote_action", metavar="<action>",
+                                title="actions")
+    forget = actions.add_parser(
+        "forget",
+        help="Remove a machine's record. Nothing on the machine is touched.",
+        description=("Remove the record of a machine from this computer. "
+                     "Nothing on the machine itself is changed or deleted."),
+    )
+    forget.add_argument("forget_name", metavar="NAME",
+                        help="The machine to forget.")
 
     ic = sub.add_parser(
         "init-config",
@@ -1877,12 +1917,16 @@ def _cmd_select(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_info() -> int:
-    print("FastMDXplora")
-    print(f"  version: {__version__}")
-    print(f"  Authors: {__author__}")
-    print(f"  DOI:     {__doi__}")
-    print()
+def _info_record() -> dict[str, Any]:
+    """What `fastmdx info` reports, as data.
+
+    One collection behind both forms, so the text a person reads and the
+    JSON a program reads cannot disagree about what is installed.
+    """
+    import platform
+
+    from fastmdxplora.provenance import source_provenance
+
     # A phase is not available because its module imports. It said so anyway:
     # a pip install reported setup and simulation "available" three lines
     # above OpenMM and PDBFixer "missing", which is the same screen
@@ -1893,7 +1937,7 @@ def _cmd_info() -> int:
         for _group, backends in _BACKENDS
         for _display, import_name, _hint in backends
     ))
-    print("Molecular Dynamics Phases:")
+    phases: dict[str, str] = {}
     for name in ("setup", "simulation", "analysis", "report"):
         try:
             module = __import__(f"fastmdxplora.{name}", fromlist=["run"])
@@ -1902,6 +1946,38 @@ def _cmd_info() -> int:
                       else _phase_status(name, probed))
         except Exception as exc:  # noqa: BLE001
             status = f"import error: {exc}"
+        phases[name] = status
+    backends: dict[str, dict[str, str]] = {}
+    for group, members in _BACKENDS:
+        for display_name, import_name, install_hint in members:
+            state, detail = probed[import_name]
+            backends[import_name] = {
+                "name": display_name, "needed": group, "state": state,
+                "detail": detail, "install": install_hint,
+            }
+    return {
+        "version": __version__,
+        "source": source_provenance(),
+        "python": platform.python_version(),
+        "phases": phases,
+        "backends": backends,
+    }
+
+
+def _cmd_info(args: argparse.Namespace | None = None) -> int:
+    record = _info_record()
+    if getattr(args, "json", False):
+        import json
+
+        print(json.dumps(record, indent=2))
+        return 0
+    print("FastMDXplora")
+    print(f"  version: {__version__}")
+    print(f"  Authors: {__author__}")
+    print(f"  DOI:     {__doi__}")
+    print()
+    print("Molecular Dynamics Phases:")
+    for name, status in record["phases"].items():
         print(f"  {name:<11} {status}")
     print()
     # Everything a phase reaches for at runtime, grouped by what it is for.
@@ -1911,15 +1987,69 @@ def _cmd_info() -> int:
     print("Backends:")
     for group, backends in _BACKENDS:
         print(f"  {group}")
-        for display_name, import_name, install_hint in backends:
-            state, detail = probed[import_name]
+        for display_name, import_name, _hint in backends:
+            entry = record["backends"][import_name]
             remedy = {
-                "missing": install_hint,
-                "broken": f"installed but will not load ({detail})",
-            }.get(state, detail)
-            print(f"    {display_name:<22} {state:<10} {remedy}".rstrip())
+                "missing": entry["install"],
+                "broken": f"installed but will not load ({entry['detail']})",
+            }.get(entry["state"], entry["detail"])
+            print(f"    {display_name:<22} {entry['state']:<10} {remedy}".rstrip())
     print()
     print(f"Citation: {__citation__}")
+    return 0
+
+
+def _cmd_remote(args: argparse.Namespace) -> int:
+    """`fastmdx remote`: list, inspect or forget machines."""
+    from fastmdxplora.remote import (
+        forget_machine,
+        inspect_machine,
+        load_machine,
+        machine_names,
+        machines_dir,
+        readiness,
+    )
+    from fastmdxplora.remote.describe import (
+        describe_machine,
+        describe_plan,
+        describe_unloadable,
+        overview,
+        plan_for,
+    )
+
+    if args.remote_action == "forget":
+        forget_machine(args.forget_name)
+        print(f"  \u2713 Forgot {args.forget_name}. Nothing on the machine "
+              "was changed.")
+        return 0
+
+    if args.machine:
+        print(f"Inspecting {args.machine} over ssh...")
+        machine = inspect_machine(args.machine)
+        print()
+        for line in describe_machine(machine, __version__):
+            print(line)
+        print()
+        verdict = readiness(machine, __version__)
+        if verdict.ready:
+            print(f"  \u2713 Ready: {verdict.summary}.")
+        else:
+            print(f"  \u2717 Not ready: {verdict.summary}.")
+            print()
+            # An installation that is there and cannot load something needs
+            # that something, not a second installation beside it.
+            advice = (describe_unloadable(machine, __version__)
+                      or describe_plan(plan_for(machine, __version__),
+                                       machine.name))
+            for line in advice:
+                print(line)
+        print()
+        print(f"Recorded in {machines_dir() / (machine.name + '.json')}")
+        return 0
+
+    machines = [load_machine(name) for name in machine_names()]
+    for line in overview(machines, __version__):
+        print(line)
     return 0
 
 
@@ -2264,7 +2394,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Show the FastMDXplora identity as soon as the CLI starts. Keep version
     # and citation output machine-friendly; help and an empty invocation are
     # intentionally branded.
-    if not any(flag in raw_argv for flag in ("--version", "-V", "--cite")):
+    if not any(flag in raw_argv for flag in ("--version", "-V", "--cite", "--json")):
         from fastmdxplora.utils.presenter import get_presenter
 
         dashboard_url, dashboard_enabled = _startup_dashboard_details(raw_argv)
@@ -2319,9 +2449,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command in ("setup", "simulate", "analyze", "report"):
             return _cmd_phase(args.command, args)
         if args.command == "info":
-            return _cmd_info()
+            return _cmd_info(args)
         if args.command == "select":
             return _cmd_select(args)
+        if args.command == "remote":
+            return _cmd_remote(args)
     except ConfigError as exc:
         print(f"fastmdx: config error: {exc}", file=sys.stderr)
         return 2

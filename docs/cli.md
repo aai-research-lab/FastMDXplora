@@ -30,6 +30,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx init-config` | Write a commented Config template |
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx info` | What is installed, and how to get what is not |
+| `fastmdx remote` | Inspect other machines over SSH: [Other machines](remote.md) |
 
 Plus two global flags, which go **before** the subcommand:
 
@@ -433,7 +434,7 @@ script. See [Selections in a Config](selections.md).
 
 ## `info`
 
-No flags. Prints the version, authors and DOI; a readiness line per phase; a
+Prints the version, authors and DOI; a readiness line per phase; a
 grouped backend table marking each of OpenMM, PDBFixer, the OpenFF toolkit,
 `openmmforcefields`, RDKit, PROPKA, WeasyPrint, Markdown, UMAP and
 `openmmplumed` as `installed`, `missing` or `broken`, with the conda command
@@ -442,6 +443,32 @@ for anything missing; and the citation.
 A backend that is present but will not load — WeasyPrint without Pango, say —
 is reported as **broken** rather than missing, because reinstalling something
 already there fixes nothing.
+
+`--json` prints the same information as JSON, with no banner, for a program to
+read. It is how `fastmdx remote` learns what an installation on another machine
+can load.
+
+---
+
+## `remote`
+
+Machines a study can run on, reached with your own `ssh`. See
+[Other machines](remote.md).
+
+```bash
+fastmdx remote                      # machines inspected so far, without connecting
+fastmdx remote --machine gpu-box    # inspect, record, and say if it is ready
+fastmdx remote forget gpu-box       # remove the record; the machine is untouched
+```
+
+| Argument | Required | Default |
+|---|---|---|
+| `--machine NAME` | no | lists the recorded machines |
+| `forget NAME` | no | — |
+
+`NAME` is an alias from `~/.ssh/config` or `user@host`. Inspection only reads
+the machine. Exits **0** once a machine is inspected, ready or not, and **1**
+when it cannot be reached or a name is not known.
 
 ---
 

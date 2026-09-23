@@ -46,6 +46,10 @@ from scripts.run_pdb_smoke_campaign import build_parser as build_campaign_parser
         "gui --output ./trpcage_study --port 8765",
         "init-config --minimal -o study.yml",
         "info",
+        "info --json",
+        "remote",
+        "remote --machine gpu-box",
+        "remote forget gpu-box",
     ],
 )
 def test_documented_fastmdx_commands_parse(command: str) -> None:
