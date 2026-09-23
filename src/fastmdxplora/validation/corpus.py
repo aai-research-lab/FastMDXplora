@@ -924,6 +924,18 @@ def _umbrella_split_into_segments() -> Any:
 
 
 
+def _a_checkpoint_as_left(directory: Any, *, finished: bool) -> None:
+    """A sealed checkpoint and its sidecar, as the runner leaves them: the
+    sidecar says whether the run finished, the seal only that it is whole."""
+    from fastmdxplora.simulation.runner import seal_checkpoint, write_checkpoint_sidecar
+
+    checkpoint = directory / "checkpoint.chk"
+    checkpoint.write_bytes(b"x")
+    seal_checkpoint(checkpoint)
+    write_checkpoint_sidecar(checkpoint, stage="production", step=1000, ensemble="nvt",
+                             temperature_K=300.0, timestep_fs=2.0, finished=finished)
+
+
 def _segments_with_a_gap() -> Any:
     """Joining a run whose third segment is missing.
 
@@ -942,8 +954,7 @@ def _segments_with_a_gap() -> Any:
         directory = root / f"segment-{index:03d}" / "simulation"
         directory.mkdir(parents=True)
         (directory / "production.dcd").write_bytes(b"")
-        (directory / "checkpoint.chk").write_bytes(b"x")
-        (directory / "checkpoint.chk.sha256").write_text("1 abc\n")
+        _a_checkpoint_as_left(directory, finished=True)
     return join_segments(root, root / "joined.dcd")
 
 
@@ -958,9 +969,9 @@ def _segments_from_an_unfinished_run() -> Any:
         directory = root / f"segment-{index:03d}" / "simulation"
         directory.mkdir(parents=True)
         (directory / "production.dcd").write_bytes(b"")
-        (directory / "checkpoint.chk").write_bytes(b"x")
-        if index != 1:
-            (directory / "checkpoint.chk.sha256").write_text("1 abc\n")
+        # Segment 1 was killed: its last checkpoint is sealed like every
+        # other, and its sidecar says the run did not reach its end.
+        _a_checkpoint_as_left(directory, finished=(index != 1))
     return join_segments(root, root / "joined.dcd")
 
 

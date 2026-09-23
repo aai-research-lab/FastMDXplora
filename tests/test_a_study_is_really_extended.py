@@ -117,29 +117,6 @@ class TestAStudyIsReallyExtended(unittest.TestCase):
         self.assertTrue((study / "report" / "report.md").is_file())
         self.assertGreater(production_done_ns(study), before)
 
-    def test_a_killed_run_is_resumed_from_its_last_checkpoint(self):
-        from fastmdxplora.simulation.resume import extend_study, frames_before_checkpoint
-        from fastmdxplora.simulation.runner import CHECKPOINT_DIGEST_SUFFIX
-
-        study = self.study()
-        # What a kill leaves: the checkpoint, and no seal on it.
-        (study / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink(
-            missing_ok=True)
-        keep = frames_before_checkpoint(study)
-        self.assertIsNotNone(keep)
-
-        answer = extend_study(study, more_ns=0.0006, analyse=False)
-        self.assertTrue(answer["ok"], answer.get("error"))
-        record = answer["joined"]
-        self.assertEqual(record["trimmed"], {"0": keep})
-        segment = _frames(study / "segment-001" / "simulation" / "production.dcd",
-                          self.topology)
-        # The frames after the checkpoint are left out, so the pieces meet
-        # rather than overlap.
-        self.assertEqual(record["frames"], keep + segment)
-        record_file = json.loads((study / "joined" / "joined.json").read_text())
-        self.assertEqual(record_file["trimmed"], {"0": keep})
-
     def test_the_command_line_does_the_same(self):
         # `simulation.resume_from` naming a study, from a config file, is
         # the whole operation -- the same one as the Python call above.
@@ -153,3 +130,94 @@ class TestAStudyIsReallyExtended(unittest.TestCase):
         self.assertEqual(main(["explore", "--config", str(config)]), 0)
         self.assertTrue((study / "segment-001" / "simulation" / "production.dcd").is_file())
         self.assertTrue((study / "joined" / "production.dcd").is_file())
+
+
+@unittest.skipUnless(HAS_BACKENDS, "OpenMM, PDBFixer and MDTraj are needed")
+class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
+    """A run stopped partway through production, then resumed.
+
+    This used to be faked by deleting the checkpoint's seal, which is what
+    a kill left before every checkpoint was sealed as it was written. A real
+    kill leaves a sealed checkpoint, so the join took the killed run for a
+    finished one, kept the frames written after its last checkpoint, and
+    the resume ran that stretch again: the joined trajectory held it twice.
+    Here the run is stopped for real, 250 steps into a 300-step production,
+    after its checkpoint at step 200 and with a frame written after it.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from unittest import mock
+
+        import pytest
+
+        pytest.importorskip("openmm.app")
+        import openmm.app
+
+        from fastmdxplora import FastMDXplora
+
+        root = Path(tempfile.mkdtemp())
+        pdb = root / "tri-ala.pdb"
+        pdb.write_text(TRI_ALANINE)
+        config = {
+            "systems": [{"id": "tri", "system": str(pdb)}],
+            "setup": {"ph": 7.0, "solvent_padding_nm": 1.2, "nonbonded_cutoff_nm": 0.9},
+            "simulation": {"platform": "CPU", "production_steps": 300,
+                           "nvt_steps": 100, "npt_steps": 100, "timestep_fs": 2,
+                           "trajectory_interval_steps": 50,
+                           "checkpoint_interval_steps": 100,
+                           # Steps taken fifty at a time, so the run can be
+                           # stopped between two of them.
+                           "telemetry_interval": 50},
+            "analysis": {"include": ["rmsd"]},
+            "report": {"document": False, "slides": False, "pdf": False, "bundle": False},
+        }
+        real_step = openmm.app.Simulation.step
+        taken = {"steps": 0}
+
+        def step_until_killed(simulation, steps):
+            # Equilibration is 200 steps; the process dies 250 into production.
+            if taken["steps"] >= 200 + 250:
+                raise RuntimeError("killed")
+            taken["steps"] += int(steps)
+            return real_step(simulation, steps)
+
+        cls.study = root / "study"
+        with mock.patch.object(openmm.app.Simulation, "step", step_until_killed):
+            FastMDXplora(config_data=config, output_dir=str(cls.study)).explore()
+        cls.topology = cls.study / "simulation" / "trajectory_topology.pdb"
+        cls.written = _frames(cls.study / "simulation" / "production.dcd", cls.topology)
+
+    def test_it_was_stopped_after_a_checkpoint_and_a_frame_past_it(self):
+        from fastmdxplora.analysis.joining import survey_segments
+        from fastmdxplora.simulation.resume import frames_before_checkpoint
+
+        from fastmdxplora.simulation.resume import _interval_from_telemetry
+        from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+        self.assertEqual(self.written, 5)
+        self.assertEqual(frames_before_checkpoint(self.study), 4)
+        self.assertFalse(survey_segments(self.study)[0].finished)
+        # The interval is recorded with the checkpoint, and a run from
+        # before it was has its own telemetry to read it from.
+        sidecar = read_checkpoint_sidecar(self.study / "simulation" / "checkpoint.chk")
+        self.assertEqual(sidecar["trajectory_interval_steps"], 50)
+        self.assertEqual(_interval_from_telemetry(self.study / "simulation"), 50)
+
+    def test_the_resume_leaves_nothing_twice(self):
+        from fastmdxplora.simulation.resume import extend_study
+
+        answer = extend_study(self.study, analyse=False)
+        self.assertTrue(answer["ok"], answer.get("error"))
+        record = json.loads((self.study / "joined" / "joined.json").read_text())
+        # The frame after the checkpoint is left out, the remaining 100
+        # steps are run, and the whole holds the 300 planned steps once.
+        self.assertEqual(record["trimmed"], {"0": 4})
+        self.assertEqual(record["frames"], 6)
+        self.assertEqual(_frames(self.study / "joined" / "production.dcd", self.topology), 6)
+        # One spacing, and the time it represents, for what analyses it.
+        from fastmdxplora.analysis.analyze import _saving_interval_ps
+
+        self.assertEqual(record["trajectory_interval_steps"], 50)
+        joined = self.study / "joined" / "production.dcd"
+        self.assertAlmostEqual(_saving_interval_ps(self.study, trajectory=joined), 0.1)

@@ -30,6 +30,17 @@ except ImportError:  # pragma: no cover
 
 
 @unittest.skipUnless(HAVE_MDTRAJ, "MDTraj is not installed")
+
+def _checkpoint(directory: Path, *, finished: bool, interval: int | None = None) -> None:
+    from fastmdxplora.simulation.runner import seal_checkpoint, write_checkpoint_sidecar
+
+    checkpoint = directory / "checkpoint.chk"
+    checkpoint.write_bytes(b"x" * 10)
+    seal_checkpoint(checkpoint)
+    write_checkpoint_sidecar(checkpoint, stage="production", step=1000, ensemble="nvt",
+                             temperature_K=300.0, timestep_fs=2.0, finished=finished,
+                             trajectory_interval_steps=interval)
+
 class TestJoiningRefusesWhatItShould(unittest.TestCase):
 
     def setUp(self):
@@ -49,9 +60,10 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
         trace[0].save_pdb(str(directory / "topology.pdb"))
         if trajectory:
             trace.save_dcd(str(directory / "production.dcd"))
-        if finished:
-            (directory / "checkpoint.chk").write_bytes(b"x" * 10)
-            (directory / "checkpoint.chk.sha256").write_text("10 abc\n")
+        # What the runner leaves either way: a sealed checkpoint, whose
+        # sidecar says whether the run reached its end. A killed run's last
+        # checkpoint is sealed too; only the sidecar tells the two apart.
+        _checkpoint(directory, finished=finished)
         (directory / "resolved_config.yml").write_text(
             f"setup:\n  ph: 7.{0 if study == 'A' else 5}\n"
             f"systems:\n- id: a\n"
@@ -88,15 +100,35 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
             join_segments(self.root, self.root / "joined.dcd")
 
     def test_an_unfinished_segment_refuses(self):
-        # No sealed checkpoint means the process died partway, and the
-        # trajectory ends wherever it died with nothing in the file to
-        # say so.
+        # A checkpoint written along the way and none at the end means the
+        # process died partway, and the trajectory ends wherever it died
+        # with nothing in the file to say so.
         for index in range(3):
             self.segment(index, finished=(index != 1))
         with self.assertRaises(MissingResultError) as caught:
             join_segments(self.root, self.root / "joined.dcd")
         self.assertEqual(refusal_of(caught.exception).code,
                          "simulation.resume.unsealed")
+
+    def test_segments_at_different_spacings_refuse(self):
+        # What a continuation left to choose its own interval wrote: the
+        # parent every 500 steps, the remainder every 250.
+        for index, interval in ((0, 500), (1, 250)):
+            self.segment(index)
+            _checkpoint(self.root / f"segment-{index:03d}" / "simulation",
+                        finished=True, interval=interval)
+        with self.assertRaises(StudyError) as caught:
+            join_segments(self.root, self.root / "joined.dcd")
+        self.assertEqual(refusal_of(caught.exception).code, "simulation.resume.interval_differs")
+
+    def test_one_spacing_is_recorded_with_its_time(self):
+        for index in range(2):
+            self.segment(index)
+            _checkpoint(self.root / f"segment-{index:03d}" / "simulation",
+                        finished=True, interval=500)
+        record = join_segments(self.root, self.root / "joined.dcd")
+        self.assertEqual(record["trajectory_interval_steps"], 500)
+        self.assertEqual(record["saving_interval_ps"], 1.0)
 
     def test_segments_from_two_studies_refuse(self):
         # Two runs of the same length under different settings leave
@@ -179,8 +211,7 @@ class TestTheRefusalSeesWhereARunPutsItsConfig(unittest.TestCase):
         trace = mdtraj.Trajectory(xyz, topology)
         trace[0].save_pdb(str(simulation / "topology.pdb"))
         trace.save_dcd(str(simulation / "production.dcd"))
-        (simulation / "checkpoint.chk").write_bytes(b"x" * 10)
-        (simulation / "checkpoint.chk.sha256").write_text("10 abc\n")
+        _checkpoint(simulation, finished=True)
         options = {"setup": {"ph": ph},
                    "simulation": {"production_steps": 1000 * (index + 1)}}
         if index:

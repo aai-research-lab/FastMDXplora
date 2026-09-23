@@ -289,14 +289,20 @@ its length loads without complaint and gives the right positions; cut to a
 tenth it loads without complaint and gives wrong ones. There is no length or
 checksum in the format.
 
-So a finished run writes `checkpoint.chk.sha256` beside its checkpoint, holding
-the size and digest. That makes the seal two things at once: a way to detect
-truncation, and **a marker that the segment got to the end**. A run killed
-partway leaves a checkpoint from the last reporter interval and no seal, and
-the next segment refuses.
+So every checkpoint is written with `checkpoint.chk.sha256` beside it, holding
+the size and digest: **a way to detect truncation**. It says the file is whole,
+which is as true of a checkpoint written partway through a run as of the last
+one, so the checkpoint a killed run leaves is one that can be resumed from.
+
+Whether the run **got to the end** is a different fact, and the checkpoint's
+sidecar (`checkpoint.chk.json`) records it: `finished` is false for the
+checkpoints written along the way and true for the one written at a clean
+finish. A join reads it to know which segments were killed, and leaves out the
+frames a killed segment wrote after its last checkpoint, since the resume runs
+them again.
 
 Required for segments, where the predecessor was written by this software and
-is always sealed on a clean finish. Not required otherwise — refusing a
+its checkpoints are always sealed. Not required otherwise — refusing a
 hand-made checkpoint would be refusing a legitimate use over a convention
 nobody agreed to.
 
@@ -324,8 +330,9 @@ Concatenation is four lines. The refusals are the module:
   trajectory but one with a jump in the middle. Equilibration detection would
   find a transient that is really a discontinuity, and a correlation time
   computed across it means nothing.
-- **An unfinished segment** has no sealed checkpoint. Its trajectory ends
-  wherever the process died and nothing in the file says so.
+- **An unfinished segment**, one whose checkpoint sidecar does not say it
+  finished. Its trajectory ends wherever the process died and nothing in the
+  file says so.
 - **Segments from two studies** look alike on disk and concatenate without
   complaint. Each segment's resolved Config says which study it was, and the
   settings that vary between segments by design — production steps, minimize,

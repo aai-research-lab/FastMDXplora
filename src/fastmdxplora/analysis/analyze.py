@@ -136,7 +136,7 @@ def run(
         stride=stride,
         first=first,
         last=last,
-        saving_interval_ps=_saving_interval_ps(project_root),
+        saving_interval_ps=_saving_interval_ps(project_root, trajectory=traj_path),
         figure_colours=figure_colours,
     )
 
@@ -187,7 +187,7 @@ def run(
     return artifacts
 
 
-def _saving_interval_ps(project_root: Path) -> float | None:
+def _saving_interval_ps(project_root: Path, *, trajectory: str | Path | None = None) -> float | None:
     """Picoseconds between saved frames, from the run's own record.
 
     DCD does not carry this through MDTraj, so without it every time series
@@ -207,6 +207,19 @@ def _saving_interval_ps(project_root: Path) -> float | None:
     """
     import json
 
+    # A joined trajectory says its own spacing, which is the one to use: its
+    # first segment may have been killed and never written the run's record.
+    if trajectory is not None:
+        beside = Path(trajectory)
+        for record_path in (beside.with_suffix(beside.suffix + ".join.json"),
+                            beside.parent / "joined.json"):
+            try:
+                joined = json.loads(record_path.read_text(encoding="utf-8"))
+                if float(joined.get("saving_interval_ps") or 0) > 0:
+                    return float(joined["saving_interval_ps"])
+            except (OSError, ValueError, TypeError):
+                continue
+
     manifest = project_root / "simulation" / "simulation_parameters.json"
     try:
         record = json.loads(manifest.read_text(encoding="utf-8"))
@@ -214,7 +227,10 @@ def _saving_interval_ps(project_root: Path) -> float | None:
         return None
 
     params = record.get("parameters") or {}
-    steps = params.get("trajectory_interval_steps")
+    # The resolved value first: where no interval was set, the parameter is
+    # the null that was asked for and the resolved one is what was written.
+    steps = ((record.get("resolved") or {}).get("trajectory_interval_steps")
+             or params.get("trajectory_interval_steps"))
     timestep_fs = params.get("timestep_fs")
     try:
         if steps and timestep_fs:

@@ -760,7 +760,7 @@ def _attach_checkpoint_reporter(
                     # between the two leaves no seal and is still refused.
                     seal_checkpoint(chk_path)
                     write_checkpoint_sidecar(
-                        chk_path, step=int(sim.currentStep), **sidecar)
+                        chk_path, step=int(sim.currentStep), finished=False, **sidecar)
                 except Exception:  # noqa: BLE001 - the checkpoint itself was written
                     logger.debug("Could not write the checkpoint sidecar.")
 
@@ -1305,7 +1305,9 @@ CHECKPOINT_SIDECAR_SUFFIX = ".json"
 def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
                              ensemble: str, temperature_K: float,
                              timestep_fs: float, study: str | Path | None = None,
-                             system_digest: str | None = None) -> Path:
+                             system_digest: str | None = None,
+                             finished: bool | None = None,
+                             trajectory_interval_steps: int | None = None) -> Path:
     """What a checkpoint is, beside it: the stage that wrote it, the step,
     the ensemble and temperature, the timestep, and the study.
 
@@ -1315,6 +1317,17 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
     the velocities away and makes the continuation a new run from a
     snapshot rather than the same trajectory; nothing refused, because
     nothing knew. This is how the loader knows.
+
+    ``finished`` says whether the run reached its end: false for the
+    checkpoints written along the way, true for the one written at a clean
+    finish. The seal cannot say it, because every checkpoint is sealed as
+    it is written; it says the file is whole, not that the run finished.
+
+    ``trajectory_interval_steps`` is the interval the trajectory was
+    actually written at, resolved from the adaptive default where none was
+    set. A killed run never reaches the record written at the end of the
+    phase, and without the interval the frames that precede a checkpoint
+    cannot be counted, nor the time a frame represents.
     """
     import json
 
@@ -1325,6 +1338,9 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
         "temperature_K": float(temperature_K), "timestep_fs": float(timestep_fs),
         "study": str(study) if study else None,
         "system_digest": system_digest,
+        **({} if finished is None else {"finished": bool(finished)}),
+        **({} if trajectory_interval_steps is None
+           else {"trajectory_interval_steps": int(trajectory_interval_steps)}),
         "written_at": datetime.now(timezone.utc).isoformat(),
     }, indent=1), encoding="utf-8")
     return sidecar
@@ -2578,7 +2594,8 @@ def run_simulation(
             sidecar={"stage": "production", "ensemble": "npt" if wants_npt_production else "nvt",
                      "temperature_K": float(temperature_K),
                      "timestep_fs": float(timestep_fs),
-                     "study": str(output_dir.parent)},
+                     "study": str(output_dir.parent),
+                     "trajectory_interval_steps": int(trajectory_interval_steps)},
         )
         if telemetry is not None:
             if plan["production_steps"] > 0:
@@ -2625,12 +2642,6 @@ def run_simulation(
         with final_state_path.open("w", encoding="utf-8") as fh:
             fh.write(omm["openmm"].XmlSerializer.serialize(final_state))
 
-        # The run reached the end, so write a final checkpoint and seal it.
-        # Sealing here rather than in the reporter is what makes the seal
-        # mean "this segment finished": a run killed partway leaves a
-        # checkpoint from the last reporter interval and no seal, and the
-        # next segment refuses rather than continuing from a file that may
-        # have been half written when the process died.
         # What this run cost, in the three numbers an estimate is built
         # from. Written because the cost model can otherwise only be
         # calibrated from a synthetic benchmark, and a machine that has run
@@ -2657,6 +2668,11 @@ def run_simulation(
         except Exception:  # noqa: BLE001 - a run that finished still finished
             logger.debug("Could not record what this run cost.")
 
+        # The run reached the end, so write a final checkpoint, seal it, and
+        # record in its sidecar that the run finished. The seal says only
+        # that the file is whole -- every checkpoint along the way is sealed
+        # too -- so "finished" is said in the sidecar, where a join reads it
+        # to know that a run's trajectory has no frames past its checkpoint.
         checkpoint_path = output_dir / "checkpoint.chk"
         try:
             with checkpoint_path.open("wb") as fh:
@@ -2665,7 +2681,8 @@ def run_simulation(
             write_checkpoint_sidecar(
                 checkpoint_path, stage="production", step=int(simulation.currentStep),
                 ensemble="npt" if wants_npt_production else "nvt", temperature_K=float(temperature_K),
-                timestep_fs=float(timestep_fs), study=str(output_dir.parent))
+                timestep_fs=float(timestep_fs), study=str(output_dir.parent), finished=True,
+                trajectory_interval_steps=int(trajectory_interval_steps))
         except Exception:  # noqa: BLE001 - a run that finished still finished
             logger.warning(
                 "Could not write a sealed checkpoint to %s; this run is "

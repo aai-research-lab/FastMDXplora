@@ -16,8 +16,9 @@ equilibration detection will find a transient that is really a jump, and
 a correlation time computed across it is meaningless. A gap is not a
 smaller run, it is a different and silently wrong one.
 
-**A segment that did not finish.** Its checkpoint has no seal, which is
-the same marker the resume path reads. A run whose fourth segment was
+**A segment that did not finish.** Its checkpoint's sidecar says so. The
+seal cannot: every checkpoint is sealed as it is written, so a seal says
+the file is whole, not that the run reached its end. A run whose fourth segment was
 killed has four directories and three usable ones.
 
 **Segments from different studies.** Two runs of the same length under
@@ -126,6 +127,25 @@ def _config_digest(directory: Path, *, _depth: int = 0) -> str:
     ).hexdigest()[:16]
 
 
+def _finished(simulation_dir: Path) -> bool:
+    """Whether the run in `simulation_dir` reached its end.
+
+    Read from the checkpoint's sidecar, which says so. This used to be the
+    seal's presence, back when only a clean finish sealed; since every
+    checkpoint is sealed as it is written, a killed run looked finished,
+    the frames it wrote past its last checkpoint were kept, and the resume
+    ran them again, so the joined trajectory held that stretch twice. A
+    sidecar from before the sidecar said it is read by the final state,
+    which only a clean finish writes.
+    """
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    side = read_checkpoint_sidecar(simulation_dir / "checkpoint.chk") or {}
+    if isinstance(side.get("finished"), bool):
+        return side["finished"]
+    return (simulation_dir / "state_final.xml").is_file()
+
+
 def survey_segments(root: Path | str, *,
                     trajectory_name: str = "production.dcd") -> list[SegmentPiece]:
     """What is on disk, without judging whether it joins.
@@ -135,8 +155,6 @@ def survey_segments(root: Path | str, *,
     what somebody coming back to a run that stopped overnight actually
     wants first.
     """
-    from fastmdxplora.simulation.runner import CHECKPOINT_DIGEST_SUFFIX
-
     base = Path(root)
     pieces: list[SegmentPiece] = []
     # A study that ran in one piece and was then extended keeps its first
@@ -148,11 +166,9 @@ def survey_segments(root: Path | str, *,
     if own.is_dir() and not (base / "segment-000").is_dir():
         own_trajectory = own / trajectory_name
         if own_trajectory.is_file():
-            own_seal = (own / "checkpoint.chk").with_suffix(
-                ".chk" + CHECKPOINT_DIGEST_SUFFIX)
             pieces.append(SegmentPiece(
                 index=0, directory=base, trajectory=own_trajectory,
-                finished=own_seal.is_file(), config_digest=_config_digest(base)))
+                finished=_finished(own), config_digest=_config_digest(base)))
     for directory in sorted(base.glob("segment-*")):
         if not directory.is_dir():
             continue
@@ -162,13 +178,11 @@ def survey_segments(root: Path | str, *,
             continue
         simulation_dir = directory / "simulation"
         trajectory = simulation_dir / trajectory_name
-        seal = (simulation_dir / "checkpoint.chk").with_suffix(
-            ".chk" + CHECKPOINT_DIGEST_SUFFIX)
         pieces.append(SegmentPiece(
             index=index,
             directory=directory,
             trajectory=trajectory if trajectory.is_file() else None,
-            finished=seal.is_file(),
+            finished=_finished(simulation_dir),
             config_digest=_config_digest(directory),
         ))
     return pieces
@@ -231,8 +245,9 @@ def join_segments(
     unfinished = [p.index for p in pieces if not p.finished and p.index not in limits]
     if unfinished:
         raise MissingResultError(
-            f"Segments {unfinished} have no sealed checkpoint, so they did "
-            "not finish. Rerun them before joining; a run that stopped "
+            f"Segments {unfinished} did not finish: their checkpoints were "
+            "written along the way, not at the end. Rerun them before "
+            "joining; a run that stopped "
             "partway has a trajectory that ends wherever the process died, "
             "and nothing in the file says so.",
             code="simulation.resume.unsealed",
@@ -255,6 +270,28 @@ def join_segments(
             "look alike and concatenate without complaint.",
             code="analysis.data.absent",
             needs="segments from one study")
+
+    # One spacing throughout. A continuation left to choose its own chose
+    # from its own length, so the remainder of a run wrote frames at half
+    # the spacing and the joined trajectory changed its clock at the join;
+    # every analysis that reads time assumes it does not.
+    from fastmdxplora.simulation.resume import trajectory_interval_of
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    intervals = {p.index: trajectory_interval_of(p.directory) for p in pieces}
+    known = {index: value for index, value in intervals.items() if value is not None}
+    if len(set(known.values())) > 1:
+        spacing = ", ".join(f"segment {i}: every {v:,} steps" for i, v in sorted(known.items()))
+        raise StudyError(
+            f"The segments under {base} were written at different frame "
+            f"spacings ({spacing}), so joining them would change the time a "
+            "frame represents partway through the trajectory. Continue each "
+            "segment at its parent's trajectory_interval_steps.",
+            code="simulation.resume.interval_differs", path=str(base),
+            intervals={str(i): v for i, v in sorted(known.items())})
+    interval = next(iter(known.values()), None) if len(known) == len(pieces) else None
+    timestep_fs = (read_checkpoint_sidecar(
+        pieces[0].directory / "simulation" / "checkpoint.chk") or {}).get("timestep_fs")
 
     import mdtraj
 
@@ -304,6 +341,12 @@ def join_segments(
         # was cut back to its checkpoint without opening the file.
         "trimmed": {str(index): count for index, count in sorted(limits.items())},
         "joins": joins,
+        # The spacing every segment was written at, and the time a frame
+        # represents, so what is analysed from this file is labelled in
+        # time. None where a segment's spacing is not recorded.
+        "trajectory_interval_steps": interval,
+        "saving_interval_ps": (interval * float(timestep_fs) / 1000.0
+                               if interval and isinstance(timestep_fs, (int, float)) else None),
         "topology": str(topology_path),
         # Stated so a reader knows this file is derived without having to
         # infer it from the directory it sits in.

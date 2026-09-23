@@ -561,13 +561,14 @@ SIMULATION = PhaseSchema(
               "continuation with no length asked for finishes the plan.",
               example=0.1),
         Field("resume_unsealed", bool, False,
-              "Accept a checkpoint with no seal -- a run that was killed "
-              "rather than one that finished cleanly. Continuing a study "
-              "sets this itself when the study was killed; set it yourself "
-              "only when `resume_from` names a checkpoint file. The frames "
-              "the killed run wrote after that checkpoint "
-              "are left out of the join, so the pieces meet at the "
-              "checkpoint rather than overlapping it."),
+              "Accept a checkpoint with no seal beside it. A seal says "
+              "the file was written whole, and every checkpoint this "
+              "software writes has one; one written by hand, by another "
+              "program, or by a version before every checkpoint was sealed "
+              "does not. Continuing a study sets this itself where the study "
+              "was killed partway, and the frames written after its last "
+              "checkpoint are left out of the join, so the pieces meet at "
+              "the checkpoint rather than overlapping it."),
         Field("resume_from", str, None,
               "What this run continues from, and how much it does depends "
               "on what you name. A STUDY DIRECTORY continues that study: "

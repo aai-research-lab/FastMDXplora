@@ -523,6 +523,13 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
         "npt_steps": 0,
         "ensemble": str(side.get("ensemble") or ("npt" if npt > 0 else "nvt")),
     })
+    # The parent's spacing, not a new one. Left unset, the interval is
+    # chosen from the run's own length, so a 1 ns remainder of a 2 ns run
+    # wrote frames twice as often and the joined trajectory changed its
+    # spacing at the join with nothing to say so.
+    interval = trajectory_interval_of(root)
+    if interval is not None:
+        new_sim["trajectory_interval_steps"] = interval
     new["simulation"] = new_sim
     new["exclude_phase"] = ["setup"]
     return Continuation(parent=str(root), checkpoint=str(checkpoint),
@@ -641,7 +648,7 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
         return {"ok": False, "error": plan.refusal, "stage": "planning"}
 
     # Before anything runs: can what is here be joined to what will be?
-    # A segment with no seal was killed, and its trajectory holds frames
+    # A segment that did not finish was killed, and its trajectory holds frames
     # written after its last checkpoint -- the frames a resume would run
     # again. Joining the two would put that overlap in the middle of the
     # trajectory with nothing to mark it, and every analysis downstream
@@ -741,6 +748,89 @@ def json_dumps(value: Any) -> str:
     return json.dumps(value, indent=1, default=str)
 
 
+def trajectory_interval_of(segment: str | Path) -> int | None:
+    """Steps between the frames a run wrote, from what the run recorded.
+
+    Left unset, the interval is chosen from the run's own length, so a
+    killed run's config says nothing, and the record that would say it is
+    written only at the end of the phase. Read, in order, from the
+    checkpoint's sidecar, which records it with every checkpoint; the
+    finished run's record; the config, where it was set; and the run's own
+    telemetry, which pairs each production step with the frames written by
+    then and is accepted only where every sample agrees with one interval.
+    None where none of these says, so a caller refuses rather than guesses.
+    """
+    import json
+
+    import yaml
+
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    folder = Path(segment)
+    simulation = folder / "simulation"
+
+    def whole(value) -> int | None:
+        return int(value) if isinstance(value, (int, float)) and value > 0 else None
+
+    side = read_checkpoint_sidecar(simulation / "checkpoint.chk") or {}
+    if whole(side.get("trajectory_interval_steps")):
+        return whole(side["trajectory_interval_steps"])
+    try:
+        record = json.loads((simulation / "simulation_parameters.json").read_text(encoding="utf-8"))
+        found = whole((record.get("resolved") or {}).get("trajectory_interval_steps"))
+        if found:
+            return found
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        config = yaml.safe_load((folder / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+        found = whole((config.get("simulation") or {}).get("trajectory_interval_steps"))
+        if found:
+            return found
+    except (OSError, yaml.YAMLError, AttributeError):
+        pass
+    return _interval_from_telemetry(simulation)
+
+
+def _interval_from_telemetry(simulation: Path) -> int | None:
+    """The interval every production sample of the run's telemetry agrees on.
+
+    Each sample says how many frames production had written by a step, as
+    (step - start) // interval, and the status says how many were planned
+    in all. One interval from the first and last samples, then kept only if
+    some production start makes every sample, and the plan, come out
+    exactly: a disagreement anywhere means the samples do not say, and
+    None is returned.
+    """
+    import csv
+    import json
+
+    try:
+        with (simulation / "live_metrics.csv").open(encoding="utf-8") as handle:
+            rows = [(int(float(r["step"])), int(float(r["current_frame_count"])))
+                    for r in csv.DictReader(handle)
+                    if str(r.get("stage", "")).lower().startswith("production")
+                    and r.get("step") and r.get("current_frame_count")]
+        status = json.loads((simulation / "live_status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError):
+        return None
+    if len(rows) < 2 or rows[-1][1] <= rows[0][1]:
+        return None
+    (first_step, first_frames), (last_step, last_frames) = rows[0], rows[-1]
+    interval = round((last_step - first_step) / (last_frames - first_frames))
+    if interval <= 0:
+        return None
+    # The production start P0 satisfies f*I <= step - P0 < (f+1)*I for
+    # every sample: step-(f+1)*I < P0 <= step-f*I.
+    low = max(step - (frames + 1) * interval for step, frames in rows)
+    high = min(step - frames * interval for step, frames in rows)
+    total, planned = status.get("total_planned_steps"), status.get("planned_frame_count")
+    if isinstance(total, int) and isinstance(planned, int) and planned > 0:
+        low = max(low, total - (planned + 1) * interval)
+        high = min(high, total - planned * interval)
+    return interval if low < high else None
+
+
 def frames_before_checkpoint(segment: str | Path) -> int | None:
     """How many written frames precede this segment's last checkpoint.
 
@@ -753,22 +843,14 @@ def frames_before_checkpoint(segment: str | Path) -> int | None:
     recorded, because a guess here would put an overlap in a trajectory
     and call it whole.
     """
-    import yaml
-
     from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
     folder = Path(segment)
-    checkpoint = folder / "simulation" / "checkpoint.chk"
-    side = read_checkpoint_sidecar(checkpoint) or {}
+    side = read_checkpoint_sidecar(folder / "simulation" / "checkpoint.chk") or {}
     step = side.get("step")
     if not isinstance(step, (int, float)) or step < 0:
         return None
-    try:
-        config = yaml.safe_load(
-            (folder / "resolved_config.yml").read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
-        return None
-    interval = (config.get("simulation") or {}).get("trajectory_interval_steps")
-    if not isinstance(interval, (int, float)) or interval <= 0:
+    interval = trajectory_interval_of(folder)
+    if interval is None:
         return None
     return int(step) // int(interval)

@@ -25,7 +25,11 @@ def _seal(directory: Path) -> None:
     (directory / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).write_text("s", encoding="utf-8")
 
 
-def _study(*, done_steps: int = 250_000, duration: float = 0.5) -> Path:
+def _study(*, done_steps: int = 250_000, duration: float = 0.5,
+           finished: bool = True) -> Path:
+    """A study as the runner leaves it: a sealed checkpoint whose sidecar
+    says whether the run finished, true at a clean finish and false for the
+    checkpoints a killed run leaves behind."""
     root = Path(tempfile.mkdtemp()) / "fastmdxplora_trpcage_study_x"
     (root / "simulation").mkdir(parents=True)
     (root / "resolved_config.yml").write_text(yaml.safe_dump({
@@ -40,7 +44,7 @@ def _study(*, done_steps: int = 250_000, duration: float = 0.5) -> Path:
     checkpoint.write_bytes(b"x")
     write_checkpoint_sidecar(checkpoint, stage="production", step=done_steps,
                              ensemble="npt", temperature_K=300.0,
-                             timestep_fs=2.0, study=str(root))
+                             timestep_fs=2.0, study=str(root), finished=finished)
     return root
 
 
@@ -201,11 +205,27 @@ class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
             "simulation": {}}), encoding="utf-8")
         self.assertIsNone(frames_before_checkpoint(root))
 
+    def test_a_run_left_to_choose_its_interval_is_counted_from_its_sidecar(self):
+        # The case measured on a card: no interval in the config, so the
+        # run chose 500 steps from its length, was killed with its
+        # checkpoint at production step 500,000, and never wrote the record
+        # that says so. The sidecar written with that checkpoint does.
+        from fastmdxplora.simulation.resume import continuation_of, frames_before_checkpoint
+
+        root = _study(done_steps=500_000, duration=2.0, finished=False)
+        write_checkpoint_sidecar(root / "simulation" / "checkpoint.chk", stage="production",
+                                 step=500_000, ensemble="npt", temperature_K=300.0,
+                                 timestep_fs=2.0, study=str(root), finished=False,
+                                 trajectory_interval_steps=500)
+        self.assertEqual(frames_before_checkpoint(root), 1000)
+        # And the remainder is written at the same spacing, not one it
+        # would choose from its own, shorter length.
+        self.assertEqual(continuation_of(root).config["simulation"]["trajectory_interval_steps"], 500)
+
     def test_where_it_cannot_be_counted_the_join_is_still_refused(self):
         from fastmdxplora.simulation.resume import extend_study
 
-        root = _study()
-        (root / "simulation" / ("checkpoint.chk" + CHECKPOINT_DIGEST_SUFFIX)).unlink()
+        root = _study(finished=False)
         (root / "resolved_config.yml").write_text(yaml.safe_dump({
             "systems": [{"id": "s1", "system": "1L2Y"}],
             "simulation": {"duration_ns": 0.5, "nvt_steps": 50000,

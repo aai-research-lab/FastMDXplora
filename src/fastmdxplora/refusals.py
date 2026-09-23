@@ -515,8 +515,8 @@ CODES: tuple[Code, ...] = (
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("path", "found", "expected")),
     Code("simulation.resume.unsealed",
-         "A checkpoint with no seal beside it, so the segment that wrote "
-         "it did not finish.",
+         "A segment that did not finish: its checkpoints were written "
+         "along the way and none at the end.",
          Kind.SEMANTIC, Disclosure.ACTION,
          detail_keys=("path",)),
     Code("simulation.resume.checkpoint_rejected",
@@ -540,6 +540,11 @@ CODES: tuple[Code, ...] = (
          "a new run from a snapshot rather than the same trajectory.",
          Kind.SEMANTIC, Disclosure.ACTION,
          detail_keys=("path", "stage", "step", "minimize", "nvt_steps", "npt_steps")),
+    Code("simulation.resume.interval_differs",
+         "Segments written at different frame spacings, so a joined "
+         "trajectory would change the time a frame represents partway.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("path", "intervals")),
     Code("simulation.resume.timestep_differs",
          "A checkpoint was to be continued with a different timestep from "
          "the one that wrote it; the integrator state it carries is for the "
