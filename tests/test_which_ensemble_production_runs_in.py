@@ -220,17 +220,32 @@ class TestTheWarningSaysWhatHappened(unittest.TestCase):
         self.assertFalse(self.warns({"npt_steps": 50_000}))
 
     def test_the_runner_asks_the_ensemble_and_not_only_the_steps(self):
-        # The regression this exists to prevent. If the condition ever goes
-        # back to `npt_steps > 0` alone, a correct segment warns again.
-        import inspect
+        # The regression this exists to prevent: with no NPT equilibration,
+        # a run whose production is at constant pressure has its density set
+        # by the barostat and is not warned about; one at constant volume is.
+        import tempfile
+        from pathlib import Path
 
+        import pytest
+
+        pytest.importorskip("openmm")
         from fastmdxplora.simulation import runner
+        from tests._the_phase import a_prepared_water_box
 
-        source = inspect.getsource(runner)
-        self.assertIn(
-            'if not plan["npt_steps"] > 0 and not wants_npt_production:',
-            source)
-
+        warned = []
+        real = runner._warn_density_was_never_equilibrated
+        runner._warn_density_was_never_equilibrated = (
+            lambda *a, **k: warned.append(True) or real(*a, **k))
+        try:
+            for ensemble, expected in (("npt", []), ("nvt", [True])):
+                warned.clear()
+                root = Path(tempfile.mkdtemp())
+                runner.run_simulation(**a_prepared_water_box(root), output_dir=str(root / "out"),
+                                      production_steps=10, nvt_steps=10, npt_steps=0,
+                                      minimize=False, platform="CPU", ensemble=ensemble)
+                self.assertEqual(warned, expected, ensemble)
+        finally:
+            runner._warn_density_was_never_equilibrated = real
 
 class TestEveryPlaceThatAsksAsksTheSameWay(unittest.TestCase):
     """Three places asked whether there was a barostat, and by the end all

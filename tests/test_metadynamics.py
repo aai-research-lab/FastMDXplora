@@ -469,34 +469,42 @@ class TestTheThreeAddedVariables:
         assert "sep.z" in build_steered_script(plan)
 
 
-def test_one_translation_serves_every_method_that_biases() -> None:
+def test_one_translation_serves_every_method_that_biases(tmp_path, monkeypatch) -> None:
     """Steered MD had a copy of the collective-variable translation, so
     membrane_depth reached metadynamics and fell through steering's else
     branch into one expecting a radius of gyration.
 
-    A variable should arrive everywhere at once. Checked by counting where
-    the translation lives rather than by listing the methods, because the
-    list is the thing that drifts.
+    A variable should arrive everywhere at once. Whatever the one
+    translation writes, every method that biases a coordinate writes:
+    metadynamics, a pull, and an umbrella window's script from a real run.
+    A method keeping its own copy would lack the marker.
     """
-    import inspect
+    from fastmdxplora.simulation import metadynamics, steered
+    from fastmdxplora.simulation.metadynamics import build_plumed_script, plan_from_config
+    from fastmdxplora.simulation.steered import build_steered_script, plan_steered
 
-    from fastmdxplora.simulation import metadynamics, steered, umbrella
+    # Steering holds the one function, not a copy of it: the same object.
+    assert steered.cv_lines is metadynamics.cv_lines
+    marker = "# written by the one translation"
+    real = metadynamics.cv_lines
 
-    # The sentinel is the action and its first keyword rather than the
-    # label: labels became suffixable when a run could bias two variables
-    # at once, so `cv: COORDINATION` no longer appears anywhere while the
-    # translation it stands for has not moved.
-    definitions = sum(
-        inspect.getsource(module).count(": COORDINATION GROUPA=")
-        for module in (metadynamics, steered, umbrella)
-    )
-    assert definitions == 1, (
-        "the translation from a named variable to PLUMED should exist once"
-    )
+    def marked(*args, **kwargs):
+        return [marker, *real(*args, **kwargs)]
 
-    # And steering reaches it rather than reimplementing.
-    assert "cv_lines(" in inspect.getsource(steered.build_steered_script)
-
+    # Wherever it is held: steering imported it by name.
+    monkeypatch.setattr(metadynamics, "cv_lines", marked)
+    monkeypatch.setattr(steered, "cv_lines", marked)
+    ligand = {"collective_variable": "ligand_distance", "ligand_resname": "BNZ",
+              "site_selection": "resid 1 to 3 and name CA"}
+    assert marker in build_plumed_script(plan_from_config(
+        dict(ligand, sigma=0.05, height=1.0, pace=10, unbounded=True), _topology()))
+    assert marker in build_steered_script(plan_steered(
+        dict(ligand, **{"from": 0.4, "to": 3.0}), _topology()))
+    window = {"collective_variable": "distance", "selection_a": "resid 0 and name O",
+              "selection_b": "resid 1 and name O", "centre": 0.5,
+              "force_constant": 500.0, "index": 0}
+    out = _a_biased_run(tmp_path, monkeypatch, umbrella=window)
+    assert marker in (out / "umbrella.plumed").read_text(encoding="utf-8")
 
 class TestTheStagePlanSurvivesTheBiasPlan:
     """`plan = plan_from_config(...)` in the runner rebound the stage plan --
@@ -509,34 +517,33 @@ class TestTheStagePlanSurvivesTheBiasPlan:
     produces. None of them runs the runner, which is where the two names met.
     """
 
-    def _runner_source(self) -> str:
-        import inspect
+    def test_the_bias_plan_has_its_own_name(self, tmp_path, monkeypatch) -> None:
+        # One variable biased: the run minimises, equilibrates at constant
+        # volume and pressure, and produces, every stage reading the stage
+        # plan after the bias plan was made.
+        out = _a_biased_run(tmp_path, monkeypatch, metadynamics=_ONE_VARIABLE)
+        assert (out / "metadynamics.plumed").is_file()
+        assert (out / "production.dcd").is_file()
 
-        from fastmdxplora.simulation import runner
+    def test_the_umbrella_path_already_did_this(self, tmp_path, monkeypatch) -> None:
+        """`cv_plan` beside it: the pattern was there to copy. An umbrella
+        window runs its stages under its restraint."""
+        window = {"collective_variable": "distance", "selection_a": "resid 0 and name O",
+                  "selection_b": "resid 1 and name O", "centre": 0.5,
+                  "force_constant": 500.0, "index": 0}
+        out = _a_biased_run(tmp_path, monkeypatch, umbrella=window)
+        assert (out / "umbrella.plumed").is_file()
+        assert (out / "production.dcd").is_file()
 
-        return inspect.getsource(runner)
-
-    def test_the_bias_plan_has_its_own_name(self) -> None:
-        source = self._runner_source()
-        assert "bias_plan = plan_from_config(" in source
-        assert "\n        plan = plan_from_config(" not in source
-
-    def test_the_umbrella_path_already_did_this(self) -> None:
-        """`cv_plan` beside it: the pattern was there to copy."""
-        source = self._runner_source()
-        assert "cv_plan" in source
-
-    def test_the_stage_plan_is_still_a_mapping_afterwards(self) -> None:
-        """The failure was a dict becoming a dataclass, so the guard is that
-        every use of `plan` in the runner subscripts it."""
-        import re
-
-        source = self._runner_source()
-        # Every `plan = ` assignment in the runner should be a mapping, so no
-        # assignment from a *_from_config factory may bind the bare name.
-        for match in re.finditer(r"^\s+plan = (\w+)\(", source, re.M):
-            assert not match.group(1).endswith("_from_config"), match.group(0)
-
+    def test_the_stage_plan_is_still_a_mapping_afterwards(self, tmp_path, monkeypatch) -> None:
+        """The failure was a dict becoming a dataclass, so a run that biases
+        two variables at once, through the other planner, runs its stages
+        too."""
+        pair = {"variables": [dict(_ONE_VARIABLE), dict(_ONE_VARIABLE, selection_a="resid 2 and name O",
+                                                         selection_b="resid 3 and name O")],
+                "height": 1.0, "pace": 5}
+        out = _a_biased_run(tmp_path, monkeypatch, metadynamics=pair)
+        assert (out / "production.dcd").is_file()
 
 class TestQBiasesTheSameThingItReports:
     """The CV and the analysis have to share one definition of S.
@@ -958,3 +965,24 @@ class TestTheBiasIsLookedUpNotResummed:
             ]},
             _topology(), temperature_K=300.0)
         assert "GRID_" not in self._metad_line(build_plumed_script_pair(pair))
+
+
+_ONE_VARIABLE = {"collective_variable": "distance", "selection_a": "resid 0 and name O",
+                 "selection_b": "resid 1 and name O", "sigma": 0.05, "height": 1.0, "pace": 5}
+
+
+def _a_biased_run(root, monkeypatch, **bias):
+    """A real run of a small water box with `bias`, through minimisation,
+    both equilibrations and production. PLUMED's own force is the one part
+    stood in, as it is not installed everywhere; the script it would be
+    given is still written. Returns the run's folder."""
+    from fastmdxplora.simulation import plumed
+    from fastmdxplora.simulation.runner import run_simulation
+    from tests._the_phase import a_prepared_water_box
+
+    monkeypatch.setattr(plumed, "add_plumed_force", lambda *args, **kwargs: None)
+    root.mkdir(parents=True, exist_ok=True)
+    out = root / "out"
+    run_simulation(**a_prepared_water_box(root), output_dir=str(out), production_steps=20,
+                   nvt_steps=10, npt_steps=10, minimize=True, platform="CPU", **bias)
+    return out

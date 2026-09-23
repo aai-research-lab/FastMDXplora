@@ -287,23 +287,32 @@ class TestWhenTheBiasGoesOn:
         assert written["equilibration_steps"] == 20
         assert written["equilibration_ps"] == pytest.approx(0.04)
 
-    def test_the_record_does_not_claim_to_locate_production(self):
+    def test_the_record_does_not_claim_to_locate_production(self, tmp_path) -> None:
         """It cannot, and saying so cost a smoke test.
 
         Production resets the context's step counter and clock, which rewinds
         PLUMED's clock behind the runner's back -- so a step count recorded
         here described a file whose production rows begin at 0.2 ps. The
-        reader finds the boundary in the clock instead.
-        """
-        import inspect
+        reader finds the boundary in the clock instead: a window's file with
+        equilibration rows and then a reset yields production's rows alone,
+        and a file with no reset yields all of them."""
+        from fastmdxplora.simulation.umbrella import collect_samples
 
-        from fastmdxplora.simulation import umbrella
+        simulation = tmp_path / "window" / "simulation"
+        simulation.mkdir(parents=True)
+        equilibration = [f"{0.2 * i:.1f} 9.9 0.0" for i in range(1, 11)]
+        production = [f"{0.2 * i:.1f} {0.5 + 0.001 * i:.4f} 0.0" for i in range(1, 21)]
+        simulation.joinpath("COLVAR").write_text(
+            "#! FIELDS time cv bias\n" + "\n".join(equilibration + production), encoding="utf-8")
+        held = collect_samples({0: tmp_path / "window"}, equilibration_fraction=0.0)[0]
+        assert len(held) == 20 and float(held.max()) < 1.0
 
-        source = inspect.getsource(umbrella.collect_samples)
-
-        assert "production_start_ps" not in source
-        assert "production_begins_at" in source
-
+        only_production = tmp_path / "production_only" / "simulation"
+        only_production.mkdir(parents=True)
+        only_production.joinpath("COLVAR").write_text(
+            "#! FIELDS time cv bias\n" + "\n".join(production), encoding="utf-8")
+        assert len(collect_samples({0: tmp_path / "production_only"},
+                                   equilibration_fraction=0.0)[0]) == 20
 
 class TestTheLogSaysWhatItDoes:
 

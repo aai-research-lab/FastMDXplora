@@ -46,9 +46,6 @@ READS_THE_SOURCE: dict[str, str] = {'test_a_figure_says_what_it_shows.py::TestEv
  'test_a_superposition_needs_three_atoms.py::TestTheThresholdIsDeclared.test_every_analysis_that_superposes_is_covered': 'not '
                                                                                                                          'yet '
                                                                                                                          'converted',
- 'test_a_window_is_held_while_it_equilibrates.py::TestWhenTheBiasGoesOn.test_the_record_does_not_claim_to_locate_production': 'not '
-                                                                                                                              'yet '
-                                                                                                                              'converted',
  'test_analyses_do_not_disturb_each_other.py::TestAnAnalysisGivesTheSameAnswerInCompany.test_the_orchestrator_hands_out_copies': 'not '
                                                                                                                                  'yet '
                                                                                                                                  'converted',
@@ -98,16 +95,6 @@ READS_THE_SOURCE: dict[str, str] = {'test_a_figure_says_what_it_shows.py::TestEv
                                                                                 'text; what the '
                                                                                 'glyphs are is '
                                                                                 'tested beside it',
- 'test_metadynamics.py::TestTheStagePlanSurvivesTheBiasPlan.test_the_bias_plan_has_its_own_name': 'not '
-                                                                                                  'yet '
-                                                                                                  'converted',
- 'test_metadynamics.py::TestTheStagePlanSurvivesTheBiasPlan.test_the_stage_plan_is_still_a_mapping_afterwards': 'not '
-                                                                                                                'yet '
-                                                                                                                'converted',
- 'test_metadynamics.py::TestTheStagePlanSurvivesTheBiasPlan.test_the_umbrella_path_already_did_this': 'not '
-                                                                                                      'yet '
-                                                                                                      'converted',
- 'test_metadynamics.py::test_one_translation_serves_every_method_that_biases': 'not yet converted',
  'test_one_card_one_line.py::TestTheMachineCanMeasureItself.test_it_warms_up_before_timing': 'not '
                                                                                              'yet '
                                                                                              'converted',
@@ -125,10 +112,7 @@ READS_THE_SOURCE: dict[str, str] = {'test_a_figure_says_what_it_shows.py::TestEv
  'test_simulation_phase.py::TestDefaults.test_nothing_still_reads_one': 'not yet converted',
  'test_the_box_is_consulted.py::TestTheRuleIsGivenTheOption.test_every_dispatch_line_passes_periodic': 'not '
                                                                                                        'yet '
-                                                                                                       'converted',
- 'test_which_ensemble_production_runs_in.py::TestTheWarningSaysWhatHappened.test_the_runner_asks_the_ensemble_and_not_only_the_steps': 'not '
-                                                                                                                                       'yet '
-                                                                                                                                       'converted'}
+                                                                                                       'converted'}
 
 
 def _called(node: ast.AST) -> set[str]:
