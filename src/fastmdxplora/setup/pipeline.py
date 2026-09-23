@@ -142,8 +142,34 @@ _CHAIN_COLUMNS = {
 _LIGAND_KEEP_DISTANCE_NM = 0.5
 
 
+def _the_chains_to_simulate(orchestrator: Any, input_pdb: Path, input_form: str,
+                            params: dict[str, Any], *, presenter: Any = None) -> Path:
+    """The chains named, or else the biological assembly the file declares.
+
+    Named chains are the person's choice and always win. Otherwise the
+    depositors' assembly is used where the file declares one: every chain
+    was simulated before, so 1AKE ran as both copies of a monomer and 1HHO
+    as half a tetramer. The choice is recorded for the setup record.
+    """
+    if params.get("chains"):
+        return _select_chains(input_pdb, params["chains"], presenter=presenter)
+    if input_form not in ("pdb_id", "pdb_file"):
+        return input_pdb
+    from fastmdxplora.setup.assembly import choose_assembly, say_the_choice
+
+    choice = choose_assembly(input_pdb, select=_select_chains)
+    if choice is None:
+        return input_pdb
+    orchestrator._assembly = choice.record()
+    say_the_choice(choice)
+    if choice.keep:
+        return _select_chains(input_pdb, choice.keep, presenter=presenter)
+    return input_pdb
+
+
 def _select_chains(
-    input_pdb: Path, chains: str | list[str], *, presenter: Any = None
+    input_pdb: Path, chains: str | list[str], *, presenter: Any = None,
+    quiet: bool = False,
 ) -> Path:
     """Keep only the named chains, and the heterogens that belong to them.
 
@@ -269,7 +295,9 @@ def _select_chains(
         f"{name}{seq}" for (chain, name, seq), keep in verdicts.items()
         if keep and chain not in wanted
     })
-    logger.info(
+    # Quiet where the selection is a comparison, not the decision: the
+    # assembly choice asks what each candidate would hold.
+    (logger.debug if quiet else logger.info)(
         "Keeping chain(s) %s; dropping %s.%s",
         ", ".join(sorted(wanted)),
         ", ".join(dropped_chains) if dropped_chains else "nothing",
@@ -799,6 +827,7 @@ def run(
     # rather than whatever the attribute happens not to be. A sequence input
     # and a fetch that never landed both end here, and both are honest.
     orchestrator._structure_provenance = None
+    orchestrator._assembly = None
 
     # ---- Stage 1: resolve input ----------------------------------------
     try:
@@ -811,9 +840,8 @@ def run(
         orchestrator._structure_provenance = structure_provenance(
             orchestrator.system, input_form, input_pdb)
 
-        if params.get("chains"):
-            input_pdb = _select_chains(
-                input_pdb, params["chains"], presenter=presenter)
+        input_pdb = _the_chains_to_simulate(
+            orchestrator, input_pdb, input_form, params, presenter=presenter)
 
         artifacts.append("input.pdb")
         if presenter:
@@ -1177,6 +1205,9 @@ def _write_manifest(
             # Which structure, past the point the string above still says.
             # Absent for a sequence, and for a fetch that never landed.
             "structure": getattr(orchestrator, "_structure_provenance", None),
+            # Which biological assembly was simulated, and why; None where no
+            # chains were chosen for the run or the file declares none.
+            "assembly": getattr(orchestrator, "_assembly", None),
         },
         "parameters": params,
         # How big the system ended up. A methods section has to state it, and

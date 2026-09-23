@@ -349,6 +349,11 @@ CODES: tuple[Code, ...] = (
          "The deposited entry does not determine what should be simulated.",
          Kind.SEMANTIC, Disclosure.NOTHING,
          detail_keys=("components",)),
+    Code("setup.structure.assembly_ambiguous",
+         "The structure's biological assemblies hold different things, so "
+         "which is simulated has to be named.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("assemblies",)),
     Code("setup.structure.chain_unknown",
          "A chain was named that the structure does not hold.",
          Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,
