@@ -689,6 +689,23 @@ def write_trajectory_topology(
     if atom_subset is None:
         return None
 
+    # Written by OpenMM from OpenMM's topology where there is one, keeping the
+    # deposited residue numbers, insertion codes and chain IDs. Through
+    # MDTraj the insertion codes were dropped, so trypsin's 184A and 184
+    # became two residues numbered 184 in every file analysis read, and no
+    # later step could tell them apart.
+    kept = [int(i) for i in atom_subset]
+    if hasattr(topology, "atoms") and callable(topology.atoms) and kept == sorted(set(kept)):
+        from openmm.app import Modeller, PDBFile
+
+        modeller = Modeller(topology, positions)
+        keep = set(kept)
+        modeller.delete([atom for atom in topology.atoms() if atom.index not in keep])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            PDBFile.writeFile(modeller.topology, modeller.positions, handle, keepIds=True)
+        return path
+
     import mdtraj as md
 
     mdtop = (topology if isinstance(topology, md.Topology)

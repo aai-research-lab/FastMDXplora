@@ -289,7 +289,7 @@ class SASA(Analysis):
             ax.set_ylim(bottom=0)
         else:
             # Per-residue heatmap: pivot long-form -> (residue × frame)
-            rows = ["chain", "residue"] if "chain" in result else "residue"
+            rows = [c for c in ("chain", "residue", "insertion") if c in result]
             grid = result.pivot(
                 index=rows, columns="frame", values="sasa_nm2"
             ).to_numpy()

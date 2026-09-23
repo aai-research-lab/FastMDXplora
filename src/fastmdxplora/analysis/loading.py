@@ -392,6 +392,12 @@ def load_trajectory(
             raise TrajectoryLoadError(f"Trajectory file not found: {p}")
 
     top_path = _resolve_topology(traj_paths, top)
+    if top_path is not None:
+        # Insertion codes, which MDTraj does not keep: trypsin's 184A and 184
+        # otherwise load as two residues numbered 184 in one chain.
+        from fastmdxplora.analysis.residues import remember_insertion_codes
+
+        remember_insertion_codes(top_path)
 
     logger.debug(
         "Loading %d trajectory file(s) with topology=%s, stride=%s",

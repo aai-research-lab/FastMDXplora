@@ -135,7 +135,7 @@ class SS(Analysis):
         # number alone gave four columns one name.
         from fastmdxplora.analysis.residues import label, several_chains
 
-        qualified = several_chains(traj.topology)
+        qualified = several_chains(traj.topology)  # label() adds 184A where coded
         labels = [label(r, qualified=qualified) for r in residues]
 
         if len(labels) != codes.shape[1]:

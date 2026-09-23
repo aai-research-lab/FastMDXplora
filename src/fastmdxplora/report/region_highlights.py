@@ -186,9 +186,9 @@ def _load_rmsf(path: Path) -> tuple[np.ndarray, "np.ndarray | None"]:
         import pandas as pd
 
         table = pd.read_csv(path)
-        if {"chain", "residue", "rmsf_nm"} <= set(table.columns):
+        if {"residue", "rmsf_nm"} <= set(table.columns):
             return (table[["residue", "rmsf_nm"]].to_numpy(dtype=float),
-                    table["chain"].astype(str).to_numpy())
+                    table["chain"].astype(str).to_numpy() if "chain" in table else None)
     except (ValueError, OSError):
         pass
     try:

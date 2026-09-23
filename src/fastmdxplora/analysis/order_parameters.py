@@ -361,9 +361,9 @@ class OrderParameters(Analysis):
 
         self.findings["order_parameters"] = record
 
-        from fastmdxplora.analysis.residues import columns, several_chains
+        from fastmdxplora.analysis.residues import columns, distinct
 
-        if several_chains(traj.topology):
+        if not distinct(traj.topology):
             # By chain as well as number: the numbers of every copy stood in
             # one column. A measured set is matched by number, so each copy
             # is compared with the same value -- which is what a measurement

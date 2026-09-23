@@ -139,7 +139,7 @@ class RMSF(Analysis):
 
         # Use residue.resSeq (PDB numbering) for the x axis when available;
         # fall back to topology index otherwise.
-        from fastmdxplora.analysis.residues import columns, number, several_chains
+        from fastmdxplora.analysis.residues import columns, distinct, number
 
         rows: list[tuple[int, float]] = []
         for ridx in sorted(residues):
@@ -157,7 +157,7 @@ class RMSF(Analysis):
             rows.append((label, float(np.sqrt(np.mean(values ** 2)))))
 
         ordered = [traj.topology.residue(ridx) for ridx in sorted(residues)]
-        if several_chains(traj.topology):
+        if not distinct(traj.topology):
             # A table naming each residue's chain: as the two-column array,
             # the numbers of four copies stood in one column and the line
             # through them doubled back on itself three times.

@@ -259,9 +259,9 @@ class BFactorComparison(Analysis):
                 "not the same measurement."
             ),
         }
-        from fastmdxplora.analysis.residues import columns, several_chains
+        from fastmdxplora.analysis.residues import columns, distinct
 
-        if several_chains(traj.topology):
+        if not distinct(traj.topology):
             # Matched by chain and number, and now written that way too: the
             # rows of every copy carried the number alone.
             import pandas as pd

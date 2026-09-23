@@ -124,3 +124,62 @@ def test_the_readers_of_rmsf_read_a_tetramer(tmp_path, tetramer) -> None:
     _plot_rmsf_regions(data, regions, tmp_path / "regions.png", chains=chains)
     assert (tmp_path / "regions.png").is_file()
     assert len(_numeric_series(written)) == 4 * 121
+
+
+@pytest.fixture(scope="module")
+def trypsin(tmp_path_factory):
+    """3PTB as a run leaves it: prepared by PDBFixer, its trajectory topology
+    written by the simulation phase's own writer, loaded by the loader."""
+    pdbfixer = pytest.importorskip("pdbfixer")
+    from fastmdxplora.analysis.loading import load_trajectory
+    from fastmdxplora.simulation.runner import write_trajectory_topology
+
+    root = tmp_path_factory.mktemp("trypsin")
+    deposited = root / "3PTB.pdb"
+    deposited.write_bytes(gzip.decompress((DEPOSITED / "3PTB.pdb.gz").read_bytes()))
+    fixer = pdbfixer.PDBFixer(filename=str(deposited))
+    fixer.removeHeterogens(keepWater=False)
+    kept = [atom.index for atom in fixer.topology.atoms()]
+    topology = write_trajectory_topology(fixer.topology, fixer.positions,
+                                         root / "trajectory_topology.pdb", kept)
+    start = md.load(str(topology))
+    shake = np.random.default_rng(3).normal(0.0, 0.02, (6,) + start.xyz.shape[1:])
+    md.Trajectory((start.xyz + shake).astype(np.float32), start.topology).save_dcd(str(root / "t.dcd"))
+    loaded = load_trajectory(str(root / "t.dcd"), top=str(topology))
+    return (loaded[0] if isinstance(loaded, tuple) else loaded), topology
+
+
+def test_the_trajectory_topology_keeps_insertion_codes(trypsin) -> None:
+    # Trypsin is numbered 184A before 184; written through MDTraj the code
+    # was dropped and the two residues shared a number in every later file.
+    _, topology = trypsin
+    coded = sorted({line[22:27].strip() for line in topology.read_text().splitlines()
+                    if line.startswith("ATOM") and line[26] != " "})
+    assert coded == ["184A", "188A", "221A"]
+
+
+@pytest.mark.parametrize("name", ["rmsf", "sasa_residue", "sasa_average", "dihedrals"])
+def test_an_inserted_residue_is_its_own_row(tmp_path, trypsin, name) -> None:
+    from fastmdxplora.analysis.dihedrals import Dihedrals
+    from fastmdxplora.analysis.rmsf import RMSF
+    from fastmdxplora.analysis.sasa import SASA
+
+    traj, _ = trypsin
+    analysis = {"rmsf": lambda: RMSF(output_dir=tmp_path),
+                "sasa_residue": lambda: SASA(mode="residue", output_dir=tmp_path),
+                "sasa_average": lambda: SASA(mode="average_residue", output_dir=tmp_path),
+                "dihedrals": lambda: Dihedrals(output_dir=tmp_path)}[name]()
+    assert analysis.run(traj).status == "ok"
+    table = analysis.compute(traj)
+    keys = [c for c in ("frame", "chain", "residue", "insertion") if c in table]
+    assert "insertion" in keys and not table.duplicated(subset=keys).any()
+    assert sorted(table.loc[table["insertion"] == "A", "residue"].unique()) == [184, 188, 221]
+
+
+def test_secondary_structure_names_an_inserted_residue(tmp_path, trypsin) -> None:
+    from fastmdxplora.analysis.ss import SS
+
+    traj, _ = trypsin
+    residues = [c for c in SS(output_dir=tmp_path).compute(traj).columns if c != "frame"]
+    assert len(residues) == len(set(residues))
+    assert {"184A", "188A", "221A"} <= {c for c in residues if isinstance(c, str)}
