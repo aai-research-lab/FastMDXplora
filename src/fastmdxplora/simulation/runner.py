@@ -201,6 +201,16 @@ def _probe_platform(omm: Any, platform: Any, name: str,
         return False
 
 
+def _platform_of_plugin(failure: str) -> str | None:
+    """The platform a plugin load failure belongs to, from the library named
+    in it: libOpenMMCUDA.so and libOpenMMRPMDCUDA.so are both CUDA's. None
+    where no platform library is named."""
+    import re
+
+    match = re.search(r"OpenMM[A-Za-z]*?(CUDA|OpenCL|HIP|CPU)\.(?:so|dylib|dll)", failure)
+    return match.group(1) if match else None
+
+
 def _say_what_is_available(omm: dict, wanted: "list[str]") -> None:
     """Name the platforms OpenMM found, and why a wanted one is missing.
 
@@ -227,18 +237,29 @@ def _say_what_is_available(omm: dict, wanted: "list[str]") -> None:
 
     logger.info("OpenMM platforms available: %s", ", ".join(found) or "none")
 
-    missing = [name for name in wanted if name not in found]
-    if not missing:
-        return
+    # Only what could have changed the choice: the wanted platforms ahead of
+    # the first one that is there. Every load failure was printed whenever
+    # any wanted platform was absent, so a CUDA machine with no OpenCL
+    # listed the AMD libraries it had never been asked to use, marked as
+    # information, above the line saying CUDA was selected.
+    first_found = next((i for i, name in enumerate(wanted) if name in found), len(wanted))
+    missing = list(wanted[:first_found])
 
     try:
         failures = [str(f) for f in mm.Platform.getPluginLoadFailures()]
     except Exception:  # noqa: BLE001
         failures = []
 
-    if failures:
-        for failure in failures:
-            logger.info("  a plugin did not load: %s", failure)
+    explaining = [f for f in failures if _platform_of_plugin(f) in (*missing, None)]
+    for failure in failures:
+        if failure not in explaining or not missing:
+            logger.debug("  a plugin did not load: %s", failure)
+    if not missing:
+        return
+
+    if explaining:
+        for failure in explaining:
+            logger.warning("  a plugin did not load: %s", failure)
     elif "CPU" in missing:
         # Nothing failed and the CPU platform is absent, which means nothing
         # was attempted: the plugin directory is wrong or unset. Worth saying,

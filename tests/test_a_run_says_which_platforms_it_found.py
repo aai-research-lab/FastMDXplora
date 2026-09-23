@@ -85,6 +85,31 @@ class TestItSaysWhyOneIsMissing:
         assert "OPENMM_PLUGIN_DIR" not in caplog.text
 
 
+HIP_FAILURES = [f"Error loading library /env/lib/plugins/libOpenMM{name}HIP.so: "
+                "libhiprtc.so.6: cannot open shared object file"
+                for name in ("", "RPMD", "Drude", "Amoeba")]
+
+
+class TestOnlyWhatChangedTheChoiceIsSaid:
+    def test_a_cuda_machine_is_not_told_about_amd_libraries(self, caplog) -> None:
+        """What a CUDA workstation printed on every run: the four AMD plugins
+        OpenMM ships, none asked for, as green information above the line
+        saying CUDA was selected. No OpenCL made every failure look relevant."""
+        with caplog.at_level(logging.INFO):
+            _say_what_is_available(_openmm(["Reference", "CPU", "CUDA"], HIP_FAILURES), WANTED)
+        assert "did not load" not in caplog.text
+        assert "Reference, CPU, CUDA" in caplog.text
+
+    def test_the_failure_behind_a_missing_gpu_is_a_warning(self, caplog) -> None:
+        cuda = ("Error loading library /env/lib/plugins/libOpenMMCUDA.so: "
+                "libcuda.so.1: cannot open shared object file")
+        with caplog.at_level(logging.INFO):
+            _say_what_is_available(_openmm(["Reference", "CPU"], [cuda, *HIP_FAILURES]), WANTED)
+        shown = [r for r in caplog.records if "did not load" in r.getMessage()]
+        assert [r.levelno for r in shown] == [logging.WARNING]
+        assert "libcuda.so.1" in shown[0].getMessage()
+
+
 class TestItNeverStopsARunItCannotDescribe:
     def test_no_openmm_is_not_an_error(self) -> None:
         _say_what_is_available({}, WANTED)
