@@ -221,3 +221,21 @@ class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
         self.assertEqual(record["trajectory_interval_steps"], 50)
         joined = self.study / "joined" / "production.dcd"
         self.assertAlmostEqual(_saving_interval_ps(self.study, trajectory=joined), 0.1)
+
+
+def test_checkpoints_are_placed_on_frames(tmp_path) -> None:
+    # Asked for every 100 steps with a frame every 60, checkpoints go every
+    # 120, so the step a run is resumed from is always one a frame was
+    # written at.
+    import pytest
+
+    pytest.importorskip("openmm.app")
+    from fastmdxplora.simulation.runner import run_simulation
+    from tests._the_phase import a_prepared_water_box
+
+    out = tmp_path / "study" / "simulation"
+    result = run_simulation(**a_prepared_water_box(tmp_path), output_dir=str(out),
+                            production_steps=300, nvt_steps=10, npt_steps=0, minimize=False,
+                            platform="CPU", trajectory_interval_steps=60,
+                            checkpoint_interval_steps=100)
+    assert result.resolved["checkpoint_interval_steps"] == 120

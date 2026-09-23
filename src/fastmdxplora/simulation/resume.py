@@ -470,6 +470,19 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     done_steps = max(0, step)
     done_ns = done_steps * dt_ns
 
+    # The continuation's frames start from its own zero, at the checkpoint.
+    # Off the frame grid, the gap across the join is the interval plus the
+    # remainder, and the joined trajectory changes its spacing there.
+    interval = trajectory_interval_of(root)
+    if interval and done_steps % interval:
+        return Continuation(**empty, refusal=(
+            f"the checkpoint is at production step {done_steps:,}, which is not a "
+            f"multiple of the {interval:,} steps between frames, so a continuation's "
+            f"frames would fall {done_steps % interval:,} steps off the ones before "
+            "it and the joined trajectory would change its spacing at the join. "
+            "Runs now place their checkpoints on frames; this one has to be rerun "
+            "to be continued."))
+
     if total_ns is not None:
         remaining = float(total_ns) - done_ns
     elif more_ns is not None:

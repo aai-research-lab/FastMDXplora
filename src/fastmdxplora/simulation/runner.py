@@ -2587,6 +2587,20 @@ def run_simulation(
                              if cone is not None else None),
                 }, indent=2),
                 encoding="utf-8")
+        # Checkpoints on frames. A continuation's frames start from its own
+        # zero at the checkpoint, so a checkpoint between frames made the
+        # joined trajectory's spacing change at the join: 100,000 steps
+        # against the 750 a 3 ns run chooses leaves every checkpoint 250
+        # steps off a frame.
+        if (trajectory_interval_steps and checkpoint_interval_steps
+                and checkpoint_interval_steps % trajectory_interval_steps):
+            on_frames = -(-checkpoint_interval_steps // trajectory_interval_steps) * trajectory_interval_steps
+            logger.info(
+                "Checkpoints every %s steps rather than %s: the nearest multiple of the "
+                "%s steps between frames, so a run resumed from one continues the "
+                "trajectory at the same spacing.",
+                f"{on_frames:,}", f"{checkpoint_interval_steps:,}", f"{trajectory_interval_steps:,}")
+            checkpoint_interval_steps = on_frames
         # Checkpoint reporter for crash recovery / restart.
         _attach_checkpoint_reporter(
             omm, simulation, output_dir / "checkpoint.chk",
@@ -2787,6 +2801,8 @@ def run_simulation(
             "npt_steps": int(plan["npt_steps"]),
             "production_steps": int(plan["production_steps"]),
             "trajectory_interval_steps": int(trajectory_interval_steps),
+            # As placed, on frames, which may be later than was asked.
+            "checkpoint_interval_steps": int(checkpoint_interval_steps),
             "pressure_bar": resolved_pressure_bar,
             # Only where restraints were applied. The schedule has a
             # built-in default that a release could change, and a run that

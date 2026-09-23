@@ -222,6 +222,20 @@ class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
         # would choose from its own, shorter length.
         self.assertEqual(continuation_of(root).config["simulation"]["trajectory_interval_steps"], 500)
 
+    def test_a_checkpoint_between_frames_is_refused_before_anything_runs(self):
+        # A continuation's frames start from its own zero at the checkpoint,
+        # so a checkpoint 250 steps past a frame would make the joined
+        # trajectory's spacing change at the join.
+        from fastmdxplora.simulation.resume import continuation_of
+
+        root = _study(done_steps=500_250, duration=2.0, finished=False)
+        write_checkpoint_sidecar(root / "simulation" / "checkpoint.chk", stage="production",
+                                 step=500_250, ensemble="npt", temperature_K=300.0,
+                                 timestep_fs=2.0, study=str(root), finished=False,
+                                 trajectory_interval_steps=500)
+        refusal = continuation_of(root).refusal or ""
+        self.assertIn("not a multiple of the 500 steps between frames", refusal)
+
     def test_where_it_cannot_be_counted_the_join_is_still_refused(self):
         from fastmdxplora.simulation.resume import extend_study
 
