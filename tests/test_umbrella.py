@@ -8,7 +8,6 @@ is dissipated.
 
 from __future__ import annotations
 
-import re
 
 import numpy as np
 import pytest
@@ -484,6 +483,20 @@ class TestItIsActuallyReached:
             )
 
 
+
+def _windows_sampled(explorer, n=1500):
+    """Each window's COLVAR, written where the explorer says the run went,
+    drawn from the biased distribution that window would sample."""
+    for spec in explorer.run_specs:
+        block = spec.options["simulation"]["umbrella"]
+        simulation = explorer._run_output_dir(spec) / "simulation"
+        simulation.mkdir(parents=True, exist_ok=True)
+        values = _sample(block["centre"], block["force_constant"], n=n, seed=block["index"])
+        simulation.joinpath("COLVAR").write_text(
+            "#! FIELDS time cv bias\n"
+            + "\n".join(f"{i * 0.1:.1f} {v:.6f} 0.0" for i, v in enumerate(values)),
+            encoding="utf-8")
+
 class TestNothingIsSmuggledThroughTheConfig:
     """The expansion stashed the plan under `_umbrella_plan`, and validation
     refused the unknown key -- correctly, since a config is what somebody
@@ -541,15 +554,24 @@ class TestNothingIsSmuggledThroughTheConfig:
         assert plan_from_expanded(
             {"systems": [{"system": "1UBQ"}, {"system": "181L"}]}) is None
 
-    def test_the_explorer_rebuilds_rather_than_reads_a_stash(self) -> None:
-        import inspect
+    def test_the_explorer_rebuilds_rather_than_reads_a_stash(self, tmp_path) -> None:
+        # The explorer holds only what was written, and its PMF is built
+        # from a plan rebuilt from that: the plan pmf.json records is the
+        # one the windows imply.
+        import json
 
-        from fastmdxplora.batch import explorer
+        from fastmdxplora.batch.explorer import BatchExplorer
+        from fastmdxplora.simulation.umbrella import plan_from_expanded
 
-        source = inspect.getsource(explorer.BatchExplorer._maybe_build_pmf)
-        assert "plan_from_expanded" in source
-        assert "_umbrella_plan" not in source
-
+        explorer = BatchExplorer(config=self._written(tmp_path),
+                                 output_dir=str(tmp_path / "out"))
+        assert not [k for k in explorer._raw if str(k).startswith("_")]
+        for spec in explorer.run_specs:
+            assert not [k for k in spec.options if str(k).startswith("_")]
+        _windows_sampled(explorer)
+        explorer._maybe_build_pmf(bootstrap_resamples=8)
+        written = json.loads((tmp_path / "out" / "pmf.json").read_text(encoding="utf-8"))
+        assert written["plan"] == json.loads(json.dumps(plan_from_expanded(explorer._raw).as_record()))
 
 class TestAWindowInheritsTheStudysSettings:
     """A per-system block replaces the top-level one rather than merging, so a
@@ -776,23 +798,32 @@ class TestItLooksWhereTheRunsActuallyWent:
         f = np.array(written["pmf"]["free_energy_kjmol"])
         assert f[np.argmin(np.abs(x))] == pytest.approx(10.0, abs=1.5)
 
-    def test_the_directories_come_from_the_explorer(self) -> None:
-        """Not from reconstructing a path, which is what got it wrong."""
-        import inspect
+    def test_the_directories_come_from_the_explorer(self, tmp_path, monkeypatch) -> None:
+        """Not from reconstructing a path, which is what got it wrong. The
+        runs are put somewhere no convention would guess, and the free
+        energy is still found; and the collector reads the folders it is
+        given whatever they are called."""
+        import json
 
-        from fastmdxplora.batch import explorer
-        from fastmdxplora.simulation import umbrella
+        from fastmdxplora.batch.explorer import BatchExplorer
+        from fastmdxplora.simulation.umbrella import collect_samples
 
-        assert "_run_output_dir(spec)" in inspect.getsource(
-            explorer.BatchExplorer._maybe_build_pmf)
-        # And the collector no longer builds one.
-        # The body, not the docstring -- which explains the mistake and
-        # therefore contains the very string this looks for.
-        source = inspect.getsource(umbrella.collect_samples)
-        body = source[source.index('"""', source.index('"""') + 3):]
-        assert "window_" not in body, (
-            "the collector should not know how a run directory is named"
-        )
+        explorer = self._explorer(tmp_path)
+        (tmp_path / "out").mkdir()          # the study's own folder, made before any run
+        monkeypatch.setattr(BatchExplorer, "_run_output_dir",
+                            lambda self, spec: tmp_path / "elsewhere" / f"no-{spec.run_id}")
+        _windows_sampled(explorer)
+        explorer._maybe_build_pmf(bootstrap_resamples=8)
+        written = json.loads((tmp_path / "out" / "pmf.json").read_text(encoding="utf-8"))
+        assert written["refused"] is None
+
+        odd = tmp_path / "anything" / "simulation"
+        odd.mkdir(parents=True)
+        odd.joinpath("COLVAR").write_text(
+            "#! FIELDS time cv bias\n" + "\n".join(f"{i:.1f} 0.5 0.0" for i in range(50)),
+            encoding="utf-8")
+        samples = collect_samples({0: tmp_path / "anything"}, equilibration_fraction=0.0)
+        assert len(samples[0]) == 50
 
     def test_a_missing_window_names_the_path_it_looked_at(self, tmp_path) -> None:
         """So the next path mistake is one line of output rather than an
@@ -890,32 +921,47 @@ class TestParallelRunsShareOneTerminal:
             if previous is not None:
                 os.environ["FASTMDX_LOG_STYLE"] = previous
 
-    def test_the_worker_asks_for_it(self) -> None:
-        import inspect
-
-        from fastmdxplora.batch import explorer
-
-        source = inspect.getsource(explorer._execute_run)
-        assert "FASTMDX_LOG_STYLE" in source
-        assert "share one terminal" in source
-
     @staticmethod
-    def _guard():
-        """The guard, lifted out of the worker and made runnable here."""
-        import inspect
-        import textwrap
+    def _run_the_worker(tmp_path, monkeypatch, *, quiet=True, fail=False, during=None):
+        """The worker, in this process, with a study that records the log
+        style it ran under, does whatever `during` does while it runs (a
+        write to the descriptor, as PLUMED's banner is), and fails if asked.
+        Gives back the styles seen and the run's log."""
+        import os
 
+        import fastmdxplora
         from fastmdxplora.batch import explorer
 
-        source = inspect.getsource(explorer._execute_run)
-        block = source[source.index("    class _QuietBanner:"):
-                       source.index("    # Imported here")]
-        namespace: dict = {}
-        exec("import os as _os\nimport sys as _sys\n" + textwrap.dedent(block),
-             namespace)
-        return namespace["_QuietBanner"]
+        seen = []
 
-    def test_plumeds_own_output_goes_to_the_run_log(self) -> None:
+        class Study:
+            def __init__(self, **kwargs):
+                pass
+
+            def explore(self, **kwargs):
+                seen.append(os.environ.get("FASTMDX_LOG_STYLE"))
+                if during is not None:
+                    during()
+                if fail:
+                    raise RuntimeError("the run failed")
+                return []
+
+        monkeypatch.setattr(fastmdxplora, "FastMDXplora", Study)
+        run = tmp_path / "run"
+        spec = {"run_id": "r", "system": "1UBQ", "options": {}, "sweep_values": {}}
+        explorer._execute_run(spec, str(run), None, None, False, None, quiet=quiet)
+        return seen, run / "run.log"
+
+    def test_the_worker_asks_for_it(self, tmp_path, monkeypatch) -> None:
+        # Parallel workers share one terminal, so each asks for plain logs
+        # while its study runs; a run on its own does not need to.
+        monkeypatch.delenv("FASTMDX_LOG_STYLE", raising=False)
+        seen, _log = self._run_the_worker(tmp_path, monkeypatch, quiet=True)
+        assert seen == ["plain"]
+        seen, _log = self._run_the_worker(tmp_path / "alone", monkeypatch, quiet=False)
+        assert seen == [None]
+
+    def test_plumeds_own_output_goes_to_the_run_log(self, tmp_path, monkeypatch) -> None:
         """PLUMED prints its banner from C++, straight to the file
         descriptor, so silencing ours left three copies of its own
         interleaved in the terminal. Python-level redirection does not reach
@@ -925,22 +971,17 @@ class TestParallelRunsShareOneTerminal:
 
         Written through ``os.write``, which addresses the descriptor and not
         ``sys.stdout``, so it is the same path a C write takes and it is one
-        every platform has.
+        every platform has. From inside a study the worker runs.
         """
         import os
-        import pathlib
-        import tempfile
 
-        with tempfile.TemporaryDirectory() as directory:
-            log = os.path.join(directory, "run", "run.log")
-            with self._guard()(log):
-                os.write(1, b"PLUMED: pretending to start\n")
-            assert "PLUMED" in pathlib.Path(log).read_text(encoding="utf-8")
+        _seen, log = self._run_the_worker(
+            tmp_path, monkeypatch, during=lambda: os.write(1, b"PLUMED: pretending to start\n"))
+        assert "PLUMED" in log.read_text(encoding="utf-8")
 
     def test_a_c_write_lands_there_too(self) -> None:
         """The descriptor is the thing shared with a C library, so a real one
         is used where the platform has a C runtime ``ctypes`` can reach.
-
         In a subprocess, and with ``PYTHONUNBUFFERED`` cleared, because that
         variable makes CPython set the C runtime's stdout unbuffered as well.
         With it set, every write lands immediately and this test passes
@@ -949,7 +990,8 @@ class TestParallelRunsShareOneTerminal:
         CI.
 
         Nothing is flushed by the caller on purpose: what is still buffered
-        when the descriptors go back is the guard's problem.
+        when the descriptors go back is the guard's problem. The worker itself
+        runs, with a study that writes from C the way PLUMED's banner does.
         """
         import os
         import subprocess
@@ -964,22 +1006,25 @@ class TestParallelRunsShareOneTerminal:
             pytest.skip("no C runtime reachable through ctypes on this platform")
 
         script = textwrap.dedent("""
-            import inspect, os, pathlib, sys, tempfile, textwrap
+            import os, pathlib, sys, tempfile
+            import fastmdxplora
             from fastmdxplora.batch import explorer
             from fastmdxplora.utils.native_output import _load_libc
 
-            source = inspect.getsource(explorer._execute_run)
-            block = source[source.index("    class _QuietBanner:"):
-                           source.index("    # Imported here")]
-            namespace = {}
-            exec("import os as _os\\nimport sys as _sys\\n"
-                 + textwrap.dedent(block), namespace)
+            class Study:
+                def __init__(self, **kwargs):
+                    pass
+                def explore(self, **kwargs):
+                    _load_libc().puts(b"PLUMED: pretending to start")
+                    return []
 
+            fastmdxplora.FastMDXplora = Study
             directory = tempfile.mkdtemp()
-            log = os.path.join(directory, "run", "run.log")
-            with namespace["_QuietBanner"](log):
-                _load_libc().puts(b"PLUMED: pretending to start")
-            sys.stderr.write(pathlib.Path(log).read_text(encoding="utf-8"))
+            run = os.path.join(directory, "run")
+            explorer._execute_run({"run_id": "r", "system": "1UBQ", "options": {},
+                                   "sweep_values": {}}, run, None, None, False, None,
+                                  quiet=True)
+            sys.stderr.write(pathlib.Path(run, "run.log").read_text(encoding="utf-8"))
         """)
 
         environment = dict(os.environ)
@@ -990,8 +1035,9 @@ class TestParallelRunsShareOneTerminal:
         assert "PLUMED" in finished.stderr, (
             "the C runtime's buffer still held it when the descriptors went "
             f"back, so it reached the terminal instead: {finished.stderr!r}")
+        assert "PLUMED" not in finished.stdout
 
-    def test_the_terminal_comes_back(self) -> None:
+    def test_the_terminal_comes_back(self, tmp_path, monkeypatch) -> None:
         """A worker that redirects and does not restore takes the study's
         terminal with it.
 
@@ -999,32 +1045,31 @@ class TestParallelRunsShareOneTerminal:
         descriptors, so it means the same thing on every platform.
         """
         import os
-        import pathlib
-        import tempfile
 
-        with tempfile.TemporaryDirectory() as directory:
-            log = os.path.join(directory, "run", "run.log")
-            with self._guard()(log):
-                os.write(1, b"during\n")
-            os.write(1, b"after\n")
-            written = pathlib.Path(log).read_text(encoding="utf-8")
+        _seen, log = self._run_the_worker(
+            tmp_path, monkeypatch, during=lambda: os.write(1, b"during\n"))
+        os.write(1, b"after\n")
+        written = log.read_text(encoding="utf-8")
         assert "during" in written
         assert "after" not in written
 
-    def test_and_puts_it_back(self) -> None:
+    def test_and_puts_it_back(self, tmp_path, monkeypatch) -> None:
         """The worker is called in-process by the tests as well as in a
         subprocess by a real run. Setting a global and not restoring it made
-        seventeen unrelated tests fail."""
-        import inspect
+        seventeen unrelated tests fail. Restored after a run, and after one
+        that fails: the variable, and the descriptor behind stdout."""
+        import os
 
-        from fastmdxplora.batch import explorer
-
-        source = inspect.getsource(explorer._execute_run)
-        assert "__exit__" in source
-        # The call, whatever it now takes as an argument -- pinning the exact
-        # text made this fail the moment the guard learned where to write.
-        assert "with _QuietBanner(" in source
-
+        before = os.fstat(1)
+        monkeypatch.setenv("FASTMDX_LOG_STYLE", "rich")
+        for fail in (False, True):
+            self._run_the_worker(tmp_path / str(fail), monkeypatch, fail=fail)
+            assert os.environ.get("FASTMDX_LOG_STYLE") == "rich"
+            after = os.fstat(1)
+            assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
+        monkeypatch.delenv("FASTMDX_LOG_STYLE")
+        self._run_the_worker(tmp_path / "unset", monkeypatch)
+        assert "FASTMDX_LOG_STYLE" not in os.environ
 
 class TestHowMuchOverlapIsEnough:
     """Three per cent is enough to stitch and thin. On a real study, pairs at
@@ -1273,10 +1318,13 @@ class TestOneSystemForEveryWindow:
         with pytest.raises(RuntimeError, match="nothing for the windows"):
             study._maybe_prepare_once(["setup", "simulation"], None)
 
-    def test_an_existing_preparation_is_not_repeated(self, tmp_path) -> None:
+    def test_an_existing_preparation_is_not_repeated(self, tmp_path, monkeypatch) -> None:
         """A study rerun after a window failed should not solvate again --
-        that would replace the system its finished windows already used."""
-        import inspect
+        that would replace the system its finished windows already used.
+        And a preparation missing one of its files is not one: the check's
+        answer for nothing on disk is a tuple of Nones, which is truthy, and
+        reading it whole called an empty folder prepared."""
+        from types import SimpleNamespace
 
         from fastmdxplora.batch import explorer
 
@@ -1285,11 +1333,20 @@ class TestOneSystemForEveryWindow:
         self._pretend_it_is_prepared(shared)
         marker = shared / "system.xml"
         stamp = marker.stat().st_mtime_ns
+        ran = []
 
+        def setup_runs(spec, where, include, *args, **kwargs):
+            ran.append(include)
+            self._pretend_it_is_prepared(shared)
+            return SimpleNamespace(status="ok", message="")
+
+        monkeypatch.setattr(explorer, "_execute_run", setup_runs)
         study._maybe_prepare_once(["setup", "simulation"], None)
-        assert marker.stat().st_mtime_ns == stamp
-        assert "_a_prepared_system_is_there" in inspect.getsource(
-            explorer.BatchExplorer._maybe_prepare_once)
+        assert marker.stat().st_mtime_ns == stamp and ran == []
+
+        (shared / "state.xml").unlink()
+        study._maybe_prepare_once(["setup", "simulation"], None)
+        assert ran == [["setup"]]
 
     def test_the_check_reads_the_first_element_not_the_tuple(self, tmp_path) -> None:
         """The simulation phase answers with a tuple of paths, and an empty
@@ -1651,17 +1708,31 @@ class TestASettingThatDoesNotExist:
         """The list is declared beside the reader so the two cannot drift: a
         setting read but not listed would be refused the moment anyone used
         it, which is a loud failure in a test rather than a quiet one in a
-        study."""
-        import inspect
-
+        study. Every key the reader asks its spec for, recorded as it asks,
+        over both ways of placing the windows."""
         from fastmdxplora.simulation import umbrella
 
-        source = inspect.getsource(umbrella.plan_windows)
-        read = set(re.findall(r'spec\.get\("([a-z_]+)"', source))
-        read |= set(re.findall(r'spec\["([a-z_]+)"\]', source))
-        read |= set(re.findall(r'"([a-z_]+)" in spec', source))
-        assert read <= umbrella._accepted_keys(), read - umbrella._accepted_keys()
+        class Asked(dict):
+            asked: set = set()
 
+            def get(self, key, default=None):
+                Asked.asked.add(key)
+                return super().get(key, default)
+
+            def __getitem__(self, key):
+                Asked.asked.add(key)
+                return super().__getitem__(key)
+
+            def __contains__(self, key):
+                Asked.asked.add(key)
+                return super().__contains__(key)
+
+        common = {"collective_variable": "distance", "selection_a": "name CA",
+                  "selection_b": "name CB", "force_constant": 200.0}
+        umbrella.plan_windows(Asked({**common, "from": 0.3, "to": 1.5, "n_windows": 5}))
+        umbrella.plan_windows(Asked({**common, "centres": [0.4, 0.6, 0.8]}))
+        assert {"force_constant", "n_windows", "centres"} <= Asked.asked   # it did ask
+        assert Asked.asked <= umbrella._accepted_keys(), Asked.asked - umbrella._accepted_keys()
 
 class TestAnUnsampledBinIsNotAMeasurement:
     """The floor that stops `log(0)` inside the WHAM iteration was carried
