@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 
 from fastmdxplora.simulation.runner import _say_what_is_available
 
@@ -95,13 +97,14 @@ class TestItNeverStopsARunItCannotDescribe:
 
         _say_what_is_available({"openmm": _Broken()}, WANTED)
 
-    def test_it_runs_before_a_platform_is_chosen(self) -> None:
+    def test_it_runs_before_a_platform_is_chosen(self, caplog) -> None:
         """So the listing appears whether or not the selection then
         succeeds -- a run that finds nothing usable is exactly the one that
-        needs it."""
-        import inspect
+        needs it. Nothing usable here, and the listing is said all the same."""
+        from fastmdxplora.refusals import BackendUnavailable
         from fastmdxplora.simulation.runner import select_platform
 
-        source = inspect.getsource(select_platform)
-        assert source.index("_say_what_is_available(") < source.index(
-            "for name in candidates:")
+        with caplog.at_level(logging.INFO), pytest.raises(BackendUnavailable):
+            select_platform(_openmm(["Reference"]), requested="auto")
+        assert "OpenMM platforms available: Reference" in caplog.text
+

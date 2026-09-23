@@ -2199,13 +2199,6 @@ class TestEveryStageShowsProgress:
     showed nothing. "Production: 1,000,000 steps" and then fifty minutes of a
     terminal indistinguishable from a hung one."""
 
-    def _runner(self) -> str:
-        import inspect
-
-        from fastmdxplora.simulation import runner
-
-        return inspect.getsource(runner)
-
     def test_the_chunked_stage_accepts_the_callback(self) -> None:
         import inspect
 
@@ -2216,12 +2209,16 @@ class TestEveryStageShowsProgress:
         parameters = inspect.signature(_run_md_stage_with_live_metrics).parameters
         assert "on_step_progress" in parameters
 
-    def test_every_call_site_passes_it(self) -> None:
+    def test_every_call_site_passes_it(self, tmp_path) -> None:
         """Three stages -- NVT, NPT and production -- and each has two
         branches depending on whether telemetry is on. All six should show a
-        bar."""
-        source = self._runner()
-        assert source.count("on_step_progress=_bar") == 6
+        bar: each stage reports, with telemetry on and with it off."""
+        from tests._the_phase import a_run_s_progress
+
+        for telemetry in (True, False):
+            labels = {label.split()[0] for label, _done, _total in
+                      a_run_s_progress(tmp_path / str(telemetry), telemetry=telemetry)}
+            assert {"NVT", "NPT", "Production"} <= labels, (telemetry, labels)
 
     def test_the_bar_is_driven_from_inside_the_chunk_loop(self, a_watched_run) -> None:
         """Where the work happens: a callback outside it would fire once."""

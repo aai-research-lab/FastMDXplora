@@ -781,13 +781,14 @@ class TestTheRunSaysHowFarThroughItIs:
         presenter.progress("Production", 0, 0)
         assert presenter.stream.getvalue() == ""
 
-    def test_a_stage_steps_in_chunks_so_it_can_report(self) -> None:
+    def test_a_stage_steps_in_chunks_so_it_can_report(self, tmp_path) -> None:
         """A single blocking call to step() cannot say anything until it
-        returns."""
-        import inspect
+        returns. A real run without live telemetry reports its production
+        again and again as it goes, and last at the end."""
+        from tests._the_phase import a_run_s_progress
 
-        from fastmdxplora.simulation import runner
+        production = [done for label, done, total in a_run_s_progress(tmp_path, telemetry=False)
+                      if label.startswith("Production")]
+        assert len(production) > 3
+        assert production == sorted(production) and production[-1] == 100
 
-        source = inspect.getsource(runner._run_md_stage)
-        assert "while done < total:" in source
-        assert "on_step_progress(label, done, total" in source

@@ -64,12 +64,20 @@ class TestItNeverStopsARun:
         failure."""
         _mark_a_new_run(tmp_path / "no" / "such" / "place.log")
 
-    def test_the_first_run_gets_no_banner(self) -> None:
+    def test_the_first_run_gets_no_banner(self, tmp_path: Path) -> None:
         """An empty file needs no separator: there is nothing to separate it
-        from, and a banner at the top of every log is noise."""
-        import inspect
-        import fastmdxplora.utils.logging as logging_module
+        from, and a banner at the top of every log is noise. A log attached
+        where there is none, or where the file is empty, starts with no
+        banner; one attached to a log with a run in it gets one."""
+        from fastmdxplora.utils.logging import attach_file_logger
 
-        source = inspect.getsource(logging_module)
-        assert "st_size > 0" in source
-        assert "if existing:" in source
+        new, empty, used = tmp_path / "new.log", tmp_path / "empty.log", tmp_path / "used.log"
+        empty.write_text("", encoding="utf-8")
+        used.write_text("the run before\n", encoding="utf-8")
+        for log in (new, empty, used):
+            attach_file_logger(log)
+        assert "=== new run" not in new.read_text(encoding="utf-8")
+        assert "=== new run" not in empty.read_text(encoding="utf-8")
+        text = used.read_text(encoding="utf-8")
+        assert text.startswith("the run before\n") and "=== new run" in text
+

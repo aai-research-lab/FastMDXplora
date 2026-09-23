@@ -344,19 +344,36 @@ class TestTheMachineCanMeasureItself(unittest.TestCase):
     def test_it_warms_up_before_timing(self):
         # The first steps pay for kernel compilation and buffer allocation.
         # Charging them to the constant would overstate every estimate
-        # afterwards, on a GPU by a great deal. Asserted by source rather
-        # than by timing, because a timing assertion on shared CI hardware
-        # is a flake waiting to happen.
-        import inspect
+        # afterwards, on a GPU by a great deal. Here the first call to step
+        # is made to cost two seconds, as a first kernel build can; the time
+        # measured is the time of the steps after it.
+        import time
 
+        import pytest
+
+        openmm = pytest.importorskip("openmm.app")
         from fastmdxplora import cost
 
-        source = inspect.getsource(cost.measure_this_machine)
-        self.assertIn("Warm up before timing", source)
-        warmup = source.index("simulation.step(max(100")
-        timed = source.index("started = _time.perf_counter()")
-        self.assertLess(warmup, timed)
+        real_step = openmm.Simulation.step
+        calls = []
 
+        def step(simulation, n):
+            if not calls:
+                time.sleep(2.0)
+            calls.append(n)
+            return real_step(simulation, n)
+
+        measured = {}
+        real_calibrate = cost.calibrate
+        openmm.Simulation.step = step
+        cost.calibrate = lambda **kwargs: measured.update(kwargs)
+        try:
+            cost.measure_this_machine(particles=125, steps=200, platform_name="CPU", save=False)
+        finally:
+            openmm.Simulation.step = real_step
+            cost.calibrate = real_calibrate
+        self.assertEqual(len(calls), 2, "a warm-up and the timed steps")
+        self.assertLess(measured["seconds"], 1.5)
 
 class TestTheMachineLearnsFromWhatItHasRun(unittest.TestCase):
     """Argon is a bootstrap. Real studies are better information.

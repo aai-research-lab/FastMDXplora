@@ -28,12 +28,6 @@ READS = {"getsource", "getsourcelines", "getfile", "getsourcefile"}
 READS_THE_SOURCE: dict[str, str] = {'test_a_figure_says_what_it_shows.py::TestEveryRowCanBeToldFromEveryOther.test_the_compute_path_records_the_atom_names': 'not '
                                                                                                                           'yet '
                                                                                                                           'converted',
- 'test_a_log_says_where_a_run_begins.py::TestItNeverStopsARun.test_the_first_run_gets_no_banner': 'not '
-                                                                                                  'yet '
-                                                                                                  'converted',
- 'test_a_run_says_which_platforms_it_found.py::TestItNeverStopsARunItCannotDescribe.test_it_runs_before_a_platform_is_chosen': 'not '
-                                                                                                                               'yet '
-                                                                                                                               'converted',
  'test_a_setting_that_validates_is_a_setting_that_runs.py::TestEverySettingReachesSomething.test_no_setup_setting_is_silently_ignored': 'not '
                                                                                                                                         'yet '
                                                                                                                                         'converted',
@@ -85,8 +79,6 @@ READS_THE_SOURCE: dict[str, str] = {'test_a_figure_says_what_it_shows.py::TestEv
  'test_interface_parity.py::TestArtifactLayout.test_ligands_are_not_written_to_a_nested_setup_directory': 'not '
                                                                                                           'yet '
                                                                                                           'converted',
- 'test_live_status.py::TestEveryStageShowsProgress.test_every_call_site_passes_it': 'not yet '
-                                                                                    'converted',
  'test_live_status.py::TestTheWordmarkIsDrawnOnce.test_there_is_one_glyph_set': 'kept: one '
                                                                                 'definition of the '
                                                                                 'glyphs and one of '
@@ -95,17 +87,11 @@ READS_THE_SOURCE: dict[str, str] = {'test_a_figure_says_what_it_shows.py::TestEv
                                                                                 'text; what the '
                                                                                 'glyphs are is '
                                                                                 'tested beside it',
- 'test_one_card_one_line.py::TestTheMachineCanMeasureItself.test_it_warms_up_before_timing': 'not '
-                                                                                             'yet '
-                                                                                             'converted',
  'test_one_study_three_languages.py::TestAResolvedConfigTranslatesToWhatWasChosen.test_the_one_setting_dropped_by_the_mirror_is_reached_anyway': 'not '
                                                                                                                                                  'yet '
                                                                                                                                                  'converted',
  'test_orchestrator.py::test_the_resolved_config_exists_before_the_first_phase_runs': 'not yet '
                                                                                       'converted',
- 'test_presenter.py::TestTheRunSaysHowFarThroughItIs.test_a_stage_steps_in_chunks_so_it_can_report': 'not '
-                                                                                                     'yet '
-                                                                                                     'converted',
  'test_settings_a_novice_cannot_guess.py::TestAskingForWorkersAsksForParallel.test_the_source_infers_it': 'not '
                                                                                                           'yet '
                                                                                                           'converted',

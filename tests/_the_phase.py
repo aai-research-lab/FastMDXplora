@@ -209,3 +209,19 @@ def a_real_setup(root: Path, prepare_system: Any = None, **options: Any) -> Simp
         logger.removeHandler(handler)
         logger.setLevel(level)
     return SimpleNamespace(root=root, returned=returned, steps=steps, messages=messages)
+
+
+def a_run_s_progress(root: Path, *, telemetry: bool) -> list[tuple[str, int, int]]:
+    """Run a small water box through NVT, NPT and a hundred production
+    steps, with live telemetry on or off, and return every progress report
+    the run made, as (stage label, steps done, stage total)."""
+    from fastmdxplora.simulation.runner import run_simulation
+
+    root.mkdir(parents=True, exist_ok=True)
+    reported: list[tuple[str, int, int]] = []
+    run_simulation(**a_prepared_water_box(root), output_dir=str(root / "out"),
+                   production_steps=100, nvt_steps=40, npt_steps=40, minimize=False,
+                   platform="CPU", live_telemetry=telemetry, telemetry_interval=10,
+                   on_step_progress=lambda label, done, total, rate, left:
+                       reported.append((label, done, total)))
+    return reported
