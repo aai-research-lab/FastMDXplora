@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.user_dir import user_config_dir
 
 __all__ = [
     "list_models",
@@ -142,14 +143,7 @@ class ModelChoice:
 
 def model_path() -> Path:
     """Where the choice is stored. Outside any study, on purpose."""
-    root = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
-    if root:
-        return Path(root) / "model.json"
-    if os.name == "nt":  # pragma: no cover - platform-specific
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming"))
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "fastmdxplora" / "model.json"
+    return user_config_dir() / "model.json"
 
 
 def load_choice(path: Path | None = None) -> ModelChoice | None:

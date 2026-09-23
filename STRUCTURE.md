@@ -10,6 +10,7 @@ FastMDXplora/
 │       ├── dependencies.py        # Optional-backend detection (OpenMM, PDBFixer, …)
 │       ├── statistics.py          # Statistical inefficiency: how many independent samples a mean rests on
 │       ├── provenance.py          # Which code a run was made from
+│       ├── user_dir.py            # Where per-user settings live, outside any study
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── cli/
 │       │   ├── __init__.py

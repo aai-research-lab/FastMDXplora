@@ -40,7 +40,6 @@ schedules a fortnight as an afternoon.
 from __future__ import annotations
 
 import json
-import os
 import platform as _platform
 import time
 from dataclasses import asdict, dataclass
@@ -48,6 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.user_dir import user_config_dir
 
 __all__ = [
     "Calibration",
@@ -181,14 +181,7 @@ def calibration_path() -> Path:
     that a machine keeps its calibration across upgrades and a shared
     installation does not hand one machine's measurement to another.
     """
-    root = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
-    if root:
-        return Path(root) / "calibration.json"
-    if os.name == "nt":  # pragma: no cover - platform-specific
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming"))
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "fastmdxplora" / "calibration.json"
+    return user_config_dir() / "calibration.json"
 
 
 def load_calibration(path: Path | None = None) -> Calibration | None:
