@@ -716,21 +716,19 @@ class TestARunSaysWhichCodeMadeIt:
         unknown = described({"commit": "abcdef123456", "dirty": None})
         assert "could not be determined" in unknown
 
-    def test_the_manifest_carries_it(self) -> None:
+    def test_the_manifest_carries_it(self, tmp_path, monkeypatch) -> None:
         # Written, then read back: the commit a run was made from is in its
-        # manifest.
+        # manifest. In pytest's own folder rather than a TemporaryDirectory:
+        # the study keeps its log open while it is the current one, and
+        # Windows will not delete an open file when the block ends.
         import json
-        import tempfile
-        from unittest import mock
 
         from fastmdxplora.orchestrator import FastMDXplora
 
         record = {"commit": "0123456789abcdef", "dirty": False, "branch": "main"}
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch("fastmdxplora.provenance.source_provenance", return_value=record):
-            study = FastMDXplora(system="1UBQ", output_dir=Path(tmp) / "study")
-            study._write_manifest()
-            written = json.loads((Path(tmp) / "study" / "manifest.json").read_text(encoding="utf-8"))
+        monkeypatch.setattr("fastmdxplora.provenance.source_provenance", lambda: record)
+        FastMDXplora(system="1UBQ", output_dir=tmp_path / "study")._write_manifest()
+        written = json.loads((tmp_path / "study" / "manifest.json").read_text(encoding="utf-8"))
         assert written["source"] == record
 
     def test_and_the_reproducibility_section_prints_it(self) -> None:
