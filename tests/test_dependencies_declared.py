@@ -336,7 +336,7 @@ def test_backends_are_grouped_by_what_they_are_for() -> None:
     )
 
 
-def test_a_backend_is_probed_in_a_process_of_its_own() -> None:
+def test_a_backend_is_probed_in_a_process_of_its_own(tmp_path) -> None:
     """Importing is the only honest test of whether a backend will load, and
     the failure is not always quiet or catchable.
 
@@ -346,19 +346,45 @@ def test_a_backend_is_probed_in_a_process_of_its_own() -> None:
     the test written for that fix passed only because it faked the message
     with a print, which checks the assumption rather than the behaviour.
 
-    A subprocess ends the argument: its output is captured whatever writes it,
-    and a backend that fails hard cannot take this command with it.
+    A subprocess ends the argument, and a backend that fails hard cannot take
+    this command with it. Two that end the interpreter on import, one by
+    exiting and one by segfaulting as a C extension built against the wrong
+    ABI does: each is named and reported broken, the backends after them are
+    still probed, and the command lives. Probed from a child process of its
+    own here, so that if it did not live, this is one failing test rather
+    than a test run that stops.
     """
-    import inspect
+    import json
+    import os
+    import subprocess
+    import sys
 
-    # `from fastmdxplora.cli import main` gives the entry-point function,
-    # which the package re-exports; the module is the longer path.
-    from fastmdxplora.cli.main import _probe_backends
-
-    source = inspect.getsource(_probe_backends)
-    assert "subprocess.run" in source
-    assert "capture_output=True" in source
-
+    (tmp_path / "pretend_exits.py").write_text("import os\nos._exit(3)\n", encoding="utf-8")
+    (tmp_path / "pretend_crashes.py").write_text(
+        "import os, signal\nos.kill(os.getpid(), signal.SIGSEGV)\n", encoding="utf-8")
+    names = ["json", "pretend_exits", "os", "no_such_module_at_all"]
+    if hasattr(__import__("signal"), "SIGSEGV") and sys.platform != "win32":
+        names.insert(3, "pretend_crashes")
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(tmp_path), str(Path(__file__).resolve().parents[1] / "src"),
+         environment.get("PYTHONPATH", "")])
+    finished = subprocess.run(
+        [sys.executable, "-c",
+         "import json, sys\n"
+         "from fastmdxplora.cli.main import _probe_backends\n"
+         f"print(json.dumps(_probe_backends(tuple({names!r}))))\n"],
+        capture_output=True, text=True, env=environment, timeout=300)
+    assert finished.returncode == 0, (
+        f"a backend took the command with it: exit code {finished.returncode}, "
+        f"{finished.stderr[-300:]!r}")
+    found = json.loads(finished.stdout.strip().splitlines()[-1])
+    assert found["json"][0] == "installed" and found["os"][0] == "installed"
+    assert found["no_such_module_at_all"][0] == "missing"
+    assert found["pretend_exits"] == ["broken", "ended the interpreter on import (exit code 3)"]
+    if "pretend_crashes" in found:
+        assert found["pretend_crashes"][0] == "broken"
+        assert "SIGSEGV" in found["pretend_crashes"][1]
 
 def test_it_reports_what_is_there_and_what_is_not() -> None:
     from fastmdxplora.cli.main import _probe_backends
@@ -489,16 +515,19 @@ def test_a_backend_writing_to_stdout_cannot_corrupt_the_answer(tmp_path) -> None
     )
 
 
-def test_the_answer_does_not_come_back_on_stdout() -> None:
-    """Which is the channel a failing backend is most likely to use."""
-    import importlib
-    import inspect
+def test_the_answer_does_not_come_back_on_stdout(tmp_path, monkeypatch) -> None:
+    """Which is the channel a failing backend is most likely to use. A
+    backend that prints a forged answer there, claiming json is missing,
+    changes nothing about what the probe reports."""
+    from fastmdxplora.cli.main import _probe_backends
 
-    module = importlib.import_module("fastmdxplora.cli.main")
-    source = inspect.getsource(module._probe_backends)
-    assert "sys.stdout.write(json.dumps" not in source
-    assert "open(sys.argv[2]" in source
-
+    (tmp_path / "pretend_liar.py").write_text(
+        "import sys\n"
+        "sys.stdout.write('{\"json\": [\"missing\", \"forged\"]}\\n')\n"
+        "sys.stdout.flush()\n", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    found = _probe_backends(("pretend_liar", "json"))
+    assert found == {"pretend_liar": ("installed", ""), "json": ("installed", "")}
 
 class TestAPhaseSaysWhetherItWillRun:
     """`fastmdx info` reported setup and simulation as "available" three lines
@@ -611,15 +640,27 @@ class TestARunSaysWhichCodeMadeIt:
     def test_the_checkout_is_found_from_the_package(self) -> None:
         """Not from the working directory. A run started inside another
         repository would otherwise record that repository's commit, which is
-        worse than recording nothing: a precise claim about the wrong code."""
-        import inspect
+        worse than recording nothing: a precise claim about the wrong code.
+        Asked from inside another repository."""
+        import os
+        import subprocess
+        import tempfile
         from pathlib import Path
 
         from fastmdxplora import provenance
 
-        source = inspect.getsource(provenance.source_checkout)
-        assert "Path(__file__)" in source
-        assert "cwd" not in source and "getcwd" not in source
+        before = provenance.source_checkout()
+        here = os.getcwd()
+        with tempfile.TemporaryDirectory() as other:
+            subprocess.run(["git", "init", "-q", other], check=True)
+            os.chdir(other)
+            try:
+                from_elsewhere = provenance.source_checkout()
+            finally:
+                os.chdir(here)
+        assert from_elsewhere == before
+        assert from_elsewhere is None or Path(other).resolve() not in (
+            from_elsewhere, *from_elsewhere.parents)
 
         found = provenance.source_checkout()
         if found is not None:
@@ -676,24 +717,43 @@ class TestARunSaysWhichCodeMadeIt:
         assert "could not be determined" in unknown
 
     def test_the_manifest_carries_it(self) -> None:
-        import inspect
+        # Written, then read back: the commit a run was made from is in its
+        # manifest.
+        import json
+        import tempfile
+        from unittest import mock
 
         from fastmdxplora.orchestrator import FastMDXplora
 
-        source = inspect.getsource(FastMDXplora)
-        assert '"source": source_provenance()' in source
+        record = {"commit": "0123456789abcdef", "dirty": False, "branch": "main"}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("fastmdxplora.provenance.source_provenance", return_value=record):
+            study = FastMDXplora(system="1UBQ", output_dir=Path(tmp) / "study")
+            study._write_manifest()
+            written = json.loads((Path(tmp) / "study" / "manifest.json").read_text(encoding="utf-8"))
+        assert written["source"] == record
 
     def test_and_the_reproducibility_section_prints_it(self) -> None:
         """It is where a reader looks, so a manifest holding it and a report
-        not showing it would only move the problem."""
-        import inspect
+        not showing it would only move the problem. And a copy installed from
+        a release, with no checkout, says nothing rather than something."""
+        import tempfile
+        from types import SimpleNamespace
+        from unittest import mock
 
-        from fastmdxplora.report import document
+        from fastmdxplora.report.context import load_phase_context
+        from fastmdxplora.report.document import _reproducibility_section
 
-        source = inspect.getsource(document._reproducibility_section)
-        assert "source_provenance()" in source
-        assert "Source commit" in source
-
+        record = {"commit": "0123456789abcdef", "dirty": True, "branch": "main"}
+        with tempfile.TemporaryDirectory() as tmp:
+            study = SimpleNamespace(system="1UBQ", output_dir=Path(tmp))
+            with mock.patch("fastmdxplora.provenance.source_provenance", return_value=record):
+                from_a_checkout = _reproducibility_section(study, load_phase_context(Path(tmp)))
+            with mock.patch("fastmdxplora.provenance.source_provenance", return_value=None):
+                installed = _reproducibility_section(study, load_phase_context(Path(tmp)))
+        line = next(row for row in from_a_checkout.splitlines() if "Source commit" in row)
+        assert "0123456" in line and "main" in line
+        assert "Source commit" not in installed
 
 def test_the_reference_recipe_carries_every_conda_only_backend() -> None:
     """The conda-forge distribution exists so that one install command makes

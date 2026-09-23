@@ -1666,53 +1666,80 @@ def _probe_backends(import_names: tuple[str, ...]) -> dict[str, tuple[str, str]]
     and however far down, and a backend that fails hard cannot take this
     command with it. One process probes them all, so the cost is a single
     interpreter start rather than one per backend.
+
+    It reports as it goes: each name before it is imported, each answer
+    after. A backend that ends the interpreter -- a C extension built against
+    the wrong ABI segfaults on import -- is then known by name, reported as
+    broken with how the interpreter ended, and the names after it are probed
+    in a fresh process. The whole answer used to be written once at the end,
+    so a crash lost it, and the fallback then imported every backend in this
+    process: the one that had just killed an interpreter killed the command,
+    silently, with its own exit code. A hang is treated the same way.
+    Checking in this process is kept for when no subprocess can be started at
+    all, which is what it was written for.
     """
     import json
     import subprocess
     import sys
+    import tempfile
 
     script = (
         "import json, sys\n"
-        "out = {}\n"
-        "for name in json.loads(sys.argv[1]):\n"
-        "    try:\n"
-        "        __import__(name)\n"
-        "        out[name] = ['installed', '']\n"
-        "    except ImportError:\n"
-        "        out[name] = ['missing', '']\n"
-        "    except BaseException as exc:\n"
-        "        out[name] = ['broken', str(exc).split(':')[0][:60]]\n"
-        # Written to a file, not to stdout. A backend that fails may print
-        # on the way out -- WeasyPrint writes five lines about its
-        # installation guide, and to stdout rather than stderr, which is why
-        # redirecting stderr never quieted it and why the answer could not be
-        # parsed from stdout either.
-        "open(sys.argv[2], 'w').write(json.dumps(out))\n"
+        "with open(sys.argv[2], 'a', encoding='utf-8') as out:\n"
+        "    for name in json.loads(sys.argv[1]):\n"
+        "        out.write(json.dumps({'trying': name}) + '\\n')\n"
+        "        out.flush()\n"
+        "        try:\n"
+        "            __import__(name)\n"
+        "            row = [name, 'installed', '']\n"
+        "        except ImportError:\n"
+        "            row = [name, 'missing', '']\n"
+        "        except BaseException as exc:\n"
+        "            row = [name, 'broken', str(exc).split(':')[0][:60]]\n"
+        "        out.write(json.dumps({'result': row}) + '\\n')\n"
+        "        out.flush()\n"
     )
-    import tempfile
-
+    timeout_s = 120
+    found: dict[str, tuple[str, str]] = {}
+    remaining = list(import_names)
+    detail = ""
     try:
         with tempfile.TemporaryDirectory() as work:
-            answer = Path(work) / "backends.json"
-            finished = subprocess.run(
-                [sys.executable, "-c", script,
-                 json.dumps(list(import_names)), str(answer)],
-                capture_output=True, text=True, timeout=120, check=False,
-            )
-            found = (json.loads(answer.read_text(encoding="utf-8"))
-                     if answer.is_file() else {})
-        if found:
-            return {name: tuple(found[name]) for name in import_names
-                    if name in found}
-        reason = (finished.stderr or "").strip().splitlines()
-        detail = reason[-1][:80] if reason else f"exit code {finished.returncode}"
+            for attempt in range(len(import_names) + 1):
+                if not remaining:
+                    break
+                answer = Path(work) / f"backends-{attempt}.jsonl"
+                try:
+                    finished = subprocess.run(
+                        [sys.executable, "-c", script, json.dumps(remaining), str(answer)],
+                        capture_output=True, text=True, timeout=timeout_s, check=False,
+                    )
+                    ended = _how_the_probe_ended(finished.returncode)
+                except subprocess.TimeoutExpired:
+                    ended = f"did not finish loading within {timeout_s} s"
+                trying = None
+                lines = answer.read_text(encoding="utf-8").splitlines() if answer.is_file() else []
+                for line in lines:
+                    record = json.loads(line)
+                    if "trying" in record:
+                        trying = record["trying"]
+                    else:
+                        name, state, why = record["result"]
+                        found[name] = (state, why)
+                        trying = None
+                if trying is None:
+                    break
+                found[trying] = ("broken", ended)
+                remaining = [name for name in remaining if name not in found]
+        if found or not import_names:
+            # Anything a finished process never reached was not reached
+            # because an earlier backend ended it past recovery; say so
+            # rather than leave a gap the caller would read as a KeyError.
+            return {name: found.get(name, ("broken", "not reached by the check"))
+                    for name in import_names}
+        detail = "the check answered nothing"
     except Exception as exc:  # noqa: BLE001
         detail = f"{type(exc).__name__}: {exc}"[:80]
-
-    # The subprocess could not answer. Importing here can, and the only cost
-    # is that a backend which complains on its way out is heard -- which is
-    # better than a table of "unknown", and better than hiding why the
-    # subprocess failed. Both are said.
     print(f"  (checked in this process: {detail})")
     checked: dict[str, tuple[str, str]] = {}
     for name in import_names:
@@ -1724,6 +1751,19 @@ def _probe_backends(import_names: tuple[str, ...]) -> dict[str, tuple[str, str]]
         except BaseException as exc:  # noqa: BLE001 - any load failure counts
             checked[name] = ("broken", str(exc).split(":")[0][:60])
     return checked
+
+
+def _how_the_probe_ended(returncode: int) -> str:
+    """What a probe that stopped mid-import said on the way out."""
+    if returncode < 0:
+        import signal
+
+        try:
+            name = signal.Signals(-returncode).name
+        except ValueError:
+            name = f"signal {-returncode}"
+        return f"crashed the interpreter on import ({name})"
+    return f"ended the interpreter on import (exit code {returncode})"
 
 
 #: What a phase cannot run without, and what it does less of without the rest.
