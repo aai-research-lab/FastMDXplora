@@ -595,10 +595,9 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         # shown there by the level it was written with and nothing else.
         import tempfile
 
-        try:
-            import openmm  # noqa: F401
-        except ImportError:
-            self.skipTest("openmm not installed")
+        import pytest
+
+        pytest.importorskip("openmm")
         from playwright.sync_api import sync_playwright
 
         from fastmdxplora.explain import explain
