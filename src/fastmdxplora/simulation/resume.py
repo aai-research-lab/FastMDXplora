@@ -478,7 +478,7 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
         remaining = planned_ns - done_ns
     if remaining <= 0:
         # A finished plan is not a study that cannot be continued -- it is
-        # the case `fastmdx extend` exists for. Saying "cannot be
+        # the case extending a study exists for. Saying "cannot be
         # continued" here sent the Agent to offer a fresh run of the same
         # molecule instead of the hundred picoseconds that were asked for.
         asked = total_ns is not None or more_ns is not None
@@ -488,8 +488,9 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
                f"production already reached {done_ns:.3f} ns, which is the "
                f"{planned_ns:.3f} ns this study planned. Nothing remains of "
                f"the plan, but it can still be extended past it: "
-               f"`fastmdx extend --output {root} --duration-ns <total>` or "
-               f"`--extra-ns <more>`")
+               f"`fastmdx explore --simulate-resume-from {root} "
+               f"--simulate-duration-ns <total>`, or `--simulate-extra-ns "
+               f"<more>` in place of the total")
         if asked and total_ns is None:
             why = f"{done_ns:.3f} ns is already written and no further length was asked for"
         return Continuation(parent=str(root), checkpoint=str(checkpoint),

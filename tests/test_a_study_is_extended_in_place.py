@@ -321,6 +321,22 @@ class TestOneSettingOneFlag(unittest.TestCase):
             with self.subTest(command=gone), self.assertRaises(SystemExit):
                 parser.parse_args([gone, "--output", "x"])
 
+    def test_no_setting_names_a_command_that_is_gone(self):
+        # The help for resume_unsealed said "`fastmdx resume` sets this"
+        # long after the command went. Every command any setting's help
+        # names is one the parser has.
+        import re
+
+        from fastmdxplora.cli.main import _build_parser
+        from fastmdxplora.config.schema import all_schemas
+
+        commands = set(_build_parser()._subparsers._group_actions[0].choices)
+        named = {(section, field.name, word)
+                 for section, schema in all_schemas().items() for field in schema.fields
+                 for word in re.findall(r"fastmdx ([a-z][a-z-]*)", field.help or "")}
+        self.assertTrue(named)
+        self.assertEqual({entry for entry in named if entry[2] not in commands}, set())
+
     def test_every_top_level_setting_is_in_a_group(self):
         # Three settings landed at the top level with no group and no flag,
         # and nothing checked. Now nothing can.

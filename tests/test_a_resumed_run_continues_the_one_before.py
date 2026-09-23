@@ -649,6 +649,29 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
         self.assertAlmostEqual(continuation_of(s).config["simulation"]["duration_ns"], 0.058, places=6)
         self.assertIn("already written, which is at or past", continuation_of(s, total_ns=0.4).refusal)
 
+    def test_a_finished_study_is_told_a_command_that_exists(self):
+        # A study that ran its whole plan is told how to extend it past the
+        # plan. It named `fastmdx extend`, a command removed when continuing
+        # became a simulation setting; each command it names now parses.
+        import re
+        import shlex
+
+        from fastmdxplora.cli.main import _build_parser
+        from fastmdxplora.simulation.resume import continuation_of
+
+        s = self.study(step=100000 + 250000)
+        said = continuation_of(s).refusal or ""
+        commands = re.findall(r"`(fastmdx [^`]+)`", said)
+        self.assertTrue(commands, said)
+        parser = _build_parser()
+        for command in commands:
+            words = shlex.split(command.replace("<total>", "1.0").replace("<more>", "0.5"))[1:]
+            with self.subTest(command=command):
+                parser.parse_args(words)
+        # And the alternative it offers in place of the total.
+        self.assertIn("--simulate-extra-ns", said)
+        parser.parse_args(["explore", "--simulate-extra-ns", "0.5"])
+
     def test_a_study_with_no_production_checkpoint_says_so(self):
         from fastmdxplora.simulation.resume import continuation_of
 

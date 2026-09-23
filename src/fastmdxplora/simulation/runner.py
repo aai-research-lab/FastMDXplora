@@ -2002,9 +2002,9 @@ def run_simulation(
                            nvt_steps=int(plan["nvt_steps"]), npt_steps=int(plan["npt_steps"]),
                            timestep_fs=float(timestep_fs))
         # require_seal: the predecessor is sealed on a clean finish, so a
-        # missing seal means it was killed. Resuming a killed run is the
-        # point of `fastmdx resume`, and the caller says so explicitly by
-        # passing resume_unsealed; OpenMM still refuses a checkpoint it
+        # missing seal means it was killed. Resuming one is allowed only
+        # when the caller says so by passing resume_unsealed, which a study
+        # continuation does for itself; OpenMM still refuses a checkpoint it
         # cannot read, which is what a torn write leaves. Nothing is
         # assumed about the file beyond its own validation.
         load_checkpoint(omm, simulation, resume_from,

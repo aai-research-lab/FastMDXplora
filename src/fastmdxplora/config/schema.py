@@ -176,12 +176,6 @@ TOP_LEVEL = PhaseSchema(
               "Output directory for all artifacts. "
               "Default: ./fastmdxplora_<system>_study_<UTC-timestamp>.",
               example="./my_study"),
-        # A continuation in config form, so the GUI and the Agent can ask
-        # for one. `fastmdx resume` and `fastmdx extend` are these three
-        # settings on the command line; a config carrying `continues` runs
-        # the same path, which is the whole operation -- the segment, the
-        # join, and the analyses over the joined trajectory -- rather than
-        # a bare simulation the person then has to put together.
         Field("agent_model", str, None,
               "Which model wrote this study, as provider/model. Written by "
               "`fastmdx agent`; absent when a person wrote the config. "
@@ -568,8 +562,10 @@ SIMULATION = PhaseSchema(
               example=0.1),
         Field("resume_unsealed", bool, False,
               "Accept a checkpoint with no seal -- a run that was killed "
-              "rather than one that finished cleanly. `fastmdx resume` sets "
-              "this. The frames the killed run wrote after that checkpoint "
+              "rather than one that finished cleanly. Continuing a study "
+              "sets this itself when the study was killed; set it yourself "
+              "only when `resume_from` names a checkpoint file. The frames "
+              "the killed run wrote after that checkpoint "
               "are left out of the join, so the pieces meet at the "
               "checkpoint rather than overlapping it."),
         Field("resume_from", str, None,
