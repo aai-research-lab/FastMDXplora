@@ -555,13 +555,34 @@ class TestACheckpointSaysWhatItIs(unittest.TestCase):
         self.assertTrue(any("no sidecar" in line for line in logs.output))
 
     def test_the_fence_stands_before_the_load(self):
-        import inspect
+        # A plan that would minimise and equilibrate a production
+        # checkpoint again is refused before the file is loaded at all.
+        import tempfile
+
+        import pytest
 
         from fastmdxplora.simulation import runner
+        from fastmdxplora.simulation.runner import write_checkpoint_sidecar
+        from tests._the_phase import a_prepared_water_box
 
-        source = inspect.getsource(runner.run_simulation)
-        self.assertLess(source.index("check_continuation(resume_from"),
-                        source.index("load_checkpoint(omm, simulation, resume_from"))
+        root = Path(tempfile.mkdtemp())
+        checkpoint = root / "before" / "checkpoint.chk"
+        checkpoint.parent.mkdir()
+        checkpoint.write_bytes(b"not read before the plan is checked")
+        write_checkpoint_sidecar(checkpoint, stage="production", step=1000, ensemble="nvt",
+                                 temperature_K=300.0, timestep_fs=2.0)
+        loaded = []
+        real = runner.load_checkpoint
+        runner.load_checkpoint = lambda *a, **k: loaded.append(a) or real(*a, **k)
+        try:
+            with pytest.raises(Exception) as raised:
+                runner.run_simulation(**a_prepared_water_box(root), output_dir=str(root / "out"),
+                                      resume_from=str(checkpoint), minimize=True, nvt_steps=10,
+                                      npt_steps=0, production_steps=10, platform="CPU")
+        finally:
+            runner.load_checkpoint = real
+        self.assertEqual(loaded, [], "the checkpoint was loaded before the plan was checked")
+        self.assertIn("continu", str(raised.value).lower())
 
 class TestContinuingAStudyThatStopped(unittest.TestCase):
     """One new segment from a study that ran and stopped, with the

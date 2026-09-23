@@ -427,28 +427,49 @@ def test_the_sidebar_reads_top_down():
     assert ">Load available study<" in study
 
 
-def test_the_run_outlives_the_server():
+def test_the_run_outlives_the_server(tmp_path: Path) -> None:
     # Without start_new_session the run sat in the terminal's process
     # group, and Ctrl-C on the server sent SIGINT to the run as well: a
     # day-long simulation died mid-step, not by any decision but because
-    # the terminal delivers the signal to the whole group.
-    import inspect
+    # the terminal delivers the signal to the whole group. A run started
+    # here is in a process group of its own.
+    import os
+    import sys
 
-    from fastmdxplora.gui import exploration
+    if not hasattr(os, "getpgid"):
+        pytest.skip("process groups are a POSIX notion")
+    runtime = DashboardRuntime(workspace_root=tmp_path / "workspace",
+                               exploration_root=tmp_path / "runs")
+    (tmp_path / "run").mkdir()
+    runtime._spawn([sys.executable, "-c", "import time; time.sleep(30)"], tmp_path / "run", None)
+    try:
+        assert os.getpgid(runtime.process.pid) != os.getpgid(0)
+    finally:
+        runtime.process.kill()
+        runtime.process.wait(timeout=10)
 
-    source = inspect.getsource(exploration.DashboardRuntime._spawn)
-    assert "start_new_session=True" in source
-
-
-def test_stopping_the_server_says_what_is_still_running():
-    import inspect
-
+def test_stopping_the_server_says_what_is_still_running(tmp_path: Path, monkeypatch,
+                                                        capsys) -> None:
+    # Ctrl-C on the server stops the server and not the run, and says which
+    # study is still going and how to stop it; a run that has finished is
+    # not mentioned.
     from fastmdxplora.gui import server
 
-    source = inspect.getsource(server.serve_dashboard)
-    assert "is still running (pid" in source
-    assert "kill {proc.pid}" in source
-
+    for still_going, pid in ((True, 4242), (False, 4243)):
+        process = SimpleNamespace(pid=pid, poll=lambda _g=still_going: None if _g else 0)
+        session = SimpleNamespace(
+            url="http://127.0.0.1:1/", port_was_changed=False, root=tmp_path,
+            runtime=SimpleNamespace(process=process, running_root=tmp_path / "study",
+                                    active_root=None),
+            wait_forever=lambda: (_ for _ in ()).throw(KeyboardInterrupt()), stop=lambda: None)
+        monkeypatch.setattr(server, "start_dashboard_session", lambda _s=session, **kw: _s)
+        server.serve_dashboard(output=tmp_path, host="127.0.0.1", port=0)
+        said = capsys.readouterr().out
+        if still_going:
+            assert f"The study in {tmp_path / 'study'} is still running (pid {pid})" in said
+            assert f"kill {pid}" in said
+        else:
+            assert "still running" not in said
 
 def test_a_new_session_child_leaves_the_terminals_group():
     import os

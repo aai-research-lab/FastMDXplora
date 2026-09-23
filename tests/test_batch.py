@@ -1018,29 +1018,48 @@ class TestSelectionsAreCheckedAgainstWhateverWillBeSimulated:
     which is the case where the author has just watched the structure being
     built."""
 
-    def test_it_runs_outside_the_preparation_block(self) -> None:
-        import inspect
-
+    def test_it_runs_outside_the_preparation_block(self, tmp_path, monkeypatch) -> None:
+        # A study re-run finds its shared system already prepared, and the
+        # selections are still checked against it: one that matches nothing
+        # there is refused before a window runs. And freshly prepared too.
         from fastmdxplora.batch import explorer
+        from fastmdxplora.refusals import StudyError
 
-        source = inspect.getsource(explorer.BatchExplorer._maybe_prepare_once)
-        check = source.index("_check_selections_against(")
-        prepared_block = source.index('if not _a_prepared_system_is_there(prepared):')
-        raise_block = source.index("The system could not be prepared")
-        # After the block that prepares and after its failure is raised,
-        # so a reused system is checked too.
-        assert check > raise_block > prepared_block
+        for already_prepared in (True, False):
+            where = tmp_path / str(already_prepared)
+            study = _an_umbrella_study(where, selection_a="resname XYZ and name CA")
+            shared = where / "out" / "shared_setup" / "setup"
+            if already_prepared:
+                _a_prepared_peptide(shared)
+            monkeypatch.setattr(explorer, "_execute_run",
+                                lambda *a, _s=shared, **k: _a_prepared_peptide(_s) or _ok())
+            with pytest.raises(StudyError) as raised:
+                study._maybe_prepare_once(["setup", "simulation"], None)
+            assert raised.value.code == "simulation.cv.selection_empty", already_prepared
 
-    def test_an_unresolvable_selection_is_not_a_verdict(self) -> None:
+    def test_an_unresolvable_selection_is_not_a_verdict(self, tmp_path, monkeypatch) -> None:
         """A selection this cannot resolve is not thereby wrong; refusing on
-        that basis would be worse than the wait it saves."""
-        import inspect
-
+        that basis would be worse than the wait it saves. A selection that
+        resolves to nothing is a verdict, and is refused."""
         from fastmdxplora.batch import explorer
+        from fastmdxplora.refusals import StudyError
 
-        source = inspect.getsource(explorer._check_selections_against)
-        assert "except Exception" in source
-        assert "return" in source.split("except Exception")[1][:200]
+        _a_prepared_peptide(tmp_path)
+        spec = {"umbrella": {"collective_variable": "distance",
+                             "selection_a": "name CA", "selection_b": "name CB"}}
+
+        def cannot_tell(*args, **kwargs):
+            raise RuntimeError("the resolver could not read this topology")
+
+        monkeypatch.setattr(explorer, "_resolve_umbrella_selections", cannot_tell)
+        assert explorer._check_selections_against(tmp_path, spec) is None
+
+        def matches_nothing(*args, **kwargs):
+            raise ValueError("selection_b 'name CB' matched no atoms")
+
+        monkeypatch.setattr(explorer, "_resolve_umbrella_selections", matches_nothing)
+        with pytest.raises(StudyError):
+            explorer._check_selections_against(tmp_path, spec)
 
     def test_a_missing_topology_is_passed_over(self, tmp_path) -> None:
         from fastmdxplora.batch.explorer import _check_selections_against
@@ -1164,3 +1183,34 @@ class TestEachMethodIsCheckedByItsOwnPlanner:
         with pytest.raises(ValueError) as caught:
             _check_selections_against(tmp_path, {"umbrella": expanded})
         assert "matched no atoms" in str(caught.value)
+
+
+def _a_prepared_peptide(setup: Path) -> None:
+    """What a prepared system leaves: its three files, the topology real."""
+    from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
+
+    setup.mkdir(parents=True, exist_ok=True)
+    (setup / "topology.pdb").write_text(TRI_ALANINE, encoding="utf-8")
+    for name in ("system.xml", "state.xml"):
+        (setup / name).write_text("<x/>", encoding="utf-8")
+
+
+def _ok():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(status="ok", message="")
+
+
+def _an_umbrella_study(where: Path, *, selection_a: str):
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    where.mkdir(parents=True, exist_ok=True)
+    config = where / "umbrella.yml"
+    config.write_text(
+        "systems:\n  - system: 1UBQ\n"
+        "include: [setup, simulation]\n"
+        "simulation:\n  umbrella:\n    collective_variable: distance\n"
+        f"    selection_a: \"{selection_a}\"\n    selection_b: \"name CA\"\n"
+        "    from: 0.4\n    to: 1.2\n    n_windows: 3\n    force_constant: 500\n",
+        encoding="utf-8")
+    return BatchExplorer(config=config, output_dir=str(where / "out"))

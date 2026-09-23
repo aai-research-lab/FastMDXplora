@@ -27,7 +27,6 @@ rejection is the only check available and it must not be swallowed.
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -73,25 +72,34 @@ class TestTheTwoStudiesItIsWrongFor:
 
 class TestTheCheckpointIsCheckedRatherThanTrusted:
 
-    def test_a_missing_checkpoint_refuses(self):
-        from fastmdxplora.simulation import runner
+    def test_a_missing_checkpoint_refuses(self, tmp_path) -> None:
+        # Asked to continue from a checkpoint that is not there, a run
+        # refuses and says where it looked; it does not start over.
+        from fastmdxplora.refusals import MissingResultError
+        from fastmdxplora.simulation.runner import load_checkpoint
 
-        source = inspect.getsource(runner)
-        assert "MissingResultError" in source
-        assert "No checkpoint at" in source
+        simulation = _twenty_argon_atoms()[0]
+        with pytest.raises(MissingResultError) as raised:
+            load_checkpoint({}, simulation, tmp_path / "study" / "checkpoint.chk")
+        assert f"No checkpoint at {tmp_path / 'study' / 'checkpoint.chk'}" in str(raised.value)
 
-    def test_a_mismatched_checkpoint_refuses_rather_than_loading(self):
+    def test_a_mismatched_checkpoint_refuses_rather_than_loading(self, tmp_path) -> None:
         # OpenMM raises when a checkpoint does not match the System and
         # Platform it is loaded into. That raise is the only check there
         # is -- there is no cheaper way to verify a checkpoint belongs to
         # this system -- so it must be turned into a refusal and never
-        # swallowed.
-        from fastmdxplora.simulation import runner
+        # swallowed. A checkpoint of twenty atoms, loaded into twenty-one.
+        from fastmdxplora.simulation.runner import UnstableRun, load_checkpoint
 
-        source = inspect.getsource(runner)
-        assert "simulation.resume.checkpoint_rejected" in source
-        assert "loadCheckpoint" in source
-
+        written, _ = _twenty_argon_atoms()
+        checkpoint = tmp_path / "checkpoint.chk"
+        with open(checkpoint, "wb") as handle:
+            handle.write(written.context.createCheckpoint())
+        other = _twenty_argon_atoms(n=21)[0]
+        with pytest.raises(UnstableRun) as raised:
+            load_checkpoint({}, other, checkpoint)
+        assert raised.value.code == "simulation.resume.checkpoint_rejected"
+        assert raised.value.__cause__ is not None
 
 class TestTheWordingMatchesWhatIsTrue:
     """The point of the original file, kept: say only what is so."""
@@ -118,3 +126,27 @@ class TestTheWordingMatchesWhatIsTrue:
         whole = resume_provenance(None, segment=0, of_segments=1,
                                   from_step=0)
         assert whole["ran_through"] is True
+
+
+def _twenty_argon_atoms(n: int = 20):
+    """A real simulation of `n` argon atoms on the CPU platform, and its
+    System. Enough for OpenMM to write a checkpoint and to refuse one."""
+    pytest.importorskip("openmm.app")
+    import openmm
+    from openmm import app, unit
+
+    system = openmm.System()
+    topology = app.Topology()
+    residue = topology.addResidue("AR", topology.addChain())
+    force = openmm.NonbondedForce()
+    for _ in range(n):
+        system.addParticle(39.948)
+        force.addParticle(0.0, 0.34, 0.99)
+        topology.addAtom("AR", app.Element.getBySymbol("Ar"), residue)
+    system.addForce(force)
+    positions = [openmm.Vec3((i % 5) * 0.4, (i // 5) * 0.4, 0.0) for i in range(n)]
+    simulation = app.Simulation(topology, system,
+                                openmm.VerletIntegrator(1 * unit.femtosecond),
+                                openmm.Platform.getPlatformByName("CPU"))
+    simulation.context.setPositions(positions * unit.nanometer)
+    return simulation, system

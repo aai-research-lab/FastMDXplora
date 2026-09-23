@@ -23,22 +23,46 @@ class TestAFetchWithNoNetwork:
     from that sentence. Clusters are commonly airgapped and this is the first
     thing a run does there."""
 
-    def test_it_says_there_is_no_route_and_what_to_do(self) -> None:
-        import inspect
-        import fastmdxplora.setup.pipeline as pipeline
+    def test_it_says_there_is_no_route_and_what_to_do(self, tmp_path, monkeypatch) -> None:
+        # A machine with no route out: the refusal says so, and gives the
+        # command to fetch the file from one that has.
+        import urllib.request
 
-        source = inspect.getsource(pipeline._fetch_pdb_from_rcsb)
-        assert "no route to the internet" in source
-        assert "curl -O" in source
+        import pytest
 
-    def test_the_original_error_survives(self) -> None:
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.setup.pipeline import _fetch_pdb_from_rcsb
+
+        def no_route(url, dest):
+            raise OSError("[Errno -3] Temporary failure in name resolution")
+
+        monkeypatch.setattr(urllib.request, "urlretrieve", no_route)
+        with pytest.raises(StudyError) as raised:
+            _fetch_pdb_from_rcsb("1UBQ", tmp_path / "1UBQ.pdb")
+        said = str(raised.value)
+        assert "no route to the internet" in said
+        assert "curl -O https://files.rcsb.org/download/1UBQ.pdb" in said
+        assert raised.value.code == "environment.service.unreachable"
+
+    def test_the_original_error_survives(self, tmp_path, monkeypatch) -> None:
         """Whatever OSError actually said is still the evidence."""
-        import inspect
-        import fastmdxplora.setup.pipeline as pipeline
+        import urllib.request
 
-        source = inspect.getsource(pipeline._fetch_pdb_from_rcsb)
-        assert "{exc}" in source and "from exc" in source
+        import pytest
 
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.setup.pipeline import _fetch_pdb_from_rcsb
+
+        original = OSError("[Errno 113] No route to host")
+
+        def no_route(url, dest):
+            raise original
+
+        monkeypatch.setattr(urllib.request, "urlretrieve", no_route)
+        with pytest.raises(StudyError) as raised:
+            _fetch_pdb_from_rcsb("1UBQ", tmp_path / "1UBQ.pdb")
+        assert "No route to host" in str(raised.value)
+        assert raised.value.__cause__ is original
 
 class TestARefusalToLookUpChemistry:
     def test_it_says_where_to_get_the_file(self) -> None:

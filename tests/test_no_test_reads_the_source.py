@@ -25,27 +25,12 @@ READS = {"getsource", "getsourcelines", "getfile", "getsourcefile"}
 
 #: test -> why it reads source. "not yet converted" marks the ones still to
 #: be rewritten to run the code; anything else is kept on purpose.
-READS_THE_SOURCE: dict[str, str] = {'test_a_checkpoint_promises_only_what_it_can_keep.py::TestTheCheckpointIsCheckedRatherThanTrusted.test_a_mismatched_checkpoint_refuses_rather_than_loading': 'not '
-                                                                                                                                                              'yet '
-                                                                                                                                                              'converted',
- 'test_a_checkpoint_promises_only_what_it_can_keep.py::TestTheCheckpointIsCheckedRatherThanTrusted.test_a_missing_checkpoint_refuses': 'not '
-                                                                                                                                       'yet '
-                                                                                                                                       'converted',
- 'test_a_figure_says_what_it_shows.py::TestEveryRowCanBeToldFromEveryOther.test_the_compute_path_records_the_atom_names': 'not '
+READS_THE_SOURCE: dict[str, str] = {'test_a_figure_says_what_it_shows.py::TestEveryRowCanBeToldFromEveryOther.test_the_compute_path_records_the_atom_names': 'not '
                                                                                                                           'yet '
                                                                                                                           'converted',
  'test_a_log_says_where_a_run_begins.py::TestItNeverStopsARun.test_the_first_run_gets_no_banner': 'not '
                                                                                                   'yet '
                                                                                                   'converted',
- 'test_a_message_says_what_to_do.py::TestAFetchWithNoNetwork.test_it_says_there_is_no_route_and_what_to_do': 'not '
-                                                                                                             'yet '
-                                                                                                             'converted',
- 'test_a_message_says_what_to_do.py::TestAFetchWithNoNetwork.test_the_original_error_survives': 'not '
-                                                                                                'yet '
-                                                                                                'converted',
- 'test_a_resumed_run_continues_the_one_before.py::TestACheckpointSaysWhatItIs.test_the_fence_stands_before_the_load': 'not '
-                                                                                                                      'yet '
-                                                                                                                      'converted',
  'test_a_run_says_which_platforms_it_found.py::TestItNeverStopsARunItCannotDescribe.test_it_runs_before_a_platform_is_chosen': 'not '
                                                                                                                                'yet '
                                                                                                                                'converted',
@@ -95,19 +80,11 @@ READS_THE_SOURCE: dict[str, str] = {'test_a_checkpoint_promises_only_what_it_can
                                                                                                                     'a '
                                                                                                                     'biased '
                                                                                                                     'run',
- 'test_batch.py::TestSelectionsAreCheckedAgainstWhateverWillBeSimulated.test_an_unresolvable_selection_is_not_a_verdict': 'not '
-                                                                                                                          'yet '
-                                                                                                                          'converted',
- 'test_batch.py::TestSelectionsAreCheckedAgainstWhateverWillBeSimulated.test_it_runs_outside_the_preparation_block': 'not '
-                                                                                                                     'yet '
-                                                                                                                     'converted',
  'test_binding.py::TestItSitsBehindTheOverlapGate.test_the_campaign_uses_the_rule_rather_than_repeating_it': 'not '
                                                                                                              'yet '
                                                                                                              'converted',
  'test_environment_record.py::TestItReachesTheManifest.test_the_orchestrator_writes_it': 'not yet '
                                                                                          'converted',
- 'test_exploration.py::test_stopping_the_server_says_what_is_still_running': 'not yet converted',
- 'test_exploration.py::test_the_run_outlives_the_server': 'not yet converted',
  'test_interface_parity.py::TestArtifactLayout.test_ligands_are_not_written_to_a_nested_setup_directory': 'not '
                                                                                                           'yet '
                                                                                                           'converted',

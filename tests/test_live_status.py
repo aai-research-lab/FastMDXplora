@@ -2298,8 +2298,8 @@ def _two_antiparallel_helices():
     the second is the first mirrored in z. Over 100 atoms each, which is
     the size below which the check does not judge a chain."""
     import numpy as np
-    openmm = pytest.importorskip("openmm")
-    app, unit = openmm.app, openmm.unit
+    pytest.importorskip("openmm.app")
+    from openmm import app, unit
 
     rng = np.random.default_rng(0)
     topology = app.Topology()

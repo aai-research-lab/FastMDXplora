@@ -594,7 +594,7 @@ class TestAFailureDuringSolvationExplainsItself:
         the force field cannot parameterize and what to do, rather than
         OpenMM's raw message. Made to fail in each, on the prepared peptide,
         with its first residue the one the force field cannot match."""
-        app = pytest.importorskip("openmm").app
+        app = pytest.importorskip("openmm.app")
         from fastmdxplora.setup import prepare
 
         raw = ValueError("No template found for residue 1 (ALA).  The set of atoms "
