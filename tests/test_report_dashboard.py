@@ -174,5 +174,3 @@ def _write_plot(root: Path, image_rel: str, data_rel: str | None, data: str | No
         path = root / data_rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(data, encoding="utf-8")
-
-

@@ -791,4 +791,3 @@ class TestTheRunSaysHowFarThroughItIs:
                       if label.startswith("Production")]
         assert len(production) > 3
         assert production == sorted(production) and production[-1] == 100
-

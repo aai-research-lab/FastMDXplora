@@ -80,4 +80,3 @@ class TestItNeverStopsARun:
         assert "=== new run" not in empty.read_text(encoding="utf-8")
         text = used.read_text(encoding="utf-8")
         assert text.startswith("the run before\n") and "=== new run" in text
-

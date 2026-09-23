@@ -558,4 +558,3 @@ class TestPerResidueRmsfIsTheConventionalOne:
         assert per_residue[0, 1] == pytest.approx(float(np.sqrt(np.mean(values ** 2))), rel=1e-6)
         # Measurably apart here, so the check above tells the two apart.
         assert per_residue[0, 1] > 1.03 * float(np.mean(values))
-

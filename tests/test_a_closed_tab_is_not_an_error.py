@@ -84,4 +84,6 @@ def test_a_real_failure_is_still_a_warning_and_a_500(address, caplog, monkeypatc
     with caplog.at_level(logging.WARNING, logger="fastmdxplora.gui.server"):
         written = _ask(address, method)
     assert written == 500
-    assert any("route failed" in r.getMessage() for r in caplog.records)
+    # Said, and said of the route that failed.
+    assert any(r.levelno == logging.WARNING and "/api/anything" in r.getMessage()
+               and "failed" in r.getMessage() for r in caplog.records)

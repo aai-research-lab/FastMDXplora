@@ -107,4 +107,3 @@ class TestItNeverStopsARunItCannotDescribe:
         with caplog.at_level(logging.INFO), pytest.raises(BackendUnavailable):
             select_platform(_openmm(["Reference"]), requested="auto")
         assert "OpenMM platforms available: Reference" in caplog.text
-

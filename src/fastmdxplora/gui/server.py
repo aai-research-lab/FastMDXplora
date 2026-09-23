@@ -268,7 +268,7 @@ def make_handler(
                 # the route caught them first.
                 logger.debug("dashboard caller %s hung up mid-request", self.client_address)
             except Exception as exc:  # noqa: BLE001 — dashboard must never crash the sim
-                logger.warning("dashboard route failed: %s", exc)
+                logger.warning("dashboard route %s failed: %s", self.path, exc)
                 self.send_error(500, "Dashboard internal error")
 
         def do_POST(self) -> None:  # noqa: N802 - stdlib API
@@ -277,7 +277,7 @@ def make_handler(
             except ConnectionError:
                 logger.debug("dashboard caller %s hung up mid-request", self.client_address)
             except Exception as exc:  # noqa: BLE001 - exploration errors stay local
-                logger.warning("dashboard POST route failed: %s", exc)
+                logger.warning("dashboard POST route %s failed: %s", self.path, exc)
                 # Whatever went wrong, the body may not have been read -- and
                 # an unread body costs the caller this message.
                 self._drain_request_body()
@@ -1103,9 +1103,57 @@ def start_test_server(
 
 
 def _artifact_records(root: Path) -> list[dict[str, str]]:
+    """Every file a run has written, for the Files page.
+
+    Read while the run is still writing. The live-frame history keeps the
+    last two hundred frames, so each new frame deletes the oldest, and every
+    atomic write passes through a `.tmp` file renamed into place. A file
+    that vanished between the walk and its `stat` raised out of here and
+    failed the whole listing -- "dashboard route failed: No such file"
+    scattered through a production run, each one a refresh that landed in
+    the gap. The playback beside it already allowed for this. Now each file
+    is read once, a file gone since the walk is left out, and a `.tmp` is
+    never listed: a half-written file is nothing to show or download. One
+    reading also keeps `href`, `mtime` and `size` from disagreeing.
+    """
+    import stat as _stat
+
     records: list[dict[str, str]] = []
     if not root.exists():
         return records
+    found: list[Path] = []
+    try:
+        for path in root.rglob("*"):
+            found.append(path)
+    except OSError:
+        # A folder removed while it was walked: list what was reached.
+        pass
+    for path in sorted(found):
+        if path.suffix == ".tmp" or "__pycache__" in path.parts:
+            continue
+        try:
+            rel = path.relative_to(root).as_posix()
+            info = path.stat()
+        except (OSError, ValueError):
+            continue
+        if not _stat.S_ISREG(info.st_mode):
+            continue
+        label, group = _artifact_label(rel)
+        version = int(info.st_mtime)
+        records.append(
+            {
+                "path": rel,
+                "name": path.name,
+                "href": f"/artifacts/{rel}?v={version}",
+                "download_href": f"/artifacts/{rel}?download=1&v={version}",
+                "size": str(info.st_size),
+                "mtime": str(info.st_mtime),
+                "display_path": _compact_path(rel),
+                "label": label,
+                "group": group,
+            }
+        )
+    return records
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
         try:
             rel = path.relative_to(root).as_posix()
