@@ -793,12 +793,35 @@ def _close_one_reporter(simulation: Any, reporter: Any) -> None:
 
 
 def _detach_all_reporters(simulation: Any) -> None:
-    # Closing the trajectory reporter is what flushes the DCD header.
+    """Close every reporter's file and take the reporters off the simulation.
+
+    Closing the trajectory reporter is what flushes the DCD header. OpenMM's
+    own reporters -- DCDReporter, StateDataReporter -- have no close(): they
+    release their file in __del__, which waits on whatever still holds the
+    simulation, and after a failure the traceback does. So this closed
+    nothing on any path, and a sweep run in this process kept two files open
+    for every run that failed. Their file is closed here directly, where the
+    reporter opened it; one handed a stream it did not open, such as
+    StateDataReporter writing to stdout, is left alone.
+    """
+    import sys as _sys
+
+    borrowed = {id(stream) for stream in (_sys.stdout, _sys.stderr,
+                                          _sys.__stdout__, _sys.__stderr__)}
     for r in simulation.reporters:
         close = getattr(r, "close", None)
         if callable(close):
             try:
                 close()
+            except Exception:  # noqa: BLE001
+                pass
+            continue
+        out = getattr(r, "_out", None)
+        opened_here = getattr(r, "_openedFile", True)
+        if (out is not None and opened_here and id(out) not in borrowed
+                and callable(getattr(out, "close", None))):
+            try:
+                out.close()
             except Exception:  # noqa: BLE001
                 pass
     simulation.reporters.clear()

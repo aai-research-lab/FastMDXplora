@@ -684,19 +684,51 @@ class TestASettingThatDoesNothingIsNotOffered:
             get_analysis_class("pl_interactions")(
                 ligand_resname="LIG", selection="protein")
 
-    def test_the_orchestrator_stops_passing_it(self) -> None:
+    def test_the_orchestrator_stops_passing_it(self, tmp_path, monkeypatch) -> None:
         """It sent the scope selection to every analysis, which was harmless
-        only because they ignored it -- which is why nobody noticed."""
-        import inspect
+        only because they ignored it -- which is why nobody noticed. Given a
+        selection, an analysis that honours it is handed it; one that works
+        out its own atoms is not."""
+        import mdtraj as md
+        import numpy as np
 
-        from fastmdxplora.analysis import orchestrator
+        from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator, get_analysis_class
 
-        source = inspect.getsource(orchestrator)
-        assert 'getattr(cls, "honours_selection", True)' in source
+        topology = md.Topology()
+        chain = topology.add_chain()
+        for _ in range(4):
+            residue = topology.add_residue("ALA", chain)
+            for name, element in (("N", "nitrogen"), ("CA", "carbon"), ("C", "carbon"),
+                                  ("O", "oxygen")):
+                topology.add_atom(name, getattr(md.element, element), residue)
+        xyz = np.random.default_rng(0).normal(scale=0.4, size=(5, topology.n_atoms, 3))
+        md.Trajectory(xyz.astype(np.float32), topology).save_pdb(str(tmp_path / "t.pdb"))
+        md.Trajectory(xyz.astype(np.float32), topology).save_dcd(str(tmp_path / "t.dcd"))
+
+        handed = {}
+        for name in ("rmsd", "dihedrals"):
+            cls = get_analysis_class(name)
+            real = cls.__init__
+
+            def recording(self, *args, _name=name, _real=real, **kwargs):
+                handed[_name] = kwargs.get("selection")
+                _real(self, *args, **kwargs)
+
+            monkeypatch.setattr(cls, "__init__", recording)
+        AnalysisOrchestrator(trajectory=str(tmp_path / "t.dcd"), topology=str(tmp_path / "t.pdb"),
+                             output_dir=str(tmp_path / "analysis"),
+                             selection="name CA").run(include=["rmsd", "dihedrals"])
+        assert handed == {"rmsd": "name CA", "dihedrals": None}
 
     def test_every_analysis_that_ignores_it_declares_so(self) -> None:
         """Written as a property, because six were found by checking and the
-        seventh would be found the same way or not at all."""
+        seventh would be found the same way or not at all.
+
+        Read from the source on purpose. Showing it by behaviour would mean
+        running every analysis twice with two selections, most of them
+        needing a ligand, water or a biased run to have anything to say;
+        what is checked here is a declaration and its use agreeing, which
+        the text states directly."""
         import inspect
 
         import fastmdxplora.analysis  # noqa: F401
@@ -744,19 +776,43 @@ class TestTheManifestRecordsWhatTheRunLearned:
     that record was reaching nothing.
     """
 
-    def test_the_manifest_is_written_after_compute(self) -> None:
-        import inspect
+    def test_the_manifest_is_written_after_compute(self, tmp_path) -> None:
+        # Written before compute, so an analysis that fails still leaves its
+        # settings behind, and again after, so what compute learned is kept.
+        import json
 
-        from fastmdxplora.analysis import base
+        import mdtraj as md
+        import numpy as np
+        import pandas as pd
 
-        source = inspect.getsource(base.Analysis.run)
-        wrote = source.index("_write_options_manifest")
-        computed = source.index("self.compute(traj)")
-        assert source.count("_write_options_manifest") >= 2, (
-            "it should be written before compute in case that fails, and "
-            "again afterwards to capture what compute learned"
-        )
-        assert wrote < computed, "the first write should precede compute"
+        from fastmdxplora.analysis.base import Analysis
+
+        class Learns(Analysis):
+            name = "learns"
+            description = "records what it found"
+
+            def compute(self, traj):
+                self.findings["worked_out"] = 42
+                return pd.DataFrame({"frame": [0], "value": [1.0]})
+
+            def plot(self, result, ax):
+                ax.plot([0], [1])
+
+        class Fails(Learns):
+            name = "fails"
+
+            def compute(self, traj):
+                raise RuntimeError("compute failed")
+
+        topology = md.Topology()
+        topology.add_atom("CA", md.element.carbon, topology.add_residue("ALA", topology.add_chain()))
+        traj = md.Trajectory(np.zeros((1, 1, 3), dtype=np.float32), topology)
+        Learns(output_dir=str(tmp_path / "a")).run(traj)
+        failed = Fails(output_dir=str(tmp_path / "b")).run(traj)
+        learned = json.loads(next((tmp_path / "a").rglob("options.json")).read_text(encoding="utf-8"))
+        assert learned["findings"]["worked_out"] == 42
+        assert failed.status == "error"
+        assert next((tmp_path / "b").rglob("options.json")).is_file()
 
     def test_what_compute_records_survives(self, tmp_path) -> None:
         import json

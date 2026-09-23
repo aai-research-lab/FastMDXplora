@@ -9,6 +9,8 @@ problem is a ligand whose parameters are wrong.
 
 from __future__ import annotations
 
+import pytest
+
 import numpy as np
 
 
@@ -127,16 +129,33 @@ class TestItDoesNotRetry:
     a broken system is worse than a failure: the failure is visible.
     """
 
-    def test_nothing_here_reruns_anything(self) -> None:
+    def test_nothing_here_reruns_anything(self, monkeypatch) -> None:
+        # A diagnosis reports; it does not step, minimise or retry. It is
+        # given a topology and positions, never a simulation, and every way
+        # to move one raises while it runs.
         import inspect
 
-        from fastmdxplora.simulation import diagnose
+        import numpy as np
+        pytest.importorskip("openmm.app")
+        import openmm
 
-        source = inspect.getsource(diagnose)
-        for attempt in ("simulation.step", "retry", "rerun", "minimizeEnergy"):
-            assert attempt not in source, (
-                f"a diagnosis should report, not {attempt}"
-            )
+        from fastmdxplora.simulation.diagnose import diagnose_failure
+
+        def moved(*args, **kwargs):
+            raise AssertionError("the diagnosis tried to run something")
+
+        for owner, method in ((openmm.app.Simulation, "step"),
+                              (openmm.app.Simulation, "minimizeEnergy"),
+                              (openmm.LocalEnergyMinimizer, "minimize"),
+                              (openmm.Context, "setPositions")):
+            monkeypatch.setattr(owner, method, moved)
+        assert not {"simulation", "context", "integrator"} & set(
+            inspect.signature(diagnose_failure).parameters)
+        topology, positions = _two_residues_one_exploded()
+        before = positions.copy()
+        diagnosis = diagnose_failure(topology, positions, stage="production")
+        assert diagnosis.as_text()
+        assert np.array_equal(positions, before, equal_nan=True)
 
     def test_and_the_module_says_why(self) -> None:
         import inspect
@@ -148,20 +167,68 @@ class TestItDoesNotRetry:
 
 class TestTheRunnerUsesIt:
     def test_a_failed_state_is_diagnosed(self) -> None:
-        import inspect
+        # A state gone non-finite is read, and the error says what went
+        # wrong in it, not only that something did.
+        from fastmdxplora.simulation.runner import UnstableRun, _validate_state_finite
 
-        from fastmdxplora.simulation import runner
+        openmm = pytest.importorskip("openmm")
+        topology, positions = _two_residues_one_exploded()
+        with pytest.raises(UnstableRun) as raised:
+            _validate_state_finite({"unit": openmm.unit}, _a_simulation_in(topology, positions),
+                                   stage="production")
+        said = str(raised.value)
+        assert said.endswith("OpenMM reported: positions contain NaN or Inf.")
+        assert not said.startswith("Invalid simulation state")
 
-        source = inspect.getsource(runner._validate_state_finite)
-        assert "topology=simulation.topology" in source
-        assert "positions=positions" in source
-
-    def test_and_a_diagnosis_that_fails_does_not_hide_the_failure(self) -> None:
+    def test_and_a_diagnosis_that_fails_does_not_hide_the_failure(self, monkeypatch) -> None:
         """The failure worth reporting is the simulation's, not the
         diagnosis's."""
-        import inspect
+        from fastmdxplora.simulation import diagnose
+        from fastmdxplora.simulation.runner import UnstableRun, _validate_state_finite
 
-        from fastmdxplora.simulation import runner
+        openmm = pytest.importorskip("openmm")
 
-        source = inspect.getsource(runner._validation_error)
-        assert "fall through to the general message" in source
+        def breaks(*args, **kwargs):
+            raise RuntimeError("the diagnosis itself failed")
+
+        monkeypatch.setattr(diagnose, "diagnose_failure", breaks)
+        topology, positions = _two_residues_one_exploded()
+        with pytest.raises(UnstableRun) as raised:
+            _validate_state_finite({"unit": openmm.unit}, _a_simulation_in(topology, positions),
+                                   stage="production")
+        said = str(raised.value)
+        assert said.startswith("Invalid simulation state after production: "
+                               "positions contain NaN or Inf.")
+        assert "diagnosis itself failed" not in said
+
+
+def _two_residues_one_exploded():
+    """An OpenMM topology of two residues, the second's atoms non-finite."""
+    import numpy as np
+    pytest.importorskip("openmm.app")
+    import openmm.app
+
+    topology = openmm.app.Topology()
+    chain = topology.addChain()
+    for _ in range(2):
+        residue = topology.addResidue("ALA", chain)
+        for name, element in (("N", "nitrogen"), ("CA", "carbon"), ("C", "carbon")):
+            topology.addAtom(name, getattr(openmm.app.element, element), residue)
+    positions = np.array([[0.1 * i, 0.0, 0.0] for i in range(6)], dtype=float)
+    positions[3:] = np.nan
+    return topology, positions
+
+
+def _a_simulation_in(topology, positions):
+    """What _validate_state_finite asks of a simulation: a context whose
+    state holds these positions, and the topology."""
+    from types import SimpleNamespace
+
+    openmm = pytest.importorskip("openmm")
+    quantity = positions * openmm.unit.nanometer
+    state = SimpleNamespace(
+        getPositions=lambda asNumpy=False: quantity,
+        getPotentialEnergy=lambda: 0.0 * openmm.unit.kilojoules_per_mole)
+    context = SimpleNamespace(getPlatform=lambda: SimpleNamespace(getName=lambda: "CPU"),
+                              getState=lambda **kwargs: state)
+    return SimpleNamespace(context=context, topology=topology)

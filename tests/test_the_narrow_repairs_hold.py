@@ -195,17 +195,20 @@ class TestABondAngleIsNotACircle:
         assert "torsion" in PERIODIC_VARIABLES
         assert "angle" not in PERIODIC_VARIABLES
 
-    def test_the_metadynamics_side_agrees(self) -> None:
-        import inspect
+    def test_the_metadynamics_side_agrees(self, tmp_path) -> None:
+        # A torsion is a circle; a bond angle, on [0, pi], is not. Read from
+        # a PLUMED script as a study writes one, in one and two dimensions.
+        from fastmdxplora.simulation.metad_surface import periodic_dimensions
 
-        from fastmdxplora.simulation import metad_surface
-
-        source = inspect.getsource(metad_surface.periodic_dimensions)
-        circular = source[source.index("circular = ("):]
-        circular = circular[:circular.index(")") + 1]
-        assert "TORSION" in circular
-        assert "ANGLE" not in circular
-
+        script = tmp_path / "plumed.dat"
+        script.write_text("cv1: TORSION ATOMS=5,7,9,15\ncv2: ANGLE ATOMS=5,7,9\n"
+                          "METAD ARG=cv1,cv2 SIGMA=0.3,0.1 HEIGHT=1.2 PACE=500\n",
+                          encoding="utf-8")
+        assert periodic_dimensions(script, 2) == (True, False)
+        script.write_text("cv1: ANGLE ATOMS=5,7,9\nMETAD ARG=cv1\n", encoding="utf-8")
+        assert periodic_dimensions(script, 1) == (False,)
+        script.write_text("cv1: TORSION ATOMS=5,7,9,15\nMETAD ARG=cv1\n", encoding="utf-8")
+        assert periodic_dimensions(script, 1) == (True,)
 
 class TestAClosureGapNeedsSomethingToClose:
     """AUD21. `closure_gap` judged from the span alone."""
@@ -298,32 +301,67 @@ class TestTheSecondCallIsNotToldAboutTheFirst:
 class TestTheReportersAreClosedWhateverHappens:
     """AUD25. `_detach_all_reporters` was the last statement in the try."""
 
-    def test_it_is_in_the_finally(self) -> None:
-        """Read from the source, and stated as such.
+    def test_a_stream_it_did_not_open_is_left_alone(self, tmp_path) -> None:
+        # Closing a reporter's file is for files it opened: a state reporter
+        # handed stdout, or a caller's stream, must still be usable after.
+        import io
+        import sys
+        from types import SimpleNamespace
 
-        The behaviour needs a real OpenMM simulation raising mid-production,
-        which this environment cannot always build. What can be checked
-        cheaply is the structural fact that made the leak possible: the
-        detach sitting where an exception skips it.
-        """
-        import inspect
+        app = pytest.importorskip("openmm.app")
+        from fastmdxplora.simulation.runner import _detach_all_reporters
 
+        mine = io.StringIO()
+        reporters = [app.StateDataReporter(sys.stdout, 10, step=True),
+                     app.StateDataReporter(mine, 10, step=True),
+                     app.StateDataReporter(str(tmp_path / "own.csv"), 10, step=True)]
+        simulation = SimpleNamespace(reporters=list(reporters))
+        _detach_all_reporters(simulation)
+        assert not sys.stdout.closed and not mine.closed
+        assert reporters[2]._out.closed
+        assert simulation.reporters == []
+
+    def test_it_is_in_the_finally(self, tmp_path, monkeypatch) -> None:
+        """A real run whose production raises after its reporters are
+        attached: the reporters' files are closed and the reporters taken off
+        the simulation anyway, so no file is left open behind the failure.
+        Read from the source before, which is why it was missed that
+        OpenMM's reporters have no close() and none of their files were
+        closed on any path."""
+        pytest.importorskip("openmm")
         from fastmdxplora.simulation import runner
+        from tests._the_phase import a_prepared_water_box
 
-        source = inspect.getsource(runner.run_simulation)
-        detach = source.index("_detach_all_reporters(simulation)")
-        finally_at = source.rindex("finally:", 0, detach)
-        except_at = source.rindex("except Exception as exc:", 0, detach)
+        closed = []
+        real_detach = runner._detach_all_reporters
 
-        assert finally_at > except_at, (
-            "the detach is inside the try or the except, so an exception "
-            "between attaching a reporter and reaching it leaks the handle"
-        )
+        def watched_detach(simulation):
+            closed.append(list(simulation.reporters))
+            real_detach(simulation)
+            closed.append(list(simulation.reporters))
 
+        def fails_in_production(real):
+            def stage(*args, **kwargs):
+                if kwargs.get("label") == "Production":
+                    raise RuntimeError("production failed")
+                return real(*args, **kwargs)
+            return stage
 
-# ---------------------------------------------------------------------------
-# Batch 6: the seven the batching missed, plus AUD30's count.
-# ---------------------------------------------------------------------------
+        monkeypatch.setattr(runner, "_detach_all_reporters", watched_detach)
+        monkeypatch.setattr(runner, "_run_md_stage", fails_in_production(runner._run_md_stage))
+        monkeypatch.setattr(runner, "_run_md_stage_with_live_metrics",
+                            fails_in_production(runner._run_md_stage_with_live_metrics))
+        with pytest.raises(Exception, match="production failed"):
+            runner.run_simulation(**a_prepared_water_box(tmp_path), output_dir=str(tmp_path / "out"),
+                                  production_steps=100, nvt_steps=10, npt_steps=0,
+                                  minimize=False, platform="CPU", trajectory_interval_steps=10)
+        assert closed, "the reporters were not detached when production failed"
+        attached, after = closed[0], closed[-1]
+        assert attached and after == []
+        files = [reporter._out for reporter in attached
+                 if hasattr(getattr(reporter, "_out", None), "closed")]
+        assert files, "no reporter file to check: the run attached none"
+        assert all(f.closed for f in files), [f.name for f in files if not f.closed]
 
 class TestTheWhamLoopSaysWhetherItSettled:
     """AUD38. It ran to 2000 and stopped with no `else`, no flag and no
@@ -495,10 +533,29 @@ class TestPerResidueRmsfIsTheConventionalOne:
         assert averaging_rmsf == pytest.approx(0.14, abs=0.001)
         assert conventional == pytest.approx(0.228, abs=0.001)
 
-    def test_the_module_takes_the_second(self) -> None:
-        import inspect
+    def test_the_module_takes_the_second(self, tmp_path) -> None:
+        # A residue of five atoms, one mobile among four still: the
+        # per-residue value is the root of the mean of the per-atom squares,
+        # not the mean of the per-atom values.
+        import mdtraj as md
 
-        from fastmdxplora.analysis import rmsf as module
+        from fastmdxplora.analysis.rmsf import RMSF
 
-        source = inspect.getsource(module)
-        assert "np.sqrt(np.mean(values ** 2))" in source
+        topology = md.Topology()
+        residue = topology.add_residue("ALA", topology.add_chain(), resSeq=1)
+        for name in ("N", "CA", "C", "O", "CB"):
+            topology.add_atom(name, md.element.carbon, residue)
+        rng = np.random.default_rng(0)
+        base = np.array([[0.0, 0, 0], [0.15, 0, 0], [0.3, 0, 0], [0.3, 0.12, 0], [0.15, 0.15, 0]])
+        xyz = np.repeat(base[None], 200, axis=0) + rng.normal(0, 0.005, (200, 5, 3))
+        xyz[:, 4] += rng.normal(0, 0.3, (200, 3))
+        traj = md.Trajectory(xyz.astype(np.float32), topology)
+        per_atom = RMSF(per_residue=False, selection="all",
+                        output_dir=str(tmp_path / "a")).compute(traj[:])
+        per_residue = RMSF(per_residue=True, selection="all",
+                           output_dir=str(tmp_path / "r")).compute(traj[:])
+        values = np.asarray(per_atom)[:, -1]
+        assert per_residue[0, 1] == pytest.approx(float(np.sqrt(np.mean(values ** 2))), rel=1e-6)
+        # Measurably apart here, so the check above tells the two apart.
+        assert per_residue[0, 1] > 1.03 * float(np.mean(values))
+

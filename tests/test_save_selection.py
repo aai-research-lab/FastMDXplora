@@ -15,6 +15,8 @@ from __future__ import annotations
 import mdtraj as md
 import pytest
 
+from pathlib import Path
+
 from fastmdxplora.simulation.runner import (
     resolve_save_selection,
     write_trajectory_topology,
@@ -221,26 +223,34 @@ class TestEverythingThatReadsTheTrajectoryAgrees:
         return tmp_path
 
     def test_the_analysis_phase_prefers_the_matching_topology(self, tmp_path):
-        import inspect
+        # A study that saved only its alpha carbons: analysed, it reads the
+        # trajectory against the topology written beside it and runs.
+        # Against the prepared system's topology it would not load at all.
+        import importlib
+        import json
+        from types import SimpleNamespace
 
-        from fastmdxplora.analysis import analyze
+        analyze = importlib.import_module("fastmdxplora.analysis.analyze")
+        root = _a_study_that_saved_a_subset(tmp_path)
+        analyze.run(orchestrator=SimpleNamespace(output_dir=root, system="x", _presenter=None),
+                    output_dir=root / "analysis", include=["rmsd"])
+        manifest = json.loads((root / "analysis" / "analysis_manifest.json").read_text(
+            encoding="utf-8"))
+        assert manifest["results"]["rmsd"]["status"] == "ok"
 
-        source = inspect.getsource(analyze)
-        assert "trajectory_topology.pdb" in source, (
-            "the analysis phase must prefer the topology written beside "
-            "the trajectory")
-        # And fall back where no subset was saved.
-        assert "topology.pdb" in source
+    def test_the_playback_prefers_it_too(self, tmp_path):
+        # The browser's copy holds the eight atoms that were written.
+        import mdtraj as md
 
-    def test_the_playback_prefers_it_too(self):
-        import inspect
+        from fastmdxplora.gui.trajectory_playback import playback_info
 
-        from fastmdxplora.gui import trajectory_playback
+        root = _a_study_that_saved_a_subset(tmp_path)
+        info = playback_info(root)
+        assert info["playback_available"], info.get("reason")
+        shown = md.load(str(root / "simulation" / info["companion_pdb"]))
+        assert shown.n_atoms == 8 and {a.name for a in shown.topology.atoms} == {"CA"}
 
-        assert "trajectory_topology.pdb" in inspect.getsource(
-            trajectory_playback)
-
-    def test_every_known_reader_prefers_it(self):
+    def test_every_known_reader_prefers_it(self, tmp_path):
         """Named rather than found by scanning.
 
         A first version of this checked the source for any file mentioning
@@ -248,21 +258,40 @@ class TestEverythingThatReadsTheTrajectoryAgrees:
         example, the module that writes the file, and the setup path that
         reads its own input. A check with three false positives out of four
         is one that gets deleted rather than fixed, so the readers are
-        listed and a new one joins this list.
+        listed and a new one joins this list. The two above run the analysis
+        phase and the playback; the command line's and the cross-tool
+        benchmark's lookups are asked here, with the subset topology and
+        without it.
         """
-        import inspect
-        from pathlib import Path
+        from fastmdxplora.cli.main import _infer_system_from_output
+        from fastmdxplora.validation.cross_tool import trajectory_and_topology
 
-        from fastmdxplora.analysis import analyze
-        from fastmdxplora.cli import main as cli_main
-        from fastmdxplora.gui import trajectory_playback
-        from fastmdxplora.validation import cross_tool
+        root = _a_study_that_saved_a_subset(tmp_path)
+        assert Path(_infer_system_from_output(str(root))).name == "trajectory_topology.pdb"
+        assert trajectory_and_topology(root, {})[1].name == "trajectory_topology.pdb"
+        (root / "simulation" / "trajectory_topology.pdb").unlink()
+        assert Path(_infer_system_from_output(str(root))).name == "topology.pdb"
+        # The benchmark's own fallback is the prepared system's topology.
+        assert trajectory_and_topology(root, {})[1] == root / "setup" / "topology.pdb"
 
-        # Read from disk rather than through `inspect.getsource`, which
-        # answers out of `linecache` and returned a stale copy of a module
-        # edited in the same session.
-        for module in (analyze, cli_main, trajectory_playback, cross_tool):
-            source = Path(inspect.getfile(module)).read_text(encoding="utf-8")
-            assert "trajectory_topology.pdb" in source, (
-                f"{module.__name__} reads a trajectory without preferring "
-                "the topology written beside it")
+
+def _a_study_that_saved_a_subset(root):
+    """A finished study that kept only its alpha carbons: the prepared
+    system's topology with the water, the trajectory of eight atoms, and
+    the topology written beside it that describes them. Read against the
+    wrong one, the counts do not agree and nothing loads."""
+    import numpy as np
+
+    top, xyz = _solvated()
+    full = md.Trajectory(xyz[None].astype(np.float32), top)
+    simulation = root / "simulation"
+    simulation.mkdir(parents=True, exist_ok=True)
+    full.save_pdb(str(simulation / "topology.pdb"))
+    (root / "setup").mkdir(exist_ok=True)
+    full.save_pdb(str(root / "setup" / "topology.pdb"))
+    subset = full.atom_slice(full.topology.select("name CA"))
+    subset.save_pdb(str(simulation / "trajectory_topology.pdb"))
+    moved = subset.xyz + np.random.default_rng(0).normal(0, 0.05, (8, *subset.xyz.shape[1:]))
+    md.Trajectory(moved.astype(np.float32), subset.topology).save_dcd(
+        str(simulation / "production.dcd"))
+    return root
