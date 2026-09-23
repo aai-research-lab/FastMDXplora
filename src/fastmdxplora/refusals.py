@@ -358,6 +358,11 @@ CODES: tuple[Code, ...] = (
          "The deposited entry does not determine what should be simulated.",
          Kind.SEMANTIC, Disclosure.NOTHING,
          detail_keys=("components",)),
+    Code("setup.prepared.mismatch",
+         "A shared prepared system was built with other setup settings than "
+         "the study now asks for.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("changed",)),
     Code("setup.structure.assembly_ambiguous",
          "The structure's biological assemblies hold different things, so "
          "which is simulated has to be named.",

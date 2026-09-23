@@ -1182,6 +1182,70 @@ class TestOneSystemForEveryWindow:
 
         assert study._maybe_prepare_once(["setup", "simulation"], None) == shared
 
+    @staticmethod
+    def _study_at_ph(tmp_path, ph, *, force=False):
+        from fastmdxplora.batch.explorer import BatchExplorer
+
+        config = tmp_path / "study.yml"
+        config.write_text(
+            "output: out\ninclude: [setup, simulation]\nsystems:\n  - system: 181L\n"
+            f"setup:\n  ph: {ph}\n"
+            "simulation:\n  umbrella:\n    collective_variable: radius_of_gyration\n"
+            '    selection: "protein and name CA"\n'
+            "    from: 0.4\n    to: 0.6\n    n_windows: 3\n    force_constant: 5000\n",
+            encoding="utf-8")
+        return BatchExplorer(config=config, output_dir=str(tmp_path / "out"), force=force)
+
+    def _prepared_at(self, tmp_path, ph):
+        """A shared system as a study at ``ph`` leaves it, record included."""
+        import json
+
+        shared = tmp_path / "out" / "shared_setup"
+        self._pretend_it_is_prepared(shared / "setup")
+        (shared / "prepared_for.json").write_text(
+            json.dumps({"system": "181L", "setup": {"ph": ph}}), encoding="utf-8")
+        return shared / "setup"
+
+    def test_a_system_prepared_for_the_same_settings_is_reused(self, tmp_path) -> None:
+        prepared = self._prepared_at(tmp_path, 7.4)
+        assert self._study_at_ph(tmp_path, 7.4)._maybe_prepare_once(
+            ["setup", "simulation"], None) == prepared
+
+    def test_one_prepared_for_other_settings_is_refused(self, tmp_path) -> None:
+        # What --force used to do silently: a study asking for pH 5.0 simulated
+        # every window in the pH 7.4 system it found, its config saying 5.0.
+        from fastmdxplora.refusals import StudyError, refusal_of
+
+        self._prepared_at(tmp_path, 7.4)
+        with pytest.raises(StudyError) as caught:
+            self._study_at_ph(tmp_path, 5.0)._maybe_prepare_once(["setup", "simulation"], None)
+        assert refusal_of(caught.value).code == "setup.prepared.mismatch"
+        assert "(ph)" in str(caught.value)
+
+    def test_with_force_it_is_prepared_again(self, tmp_path, monkeypatch) -> None:
+        import json
+        from types import SimpleNamespace
+
+        from fastmdxplora.batch import explorer
+
+        prepared = self._prepared_at(tmp_path, 7.4)
+        (prepared / "stale").write_text("from the pH 7.4 preparation", encoding="utf-8")
+        calls = []
+
+        def prepare(spec, output, phases, *args, **kwargs):
+            calls.append(spec)
+            from pathlib import Path
+
+            self._pretend_it_is_prepared(Path(output) / "setup")
+            return SimpleNamespace(status="ok", message="")
+
+        monkeypatch.setattr(explorer, "_execute_run", prepare)
+        study = self._study_at_ph(tmp_path, 5.0, force=True)
+        assert study._maybe_prepare_once(["setup", "simulation"], None) == prepared
+        assert len(calls) == 1 and not (prepared / "stale").exists()
+        record = json.loads((prepared.parent / "prepared_for.json").read_text(encoding="utf-8"))
+        assert record["setup"]["ph"] == 5.0
+
     def test_and_every_window_simulates_from_it(self, tmp_path) -> None:
         study = self._study(tmp_path)
         shared = tmp_path / "out" / "shared_setup" / "setup"

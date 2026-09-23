@@ -1000,6 +1000,42 @@ class BatchExplorer:
 
         shared = self.output_dir / "shared_setup"
         prepared = shared / "setup"
+        # What the shared system was prepared from, so that reusing it is a
+        # checked claim. Its existence was the whole check, so a study re-run
+        # with pH 5.0 simulated every window in the pH 7.4 system it had
+        # prepared before, while its resolved config said 5.0.
+        wanted = {"system": str(self.run_specs[0].system),
+                  "setup": json.loads(next(iter(preparations)))}
+        record = shared / "prepared_for.json"
+        if _a_prepared_system_is_there(prepared):
+            try:
+                found = json.loads(record.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                found = None
+            if found != wanted and self.force:
+                logger.info("The shared system was prepared from %s, not what this study "
+                            "asks for; --force-overwrite prepares it again.",
+                            "settings it did not record" if found is None else "other settings")
+                import shutil
+
+                shutil.rmtree(shared)
+            elif found is None:
+                logger.warning(
+                    "The shared system in %s was prepared before what it was prepared "
+                    "from was recorded, so whether it matches this study's setup cannot "
+                    "be checked. It is reused; --force-overwrite prepares it again.", shared)
+            elif found != wanted:
+                changed = sorted(key for key in set(found["setup"]) | set(wanted["setup"])
+                                 if found["setup"].get(key) != wanted["setup"].get(key))
+                if found["system"] != wanted["system"]:
+                    changed.insert(0, "system")
+                raise StudyError(
+                    f"The shared system in {shared} was prepared with different "
+                    f"settings from this study's ({', '.join(changed)}), so every "
+                    "window would simulate a system other than the one asked for. "
+                    "Re-run with --force-overwrite to prepare it again, or restore the settings "
+                    "it was prepared with.",
+                    code="setup.prepared.mismatch", changed=changed)
         if self.force and shared.exists() and not _a_prepared_system_is_there(prepared):
             # A half-written shared setup from an interrupted study: with
             # --force the intent is plainly to start again, and leaving the
@@ -1021,6 +1057,8 @@ class BatchExplorer:
                     "The system could not be prepared, so there is nothing "
                     f"for the windows to simulate: {result.message or prepared}"
                 , code="analysis.data.absent")
+            record.write_text(json.dumps(wanted, indent=2, sort_keys=True, default=str),
+                              encoding="utf-8")
 
         # Outside the block that prepares, because the selections need
         # checking against whatever system the windows will use -- and a
