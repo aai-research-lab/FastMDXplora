@@ -103,6 +103,20 @@ def _playback_info_unlocked(
                      else sim_dir / "topology.pdb")
     dcd_path = sim_dir / "production.dcd"
 
+    # A study that has been extended or resumed plays its joined trajectory,
+    # against the topology its record names. The first segment's own file
+    # was played instead, so an extended study showed only its first part,
+    # and a killed one, whose status still says running, showed the live
+    # snapshots. A joined trajectory is written only from finished segments.
+    joined_record = _load_json(out / "joined" / "joined.json")
+    joined_dcd = out / "joined" / "production.dcd"
+    if joined_record and joined_dcd.is_file() and joined_dcd.stat().st_size > 0:
+        dcd_path = joined_dcd
+        named = Path(str(joined_record.get("topology") or ""))
+        if named.is_file():
+            topology_path = named
+        workflow_completed = True
+
     # During a live run use lightweight snapshots.  This allows play/pause and
     # scrubbing during minimization/NVT/NPT before a production DCD even exists.
     if len(history_frames) >= 2 and not workflow_completed:
@@ -128,7 +142,11 @@ def _playback_info_unlocked(
     # Completed runs prefer the scientific DCD.  The browser copy is atom-
     # sliced and downsampled; the original DCD remains unchanged.
     if topology_path.is_file() and dcd_path.is_file() and dcd_path.stat().st_size > 0:
-        signature = f"{_file_signature(dcd_path)}:cap={cap}"
+        # The topology is part of what was played: the same trajectory read
+        # against a different one is a different playback, and the copy made
+        # from the first was served after the second replaced it.
+        signature = (f"{dcd_path.parent.name}/{dcd_path.name}:{_file_signature(dcd_path)}:"
+                     f"{topology_path.name}:{_file_signature(topology_path)}:cap={cap}")
         cached = _cached_playback(companion_pdb, companion_idx, "production-dcd", signature, force)
         if cached is not None:
             return cached

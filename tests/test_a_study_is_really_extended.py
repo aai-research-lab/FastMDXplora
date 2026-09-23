@@ -221,6 +221,12 @@ class TestAKilledRunIsResumedFromItsLastCheckpoint(unittest.TestCase):
         self.assertEqual(record["trajectory_interval_steps"], 50)
         joined = self.study / "joined" / "production.dcd"
         self.assertAlmostEqual(_saving_interval_ps(self.study, trajectory=joined), 0.1)
+        # And the GUI plays the whole of it, not the killed run's own file,
+        # whose status still says it is running.
+        from fastmdxplora.gui.trajectory_playback import playback_info
+
+        played = playback_info(self.study, force=True)
+        self.assertEqual((played["source_kind"], played["n_frames_total"]), ("production-dcd", 6))
 
 
 def test_checkpoints_are_placed_on_frames(tmp_path) -> None:
@@ -239,3 +245,32 @@ def test_checkpoints_are_placed_on_frames(tmp_path) -> None:
                             platform="CPU", trajectory_interval_steps=60,
                             checkpoint_interval_steps=100)
     assert result.resolved["checkpoint_interval_steps"] == 120
+
+
+def test_a_replaced_topology_is_played_again(tmp_path) -> None:
+    # The same trajectory read against a different topology is a different
+    # playback; the copy made from the first was served after the second
+    # replaced it.
+    import os
+
+    import pytest
+
+    pytest.importorskip("openmm.app")
+    pytest.importorskip("mdtraj")
+    from fastmdxplora.gui.trajectory_playback import playback_info
+    from fastmdxplora.simulation.runner import run_simulation
+    from tests._the_phase import a_prepared_water_box
+
+    study = tmp_path / "study"
+    run_simulation(**a_prepared_water_box(tmp_path), output_dir=str(study / "simulation"),
+                   production_steps=200, nvt_steps=10, npt_steps=0, minimize=False,
+                   platform="CPU", trajectory_interval_steps=50)
+    (study / "simulation" / "live_status.json").write_text('{"status": "completed"}')
+    first = playback_info(study)
+    topology = next(p for p in (study / "simulation" / "trajectory_topology.pdb",
+                                study / "simulation" / "topology.pdb") if p.is_file())
+    later = topology.stat().st_mtime_ns + 5_000_000_000
+    os.utime(topology, ns=(later, later))
+    again = playback_info(study)
+    assert first["source_kind"] == again["source_kind"] == "production-dcd"
+    assert again["source_signature"] != first["source_signature"]
