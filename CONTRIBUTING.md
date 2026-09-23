@@ -105,6 +105,11 @@ environment for it.
 - **Tests required for new functionality.** Smoke tests at minimum; full
   numerical/equivalence tests for any analytical code migrated from
   FastMDXplora version 1.
+- **A test runs the code.** A test that searches a function's source for a
+  phrase passes when written and fails only when the wording changes, never
+  when the behaviour breaks. `tests/test_no_test_reads_the_source.py` fails
+  on any new test that reads source, unless it is listed there with the
+  reason the text itself is what needs checking.
 - **Lazy imports for heavy optional dependencies** (OpenMM, PDBFixer,
   python-pptx, etc.).
 - **Consistent output structure.** Every phase writes its outputs to
