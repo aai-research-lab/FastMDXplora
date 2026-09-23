@@ -589,14 +589,48 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
 
     def test_the_explanations_reach_the_log(self):
         # The "why" filter had nothing to show: the explain text was
-        # printed by the caller's hook and never written as an event.
-        import inspect
+        # printed by the caller's hook and never written as an event. A
+        # short real run, opened in the dashboard, with the filter on "why".
+        # The production step's explanation carries no citation, so it is
+        # shown there by the level it was written with and nothing else.
+        import tempfile
 
-        from fastmdxplora.simulation import runner
+        try:
+            import openmm  # noqa: F401
+        except ImportError:
+            self.skipTest("openmm not installed")
+        from playwright.sync_api import sync_playwright
 
-        source = inspect.getsource(runner.run_simulation)
-        self.assertIn('telemetry.event(text, level="explain")', source)
-        self.assertIn('if (level === "explain") return { kind: "why", level: "info" };', _script())
+        from fastmdxplora.explain import explain
+        from fastmdxplora.gui.server import start_dashboard_session
+        from fastmdxplora.simulation.runner import run_simulation
+        from tests._the_phase import a_prepared_water_box
+
+        root = pathlib.Path(tempfile.mkdtemp()) / "study"
+        run_simulation(**a_prepared_water_box(root.parent), output_dir=str(root / "simulation"),
+                       production_steps=20, nvt_steps=10, npt_steps=0, minimize=False,
+                       platform="CPU", live_telemetry=True, telemetry_interval=10,
+                       trajectory_interval_steps=10)
+        production = explain("production")
+        self.assertIsNone(production.reference)
+        opening = production.why.strip()[:40]
+        session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto(session.url, wait_until="domcontentloaded")
+                page.wait_for_selector(".side-panel", timeout=20000)
+                page.evaluate("() => window.FastMDXFrame.showTab('log')")
+                page.wait_for_selector("#side-log .side-log-line", timeout=20000)
+                page.click('.side-filter[data-log-filter="why"]')
+                page.wait_for_selector('#side-log .side-log-block[data-kind="why"]', timeout=20000)
+                why = page.eval_on_selector_all('#side-log .side-log-block[data-kind="why"]',
+                                                "els => els.map(e => e.textContent)")
+                browser.close()
+        finally:
+            session.server.shutdown()
+        self.assertTrue(any(opening in text for text in why), why)
 
     def test_one_status_row_and_complete(self):
         page = _page()
@@ -735,15 +769,25 @@ class TestTheFilePreviewReadsWhatTheAgentCanRead(unittest.TestCase):
     take the whole panel."""
 
     def test_one_reader_over_one_list_of_types(self):
-        import inspect
+        # A file you can attach is a file you can preview: for every type on
+        # the list the Agent's reader and the Files tab's reader answer the
+        # same, and for a type not on it they refuse the same.
+        import tempfile
 
         from fastmdxplora.gui.agent_panel import ATTACHABLE_SUFFIXES, read_attachment, read_text_file
 
-        # The attachment reader delegates, so the two cannot drift.
-        self.assertIn("return read_text_file(path", inspect.getsource(read_attachment))
-        self.assertIn("ATTACHABLE_SUFFIXES", inspect.getsource(read_text_file))
         for suffix in (".yml", ".json", ".log", ".md", ".csv", ".pdb", ".cif", ".py"):
             self.assertIn(suffix, ATTACHABLE_SUFFIXES)
+        with tempfile.TemporaryDirectory() as tmp:
+            for suffix in sorted(ATTACHABLE_SUFFIXES) + [".png", ".dcd"]:
+                path = pathlib.Path(tmp) / f"file{suffix}"
+                path.write_text(f"one line of {suffix}\n", encoding="utf-8")
+                attached, previewed = read_attachment(path), read_text_file(path)
+                with self.subTest(suffix=suffix):
+                    self.assertEqual(attached.get("ok"), suffix in ATTACHABLE_SUFFIXES)
+                    self.assertEqual(attached.get("ok"), previewed.get("ok"))
+                    self.assertEqual(attached.get("text"), previewed.get("text"))
+                    self.assertEqual(attached.get("error"), previewed.get("error"))
 
     def test_a_read_is_confined_to_the_study(self):
         import tempfile
@@ -807,24 +851,32 @@ class TestTheFilePreviewReadsWhatTheAgentCanRead(unittest.TestCase):
     def test_markdown_is_rendered_by_the_server_with_the_reports_renderer(self):
         # One renderer for the report page and the preview, on the server;
         # nothing vendored. On an install without the library the text is
-        # shown as written, as the report page does.
-        import inspect
+        # shown as written, as the report page does -- which is the same
+        # function answering, so the comparison holds either way.
+        import json
+        import tempfile
+        import urllib.request
 
-        from fastmdxplora.gui import report_page, server
+        from fastmdxplora.gui.report_page import render_markdown, report_payload
+        from fastmdxplora.gui.server import start_dashboard_session
 
-        self.assertTrue(callable(report_page.render_markdown))
-        self.assertIn("html, rendered = render_markdown(text)", inspect.getsource(report_page.report_payload))
-        self.assertIn("render_markdown(answer[\"text\"])", inspect.getsource(server))
-        html, kind = report_page.render_markdown("# A title\n\nSome **bold**.")
-        if kind == "html":
-            self.assertIn("<h1", html)
-            self.assertIn("<strong>bold</strong>", html)
-        else:
-            self.assertIn('<pre class="report-plain">', html)
-        script = _script()
-        doc = script[script.index("function renderDoc("):script.index("function treeNode(")]
-        self.assertIn("if (data.html)", doc)
-        self.assertNotIn("escapeText", doc)
+        text = "# Findings\n\nThe run **settled** after 2 ns.\n\n- one\n- two\n"
+        expected_html, expected_rendered = render_markdown(text)
+        root = pathlib.Path(tempfile.mkdtemp()) / "study"
+        (root / "report").mkdir(parents=True)
+        (root / "report" / "report.md").write_text(text, encoding="utf-8")
+        (root / "notes.md").write_text(text, encoding="utf-8")
+        page = report_payload(root)
+        self.assertEqual((page["html"], page["rendered"]), (expected_html, expected_rendered))
+        session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+        try:
+            with urllib.request.urlopen(f"{session.url.rstrip('/')}/api/file-text?path=notes.md",
+                                        timeout=20) as response:
+                answer = json.loads(response.read())
+        finally:
+            session.server.shutdown()
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual((answer["html"], answer["rendered"]), (expected_html, expected_rendered))
 
     def test_the_json_tree_folds_and_the_table_sorts(self):
         script = _script()
