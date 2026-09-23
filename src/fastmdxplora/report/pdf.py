@@ -76,6 +76,11 @@ blockquote { border-left: 3px solid #ddd; margin-left: 0; padding-left: 1em; }
 """
 
 
+class _NoMarkdownConverter(PdfUnavailable):
+    """The Markdown converter is missing, told apart so that a refusal can
+    name it together with anything else that is missing."""
+
+
 def _markdown_to_html(text: str, title: str) -> str:
     """Markdown to HTML, by whichever converter is present.
 
@@ -86,7 +91,7 @@ def _markdown_to_html(text: str, title: str) -> str:
     try:
         import markdown as markdown_lib
     except ImportError as exc:
-        raise PdfUnavailable(
+        raise _NoMarkdownConverter(
             "Rendering the report as a PDF needs a Markdown converter. "
             "Install the report extra (pip install 'fastmdxplora[pdf]') or "
             "conda install -c conda-forge markdown weasyprint."
@@ -119,30 +124,47 @@ def render_pdf(
 
     target = Path(pdf_path) if pdf_path else markdown_path.with_suffix(".pdf")
 
+    # Both converters asked about before refusing, and everything missing
+    # named at once. This stopped at the first: somebody without either
+    # installed WeasyPrint, ran again, and only then heard about Markdown.
+    missing: list[str] = []
+    unloadable: OSError | None = None
     try:
         from weasyprint import CSS, HTML
-    except ImportError as exc:
-        raise PdfUnavailable(
-            "Rendering the report as a PDF needs WeasyPrint, which is not "
-            "installed. Install the report extra (pip install "
-            "'fastmdxplora[pdf]') or conda install -c conda-forge weasyprint. "
-            "On pip it also needs Pango and Cairo as system libraries; the "
-            "conda-forge package brings its own."
-        ) from exc
+    except ImportError:
+        missing.append("WeasyPrint")
     except OSError as exc:
         # WeasyPrint imports but cannot find Pango or Cairo. The message it
         # raises names a shared library, which is not what somebody needs to
         # be told.
+        unloadable = exc
+    # Asked of the converter rather than of the package, so that whatever
+    # converts is what is checked.
+    html = None
+    try:
+        html = _markdown_to_html(markdown_path.read_text(encoding="utf-8"), title)
+    except _NoMarkdownConverter:
+        missing.append("Markdown")
+    if missing:
+        packages = " ".join(name.lower() for name in missing)
+        said = " and ".join(missing)
+        which = "which is" if len(missing) == 1 else "which are"
+        libraries = (" On pip, WeasyPrint also needs Pango and Cairo as system "
+                     "libraries; the conda-forge package brings its own."
+                     if "WeasyPrint" in missing else "")
+        raise PdfUnavailable(
+            f"Rendering the report as a PDF needs {said}, {which} not installed. "
+            "Install the report extra (pip install 'fastmdxplora[pdf]') or "
+            f"conda install -c conda-forge {packages}.{libraries}"
+        )
+    if unloadable is not None:
         raise PdfUnavailable(
             "WeasyPrint is installed but its system libraries are not: it "
             "needs Pango, Cairo and GDK-PixBuf. On conda-forge these come "
             "with the package (conda install -c conda-forge weasyprint); on "
             "Debian they are libpango-1.0-0, libcairo2 and "
-            f"libgdk-pixbuf-2.0-0. The underlying error was: {exc}"
-        ) from exc
-
-    html = _markdown_to_html(
-        markdown_path.read_text(encoding="utf-8"), title)
+            f"libgdk-pixbuf-2.0-0. The underlying error was: {unloadable}"
+        ) from unloadable
 
     # Resolved against the report's own directory, so the figures it references
     # by relative path are found rather than silently dropped.

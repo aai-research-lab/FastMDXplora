@@ -1727,6 +1727,40 @@ class TestTheReportIsAlsoAPDF:
         assert "fastmdxplora[pdf]" in reason and "conda-forge" in reason
         assert "Pango" in reason and "Cairo" in reason
 
+    @pytest.mark.parametrize("absent, named, not_named", [
+        ({"weasyprint", "markdown"}, ["WeasyPrint and Markdown", "weasyprint markdown"], []),
+        ({"markdown"}, ["needs Markdown, which is", "conda-forge markdown."], ["WeasyPrint needs"]),
+    ])
+    def test_everything_missing_is_named_at_once(self, tmp_path, monkeypatch,
+                                                absent, named, not_named) -> None:
+        """It stopped at the first thing missing, so somebody without either
+        installed WeasyPrint, ran again, and only then heard about Markdown.
+        With WeasyPrint present, only Markdown is named."""
+        import builtins
+        import sys
+        import types
+
+        from fastmdxplora.report.pdf import PdfUnavailable, render_pdf
+
+        real_import = builtins.__import__
+
+        def without(name, *args, **kwargs):
+            if name.split(".")[0] in absent:
+                raise ImportError(f"No module named {name!r}")
+            return real_import(name, *args, **kwargs)
+
+        if "weasyprint" not in absent:
+            present = types.ModuleType("weasyprint")
+            present.HTML = present.CSS = object
+            monkeypatch.setitem(sys.modules, "weasyprint", present)
+        monkeypatch.setattr(builtins, "__import__", without)
+        (tmp_path / "report.md").write_text("# R\n", encoding="utf-8")
+        with pytest.raises(PdfUnavailable) as raised:
+            render_pdf(tmp_path / "report.md")
+        said = str(raised.value)
+        assert all(phrase in said for phrase in named), said
+        assert not any(phrase in said for phrase in not_named), said
+
     def test_it_converts_the_document_not_the_dashboard(self, tmp_path, monkeypatch) -> None:
         """A PDF of the browser dashboard would be a picture of an interface.
         The report is a document, and a document is what a PDF should be:
