@@ -544,6 +544,43 @@ sweep:
         assert batch._resolve_workers() <= 2
         assert batch._resolve_workers() >= 1
 
+    def test_a_card_freed_first_takes_the_next_run(self, tmp_path, stub_pdb, monkeypatch):
+        """Two cards, three runs, and the second run finishes before the first.
+
+        The third went to card 0 by its place in the queue, so two runs
+        shared card 0 while card 1 sat idle. It goes where the room is."""
+        from fastmdxplora.batch import explorer
+
+        given: list[str] = []
+
+        class FirstRunStillGoing:
+            def __init__(self, max_workers, mp_context=None, initializer=None, initargs=()):
+                self.held = []
+
+            def submit(self, fn, spec_dict, out, include, exclude, verbose, device, **kwargs):
+                given.append(device)
+                fut = Future()
+                result = RunResult(run_id=spec_dict["run_id"], system=spec_dict["system"],
+                                   status="ok", output_dir=Path(out),
+                                   sweep_values=spec_dict["sweep_values"], phases=[])
+                if len(given) == 1:
+                    self.held.append((fut, result))
+                else:
+                    fut.set_result(result)
+                if len(given) == 3:
+                    for held, done in self.held:
+                        held.set_result(done)
+                return fut
+
+            def shutdown(self, wait=True, cancel_futures=False):
+                return None
+
+        monkeypatch.setattr(explorer, "ProcessPoolExecutor", FirstRunStillGoing)
+        cfg = self._cfg(tmp_path, stub_pdb,
+                        "execution:\n  mode: parallel\n  devices: [0, 1]\n", n_temps=3)
+        BatchExplorer(config=str(cfg)).run()
+        assert given == ["0", "1", "1"]
+
     def test_device_round_robin(self, tmp_path, stub_pdb):
         cfg = self._cfg(tmp_path, stub_pdb,
                         "execution:\n  mode: parallel\n  devices: [0, 1]\n")

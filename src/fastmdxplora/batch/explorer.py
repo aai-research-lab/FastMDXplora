@@ -798,6 +798,23 @@ class BatchExplorer:
         # CPU default: all cores, capped at the number of runs.
         return max(1, min(os.cpu_count() or 1, len(self.run_specs)))
 
+    def _least_used_device(self, in_flight) -> str | None:
+        """The listed device with the most room, the first listed on a tie.
+
+        Chosen by what is running, not by the run's place in the queue: by
+        place, with two cards, the third run went to card 0 whenever the
+        second finished first, so two runs shared one card and the other sat
+        idle. A device listed twice has room for two.
+        """
+        if not self.devices:
+            return None
+        from collections import Counter
+
+        room = Counter(str(d) for d in self.devices)
+        busy = Counter(str(d) for d in in_flight)
+        return min(dict.fromkeys(str(d) for d in self.devices),
+                   key=lambda d: busy[d] / room[d])
+
     def _device_for_worker(self, worker_slot: int) -> str | None:
         """Round-robin GPU device for a worker slot, or None if no devices."""
         if not self.devices:
@@ -1686,6 +1703,9 @@ class BatchExplorer:
 
         results: list[RunResult] = []
         futures = {}
+        # The device each run was given. The runs in flight are the ones
+        # still in `futures`, so what each device holds is counted from it.
+        held: dict = {}
         next_index = 0
         done = 0
         stopped_after: str | None = None
@@ -1697,13 +1717,14 @@ class BatchExplorer:
                 return False
             spec = self.run_specs[next_index]
             run_out = self._run_output_dir(spec)
-            device = self._device_for_worker(next_index)
+            device = self._least_used_device(held[f] for f in futures if f in held)
             fut = pool.submit(
                 _execute_run,
                 spec.to_dict(), str(run_out), include, exclude,
                 self.verbose, device, force=self.force,
             )
             futures[fut] = (next_index, spec)
+            held[fut] = device
             next_index += 1
             # Said on the way in, so a run that is still going has been named
             # once and its log can be followed while it goes.
