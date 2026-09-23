@@ -8,6 +8,8 @@ trajectory they cannot defend.
 
 from __future__ import annotations
 
+import pytest
+
 import io
 
 
@@ -153,29 +155,23 @@ class TestWhatTheStepsThemselvesSay:
     """A step's message is read far more often than any explanation under it,
     and two of them were wrong."""
 
-    def test_the_solvation_message_has_no_nested_parentheses(self) -> None:
+    def test_the_solvation_message_has_no_nested_parentheses(self, a_setup_run) -> None:
         """It read "Solvating (box=cube) (padding=1.00 nm, ...)" -- a
         parenthesis inside a parenthesis, introduced when the message learned
-        to choose between solvating and embedding."""
-        import inspect
+        to choose between solvating and embedding. As logged by a real setup."""
+        said = next(m for m in a_setup_run.messages if m.startswith("Solvating in a "))
+        assert "padding=1.20 nm, ions=" in said
+        assert "(" not in said and ")" not in said, said
 
-        from fastmdxplora.setup import prepare
-
-        source = inspect.getsource(prepare.prepare_system)
-        assert "Solvating (box=" not in source
-        assert "padding=%.2f nm, ions" in source
-
-    def test_the_force_field_step_says_what_it_resolved_to(self) -> None:
+    def test_the_force_field_step_says_what_it_resolved_to(self, a_setup_run) -> None:
         """It said "(auto)", which tells a reader nothing -- while the banner
-        two inches above said amber-openff (auto)."""
-        import inspect
+        two inches above said amber-openff (auto). A setup left to choose its
+        own force field names the one it chose."""
+        from fastmdxplora.setup.forcefields import AUTO_FORCEFIELD
 
-        from fastmdxplora.setup import pipeline
-
-        source = inspect.getsource(pipeline)
-        assert "AUTO_FORCEFIELD" in source, (
-            "the step should name the force field auto resolved to"
-        )
+        step = next(s for s in a_setup_run.steps if s.startswith("Solvated and parameterized"))
+        assert step == f"Solvated and parameterized ({AUTO_FORCEFIELD})"
+        assert "auto" not in step.replace(str(AUTO_FORCEFIELD), "")
 
     def test_no_step_message_nests_parentheses(self) -> None:
         """This mistake has been made twice: once when the solvation message
@@ -297,15 +293,47 @@ def test_an_analysis_needing_water_does_not_run_without_it() -> None:
 
 
 def test_the_gate_is_applied_wherever_the_ligand_gate_is() -> None:
-    import inspect
+    # A dry trajectory with no ligand, in a periodic box: the analyses that
+    # need water are left out of the plan in every path that leaves out the
+    # ones that need a ligand -- the default plan and one built by
+    # exclusion. With water added, they come back.
+    import tempfile
+    from pathlib import Path
 
-    from fastmdxplora.analysis import orchestrator
+    import mdtraj as md
+    import numpy as np
 
-    source = inspect.getsource(orchestrator.AnalysisOrchestrator._build_plan)
-    assert source.count("_ligand_ok(") == source.count("_water_ok("), (
-        "a water-only analysis should be gated everywhere a ligand-only one is"
-    )
+    from fastmdxplora.analysis.orchestrator import _REGISTRY, AnalysisOrchestrator
 
+    def plans(waters: int):
+        topology = md.Topology()
+        chain = topology.add_chain()
+        for _ in range(6):
+            residue = topology.add_residue("ALA", chain)
+            for name, element in (("N", "nitrogen"), ("CA", "carbon"), ("C", "carbon"),
+                                  ("O", "oxygen"), ("CB", "carbon")):
+                topology.add_atom(name, getattr(md.element, element), residue)
+        solvent = topology.add_chain()
+        for _ in range(waters):
+            residue = topology.add_residue("HOH", solvent)
+            topology.add_atom("O", md.element.oxygen, residue)
+        n = topology.n_atoms
+        xyz = np.random.default_rng(0).uniform(0.5, 2.5, size=(5, n, 3)).astype(np.float32)
+        trajectory = md.Trajectory(xyz, topology, unitcell_lengths=np.full((5, 3), 3.0),
+                                   unitcell_angles=np.full((5, 3), 90.0))
+        orchestrator = AnalysisOrchestrator.__new__(AnalysisOrchestrator)
+        orchestrator.traj = trajectory
+        orchestrator.ligand_resname = None
+        orchestrator.output_dir = Path(tempfile.mkdtemp())
+        return orchestrator._build_plan(None, None), orchestrator._build_plan(None, ["rmsf"])
+
+    needs_water = {n for n, c in _REGISTRY.items() if getattr(c, "requires_water", False)}
+    needs_ligand = {n for n, c in _REGISTRY.items() if getattr(c, "requires_ligand", False)}
+    for plan in plans(waters=0):
+        assert not needs_ligand & set(plan)
+        assert not needs_water & set(plan), sorted(needs_water & set(plan))
+    by_default, by_exclusion = plans(waters=40)
+    assert needs_water & set(by_default) and needs_water & set(by_exclusion)
 
 def test_a_class_importing_openmm_is_guarded() -> None:
     """A regex removing one test swallowed the decorator above the class that
@@ -423,14 +451,25 @@ class TestTheBannerReportsTheRunItIsAbout:
         printed = self._banner()
         assert "steps" in printed
 
-    def test_the_orchestrator_passes_what_it_resolved(self) -> None:
-        import inspect
+    def test_the_orchestrator_passes_what_it_resolved(self, tmp_path, monkeypatch) -> None:
+        # The banner is handed the run's own settings, not left to rebuild
+        # them from a command line that never mentioned them: a study driven
+        # by a config file showed the defaults while using the config's.
+        from fastmdxplora.orchestrator import FastMDXplora
+        from fastmdxplora.utils.presenter import SessionPresenter
 
-        from fastmdxplora import orchestrator
+        shown = {}
+        monkeypatch.setattr(SessionPresenter, "banner",
+                            lambda self, **fields: shown.update(fields))
+        FastMDXplora(system="1UBQ", output_dir=tmp_path / "study",
+                     options={"simulation": {"temperature_K": 310.0, "timestep_fs": 4.0}})
+        assert shown["temperature_K"] == "310.0"
+        assert shown["timestep_fs"] == "4.0"
 
-        source = inspect.getsource(orchestrator)
-        banner = source[source.index("self._presenter.banner("):]
-        assert "simulation.items()" in banner[:600], (
-            "the banner should be given the run's settings, not left to "
-            "reconstruct them from the command line"
-        )
+
+@pytest.fixture(scope="module")
+def a_setup_run(tmp_path_factory):
+    """One real setup of a three-residue peptide, with what it said."""
+    from tests._the_phase import a_real_setup
+
+    return a_real_setup(tmp_path_factory.mktemp("explained_setup"))

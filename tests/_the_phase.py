@@ -160,3 +160,52 @@ def what_preparation_receives(root: Path, monkeypatch, **options: Any) -> dict:
         pipeline.run(orchestrator=orchestrator, output_dir=root / "setup",
                      fixed_pdb=str(structure), **options)
     return received
+
+
+def a_real_setup(root: Path, prepare_system: Any = None, **options: Any) -> SimpleNamespace:
+    """The setup phase, run on a three-residue peptide as it runs on
+    anything -- PDBFixer, hydrogens, solvent. Returns where it wrote, what
+    prepare_system returned, the steps the presenter was told and the log
+    messages, so tests can ask what a person sees. `prepare_system`, if
+    given, stands in for the real one and is handed the same arguments."""
+    import logging
+
+    pytest.importorskip("openmm")
+    from fastmdxplora.setup import pipeline, prepare
+    from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
+
+    structure = root / "peptide.pdb"
+    structure.write_text(TRI_ALANINE, encoding="utf-8")
+    (root / "setup").mkdir(parents=True, exist_ok=True)
+    returned: dict = {}
+    steps: list[str] = []
+    messages: list[str] = []
+    real = prepare_system or prepare.prepare_system
+
+    def watched(*args, **kwargs):
+        produced = real(*args, **kwargs)
+        returned.update(produced or {})
+        return produced
+
+    class Recording(logging.Handler):
+        def emit(self, record):
+            messages.append(record.getMessage())
+
+    handler = Recording(level=logging.DEBUG)
+    logger = logging.getLogger("fastmdx")
+    level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    presenter = SimpleNamespace(step=lambda message, **kwargs: steps.append(message))
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(prepare, "prepare_system", watched)
+            settings = {"solvent_padding_nm": 1.2, "nonbonded_cutoff_nm": 0.9, **options}
+            pipeline.run(orchestrator=SimpleNamespace(system=str(structure),
+                                                      _structure_provenance=None,
+                                                      _presenter=presenter),
+                         output_dir=root / "setup", **settings)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(level)
+    return SimpleNamespace(root=root, returned=returned, steps=steps, messages=messages)

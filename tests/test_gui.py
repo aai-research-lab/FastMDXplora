@@ -4272,29 +4272,36 @@ class TestTheBannerSaysHowToWatchTheRun:
     that the GUI prints its own -- true while a server is running, and no help
     to somebody who has just started a run and wants to see it."""
 
-    def test_it_names_the_command_where_no_server_is_running(self) -> None:
-        import inspect
+    def test_it_names_the_command_where_no_server_is_running(self, monkeypatch) -> None:
+        # The banner of a run with no server names the command that starts
+        # one, pointed at the study.
+        import io
 
-        from fastmdxplora.utils import presenter
+        from fastmdxplora.utils.presenter import SessionPresenter
 
-        source = inspect.getsource(presenter)
-        # The path goes through `_worth_watching` now, so that a study's
-        # shared preparation points at the study rather than at a directory
-        # that will not change again. What this test is for -- that the
-        # command is named at all -- is unchanged.
-        assert 'kv("Watch", f"fastmdx gui --output {_worth_watching(output)}"' \
-            in source
+        monkeypatch.delenv("FASTMDX_DASHBOARD_ACTIVE", raising=False)
+        monkeypatch.delenv("FASTMDX_DASHBOARD_URL", raising=False)
+        printed = io.StringIO()
+        SessionPresenter(stream=printed, quiet=False, width=200).banner(
+            System="1UBQ", Output="/runs/a_study")
+        watch = next(line for line in printed.getvalue().splitlines() if "Watch" in line)
+        assert "fastmdx gui --output /runs/a_study" in watch
 
-    def test_and_the_address_where_one_is(self) -> None:
-        """A bare URL printed for a server nobody started points at nothing."""
-        import inspect
+    def test_and_the_address_where_one_is(self, monkeypatch) -> None:
+        """A bare URL printed for a server nobody started points at nothing;
+        where one is running, its address is the thing to print."""
+        import io
 
-        from fastmdxplora.utils import presenter
+        from fastmdxplora.utils.presenter import SessionPresenter
 
-        source = inspect.getsource(presenter)
-        watch = source[source.index('if dashboard_enabled:'):]
-        assert 'kv("Watch", dashboard_link' in watch[:200]
-
+        monkeypatch.setenv("FASTMDX_DASHBOARD_ACTIVE", "1")
+        monkeypatch.setenv("FASTMDX_DASHBOARD_URL", "http://127.0.0.1:8799")
+        printed = io.StringIO()
+        SessionPresenter(stream=printed, quiet=False, width=200).banner(
+            System="1UBQ", Output="/runs/a_study")
+        watch = next(line for line in printed.getvalue().splitlines() if "Watch" in line)
+        assert "http://127.0.0.1:8799" in watch
+        assert "fastmdx gui" not in watch
 
 class TestTheLiveTabDoesNotPretendToHaveData:
     """Opened on a run that recorded no telemetry, the page rendered its whole
@@ -4429,15 +4436,20 @@ class TestTheGUICitesTheSoftware:
             f"the BibTeX entry is written out in {[f.name for f in holders]} "
             "as well as in __init__.py")
 
-    def test_the_report_dashboard_carries_it_too(self) -> None:
-        import inspect
+    def test_the_report_dashboard_carries_it_too(self, tmp_path) -> None:
+        # The written dashboard names the paper to cite, with its DOI.
+        from html import escape
+        from types import SimpleNamespace
 
-        from fastmdxplora.gui import report_dashboard
+        from fastmdxplora import __citation__, __doi__
+        from fastmdxplora.gui.report_dashboard import build_dashboard
 
-        source = inspect.getsource(report_dashboard._render_dashboard)
-        assert "__citation__" in source
-        assert "citation_html" in source
-
+        (tmp_path / "report").mkdir()
+        build_dashboard(orchestrator=SimpleNamespace(output_dir=tmp_path, system="1UBQ"),
+                        output_dir=tmp_path / "report", title="A study")
+        html = (tmp_path / "report" / "dashboard.html").read_text(encoding="utf-8")
+        assert escape(__citation__) in html
+        assert __doi__ in html
 
 class TestTheGUIAsksToBeCited:
     """The citation page existed and was the last item in the sidebar,
@@ -4478,17 +4490,23 @@ class TestTheGUIAsksToBeCited:
         assert "__FASTMDX_CITATION__" in markup
         assert "__FASTMDX_DOI__" in markup
 
-    def test_and_the_server_fills_them_in(self) -> None:
+    def test_and_the_server_fills_them_in(self, tmp_path) -> None:
         """A placeholder that reaches the browser unreplaced is worse than
-        no citation at all."""
-        import inspect
+        no citation at all. The page as the server sends it."""
+        import urllib.request
+        from html import escape
 
-        from fastmdxplora.gui import server
+        from fastmdxplora import __citation__, __doi__
+        from fastmdxplora.gui.server import start_dashboard_session
 
-        source = inspect.getsource(server)
-        assert '"__FASTMDX_CITATION__"' in source
-        assert '"__FASTMDX_DOI__"' in source
-
+        session = start_dashboard_session(output=str(tmp_path), host="127.0.0.1", port=0)
+        try:
+            with urllib.request.urlopen(session.url, timeout=20) as response:
+                page = response.read().decode("utf-8")
+        finally:
+            session.server.shutdown()
+        assert "__FASTMDX_" not in page
+        assert escape(__citation__) in page and __doi__ in page
 
 class TestOnePageForOneRun:
     """Overview and Live Simulation showed the same run, and the top bar
