@@ -156,6 +156,11 @@ def run(
                 indent=2),
             encoding="utf-8")
         artifacts.append("not_produced.json")
+    else:
+        # Everything was produced this time, so a record of what an earlier
+        # run could not produce is no longer true. Left in place, the page
+        # said the PDF was missing beside a link to download it.
+        (output_dir / "not_produced.json").unlink(missing_ok=True)
 
     logger.debug("report: wrote %d artifact(s) to %s", len(artifacts), output_dir)
     return artifacts

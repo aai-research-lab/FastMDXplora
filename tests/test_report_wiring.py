@@ -2140,6 +2140,33 @@ class TestARequestedOutputThatCouldNotBeMadeIsRecorded:
         assert record == [{"artifact": "report.pdf", "reason": "WeasyPrint is not installed."}]
         assert "not_produced.json" in artifacts and "report.md" in artifacts
 
+    def test_a_later_run_that_made_it_clears_the_record(self, tmp_path, monkeypatch) -> None:
+        # The record was written when the PDF could not be made and never
+        # removed, so after a later run made it the page said the PDF was
+        # missing beside a link to download it.
+        from types import SimpleNamespace
+
+        import importlib
+
+        from fastmdxplora.gui.report_page import report_payload
+
+        report_run_module = importlib.import_module("fastmdxplora.report.run")
+        root = _a_reported_run(tmp_path, n_frames=40)
+        report = root / "report"
+
+        def made(markdown_path, *, title):
+            target = Path(markdown_path).with_suffix(".pdf")
+            target.write_bytes(b"%PDF-1.4 stand-in")
+            return target, None
+
+        for renderer in (lambda markdown_path, *, title: (None, "Markdown is not installed."), made):
+            monkeypatch.setattr("fastmdxplora.report.pdf.try_render_pdf", renderer)
+            report_run_module.run(orchestrator=SimpleNamespace(output_dir=root, system="1UBQ"),
+                                  output_dir=report, slides=False, bundle=False)
+        assert (report / "report.pdf").is_file()
+        assert not (report / "not_produced.json").exists()
+        assert report_payload(root)["not_produced"] == []
+
 class TestTheSummarySaysWhatTheStudyWas:
     """The first section a reader reads said "This report was generated
     automatically by FastMDXplora from the outputs of an end-to-end molecular
