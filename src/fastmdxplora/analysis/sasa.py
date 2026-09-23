@@ -231,13 +231,12 @@ class SASA(Analysis):
             # and which are on the surface. The per-frame matrix contains it,
             # but reading it off a heatmap by eye is not the same as having
             # it. Version 1 wrote all three from one run.
-            residues = list(traj.topology.residues)
-            try:
-                labels = np.array([int(r.resSeq) for r in residues])
-            except (AttributeError, TypeError):
-                labels = np.array([r.index for r in residues])
+            from fastmdxplora.analysis.residues import columns
+
             return pd.DataFrame({
-                "residue": labels,
+                # With a chain column where there are several chains: the
+                # number alone named four residues at once on a tetramer.
+                **columns(list(traj.topology.residues), traj.topology),
                 # Accumulated in double. `numpy.mean` on a float32 array
                 # sums in float32, so a long run loses digits the per-frame
                 # route does not -- pandas groups in double and the two
@@ -252,19 +251,14 @@ class SASA(Analysis):
 
         # Per-residue: build a long-form table. Residue labels = resSeq
         # (PDB numbering) when available.
-        residues = list(traj.topology.residues)
-        try:
-            labels = np.array([int(r.resSeq) for r in residues])
-        except (AttributeError, TypeError):
-            labels = np.array([r.index for r in residues])
+        from fastmdxplora.analysis.residues import columns
 
         n_frames, n_res = sasa.shape
-        frames = np.repeat(np.arange(n_frames), n_res)
-        residue_col = np.tile(labels, n_frames)
+        named = columns(list(traj.topology.residues), traj.topology)
         return pd.DataFrame(
             {
-                "frame": frames,
-                "residue": residue_col,
+                "frame": np.repeat(np.arange(n_frames), n_res),
+                **{key: np.tile(values, n_frames) for key, values in named.items()},
                 "sasa_nm2": sasa.flatten(),
             }
         )
@@ -274,6 +268,13 @@ class SASA(Analysis):
             x, _ = self.frame_axis_for_plot(self._traj_for_plot, len(result))
             ax.plot(x, result["sasa_nm2"].to_numpy(), linewidth=1.4)
             ax.fill_between(x, 0, result["sasa_nm2"].to_numpy(), alpha=0.15)
+        elif self.mode == "average_residue" and "chain" in result:
+            # One line per chain on the deposited numbering, the spread as a
+            # band: bars at the same numbers would stand on one another.
+            from fastmdxplora.analysis.residues import plot_by_chain
+
+            plot_by_chain(ax, result, "mean_sasa_nm2", spread="std_sasa_nm2", linewidth=1.2)
+            ax.set_ylim(bottom=0)
         elif self.mode == "average_residue":
             # A bar per residue, with the spread over the run drawn on it. A
             # residue at 1.0 every frame and one alternating between 0 and 2
@@ -288,8 +289,9 @@ class SASA(Analysis):
             ax.set_ylim(bottom=0)
         else:
             # Per-residue heatmap: pivot long-form -> (residue × frame)
+            rows = ["chain", "residue"] if "chain" in result else "residue"
             grid = result.pivot(
-                index="residue", columns="frame", values="sasa_nm2"
+                index=rows, columns="frame", values="sasa_nm2"
             ).to_numpy()
             im = ax.imshow(
                 grid,

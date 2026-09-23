@@ -146,6 +146,12 @@ class Contacts(Analysis):
 
         # Build the per-residue frequency table (only residues that ever
         # contacted the ligand), sorted by frequency descending.
+        from fastmdxplora.analysis.residues import chain_name, several_chains
+
+        # By chain as well where the protein has several: on a tetramer the
+        # same residue of two copies can hold one ligand, and "SER45" twice
+        # in the table said nothing about which.
+        qualified = several_chains(traj.topology)
         rows = []
         for ridx, n in res_contact_frames.items():
             res = traj.topology.residue(int(ridx))
@@ -153,6 +159,8 @@ class Contacts(Analysis):
                 label = f"{res.name}{res.resSeq}"
             except (AttributeError, TypeError):
                 label = str(res)
+            if qualified:
+                label = f"{chain_name(res)}:{label}"
             rows.append((label, int(res.resSeq) if hasattr(res, "resSeq") else ridx,
                          n / n_frames))
         rows.sort(key=lambda r: r[2], reverse=True)

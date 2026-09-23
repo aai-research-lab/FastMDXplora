@@ -361,6 +361,21 @@ class OrderParameters(Analysis):
 
         self.findings["order_parameters"] = record
 
+        from fastmdxplora.analysis.residues import columns, several_chains
+
+        if several_chains(traj.topology):
+            # By chain as well as number: the numbers of every copy stood in
+            # one column. A measured set is matched by number, so each copy
+            # is compared with the same value -- which is what a measurement
+            # of a homo-oligomer in solution is.
+            import pandas as pd
+
+            table = pd.DataFrame({
+                **columns([traj.topology.residue(int(i)) for i in residues], traj.topology),
+                "s2": s2})
+            if self._matched is not None:
+                table["measured"] = self._matched
+            return table
         if self._matched is not None:
             return np.column_stack(
                 [labels.astype(float), s2, self._matched])
@@ -446,6 +461,19 @@ class OrderParameters(Analysis):
         return aligned
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
+        if hasattr(result, "columns"):
+            from fastmdxplora.analysis.residues import plot_by_chain
+
+            plot_by_chain(ax, result, "s2", marker="o", markersize=2.5, linewidth=1.0)
+            if "measured" in result and result["measured"].notna().any():
+                measured = result.drop_duplicates("residue")
+                ax.plot(measured["residue"], measured["measured"], marker="s",
+                        markersize=2.5, linewidth=0.0, color=colour("SERIES"),
+                        label="measured")
+                ax.legend(loc="lower right", fontsize="small")
+            ax.set_ylim(0.0, 1.05)
+            ax.axhline(1.0, color=colour("GUIDE"), linestyle=":", linewidth=0.8)
+            return
         ax.plot(result[:, 0], result[:, 1], marker="o", markersize=2.5,
                 linewidth=1.0, label="simulation")
         if result.shape[1] > 2 and np.isfinite(result[:, 2]).any():

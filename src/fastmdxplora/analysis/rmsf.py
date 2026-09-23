@@ -139,13 +139,12 @@ class RMSF(Analysis):
 
         # Use residue.resSeq (PDB numbering) for the x axis when available;
         # fall back to topology index otherwise.
+        from fastmdxplora.analysis.residues import columns, number, several_chains
+
         rows: list[tuple[int, float]] = []
         for ridx in sorted(residues):
             res = traj.topology.residue(ridx)
-            try:
-                label = int(res.resSeq)
-            except (AttributeError, TypeError):
-                label = ridx
+            label = number(res)
             # sqrt(mean(MSF)), which is what `rmsf -res` and cpptraj
             # report and therefore what a published per-residue RMSF is.
             # Averaging the RMSF instead reads low wherever a residue has
@@ -157,9 +156,24 @@ class RMSF(Analysis):
             values = np.asarray(residues[ridx], dtype=float)
             rows.append((label, float(np.sqrt(np.mean(values ** 2)))))
 
+        ordered = [traj.topology.residue(ridx) for ridx in sorted(residues)]
+        if several_chains(traj.topology):
+            # A table naming each residue's chain: as the two-column array,
+            # the numbers of four copies stood in one column and the line
+            # through them doubled back on itself three times.
+            import pandas as pd
+
+            return pd.DataFrame({**columns(ordered, traj.topology),
+                                 "rmsf_nm": [value for _, value in rows]})
         return np.array(rows, dtype=np.float64)
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
+        if hasattr(result, "columns"):
+            from fastmdxplora.analysis.residues import plot_by_chain
+
+            plot_by_chain(ax, result, "rmsf_nm", linewidth=1.4, marker="o",
+                          markersize=3, markeredgewidth=0)
+            return
         x = result[:, 0]
         y = result[:, 1]
         ax.plot(x, y, linewidth=1.4, marker="o", markersize=3, markeredgewidth=0)

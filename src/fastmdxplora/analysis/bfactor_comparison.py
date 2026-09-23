@@ -202,6 +202,7 @@ class BFactorComparison(Analysis):
             np.sum((xyz - xyz.mean(axis=0)) ** 2, axis=2), axis=0))
 
         rows: list[tuple[float, float, float]] = []
+        compared: list = []
         missing = 0
         for position, atom_index in enumerate(alpha):
             residue = traj.topology.atom(int(atom_index)).residue
@@ -214,6 +215,7 @@ class BFactorComparison(Analysis):
             implied_nm = float(np.sqrt(B_TO_MSF * value)) / 10.0
             rows.append((float(residue.resSeq),
                          float(rmsf[position]), implied_nm))
+            compared.append(residue)
 
         if len(rows) < 3:
             raise StudyError(
@@ -257,9 +259,26 @@ class BFactorComparison(Analysis):
                 "not the same measurement."
             ),
         }
+        from fastmdxplora.analysis.residues import columns, several_chains
+
+        if several_chains(traj.topology):
+            # Matched by chain and number, and now written that way too: the
+            # rows of every copy carried the number alone.
+            import pandas as pd
+
+            return pd.DataFrame({**columns(compared, traj.topology),
+                                 "simulated_nm": table[:, 1], "implied_nm": table[:, 2]})
         return table
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
+        if hasattr(result, "columns"):
+            for name, rows in result.groupby("chain", sort=False):
+                line, = ax.plot(rows["residue"], rows["simulated_nm"], linewidth=1.2,
+                                label=f"chain {name}, simulated")
+                ax.plot(rows["residue"], rows["implied_nm"], linewidth=1.2, linestyle="--",
+                        color=line.get_color(), label=f"chain {name}, from B-factors")
+            ax.legend(loc="best", fontsize="small", ncol=2)
+            return
         ax.plot(result[:, 0], result[:, 1], linewidth=1.2, label="simulated")
         ax.plot(result[:, 0], result[:, 2], linewidth=1.2,
                 linestyle="--", label="from B-factors")

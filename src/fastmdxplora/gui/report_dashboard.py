@@ -565,14 +565,7 @@ def _numeric_series(path: Path) -> list[float]:
         text = line.strip()
         if not text or text.startswith("#"):
             continue
-        parts = [part for part in text.replace(",", " ").split() if part]
-        values: list[float] = []
-        for part in parts:
-            try:
-                values.append(float(part))
-            except ValueError:
-                values = []
-                break
+        values = _numbers_in(text)
         if values:
             rows.append(values)
     if not rows:
@@ -746,16 +739,26 @@ def _numeric_rows(path: Path) -> list[list[float]]:
         text = line.strip()
         if not text or text.startswith("#"):
             continue
-        values: list[float] = []
-        for part in [part for part in text.replace(",", " ").split() if part]:
-            try:
-                values.append(float(part))
-            except ValueError:
-                values = []
-                break
+        values = _numbers_in(text)
         if values:
             rows.append(values)
     return rows
+
+
+def _numbers_in(text: str) -> list[float]:
+    """The numeric fields of one line, its text fields left out.
+
+    A line holding any text was dropped whole, which kept a header out and
+    also every row of a table that names a residue's chain -- so the RMSF of
+    a structure with several chains read as no RMSF at all. A header has no
+    numeric field, so it is still left out."""
+    values: list[float] = []
+    for part in text.replace(",", " ").split():
+        try:
+            values.append(float(part))
+        except ValueError:
+            continue
+    return values
 
 
 def _secondary_structure_matrix(path: Path) -> tuple[list[list[int]], list[str], list[str]]:

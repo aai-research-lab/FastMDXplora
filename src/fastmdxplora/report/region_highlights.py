@@ -74,10 +74,10 @@ def build_region_highlight_artifacts(
     }
 
     try:
-        rmsf_data = _load_rmsf(project_root / "analysis" / "rmsf" / "rmsf.dat")
+        rmsf_data, chains = _load_rmsf(project_root / "analysis" / "rmsf" / "rmsf.dat")
         regions = validate_region_highlights(region_highlights, rmsf_data[:, 0])
         rmsf_path = project_root / "analysis" / "rmsf" / "rmsf_region_highlights.png"
-        _plot_rmsf_regions(rmsf_data, regions, rmsf_path)
+        _plot_rmsf_regions(rmsf_data, regions, rmsf_path, chains=chains)
         manifest["artifacts"].append(_rel(rmsf_path, project_root))
         artifacts.append(_rel_to(rmsf_path, output_dir))
 
@@ -171,12 +171,26 @@ def validate_region_highlights(
     return regions
 
 
-def _load_rmsf(path: Path) -> np.ndarray:
+def _load_rmsf(path: Path) -> tuple[np.ndarray, "np.ndarray | None"]:
+    """Residue number and RMSF, and each row's chain where there are several.
+
+    A structure with several chains writes a table with a header, naming
+    the chain beside the number; read by position, its first two columns
+    were the chain and the number."""
     if not path.is_file():
         raise StudyError(
             "region_highlights require existing RMSF output at "
             "analysis/rmsf/rmsf.dat. Run RMSF analysis first."
         , code="analysis.data.absent")
+    try:
+        import pandas as pd
+
+        table = pd.read_csv(path)
+        if {"chain", "residue", "rmsf_nm"} <= set(table.columns):
+            return (table[["residue", "rmsf_nm"]].to_numpy(dtype=float),
+                    table["chain"].astype(str).to_numpy())
+    except (ValueError, OSError):
+        pass
     try:
         data = np.loadtxt(path)
     except ValueError:
@@ -189,7 +203,7 @@ def _load_rmsf(path: Path) -> np.ndarray:
         data = data.reshape(1, -1)
     if data.shape[1] < 2:
         raise StudyError("RMSF data must have at least two columns.", code="analysis.data.absent")
-    return data[:, :2]
+    return data[:, :2], None
 
 
 @_closes_what_it_opens()
@@ -197,6 +211,8 @@ def _plot_rmsf_regions(
     rmsf_data: np.ndarray,
     regions: list[RegionHighlight],
     output_path: Path,
+    *,
+    chains: "np.ndarray | None" = None,
 ) -> None:
     fig, ax = new_figure(
         title="RMSF with highlighted residue regions",
@@ -218,8 +234,17 @@ def _plot_rmsf_regions(
             fontsize=8,
             color=region.color,
         )
-    ax.plot(x, y, linewidth=1.5, marker="o", markersize=3, color="#4E79A7")
-    ax.fill_between(x, 0, y, alpha=0.10, color="#4E79A7")
+    if chains is None:
+        ax.plot(x, y, linewidth=1.5, marker="o", markersize=3, color="#4E79A7")
+        ax.fill_between(x, 0, y, alpha=0.10, color="#4E79A7")
+    else:
+        # One line per chain on the shared numbering; a region is a range of
+        # residue numbers, so it is shaded once and holds in every chain.
+        for name in dict.fromkeys(chains):
+            mine = chains == name
+            ax.plot(x[mine], y[mine], linewidth=1.3, marker="o", markersize=2.5,
+                    label=f"chain {name}")
+        ax.legend(fontsize="small", ncol=min(4, len(set(chains))))
     ax.set_ylim(top=max(ymax * 1.18, ymax + 0.01))
     save_figure(fig, output_path)
 

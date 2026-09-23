@@ -160,15 +160,13 @@ class Dihedrals(Analysis):
         residues_topo = [
             traj.topology.atom(int(ca)).residue for ca in common_ca
         ]
-        try:
-            residue_labels = np.array(
-                [int(r.resSeq) for r in residues_topo]
-            )
-        except (AttributeError, TypeError):
-            residue_labels = np.array([r.index for r in residues_topo])
-        residue_col = np.tile(residue_labels, n_frames)
+        # With a chain column where there are several chains, so a frame
+        # and a residue name one row again.
+        from fastmdxplora.analysis.residues import columns as named
 
-        columns = {"frame": frames, "residue": residue_col}
+        columns = {"frame": frames,
+                   **{key: np.tile(values, n_frames)
+                      for key, values in named(residues_topo, traj.topology).items()}}
         if "phi" in self.angles:
             columns["phi_deg"] = phi_deg.flatten()
         if "psi" in self.angles:

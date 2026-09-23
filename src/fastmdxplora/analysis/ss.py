@@ -130,11 +130,13 @@ class SS(Analysis):
             codes = codes[:, keep]
             residues = [r for r, k in zip(residues, keep) if k]
 
-        # Residue labels: prefer resSeq (PDB numbering) when available.
-        try:
-            labels = [int(r.resSeq) for r in residues]
-        except (AttributeError, TypeError):
-            labels = [r.index for r in residues]
+        # Residue labels: the deposited number, written A:13 where there are
+        # several chains -- a column per residue, and on a tetramer the
+        # number alone gave four columns one name.
+        from fastmdxplora.analysis.residues import label, several_chains
+
+        qualified = several_chains(traj.topology)
+        labels = [label(r, qualified=qualified) for r in residues]
 
         if len(labels) != codes.shape[1]:
             # Nothing above should leave these out of step; if they are, plain
