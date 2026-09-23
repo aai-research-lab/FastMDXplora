@@ -385,7 +385,7 @@ def make_handler(
                 metrics = read_metrics(root)
                 payload = {
                     "status": status,
-                    "health": analyze_health(status, metrics),
+                    "health": analyze_health(status, metrics, root=root),
                     # Which stages this run can actually reach. An
                     # analysis-only run has no minimization to wait for, and a
                     # stage greyed out forever reads as a run that stalled.

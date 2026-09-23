@@ -494,8 +494,13 @@ def analyze_health(
     metrics: list[dict[str, Any]],
     *,
     stale_after_seconds: float = 90.0,
+    root: str | Path | None = None,
 ) -> dict[str, str]:
-    """Classify the latest telemetry into ok/warning/failed with plain text."""
+    """Classify the latest telemetry into ok/warning/failed with plain text.
+
+    With `root`, a folder with no telemetry is described by what it holds:
+    runs one level down, nothing at all, or a run that recorded none.
+    """
     latest_error = status.get("latest_error")
     if latest_error or str(status.get("status", "")).lower() == "failed":
         # The explanation used to be NUMERIC_EXPLANATION for every failure,
@@ -573,6 +578,9 @@ def analyze_health(
 
     if status:
         return {"state": "ok", "message": "Normal progress", "explanation": NORMAL_EXPLANATION}
+    not_a_run = _not_a_run(root) if root is not None else None
+    if not_a_run is not None:
+        return not_a_run
     return {
         "state": "unknown",
         "message": "Live telemetry is not available.",
@@ -581,6 +589,44 @@ def analyze_health(
             "off with `live_telemetry: false` under `simulation`, or predates "
             "the setting. Either way there is nothing on disk to read, and "
             "the page cannot fill. A new run records it without being asked."
+        ),
+    }
+
+
+def _not_a_run(root: str | Path) -> dict[str, str] | None:
+    """What a folder with no telemetry is, when it is not a run at all.
+
+    A folder holding several runs was described as a run that had turned
+    its telemetry off, and so was an empty one opened to start a study:
+    both were told about a setting when the answer was where they were.
+    """
+    root = Path(root)
+    if (root / "manifest.json").is_file() or (root / "simulation").is_dir():
+        return None
+    try:
+        runs = sorted(child.name for child in root.iterdir()
+                      if child.is_dir() and (child / "manifest.json").is_file())
+    except OSError:
+        return None
+    if runs:
+        named = ", ".join(runs[:6]) + (f" and {len(runs) - 6} more" if len(runs) > 6 else "")
+        return {
+            "state": "unknown",
+            "message": f"This folder holds {len(runs)} run{'s' if len(runs) != 1 else ''} "
+                       "rather than being one.",
+            "explanation": (
+                f"The runs are one level down: {named}. Open one of them to see "
+                "its progress and results. Runs open together as one study only "
+                "when they were run as one, which leaves a batch_manifest.json "
+                "at the top of the folder."
+            ),
+        }
+    return {
+        "state": "unknown",
+        "message": "Nothing has run in this folder yet.",
+        "explanation": (
+            "There is no run here: no manifest and no simulation. Start a "
+            "study in it, or open a folder that holds a run."
         ),
     }
 
