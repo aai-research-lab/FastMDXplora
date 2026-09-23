@@ -91,11 +91,16 @@ def machine(tmp_path, monkeypatch):
 out=run; while [ $# -gt 0 ]; do [ "$1" = --output ] && out=$2; shift; done
 mkdir -p "$out/analysis" "$out/simulation"
 echo '{"version": "1.0"}' > "$out/manifest.json"
-echo '{"progress_percent": 40, "stage": "production"}' > "$out/simulation/live_status.json"
+cp "$HOME/live_status.json" "$out/simulation/live_status.json"
 : > "$out/simulation/production.dcd"
 echo "working"
 sleep "$FAKE_SLEEP"
 exit "$FAKE_EXIT"''')
+    # The live status a real run writes, from the writer a real run uses.
+    from fastmdxplora.gui.telemetry import TelemetryWriter
+
+    TelemetryWriter(simulation_dir=str(here.home), total_steps=1000
+                    ).write_status(stage="npt", current_step=400)
     info = {"backends": {n: {"name": n, "state": "installed"} for n in REQUIRED}}
     save_machine(Machine("box", "2026-09-23T00:00:00Z",
                          Inspection(home=str(here.home)),
@@ -158,7 +163,11 @@ def test_a_running_job_reports_progress_and_can_be_stopped(machine):
     job = _send(machine)
     time.sleep(0.5)
     job = status("trial", transport=machine.transport())
-    assert job.state == "running" and job.detail == "production 40%"
+    assert job.state == "running"
+    assert job.detail == "npt, 40% of all steps"
+    with pytest.raises(ValueError) as caught:
+        fetch("trial", transport=machine.transport(), local_runner=machine.local)
+    assert refusal_of(caught.value).code == "remote.job.unfinished"
 
     job = cancel("trial", transport=machine.transport())
     assert job.state == "abandoned"
@@ -193,6 +202,15 @@ def test_a_machine_not_holding_this_code_is_sent_nothing(machine):
                 code=CodeIdentity("2.0"), transport=machine.transport())
     assert refusal_of(caught.value).code == "remote.machine.not_ready"
     assert not any("job.sh" in c for c in machine.commands)
+
+
+def test_the_log_shown_is_what_the_run_said_not_the_banner():
+    from fastmdxplora.remote.send import _telling
+
+    banner = ["", "   ___             _    __  __", "  | _| / _` |(_-< | __||",
+              "  Fully   Automated   SysTem   for   Molecular  Dynamics  eXploration",
+              "      NPT equilibration:  20.0%  1064.93 ns/day  1m04s left"]
+    assert _telling(banner) == [banner[-1]]
 
 
 # ---------------------------------------------------------------------------

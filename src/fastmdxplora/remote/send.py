@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import tempfile
 from dataclasses import dataclass, field
@@ -88,6 +89,7 @@ class Sending:
     script: str
     inputs: Inputs
     force: bool = False
+    name_from_time: bool = False
     notes: list[str] = field(default_factory=list)
 
 
@@ -206,6 +208,11 @@ def prepare(config_path: str | Path, machine_name: str, *,
                       remote_dir=remote_dir, local_output=local_output,
                       scheduler=scheduler, config_text=config_text,
                       script=script, inputs=inputs, force=force)
+    sending.name_from_time = not output and not raw.get("output")
+    if sending.name_from_time:
+        sending.notes.append(
+            "The job's name comes from the time it is worked out, so a send "
+            "made later gets another. Give --output to fix it.")
     if scheduler == "slurm" and not time_limit:
         sending.notes.append("No --time given, so the partition's default "
                              "limit applies.")
@@ -296,7 +303,7 @@ def _status_script(job: Job) -> str:
             + alive +
             "[ -f run/simulation/live_status.json ] && printf 'fmdx:live=%s\\n' "
             "\"$(tr -d '\\n' < run/simulation/live_status.json)\"\n"
-            "[ -f job.log ] && tail -n 3 job.log | sed 's/^/fmdx:log=/'\n")
+            "[ -f job.log ] && tail -n 12 job.log | sed 's/^/fmdx:log=/'\n")
 
 
 def _read(text: str) -> dict[str, list[str]]:
@@ -306,6 +313,39 @@ def _read(text: str) -> dict[str, list[str]]:
             key, _, value = line[5:].partition("=")
             found.setdefault(key, []).append(value)
     return found
+
+
+def _progress(live: str) -> str:
+    """Where the simulation is, from its own live_status.json.
+
+    The file gives the current stage and the step reached out of every step
+    planned across the stages, so the percentage is of the whole run, and
+    says so, rather than of the stage it names.
+    """
+    try:
+        record = json.loads(live)
+    except ValueError:
+        return ""
+    stage = str(record.get("stage") or "")
+    step, total = record.get("current_step"), record.get("total_planned_steps")
+    if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
+        overall = f"{100 * step / total:.0f}% of all steps"
+        return f"{stage}, {overall}" if stage else overall
+    return stage
+
+
+def _telling(lines: list[str]) -> list[str]:
+    """The log lines that say something: not blank, not the banner.
+
+    The banner is drawn in punctuation, so a line with no two letters
+    together is art; the tagline under it is dropped by name.
+    """
+    from fastmdxplora.utils.presenter import SessionPresenter
+
+    tagline = " ".join(SessionPresenter._TAGLINE.split())
+    return [line for line in lines
+            if re.search(r"[A-Za-z]{2}", line)
+            and " ".join(line.split()) != tagline]
 
 
 def status(name: str, *, transport: Transport | None = None) -> Job:
@@ -334,15 +374,8 @@ def status(name: str, *, transport: Transport | None = None) -> Job:
         job.detail = "ended without recording an exit code (killed, or the machine restarted)"
     live = (found.get("live") or [""])[0]
     if job.state in (RUNNING, READY) and live:
-        try:
-            record = json.loads(live)
-        except ValueError:
-            record = {}
-        percent = record.get("progress_percent")
-        stage = record.get("stage") or record.get("phase") or ""
-        if percent is not None:
-            job.detail = f"{stage + ' ' if stage else ''}{float(percent):.0f}%"
-    job.extra["log_tail"] = found.get("log", [])
+        job.detail = _progress(live) or job.detail
+    job.extra["log_tail"] = _telling(found.get("log", []))
     save_job(job)
     return job
 
@@ -351,8 +384,18 @@ def fetch(name: str, *, with_trajectory: bool = False,
           transport: Transport | None = None, local_runner=None,
           code: CodeIdentity | None = None) -> tuple[Job, list[str]]:
     """Bring a job's run folder back. Returns the job and any warnings."""
-    job = load_job(name)
-    link = transport or Transport(job.machine)
+    link = transport or Transport(load_job(name).machine)
+    # A running study is still writing, and rotating its live frames, so a
+    # copy of it is a copy of nothing in particular. Asked again rather than
+    # trusting the record, which may be an hour old.
+    job = status(name, transport=link)
+    if job.state in (READY, RUNNING):
+        raise StudyError(
+            f"{name} is still {job.state}"
+            + (f" ({job.detail})" if job.detail else "")
+            + ". Fetch it once `fastmdx remote status` says done or failed; "
+            "to watch it live, tunnel to the GUI there instead.",
+            code="remote.job.unfinished", given=name, state=job.state)
     target = Path(job.local_output)
     target.mkdir(parents=True, exist_ok=True)
     excludes: list[str] = []
@@ -366,7 +409,9 @@ def fetch(name: str, *, with_trajectory: bool = False,
         left = [line for line in found.stdout.splitlines() if line.strip()]
     copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{target}/", *excludes),
                       runner=local_runner, what="fetching a study")
-    if copied != 0:
+    # 24 is rsync's "some source files vanished": a file removed between
+    # listing and copying. Not a failed copy of what is there.
+    if copied not in (0, 24):
         raise StudyError(
             f"Fetching {name} from {job.machine} failed (rsync exit {copied}).",
             code="environment.service.machine_unreachable",

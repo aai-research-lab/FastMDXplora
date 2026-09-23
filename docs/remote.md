@@ -247,7 +247,8 @@ code or the reason, and `abandoned`.
 fastmdx remote fetch lysozyme
 ```
 
-copies the run folder back to the job's output folder here, with the machine's
+copies a finished job's run folder back to the job's output folder here (a job
+still waiting or running is refused, since it is still writing), with the machine's
 job log as `remote_job.log`, ready to open with `fastmdx gui --output`.
 Trajectories and checkpoints stay on the machine unless `--with-trajectory` is
 given; fetch says how many it left and where. It also reads the run's manifest

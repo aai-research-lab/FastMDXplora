@@ -2225,7 +2225,7 @@ def _remote_job(args: argparse.Namespace) -> int:
         for job_name in names:
             job = status(job_name)
             print(job_line(job))
-            for line in job.extra.get("log_tail", [])[-3:]:
+            for line in job.extra.get("log_tail", [])[-4:]:
                 print(f"      {line}")
         return 0
     if action == "cancel":

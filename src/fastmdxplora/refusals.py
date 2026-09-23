@@ -708,6 +708,11 @@ CODES: tuple[Code, ...] = (
          "A job was named that this computer did not send.",
          Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,
          detail_keys=("given", "permitted")),
+    Code("remote.job.unfinished",
+         "A job's results were asked for while it is still waiting or "
+         "running.",
+         Kind.STRUCTURAL, Disclosure.ACTION,
+         detail_keys=("given", "state")),
     Code("remote.job.unusable_name",
          "A job name that cannot be a folder name on both computers.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
