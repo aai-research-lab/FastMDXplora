@@ -163,7 +163,19 @@ def _the_chains_to_simulate(orchestrator: Any, input_pdb: Path, input_form: str,
     orchestrator._assembly = choice.record()
     say_the_choice(choice)
     if choice.keep:
-        return _select_chains(input_pdb, choice.keep, presenter=presenter)
+        input_pdb = _select_chains(input_pdb, choice.keep, presenter=presenter)
+    if choice.chosen.generated:
+        # The rest of the molecule, from the operators the depositors gave:
+        # 1HHO holds half a haemoglobin and 1STP a quarter of streptavidin.
+        from fastmdxplora.setup.assembly import build_assembly
+
+        input_pdb, copies = build_assembly(input_pdb, choice.chosen, _CHAIN_COLUMNS)
+        orchestrator._assembly["built_chains"] = copies
+        logger.info(
+            "Built assembly %d from its %d symmetry operators: %s.",
+            choice.chosen.number, choice.chosen.copies,
+            "; ".join(f"chain {source} as {', '.join(targets)}"
+                      for source, targets in copies.items()))
     return input_pdb
 
 

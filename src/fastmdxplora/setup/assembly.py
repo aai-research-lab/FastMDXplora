@@ -19,9 +19,10 @@ Chosen here, where no ``chains`` were given:
   them is simulated is the study, not the quality of its starting model,
   so setup stops and names each, with the ``chains`` that selects it.
 
-An assembly that the operators must build beyond the deposited chains is
-said to be so; the chains the file holds are simulated, and the log says
-how much of the assembly that is.
+An assembly the operators build beyond the deposited chains is built: each
+operator is applied to the chains it names, with the heterogens selection
+keeps beside them, and each copy gets chain IDs of its own. Copies that
+land on top of one another are refused rather than simulated.
 """
 
 from __future__ import annotations
@@ -292,11 +293,164 @@ def say_the_choice(choice: Choice) -> None:
         "Simulating the biological %s, because %s.%s",
         chosen.describe(), choice.criterion,
         f" Also declared: {others}." if others else "")
-    if chosen.generated:
-        logger.warning(
-            "Assembly %d is %s copies of chain%s %s made by symmetry, and the "
-            "file holds one. Only the deposited copy is simulated, which is "
-            "part of the molecule the authors describe; building the rest from "
-            "the operators is not done yet.",
-            chosen.number, chosen.copies, "s" if len(chosen.chains) != 1 else "",
-            ", ".join(chosen.chains))
+
+
+
+def _nearest_part(records: list[str], assembly: Assembly, extra: list[str]) -> dict[int, list[str]]:
+    import numpy as np
+
+    def points(chains) -> np.ndarray:
+        rows = []
+        for line in records:
+            if line[21] in chains:
+                try:
+                    rows.append([float(line[30:38]), float(line[38:46]), float(line[46:54])])
+                except ValueError:
+                    continue
+        return np.asarray(rows, dtype=float).reshape(-1, 3)
+
+    parts = [points(set(chains)) for chains, _ in assembly.parts]
+    placed: dict[int, list[str]] = {}
+    for chain in extra:
+        mine = points({chain})
+        if not len(mine):
+            continue
+        reach = [float(np.min(np.linalg.norm(part[:, None] - mine[None], axis=2)))
+                 if len(part) else float("inf") for part in parts]
+        placed.setdefault(int(np.argmin(reach)), []).append(chain)
+    return placed
+
+
+_CHAIN_IDS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+#: Closer than this between heavy atoms of two copies is two copies in one
+#: place, not an interface: a misread operator, not a molecule.
+_OVERLAP_A = 1.0
+
+
+def build_assembly(input_pdb: Path, assembly: Assembly, chain_columns: dict[str, tuple[int, ...]]
+                   ) -> tuple[Path, dict[str, list[str]]]:
+    """Write the assembly the operators make from ``input_pdb``.
+
+    ``input_pdb`` holds the assembly's deposited chains and the heterogens
+    kept with them. Each operator after the identity makes a copy of the
+    chains its part names, under chain IDs not otherwise in use. SEQRES,
+    SSBOND and LINK are copied with the chains they name: PDBFixer compares
+    the model with SEQRES to find missing residues, and the heterogen layer
+    reads LINK. Returns the written file and, for each deposited chain, the
+    chain IDs of its copies in operator order.
+    """
+    import numpy as np
+
+    from fastmdxplora.refusals import StudyError
+
+    lines = input_pdb.read_text(encoding="utf-8", errors="replace").splitlines()
+    coordinate_records = [line for line in lines if line[:6] in ("ATOM  ", "HETATM")]
+    in_use = {line[21] for line in coordinate_records}
+    # The chains each part moves, and any heterogen chain kept beside them.
+    free = iter(c for c in _CHAIN_IDS if c not in in_use)
+    copies: dict[str, list[str]] = {}
+    plans: list[tuple[list[list[float]], dict[str, str]]] = []
+    # A heterogen under a chain ID of its own moves with the part whose
+    # chains it sits beside, so each copy of a site gets its own ligand.
+    extras = _nearest_part(coordinate_records, assembly, sorted(in_use - set(assembly.chains)))
+    for index, (chains, operators) in enumerate(assembly.parts):
+        moved = list(chains) + extras.get(index, [])
+        for operator in operators:
+            if _is_identity(operator):
+                mapping = {c: c for c in moved}
+            else:
+                try:
+                    mapping = {c: next(free) for c in moved}
+                except StopIteration:
+                    raise StudyError(
+                        f"Assembly {assembly.number} needs more chains than a PDB "
+                        f"file can name ({len(_CHAIN_IDS)}). Name the chains to "
+                        "simulate with `chains`.",
+                        code="setup.structure.assembly_ambiguous",
+                        assemblies=[assembly.number]) from None
+            for source, target in mapping.items():
+                copies.setdefault(source, []).append(target)
+            plans.append((operator, mapping))
+
+    out: list[str] = []
+    placed: list[tuple[str, np.ndarray]] = []
+    serial = 0
+    for operator, mapping in plans:
+        rotation = np.array([row[:3] for row in operator], dtype=float)
+        shift = np.array([row[3] for row in operator], dtype=float)
+        block: list[str] = []
+        heavy: list[list[float]] = []
+        for line in coordinate_records:
+            target = mapping.get(line[21])
+            if target is None:
+                continue
+            try:
+                xyz = np.array([float(line[30:38]), float(line[38:46]), float(line[46:54])])
+            except ValueError:
+                continue
+            x, y, z = rotation @ xyz + shift
+            serial += 1
+            if serial > 99999:
+                raise StudyError(
+                    f"Assembly {assembly.number} has more atoms than a PDB file can "
+                    "number (99,999). Name the chains to simulate with `chains`.",
+                    code="setup.structure.assembly_ambiguous", assemblies=[assembly.number])
+            block.append(f"{line[:6]}{serial:5d}{line[11:21]}{target}{line[22:30]}"
+                         f"{x:8.3f}{y:8.3f}{z:8.3f}{line[54:]}")
+            if line[:6] == "ATOM  " and line[76:78].strip() != "H":
+                heavy.append([x, y, z])
+        label = ",".join(sorted(set(mapping.values())))
+        mine = np.asarray(heavy, dtype=float)
+        for other_label, other in placed:
+            if len(mine) and len(other):
+                closest = min(float(np.min(np.linalg.norm(other - point, axis=1)))
+                              for point in mine[:: max(1, len(mine) // 2000)])
+                if closest < _OVERLAP_A:
+                    raise StudyError(
+                        f"Building assembly {assembly.number} put the copy as chains "
+                        f"{label} {closest:.2f} A from chains {other_label}, which is "
+                        "two copies in one place rather than an interface. The "
+                        "file's operators are not read as they were meant; name the "
+                        "chains to simulate with `chains`.",
+                        code="setup.structure.assembly_ambiguous",
+                        assemblies=[assembly.number])
+        placed.append((label, mine))
+        # As a deposited file lays it out: each chain's polymer closed by TER,
+        # then the heterogens. Without the TER, PDBFixer read the waters and
+        # ligands into the protein chain, could not align it with its SEQRES,
+        # and found no residue missing in any copy.
+        for chain in dict.fromkeys(line[21] for line in block if line.startswith("ATOM")):
+            out.extend(line for line in block if line.startswith("ATOM") and line[21] == chain)
+            out.append("TER")
+        out.extend(line for line in block if line.startswith("HETATM"))
+
+    # SEQRES chain by chain, each copy's records together. PDBFixer reads a
+    # chain's declared sequence from consecutive records; interleaved, it
+    # read thirteen-residue fragments and found nothing missing.
+    declared: dict[str, list[str]] = {}
+    for line in lines:
+        if line[:6].strip() == "SEQRES":
+            declared.setdefault(line[11:12], []).append(line)
+    header: list[str] = [line[:11] + target + line[12:]
+                         for source, records in declared.items()
+                         for target in copies.get(source, [source])
+                         for line in records]
+    for line in lines:
+        record = line[:6].strip()
+        if record == "SEQRES":
+            continue
+        elif record in chain_columns:
+            columns = chain_columns[record]
+            targets = copies.get(line[columns[0]:columns[0] + 1], [])
+            for n in range(len(targets) or 1):
+                copied = list(line)
+                for column in columns:
+                    source = line[column:column + 1]
+                    if source in copies and n < len(copies[source]):
+                        copied[column] = copies[source][n]
+                header.append("".join(copied))
+        elif record in ("CRYST1",):
+            header.append(line)
+    target = input_pdb.with_name("input_assembly.pdb")
+    target.write_text("\n".join(header + out + ["END"]) + "\n", encoding="utf-8")
+    return target, copies
