@@ -598,6 +598,7 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         import pytest
 
         pytest.importorskip("openmm")
+        pytest.importorskip("playwright.sync_api")
         from playwright.sync_api import sync_playwright
 
         from fastmdxplora.explain import explain
