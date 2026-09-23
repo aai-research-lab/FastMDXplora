@@ -1151,12 +1151,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Inspect other machines, reached over SSH, to run studies on.",
         description=(
             "Machines a study can run on, reached with your own ssh and "
-            "~/.ssh/config. With no arguments, lists the machines inspected "
-            "so far, from what was recorded, without connecting. With "
-            "--machine, connects, finds out what the machine has, records "
-            "it, and says whether FastMDXplora is ready there or how it "
-            "would be installed. Nothing on the machine is changed. A "
-            "study's config never names a machine: the records are kept "
+            "~/.ssh/config, and the studies sent to them. With no arguments, "
+            "lists the machines and jobs as last recorded, without "
+            "connecting. With --machine alone, inspects the machine, "
+            "records it, and says whether it is ready or how FastMDXplora "
+            "would be installed there; inspecting changes nothing. A "
+            "study's Config never names a machine: the records are kept "
             "with your other settings, not in any study."
         ),
         formatter_class=_PercentSafeHelp,
@@ -1169,6 +1169,75 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     actions = rm.add_subparsers(dest="remote_action", metavar="<action>",
                                 title="actions")
+
+    def _on_machine(action: argparse.ArgumentParser) -> None:
+        # Its own dest: a subparser's default would otherwise overwrite a
+        # --machine given before the action word.
+        action.add_argument(
+            "--machine", dest="action_machine", metavar="NAME",
+            help=("The machine. May be left out when only one has been "
+                  "inspected."))
+
+    install = actions.add_parser(
+        "install",
+        help="Install FastMDXplora on a machine, after you confirm the plan.",
+        description=(
+            "Inspect the machine again, show the install plan `--machine` "
+            "prints, and run it once you answer yes. Nothing runs without "
+            "that answer, and there is no flag to skip it. Everything goes "
+            "inside your own account."),
+    )
+    _on_machine(install)
+
+    send = actions.add_parser(
+        "send",
+        help="Run a study's Config on a machine.",
+        description=(
+            "Check the Config here, copy it and the files it names to the "
+            "machine, and start `fastmdx explore` there in the installation "
+            "that holds this computer's code. Refused if the machine is not "
+            "ready. The job runs on without this terminal."),
+        formatter_class=_PercentSafeHelp,
+    )
+    send.add_argument("-c", "-config", "--config", dest="config",
+                      metavar="FILE", required=True,
+                      help="The study's YAML Config.")
+    _on_machine(send)
+    send.add_argument("--output", dest="output_dir", metavar="DIR",
+                      help=("Where fetch puts the run on this computer. Its "
+                            "folder name is the job's name on both "
+                            "computers. Default: the Config's `output`, "
+                            "else a new study folder here."))
+    send.add_argument("--dry-run", action="store_true",
+                      help="Check and show what would be sent, and send nothing.")
+    send.add_argument("--force-overwrite", dest="force", action="store_true",
+                      help="Replace a job of the same name, here and there.")
+    send.add_argument("--partition", metavar="NAME", default="",
+                      help="SLURM partition. Ignored on a workstation.")
+    send.add_argument("--time", dest="time_limit", metavar="LIMIT", default="",
+                      help=("SLURM time limit, as sbatch reads it "
+                            "(e.g. 24:00:00). Ignored on a workstation."))
+
+    status = actions.add_parser(
+        "status", help="How the jobs sent from here are doing.",
+        description="Ask each job's machine how it is doing.")
+    status.add_argument("job", nargs="?", metavar="JOB",
+                        help="One job. Default: every job not yet finished.")
+
+    fetch = actions.add_parser(
+        "fetch", help="Bring a job's results back.",
+        description=("Copy a job's run folder back to this computer, leaving "
+                     "trajectories and checkpoints on the machine unless "
+                     "asked for."))
+    fetch.add_argument("job", metavar="JOB")
+    fetch.add_argument("--with-trajectory", action="store_true",
+                       help="Bring trajectories and checkpoints as well.")
+
+    cancel = actions.add_parser(
+        "cancel", help="Stop a job. Its folder on the machine stays.",
+        description="Stop a running or waiting job.")
+    cancel.add_argument("job", metavar="JOB")
+
     forget = actions.add_parser(
         "forget",
         help="Remove a machine's record. Nothing on the machine is touched.",
@@ -1999,8 +2068,26 @@ def _cmd_info(args: argparse.Namespace | None = None) -> int:
     return 0
 
 
+def _remote_machine(args: argparse.Namespace) -> str:
+    """The machine an action is about: named, or the only one there is."""
+    from fastmdxplora.remote import machine_names
+    from fastmdxplora.remote.machines import UnknownMachine
+
+    named = getattr(args, "action_machine", None) or args.machine
+    if named:
+        return named
+    known = machine_names()
+    if len(known) == 1:
+        return known[0]
+    raise UnknownMachine(
+        "Name the machine with --machine"
+        + (f": {', '.join(known)} have been inspected." if known
+           else ". None has been inspected yet: `fastmdx remote --machine <alias>`."),
+        given="", permitted=known)
+
+
 def _cmd_remote(args: argparse.Namespace) -> int:
-    """`fastmdx remote`: list, inspect or forget machines."""
+    """`fastmdx remote`: machines, and the studies sent to them."""
     from fastmdxplora.remote import (
         forget_machine,
         inspect_machine,
@@ -2018,11 +2105,18 @@ def _cmd_remote(args: argparse.Namespace) -> int:
         plan_for,
     )
 
-    if args.remote_action == "forget":
+    action = args.remote_action
+    if action == "forget":
         forget_machine(args.forget_name)
         print(f"  \u2713 Forgot {args.forget_name}. Nothing on the machine "
               "was changed.")
         return 0
+    if action == "install":
+        return _remote_install(_remote_machine(args))
+    if action == "send":
+        return _remote_send(args, _remote_machine(args))
+    if action in ("status", "fetch", "cancel"):
+        return _remote_job(args)
 
     if args.machine:
         code = this_code()
@@ -2039,18 +2133,111 @@ def _cmd_remote(args: argparse.Namespace) -> int:
             print(f"  \u2717 Not ready: {verdict.summary}.")
             print()
             # An installation that holds the code and cannot load something
-            # needs that something, not a second installation beside it.
-            advice = (describe_unloadable(machine, verdict)
-                      or describe_plan(plan_for(machine, code), machine.name))
-            for line in advice:
+            # needs that something, not a second installation beside it;
+            # plan_for makes that choice, and says it first.
+            plan = plan_for(machine, code)
+            for line in describe_unloadable(machine, verdict)[:-1]:
                 print(line)
+            for line in describe_plan(plan, machine.name):
+                print(line)
+            if plan.possible:
+                print("Or have FastMDXplora run them, after you confirm:")
+                print(f"  fastmdx remote install --machine {machine.name}")
         print()
         print(f"Recorded in {machines_dir() / (machine.name + '.json')}")
         return 0
 
+    from fastmdxplora.remote.jobs import job_names, load_job
+    from fastmdxplora.remote.send import job_line
+
     machines = [load_machine(name) for name in machine_names()]
     for line in overview(machines, this_code()):
         print(line)
+    jobs = [load_job(name) for name in job_names()]
+    if jobs:
+        print()
+        print("Jobs (as last checked; `fastmdx remote status` asks again)")
+        for job in jobs:
+            print(job_line(job))
+    return 0
+
+
+def _remote_install(name: str) -> int:
+    from fastmdxplora.remote.describe import describe_plan
+    from fastmdxplora.remote.installer import ask_a_person, install
+
+    def confirm(plan) -> bool:
+        print()
+        for line in describe_plan(plan, name)[:-3]:
+            print(line)
+        return ask_a_person(plan)
+
+    print(f"Inspecting {name} over ssh...")
+    outcome = install(name, confirm=confirm)
+    if outcome.ran == 0 and outcome.verdict is not None and outcome.verdict.ready:
+        print(f"  \u2713 Already ready: {outcome.verdict.summary}.")
+        return 0
+    if outcome.failed_step:
+        print(f"\n  \u2717 Stopped at: {outcome.failed_step}")
+        print("  Steps before it were left as they are. See the output above.")
+        return 1
+    verdict = outcome.verdict
+    if verdict is not None and verdict.ready:
+        print(f"\n  \u2713 Ready: {verdict.summary}.")
+        return 0
+    print(f"\n  \u2717 Installed, and still not ready: "
+          f"{verdict.summary if verdict else 'not re-inspected'}.")
+    return 1
+
+
+def _remote_send(args: argparse.Namespace, name: str) -> int:
+    from fastmdxplora.remote.send import describe_sending, prepare, send
+
+    print(f"Checking the Config, and {name} over ssh...")
+    sending = prepare(args.config, name, output=args.output_dir,
+                      force=args.force, partition=args.partition,
+                      time_limit=args.time_limit)
+    print()
+    for line in describe_sending(sending):
+        print(line)
+    if args.dry_run:
+        print("\nDry run: nothing was sent.")
+        return 0
+    job = send(sending)
+    print(f"\n  \u2713 Started {job.name} on {job.machine} "
+          f"({'SLURM job' if job.scheduler == 'slurm' else 'process'} {job.handle}).")
+    print(f"  fastmdx remote status {job.name}")
+    print(f"  fastmdx remote fetch {job.name}")
+    return 0
+
+
+def _remote_job(args: argparse.Namespace) -> int:
+    from fastmdxplora.remote.jobs import FINISHED, job_names, load_job
+    from fastmdxplora.remote.send import cancel, fetch, job_line, status
+
+    action = args.remote_action
+    if action == "status":
+        names = [args.job] if args.job else [
+            n for n in job_names() if load_job(n).state not in FINISHED]
+        if not names:
+            print("No jobs still running. `fastmdx remote` lists them all.")
+            return 0
+        for job_name in names:
+            job = status(job_name)
+            print(job_line(job))
+            for line in job.extra.get("log_tail", [])[-3:]:
+                print(f"      {line}")
+        return 0
+    if action == "cancel":
+        job = cancel(args.job)
+        print(f"  \u2713 {job.name}: {job.state}. Its folder on {job.machine} "
+              f"is left at {job.remote_dir}.")
+        return 0
+    job, warnings = fetch(args.job, with_trajectory=args.with_trajectory)
+    print(f"  \u2713 Fetched {job.name} to {job.local_output}")
+    for warning in warnings:
+        print(f"  {warning}")
+    print(f"  Open it with: fastmdx gui --output {job.local_output}")
     return 0
 
 

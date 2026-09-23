@@ -32,7 +32,7 @@ from pathlib import Path
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.user_dir import user_config_dir
 
-__all__ = ["Answer", "Transport", "check_machine_name"]
+__all__ = ["Answer", "Transport", "check_machine_name", "run_here"]
 
 #: How a machine is named: an SSH alias or ``user@host``. Letters, digits and
 #: ``_ . @ -``, and never a leading ``-``, which ``ssh`` would take as an
@@ -126,9 +126,8 @@ class Transport:
         self.interactive = (sys.stdin.isatty() if interactive is None
                             else interactive)
 
-    def ssh_command(self, remote: Sequence[str], *,
-                    sockets: Path | None = None) -> list[str]:
-        """The local command that runs ``remote`` on the machine."""
+    def ssh_options(self, sockets: Path | None = None) -> list[str]:
+        """The options every connection to this machine is made with."""
         options = ["-o", f"ConnectTimeout={CONNECT_TIMEOUT_S}"]
         if not self.interactive:
             options += ["-o", "BatchMode=yes"]
@@ -138,12 +137,31 @@ class Transport:
                 "-o", f"ControlPath={sockets / '%C'}",
                 "-o", f"ControlPersist={CONTROL_PERSIST_S}",
             ]
+        return options
+
+    def ssh_command(self, remote: Sequence[str], *,
+                    sockets: Path | None = None) -> list[str]:
+        """The local command that runs ``remote`` on the machine."""
         # ssh joins its remaining arguments with spaces and hands them to the
         # remote shell, so they are quoted here once, for that shell.
-        return ["ssh", *options, "--", self.name, shlex.join(list(remote))]
+        return ["ssh", *self.ssh_options(sockets), "--", self.name,
+                shlex.join(list(remote))]
+
+    def rsync_command(self, source: str, destination: str,
+                      *extra: str) -> list[str]:
+        """An rsync between this computer and the machine over the same ssh.
+
+        ``source`` or ``destination`` names the machine's side with a
+        leading ``:``, as in ``":/scratch/me/job/run/"``.
+        """
+        shell = shlex.join(["ssh", *self.ssh_options(_socket_dir())])
+        def side(path: str) -> str:
+            return f"{self.name}{path}" if path.startswith(":") else path
+        return ["rsync", "-az", "-e", shell, *extra, side(source),
+                side(destination)]
 
     def run(self, remote: Sequence[str], *, stdin: str | None = None,
-            timeout: float = 120) -> Answer:
+            timeout: float = 120, show: bool = False) -> Answer:
         """Run ``remote`` on the machine and return what it printed.
 
         Refuses, rather than returning, when the machine could not be
@@ -151,9 +169,12 @@ class Transport:
         and failed returns its own code, which is the caller's to read.
         """
         command = self.ssh_command(remote, sockets=_socket_dir())
+        # `show` lets a long command -- an install -- print as it goes rather
+        # than leaving a person looking at nothing for ten minutes.
+        capture = {} if show else {"capture_output": True}
         try:
-            done = self._run(command, input=stdin, capture_output=True,
-                             text=True, timeout=timeout, check=False)
+            done = self._run(command, input=stdin, text=True, timeout=timeout,
+                             check=False, **capture)
         except FileNotFoundError as exc:
             raise StudyError(
                 "There is no ssh command on this computer, and FastMDXplora "
@@ -181,3 +202,26 @@ class Transport:
             )
         return Answer(stdout=done.stdout or "", stderr=done.stderr or "",
                       returncode=done.returncode)
+
+
+def run_here(command: Sequence[str], *, runner: Runner | None = None,
+             timeout: float = 3600, what: str = "") -> int:
+    """Run a command on this computer, printing as it goes; its exit code.
+
+    For the steps of a plan that happen here -- fetching a release image,
+    copying it across -- and for rsync. A missing program is a refusal
+    naming it, not a traceback.
+    """
+    try:
+        done = (runner or subprocess.run)(list(command), text=True,
+                                          timeout=timeout, check=False)
+    except FileNotFoundError as exc:
+        name = command[0]
+        raise StudyError(
+            f"There is no {name} command on this computer"
+            + (f", and {what} needs it" if what else "") + ".",
+            code="environment.backend.missing",
+            packages=[name],
+            install_command=f"{name} from your system's package manager",
+        ) from exc
+    return done.returncode

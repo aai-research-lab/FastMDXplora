@@ -46,7 +46,7 @@ class CodeIdentity:
 
     def describe(self) -> str:
         if not self.is_checkout:
-            return f"{self.version or 'unknown version'} (release)"
+            return f"release {self.version or '(version unknown)'}"
         state = {True: ", with uncommitted changes",
                  None: ", tree state unknown"}.get(self.dirty, "")
         return f"checkout at {self.commit}{state}"

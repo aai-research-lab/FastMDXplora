@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastmdxplora.remote.identity import CodeIdentity
 from fastmdxplora.remote.machines import Machine, Readiness, readiness, unloadable
-from fastmdxplora.remote.plan import InstallPlan, install_plan
+from fastmdxplora.remote.plan import InstallPlan, backends_plan, install_plan
 from fastmdxplora.remote.probe import Environment, Inspection
 
 __all__ = ["describe_machine", "describe_plan", "describe_unloadable",
@@ -94,8 +94,9 @@ def describe_plan(plan: InstallPlan, machine: str) -> list[str]:
     """How to install, in the words someone would copy from."""
     if plan.blocked:
         return ["No install route:", f"  {plan.blocked}"]
-    what = ("To bring it to this computer's commit" if plan.route == "checkout"
-            else f"Install plan ({plan.route}, inside your account only)")
+    what = {"checkout": "To bring it to this computer's commit",
+            "backends": "To add them to that environment"}.get(
+        plan.route, f"Install plan ({plan.route}, inside your account only)")
     lines = [f"{what}:"]
     for step in plan.steps:
         where = "on this computer" if step.where == "here" else f"on {machine}"
@@ -112,6 +113,15 @@ def describe_plan(plan: InstallPlan, machine: str) -> list[str]:
 
 
 def plan_for(machine: Machine, code: CodeIdentity) -> InstallPlan:
+    """What would make the machine ready: add backends to an installation
+    that holds this code, or install the code itself."""
+    verdict = readiness(machine, code)
+    env = verdict.installation
+    if env is not None and env.path in machine.info:
+        missing = [entry["import_name"] for entry in unloadable(machine, env)]
+        if missing:
+            return backends_plan(machine.inspection, env.path, missing,
+                                 machine.name)
     return install_plan(machine.inspection, code, machine.name)
 
 

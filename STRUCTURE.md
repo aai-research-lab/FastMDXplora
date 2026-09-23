@@ -80,6 +80,10 @@ FastMDXplora/
 │       │   ├── survey.py          # Inspecting a machine and asking its installation what loads
 │       │   ├── machines.py        # Per-user machine records, and readiness for this version
 │       │   ├── plan.py            # How FastMDXplora would be installed there, from conda-forge
+│       │   ├── installer.py       # Running a plan, once a person has said yes
+│       │   ├── inputs.py          # The files a Config names, gathered to travel with it
+│       │   ├── send.py            # Send, status, fetch and cancel
+│       │   ├── jobs.py            # Per-user records of the studies sent
 │       │   └── describe.py        # What `fastmdx remote` prints
 │       ├── batch/
 │       │   ├── explorer.py        # Multi-run driver (sequential/parallel)

@@ -30,11 +30,10 @@ fastmdx gui --output ~/runs/study
 The GUI reads a finished run as happily as it drives a live one, so the results
 come back to the machine where they are comfortable to look at.
 
-The portability is the Config, not a control channel. FastMDXplora can
-[inspect a machine](remote.md) over SSH and say whether it is ready or how to
-install there, with `fastmdx remote --machine <name>`. It does not yet send a
-study, submit it to SLURM or bring the results back; those steps are the ones
-shown here.
+The portability is the Config. [`fastmdx remote`](remote.md) does the steps
+above for you over SSH: it checks the machine holds the same code, sends the
+Config with its files, runs it (as `sbatch` on a cluster), and brings the
+results back. What it runs there is the same `fastmdx explore --config`.
 
 ---
 

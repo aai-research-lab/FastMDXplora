@@ -182,10 +182,10 @@ def readiness(machine: Machine, code: CodeIdentity) -> Readiness:
                                 "to hold the same code")
     holding = machine.inspection.holding(code)
     if not holding:
-        held = [f"{env.path.rsplit('/', 1)[-1]} {env.identity.describe()}"
+        held = [f"{env.path.rsplit('/', 1)[-1]} ({env.identity.describe()})"
                 for env in machine.inspection.installations()]
-        what = ("it holds " + "; ".join(held)) if held else "it has no FastMDXplora"
-        return Readiness(False, f"needs {code.describe()}, and {what}")
+        what = ("it holds " + ", ".join(held)) if held else "it has no FastMDXplora"
+        return Readiness(False, f"needs {code.describe()}; {what}")
     for env in holding:
         if env.path in machine.info and not unloadable(machine, env):
             return Readiness(True, f"{env.path} holds this code and its "

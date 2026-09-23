@@ -259,6 +259,7 @@ A few you are likely to meet, and what each means.
 | `environment.service.unreachable` | RCSB did not answer. The message carries the exact `curl` to run elsewhere |
 | `environment.service.machine_unreachable` | `ssh` could not reach a machine. The message quotes `ssh`'s own reason; try `ssh <name>` in the same terminal |
 | `remote.machine.unknown` | A machine that has not been inspected here. `fastmdx remote --machine <name>` first |
+| `remote.machine.not_ready` | Nothing on the machine holds this computer's code with its backends loading. `fastmdx remote --machine <name>` says why |
 | `environment.calibration.absent` | This machine has not been measured — see [Production runs and GPUs](production.md#knowing-how-long-before-committing-the-card) |
 | `environment.budget.exhausted` | An [Agent](agent.md) study was priced above its `--budget-hours` |
 | `analysis.unknown` | An analysis name that does not exist. The message names the nearest match and the full list |

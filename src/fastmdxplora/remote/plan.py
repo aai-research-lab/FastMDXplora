@@ -172,6 +172,48 @@ def _conda_executable(inspection: Inspection) -> str:
     return ""
 
 
+#: conda-forge's package for each backend a study needs, by import name.
+CONDA_PACKAGE = {
+    "openmm": "openmm", "pdbfixer": "pdbfixer",
+    "openff.toolkit": "openff-toolkit", "openmmforcefields": "openmmforcefields",
+    "rdkit": "rdkit", "propka": "propka",
+}
+
+
+def backends_plan(inspection: Inspection, env_path: str,
+                  missing: list[str], machine: str) -> InstallPlan:
+    """Add the backends an installation holding the right code cannot load.
+
+    Into that environment, from conda-forge, with ``cuda-version`` pinned by
+    the same rule as a new environment: OpenMM is the package it matters to.
+    """
+    plan = InstallPlan(version="")
+    packages = [CONDA_PACKAGE[name] for name in missing if name in CONDA_PACKAGE]
+    conda = _conda_executable(inspection)
+    if env_path.endswith(".sif"):
+        plan.blocked = ("The image holding this code cannot load "
+                        f"{', '.join(packages)}; an image is not changed in "
+                        "place. Build or fetch one that can.")
+        return plan
+    if not conda or inspection.internet != "yes":
+        plan.blocked = (f"{env_path} cannot load {', '.join(packages)}, and "
+                        f"{machine} has " + ("no conda" if not conda
+                                              else "no internet")
+                        + " to install them with.")
+        return plan
+    pin, why = cuda_pin(inspection)
+    plan.route = "backends"
+    root = (f" -r {conda[:-len('/bin/micromamba')]}/mamba"
+            if conda.endswith(f"{_OWN_HOME}/bin/micromamba") else "")
+    quoted = " ".join(f'"{p}"' for p in packages)
+    plan.steps.append(Step(
+        "host", f'{conda} install -y{root} -p {env_path} -c conda-forge '
+                f'{quoted} "cuda-version={pin}"'))
+    plan.check = Step("host", f"{env_path}/bin/fastmdx info --json")
+    plan.notes.append(f"cuda-version {pin}, because {why}.")
+    return plan
+
+
 def _checkout_plan(inspection: Inspection, code: CodeIdentity,
                    machine: str) -> InstallPlan:
     """Bring a checkout on the machine to this computer's commit."""
@@ -201,8 +243,8 @@ def _checkout_plan(inspection: Inspection, code: CodeIdentity,
     plan.check = Step("host", f"{env.path}/bin/fastmdx info --json")
     plan.notes.append(
         f"{env.path} is installed from the checkout at {env.checkout}, "
-        f"now at {env.commit}. The fetch finds {code.commit} only once it "
-        "is on origin, so push it from this computer first if it is not.")
+        f"now at {env.commit}. If {code.commit} is not on origin yet, push "
+        "it from this computer before the fetch.")
     if env.dirty != "no":
         plan.notes.append(
             f"{env.checkout} has uncommitted changes. Commit or discard "

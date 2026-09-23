@@ -50,6 +50,13 @@ from scripts.run_pdb_smoke_campaign import build_parser as build_campaign_parser
         "remote",
         "remote --machine gpu-box",
         "remote forget gpu-box",
+        "remote install --machine gpu-box",
+        "remote send -c study.yml --machine gpu-box --dry-run",
+        "remote send -c study.yml --partition gpu --time 24:00:00",
+        "remote status",
+        "remote status lysozyme",
+        "remote fetch lysozyme --with-trajectory",
+        "remote cancel lysozyme",
     ],
 )
 def test_documented_fastmdx_commands_parse(command: str) -> None:

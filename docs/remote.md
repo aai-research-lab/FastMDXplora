@@ -5,11 +5,21 @@ workstation, a cluster. `fastmdx remote` is how FastMDXplora learns about those
 machines. It reaches them with your own `ssh`, so anything `ssh <name>` reaches
 from your terminal, it reaches too.
 
-What it does today is the first half of running a study elsewhere: finding out
-what a machine has, and whether FastMDXplora is ready there or how it would be
-installed. Sending a study, watching it and bringing the results back come
-next. Until then, [Running FastMDXplora elsewhere](clusters.md) shows the same
-thing done by hand.
+It finds out what a machine has and whether FastMDXplora is ready there,
+installs it where you agree to, sends a study's Config to run, watches it, and
+brings the results back:
+
+```bash
+fastmdx remote --machine gpu-box              # inspect: is it ready?
+fastmdx remote install --machine gpu-box      # if not, and you agree
+fastmdx remote send -c study.yml --machine gpu-box
+fastmdx remote status
+fastmdx remote fetch <job>
+```
+
+The machine runs the ordinary `fastmdx explore -c` on the Config, so a study
+sent there is the same study as one run by hand as in
+[Running FastMDXplora elsewhere](clusters.md).
 
 ---
 
@@ -34,8 +44,8 @@ gpu-box   workstation
   scratch       not found
   home          412 GB free
   internet      yes
-  fastmdx       /home/me/miniforge3/envs/fastmdx-2.5.6: 2.5.6 (release)
-  this computer 2.5.6 (release)
+  fastmdx       /home/me/miniforge3/envs/fastmdx-2.5.6: release 2.5.6
+  this computer release 2.5.6
 
   ✓ Ready: /home/me/miniforge3/envs/fastmdx-2.5.6 holds this code and its backends load.
 ```
@@ -145,6 +155,113 @@ machine holds no checkout, the inspection says to clone one there.
 
 ---
 
+## Installing, with your confirmation
+
+```bash
+fastmdx remote install --machine gpu-box
+```
+
+inspects the machine again, shows the same plan `--machine` prints, and asks
+`Install now? [y/N]`. Nothing runs without a yes, there is no flag to skip the
+question, and with no terminal to ask at, nothing runs at all. Each step is
+printed as it runs; the first that fails stops the install and is named, and
+what the steps before it did is left in place. At the end the machine is
+inspected again and said to be ready or not.
+
+Where an installation already holds this computer's code and cannot load
+something, the plan adds just that to the same environment:
+
+```
+To add them to that environment:
+  [on gpu-box]
+    /opt/conda/bin/mamba install -y -p /home/me/.conda/envs/fastmdx-gpu -c conda-forge "openmm" "cuda-version=12.6"
+```
+
+---
+
+## Sending a study
+
+```bash
+fastmdx remote send -c study.yml --machine gpu-box
+```
+
+**The Config is checked here first,** by the same reading `explore -c` gives
+it, so a refusal costs seconds rather than a copy and a wait. The machine is
+probed again, and **nothing is sent to a machine that is not ready** for this
+computer's code.
+
+**The files the Config names travel with it.** Every setting naming a file or
+folder that exists, relative to the Config's own folder, is copied under
+`inputs/` and the copy of the Config names it there: the structure, a ligand's
+SDF, force field XMLs, a trajectory, a prepared study to continue from. A
+structure given by PDB ID is fetched by the machine, which is refused where the
+machine has no internet.
+
+`--dry-run` shows all of it, including the job script, and sends nothing:
+
+```
+Sending lysozyme to gpu-box
+  runs in      /home/me/.conda/envs/fastmdx-gpu (checkout at 147781af14c2)
+  folder       /home/me/fastmdxplora-jobs/lysozyme
+  scheduler    a detached process
+  results to   /Users/me/runs/lysozyme (with fetch)
+  inputs       /Users/me/runs/181L.pdb as inputs/181L.pdb
+
+job.sh:
+  #!/bin/sh
+  cd /home/me/fastmdxplora-jobs/lysozyme || exit 1
+  export PATH=/home/me/.conda/envs/fastmdx-gpu/bin:"$PATH"
+  /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx explore -c study.yml --output run
+  echo $? > exit_code
+```
+
+The job's **name** is its output folder's name, the same on both computers:
+`--output`, else the Config's `output`, else a new study folder. Its folder on
+the machine is `fastmdxplora-jobs/<name>` in scratch where there is one, else
+in home, and the run is written to `run/` inside it.
+
+**On a workstation** the job runs as a detached process in its own process
+group, so it outlives the connection and can be stopped whole. **On a
+cluster** it is an `sbatch` job asking for one GPU; `--partition` and `--time`
+are passed to it, and without `--time` the partition's default applies. Either
+way the job writes its exit code beside itself when it ends, so a finished run
+and a killed one are told apart.
+
+`--force-overwrite` replaces a job of the same name, here and on the machine.
+
+---
+
+## Watching, fetching and stopping
+
+```bash
+fastmdx remote status            # every job not yet finished
+fastmdx remote status lysozyme   # one job
+```
+
+asks the machine and prints the state, with progress from the run's own live
+status while it runs, and the last lines of its log. The states are the
+queue's: `ready` (waiting for a GPU), `running`, `done`, `failed` with the exit
+code or the reason, and `abandoned`.
+
+```bash
+fastmdx remote fetch lysozyme
+```
+
+copies the run folder back to the job's output folder here, with the machine's
+job log as `remote_job.log`, ready to open with `fastmdx gui --output`.
+Trajectories and checkpoints stay on the machine unless `--with-trajectory` is
+given; fetch says how many it left and where. It also reads the run's manifest
+and says so if the code that ran is not the code that sent it.
+
+```bash
+fastmdx remote cancel lysozyme
+```
+
+stops the job, `scancel` on a cluster or the whole process group on a
+workstation. Its folder on the machine is left as it is.
+
+---
+
 ## Machines you have inspected
 
 ```bash
@@ -152,7 +269,7 @@ fastmdx remote
 ```
 
 lists every machine inspected so far and whether each is ready for this
-computer's version. It connects to nothing: the list is as each machine was
+computer's code, and every job sent from here. It connects to nothing: the list is as each machine was
 last inspected, so inspect one again after changing it.
 
 ```bash

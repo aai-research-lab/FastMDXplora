@@ -456,19 +456,29 @@ Machines a study can run on, reached with your own `ssh`. See
 [Other machines](remote.md).
 
 ```bash
-fastmdx remote                      # machines inspected so far, without connecting
-fastmdx remote --machine gpu-box    # inspect, record, and say if it is ready
-fastmdx remote forget gpu-box       # remove the record; the machine is untouched
+fastmdx remote                                     # machines and jobs, without connecting
+fastmdx remote --machine gpu-box                   # inspect, record, say if it is ready
+fastmdx remote install --machine gpu-box           # run the plan, after you confirm
+fastmdx remote send -c study.yml --machine gpu-box # run a study there
+fastmdx remote status [JOB]                        # how jobs are doing
+fastmdx remote fetch JOB [--with-trajectory]       # bring results back
+fastmdx remote cancel JOB                          # stop a job
+fastmdx remote forget gpu-box                      # remove the record
 ```
 
-| Argument | Required | Default |
+| `send` argument | Required | Default |
 |---|---|---|
-| `--machine NAME` | no | lists the recorded machines |
-| `forget NAME` | no | — |
+| `-c`, `--config FILE` | **yes** | — |
+| `--machine NAME` | when more than one is inspected | the only one |
+| `--output DIR` | no | the Config's `output`, else a new study folder |
+| `--dry-run` | no | sends |
+| `--force-overwrite` | no | refuses a job of the same name |
+| `--partition NAME`, `--time LIMIT` | no | the cluster's defaults |
 
 `NAME` is an alias from `~/.ssh/config` or `user@host`. Inspection only reads
-the machine. Exits **0** once a machine is inspected, ready or not, and **1**
-when it cannot be reached or a name is not known.
+the machine; `install` runs nothing without a yes at the terminal. Exits **0**
+when the action is done (a machine inspected, ready or not), and **1** when a
+machine cannot be reached, is not ready for `send`, or a name is not known.
 
 ---
 
