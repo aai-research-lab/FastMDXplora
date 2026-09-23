@@ -60,3 +60,17 @@ def _logging_state_is_restored():
         base.setLevel(level)
         base.handlers[:] = handlers
         fastmdx_logging._console_handler = console
+
+
+@pytest.fixture(autouse=True)
+def _a_test_closes_the_figures_it_opens():
+    """Figures a test opened and left open are closed after it, as
+    matplotlib's own suite does. Only the test's own: one left open before
+    it is not its to close. Tests that a failure leaves no figure open look
+    inside their own body, so this cannot hide a leak from them."""
+    import matplotlib.pyplot as plt
+
+    before = set(plt.get_fignums())
+    yield
+    for number in set(plt.get_fignums()) - before:
+        plt.close(number)

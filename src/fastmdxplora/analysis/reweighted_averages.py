@@ -40,6 +40,7 @@ from fastmdxplora.analysis.reweight import (
 )
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.analysis.plotting import closes_what_it_opens as _closes_what_it_opens
 
 logger = get_logger("analysis.reweighted")
 
@@ -936,6 +937,7 @@ def _write_table(record: dict[str, Any], path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+@_closes_what_it_opens()
 def _plot(record: dict[str, Any], path: Path) -> None:
     """How far the bias moved each reported average, as a percentage.
 

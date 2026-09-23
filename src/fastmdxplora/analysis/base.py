@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 
 from fastmdxplora.analysis.plotting import (
-    colour, drawn_in, fit_legend, new_figure, save_figure,
+    closes_what_it_opens, colour, drawn_in, fit_legend, new_figure, save_figure,
     settle_figure_colours,
 )
 from fastmdxplora.utils.logging import get_logger
@@ -390,7 +390,8 @@ class Analysis(ABC):
             # learned about its own run was thrown away.
             options_path = self._write_options_manifest()
             data_path = self.save_data(self.result, self.output_dir / f"{self.name}.dat")
-            figures = self._do_plot()
+            with closes_what_it_opens():
+                figures = self._do_plot()
             # The first is the primary -- `<name>.png` -- and is what
             # `figure_path` has always meant. Any greyscale copy is an
             # artifact beside it, so a reader that knows only about

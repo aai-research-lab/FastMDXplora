@@ -41,7 +41,8 @@ from sklearn.manifold import TSNE
 
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
-from fastmdxplora.analysis.plotting import new_figure, save_figure
+from fastmdxplora.analysis.plotting import (
+    close_figures_opened_since, figures_open, new_figure, save_figure)
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
 
@@ -217,6 +218,8 @@ class DimRed(Analysis):
     def run(self, traj: md.Trajectory) -> AnalysisResult:
         from datetime import datetime, timezone
 
+        # Its figures are closed if it fails part-way, as base.run's are.
+        opened = figures_open()
         started = datetime.now(timezone.utc).isoformat()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         options_path = self._write_options_manifest()
@@ -264,6 +267,7 @@ class DimRed(Analysis):
                 finished_at=finished,
             )
         except Exception as exc:  # noqa: BLE001
+            close_figures_opened_since(opened)
             finished = datetime.now(timezone.utc).isoformat()
             return AnalysisResult(
                 name=self.name,

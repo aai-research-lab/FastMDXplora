@@ -18,6 +18,7 @@ import numpy as np
 from fastmdxplora.analysis.plotting import apply_style, new_figure, save_figure
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.analysis.plotting import closes_what_it_opens as _closes_what_it_opens
 
 logger = get_logger("report.region_highlights")
 
@@ -191,6 +192,7 @@ def _load_rmsf(path: Path) -> np.ndarray:
     return data[:, :2]
 
 
+@_closes_what_it_opens()
 def _plot_rmsf_regions(
     rmsf_data: np.ndarray,
     regions: list[RegionHighlight],
@@ -315,6 +317,7 @@ def build_pymol_script(
     return "\n".join(lines)
 
 
+@_closes_what_it_opens()
 def _plot_region_summary(
     *,
     rmsf_path: Path,

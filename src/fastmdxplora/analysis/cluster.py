@@ -43,7 +43,8 @@ from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
-from fastmdxplora.analysis.plotting import new_figure, save_figure
+from fastmdxplora.analysis.plotting import (
+    close_figures_opened_since, figures_open, new_figure, save_figure)
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
 
@@ -236,6 +237,8 @@ class Cluster(Analysis):
     def run(self, traj: md.Trajectory) -> AnalysisResult:
         from datetime import datetime, timezone
 
+        # Its figures are closed if it fails part-way, as base.run's are.
+        opened = figures_open()
         started = datetime.now(timezone.utc).isoformat()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         options_path = self._write_options_manifest()
@@ -295,6 +298,7 @@ class Cluster(Analysis):
                         linkage_path = self.output_dir / "hierarchical_linkage.npy"
                         np.save(linkage_path, linkage_matrix)
                         artifacts.append(linkage_path)
+                        before_the_dendrogram = figures_open()
                         fig_den, ax_den = new_figure(
                             title="Hierarchical clustering dendrogram",
                             figsize=(6.5, 3.8),
@@ -308,6 +312,7 @@ class Cluster(Analysis):
                         if skip_path.exists():
                             skip_path.unlink()
                     except Exception as dendro_exc:  # noqa: BLE001
+                        close_figures_opened_since(before_the_dendrogram)
                         skip_path.write_text(
                             json.dumps(
                                 {
@@ -342,6 +347,7 @@ class Cluster(Analysis):
                 finished_at=finished,
             )
         except Exception as exc:  # noqa: BLE001
+            close_figures_opened_since(opened)
             finished = datetime.now(timezone.utc).isoformat()
             return AnalysisResult(
                 name=self.name,

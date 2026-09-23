@@ -35,6 +35,7 @@ import numpy as np
 
 from fastmdxplora.analysis.plotting import new_figure, save_figure
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.analysis.plotting import closes_what_it_opens as _closes_what_it_opens
 
 logger = get_logger("compare")
 
@@ -135,6 +136,7 @@ def _axis_numeric_value(run: dict[str, Any], axis: str) -> float | None:
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
+@_closes_what_it_opens()
 def _overlay_plot(
     analysis: str,
     label: str,
@@ -157,6 +159,7 @@ def _overlay_plot(
     return save_figure(fig, out_path)
 
 
+@_closes_what_it_opens()
 def _trend_plot(
     analysis: str,
     label: str,

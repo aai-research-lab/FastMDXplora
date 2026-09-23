@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 from fastmdxplora.analysis.plotting import apply_style
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.analysis.plotting import closes_what_it_opens as _closes_what_it_opens
 
 logger = get_logger("report.summary_figure")
 
@@ -51,6 +52,7 @@ MAX_PANELS = 12
 
 
 
+@_closes_what_it_opens()
 def build_analysis_summary_figure(
     *,
     project_root: Path,

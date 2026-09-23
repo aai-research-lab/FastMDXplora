@@ -656,6 +656,35 @@ def _style_all_axes(fig: plt.Figure) -> None:
         _finalise_axes(ax)
 
 
+def figures_open() -> set[int]:
+    """The figures open right now, by number."""
+    return set(plt.get_fignums())
+
+
+def close_figures_opened_since(before: set[int]) -> None:
+    """Close the figures opened since `before` was taken, and no others: a
+    figure the caller had open already -- in a notebook, say -- is theirs."""
+    for number in figures_open() - before:
+        plt.close(number)
+
+
+@contextmanager
+def closes_what_it_opens():
+    """Figures opened inside this block are closed if it raises.
+
+    A figure is made, drawn, and closed by save_figure. When drawing or
+    saving raised in between, the figure was never closed: one analysis
+    whose plot failed left one open for the rest of the process, and a
+    sweep or a long GUI session accumulated them and their memory. Usable
+    as a decorator too."""
+    before = figures_open()
+    try:
+        yield
+    except BaseException:
+        close_figures_opened_since(before)
+        raise
+
+
 def new_figure(
     *,
     figsize: tuple[float, float] | None = None,
@@ -727,48 +756,52 @@ def save_figure(
 
     Returns the resolved Path that was written.
     """
-    out = Path(path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    _style_all_axes(fig)
-    fig.tight_layout()
-    mark = mark or _MARK
-    if mark:
-        # After tight_layout, so the stamp is not counted as content and
-        # squeezed into the plot area.
-        from fastmdxplora.marking import stamp_figure
+    # Closed whatever happens: a save that fails -- a folder that cannot be
+    # written, a backend refusing the format -- left the figure open, and a
+    # sweep of studies each failing to save one held them all.
+    try:
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        _style_all_axes(fig)
+        fig.tight_layout()
+        mark = mark or _MARK
+        if mark:
+            # After tight_layout, so the stamp is not counted as content and
+            # squeezed into the plot area.
+            from fastmdxplora.marking import stamp_figure
 
-        stamp_figure(fig, mark)
-    fig.patch.set_facecolor("white")
-    for ax in fig.axes:
-        ax.set_facecolor("white")
-    fig.savefig(
-        out,
-        dpi=dpi,
-        bbox_inches="tight",
-        facecolor="white",
-        edgecolor="white",
-        transparent=False,
-    )
+            stamp_figure(fig, mark)
+        fig.patch.set_facecolor("white")
+        for ax in fig.axes:
+            ax.set_facecolor("white")
+        fig.savefig(
+            out,
+            dpi=dpi,
+            bbox_inches="tight",
+            facecolor="white",
+            edgecolor="white",
+            transparent=False,
+        )
 
-    # Every publication figure also receives a true vector SVG companion.
-    # The SVG is written from the original Matplotlib figure (not converted
-    # from the PNG), so text, paths, and axes remain editable and scalable.
-    if write_svg and out.suffix.lower() != ".svg":
-        svg_out = out.with_suffix(".svg")
-        try:
-            fig.savefig(
-                svg_out,
-                format="svg",
-                bbox_inches="tight",
-                facecolor="white",
-                edgecolor="white",
-                transparent=False,
-            )
-            logger.debug("Saved SVG companion: %s", svg_out)
-        except Exception as exc:  # noqa: BLE001 - PNG remains the primary artifact
-            logger.warning("Could not save SVG companion %s: %s", svg_out, exc)
-
-    if close:
-        plt.close(fig)
+        # Every publication figure also receives a true vector SVG companion.
+        # The SVG is written from the original Matplotlib figure (not converted
+        # from the PNG), so text, paths, and axes remain editable and scalable.
+        if write_svg and out.suffix.lower() != ".svg":
+            svg_out = out.with_suffix(".svg")
+            try:
+                fig.savefig(
+                    svg_out,
+                    format="svg",
+                    bbox_inches="tight",
+                    facecolor="white",
+                    edgecolor="white",
+                    transparent=False,
+                )
+                logger.debug("Saved SVG companion: %s", svg_out)
+            except Exception as exc:  # noqa: BLE001 - PNG remains the primary artifact
+                logger.warning("Could not save SVG companion %s: %s", svg_out, exc)
+    finally:
+        if close:
+            plt.close(fig)
     logger.debug("Saved figure: %s", out)
     return out
