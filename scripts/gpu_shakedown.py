@@ -10,7 +10,10 @@ Three questions, one campaign:
 
 **Does the cost model hold here?** It assumes seconds go as particles times
 steps. Real runs of different sizes should agree about the constant to
-within a few tens of per cent. `fit.spread` near 1 means it holds; past 3
+within a few tens of per cent. Every run here is one system at one size,
+differing only in step count, so a tight fit confirms that cost is linear
+in steps and says nothing about the particle half of the model: that needs
+a second, clearly different-sized system. `fit.spread` near 1 means it holds; past 3
 the fit refuses, because averaging through a disagreement that wide would
 give a confident number for a relationship that is not there.
 
@@ -29,7 +32,8 @@ Usage::
 
     # rehearse it on a CPU first, in a couple of minutes
     python scripts/gpu_shakedown.py 1UBQ.pdb --platform CPU --ns 0.01 \
-        --nvt-steps 200 --npt-steps 200 --trajectory-interval 100
+        --nvt-steps 200 --npt-steps 200 --trajectory-interval 100 \
+        --state-interval 100
 
     # then the real thing
     python scripts/gpu_shakedown.py 1UBQ.pdb --ns 4 --segments 4
@@ -60,6 +64,11 @@ def parse(argv=None):
                    help="How many pieces to split it into (default: 4).")
     p.add_argument("--trajectory-interval", type=int, default=5_000,
                    help="Steps between written frames (default: 5,000).")
+    p.add_argument("--state-interval", type=int, default=None,
+                   help="Steps between rows of the energy record, which is "
+                        "where the volume across a join is read (default: "
+                        "the study's own, 1,000). A segment shorter than "
+                        "this writes no rows at all.")
     p.add_argument("--output", default="shakedown",
                    help="Where to write (default: ./shakedown).")
     p.add_argument("--platform", default="CUDA",
@@ -72,8 +81,9 @@ def parse(argv=None):
     p.add_argument("--npt-steps", type=int, default=50_000,
                    help="NPT equilibration steps (default: 50,000).")
     p.add_argument("--pressure-bar", type=float, default=1.0,
-                   help="Barostat pressure. 0 runs at constant volume, "
-                        "which is the control for question three.")
+                   help="Barostat pressure. 0 runs production at constant "
+                        "volume, after the NPT equilibration has set the "
+                        "density: the control for question three.")
     return p.parse_args(argv)
 
 
@@ -92,24 +102,53 @@ def study(args, *, production_ns):
             "trajectory_interval_steps": args.trajectory_interval,
         },
     }
+    if args.state_interval:
+        config["simulation"]["state_interval_steps"] = args.state_interval
     if args.pressure_bar:
         config["simulation"]["pressure_bar"] = args.pressure_bar
+    else:
+        # Said, not left to the default. Leaving the pressure out gave the
+        # default of 1 bar, and with NPT equilibration steps production
+        # stayed at constant pressure: the constant-volume control ran the
+        # same ensemble as the run it was the control for.
+        config["simulation"]["ensemble"] = "nvt"
     return config
 
 
+class StudyFailed(Exception):
+    """A study the shakedown ran did not finish: which phase, and why."""
+
+    def __init__(self, phase: str, why: str, output: Path):
+        super().__init__(f"{phase}: {why}")
+        self.phase, self.why, self.output = phase, why, output
+
+
 def run(config, output):
+    """Run a study and return its wall time, or raise StudyFailed.
+
+    What explore() returned was thrown away, so a study whose phases failed
+    printed its minutes like any other and the script went on, measuring
+    runs that never happened and explaining the missing results as physics.
+    """
     from fastmdxplora import FastMDXplora
 
     started = time.time()
-    FastMDXplora(config_data=config, output_dir=str(output)).explore()
-    return time.time() - started
+    results = FastMDXplora(config_data=config, output_dir=str(output)).explore()
+    seconds = time.time() - started
+    for result in results or []:
+        for phase in getattr(result, "phases", []) or []:
+            if getattr(phase, "status", "") == "error":
+                raise StudyFailed(phase.name, phase.message or result.message, Path(output))
+        if getattr(result, "status", "") == "error":
+            raise StudyFailed("the study", result.message, Path(output))
+    return seconds
 
 
 def main(argv=None) -> int:
     args = parse(argv)
-    from fastmdxplora.cost import calibrate_from_runs, measure_this_machine
+    from fastmdxplora.cost import measure_this_machine
     from fastmdxplora.refusals import StudyError, refusal_of
-    from fastmdxplora.simulation.resume import plan_segments, segmentability
+    from fastmdxplora.simulation.resume import segmentability
 
     root = Path(args.output)
     # Before anything is measured. A killed run leaves results behind, the
@@ -138,6 +177,28 @@ def main(argv=None) -> int:
     if verdict.qualification:
         print(f"   qualified: {verdict.qualification[:150]}")
     findings["qualification"] = verdict.qualification
+
+    try:
+        return _run_the_studies(args, root, findings)
+    except (StudyFailed, StudyError) as failed:
+        # Stopped at the first failure: everything after it would measure
+        # runs that did not happen.
+        phase = getattr(failed, "phase", "the study")
+        why = getattr(failed, "why", None) or refusal_of(failed).message
+        where = getattr(failed, "output", root)
+        print(f"\n   FAILED in {phase}: {why[:400]}")
+        print(f"   The run's own log: {Path(where) / 'fastmdxplora.log'}")
+        print("   Stopped here; nothing after this would be a measurement.")
+        findings["failed"] = {"phase": phase, "why": why, "output": str(where)}
+        (root / "shakedown.json").write_text(json.dumps(findings, indent=2),
+                                             encoding="utf-8")
+        return 1
+
+
+def _run_the_studies(args, root, findings) -> int:
+    from fastmdxplora.cost import calibrate_from_runs
+    from fastmdxplora.refusals import StudyError, refusal_of
+    from fastmdxplora.simulation.resume import plan_segments
 
     print()
     print("=" * 66)
@@ -171,8 +232,13 @@ def main(argv=None) -> int:
         # it from the file rather than trusting the absence of an error: a
         # segment that silently started over also finishes without one.
         log = (where / "fastmdxplora.log")
-        if piece.index > 0 and log.is_file():
-            if "Resumed from" in log.read_text(encoding="utf-8", errors="replace"):
+        if piece.index > 0:
+            if not log.is_file():
+                # Said rather than passed over: a segment with no log is
+                # one nothing can be said about, not one that resumed.
+                print(f"   segment {piece.index}: wrote no log, so whether it "
+                      "resumed is unknown")
+            elif "Resumed from" in log.read_text(encoding="utf-8", errors="replace"):
                 resumed += 1
                 print(f"   segment {piece.index}: resumed")
             else:
@@ -190,11 +256,17 @@ def main(argv=None) -> int:
         print(f"   fitted from {fit.runs} runs: "
               f"k = {fit.seconds_per_particle_step:.3e}, "
               f"spread = {fit.spread:.2f}")
-        # Computed before the f-string: a line break inside a replacement
-        # field needs Python 3.12, and this has to run on 3.9.
-        off_by = (abs(fit.seconds_per_particle_step - findings["argon_k"])
-                  / fit.seconds_per_particle_step)
-        print(f"   argon was out by {off_by:.0%}")
+        # As a ratio, with its consequence. "Out by 62%" hid which way and
+        # how far: argon at 0.38 of the measured constant is an estimate
+        # 2.6 times too low. Computed before the f-string, which cannot
+        # hold a line break inside a replacement field before Python 3.12.
+        ratio = findings["argon_k"] / fit.seconds_per_particle_step
+        print(f"   argon predicted {ratio:.2f}x the cost these runs measured")
+        if ratio < 0.8:
+            print(f"   an estimate from argon alone would be {1 / ratio:.1f} times too low")
+        elif ratio > 1.25:
+            print(f"   an estimate from argon alone would be {ratio:.1f} times too high")
+        findings["argon_over_fit"] = ratio
         findings["fit_k"] = fit.seconds_per_particle_step
         findings["fit_spread"] = fit.spread
         findings["fit_runs"] = fit.runs
@@ -217,29 +289,42 @@ def main(argv=None) -> int:
 
 
 def _report_the_join(root, directories, findings) -> None:
-    """Volume either side of the first join, if a barostat was on.
+    """Volume either side of every join, if a barostat was on.
 
     The barostat's adaptive move size is not in the checkpoint, so it
     restarts at its default and re-adapts. That shows up in the volume: a
     stretch of settling after the join that is not there in the run that
     went through. How long it lasts, and how far it wanders, is the number
-    this whole campaign exists to get.
+    this whole campaign exists to get. Each segment is measured against the
+    one before it: four segments are three joins, and reading only the first
+    reported a third of what was run.
     """
     import csv
     import statistics
 
     def volumes(directory):
+        """What the energy record holds: ("absent", None) where there is
+        none, ("empty", None) where it has no rows, ("constant volume", the
+        volumes or None) where the volume never changes or is not recorded,
+        and ("ok", the volumes) otherwise. Different findings, and reading an
+        empty record as constant volume blamed the physics for a reporting
+        interval. The reporter writes a volume column at constant volume too,
+        holding one value; its spread of zero was replaced by 1.0 and printed
+        as a standard deviation."""
         energy = directory / "simulation" / "energy.csv"
         if not energy.is_file():
-            return []
+            return "absent", None
         with energy.open() as handle:
             rows = list(csv.DictReader(handle))
         if not rows:
-            return []
+            return "empty", None
         key = next((k for k in rows[0] if "Volume" in k), None)
         if key is None:
-            return []
-        return [float(r[key]) for r in rows if r.get(key)]
+            return "constant volume", None
+        values = [float(r[key]) for r in rows if r.get(key)]
+        if len(set(values)) == 1:
+            return "constant volume", values
+        return "ok", values
 
     def particles(directory):
         import json as _json
@@ -250,64 +335,93 @@ def _report_the_join(root, directories, findings) -> None:
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
-    before = volumes(directories[0])
-    after = volumes(directories[1]) if len(directories) > 1 else []
-    if not (before and after):
-        print("   No volume column found -- constant volume, or the "
-              "reporter did not write one. Nothing to measure here.")
+    if len(directories) < 2:
+        print("   One segment only, so there is no join to measure.")
         return
-    if len(after) < 5:
-        print(f"   Only {len(after)} frame(s) after the join. Too few to "
-              "say anything; give the segments more production steps or a "
-              "shorter state interval.")
-        findings["frames_after_the_join"] = len(after)
-        return
-
-    # Against segment 0, not against the unsplit run.
-    #
-    # The first version compared the segment after the join with the
-    # unsplit run, and the two are independently solvated: 13,241 atoms
-    # against 13,406 in one rehearsal, about 1.2% more water, which at
-    # 132 nm^3 is three standard deviations of volume before any barostat
-    # has done anything. It reported nine frames of settling that were
-    # mostly a different amount of water.
-    #
-    # Segment 0 and segment 1 are the same system -- one solvation, one
-    # topology, a checkpoint between them -- so the only thing that can
-    # move the volume across the join is the barostat re-adapting. That is
-    # the measurement this section claims to make.
-    # A later segment has no setup of its own -- it runs with
-    # `include: ["simulation"]` and `setup_from` pointing at segment 0 --
-    # so the absence of its setup record is the evidence that the two share
-    # a solvation, not evidence that they differ. The first version read it
-    # the other way round and refused on exactly the correct case.
-    first, second = particles(directories[0]), particles(directories[1])
-    if first is not None and second is not None and first != second:
-        print(f"   The segments were solvated separately ({first:,} atoms "
-              f"against {second:,}), so a volume difference across the join "
-              "is not a transient. Nothing comparable here.")
-        findings["segments_share_a_solvation"] = False
-        return
-    findings["particles"] = first
-
-    settled = statistics.fmean(before[len(before) // 2:])
-    spread = statistics.pstdev(before[len(before) // 2:]) or 1.0
-    outside = 0
-    for value in after:
-        if abs(value - settled) > 2 * spread:
-            outside += 1
+    joins = findings.setdefault("joins", [])
+    for number, (earlier, later) in enumerate(zip(directories, directories[1:]), start=1):
+        name = f"join {number} ({earlier.name} to {later.name})"
+        (said_before, before), (said_after, after) = volumes(earlier), volumes(later)
+        records = {earlier.name: said_before, later.name: said_after}
+        absent = [d for d, said in records.items() if said == "absent"]
+        empty = [d for d, said in records.items() if said == "empty"]
+        if absent:
+            # Not "constant volume": a run that wrote no energy record did
+            # not get as far as production, which is a different finding.
+            print(f"   {name}: no energy record in {', '.join(absent)}: that run did "
+                  "not reach production. Nothing to measure here.")
+            joins.append({"join": number, "not_measured": "no energy record"})
+            continue
+        if empty:
+            print(f"   {name}: the energy record of {', '.join(empty)} has no rows: "
+                  "its production is shorter than the state interval. Give the "
+                  "segments more production steps, or a shorter --state-interval.")
+            joins.append({"join": number, "not_measured": "no energy rows"})
+            continue
+        if "constant volume" in records.values():
+            if before and after and before[-1] != after[0]:
+                # Held constant either side and different across the join:
+                # the continuation did not start from the box it was given.
+                print(f"   {name}: the box changed across the join, from "
+                      f"{before[-1]:.4f} to {after[0]:.4f} nm^3, with the volume "
+                      "held constant on each side. The segment did not continue "
+                      "from the box it was given.")
+                joins.append({"join": number, "box_changed": [before[-1], after[0]]})
+                continue
+            held = f", held at {before[-1]:.3f} nm^3 on both sides" if before else ""
+            print(f"   {name}: production at constant volume{held}. Nothing moves "
+                  "across the join to measure.")
+            joins.append({"join": number, "not_measured": "constant volume"})
+            continue
+        if len(after) < 5:
+            print(f"   {name}: only {len(after)} frame(s) after the join. Too few to "
+                  "say anything; give the segments more production steps or a "
+                  "shorter --state-interval.")
+            joins.append({"join": number, "frames_after_the_join": len(after)})
+            continue
+        # Against the segment before, not against the unsplit run.
+        #
+        # The first version compared the segment after the join with the
+        # unsplit run, and the two are independently solvated: 13,241 atoms
+        # against 13,406 in one rehearsal, about 1.2% more water, which at
+        # 132 nm^3 is three standard deviations of volume before any barostat
+        # has done anything. It reported nine frames of settling that were
+        # mostly a different amount of water.
+        #
+        # Consecutive segments are the same system -- one solvation, one
+        # topology, a checkpoint between them -- so the only thing that can
+        # move the volume across the join is the barostat re-adapting. A
+        # later segment has no setup of its own -- it runs with
+        # `include: ["simulation"]` and `setup_from` pointing at segment 0 --
+        # so the absence of its setup record is the evidence that the two
+        # share a solvation, not evidence that they differ.
+        first, second = particles(earlier), particles(later)
+        if first is not None and second is not None and first != second:
+            print(f"   {name}: the segments were solvated separately ({first:,} "
+                  f"atoms against {second:,}), so a volume difference across the "
+                  "join is not a transient. Nothing comparable here.")
+            joins.append({"join": number, "segments_share_a_solvation": False})
+            continue
+        if first is not None:
+            findings["particles"] = first
+        settled = statistics.fmean(before[len(before) // 2:])
+        spread = statistics.pstdev(before[len(before) // 2:]) or 1.0
+        outside = 0
+        for value in after:
+            if abs(value - settled) > 2 * spread:
+                outside += 1
+            else:
+                break
+        print(f"   {name}: {earlier.name} settles at {settled:.1f} nm^3 (sd {spread:.2f}); "
+              f"the first {outside} of {len(after)} frames after the join sit "
+              "outside 2 sd of that")
+        if outside == 0:
+            print("     -> the join cost nothing measurable at this size")
         else:
-            break
-    print(f"   segment 0 settles at {settled:.1f} nm^3 (sd {spread:.2f})")
-    print(f"   after the join, the first {outside} of {len(after)} frames "
-          f"sit outside 2 sd of that")
-    if outside == 0:
-        print("   -> the join cost nothing measurable at this size")
-    else:
-        print(f"   -> about {outside} frames of settling; discard that much "
-              "after a join when averaging volume across one")
-    findings["frames_settling_after_the_join"] = outside
-    findings["frames_in_the_segment"] = len(after)
+            print(f"     -> about {outside} frames of settling; discard that much "
+                  "after a join when averaging volume across one")
+        joins.append({"join": number, "settled_nm3": settled, "sd_nm3": spread,
+                      "frames_settling": outside, "frames_in_the_segment": len(after)})
 
 
 if __name__ == "__main__":
