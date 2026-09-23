@@ -864,8 +864,11 @@ class TestTheFilePreviewReadsWhatTheAgentCanRead(unittest.TestCase):
         expected_html, expected_rendered = render_markdown(text)
         root = pathlib.Path(tempfile.mkdtemp()) / "study"
         (root / "report").mkdir(parents=True)
-        (root / "report" / "report.md").write_text(text, encoding="utf-8")
-        (root / "notes.md").write_text(text, encoding="utf-8")
+        # With the line endings Windows writes, which failed there: the
+        # preview kept them and the report page did not.
+        windows = text.replace("\n", "\r\n").encode("utf-8")
+        (root / "report" / "report.md").write_bytes(windows)
+        (root / "notes.md").write_bytes(windows)
         page = report_payload(root)
         self.assertEqual((page["html"], page["rendered"]), (expected_html, expected_rendered))
         session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)

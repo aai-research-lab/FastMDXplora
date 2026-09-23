@@ -851,6 +851,11 @@ def read_text_file(path: Any, *, within: Any = None,
         truncated = True
     else:
         text = raw.decode("utf-8", "replace")
+    # Line endings as reading text in Python gives them. Decoded bytes kept
+    # a file's \r\n, so on Windows the same report.md rendered one way on
+    # the report page, which reads it as text, and another in the preview.
+    # Size and digest stay those of the file as it is on disk.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if "\x00" in text[:4000]:
         return {"ok": False, "error": f"{file.name} looks binary; this reads text."}
     return {"ok": True, "name": file.name, "path": str(file),
