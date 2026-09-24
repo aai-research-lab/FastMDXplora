@@ -882,15 +882,22 @@ def _continuation_summary(root: Any) -> str:
     and equilibration on, which the runner now refuses -- and ask for the
     equilibration lengths it needed for the arithmetic. The planner has
     them, and the config it makes is the one to hand back.
+
+    It resumes from the last segment, as the command line's extension
+    does: the study's own checkpoint is where its first run stopped, and
+    a config resumed from there once the study has been extended runs
+    the extensions' span again.
     """
     if not root:
         return ""
     try:
         import yaml
 
-        from fastmdxplora.simulation.resume import continuation_of
+        from fastmdxplora.simulation.resume import continuation_of, last_segment
 
-        cont = continuation_of(root)
+        last = last_segment(root)
+        cont = continuation_of(root, from_segment=last)
+        extended = Path(last).resolve() != Path(root).resolve()
     except Exception:  # noqa: BLE001 - context, not load-bearing
         return ""
     if not cont.possible:
@@ -899,8 +906,12 @@ def _continuation_summary(root: Any) -> str:
         return f"continuing this study: {cont.as_text()}"
     short = dict(cont.config)
     text = yaml.safe_dump(short, sort_keys=False, default_flow_style=False).strip()
+    # Named, because "checkpoint.chk" alone reads as the study's own.
+    where = (f". It has been extended, so that is {Path(last).name}'s checkpoint, "
+             f"where it last stopped, and the production done counts every segment"
+             if extended else "")
     return (
-        f"continuing this study: {cont.as_text()}. To continue it, use this "
+        f"continuing this study: {cont.as_text()}{where}. To continue it, use this "
         f"config as the base and set simulation.duration_ns to how much MORE "
         f"production is wanted (the remainder of the plan is filled in); "
         f"for a total, subtract {cont.production_done_ns:.3f} ns already done. "
