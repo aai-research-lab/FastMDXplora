@@ -264,12 +264,17 @@ and is not a Context parameter, so it restarts at its default and re-adapts over
 the moves after each join.
 
 ```python
-segmentability({"simulation": {"duration_ns": 100, "pressure_bar": 1.0}})
+segmentability({"simulation": {"duration_ns": 100}})
 # .allowed        True
 # .qualification  "The barostat's adaptive move size is not carried by a
 #                  checkpoint, so it restarts at its default and re-adapts
 #                  after each join…"
 ```
+
+Constant pressure means the ensemble production runs in, decided as the runner
+decides it: a study that names no `ensemble` is NPT and is qualified, and one
+with `ensemble: nvt` is not, even with a `pressure_bar` in its config — that
+pressure is the equilibration's.
 
 That is a **qualification**. The state the second piece starts from is
 physically right and the trajectory it produces is a valid sample of the same

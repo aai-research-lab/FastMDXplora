@@ -80,6 +80,38 @@ class TestWhatMayBeSplit(unittest.TestCase):
                          "simulation.resume.bias_not_carried")
 
 
+class TestTheBarostatCaveatFollowsTheEnsemble(unittest.TestCase):
+    """The caveat is about the ensemble production runs in, not about
+    whether a pressure is written down.
+
+    It was read from `pressure_bar` and `pressure_atm`. A study that names
+    neither runs at constant pressure, so its segments were joined with no
+    caveat; and every resolved config carries a pressure, so a
+    constant-volume study continued from one was given a caveat about a
+    barostat its production never had.
+    """
+
+    def test_a_study_that_names_no_ensemble_is_qualified(self):
+        verdict = segmentability({"simulation": {"duration_ns": 10}})
+        self.assertTrue(verdict.allowed)
+        self.assertIn("barostat", verdict.qualification)
+
+    def test_constant_volume_is_not_even_with_a_pressure_in_the_config(self):
+        # What a resolved config for NVT production looks like: the
+        # pressure is there, and it was the equilibration's.
+        verdict = segmentability({"simulation": {
+            "duration_ns": 10, "ensemble": "nvt", "npt_steps": 50_000,
+            "pressure_bar": 1.0}})
+        self.assertTrue(verdict.allowed)
+        self.assertEqual(verdict.qualification, "")
+
+    def test_constant_pressure_stated_is_qualified(self):
+        verdict = segmentability(
+            {"simulation": {"duration_ns": 10, "ensemble": "npt"}})
+        self.assertTrue(verdict.allowed)
+        self.assertIn("barostat", verdict.qualification)
+
+
 class TestTheJoinsAreRecorded(unittest.TestCase):
     """A trajectory assembled from pieces is not one that ran through."""
 
@@ -392,6 +424,28 @@ class TestASegmentedStudyRunsEndToEnd(unittest.TestCase):
         self.run_it(segments=1)
         done = list(self.queue.jobs("c", status="done"))
         self.assertTrue(done[-1].result["provenance"]["ran_through"])
+
+    def test_a_default_study_records_the_barostat_caveat(self):
+        # The study names no ensemble and no pressure, and runs at constant
+        # pressure. Its first segment runs the config as written, which is
+        # the one the pressure keys read as caveat-free.
+        self.run_it(segments=4)
+        for job in self.queue.jobs("c", status="done"):
+            with self.subTest(segment=job.payload.get("segment")):
+                self.assertIn("barostat",
+                              job.result["provenance"]["qualification"])
+
+    def test_a_constant_volume_study_records_none(self):
+        self.config["simulation"] = {**self.config["simulation"],
+                                     "ensemble": "nvt", "pressure_bar": 1.0}
+        self.run_it(segments=4)
+        for job in self.queue.jobs("c", status="done"):
+            self.assertEqual(job.result["provenance"]["qualification"], "")
+
+    def test_a_study_that_runs_through_has_no_join_to_qualify(self):
+        self.run_it(segments=1)
+        [job] = self.queue.jobs("c", status="done")
+        self.assertEqual(job.result["provenance"]["qualification"], "")
 
     def test_each_segment_writes_to_its_own_directory(self):
         # Appending into one would leave a crashed segment's half-written

@@ -172,8 +172,11 @@ def study_runner(
                 from_step=int(payload.get("from_step", 0)),
                 checkpoint=block.get("resume_from", ""),
                 # Carried into the run's own record, so a reader sees it
-                # without going back to the config to re-derive it.
-                qualification=segmentability(config).qualification),
+                # without going back to the config to re-derive it. Only
+                # where the study is split: the caveat is about joins, and
+                # a study that runs through has none.
+                qualification=(segmentability(config).qualification
+                               if of_segments > 1 else "")),
         }
         # Whatever the study produced travels with it verbatim. A watcher
         # deciding whether to abandon a chain should read the study's own

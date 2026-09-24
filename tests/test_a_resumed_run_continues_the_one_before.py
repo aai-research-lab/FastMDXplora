@@ -470,7 +470,11 @@ class TestWhatAJoinCostsUnderPressure(unittest.TestCase):
         self.assertTrue(under_pressure.allowed)
         self.assertIn("barostat", under_pressure.qualification)
 
-        constant_volume = segmentability({"simulation": {"duration_ns": 10}})
+        # Constant volume is the ensemble, stated. A study naming none
+        # produces at constant pressure, so leaving the pressure out does
+        # not make it one.
+        constant_volume = segmentability(
+            {"simulation": {"duration_ns": 10, "ensemble": "nvt"}})
         self.assertTrue(constant_volume.allowed)
         self.assertEqual(constant_volume.qualification, "")
 

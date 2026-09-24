@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.refusals import Refusal, StudyError
-from fastmdxplora.simulation.ensembles import resolve_ensemble
+from fastmdxplora.simulation.ensembles import NPT, resolve_ensemble
 
 __all__ = [
     "Segment",
@@ -159,8 +159,12 @@ def segmentability(config: dict[str, Any] | None) -> Segmentability:
     # barostat's acceptance rate is off for a while at each join. Refusing
     # would refuse constant pressure, which is most work anybody does.
     # Saying nothing would leave a volume artefact for somebody to find.
-    barostat = (block.get("pressure_bar") is not None
-                or block.get("pressure_atm") is not None)
+    #
+    # Whether production has a barostat is the ensemble it runs in, asked
+    # of the resolver the runner uses. A pressure in the config does not
+    # say: a default study writes none and runs at constant pressure, and
+    # every resolved config carries one, NVT production included.
+    barostat = resolve_ensemble(block) == NPT
     qualification = (
         "The barostat's adaptive move size is not carried by a checkpoint, "
         "so it restarts at its default and re-adapts after each join. The "

@@ -908,19 +908,40 @@ def _steered_split_into_segments() -> Any:
         {"simulation": {"steered": {"to": 3.0}}}, segments=10)
 
 
-def _unbiased_split_into_segments() -> Any:
+def _split_ten_ways(simulation: dict) -> Any:
+    """The verdict on splitting a study, under the name the harness reads.
+
+    The verdict's record calls its caveat `qualification`, and the harness
+    reads `qualified`. Without carrying it across, a split with the
+    barostat's caveat would score as a clean one, and the case would be
+    measuring a key name.
+    """
     from fastmdxplora.simulation.resume import require_segmentable
 
-    return require_segmentable(
-        {"simulation": {"duration_ns": 100}}, segments=10).as_record()
+    record = require_segmentable({"simulation": simulation},
+                                 segments=10).as_record()
+    if record.get("qualification"):
+        record["qualified"] = record["qualification"]
+    return record
+
+
+def _unbiased_split_into_segments() -> Any:
+    # Nothing about the ensemble is said, so production runs at constant
+    # pressure, as a study that says nothing does.
+    return _split_ten_ways({"duration_ns": 100})
+
+
+def _constant_volume_run_split_into_segments() -> Any:
+    # Equilibrated at constant pressure, produced at constant volume. The
+    # pressure is there because a resolved config always carries one; it
+    # belongs to the equilibration, and production has no barostat to
+    # re-adapt at a join.
+    return _split_ten_ways(
+        {"duration_ns": 100, "ensemble": "nvt", "pressure_bar": 1.0})
 
 
 def _umbrella_split_into_segments() -> Any:
-    from fastmdxplora.simulation.resume import require_segmentable
-
-    return require_segmentable(
-        {"simulation": {"umbrella": {"centres": [1.0, 1.5]}}},
-        segments=10).as_record()
+    return _split_ten_ways({"umbrella": {"centres": [1.0, 1.5]}})
 
 
 
@@ -1340,13 +1361,24 @@ CLEAN: list[Case] = [
          "size and digest match the seal, so it is the file that was "
          "written and resuming from it continues the run"),
     Case("an unbiased run split into segments",
-         _unbiased_split_into_segments, "proceeded",
+         _unbiased_split_into_segments, "qualified",
          "it carries no state beyond positions and velocities, which a "
-         "checkpoint restores"),
+         "checkpoint restores, but a study that names no ensemble produces "
+         "at constant pressure, and the barostat's move size is not carried "
+         "across a join",
+         mentioning="barostat"),
+    Case("an unbiased constant-volume run split into segments",
+         _constant_volume_run_split_into_segments, "proceeded",
+         "production has no barostat, so positions and velocities are the "
+         "whole of its state and a checkpoint restores them; the pressure "
+         "in its config is the equilibration's"),
     Case("an umbrella window split into segments",
-         _umbrella_split_into_segments, "proceeded",
+         _umbrella_split_into_segments, "qualified",
          "the restraint is a function of the collective variable and not "
-         "of time, so stopping and continuing changes nothing"),
+         "of time, so stopping and continuing is sound; the window runs at "
+         "constant pressure, as a study that names no ensemble does, so "
+         "the barostat's caveat comes with it",
+         mentioning="barostat"),
     Case("a mean from a run with independent samples",
          _mean_of_an_independent_run, "proceeded",
          "two thousand uncorrelated frames support a mean and an error, "
