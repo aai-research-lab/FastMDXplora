@@ -751,10 +751,26 @@ def resolve(
         If any component's fate is not determined by the structure. The
         message names every such component and what must be decided.
     """
+    decisions = decide(pdb_path, keep_water=keep_water)
+    refuse_undetermined(decisions)
+    return decisions
+
+
+def decide(pdb_path: str | Path, *, keep_water: bool = False) -> list[Decision]:
+    """Every component's decision, those that STOP included, refusing nothing.
+
+    For a caller that takes only some decisions from here: with a ligand's
+    chemistry supplied as a file, setup decides the ions by these rules and
+    leaves the other components as it always has, so only the ions' STOP
+    is passed to `refuse_undetermined`.
+    """
     polymer, heteroatoms, linked = parse_structure(pdb_path)
     heterogens = group_heterogens(heteroatoms, linked)
-    decisions = classify(heterogens, polymer, keep_water=keep_water)
+    return classify(heterogens, polymer, keep_water=keep_water)
 
+
+def refuse_undetermined(decisions: list[Decision]) -> None:
+    """Refuse if any of these decisions is STOP, naming each one."""
     blocking = [d for d in decisions if d.action is Action.STOP]
     if blocking:
         detail = "\n".join(f"  - {d.resname}: {d.reason}" for d in blocking)
@@ -765,4 +781,3 @@ def resolve(
             "editing the input structure or by stating your intent with "
             "--setup-ligand and --setup-keep-heterogens."
         )
-    return decisions

@@ -108,6 +108,58 @@ def _heterogen_residue_counts(topology) -> dict[str, int]:
     return counts
 
 
+def report_removed_heterogens(
+    removed: dict[str, int],
+    *,
+    reinstated: tuple[str, ...] = (),
+    explained: tuple[str, ...] = (),
+) -> None:
+    """Say which heterogens were removed, and which of them come back.
+
+    ``removed`` counts residues by name. Water, common ions and capping
+    groups are left out here rather than by the caller, so what setup
+    filters out before PDBFixer sees the structure is reported in the same
+    terms as what PDBFixer removes itself.
+    """
+    removed = {n: c for n, c in removed.items()
+               if n.upper() not in CAPPING_GROUPS
+               and n.upper() not in _UNREMARKABLE_RESIDUES}
+    kept = {name.upper() for name in reinstated}
+    # Components the caller has already reasoned about and reported on.
+    # Warning that a buffer molecule "was removed, and might be the ligand
+    # you meant to simulate" contradicts a decision just explained to the
+    # user, and invites them to second-guess a correct one.
+    accounted = kept | {name.upper() for name in explained}
+    discarded = {n: c for n, c in removed.items() if n.upper() not in accounted}
+
+    if kept:
+        # Under the auto policy the components worth simulating have
+        # already been parameterized and are added back through the
+        # small-molecule path. Warning that they were "removed" would
+        # describe a loss that did not happen.
+        logger.info(
+            "Stripped %s from the structure; they are re-added with "
+            "small-molecule parameters.",
+            ", ".join(sorted(kept)),
+        )
+
+    if discarded:
+        summary = ", ".join(
+            f"{name} ({count})" if count > 1 else name
+            for name, count in sorted(discarded.items())
+        )
+        # Removing crystallization additives is usually right, but a bound
+        # ligand looks identical to a buffer molecule at this stage. Say
+        # what went, so a silently apo run cannot be mistaken for a holo
+        # one.
+        logger.warning(
+            "Removed heterogens: %s. Pass --setup-keep-heterogens (or "
+            "setup.keep_heterogens: true) to retain them, for example when "
+            "one of these is the ligand you intend to simulate.",
+            summary,
+        )
+
+
 def _standard_residue_names() -> frozenset[str]:
     """Amino acids and nucleotides, which are not heterogens."""
     amino = (
@@ -440,42 +492,8 @@ def fix_pdb_with_pdbfixer(
             logger.info(
                 "Kept %s: capping groups terminate the chain and are part of "
                 "the molecule, not heterogens.", ", ".join(sorted(caps)))
-        removed = {n: c for n, c in removed.items()
-                   if n.upper() not in CAPPING_GROUPS}
-        kept = {name.upper() for name in reinstated}
-        # Components the caller has already reasoned about and reported on.
-        # Warning that a buffer molecule "was removed, and might be the ligand
-        # you meant to simulate" contradicts a decision just explained to the
-        # user, and invites them to second-guess a correct one.
-        accounted = kept | {name.upper() for name in explained}
-        discarded = {n: c for n, c in removed.items() if n.upper() not in accounted}
-
-        if kept:
-            # Under the auto policy the components worth simulating have
-            # already been parameterized and are added back through the
-            # small-molecule path. Warning that they were "removed" would
-            # describe a loss that did not happen.
-            logger.info(
-                "Stripped %s from the structure; they are re-added with "
-                "small-molecule parameters.",
-                ", ".join(sorted(kept)),
-            )
-
-        if discarded:
-            summary = ", ".join(
-                f"{name} ({count})" if count > 1 else name
-                for name, count in sorted(discarded.items())
-            )
-            # Removing crystallization additives is usually right, but a bound
-            # ligand looks identical to a buffer molecule at this stage. Say
-            # what went, so a silently apo run cannot be mistaken for a holo
-            # one.
-            logger.warning(
-                "Removed heterogens: %s. Pass --setup-keep-heterogens (or "
-                "setup.keep_heterogens: true) to retain them, for example when "
-                "one of these is the ligand you intend to simulate.",
-                summary,
-            )
+        report_removed_heterogens(removed, reinstated=reinstated,
+                                  explained=explained)
     fixer.findMissingResidues()
 
     # removeHeterogens() deletes components from the topology but not from

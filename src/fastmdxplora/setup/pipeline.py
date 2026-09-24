@@ -612,31 +612,15 @@ def _retain_in_structure(input_pdb, setup_dir, keep_decisions):
     return target
 
 
-def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> list[str]:
-    """Turn the classifier's SIMULATE decisions into files the ligand path takes.
+def _keep_in_place(params: dict, input_pdb, setup_dir, decisions) -> list:
+    """Keep the ions the classifier kept, and water asked for, where they are.
 
-    The chemistry a structure omits is fetched from RCSB, completed with
-    hydrogens, and checked for a determined protonation in the complex. What
-    comes back is an ordinary ligand file, so everything downstream is the
-    existing protein-ligand route rather than a parallel one.
-
-    Returns the ligand files written, empty when the structure holds nothing
-    worth simulating.
+    Returns the decisions whose copies the filtered structure holds, or
+    nothing when there is no ion to keep, and PDBFixer then strips the
+    heterogens itself.
     """
-    from fastmdxplora.setup.ccd import fetch_chemistry
-    from fastmdxplora.setup.forcefields import (
-        available_forcefields,
-        resolve_forcefield,
-    )
-    from fastmdxplora.setup.heterogens import (
-        WATER_NAMES, Action, resolve, summarize,
-    )
-    from fastmdxplora.setup.protonation import (
-        POISED_MARGIN, apply_settled_state, settle,
-    )
+    from fastmdxplora.setup.heterogens import ION_NAMES, WATER_NAMES, Action
 
-    decisions = resolve(input_pdb, keep_water=bool(params.get("keep_water")))
-    logger.info("Heterogen decisions:\n%s", summarize(decisions))
     simulate = [d for d in decisions if d.action is Action.SIMULATE]
 
     # A lone ion is kept and needs nothing fetched. Bond orders, formal
@@ -678,34 +662,105 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
                       for d in waters),
         )
 
-    wanted = [d for d in simulate
-              if not d.is_monatomic and d.resname not in WATER_NAMES]
-
     # Monatomic ions are kept in the structure rather than extracted. The
     # protein force field already carries validated ion parameters, and the
     # small-molecule route is both unnecessary and destructive: a zinc pulled
     # out to an SDF and re-added came back renamed, in a different chain, and
-    # at coordinates that were not its coordination site.
-    #
+    # at coordinates that were not its coordination site. Retained water
+    # goes into the same structure, because PDBFixer keeps all it is given
+    # from it and does not read its own water option.
+    in_place = ions + [d for d in simulate
+                       if not d.is_monatomic and d.resname in ION_NAMES]
+    if not in_place:
+        return []
+    params["_retained_pdb"] = str(
+        _retain_in_structure(input_pdb, setup_dir, in_place + waters)
+    )
+    # Which copies, for the setup record: the log says it once, and the
+    # record is what is read afterwards.
+    params["_retained_ions"] = [
+        het.label for d in in_place for het in d.instances
+    ]
+    return in_place + waters
+
+
+def _ions_beside_a_supplied_ligand(params: dict, input_pdb, setup_dir):
+    """Decide the structure's ions when the ligand's chemistry is supplied.
+
+    A ligand given as a file skips `_auto_ligands`, which is where the
+    structure's ions are read; unread, they go with every other heterogen
+    PDBFixer strips, and trypsin's structural calcium would be lost beside a
+    benzamidine SDF and kept without one. Whether an ion stays is a
+    question about the ion, not about where the ligand's chemistry came
+    from, so ions, and water asked for, are decided and kept as under
+    `_auto_ligands`, and an ion the structure does not determine is refused
+    in the same words.
+
+    Everything else is left as it was. The supplied ligand is not kept in
+    the structure, since it is re-added from its file, posed from
+    `input.pdb`, which is not what is filtered here; other components are
+    stripped and reported, and are not refused over.
+
+    Returns what the filtered structure left out, by residue name, for the
+    report PDBFixer no longer makes; None where nothing was filtered.
+    """
+    from fastmdxplora.setup.heterogens import (
+        ION_NAMES, WATER_NAMES, decide, refuse_undetermined, summarize,
+    )
+
+    decisions = decide(input_pdb, keep_water=bool(params.get("keep_water")))
+    # A supplied ligand is the caller's to describe, whatever it is called.
+    supplied = set(_explicit_ligand_resnames(params))
+    ions = [d for d in decisions
+            if d.resname in ION_NAMES and d.resname not in supplied]
+    if not ions:
+        return None
+    refuse_undetermined(ions)
+    logger.info("Ion decisions beside the supplied ligand:\n%s",
+                summarize(ions))
+    waters = [d for d in decisions if d.resname in WATER_NAMES]
+    kept = _keep_in_place(params, input_pdb, setup_dir, ions + waters)
+    if not kept:
+        return None
+    return {d.resname: d.count for d in decisions
+            if not any(d is k for k in kept)}
+
+
+def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> list[str]:
+    """Turn the classifier's SIMULATE decisions into files the ligand path takes.
+
+    The chemistry a structure omits is fetched from RCSB, completed with
+    hydrogens, and checked for a determined protonation in the complex. What
+    comes back is an ordinary ligand file, so everything downstream is the
+    existing protein-ligand route rather than a parallel one.
+
+    Returns the ligand files written, empty when the structure holds nothing
+    worth simulating.
+    """
+    from fastmdxplora.setup.ccd import fetch_chemistry
+    from fastmdxplora.setup.forcefields import (
+        available_forcefields,
+        resolve_forcefield,
+    )
+    from fastmdxplora.setup.heterogens import (
+        ION_NAMES, WATER_NAMES, Action, resolve, summarize,
+    )
+    from fastmdxplora.setup.protonation import (
+        POISED_MARGIN, apply_settled_state, settle,
+    )
+
+    decisions = resolve(input_pdb, keep_water=bool(params.get("keep_water")))
+    logger.info("Heterogen decisions:\n%s", summarize(decisions))
+
     # Settled here, before anything below can return: a structure with
     # nothing else to simulate returns next, and PDBFixer then strips every
     # heterogen, so an ion not already in the filtered structure is lost
-    # while the log says it was kept. Retained water goes into the same
-    # structure, because PDBFixer keeps all it is given from it and does
-    # not read its own water option.
-    from fastmdxplora.setup.heterogens import ION_NAMES
+    # while the log says it was kept.
+    _keep_in_place(params, input_pdb, setup_dir, decisions)
 
-    in_place = ions + [d for d in wanted if d.resname in ION_NAMES]
-    if in_place:
-        params["_retained_pdb"] = str(
-            _retain_in_structure(input_pdb, setup_dir, in_place + waters)
-        )
-        # Which copies, for the setup record: the log says it once, and the
-        # record is what is read afterwards.
-        params["_retained_ions"] = [
-            het.label for d in in_place for het in d.instances
-        ]
-
+    simulate = [d for d in decisions if d.action is Action.SIMULATE]
+    wanted = [d for d in simulate
+              if not d.is_monatomic and d.resname not in WATER_NAMES]
     if not wanted:
         return []
 
@@ -959,14 +1014,17 @@ def run(
 
     # With the auto policy, the structure decides what to simulate and the
     # chemistry it omits is retrieved before preparation runs, so the rest of
-    # the phase sees an ordinary protein-ligand job.
+    # the phase sees an ordinary protein-ligand job. With the ligand's
+    # chemistry supplied as a file the structure still decides its ions.
     #
     # Deliberately outside the input-resolution try above: that handler
     # downgrades failures to a warning and carries on, which would turn a
     # refusal into a run that reports success while having simulated nothing
     # of the kind.
-    if str(params.get("heterogens", "auto")).strip().lower() == "auto" \
-            and not params.get("keep_heterogens") and not params.get("ligand"):
+    auto = str(params.get("heterogens", "auto")).strip().lower() == "auto" \
+        and not params.get("keep_heterogens")
+    filtered_out = None
+    if auto and not params.get("ligand"):
         discovered = _auto_ligands(
             params,
             input_pdb,
@@ -982,6 +1040,9 @@ def run(
             )
     elif params.get("ligand"):
         params["_reinstated_heterogens"] = _explicit_ligand_resnames(params)
+        if auto:
+            filtered_out = _ions_beside_a_supplied_ligand(
+                params, input_pdb, setup_dir)
 
     # ---- Stage 2: PDBFixer (or skip via fixed_pdb) ---------------------
     prepared_pdb = setup_dir / "prepared.pdb"
@@ -1002,12 +1063,22 @@ def run(
             presenter.step(f"Using supplied fixed PDB: {fixed_src.name} (PDBFixer skipped)")
     else:
         try:
-            from fastmdxplora.setup.pdbfix import fix_pdb_with_pdbfixer
+            from fastmdxplora.setup.pdbfix import (
+                fix_pdb_with_pdbfixer, report_removed_heterogens,
+            )
 
             # When ions are being kept, PDBFixer runs on a structure already
             # filtered to the polymer plus those ions, so "keep heterogens"
             # retains exactly them and nothing else.
             retained = params.get("_retained_pdb")
+            if filtered_out is not None:
+                # PDBFixer keeps all of a filtered structure and so reports
+                # no removal; beside a supplied ligand nothing else names
+                # what the filter left out.
+                report_removed_heterogens(
+                    filtered_out,
+                    reinstated=tuple(params.get("_reinstated_heterogens", ())),
+                )
             fix_pdb_with_pdbfixer(
                 retained or str(input_pdb),
                 str(prepared_pdb),
