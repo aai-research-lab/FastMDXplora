@@ -101,7 +101,14 @@ def particles_after_setup(output_dir: Path | str) -> int | None:
     """
     import json
 
-    record = Path(output_dir) / "setup" / "setup_parameters.json"
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    # The named system's, for a study given `setup_from`: nothing was
+    # prepared here, and that is the system the rest would simulate.
+    prepared = setup_records_of(output_dir)
+    if prepared is None:
+        return None
+    record = prepared / "setup_parameters.json"
     try:
         data = json.loads(record.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -193,7 +200,10 @@ def run_in_stages(
     # top level the loader refused it and named the right place, which is
     # the guardrail working on the code that was written to use it.
     simulation = dict(rest.get("simulation") or {})
-    simulation["setup_from"] = str(out / "setup")
+    # A system the study named stays named: the first stage prepared nothing
+    # when it had one, so its own `setup/` holds nothing to simulate.
+    if not (simulation.get("setup_from") or simulation.get("prepared_from")):
+        simulation["setup_from"] = str(out / "setup")
     rest["simulation"] = simulation
     try:
         runner(config=rest, output_dir=str(out))

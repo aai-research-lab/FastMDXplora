@@ -257,11 +257,17 @@ def _detect_ligand_resname(project_root: Path) -> str | None:
 
     Returns the ligand name recorded under
     ``resolved_forcefield.ligand.name`` in ``setup/setup_parameters.json``,
-    or ``None`` if there is no ligand or the manifest can't be read.
+    or ``None`` if there is no ligand or the manifest can't be read. For a
+    run given `setup_from`, the manifest is the named system's.
     """
     import json
 
-    manifest = project_root / "setup" / "setup_parameters.json"
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    records = setup_records_of(project_root)
+    if records is None:
+        return None
+    manifest = records / "setup_parameters.json"
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, ValueError):

@@ -79,6 +79,13 @@ class PhaseResult:
     honest value: we do not know what produced it, and guessing the current
     session would be worse than saying nothing.
     """
+    taken_from: str = ""
+    """Where a phase that did not run here took its output from.
+
+    Set on the setup phase of a run whose `setup_from` names a prepared
+    system: nothing was prepared, and this says which system was simulated
+    instead, so the run's own record points at the one that describes it.
+    """
 
     def to_dict(self) -> dict[str, Any]:
         record = {
@@ -94,6 +101,8 @@ class PhaseResult:
             record["refusal"] = self.refusal
         if self.produced_by:
             record["produced_by"] = self.produced_by
+        if self.taken_from:
+            record["taken_from"] = self.taken_from
         return record
 
 
@@ -409,6 +418,19 @@ class FastMDXplora:
             exclude = self._config_exclude
 
         plan = self._build_plan(include=include, exclude=exclude, want_report=report)
+        prepared = self._prepared_system_named(options)
+        if prepared is not None and "setup" in plan:
+            # The simulation reads the named system whatever setup does, so
+            # preparing here solvates a box nothing simulates -- and its
+            # record, the one beside this run, describes a different set of
+            # atoms from the ones simulated. Every run of a replica sweep did
+            # this, each with its own unused box.
+            plan.remove("setup")
+            logger.info(
+                "Preparing nothing: `setup_from` names %s, and this run "
+                "simulates that system. A second preparation would solvate "
+                "a box that is never simulated, and water is not placed the "
+                "same way twice.", prepared)
 
         # Dry run: report the plan and return without executing.
         if dry_run:
@@ -444,6 +466,19 @@ class FastMDXplora:
 
         # Plan goes to file/audit; the presenter shows headers visually.
         logger.debug("Plan: %s", " -> ".join(plan))
+
+        if prepared is not None and not _same_directory(
+                prepared, self.output_dir / "setup"):
+            # Recorded as this run's setup, so the manifest names the system
+            # that was simulated and readers of the setup record can find it.
+            now = datetime.now(timezone.utc).isoformat()
+            self.results.append(PhaseResult(
+                name="setup", status="skipped", output_dir=prepared,
+                started_at=now, finished_at=now,
+                message=(f"Not run here: the system simulated was prepared "
+                         f"in {prepared}, which `setup_from` names."),
+                taken_from=str(prepared),
+            ))
 
         # Before the expensive part, not after. The setup phase says these
         # things too, and by then the person who would have changed
@@ -835,6 +870,29 @@ class FastMDXplora:
             plan.remove("report")
 
         return plan
+
+    def _prepared_system_named(
+        self, override: dict[str, dict[str, Any]] | None
+    ) -> Path | None:
+        """The prepared system `setup_from` names for this run, if one is there.
+
+        Resolved as the simulation phase resolves it, so the system found
+        here is the one that will be simulated. None where the setting is
+        unset or names no prepared system: then setup runs as asked, and the
+        simulation phase refuses a name that points at nothing, as before.
+        """
+        simulation = {**(self.options.get("simulation") or {}),
+                      **((override or {}).get("simulation") or {})}
+        named = simulation.get("setup_from") or simulation.get("prepared_from")
+        if not named:
+            return None
+        from fastmdxplora.simulation.pipeline import (
+            _a_prepared_system_sits_in,
+            _where_the_system_was_prepared,
+        )
+
+        where, _ = _where_the_system_was_prepared(self, named)
+        return where if _a_prepared_system_sits_in(where) else None
 
     def _refuse_to_overwrite(self, plan: list[str], *, force: bool) -> None:
         """Stop a second run from writing over the first one's output.
@@ -1263,6 +1321,13 @@ class FastMDXplora:
         from fastmdxplora.utils.presenter import get_presenter
 
         return get_presenter()
+
+
+def _same_directory(first: Path, second: Path) -> bool:
+    try:
+        return Path(first).resolve() == Path(second).resolve()
+    except OSError:
+        return False
 
 
 RUN_PROCESS_FILE = ".fastmdxplora_run.json"

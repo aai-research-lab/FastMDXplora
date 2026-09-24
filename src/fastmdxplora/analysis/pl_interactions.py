@@ -192,7 +192,7 @@ class ProteinLigandInteractions(Analysis):
         chemistry = resolve_ligand_chemistry(
             traj, self.ligand_resname, ligand,
             supplied=self.ligand_chemistry,
-            run_dir=self._run_directory(),
+            run_dir=self._run_directory() or self._setup_it_simulated(),
             net_charge=self.ligand_net_charge,
         )
         # Recorded beside the results, because an interaction computed from
@@ -333,6 +333,26 @@ class ProteinLigandInteractions(Analysis):
         for candidate in (here, *here.parents):
             if (candidate / "setup" / "ligands").is_dir():
                 return candidate
+        return None
+
+    def _setup_it_simulated(self) -> Path | None:
+        """The setup directory of a system this run took from elsewhere.
+
+        A run given `setup_from` has no ``setup/`` of its own. Its ligand was
+        resolved where the named system was prepared, and without looking
+        there the chemistry was perceived from the coordinates -- charge
+        included, which decides every salt bridge.
+        """
+        from fastmdxplora.simulation.pipeline import setup_records_of
+
+        output = getattr(self, "output_dir", None)
+        if not output:
+            return None
+        here = Path(output)
+        for candidate in (here, *here.parents):
+            records = setup_records_of(candidate)
+            if records is not None and (records / "ligands").is_dir():
+                return records
         return None
 
     def plot(self, result: pd.DataFrame, ax) -> None:

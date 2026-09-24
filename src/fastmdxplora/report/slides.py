@@ -108,9 +108,13 @@ def _outline_markdown(orchestrator: "FastMDXplora", title: str) -> str:
     # `list.extend` returns None, so "extend(...) or append(fallback)" runs the
     # fallback every time: the outline carried the bullets and then told the
     # reader to go and look at the JSON anyway.
+    setup_bullets = _setup_bullets(root)
     for present, heading, bullets, fallback in (
-        (phase_context.setup_present, "How the system was built",
-         _setup_bullets(root), "setup/setup_parameters.json"),
+        # Or where the run simulated a system prepared elsewhere, whose
+        # record says how it was built though setup did not run here.
+        (phase_context.setup_present or bool(setup_bullets),
+         "How the system was built", setup_bullets,
+         "setup/setup_parameters.json"),
         (phase_context.simulation_present, "How it was simulated",
          _simulation_bullets(root), "simulation/simulation_parameters.json"),
     ):
@@ -258,10 +262,11 @@ def _build_pptx(orchestrator: "FastMDXplora", title: str, out_path: Path) -> Non
     # What was done, not where it was written. These slides used to read
     # "System preparation phase outputs: • /tmp/audit/setup", which is a
     # filesystem path from somebody else's machine projected onto a wall.
-    if phase_context.setup_present:
-        bullets = _setup_bullets(project_root)
-        if bullets:
-            _section_slide("How the system was built", bullets)
+    # Whether setup ran here or the run simulated a system prepared
+    # elsewhere: either way the system has a record of how it was built.
+    bullets = _setup_bullets(project_root)
+    if bullets:
+        _section_slide("How the system was built", bullets)
     if phase_context.simulation_present:
         bullets = _simulation_bullets(project_root)
         if bullets:
@@ -339,7 +344,14 @@ def _recorded(project_root: Path, phase: str) -> dict:
     """A phase's recorded parameters, flattened, or an empty mapping."""
     import json
 
-    path = project_root / phase / f"{phase}_parameters.json"
+    directory = project_root / phase
+    if phase == "setup":
+        # A run given `setup_from` prepared nothing; the system it simulated
+        # is described where that setting points.
+        from fastmdxplora.simulation.pipeline import setup_records_of
+
+        directory = setup_records_of(project_root) or directory
+    path = directory / f"{phase}_parameters.json"
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):

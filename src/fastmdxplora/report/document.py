@@ -74,6 +74,20 @@ def _load_json_safely(path: Path) -> dict | None:
         return None
 
 
+def _setup_record(project_root: Path) -> dict:
+    """The setup record of the system this run simulated.
+
+    Its own, or, for a run given `setup_from`, the named system's: that run
+    prepared nothing, and the system it simulated is described there.
+    """
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    records = setup_records_of(project_root)
+    if records is None:
+        return {}
+    return _load_json_safely(records / "setup_parameters.json") or {}
+
+
 def _study_in_one_paragraph(project_root: Path) -> str | None:
     """What was simulated, for how long, and what came of it.
 
@@ -87,7 +101,7 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
     sentence assembled from three absent values is worse than the generic one
     it replaces.
     """
-    def flattened(path: Path) -> dict:
+    def flattened(record: dict) -> dict:
         """A manifest with its nested `parameters` lifted to the top.
 
         Values live at either level depending on whether they were requested
@@ -95,7 +109,6 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
         that record it under `parameters` -- so the summary fell back to the
         generic sentence for a run that had one.
         """
-        record = _load_json_safely(path) or {}
         merged = dict(record)
         nested = record.get("parameters")
         if isinstance(nested, dict):
@@ -104,8 +117,9 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
                     merged[key] = value
         return merged
 
-    setup = flattened(project_root / "setup" / "setup_parameters.json")
-    sim = flattened(project_root / "simulation" / "simulation_parameters.json")
+    setup = flattened(_setup_record(project_root))
+    sim = flattened(_load_json_safely(
+        project_root / "simulation" / "simulation_parameters.json") or {})
 
     said: list[str] = []
 
@@ -223,7 +237,11 @@ def _summary_section(phase_context: PhaseContext, project_root: Path) -> str:
 
 
 def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
-    setup = _load_json_safely(project_root / "setup" / "setup_parameters.json") or {}
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    prepared_in = setup_records_of(project_root)
+    setup = (_load_json_safely(prepared_in / "setup_parameters.json") or {}
+             if prepared_in is not None else {})
     sim = _load_json_safely(project_root / "simulation" / "simulation_parameters.json") or {}
     setup_params = setup.get("parameters", {})
     sim_params = sim.get("parameters", {})
@@ -261,10 +279,22 @@ def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
     lines.append("### System preparation")
     if setup_params:
         lines.append("")
-        lines.append(
-            "The input system was prepared using FastMDXplora's automated "
-            "setup pipeline with the following parameters:"
-        )
+        if prepared_in not in (None, project_root / "setup"):
+            # Said, because the settings below are not this run's: it
+            # simulated a system prepared elsewhere, and a reader repeating
+            # it needs that system rather than these settings run again.
+            lines.append(
+                "This run simulated the system prepared in "
+                f"`{_code_text(prepared_in)}`, named by "
+                "`simulation.setup_from`, rather than preparing its own. "
+                "That system was prepared using FastMDXplora's automated "
+                "setup pipeline with the following parameters:"
+            )
+        else:
+            lines.append(
+                "The input system was prepared using FastMDXplora's automated "
+                "setup pipeline with the following parameters:"
+            )
         lines.append("")
         for k, v in setup_params.items():
             lines.append(f"- **{_md_text(k)}**: `{_code_text(v)}`")
@@ -563,7 +593,7 @@ def _assess_this_run(project_root: Path) -> dict[str, Any] | None:
     if not series:
         return None
 
-    setup = _load_json_safely(project_root / "setup" / "setup_parameters.json") or {}
+    setup = _setup_record(project_root)
     sim = _load_json_safely(
         project_root / "simulation" / "simulation_parameters.json") or {}
     return assess_run(

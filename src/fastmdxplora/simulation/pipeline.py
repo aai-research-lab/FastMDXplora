@@ -360,13 +360,86 @@ def _where_the_system_was_prepared(
     if not prepared_from:
         return orchestrator.output_dir / "setup", False
 
+    return where_a_prepared_system_sits(_as_named(prepared_from)), True
+
+
+def _as_named(prepared_from: Any) -> Path:
+    """A path given as `setup_from`, as an absolute path."""
     named = Path(str(prepared_from)).expanduser()
     if not named.is_absolute():
         # Relative to where the run was started, which is where somebody
         # typing the path can see it.
         named = Path.cwd() / named
+    return named
 
-    return where_a_prepared_system_sits(named), True
+
+def setup_records_of(run_dir: str | Path) -> Path | None:
+    """The setup directory of the system a run simulated, or None.
+
+    A run that prepared its own system keeps the record in ``setup/``. A run
+    given `setup_from` prepared nothing, and the record of the system it
+    simulated -- force field, box, atom count, the ligand's resolved
+    chemistry -- is where that setting points. Readers that looked only in
+    ``<run>/setup`` found nothing there: the report said setup was not run,
+    and the ligand's chemistry, charge included, was perceived from the
+    coordinates instead of read.
+
+    Tried in order: where the run's manifest says setup was taken from, the
+    run's own ``setup/``, then the `setup_from` its simulation record or
+    resolved config names, resolved as the simulation phase resolves it.
+    The manifest comes first because it is the latest word: a run that once
+    prepared its own system and was then simulated from another one still
+    has the first ``setup/`` on disk. Only a directory holding
+    ``setup_parameters.json`` counts.
+    """
+    run = Path(run_dir)
+    candidates: list[Path] = []
+    taken = _setup_taken_from(run)
+    if taken is not None:
+        candidates.append(taken)
+    candidates.append(run / "setup")
+    candidates.extend(where_a_prepared_system_sits(_as_named(named))
+                      for named in _setup_from_recorded(run))
+    for candidate in candidates:
+        if (candidate / "setup_parameters.json").is_file():
+            return candidate
+    return None
+
+
+def _setup_taken_from(run: Path) -> Path | None:
+    """Where the run's manifest says its setup was taken from."""
+    try:
+        manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+        phases = manifest.get("phases") or []
+    except (OSError, ValueError, AttributeError):
+        return None
+    for phase in phases:
+        if (isinstance(phase, dict) and phase.get("name") == "setup"
+                and phase.get("taken_from")):
+            return Path(str(phase["taken_from"]))
+    return None
+
+
+def _setup_from_recorded(run: Path) -> list[str]:
+    """The `setup_from` a run's simulation record and resolved config name."""
+    import yaml
+
+    blocks: list[Any] = []
+    try:
+        record = json.loads((run / "simulation" / "simulation_parameters.json")
+                            .read_text(encoding="utf-8"))
+        blocks.append(record.get("parameters"))
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        config = yaml.safe_load((run / "resolved_config.yml").read_text(encoding="utf-8"))
+        blocks.append(config.get("simulation"))
+    except (OSError, yaml.YAMLError, AttributeError):
+        pass
+    return [str(block.get("setup_from") or block.get("prepared_from"))
+            for block in blocks
+            if isinstance(block, dict)
+            and (block.get("setup_from") or block.get("prepared_from"))]
 
 
 def run(

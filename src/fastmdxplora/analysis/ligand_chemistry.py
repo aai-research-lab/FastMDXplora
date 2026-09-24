@@ -72,7 +72,20 @@ class ResolvedChemistry:
             "n_atoms": self.n_atoms,
             "bond_orders_perceived": self.is_perceived,
             "charge_was_ambiguous": self.charge_was_ambiguous,
+            # The charge the interactions were judged with. It decides every
+            # salt bridge, and it differs by route: read from a file, or
+            # chosen among the ones that balance.
+            "formal_charge": _formal_charge(self.mol),
         }
+
+
+def _formal_charge(mol: Any) -> int | None:
+    try:
+        from rdkit import Chem
+
+        return int(Chem.GetFormalCharge(mol))
+    except Exception:  # noqa: BLE001 - a record is worth writing without it
+        return None
 
 
 def _from_sdf(path: Path, resname: str, expected_atoms: int) -> ResolvedChemistry | None:
