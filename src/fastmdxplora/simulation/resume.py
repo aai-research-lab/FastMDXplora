@@ -406,7 +406,8 @@ class Continuation:
 
 
 def continuation_of(parent: str | Path, *, total_ns: float | None = None,
-                    more_ns: float | None = None) -> Continuation:
+                    more_ns: float | None = None,
+                    from_segment: str | Path | None = None) -> Continuation:
     """The config that continues ``parent``, and the facts it rests on.
 
     ``total_ns`` asks for that much production in all, counting what
@@ -415,12 +416,18 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     is a whole study: it reuses the parent's prepared system, resumes
     from its checkpoint, and neither minimises nor equilibrates -- the
     three things a hand-written resume gets wrong.
+
+    ``from_segment`` is the folder whose checkpoint is resumed, where that
+    is not the study's own run: a study already extended goes on from its
+    last segment, not from where its first run stopped, and what it has
+    done is then counted across all of its segments.
     """
     import yaml
 
     from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
     root = Path(parent).expanduser().resolve()
+    source = Path(from_segment).expanduser().resolve() if from_segment else root
     empty = dict(parent=str(root), checkpoint="", production_done_ns=0.0,
                  production_planned_ns=0.0, config={})
     resolved = root / "resolved_config.yml"
@@ -434,11 +441,12 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     if not verdict.allowed:
         return Continuation(**empty, refusal=verdict.reason)
 
-    checkpoint = root / "simulation" / "checkpoint.chk"
+    checkpoint = source / "simulation" / "checkpoint.chk"
     empty["checkpoint"] = str(checkpoint)
     if not checkpoint.is_file():
+        where = "the study" if source == root else source.name
         return Continuation(**empty,
-                            refusal="the study has no checkpoint; checkpoints are written "
+                            refusal=f"{where} has no checkpoint; checkpoints are written "
                                     "during production, so it may not have reached it")
     side = read_checkpoint_sidecar(checkpoint) or {}
     if str(side.get("stage") or "") != "production":
@@ -463,17 +471,20 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     # and "extend to 0.6 ns in all" asked for 0.3 ns more instead of 0.1.
     # A sidecar written before this was understood may carry a whole-run
     # step; one larger than the plan is recognised and converted.
+    # Only the study's own run equilibrated, so only its step can be a
+    # whole-run one; a segment's step counts its own production from zero,
+    # and the study's plan says nothing about how long a segment ran.
     step = int(side.get("step") or 0)
     planned_steps = int(round(planned_ns / dt_ns)) if dt_ns else 0
-    if planned_steps and step > planned_steps + nvt + npt - 1:
+    if source == root and planned_steps and step > planned_steps + nvt + npt - 1:
         step = max(0, step - nvt - npt)
     done_steps = max(0, step)
-    done_ns = done_steps * dt_ns
+    done_ns = done_steps * dt_ns if source == root else production_done_ns(root)
 
     # The continuation's frames start from its own zero, at the checkpoint.
     # Off the frame grid, the gap across the join is the interval plus the
     # remainder, and the joined trajectory changes its spacing there.
-    interval = trajectory_interval_of(root)
+    interval = trajectory_interval_of(source)
     if interval and done_steps % interval:
         return Continuation(**empty, refusal=(
             f"the checkpoint is at production step {done_steps:,}, which is not a "
@@ -583,6 +594,17 @@ def segments_so_far(study: str | Path) -> list[int]:
     return sorted(piece.index for piece in survey_segments(study))
 
 
+def last_segment(study: str | Path) -> Path:
+    """The folder of the study's highest-numbered segment, which is where a
+    continuation resumes from: the study itself until it has been extended.
+    Chosen by number, because the segment a run last wrote is the one the
+    join puts last, whatever order the folders list or were touched in."""
+    from fastmdxplora.analysis.joining import survey_segments
+
+    pieces = survey_segments(study)
+    return max(pieces, key=lambda piece: piece.index).directory if pieces else Path(study)
+
+
 def production_done_ns(study: str | Path) -> float:
     """Production across every finished segment of this study."""
     import yaml
@@ -619,8 +641,12 @@ def extension_of(study: str | Path, *, total_ns: float | None = None,
     else:
         wanted = None
 
-    plan = continuation_of(study, more_ns=wanted) if wanted is not None \
-        else continuation_of(study)
+    # From the last segment's checkpoint. The study's own is where its first
+    # run stopped; resuming there once it has been extended would run the
+    # extensions' span again, and the join would hold that span twice.
+    last = last_segment(study)
+    plan = continuation_of(study, more_ns=wanted, from_segment=last) if wanted is not None \
+        else continuation_of(study, from_segment=last)
     if not plan.possible:
         return plan
     index = next_segment_index(study)

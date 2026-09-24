@@ -185,6 +185,10 @@ def survey_segments(root: Path | str, *,
             finished=_finished(simulation_dir),
             config_digest=_config_digest(directory),
         ))
+    # By number, which is the order the pieces were run in. Names sort the
+    # same only while every index has three digits: segment-1000 lists
+    # before segment-101.
+    pieces.sort(key=lambda piece: piece.index)
     return pieces
 
 
