@@ -7,6 +7,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.5.7] — 2026-09-24
+
 This release is for running a study where the compute is, and for carrying on
 one that has already run. `fastmdx remote` inspects a machine over your own
 ssh, installs there once you confirm, sends a study and brings it back, and a
