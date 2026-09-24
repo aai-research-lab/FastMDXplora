@@ -103,79 +103,13 @@ software rather than two stacks wearing one name.
 |---|---|
 | **Linux** | Everything, including CUDA. The usual choice for production. |
 | **macOS** | Everything. Apple Silicon runs on the CPU platform; OpenCL is not usable, and FastMDXplora falls back automatically and says so. |
-| **Windows** | Analysis and reporting run natively. Simulation needs WSL2, for the reasons in the next section. |
 
 Python 3.10 to 3.13.
 
----
-
-## Windows
-
-*Written from what continuous integration and the dependency declarations
-show, and not yet run end to end on a Windows machine. Corrections welcome:
-open an issue with what you hit and this section will say so.*
-
-Two thirds of FastMDXplora runs natively on Windows and one third does not,
-and it is worth knowing which before you start rather than after.
-
-**What works natively.** The analysis, reporting and GUI layers, and the
-whole test suite: continuous integration runs it on `windows-latest` for
-Python 3.10, 3.11 and 3.13 alongside Linux and macOS. If your trajectories
-come from somewhere else -- a cluster, a collaborator, GROMACS -- and you
-want the measures, the report and the GUI, install the base
-package and stop there:
-
-```powershell
-py -m pip install fastmdxplora
-fastmdx info
-```
-
-**Running dynamics.** OpenMM has Windows wheels for every supported
-Python:
-
-```powershell
-py -m pip install "fastmdxplora[md]"
-```
-
-**What does not work natively, and why.** Ligand parameterisation and
-enhanced sampling depend on packages that are distributed only through
-conda-forge, and PLUMED has no Windows build at all. This is upstream and
-not something FastMDXplora can route around:
-
-| | |
-|---|---|
-| `openmmforcefields`, `openff-toolkit` | conda-forge only, so a ligand cannot be parameterised natively |
-| `openmm-plumed`, `plumed` | no Windows build; umbrella sampling, metadynamics and steered pulling are unavailable |
-
-**For the whole stack, use WSL2.** It is a first-class Linux environment
-on the same machine, not an emulator, and the Linux instructions above
-apply unchanged inside it:
-
-```powershell
-wsl --install -d Ubuntu
-```
-
-Then, in the Ubuntu shell that opens, follow
-[the conda-forge instructions](#recommended-conda-forge) exactly as
-written. WSL2 runs a real Linux kernel rather than translating system
-calls, which is why the conda stack behaves there exactly as it does on a
-cluster, and an NVIDIA GPU in the same machine is visible to OpenMM
-through it.
-
-Your Windows drives appear at `/mnt/c/`, so a config can be edited in
-Windows and run in WSL2 without copying. **Run the study itself in the
-Linux filesystem, though.** Reads and writes across the `/mnt/c/` bridge
-are much slower than native ones, and a trajectory is hundreds of
-megabytes: keep `output` under `~/runs/` and reach across the bridge for
-inputs and for the report, not for every frame.
-
-**Whatever you install, `fastmdx info` tells you what you got.** It prints
-the phases that are available and names what is missing, so a study that
-cannot run says so before it starts rather than partway through:
-
-```powershell
-fastmdx info
-```
+**Windows is not supported.** AmberTools, which gives every ligand its
+charges, has no Windows build, so a Windows install cannot prepare a ligand
+at all. Continuous integration, the package metadata and this guide cover
+Linux and macOS, and `fastmdx info` says so when it runs on Windows.
 
 ---
 

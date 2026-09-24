@@ -13,7 +13,7 @@ cd FastMDXplora
 
 # Create and activate a virtual environment
 python -m venv .venv
-source .venv/bin/activate   # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 # Install in editable mode with development dependencies
 pip install -e ".[dev]"

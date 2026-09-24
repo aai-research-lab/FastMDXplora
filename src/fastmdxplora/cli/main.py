@@ -2054,8 +2054,26 @@ def _info_record() -> dict[str, Any]:
         "version": __version__,
         "source": source_provenance(),
         "python": platform.python_version(),
+        "platform": _platform_record(),
         "phases": phases,
         "backends": backends,
+    }
+
+
+def _platform_record() -> dict[str, Any]:
+    """The operating system, and whether FastMDXplora supports it.
+
+    Linux and macOS. Windows is not supported, because AmberTools, which
+    gives every ligand its charges, has no Windows build. Nothing refuses to
+    run there; this is where it is said.
+    """
+    import platform
+
+    system = platform.system()
+    return {
+        "name": {"Darwin": "macOS"}.get(system, system),
+        "machine": platform.machine(),
+        "supported": sys.platform != "win32",
     }
 
 
@@ -2070,6 +2088,10 @@ def _cmd_info(args: argparse.Namespace | None = None) -> int:
     print(f"  version: {__version__}")
     print(f"  Authors: {__author__}")
     print(f"  DOI:     {__doi__}")
+    shown = record["platform"]
+    print(f"  Platform: {shown['name']} {shown['machine']}".rstrip())
+    if not shown["supported"]:
+        print("  Windows is not supported. FastMDXplora supports Linux and macOS.")
     print()
     print("Molecular Dynamics Phases:")
     for name, status in record["phases"].items():

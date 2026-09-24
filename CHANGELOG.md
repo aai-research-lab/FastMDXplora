@@ -33,6 +33,16 @@ PDBFixer or solvation, with `setup.environment.charges_unavailable` and the
 install command. A study without a ligand is unaffected. From PyPI,
 AmberTools has to come from conda-forge alongside the OpenFF toolkit.
 
+### Windows is no longer supported
+
+Continuous integration, the package metadata and the documentation now cover
+Linux and macOS only, because AmberTools, which every ligand needs for its
+charges, has no Windows build. The classifiers name Linux and macOS in place
+of "OS Independent", the Windows legs are gone from the test matrix, and the
+installation guide says Windows is not supported. `fastmdx info` states the
+platform, and on Windows says plainly that it is not supported; nothing
+refuses to run there.
+
 ## [2.5.7] — 2026-09-24
 
 This release is for running a study where the compute is, and for carrying on

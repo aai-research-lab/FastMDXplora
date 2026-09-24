@@ -434,11 +434,12 @@ script. See [Selections in a Config](selections.md).
 
 ## `info`
 
-Prints the version, authors and DOI; a readiness line per phase; a
-grouped backend table marking each of OpenMM, PDBFixer, the OpenFF toolkit,
-`openmmforcefields`, RDKit, PROPKA, WeasyPrint, Markdown, UMAP and
-`openmmplumed` as `installed`, `missing` or `broken`, with the conda command
-for anything missing; and the citation.
+Prints the version, authors and DOI; the platform, saying plainly on Windows
+that it is not supported; a readiness line per phase; a grouped backend table
+marking each of OpenMM, PDBFixer, the OpenFF toolkit, `openmmforcefields`,
+RDKit, PROPKA, WeasyPrint, Markdown, UMAP and `openmmplumed` as `installed`,
+`missing` or `broken`, with the conda command for anything missing; and the
+citation.
 
 One row is not a package: **AM1-BCC charges** says whether anything can compute
 a ligand's charges, and names what will (AmberTools, or OpenEye where it is

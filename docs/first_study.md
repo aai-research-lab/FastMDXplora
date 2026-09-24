@@ -22,8 +22,8 @@ That lists every backend, grouped by what it is for, and gives the command for
 anything missing. If the simulation backends are present you can run everything
 on this page.
 
-Other routes, Windows and WSL2, and what to do about a partial install are in
-[Installing FastMDXplora](installation.md).
+Other routes, the platforms supported (Linux and macOS), and what to do about a
+partial install are in [Installing FastMDXplora](installation.md).
 
 ---
 
