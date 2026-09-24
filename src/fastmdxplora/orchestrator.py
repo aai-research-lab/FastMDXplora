@@ -418,6 +418,10 @@ class FastMDXplora:
             exclude = self._config_exclude
 
         plan = self._build_plan(include=include, exclude=exclude, want_report=report)
+        if options:
+            # Checked before anything reads them, and before the dry run,
+            # which is how a study is checked without running it.
+            self._merge_options(options)
         prepared = self._prepared_system_named(options)
         if prepared is not None and "setup" in plan:
             # The simulation reads the named system whatever setup does, so
@@ -938,6 +942,15 @@ class FastMDXplora:
                         f"Unknown phase '{phase}' in options. Valid: {PHASES}"
                     , code="config.phase.unknown")
                 merged[phase].update(opts)
+            # Settings given to explore() pass the validator, as those given
+            # anywhere else do. They were merged over the constructor's
+            # unchecked, so explore(options={"simulation": {"duraton_ns": 50}})
+            # ran the default duration without a word.
+            from fastmdxplora.config.loader import validate_config
+
+            validate_config({"systems": [{"system": str(self.system)}],
+                             **{phase: opts for phase, opts in merged.items() if opts}},
+                            require_systems=True)
         return merged
 
     def _say_what_is_worth_knowing(self, options: dict[str, Any]) -> None:

@@ -66,3 +66,17 @@ def test_a_phase_command_is_validated(tmp_path, capsys) -> None:
         printed = capsys.readouterr()
         said = printed.out + printed.err
     assert "below the smallest value" in said
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_settings_given_to_explore_are_validated(tmp_path, dry_run) -> None:
+    # The class's own example passes options to explore(), where they were
+    # merged over the constructor's without a check.
+    study = FastMDXplora(system="1UBQ", output_dir=str(tmp_path / "study"))
+    with pytest.raises(ConfigError) as caught:
+        # The report phase alone: were the settings not checked, it stops at
+        # once over an empty folder, rather than running a real study.
+        study.explore(options={"simulation": {"duraton_ns": 50}}, dry_run=dry_run,
+                      include_phase=["report"])
+    assert "did you mean 'duration_ns'" in str(caught.value)
+    assert not (tmp_path / "study" / "setup").exists()
