@@ -205,6 +205,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 fastmdxplora = [
+    # PEP 561: the package's annotations are meant to be read, so the phase
+    # methods' settings reach an editor and a type checker.
+    "py.typed",
     "gui/static/*",
     "gui/static/**/*",
     "gui/templates/*.html",

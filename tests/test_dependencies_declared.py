@@ -67,11 +67,23 @@ CONDA_ONLY = {
 }
 
 
+def _is_type_checking(test: ast.expr) -> bool:
+    return ((isinstance(test, ast.Name) and test.id == "TYPE_CHECKING")
+            or (isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"))
+
+
 def _imported_distributions() -> dict[str, set[str]]:
     found: dict[str, set[str]] = {}
     for path in sorted(PACKAGE.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        # An import under `if TYPE_CHECKING:` is read by type checkers and
+        # never run, so nothing needs installing for it. Its `else:` runs.
+        never_run = {id(inner) for block in ast.walk(tree)
+                     if isinstance(block, ast.If) and _is_type_checking(block.test)
+                     for statement in block.body for inner in ast.walk(statement)}
         for node in ast.walk(tree):
+            if id(node) in never_run:
+                continue
             if isinstance(node, ast.Import):
                 names = [alias.name.split(".")[0] for alias in node.names]
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:

@@ -25,7 +25,24 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # For editors and type checkers only: what each phase method accepts,
+    # generated from the schema. Nothing here is imported when running.
+    import sys
+
+    from fastmdxplora.config.phase_settings_types import (
+        AnalyzeSettings,
+        ReportSettings,
+        SetupSettings,
+        SimulateSettings,
+    )
+
+    if sys.version_info >= (3, 11):
+        from typing import Unpack
+    else:
+        from typing_extensions import Unpack
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import refusal_of
@@ -591,19 +608,19 @@ class FastMDXplora:
         return run_results
 
     # Convenience: per-phase entry points (also called by the CLI)
-    def setup(self, **kwargs: Any) -> PhaseResult:
+    def setup(self, **kwargs: Unpack[SetupSettings]) -> PhaseResult:
         """Run only the setup phase."""
         return self._run_phase("setup", self._validated("setup", kwargs))
 
-    def simulate(self, **kwargs: Any) -> PhaseResult:
+    def simulate(self, **kwargs: Unpack[SimulateSettings]) -> PhaseResult:
         """Run only the simulation phase."""
         return self._run_phase("simulation", self._validated("simulation", kwargs))
 
-    def analyze(self, **kwargs: Any) -> PhaseResult:
+    def analyze(self, **kwargs: Unpack[AnalyzeSettings]) -> PhaseResult:
         """Run only the analysis phase."""
         return self._run_phase("analysis", self._validated("analysis", kwargs))
 
-    def report(self, **kwargs: Any) -> PhaseResult:
+    def report(self, **kwargs: Unpack[ReportSettings]) -> PhaseResult:
         """Run only the report phase."""
         return self._run_phase("report", self._validated("report", kwargs))
 
@@ -1410,3 +1427,16 @@ def _phase_selection(
                 options=[name, name[:-6]], context="explore")
     return (include_phase if include_phase is not None else include,
             exclude_phase if exclude_phase is not None else exclude)
+
+
+def _document_the_phase_methods() -> None:
+    """Each phase method's docstring, from the schema: every setting it takes,
+    with its type, bounds, default and help, as ``fastmdx <phase> --help``
+    shows them. It named none, so help() said nothing an editor could use."""
+    from fastmdxplora.config.phase_settings import PHASES, docstring
+
+    for method in PHASES:
+        getattr(FastMDXplora, method).__doc__ = docstring(method)
+
+
+_document_the_phase_methods()
