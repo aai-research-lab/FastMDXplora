@@ -28,7 +28,7 @@ from fastmdxplora.remote import CodeIdentity, Environment, Inspection, Machine
 from fastmdxplora.remote.identity import same_code
 from fastmdxplora.remote.inputs import gather_inputs
 from fastmdxplora.remote.installer import install
-from fastmdxplora.remote.machines import save_machine
+from fastmdxplora.remote.machines import REQUIRED_BACKENDS, save_machine
 from fastmdxplora.remote.plan import backends_plan
 from fastmdxplora.remote.send import cancel, fetch, job_script, prepare, send, status
 from fastmdxplora.remote.transport import Transport
@@ -38,8 +38,10 @@ pytestmark = pytest.mark.skipif(
     reason="needs sh and rsync, as sending does")
 
 RELEASE = CodeIdentity("1.0")
-REQUIRED = ("openmm", "pdbfixer", "openff.toolkit", "openmmforcefields",
-            "rdkit", "propka")
+# The machine's installation answers for every backend a study needs, read
+# from the list the readiness check itself uses: a copy kept here fell
+# behind when AM1-BCC charges joined it, and every send was refused.
+REQUIRED = REQUIRED_BACKENDS
 
 
 def _tool(path: Path, body: str) -> None:
