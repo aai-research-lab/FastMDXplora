@@ -416,39 +416,55 @@ def _min_distance_to_polymer(het: Heterogen, polymer: list[Atom]) -> float:
 SAME_SITE_CUTOFF_A = 1.5
 
 
-def _mutually_overlapping(instances: list[Heterogen]) -> list[Heterogen]:
-    """Copies of one component that occupy the same position."""
-    if len(instances) < 2:
-        return []
-    overlapping: list[Heterogen] = []
-    for i, first in enumerate(instances):
-        for second in instances[i + 1:]:
-            for a in first.atoms:
-                for b in second.atoms:
-                    if math.dist((a.x, a.y, a.z), (b.x, b.y, b.z)) < SAME_SITE_CUTOFF_A:
-                        for h in (first, second):
-                            if h not in overlapping:
-                                overlapping.append(h)
-                        break
-    return overlapping
+def _shared_sites(instances: list[Heterogen]) -> list[list[Heterogen]]:
+    """Copies of one component that share a site, one list per site.
 
-
-def _resolve_by_occupancy(instances: list[Heterogen]) -> tuple[bool, str]:
-    """Rank alternate positions by occupancy, or report that they tie."""
-    ranked = sorted(
-        instances,
-        key=lambda h: max((a.occupancy for a in h.atoms), default=0.0),
-        reverse=True,
-    )
-    best = max((a.occupancy for a in ranked[0].atoms), default=0.0)
-    runner_up = max((a.occupancy for a in ranked[1].atoms), default=0.0)
-    if abs(best - runner_up) < OCCUPANCY_TIE_TOLERANCE:
-        return False, (
-            f"occupancies are {best:.2f} and {runner_up:.2f}."
+    Two copies within SAME_SITE_CUTOFF_A share a site, and so do copies
+    joined through a chain of such pairs. Copies that are not joined are
+    separate sites and separate questions: two split zincs 20 A apart are
+    two ions, each with its own alternate positions, not four positions for
+    one. Only sites holding more than one copy are returned, in file order.
+    """
+    def close(first: Heterogen, second: Heterogen) -> bool:
+        return any(
+            math.dist((a.x, a.y, a.z), (b.x, b.y, b.z)) < SAME_SITE_CUTOFF_A
+            for a in first.atoms for b in second.atoms
         )
-    return True, (
-        f"{ranked[0].label} at occupancy {best:.2f} kept over "
-        f"{ranked[1].label} at {runner_up:.2f}; they occupy one site."
+
+    sites: list[list[Heterogen]] = []
+    placed: set[int] = set()
+    for start in range(len(instances)):
+        if start in placed:
+            continue
+        placed.add(start)
+        site, frontier = [start], [start]
+        while frontier:
+            here = frontier.pop()
+            for other in range(len(instances)):
+                if other not in placed and close(instances[here], instances[other]):
+                    placed.add(other)
+                    site.append(other)
+                    frontier.append(other)
+        if len(site) > 1:
+            sites.append([instances[i] for i in sorted(site)])
+    return sites
+
+
+def _occupancy(het: Heterogen) -> float:
+    """A copy's occupancy, the highest of its atoms'."""
+    return max((a.occupancy for a in het.atoms), default=0.0)
+
+
+def _resolve_by_occupancy(site: list[Heterogen]) -> tuple[Heterogen | None, str]:
+    """The copy a shared site keeps and why, or None where occupancy ties."""
+    ranked = sorted(site, key=_occupancy, reverse=True)
+    best, runner_up = _occupancy(ranked[0]), _occupancy(ranked[1])
+    if abs(best - runner_up) < OCCUPANCY_TIE_TOLERANCE:
+        return None, ", ".join(f"{_occupancy(h):.2f}" for h in ranked)
+    others = ", ".join(f"{h.label} at {_occupancy(h):.2f}" for h in ranked[1:])
+    return ranked[0], (
+        f"{ranked[0].label} at occupancy {best:.2f} kept over {others}; "
+        "they occupy one site."
     )
 
 
@@ -529,24 +545,36 @@ def _classify_one(
         # alternate positions for a single site, not two sites: partially
         # occupied metals on a symmetry axis are ordinary in the PDB. Keeping
         # both puts two atoms within bonding distance, which the force field
-        # rejects, and would be wrong even if it did not.
-        overlapping = _mutually_overlapping(instances)
-        if overlapping:
-            resolved, explanation = _resolve_by_occupancy(overlapping)
-            if not resolved:
-                labels = ", ".join(h.label for h in overlapping)
-                return Decision(
-                    resname,
-                    Action.STOP,
-                    f"{len(overlapping)} copies occupy the same site "
-                    f"({labels}) at indistinguishable occupancy, so they are "
-                    f"alternate positions for one ion and the structure does "
-                    f"not say which is real. {explanation} Choose one",
-                    pack,
+        # rejects, and would be wrong even if it did not. Each site is decided
+        # by its own copies, and keeps exactly the one it chose.
+        tied: list[str] = []
+        superseded: list[Heterogen] = []
+        explanations: list[str] = []
+        for site in _shared_sites(instances):
+            kept, explanation = _resolve_by_occupancy(site)
+            if kept is None:
+                tied.append(
+                    f"{len(site)} copies occupy the same site "
+                    f"({', '.join(h.label for h in site)}) at "
+                    f"indistinguishable occupancy ({explanation})"
                 )
-            instances = [h for h in instances if h not in overlapping[1:]]
+                continue
+            superseded.extend(h for h in site if h is not kept)
+            explanations.append(explanation)
+        if tied:
+            return Decision(
+                resname,
+                Action.STOP,
+                f"{'; '.join(tied)}, so they are alternate positions for one "
+                "ion and the structure does not say which is real. Choose one"
+                + (" in each site" if len(tied) > 1 else ""),
+                pack,
+            )
+        if superseded:
+            instances = [h for h in instances if h not in superseded]
             pack = tuple(instances)
-            logger.info("%s: %s", resname, explanation)
+            for explanation in explanations:
+                logger.info("%s: %s", resname, explanation)
 
         # A LINK record naming a monatomic ion describes coordination, not a
         # covalent bond: the legacy PDB format uses one record type for both,
