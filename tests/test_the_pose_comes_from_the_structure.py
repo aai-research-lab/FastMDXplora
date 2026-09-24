@@ -94,8 +94,11 @@ class TestThePoseIsTakenFromTheStructure:
         before = molecule.conformers[0].m_as("nanometer").copy()
         moved, _ = pose_from_structure(molecule, _structure(tmp_path), "BNZ")
         after = moved.conformers[0].m_as("nanometer")
-        shift = after[6:] - before[6:]
-        assert np.allclose(shift, shift[0], atol=1e-6), "hydrogens dispersed"
+        # The stand-in has no bonds, so each hydrogen finds its carbon by
+        # proximity; either way it stays a C-H bond's length from it.
+        assert np.allclose(np.linalg.norm(after[6:] - after[:6], axis=1),
+                           np.linalg.norm(before[6:] - before[:6], axis=1),
+                           atol=1e-6), "hydrogens left behind"
 
     def test_it_says_what_it_did(self, tmp_path: Path) -> None:
         _, said = pose_from_structure(_Molecule(), _structure(tmp_path), "BNZ")

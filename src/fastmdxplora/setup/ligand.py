@@ -231,12 +231,14 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
     moved = positions.copy()
     moved[heavy] = frame.xyz[0][indices]
 
-    # Hydrogens keep their offset from the heavy atom they were built on, so
-    # the molecule stays intact rather than having its hydrogens left behind.
-    shift = moved[heavy[0]] - positions[heavy[0]]
-    for index, atom in enumerate(molecule.atoms):
-        if atom.atomic_number <= 1:
-            moved[index] = positions[index] + shift
+    # Each hydrogen hangs off its own heavy atom, turned by the rotation that
+    # best lays the file's heavy atoms onto the structure's. The file's
+    # conformer is in an arbitrary frame, so one translation for all of them
+    # would leave X-H bonds several Angstroms long.
+    rotation = _superposing_rotation(positions[heavy], moved[heavy])
+    for index, parent in _hydrogen_parents(molecule, positions, heavy).items():
+        moved[index] = moved[parent] + rotation @ (
+            positions[index] - positions[parent])
 
     # Wrapped the way the molecule's own conformer is wrapped, rather than
     # by importing the units package: this function is then testable
@@ -252,6 +254,47 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
         f"placed {wanted}{which} at its coordinates in "
         f"{Path(structure).name} rather than the supplied file's, which "
         "carries the chemistry and an arbitrary pose")
+
+
+def _superposing_rotation(mobile: Any, target: Any) -> Any:
+    """The proper rotation that best lays ``mobile`` onto ``target`` (Kabsch).
+
+    The determinant is forced to +1: a reflection can fit a flat or nearly
+    flat set of heavy atoms as well as a rotation does, and would put every
+    out-of-plane hydrogen on the wrong face.
+    """
+    import numpy as _np
+
+    a = mobile - mobile.mean(axis=0)
+    b = target - target.mean(axis=0)
+    u, _, vt = _np.linalg.svd(a.T @ b)
+    sign = 1.0 if _np.linalg.det(vt.T @ u.T) >= 0 else -1.0
+    return vt.T @ _np.diag([1.0, 1.0, sign]) @ u.T
+
+
+def _hydrogen_parents(molecule: Any, positions: Any,
+                      heavy: list[int]) -> dict[int, int]:
+    """Each hydrogen's heavy atom: by the bond graph where the molecule has
+    one, otherwise the heavy atom it sits nearest in the file's conformer."""
+    import numpy as _np
+
+    heavy_atoms = set(heavy)
+    parents: dict[int, int] = {}
+    try:
+        for bond in molecule.bonds:
+            first, second = bond.atom1_index, bond.atom2_index
+            if first in heavy_atoms and second not in heavy_atoms:
+                parents[second] = first
+            elif second in heavy_atoms and first not in heavy_atoms:
+                parents[first] = second
+    except AttributeError:
+        parents = {}
+    for index, atom in enumerate(molecule.atoms):
+        if atom.atomic_number <= 1 and index not in parents:
+            distances = _np.linalg.norm(positions[heavy] - positions[index],
+                                        axis=1)
+            parents[index] = heavy[int(_np.argmin(distances))]
+    return parents
 
 
 def load_ligand(
