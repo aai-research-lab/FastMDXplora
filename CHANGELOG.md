@@ -33,6 +33,15 @@ PDBFixer or solvation, with `setup.environment.charges_unavailable` and the
 install command. A study without a ligand is unaffected. From PyPI,
 AmberTools has to come from conda-forge alongside the OpenFF toolkit.
 
+### AmberTools is found without activating the environment
+
+The OpenFF toolkit looks for AmberTools on `PATH`, once, when it is first
+imported. Running the environment's Python by its full path, as a script, a
+batch job or a command sent over `ssh` does, left the environment's own
+programs off `PATH`, so AmberTools was installed and a ligand still could not
+be given charges. Importing FastMDXplora now puts the directory holding the
+running interpreter's programs at the end of `PATH` when it is missing.
+
 ### Windows is no longer supported
 
 Continuous integration, the package metadata and the documentation now cover

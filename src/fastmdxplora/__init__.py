@@ -86,6 +86,12 @@ def python_range_string() -> str:
     )
 
 
+# Before anything imports the OpenFF toolkit, which decides once, on import,
+# whether AmberTools is there by looking on PATH: see own_programs.
+from fastmdxplora.own_programs import put_own_programs_on_path
+
+put_own_programs_on_path()
+
 from fastmdxplora.orchestrator import FastMDXplora
 
 # Expose the analysis-level orchestrator for users who want it directly.
