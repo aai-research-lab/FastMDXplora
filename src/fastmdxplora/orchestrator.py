@@ -260,6 +260,18 @@ class FastMDXplora:
 
         self.system: str = str(system)
 
+        # The same validation every other route passes. A system given here
+        # with its options reached the phases unchecked, so a misspelled
+        # `duraton_ns` ran the default million production steps without a
+        # word, and a temperature of -50 K was planned as given. Before
+        # anything is created, so a refused study leaves nothing behind.
+        if options or study_options:
+            from fastmdxplora.config.loader import validate_config
+
+            validate_config({"systems": [{"system": self.system}],
+                             **dict(study_options or {}), **dict(options or {})},
+                            require_systems=True)
+
         # Phase selection (the batch layer passes the config's include/exclude)
         self._config_include: list[str] | None = include
         self._config_exclude: list[str] | None = exclude
