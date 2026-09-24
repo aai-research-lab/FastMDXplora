@@ -362,20 +362,15 @@ class TestTheEndpointsNeedTheMachinesTrust(unittest.TestCase):
         except urllib.error.HTTPError as exc:
             return exc.code
 
-    def test_they_are_on_the_same_list_as_the_rest(self):
-        # Asserted from the source as well as by serving, because the list
-        # is the thing somebody adding the next endpoint will read.
-        import pathlib
+    def test_they_are_not_on_the_list_of_open_routes(self):
+        # Asserted from the list as well as by serving, because the list
+        # is the thing somebody adding the next endpoint will read. It names
+        # the routes left open, so these must be absent from it.
+        from fastmdxplora.gui.server import POSTS_ANSWERED_BEYOND_LOOPBACK
 
-        import fastmdxplora.gui as gui
-
-        source = (pathlib.Path(gui.__file__).parent
-                  / "server.py").read_text(encoding="utf-8")
-        gated = source[source.index("if not allow_control and path in {"):]
-        gated = gated[:gated.index("}:")]
         for path in ("/api/agent/model", "/api/agent/propose"):
             with self.subTest(path=path):
-                self.assertIn(path, gated)
+                self.assertNotIn(path, POSTS_ANSWERED_BEYOND_LOOPBACK)
 
     def test_bound_beyond_loopback_they_refuse(self):
         port = self.serve("0.0.0.0")
@@ -684,14 +679,9 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
     def test_the_run_endpoint_needs_the_machine_s_trust(self):
         # It starts work on this machine, so it belongs with the endpoints
         # that refuse on a non-loopback bind.
-        import pathlib
+        from fastmdxplora.gui.server import POSTS_ANSWERED_BEYOND_LOOPBACK
 
-        import fastmdxplora.gui as gui
-
-        source = (pathlib.Path(gui.__file__).parent
-                  / "server.py").read_text(encoding="utf-8")
-        gated = source[source.index("if not allow_control and path in {"):]
-        self.assertIn("/api/agent/run", gated[:gated.index("}:")])
+        self.assertNotIn("/api/agent/run", POSTS_ANSWERED_BEYOND_LOOPBACK)
 
     def test_the_panel_offers_a_budget_in_every_mode(self):
         import pathlib

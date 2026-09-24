@@ -85,6 +85,15 @@ class _DashboardServer(ThreadingHTTPServer):
 #: be answered is always small enough to be drained first.
 MOST_A_BODY_MAY_BE = 1_000_000
 
+#: The POST routes a dashboard bound beyond loopback still answers; every
+#: other POST is refused there, a route added later included. There is no
+#: login, so the bind address is the whole of the trust model, and a list of
+#: what to refuse fails open for whichever route nobody remembered to put on
+#: it. The other routes start runs, change which folder is served, read files
+#: the caller names, and store or spend an API key. Building a config from
+#: the posted form reads no file and changes nothing, so it alone is open.
+POSTS_ANSWERED_BEYOND_LOOPBACK = frozenset({"/api/config"})
+
 PLOT_TITLE_ALIASES = {
     "rmsd": "RMSD",
     "rmsf": "RMSF",
@@ -296,6 +305,13 @@ def make_handler(
             if path == "/api/app-state" or path == "/api/explore/state":
                 self._send_json(app_runtime.snapshot())
                 return
+            if (path in {"/api/agent/conversation", "/api/agent/conversations"}
+                    and not allow_control):
+                # A conversation holds what somebody asked the agent and the
+                # content of files they attached. Every POST that writes one
+                # is refused beyond loopback; reading one back is no safer.
+                self._refuse_beyond_loopback()
+                return
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import read_conversation
 
@@ -493,49 +509,9 @@ def make_handler(
         def _dispatch_post(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
-            if not allow_control and path in {
-                "/api/explore/stop",
-                "/api/run",
-                "/api/run-config",
-                # These two read a file the caller names and report what went
-                # wrong with it, and a parse error quotes the line it failed
-                # on. Over a network that is a file-content oracle: a planted
-                # token and an AWS key were both recovered through it, and a
-                # valid-mapping file echoes its first key. They belong with
-                # the endpoints that need the machine's trust.
-                "/api/load-config",
-                "/api/check-config",
-                # One stores an API key and the other spends it. Over a
-                # network, unauthenticated, that is somebody else setting
-                # where this machine's requests go, or burning the credit
-                # on the key already stored. Neither is a study, so neither
-                # reads as dangerous at a glance -- which is exactly why
-                # they belong on a list rather than in a judgement.
-                "/api/agent/model",
-                "/api/agent/propose",
-                "/api/agent/run",
-                "/api/agent/conversation",
-                "/api/agent/conversation/clear",
-                "/api/agent/conversation/new",
-                "/api/agent/conversation/open",
-                "/api/agent/conversation/delete",
-                "/api/agent/conversation/attach",
-                "/api/agent/attachment",
-            }:
-                # Before the refusal, not after: an unread body turns the
-                # close into an RST and the caller loses the 403 it explains
-                # itself with. See `_drain_request_body`.
-                self._drain_request_body()
-                self._send_json(
-                    {
-                        "ok": False,
-                        "error": (
-                            "This is disabled when the dashboard is bound to a "
-                            "non-loopback address."
-                        ),
-                    },
-                    status=403,
-                )
+            if not allow_control and path not in POSTS_ANSWERED_BEYOND_LOOPBACK:
+                # Refused unless listed as open; see the list for why.
+                self._refuse_beyond_loopback()
                 return
             payload = self._read_json_body()
             if path == "/api/run":
@@ -559,8 +535,8 @@ def make_handler(
                 self._send_json(model_endpoint(payload or {}))
                 return
             if path == "/api/agent/run":
-                # Starting a study, so it belongs with the endpoints that
-                # need the machine's trust -- listed above with the others.
+                # Starting a study, so it needs the machine's trust -- which
+                # it has only on loopback, like every route not listed open.
                 from fastmdxplora.gui.agent_panel import run_endpoint
 
                 self._send_json(run_endpoint(
@@ -699,6 +675,22 @@ def make_handler(
             return
 
         # ---- Generic response helpers ----
+        def _refuse_beyond_loopback(self) -> None:
+            # The body is drained before the refusal, not after: an unread
+            # body turns the close into an RST and the caller loses the 403
+            # it explains itself with. See `_drain_request_body`.
+            self._drain_request_body()
+            self._send_json(
+                {
+                    "ok": False,
+                    "error": (
+                        "This is disabled when the dashboard is bound to a "
+                        "non-loopback address."
+                    ),
+                },
+                status=403,
+            )
+
         def _drain_request_body(self) -> None:
             """Read and discard what the caller sent, before refusing it.
 

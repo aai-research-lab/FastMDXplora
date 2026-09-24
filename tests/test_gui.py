@@ -2878,15 +2878,14 @@ class TestStartingAnAnalysisFromThePage:
         it belongs behind the same door.
         """
         import pathlib
-        import re
 
         from fastmdxplora.gui import server
 
         source = pathlib.Path(server.__file__).read_text(encoding="utf-8")
-        guarded = re.search(
-            r"if not allow_control and path in \{([^}]*)\}", source)
-        assert guarded, "the control guard has moved; check this test"
-        assert '"/api/run"' in guarded.group(1)
+        assert ("if not allow_control and path not in "
+                "POSTS_ANSWERED_BEYOND_LOOPBACK") in source, (
+            "the control guard has moved; check this test")
+        assert "/api/run" not in server.POSTS_ANSWERED_BEYOND_LOOPBACK
 
 
 class TestATimelineShowsOnlyWhatCanHappen:
@@ -3667,14 +3666,13 @@ class TestAConfigYouAlreadyHave:
 
     def test_running_one_is_a_control_and_guarded_like_one(self) -> None:
         import pathlib
-        import re
 
         from fastmdxplora.gui import server
 
         source = pathlib.Path(server.__file__).read_text(encoding="utf-8")
-        guarded = re.search(
-            r"if not allow_control and path in \{([^}]*)\}", source)
-        assert guarded and '"/api/run-config"' in guarded.group(1)
+        assert ("if not allow_control and path not in "
+                "POSTS_ANSWERED_BEYOND_LOOPBACK") in source
+        assert "/api/run-config" not in server.POSTS_ANSWERED_BEYOND_LOOPBACK
 
 
 class TestTheWordsOnTheRunPage:
