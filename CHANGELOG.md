@@ -7,6 +7,514 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+This release is for running a study where the compute is, and for carrying on
+one that has already run. `fastmdx remote` inspects a machine over your own
+ssh, installs there once you confirm, sends a study and brings it back, and a
+study can now be resumed or extended in place and stay one study, joined and
+reanalysed over its whole length. Structures are read as their authors
+deposited them: the biological assembly from REMARK 350, mmCIF as mmCIF, and
+each residue named by its chain and insertion code. The GUI holds more than
+one study, lets a run outlive the server, and keeps the Agent's conversations
+with the study they are about. Several defects in 2.5.6 that changed what was
+simulated or reported are fixed, the most consequential being coordinated
+metal ions missing from the prepared system, and a network exposure in two
+GUI routes added during this cycle is closed before release.
+
+### Off loopback, the dashboard answers only what it lists
+
+A dashboard bound beyond loopback (`fastmdx gui --host`, or
+`--dashboard-host` on `explore`) has no login, so what it answers there is
+the whole of its security. It refused a list of POST routes and answered the
+rest, and `/api/explore/switch`, added with Load study, was not on the list.
+Anyone who could reach the port could re-root the server onto any folder on
+the host shaped like a study, after which that folder's files were served
+through `/artifacts/` and `/api/file-text`; the route's two error messages
+also said whether a path existed. Stored Agent conversations could be read
+through `GET /api/agent/conversation` and `/api/agent/conversations`.
+
+Off loopback every POST is now refused unless it is listed as open, so a
+route added later is refused by default. The list holds only `/api/config`,
+which builds a config from the posted form and reads no file. The
+conversation reads are refused there too. Neither route is in 2.5.6, so no
+release was exposed, only installs of the development branch between those
+routes and this fix. A dashboard on loopback, the default `127.0.0.1`, was
+never affected.
+
+### A coordinated ion reaches the prepared system
+
+**2.5.6 prepared structures with coordinated metal ions without them.**
+
+Under the default `heterogens: auto`, a lone ion the classifier decided to
+keep, a catalytic zinc or the structural calcium of trypsin, was logged as
+kept and then removed by PDBFixer with every other heterogen, because the
+filtered structure that carries kept components to PDBFixer was never written
+for it. The prepared system lacked the ion, and the study simulated an empty
+site. With the ligand supplied as a file, the structure's ions were not
+considered at all and went the same way, unreported.
+
+The filtered structure is now written before anything can return, holding
+exactly the copies the decisions keep (and crystallographic water, where
+asked for), and the setup record lists the ions kept. A supplied ligand file
+no longer changes this: its path decides the ions by the same rules, refuses
+an ion the structure does not determine as the auto path does, and reports
+what the filter left out. Trypsin keeps its calcium beside a benzamidine file
+as it does without one.
+
+Split ion sites are decided site by site. An ion modelled at alternate
+locations within one residue is one ion, at its location of highest
+occupancy, and no longer asks for an SDF. Copies in separate residues were
+put into one group whenever any two of the same element lay within 1.5 A, so
+two split zincs 20 A apart were refused as one four-copy site or lost a site,
+and a site that resolved kept the copy first in the file while the log named
+the copy of higher occupancy. Copies now form sites by connectivity, each
+site keeps its copy of highest occupancy or stops on a tie, and only that
+copy reaches PDBFixer.
+
+### A placed ligand's hydrogens turn with it
+
+When a ligand's pose is taken from the structure, the heavy atoms of the
+supplied SDF or MOL2 are moved onto the crystal coordinates. The hydrogens
+were then shifted by the displacement of the first heavy atom alone, with no
+rotation, so wherever the file's frame differed from the crystal's the X-H
+bonds came out several angstroms long. Ligands placed this way in 2.5.6 began
+minimisation with their hydrogens misplaced. Each hydrogen is now placed from
+the heavy atom it is bonded to (the nearest heavy atom where the file has no
+bonds), turned by the Kabsch rotation that fits the file's heavy atoms onto
+the structure's.
+
+### A named prepared system is the one simulated, and is checked
+
+A run given `simulation.setup_from` still ran setup when setup was in its
+plan. Each run of a replica sweep solvated a box it never simulated, and the
+setup record beside it described those atoms rather than the ones simulated.
+With setup excluded, the analyses and the report found no setup record at
+all, so the protein-ligand interactions perceived the ligand's chemistry from
+its coordinates instead of reading it from the file it was prepared from. The
+formal charge was among what was perceived, and it decides every salt bridge,
+so interaction tables from such runs can change.
+
+Setup is now dropped from the plan when `setup_from` names a prepared system.
+The log says so, and the manifest records the setup phase as skipped, with
+`taken_from` naming the system simulated. The analyses, the report and the
+Agent's staged run read that system's setup record, and the interaction
+record carries the formal charge it was judged with.
+
+A study whose runs share one prepared system reused it whenever one existed,
+so a re-run asking for pH 5.0 simulated every window in the pH 7.4 system
+prepared before while its resolved config said 5.0. What the shared system
+was prepared from is now recorded beside it. A mismatch is refused as
+`setup.prepared.mismatch`, naming the settings that differ, and
+`--force-overwrite` prepares it again. A shared system prepared before this
+release has no record, and is reused with a warning.
+
+### Splits and reports follow the ensemble production ran in
+
+Whether production has a barostat decides the caveat a study split into
+segments carries, since the barostat's adaptive move size is not in a
+checkpoint and re-adapts after every join, and it decides what the report
+says was simulated. In 2.5.6 both read the wrong evidence.
+
+The split verdict read `pressure_bar` and `pressure_atm` from the config. A
+default study names neither and produces at constant pressure, so a default
+study split into segments joined with no qualification, while a resolved
+config always carries a pressure, so a constant-volume continuation was
+qualified. The verdict now asks the resolver the runner uses, and a queued
+study records the caveat only when it is split.
+
+The report's settings list gave the ensemble as `None`, and the methods
+paragraph and the slides described production as NPT at a pressure whether or
+not a barostat ran, so an NVT production was reported as NPT. The runner now
+records the ensemble production ran in under `resolved`, and the settings
+list, the methods text and the slides read it, stating a pressure only where
+a barostat ran.
+
+### Restraints are released in stages whether or not the run is watched
+
+With `simulation.restrain` set and `live_telemetry: false`, NVT and NPT
+equilibration ran through a stage runner that took no progress callback. The
+restraints were held at full strength through both stages and released all at
+once as production began, rather than stepped down through
+`restraint_release` during equilibration. Runs made that way in 2.5.6 started
+production from a solute let go in one step. Both stage runners now drive the
+release ladder.
+
+### Studies run on other machines
+
+`fastmdx remote` reaches a workstation or a cluster with your own ssh and
+`~/.ssh/config`. A study's Config never names a machine; the records are kept
+with your other settings.
+
+`fastmdx remote --machine NAME` inspects and records what the machine has:
+GPUs and the CUDA version its driver supports, conda and every environment
+holding FastMDXplora (under the base, `~/.conda/envs`, `envs_dirs` in
+`~/.condarc` and `CONDA_ENVS_PATH`), Apptainer, SLURM partitions, scratch,
+free space and internet access. It asks the installation matching this
+computer's code what it can load, through the new `fastmdx info --json`. A
+release matches by version; a checkout matches only by commit, with no
+uncommitted changes on either side. Inspecting changes nothing on the
+machine. Where the machine is not ready, it prints the plan: a conda-forge
+install with `cuda-version` pinned to what the driver supports, a checkout
+brought to this computer's commit with `git fetch` and `merge --ff-only`, or
+a backend added to an environment that cannot load it.
+
+- `remote install` runs that plan once you answer yes at the terminal. There
+  is no flag to skip the question.
+- `remote send -c study.yml` checks the Config here, refuses a machine not
+  holding this computer's code, copies the Config and every file it names,
+  and starts `fastmdx explore` there: as a detached process group on a
+  workstation, or as an `sbatch` job asking for a GPU on SLURM
+  (`--partition`, `--time`). `--dry-run` shows what would be sent.
+- `remote status` gives each job's exit code, scheduler state, stage, share
+  of its planned steps, and the last lines of its log.
+- `remote fetch` refuses a job still waiting or running, brings the run
+  folder back without trajectories and checkpoints unless `--with-trajectory`
+  is given, and checks that the manifest names the code that sent it.
+- `remote cancel` stops a job and leaves its folder; `remote forget` removes
+  a machine's record; `fastmdx remote` alone lists machines and jobs without
+  connecting.
+
+### A structure is simulated as its biological assembly
+
+**A structure given without `chains` may now simulate different chains from
+those 2.5.6 simulated.**
+
+A deposited entry holds the asymmetric unit, which is what the crystal
+repeated rather than what the molecule is. Every deposited chain was
+simulated whatever REMARK 350 said, so 1AKE ran as two copies of a monomer,
+1HHO as half a haemoglobin and 1STP as a quarter of streptavidin. Where no
+`chains` are named, setup now takes the authors' assembly before a
+software-predicted one. Among assemblies holding the same sequences and
+heterogens it picks the one needing least modelling (fewest missing residues,
+then fewest residues missing atoms, then the lower mean alpha-carbon
+B-factor) and says why. Where they hold different things it stops with
+`setup.structure.assembly_ambiguous` and names each with the `chains` that
+selects it.
+
+An assembly the symmetry operators build beyond the deposited chains is
+built. Each copy gets chain IDs of its own, with its own heterogens and its
+own SEQRES, SSBOND and LINK records, so PDBFixer finds the same missing
+residues in every copy, and copies that land on one another are refused. The
+assembly chosen is recorded in the setup record, and naming `chains` selects
+chains as before.
+
+### An mmCIF file is read as mmCIF
+
+A `.cif` given to setup was copied to `input.pdb` and read as PDB text, so
+every one failed. It is now converted to the records setup reads, from the
+mmCIF categories that hold them, with the original kept beside it as
+`input.cif`. An entry RCSB serves only as mmCIF is fetched as mmCIF, and a
+structure larger than the PDB format can hold, which setup works in, is
+refused as `setup.structure.too_large`. Checked against four entries
+deposited in both formats.
+
+### A residue is named by its chain and insertion code
+
+**Per-residue tables of structures with more than one polymer chain gain a
+chain column, and their labels read `A:13`.**
+
+The deposited number alone named every residue. On a structure with several
+copies of one chain, per-residue SASA could not be tabulated, and RMSF,
+secondary structure, dihedrals, order parameters, contacts and the B-factor
+comparison wrote tables in which one number meant several residues. The
+trajectory topology was written through MDTraj, which drops insertion codes,
+so trypsin's 184A and 184 shared a number in every file the analyses read,
+and per-residue SASA failed on every trypsin run.
+
+The topology is now written by OpenMM with the deposited IDs kept. Residues
+are labelled by chain where there is more than one polymer chain, and by
+insertion code where the structure has any, with an insertion column and
+labels like `184A`. A single chain without insertion codes is written exactly
+as before. The report's region highlights and the dashboard read both forms.
+
+### A study is continued in place, and stays one study
+
+A run that stopped short, or finished and needs longer, can be carried on as
+the same study. `simulation.resume_from` naming a study directory continues
+it: the extra production runs as the study's next segment, `segment-001`
+onward inside the study folder, every finished segment is joined into one
+trajectory, and the analyses and the report are rerun over the whole of it.
+`simulation.extra_ns` asks for that much more production and `duration_ns`
+beside it for the total the study should end with; with neither, the
+remainder of the study's own plan runs, which is resuming. The flags are
+`--resume-from` and `--extra-ns` on `simulate`, prefixed on `explore`. A
+checkpoint file given to `resume_from` is still the raw mechanism underneath,
+starting from those coordinates and joining nothing, which is what a
+segmented campaign wants.
+
+The study's analysis and report are replaced, since they described a shorter
+trajectory, and the segments themselves are never touched. A continuation
+reuses its parent's prepared system and inherits its identity, so the check
+that joined segments belong to one study rests on the solvated box they share
+rather than on settings resolved twice. Segments are joined against the
+trajectory's own topology, so a run that saved a subset of atoms joins. A
+continuation analyses its own joined trajectory, not the parent's file named
+in the parent's config, and playback plays the joined trajectory. A study
+whose plan is met says so, and names the setting that goes past it.
+
+Every checkpoint has a sidecar, `checkpoint.chk.json`, giving the stage,
+step, ensemble, temperature, timestep, frame interval and study, and whether
+the run finished. A plan that would minimise or equilibrate a production
+checkpoint again, or continue it at another timestep, is refused; a
+checkpoint without a sidecar loads as before, with a warning. Every
+checkpoint is sealed as it is written, the checkpoint and its seal written as
+a pair and renamed into place, so a kill cannot leave a whole checkpoint that
+cannot be shown to be whole. `resume_unsealed` accepts a checkpoint with no
+seal, one written by hand or by an earlier version.
+
+A killed run is resumed from its last checkpoint, and the frames it wrote
+after that checkpoint are left out of the join, so the pieces meet rather
+than overlap; where those frames cannot be counted, the join is refused. The
+checkpoint interval is rounded up to a multiple of the frame interval, a
+continuation keeps its parent's frame interval, and a join refuses segments
+written at different spacings. A study extended a second time resumes from
+its highest-numbered segment's checkpoint and counts production across every
+segment, on the command line and in the continuation the Agent is offered in
+the browser; development builds before this ran the first extension's span
+again and held it twice in the joined trajectory.
+
+### A run outlives the server, and a server adopts it
+
+A run started from the GUI sat in the terminal's process group, so Ctrl-C on
+the server killed a day-long simulation mid-step along with it. The run is
+now its own session and survives the server. Stop still stops it, and on
+shutdown the server says what is still running, where, and how to stop it.
+
+The run records its process ID in the study folder at start and removes it on
+exit, so a run started from the command line can be adopted too. A server
+opened on that folder, at launch or through Load study, checks that the
+process is alive and is this run, then holds it: the sidebar says running,
+progress shows, and Stop reaches it. A process is judged by what it runs, the
+`fastmdx` entry point, the `fastmdxplora.cli` module or the study named as an
+argument, and never by the interpreter's path, which inside a conda
+environment named `fastmdxplora` matches any Python. A process whose command
+line cannot be read is not adopted, since Stop might then reach whatever the
+operating system gave the number to. On Windows, liveness is read through
+`OpenProcess` without signalling the process, the command line through
+`Get-CimInstance`, and a slow answer is asked for again in the background
+every two seconds for a minute.
+
+### The GUI holds more than one study
+
+The GUI was bound to the folder given at launch. Load available study, in the
+study block, opens the folder picker and switches the dashboard to another
+study's output, refusing a folder that is not one. Another study can be
+viewed while a run goes on: the study block reads top-down as loaded, running
+and available, the running study shows its progress with a View button back
+to it, and Stop reaches it from any page. A folder that is not a run says
+what it is, the runs one level down or nothing run yet, rather than being
+described as a run with its telemetry off.
+
+A study of several runs, as a sweep writes under `runs/<id>/`, is shown as
+one. Its root lists each run with where it stands and a way in, a run names
+its study and its swept values with a way back, and the sidebar shows seven
+runs, the running ones first, with More adding three at a time. The Report
+page at the root serves the batch comparison once every run has completed,
+and before that a table of what the finished runs settled on and how many are
+still to come.
+
+### The output folder is named for its system
+
+**A default output folder is now
+`fastmdxplora_<system>_study_<UTC timestamp>`.**
+
+`fastmdxplora_output_20260919_022007` said nothing about what it held, and
+two of the places that named folders used a fixed name with no timestamp, so
+a second run could land in the first run's folder. One rule now names every
+default folder, for the orchestrator, the batch explorer, the command line
+and the GUI's launch: `fastmdxplora_1UAO_study_20260919022007`, or
+`fastmdxplora_study_<timestamp>` with no system. The browser no longer names
+a folder; the server applies the rule with the system it knows.
+
+### A file is read beside the work
+
+The side panel's preview reads every type that can be attached to a message
+for the Agent, over one list, and is confined to the run's own folder. It has
+two modes, and remembers the choice. Code is the file's bytes with line
+numbers, and the default, because somebody checking a config wants the file.
+View renders by type: a sortable table for CSV and TSV, a collapsible tree
+for JSON, folds by indentation for YAML and OpenMM's XML, Markdown by the
+same function as the Report page, atoms, residues and chains before a
+structure file's text, the name, atom count and bond count of an SDF or MOL2,
+and a log coloured by level. What is rendered is escaped first, and a `.py`
+is Code only. The header gives the file's size, line count and digest, a file
+past 200 KB shows its head and tail and says how much of the middle is left
+out, and a PDF fills the preview.
+
+The Files page is the catalogue. View opens a file in the panel, Open is
+offered only for what the browser shows itself (a PDF, an image, an HTML
+page), and Download and Copy path always. Its list holds while a run writes
+to the folder, where a live frame deleted between listing and reading used to
+fail the whole request, and a fold that was opened stays open across polls.
+
+### The Agent's conversations are kept with their study
+
+A conversation lived only in the browser's memory, and a refresh emptied it.
+Conversations are now stored by the server, one file each, inside the study
+they are about at `<study>/agent/conversations/`, so copying a study carries
+the conversations that made it; one about no study is kept at the workspace
+level. New starts a fresh thread and keeps the last. Conversations lists them
+grouped by study, the loaded one first, and deleting one is asked for and
+never a side effect. Opening a conversation from another study loads that
+study first, and a conversation that launches a run moves into the study it
+created.
+
+A file can be attached to a message with **+**: text types only, at most six
+to a message, a file past 200 KB cut to its head and tail. The transcript
+records each file's name, path, size and digest, not its bytes, and the Agent
+is told to cite a file when it uses it.
+
+The Agent sees what the sidebar shows: the step, the fraction complete,
+elapsed and remaining time, simulated time and speed, and the active run's
+resolved config, from which it copies settings rather than inferring them
+from the run's numbers. Asked to continue a stopped study, it is handed a
+config planned from the record and sets only the length. A stop it asks about
+is recorded as a question, and the stop only once confirmed. A system named
+in words is written as its identifier and the identifier named back, so a
+wrong one is visible, and an unknown name is asked about. It calls itself the
+FastMDXplora Agent and, asked, names the engine chosen in Settings.
+
+### The report says what it measured
+
+**The Convergence table's count of adequately sampled observables may fall.**
+
+The table judged adequate sampling at five independent samples while the
+report's prose and the Agent used ten, so rg at 8.3 was adequate in the table
+and not in the section above it. All three read the one bar in
+`statistics.py`, which is ten.
+
+Read against a real study's report, several lines are fixed. FastMDXplora and
+the libraries it calls are separate sentences, and the Tools sentence names
+eleven libraries rather than five, adding NumPy, SciPy, matplotlib, pandas
+and scikit-learn, any of whose versions can change a number. Every setting
+used fills in what the given settings determine, production steps from the
+duration and timestep, durations from step counts and the pressure in both
+units, rather than printing `None`, and empty parameters are dropped. The
+residue count separates protein residues from ions and cofactors. Every
+analysis section opens with a sentence saying what its figure shows, and the
+summary figure has one panel per analysis, up to twelve, where it named
+twelve files of which two exist only in per-residue SASA mode.
+
+The record holds more. `resolved_config.yml` is written before the first
+phase and again at the end, so a run in progress or stopped has one.
+`setup_parameters.json` records the periodic box: its vectors, perpendicular
+widths, the smallest of them, and its volume. A PMF whose figure cannot be
+drawn says so, and that `pmf.json` is unaffected. A PDF refusal names every
+missing library at once, and the Report page no longer says the PDF is
+missing after a later run made it.
+
+### The phase lists have one name everywhere
+
+**`include` and `exclude` at the top of a config are now `include_phase` and
+`exclude_phase`.**
+
+They read as the same thing as `analysis.include` and `analysis.exclude`,
+which choose analyses. The phase lists are `include_phase` and
+`exclude_phase` in the config, `--include-phase` and `--exclude-phase` on the
+command line, the same in the GUI, and `explore(include_phase=...)` in
+Python; the analysis lists keep their names. The earlier spellings are still
+accepted everywhere, until the release that removes every earlier spelling at
+once, and both spellings given with different values are refused rather than
+guessed between. The places that dropped a phase list and ran more than
+asked, among them the staged runner of a budgeted study and a config opened
+in the GUI form, now keep it.
+
+### Every setting reaches a study through every interface
+
+Each of the 125 settings is carried with a non-default value through the
+command line, `cli_command`, `python_script`, the GUI payload, the page
+itself in a browser and the resolved config, and compared. The few that do
+not survive are listed with the reason, and a new gap fails the suite. Among
+the gaps it found and closed:
+
+- `--sweep AXIS=VALUES`, once per axis, runs a study over several values of a
+  setting from the command line, and the GUI's run builder gains rows of a
+  setting and its values. Both read values through one function.
+- A block setting (`umbrella`, `steered`, `metadynamics`) can be given on the
+  command line as a YAML mapping, as can `analysis.options` and
+  `report.region_highlights`, and a setting declared int-or-float is read as
+  a number.
+- `--agent`, `--agent-model` and `--budget-hours` are flags on `explore`, and
+  a boolean flag has both directions, so `--no-explain` reaches the study.
+- `cli_command` and `python_script` now say `verbose`, `explain` and the
+  execution block, write a block as JSON rather than a Python repr, and hand
+  a study with a sweep, several systems or an execution block to the API
+  whole.
+- A study opened in the GUI form keeps its phases, its sweep, `explain`,
+  `verbose` and its execution block, so a parallel study reopened and started
+  again no longer runs sequentially.
+
+The GUI's unused second launch path, `/api/explore/defaults`,
+`/api/explore/validate`, `/api/explore/config` and `/api/explore/start`, is
+removed. The launch that remains refuses before starting a process when the
+chemistry stack it needs is not installed.
+
+### The Python API validates a study as every other route does
+
+A system passed to the Python API with a separate options mapping reached
+the phases without validation, so a misspelled `duraton_ns` ran the default
+duration and a temperature of -50 K was planned as given. It now passes the
+same validator as a configuration file, the command line and the GUI,
+before anything is created. So do the settings given to a single phase:
+`setup()`, `simulate()`, `analyze()` and `report()`, and the `fastmdx` phase
+commands built on them.
+
+### Python 3.10 is the floor
+
+`requires-python` is `>=3.10, <3.14`. OpenMM's last release with a Python 3.9
+wheel was 8.1.1, so a 3.9 install could not simulate, and 3.9 reached end of
+life in October 2025; refusing at install is clearer than installing what
+cannot run.
+
+### The frame, from using it
+
+The browser opens once the server answers, where on a finished study's folder
+it arrived early and showed "unable to connect". Folding either side column
+gives its width to the centre, which stays centred with both folded. Page
+headers are one sticky row, and the Builder tab is Config. The Agent's
+composer sits at the foot with its buttons centred in Chrome and Firefox
+alike, its controls (the mode, Conversations, New) under it, and a message is
+edited in place. One Output button opens the folder and copies its path, Cite
+sits in the settings popup beside the version, and the log's "why" filter
+shows the explanations, which had never been written to the log. A browser
+tab closed mid-request is not logged as a route failure.
+
+### Smaller fixes
+
+- The gate that keeps the fraction of native contacts, Q, off chains too
+  short for tertiary contacts used a separation of 4 whatever was set, so Q
+  was planned where it then failed or left out where it would have run. The
+  analysis plan now receives the per-analysis options.
+- A failed run closes its trajectory and energy files. OpenMM's reporters
+  have no `close()`, so nothing was closed on any path, and a sweep run in
+  one process kept both open for every run that failed. A figure whose
+  drawing or saving fails is closed too.
+- `fastmdx info` survives a backend that ends the interpreter on import: that
+  backend is reported broken, with how the interpreter ended, and the rest
+  are probed in a fresh process.
+- A missing preferred platform names only the plugin failures that explain
+  it; the rest go to the debug log.
+- A molecule alone in a periodic box is made whole, where imaging raised
+  because MDTraj anchored on no molecule. Seeding and the cross-tool
+  benchmark reached this.
+- Parallel runs are given the device with the most room, where a run's place
+  in the queue could leave two runs on one card and the other idle. A device
+  listed twice has room for two.
+- The preview reads a file's line endings as text does, so Markdown on
+  Windows renders as it does on the Report page.
+
+### Housekeeping
+
+More than 150 tests that searched a function's source for a phrase, and so
+passed with the behaviour broken, now run the code; converting them found the
+restraint, fold-gate, reporter and `fastmdx info` faults above. A ratchet
+lists the tests that still read source, each with its reason, and a new one
+fails until it is listed. The GUI's browser tests run on CI, on the Ubuntu
+3.11 job, and every setting is checked through the page there. The resume
+comparison tests hold at any matched thread count. The GPU shakedown script
+stops at a failed run and reports every join. The documentation describes the
+study block, conversations, attached files and continuation, and tests hold
+those claims against the code.
+
 ## [2.5.6] — 2026-09-18
 
 A pull and its umbrella windows now come from one configuration, and a
