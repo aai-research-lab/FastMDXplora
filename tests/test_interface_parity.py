@@ -205,14 +205,25 @@ class TestFilteredStructuresStayConsistent:
         return path
 
     class _Decision:
-        def __init__(self, resname):
+        """Every copy of one component in the file, as a decision holds
+        them: what is retained is those copies, not the name."""
+
+        def __init__(self, resname, source):
+            from fastmdxplora.setup.heterogens import (
+                group_heterogens, parse_structure,
+            )
+
+            _, atoms, linked = parse_structure(source)
             self.resname = resname
+            self.instances = tuple(h for h in group_heterogens(atoms, linked)
+                                   if h.resname == resname)
 
     def test_records_naming_removed_atoms_are_dropped(self, tmp_path) -> None:
         from fastmdxplora.setup.pipeline import _retain_in_structure
 
+        source = self._source(tmp_path)
         out = _retain_in_structure(
-            self._source(tmp_path), tmp_path, [self._Decision("ZN")]
+            source, tmp_path, [self._Decision("ZN", source)]
         )
         text = out.read_text(encoding="utf-8")
 
@@ -222,8 +233,9 @@ class TestFilteredStructuresStayConsistent:
     def test_the_retained_ion_is_unchanged(self, tmp_path) -> None:
         from fastmdxplora.setup.pipeline import _retain_in_structure
 
+        source = self._source(tmp_path)
         out = _retain_in_structure(
-            self._source(tmp_path), tmp_path, [self._Decision("ZN")]
+            source, tmp_path, [self._Decision("ZN", source)]
         )
         zinc = next(l for l in out.read_text().splitlines()
                     if l.startswith("HETATM"))
@@ -242,9 +254,7 @@ class TestIonConnectivityIsNotCovalent:
     and three chlorides named in CONECT records.
     """
 
-    class _Decision:
-        def __init__(self, resname):
-            self.resname = resname
+    _Decision = TestFilteredStructuresStayConsistent._Decision
 
     @staticmethod
     def _write(tmp_path, body):
@@ -263,7 +273,8 @@ class TestIonConnectivityIsNotCovalent:
             "END\n"
         ))
         out = _retain_in_structure(
-            source, tmp_path, [self._Decision("ZN"), self._Decision("CL")]
+            source, tmp_path,
+            [self._Decision("ZN", source), self._Decision("CL", source)]
         )
         text = out.read_text(encoding="utf-8")
 
@@ -283,7 +294,8 @@ class TestIonConnectivityIsNotCovalent:
             "CONECT  880 1569\n"
             "END\n"
         ))
-        out = _retain_in_structure(source, tmp_path, [self._Decision("ZN")])
+        out = _retain_in_structure(source, tmp_path,
+                                   [self._Decision("ZN", source)])
         text = out.read_text(encoding="utf-8")
 
         assert "CONECT" not in text

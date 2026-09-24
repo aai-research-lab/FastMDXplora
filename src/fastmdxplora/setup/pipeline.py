@@ -527,12 +527,22 @@ def _retain_in_structure(input_pdb, setup_dir, keep_decisions):
     filtering the input first. Everything the classifier discarded is dropped
     here; what remains is prepared by the protein force field, in place, under
     its own residue name, at its own coordinates.
+
+    What is kept is the atoms the decisions hold, record by record, not every
+    residue carrying a kept name: a zinc written at two alternate locations
+    is one ion, and a name would keep both. The polymer is read by the
+    classifier's own rule, so a selenomethionine written as HETATM stays in
+    its chain.
     """
-    keep = {d.resname.upper() for d in keep_decisions}
+    from fastmdxplora.setup.heterogens import (
+        ION_NAMES, _standard_residues, atom_from_record,
+    )
+
+    keep = {atom.identity for d in keep_decisions
+            for het in d.instances for atom in het.atoms}
+    polymer = _standard_residues()
     target = Path(setup_dir) / "retained.pdb"
     target.parent.mkdir(parents=True, exist_ok=True)
-
-    from fastmdxplora.setup.heterogens import ION_NAMES
 
     lines: list[str] = []
     dropped: set[str] = set()
@@ -541,11 +551,22 @@ def _retain_in_structure(input_pdb, setup_dir, keep_decisions):
         encoding="utf-8", errors="ignore"
     ).splitlines():
         record = raw[:6].strip()
-        if record == "HETATM" and raw[17:20].strip().upper() not in keep:
-            dropped.add(raw[6:11].strip())
-            continue
-        if record in ("ATOM", "HETATM") and raw[17:20].strip().upper() in ION_NAMES:
-            ions.add(raw[6:11].strip())
+        if record in ("ATOM", "HETATM"):
+            try:
+                atom = atom_from_record(raw)
+            except ValueError:
+                # The classifier skipped this line, so nothing was decided
+                # about it: an ATOM record stays as polymer, a HETATM goes.
+                atom = None
+            if atom is None:
+                if record == "HETATM":
+                    dropped.add(raw[6:11].strip())
+                    continue
+            elif atom.resname not in polymer and atom.identity not in keep:
+                dropped.add(raw[6:11].strip())
+                continue
+            elif atom.resname in ION_NAMES:
+                ions.add(raw[6:11].strip())
         lines.append(raw)
 
     # CONECT records name atoms by serial number, and OpenMM builds bonds from
@@ -659,6 +680,32 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
 
     wanted = [d for d in simulate
               if not d.is_monatomic and d.resname not in WATER_NAMES]
+
+    # Monatomic ions are kept in the structure rather than extracted. The
+    # protein force field already carries validated ion parameters, and the
+    # small-molecule route is both unnecessary and destructive: a zinc pulled
+    # out to an SDF and re-added came back renamed, in a different chain, and
+    # at coordinates that were not its coordination site.
+    #
+    # Settled here, before anything below can return: a structure with
+    # nothing else to simulate returns next, and PDBFixer then strips every
+    # heterogen, so an ion not already in the filtered structure is lost
+    # while the log says it was kept. Retained water goes into the same
+    # structure, because PDBFixer keeps all it is given from it and does
+    # not read its own water option.
+    from fastmdxplora.setup.heterogens import ION_NAMES
+
+    in_place = ions + [d for d in wanted if d.resname in ION_NAMES]
+    if in_place:
+        params["_retained_pdb"] = str(
+            _retain_in_structure(input_pdb, setup_dir, in_place + waters)
+        )
+        # Which copies, for the setup record: the log says it once, and the
+        # record is what is read afterwards.
+        params["_retained_ions"] = [
+            het.label for d in in_place for het in d.instances
+        ]
+
     if not wanted:
         return []
 
@@ -694,19 +741,9 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
             "heterogens policy to 'drop' to exclude them."
         , code="setup.structure.undetermined")
 
-    # Monatomic ions are kept in the structure rather than extracted. The
-    # protein force field already carries validated ion parameters, and the
-    # small-molecule route is both unnecessary and destructive: a zinc pulled
-    # out to an SDF and re-added came back renamed, in a different chain, and
-    # at coordinates that were not its coordination site.
-    from fastmdxplora.setup.heterogens import ION_NAMES
-
     ions = [d for d in wanted if d.resname in ION_NAMES]
     molecules = [d for d in wanted if d.resname not in ION_NAMES]
     if ions:
-        params["_retained_pdb"] = str(
-            _retain_in_structure(input_pdb, setup_dir, ions)
-        )
         logger.info(
             "Keeping %s in the structure; the protein force field provides "
             "ion parameters.",

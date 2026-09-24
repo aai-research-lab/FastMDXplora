@@ -148,6 +148,33 @@ class Atom:
         """Identity of the residue this atom belongs to."""
         return (self.resname, self.chain, self.resseq, self.icode)
 
+    @property
+    def identity(self) -> tuple[str, str, int, str, str, str]:
+        """Which record this is: its residue, its name and its alternate location."""
+        return (*self.key, self.name, self.altloc)
+
+
+def atom_from_record(raw: str) -> Atom:
+    """One ATOM or HETATM line, read by the legacy PDB columns.
+
+    Raises ``ValueError`` for a line whose numbers do not parse. Shared, so
+    that a structure filtered by what the classifier decided reads each line
+    exactly as the classifier did.
+    """
+    return Atom(
+        name=raw[12:16].strip(),
+        resname=raw[17:20].strip().upper(),
+        chain=raw[21:22].strip(),
+        resseq=int(raw[22:26]),
+        icode=raw[26:27],
+        altloc=raw[16:17],
+        occupancy=float(raw[54:60] or 1.0),
+        element=(raw[76:78].strip() or raw[12:14].strip()).upper(),
+        x=float(raw[30:38]),
+        y=float(raw[38:46]),
+        z=float(raw[46:54]),
+    )
+
 
 @dataclass(frozen=True)
 class Heterogen:
@@ -299,19 +326,7 @@ def parse_structure(pdb_path: str | Path) -> tuple[list[Atom], list[Atom], dict[
             continue
 
         try:
-            atom = Atom(
-                name=raw[12:16].strip(),
-                resname=raw[17:20].strip().upper(),
-                chain=raw[21:22].strip(),
-                resseq=int(raw[22:26]),
-                icode=raw[26:27],
-                altloc=raw[16:17],
-                occupancy=float(raw[54:60] or 1.0),
-                element=(raw[76:78].strip() or raw[12:14].strip()).upper(),
-                x=float(raw[30:38]),
-                y=float(raw[38:46]),
-                z=float(raw[46:54]),
-            )
+            atom = atom_from_record(raw)
         except ValueError:
             # A malformed record is not worth failing the whole run over, but
             # it must not be silently treated as absent either.
@@ -347,11 +362,35 @@ def group_heterogens(
                 chain=chain,
                 resseq=resseq,
                 icode=icode,
-                atoms=tuple(atoms),
+                atoms=_one_position_per_ion(resname, atoms),
                 covalent_to=partners,
             )
         )
     return out
+
+
+def _one_position_per_ion(resname: str, atoms: list[Atom]) -> tuple[Atom, ...]:
+    """An ion written at alternate locations, as the one atom it is.
+
+    A zinc modelled at locations A and B inside one residue is two records
+    for one atom. Counted as two atoms it is not monatomic, and setup would
+    ask for a ZN SDF describing bonds that do not exist. The location of
+    highest occupancy is taken, the first where they tie: the usual reading
+    of alternate locations.
+    """
+    if resname not in ION_NAMES or len(atoms) < 2:
+        return tuple(atoms)
+    codes = [a.altloc.strip() for a in atoms]
+    if len({a.name for a in atoms}) != 1 or not all(codes) \
+            or len(set(codes)) != len(codes):
+        return tuple(atoms)
+    chosen = max(atoms, key=lambda a: a.occupancy)
+    logger.info(
+        "%s %s%s%s: alternate locations %s of one ion; location %s, at "
+        "occupancy %.2f, is the one kept.",
+        resname, chosen.chain, chosen.resseq, chosen.icode.strip(),
+        " and ".join(codes), chosen.altloc, chosen.occupancy)
+    return (chosen,)
 
 
 def _min_distance_to_polymer(het: Heterogen, polymer: list[Atom]) -> float:
