@@ -102,11 +102,27 @@ def _fetch_pdb_from_rcsb(pdb_id: str, dest: Path) -> Path:
     """Fetch ``{pdb_id}.pdb`` from RCSB to ``dest``. Raises on HTTP error."""
     import urllib.request
 
+    import urllib.error
+
     url = f"https://files.rcsb.org/download/{pdb_id.upper()}.pdb"
     logger.info("Fetching PDB from RCSB: %s", url)
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
         urllib.request.urlretrieve(url, dest)  # noqa: S310 -- trusted URL
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise StudyError(f"RCSB refused {url}: {exc}.",
+                             code="environment.service.unreachable") from exc
+        # Entries too large for the PDB format are deposited as mmCIF only.
+        cif_url = f"https://files.rcsb.org/download/{pdb_id.upper()}.cif"
+        logger.info("RCSB has no PDB-format file for %s; fetching %s", pdb_id.upper(), cif_url)
+        cif = dest.with_name("input.cif")
+        try:
+            urllib.request.urlretrieve(cif_url, cif)  # noqa: S310 -- trusted URL
+        except OSError as cif_exc:
+            raise StudyError(f"Could not fetch {pdb_id.upper()} from RCSB as PDB or mmCIF: "
+                             f"{cif_exc}.", code="environment.service.unreachable") from cif_exc
+        _write_mmcif_as_pdb(cif, dest)
     except OSError as exc:
         # A machine with no route out raises this as `[Errno -3] Temporary
         # failure in name resolution`, which is Python's words for a
@@ -123,6 +139,14 @@ def _fetch_pdb_from_rcsb(pdb_id: str, dest: Path) -> Path:
             "where fastmdx was run."
         , code="environment.service.unreachable") from exc
     return dest
+
+
+def _write_mmcif_as_pdb(cif: Path, target: Path) -> Path:
+    from fastmdxplora.setup.mmcif import to_pdb_lines
+
+    target.write_text("\n".join(to_pdb_lines(cif)) + "\n", encoding="utf-8")
+    logger.info("Read %s as mmCIF and wrote its records as PDB to %s", cif.name, target.name)
+    return target
 
 
 #: Where each record type carries its chain identifiers, by column, from the
@@ -328,7 +352,13 @@ def _resolve_input(
 ) -> Path:
     """Place the source PDB at ``setup_dir/input.pdb``. Returns its path."""
     target = setup_dir / "input.pdb"
-    if input_form == "pdb_file":
+    if input_form == "pdb_file" and Path(system).suffix.lower() in (".cif", ".pdbx", ".mmcif"):
+        # Copied to input.pdb whatever it held, an mmCIF file was read as PDB
+        # text and failed at its first number. Written as the PDB records
+        # setup reads, the original kept beside it.
+        shutil.copy2(system, setup_dir / "input.cif")
+        _write_mmcif_as_pdb(setup_dir / "input.cif", target)
+    elif input_form == "pdb_file":
         shutil.copy2(system, target)
     elif input_form == "pdb_id":
         _fetch_pdb_from_rcsb(system, target)
