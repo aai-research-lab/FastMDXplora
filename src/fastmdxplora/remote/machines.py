@@ -42,9 +42,9 @@ __all__ = [
 
 #: Backends a machine must load for a study to run there: the ones the
 #: simulation and ligand paths reach for. Import names, as ``fastmdx info
-#: --json`` reports them.
+#: --json`` reports them, and ``am1bcc``, the charges every ligand takes.
 REQUIRED_BACKENDS = ("openmm", "pdbfixer", "openff.toolkit",
-                     "openmmforcefields", "rdkit", "propka")
+                     "openmmforcefields", "rdkit", "propka", "am1bcc")
 
 
 def machines_dir() -> Path:

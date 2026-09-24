@@ -1747,6 +1747,12 @@ _BACKENDS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
          "conda install -c conda-forge openmmforcefields"),
         ("RDKit", "rdkit", "conda install -c conda-forge rdkit"),
         ("PROPKA", "propka", "conda install -c conda-forge propka"),
+        # A capability rather than a module, answered by _CAPABILITIES. The
+        # toolkit loads without anything to compute a ligand's AM1-BCC
+        # charges, and conda-forge's openff-toolkit does not bring
+        # AmberTools, so the row above being installed says nothing here.
+        ("AM1-BCC charges", "am1bcc",
+         "conda install -c conda-forge ambertools"),
     )),
     ("to write the report as a PDF", (
         ("WeasyPrint", "weasyprint", "conda install -c conda-forge weasyprint"),
@@ -1757,6 +1763,14 @@ _BACKENDS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
         ("PLUMED", "openmmplumed", "conda install -c conda-forge openmm-plumed"),
     )),
 )
+
+#: Rows of ``_BACKENDS`` that importing cannot answer, each with the function
+#: that can: it returns what provides the capability, or None where nothing
+#: does. Setup asks the same function before it prepares a ligand, so the two
+#: cannot disagree.
+_CAPABILITIES: dict[str, tuple[str, str]] = {
+    "am1bcc": ("fastmdxplora.setup.ligand", "am1bcc_provider"),
+}
 
 
 def _probe_backends(import_names: tuple[str, ...]) -> dict[str, tuple[str, str]]:
@@ -1794,13 +1808,19 @@ def _probe_backends(import_names: tuple[str, ...]) -> dict[str, tuple[str, str]]
 
     script = (
         "import json, sys\n"
+        "checks = json.loads(sys.argv[3])\n"
         "with open(sys.argv[2], 'a', encoding='utf-8') as out:\n"
         "    for name in json.loads(sys.argv[1]):\n"
         "        out.write(json.dumps({'trying': name}) + '\\n')\n"
         "        out.flush()\n"
         "        try:\n"
-        "            __import__(name)\n"
-        "            row = [name, 'installed', '']\n"
+        "            if name in checks:\n"
+        "                module, function = checks[name]\n"
+        "                got = getattr(__import__(module, fromlist=[function]), function)()\n"
+        "                row = [name, 'installed' if got else 'missing', str(got or '')]\n"
+        "            else:\n"
+        "                __import__(name)\n"
+        "                row = [name, 'installed', '']\n"
         "        except ImportError:\n"
         "            row = [name, 'missing', '']\n"
         "        except BaseException as exc:\n"
@@ -1820,7 +1840,8 @@ def _probe_backends(import_names: tuple[str, ...]) -> dict[str, tuple[str, str]]
                 answer = Path(work) / f"backends-{attempt}.jsonl"
                 try:
                     finished = subprocess.run(
-                        [sys.executable, "-c", script, json.dumps(remaining), str(answer)],
+                        [sys.executable, "-c", script, json.dumps(remaining), str(answer),
+                         json.dumps(_CAPABILITIES)],
                         capture_output=True, text=True, timeout=timeout_s, check=False,
                     )
                     ended = _how_the_probe_ended(finished.returncode)
@@ -1853,6 +1874,11 @@ def _probe_backends(import_names: tuple[str, ...]) -> dict[str, tuple[str, str]]
     checked: dict[str, tuple[str, str]] = {}
     for name in import_names:
         try:
+            if name in _CAPABILITIES:
+                module, function = _CAPABILITIES[name]
+                got = getattr(__import__(module, fromlist=[function]), function)()
+                checked[name] = ("installed" if got else "missing", str(got or ""))
+                continue
             __import__(name)
             checked[name] = ("installed", "")
         except ImportError:

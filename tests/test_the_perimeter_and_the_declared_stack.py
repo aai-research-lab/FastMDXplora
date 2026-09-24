@@ -297,6 +297,7 @@ class TestTheEnvironmentFileCarriesWhatThePageClaims:
         "rdkit",            # ligand perception
         "propka",           # pKa assignment
         "openff-toolkit",   # ligand parameterisation
+        "ambertools",       # a ligand's AM1-BCC charges
         "openmm-plumed",    # every enhanced-sampling method
         "scipy",
         "pillow",

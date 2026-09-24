@@ -103,10 +103,11 @@ pip install --no-index --find-links=wheels fastmdxplora python-pptx
 ### Where wheels are not enough
 
 The route above installs FastMDXplora and its pure-Python dependencies. It does
-not reach the ligand path: **the OpenFF toolkit and openmmforcefields are
-distributed through conda-forge only**, are not on PyPI, and no arrangement of
-wheels will fetch them. A machine without them prepares proteins perfectly well
-and refuses the moment a ligand needs parameterising.
+not reach the ligand path: **the OpenFF toolkit, openmmforcefields and
+AmberTools, which gives a ligand its charges, are distributed through
+conda-forge only**, are not on PyPI, and no arrangement of wheels will fetch
+them. A machine without them prepares proteins perfectly well and refuses the
+moment a ligand needs parameterising.
 
 There are two ways round it.
 
@@ -141,9 +142,9 @@ the second way exists.
 
 **Take an image.** One is attached to each release, built from
 `container/fastmdx.def` and carrying the whole stack — OpenMM with CUDA and
-PLUMED, MDTraj, PDBFixer, the OpenFF toolkit, and FastMDXplora itself, all
-resolved by one solver so the versions are the ones the packaging chose. It is
-about 1.3 GB:
+PLUMED, MDTraj, PDBFixer, the OpenFF toolkit, AmberTools, and FastMDXplora
+itself, all resolved by one solver so the versions are the ones the packaging
+chose. It is about 1.3 GB:
 
 ```bash
 curl -LO https://github.com/aai-research-lab/FastMDXplora/releases/download/v2.5.6/fastmdx-2.5.6.sif

@@ -463,6 +463,52 @@ def _validate_ligand_forcefield(params: dict) -> None:
         , code="setup.forcefield.incompatible")
 
 
+#: What gives a ligand its AM1-BCC charges, as one command.
+CHARGES_INSTALL_COMMAND = "conda install -c conda-forge ambertools"
+
+
+def _refuse_without_a_charge_provider(params: dict) -> None:
+    """A ligand needs AM1-BCC charges, so the environment has to supply them.
+
+    Checked once the ligands are known and before PDBFixer, because the
+    OpenFF toolkit only finds out when it is asked for the charges, after
+    the system has been repaired and solvated, and then says "No registered
+    toolkits can provide the capability assign_partial_charges" -- which
+    names neither the charge model nor the package that computes it.
+
+    Where the toolkit itself is absent this is silent: loading the ligand
+    refuses for that, with the install line that brings both.
+    """
+    from fastmdxplora.setup import ligand as ligand_module
+    from fastmdxplora.setup.forcefields import resolve_forcefield
+
+    small_molecule = (params.get("ligand_forcefield")
+                      or resolve_forcefield(params["forcefield"])
+                      .small_molecule_forcefield)
+    if not ligand_module.takes_am1bcc_charges(small_molecule):
+        return
+    try:
+        provider = ligand_module.am1bcc_provider()
+    except ImportError:
+        return
+    if provider:
+        logger.debug("setup: AM1-BCC charges from %s", provider)
+        return
+    raise StudyError(
+        "The ligand cannot be given charges in this environment. "
+        f"{small_molecule} gives a ligand AM1-BCC partial charges, which the "
+        "OpenFF toolkit computes with AmberTools (its `sqm` program) or with "
+        "OpenEye, and neither is available here. Install AmberTools into "
+        "this environment:\n\n"
+        f"    {CHARGES_INSTALL_COMMAND}\n\n"
+        "The conda-forge FastMDXplora package brings it; it is not on PyPI. "
+        "Setup stopped before repairing or solvating the structure.",
+        code="setup.environment.charges_unavailable",
+        forcefield=small_molecule, packages=["ambertools"],
+        install_command=CHARGES_INSTALL_COMMAND,
+    )
+
+
 
 #: One repaired complex per (structure, setup directory, pH), because that is
 #: what determines it. `_repaired_complex` is called once per ligand copy and
@@ -1043,6 +1089,11 @@ def run(
         if auto:
             filtered_out = _ions_beside_a_supplied_ligand(
                 params, input_pdb, setup_dir)
+
+    # Every ligand is now known, whether found in the structure or supplied,
+    # and nothing has been repaired or solvated yet.
+    if params.get("ligand"):
+        _refuse_without_a_charge_provider(params)
 
     # ---- Stage 2: PDBFixer (or skip via fixed_pdb) ---------------------
     prepared_pdb = setup_dir / "prepared.pdb"

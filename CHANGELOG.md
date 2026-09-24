@@ -7,6 +7,32 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A ligand is given its charges on a fresh install
+
+**A fresh conda-forge install of 2.5.7 could not parameterize any ligand.**
+
+A ligand parameterized with an OpenFF or GAFF small-molecule force field,
+which includes the default stack, takes AM1-BCC partial charges, and the
+OpenFF toolkit computes them by calling AmberTools' `sqm`. conda-forge's
+openff-toolkit no longer depends on AmberTools and FastMDXplora never
+declared it, so a new environment had nothing to compute them with. Setup
+repaired and solvated a protein-ligand system and then failed with the
+toolkit's own error, "No registered toolkits can provide the capability
+assign_partial_charges", which names neither the charge model nor the
+package that was missing.
+
+AmberTools is now a run dependency of the conda-forge package, and is in
+`environment.yml` and the container image, whose build charges a small
+molecule and fails if it cannot. `fastmdx info` reports **AM1-BCC charges**,
+naming AmberTools or OpenEye where one will compute them and
+`conda install -c conda-forge ambertools` where nothing will; `info --json`
+carries the same row, so `fastmdx remote` counts a machine without it as not
+ready and adds AmberTools to that environment. Where nothing can compute the
+charges, setup refuses as soon as it knows the study has a ligand, before
+PDBFixer or solvation, with `setup.environment.charges_unavailable` and the
+install command. A study without a ligand is unaffected. From PyPI,
+AmberTools has to come from conda-forge alongside the OpenFF toolkit.
+
 ## [2.5.7] — 2026-09-24
 
 This release is for running a study where the compute is, and for carrying on

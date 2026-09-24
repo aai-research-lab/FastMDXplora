@@ -440,6 +440,11 @@ grouped backend table marking each of OpenMM, PDBFixer, the OpenFF toolkit,
 `openmmplumed` as `installed`, `missing` or `broken`, with the conda command
 for anything missing; and the citation.
 
+One row is not a package: **AM1-BCC charges** says whether anything can compute
+a ligand's charges, and names what will (AmberTools, or OpenEye where it is
+licensed). The OpenFF toolkit loads without either, so its own row being
+`installed` does not answer this.
+
 A backend that is present but will not load — WeasyPrint without Pango, say —
 is reported as **broken** rather than missing, because reinstalling something
 already there fixes nothing.

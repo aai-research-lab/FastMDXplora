@@ -22,8 +22,8 @@ pytest -q
 
 `environment.yml` carries the conda-only packages — openmm-plumed above all,
 which has no PyPI distribution — so a clone set up this way has the whole
-stack: rdkit, propka and openff-toolkit for ligand chemistry and pKa
-assignment, openmm-plumed for enhanced sampling, weasyprint and markdown for
+stack: rdkit, propka, openff-toolkit and ambertools for ligand chemistry,
+charges and pKa assignment, openmm-plumed for enhanced sampling, weasyprint and markdown for
 the PDF report, umap-learn for the dimensionality reduction that offers it, and
 scipy, pillow and netcdf4.
 

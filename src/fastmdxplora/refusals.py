@@ -440,6 +440,13 @@ CODES: tuple[Code, ...] = (
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("worst_distance_nm", "threshold_nm", "pairs")),
 
+    # -- setup: environment -------------------------------------------------
+    Code("setup.environment.charges_unavailable",
+         "A ligand takes AM1-BCC charges and nothing in the environment can "
+         "compute them.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION,
+         detail_keys=("forcefield", "packages", "install_command")),
+
     # -- setup: force field and membrane ------------------------------------
     Code("setup.forcefield.unknown",
          "A force field name outside the registry.",

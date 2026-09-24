@@ -72,6 +72,10 @@ requirements:
     # in the complex. On PyPI these are the [ligand] extra; here they belong
     # in the package, because one install command is the point.
     - openff-toolkit >=0.16
+    # Every ligand takes AM1-BCC charges, and the toolkit computes them by
+    # calling AmberTools' sqm. openff-toolkit no longer brings AmberTools, so
+    # without this a ligand fails after its system has been solvated.
+    - ambertools
     - openmmforcefields >=0.12
     - rdkit >=2023.3
     - propka >=3.5
@@ -108,17 +112,21 @@ tests:
       python_version:
         - ${{ python_min }}.*
         - "*"
-      # Disabled deliberately. openff-toolkit pulls in AmberTools components
-      # (ndfes, edgembar, fetkutils) whose metadata still declares numpy<2
-      # while the environment provides numpy 2.x. Nothing in this package
-      # imports them, and pinning numpy<2 to satisfy metadata we do not use
-      # would be worse than not running the check. The import tests above
-      # already prove the stack resolves.
+      # Disabled deliberately. AmberTools, a run dependency above, installs
+      # Python components (ndfes, edgembar, fetkutils) whose metadata
+      # declares numpy<2 while the environment provides numpy 2.x. Nothing
+      # in this package imports them, and pinning numpy<2 to satisfy
+      # metadata we do not use would be worse than not running the check.
+      # The import tests above already prove the stack resolves.
       pip_check: false
   - script:
       - fastmdx --version
       - fastmdx info
       - fastmdxplora --version
+      # AmberTools has no module to import, and the toolkit loads without
+      # it, so the import tests cannot see it missing. This is what the
+      # toolkit asks before it will compute a ligand's AM1-BCC charges.
+      - python -c "from openff.toolkit.utils.toolkits import AmberToolsToolkitWrapper as T; assert T.is_available(), 'no AmberTools, so no ligand charges'"
     requirements:
       run:
         - python ${{ python_min }}.*

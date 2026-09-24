@@ -74,11 +74,48 @@ def _import_openff() -> Any:
             "conda-forge only, so pip cannot fetch it whatever extra is "
             "named.\n\n"
             "    conda install -c conda-forge openff-toolkit "
-            "openmmforcefields\n\n"
+            "openmmforcefields ambertools\n\n"
             "Or install FastMDXplora itself from conda-forge, which brings "
             "the whole ligand path with it."
         , code="environment.backend.missing", packages=["openff-toolkit"]) from exc
     return Molecule
+
+
+def takes_am1bcc_charges(small_molecule_forcefield: str | None) -> bool:
+    """Whether a small-molecule force field gives a ligand AM1-BCC charges.
+
+    The OpenFF force fields and GAFF both do, through the OpenFF toolkit.
+    Anything else (espaloma assigns its own) is not held to a charge
+    provider it would not use.
+    """
+    name = str(small_molecule_forcefield or "").strip().lower()
+    return name.startswith(("openff", "smirnoff", "gaff"))
+
+
+def am1bcc_provider() -> str | None:
+    """What will compute a ligand's AM1-BCC charges here, or None.
+
+    The OpenFF toolkit computes them by calling AmberTools' ``sqm`` or,
+    where it is licensed, OpenEye's toolkit. Without either it still loads,
+    and offers NAGL, RDKit and its built-in charges, none of which is
+    AM1-BCC, so the first a study hears of it is a toolkit error raised
+    after the system has been solvated. conda-forge's openff-toolkit does
+    not bring AmberTools with it, so the toolkit being present says nothing
+    about this.
+
+    Raises ImportError where the toolkit itself is absent: that is a
+    different thing missing, with its own install line.
+    """
+    from openff.toolkit.utils.toolkits import (
+        AmberToolsToolkitWrapper,
+        OpenEyeToolkitWrapper,
+    )
+
+    if AmberToolsToolkitWrapper.is_available():
+        return "AmberTools"
+    if OpenEyeToolkitWrapper.is_available():
+        return "OpenEye"
+    return None
 
 
 POSE_POLICIES = ("auto", "structure", "file")

@@ -107,8 +107,8 @@ inspection names what is missing and the conda command for each.
 If it does not hold the right version, it prints an **install plan**: the exact
 commands, and which computer each runs on. Run them yourself, then inspect the
 machine again to check. Everything installs from conda-forge, where the
-`fastmdxplora` package brings OpenMM, PDBFixer, the OpenFF toolkit, PLUMED and
-the rest with it. The route depends on what the machine has:
+`fastmdxplora` package brings OpenMM, PDBFixer, the OpenFF toolkit, AmberTools,
+PLUMED and the rest with it. The route depends on what the machine has:
 
 | The machine has | The plan |
 |---|---|

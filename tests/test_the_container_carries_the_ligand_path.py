@@ -32,7 +32,7 @@ def definition() -> str:
 
 class TestItCarriesWhatWheelsCannot:
     @pytest.mark.parametrize("package", [
-        "openff-toolkit", "openmmforcefields",
+        "openff-toolkit", "openmmforcefields", "ambertools",
     ])
     def test_the_conda_only_packages_are_installed(
             self, definition: str, package: str) -> None:
@@ -51,7 +51,8 @@ class TestItCarriesWhatWheelsCannot:
         the toolkit built against it."""
         install = definition[definition.index("micromamba install"):]
         block = install[:install.index("micromamba clean")]
-        for package in ("openmm", "openff-toolkit", "openmmforcefields"):
+        for package in ("openmm", "openff-toolkit", "ambertools",
+                        "openmmforcefields"):
             assert package in block
 
 
@@ -59,6 +60,16 @@ class TestItRefusesToShipAnImageThatWillNotWork:
     def test_the_build_asserts_the_ligand_path_imports(
             self, definition: str) -> None:
         assert "import openff.toolkit" in definition
+
+    def test_the_build_charges_a_molecule_with_ambertools(
+            self, definition: str) -> None:
+        """The toolkit imports without AmberTools and then cannot give a
+        ligand its AM1-BCC charges, so an import proves nothing here. The
+        build charges a small cation through AmberTools alone."""
+        check = definition[definition.index("<<'CHECK'"):]
+        check = check[:check.index("\nCHECK\n")]
+        assert 'assign_partial_charges(\n    "am1bcc"' in check
+        assert "toolkit_registry=AmberToolsToolkitWrapper()" in check
 
     def test_the_build_asserts_the_cuda_plugin_is_installed(
             self, definition: str) -> None:

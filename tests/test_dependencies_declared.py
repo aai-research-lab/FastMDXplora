@@ -306,7 +306,7 @@ def test_info_reports_every_backend_the_software_reaches_for() -> None:
         for _display, import_name, _hint in backends
     }
     for needed in ("openmm", "pdbfixer", "openff.toolkit", "openmmforcefields",
-                   "rdkit", "propka", "weasyprint", "markdown"):
+                   "rdkit", "propka", "am1bcc", "weasyprint", "markdown"):
         assert needed in reported, f"info does not mention {needed}"
 
 
@@ -321,6 +321,10 @@ def test_each_backend_says_where_to_get_it() -> None:
             if import_name == "openff.toolkit":
                 assert "conda" in hint and "pip" not in hint, (
                     "the toolkit is not on PyPI, so a pip hint cannot work"
+                )
+            if import_name == "am1bcc":
+                assert hint == "conda install -c conda-forge ambertools", (
+                    "AmberTools computes the charges and is not on PyPI"
                 )
 
 
@@ -778,9 +782,9 @@ def test_the_reference_recipe_carries_every_conda_only_backend() -> None:
     declared = set(re.findall(r"^\s+- ([a-z0-9_.-]+)", run, re.M))
 
     # Everything `fastmdx info` reports and pip cannot install.
-    for backend in ("openmm", "pdbfixer", "openff-toolkit", "openmmforcefields",
-                    "rdkit", "propka", "weasyprint", "markdown",
-                    "openmm-plumed"):
+    for backend in ("openmm", "pdbfixer", "openff-toolkit", "ambertools",
+                    "openmmforcefields", "rdkit", "propka", "weasyprint",
+                    "markdown", "openmm-plumed"):
         assert backend in declared, (
             f"{backend} is a conda-only backend and is not a run dependency "
             "of the reference recipe")
@@ -794,9 +798,9 @@ def test_the_reference_recipe_carries_every_conda_only_backend() -> None:
             f"the recipe does not import {imported} in its tests, so a solve "
             "that resolves the name and not the package would pass the build")
 
-    # openff-toolkit pulls in AmberTools components whose metadata declares
-    # numpy<2 against a numpy 2.x environment. The reason is recorded beside
-    # the setting, because a regeneration that restored the check without it
+    # AmberTools installs Python components whose metadata declares numpy<2
+    # against a numpy 2.x environment. The reason is recorded beside the
+    # setting, because a regeneration that restored the check without it
     # would reintroduce a build failure somebody had already diagnosed.
     assert "pip_check: false" in text
     assert "numpy<2" in text

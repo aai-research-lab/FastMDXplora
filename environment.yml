@@ -17,11 +17,11 @@
 #
 # What "full" means here, exactly: the core requirements and the `md`,
 # `ligand`, `amber`, `umap` and `pdf` extras of pyproject.toml -- which is
-# `all` plus `pdf` -- together with the two conda-only packages
-# (`openmm-plumed`, `openff-toolkit`) that no extra can express. The
-# `validation` extra is deliberately not here: MDAnalysis and ProLIF are
-# installed for the cross-tool comparison, where the point is that the two
-# stacks are separate.
+# `all` plus `pdf` -- together with the three conda-only packages
+# (`openmm-plumed`, `openff-toolkit`, `ambertools`) that no extra can
+# express. The `validation` extra is deliberately not here: MDAnalysis and
+# ProLIF are installed for the cross-tool comparison, where the point is that
+# the two stacks are separate.
 #
 # `test_the_conda_file_installs_what_it_claims` holds this file to that
 # sentence. It is not a formality: `markdown` and `umap-learn` were both
@@ -57,6 +57,10 @@ dependencies:
   - rdkit>=2023.3
   - propka>=3.5
   - openff-toolkit
+  # A ligand's AM1-BCC charges, which the toolkit computes by calling
+  # AmberTools' sqm. openff-toolkit no longer brings it, and without it every
+  # ligand fails after its system has been solvated.
+  - ambertools
   # Enhanced sampling. conda-only, which is the reason this file exists:
   # there is deliberately no `plumed` pip extra, so a clone set up any other
   # way has no umbrella, metadynamics or steered support.

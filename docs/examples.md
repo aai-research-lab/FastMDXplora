@@ -38,6 +38,10 @@ looks its chemistry up, settles its protonation in the binding site, and
 discards crystallisation additives. The analysis phase adds the protein–ligand
 measures automatically.
 
+The ligand's charges are AM1-BCC, computed by AmberTools, which the conda-forge
+package brings. Where nothing can compute them, the study refuses before setup
+touches the structure and names what to install.
+
 **That route needs the network**: the chemistry is looked up by identifier, and
 a local file carries no entry to look it up in. Where the lookup is not
 available — an offline machine, or a ligand the dictionary does not have —

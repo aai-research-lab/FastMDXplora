@@ -11,9 +11,16 @@ fastmdx info
 That gives you everything: the simulation engine, the ligand chemistry stack,
 the PDF report, enhanced sampling. `fastmdx info` confirms it.
 
-conda-forge is the recommendation and not a preference. Two of the packages
-FastMDXplora depends on — the OpenFF toolkit and openmm-plumed — **have no
-PyPI distribution at all**, so no pip command can reach them.
+conda-forge is the recommendation and not a preference. Three of the packages
+FastMDXplora depends on — the OpenFF toolkit, AmberTools and openmm-plumed —
+**have no PyPI distribution at all**, so no pip command can reach them.
+
+AmberTools is where a ligand's charges come from. Every ligand is given AM1-BCC
+partial charges, which the OpenFF toolkit computes by calling AmberTools' `sqm`
+program; the toolkit installs without it and then cannot charge anything. The
+conda-forge package brings it, and `fastmdx info` reports it on the line
+**AM1-BCC charges**. Where nothing can compute them, a study with a ligand
+refuses before setup repairs or solvates anything, and says what to install.
 
 ---
 
@@ -32,10 +39,12 @@ pip install "fastmdxplora[pdf]"     # adds the PDF report
 Two of those are partial, and `fastmdx info` will tell you which parts are
 missing and how to get them.
 
-**The ligand path** needs the OpenFF toolkit, which pip cannot install:
+**The ligand path** needs the OpenFF toolkit, and AmberTools to give each
+ligand its charges. Neither is on PyPI, so after a pip install they have to
+come from conda-forge:
 
 ```bash
-conda install -c conda-forge openff-toolkit openmmforcefields
+conda install -c conda-forge openff-toolkit openmmforcefields ambertools
 ```
 
 **Enhanced sampling** needs openmm-plumed, likewise:
@@ -71,10 +80,10 @@ The environment file carries the conda-only packages -- openmm-plumed above
 all, which has no PyPI distribution -- so a clone set up this way has the whole
 stack.
 
-It carries rdkit, propka and openff-toolkit for ligand chemistry and pKa
-assignment, openmm-plumed for enhanced sampling, weasyprint and markdown for
-the PDF report, umap-learn for the dimensionality-reduction analysis that
-offers it, and scipy, pillow and netcdf4.
+It carries rdkit, propka, openff-toolkit and ambertools for ligand chemistry,
+charges and pKa assignment, openmm-plumed for enhanced sampling, weasyprint
+and markdown for the PDF report, umap-learn for the dimensionality-reduction
+analysis that offers it, and scipy, pillow and netcdf4.
 
 What it does not carry is MDAnalysis and ProLIF, the `validation` extra. That
 is deliberate: they exist here to compare against, and a comparison between

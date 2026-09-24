@@ -354,7 +354,7 @@ def test_an_unreachable_machine_is_refused_with_sshs_reason():
 # ---------------------------------------------------------------------------
 def _ready_info() -> dict:
     names = ("openmm", "pdbfixer", "openff.toolkit", "openmmforcefields",
-             "rdkit", "propka")
+             "rdkit", "propka", "am1bcc")
     return {"backends": {n: {"name": n, "state": "installed"} for n in names}}
 
 

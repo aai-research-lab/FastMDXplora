@@ -6,10 +6,10 @@ install`` after they approve it. One function writes both, so the commands a
 person copies are the commands the software would run.
 
 Everything installs from conda-forge, because that is the distribution that
-carries the whole stack: OpenMM, PDBFixer, the OpenFF toolkit, PLUMED and
-WeasyPrint arrive as dependencies of ``fastmdxplora`` there, and several of
-them exist nowhere else. The routes differ only in how conda-forge reaches
-the machine:
+carries the whole stack: OpenMM, PDBFixer, the OpenFF toolkit, AmberTools,
+PLUMED and WeasyPrint arrive as dependencies of ``fastmdxplora`` there, and
+several of them exist nowhere else. The routes differ only in how conda-forge
+reaches the machine:
 
 ``conda``
     A conda, mamba or micromamba is already there, and so is the internet.
@@ -173,10 +173,11 @@ def _conda_executable(inspection: Inspection) -> str:
 
 
 #: conda-forge's package for each backend a study needs, by import name.
+#: AM1-BCC charges come from AmberTools, which openff-toolkit does not bring.
 CONDA_PACKAGE = {
     "openmm": "openmm", "pdbfixer": "pdbfixer",
     "openff.toolkit": "openff-toolkit", "openmmforcefields": "openmmforcefields",
-    "rdkit": "rdkit", "propka": "propka",
+    "rdkit": "rdkit", "propka": "propka", "am1bcc": "ambertools",
 }
 
 
