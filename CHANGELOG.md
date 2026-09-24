@@ -1141,14 +1141,11 @@ refuses rather than averaging through a disagreement that wide. A queue's
 budget is arithmetic over those numbers, and a study says how long it will
 take on this machine and holds the line to it.
 
-### Four analyses other task sets ask for
+### Four measurements per frame
 
-MDCrow, MDArena and MDGym between them ask for four measurements this package
-could not express, and each of them repeatedly: a coordination number appears
-thirty-five times across two of the three, a residue-pair distance and a
-moment of inertia in the others, and an end-to-end distance wherever a chain
-is unstructured. None needed a new phase; each is one number per frame and
-each goes in beside `rg`.
+A coordination number, a residue-pair distance, a moment of inertia and an
+end-to-end distance for an unstructured chain. None needed a new phase; each
+is one number per frame and each goes in beside `rg`.
 
 `coordination_number` counts one selection within a shell of another. The
 cutoff *is* the measurement -- water round Mg2+ is six at 0.28 nm and eleven
