@@ -48,14 +48,39 @@ def _tool(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
+#: What a workstation in these tests does not have, whatever this computer
+#: has installed: a scheduler, a GPU, conda, a container runtime, or a
+#: FastMDXplora of its own. With sbatch on PATH the stand-in would be a
+#: cluster, and a test runner with SLURM installed would fail these.
+_NOT_ON_THE_MACHINE = frozenset({
+    "sbatch", "sinfo", "squeue", "sacct", "scancel", "nvidia-smi",
+    "conda", "mamba", "micromamba", "apptainer", "singularity", "fastmdx",
+})
+
+
+@pytest.fixture(scope="session")
+def machine_path(tmp_path_factory) -> str:
+    """A PATH holding this computer's tools, less the ones above."""
+    shims = tmp_path_factory.mktemp("machine-bin")
+    for folder in ("/usr/local/bin", "/usr/bin", "/bin"):
+        if not Path(folder).is_dir():
+            continue
+        for tool in Path(folder).iterdir():
+            target = shims / tool.name
+            if tool.name in _NOT_ON_THE_MACHINE or target.exists():
+                continue
+            if os.access(tool, os.X_OK) and not tool.is_dir():
+                target.symlink_to(tool)
+    return str(shims)
+
+
 class Here:
     """This computer standing in for a machine reached over ssh."""
 
-    def __init__(self, root: Path, **env: str) -> None:
+    def __init__(self, root: Path, path: str, **env: str) -> None:
         self.home = root / "machine-home"
         self.home.mkdir()
-        self.env = {"HOME": str(self.home), "PATH": "/usr/bin:/bin",
-                    "LC_ALL": "C", **env}
+        self.env = {"HOME": str(self.home), "PATH": path, "LC_ALL": "C", **env}
         self.commands: list[str] = []
 
     def ssh(self, command, input=None, **kwargs):
@@ -81,9 +106,9 @@ class Here:
 
 
 @pytest.fixture
-def machine(tmp_path, monkeypatch):
+def machine(tmp_path, monkeypatch, machine_path):
     monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
-    here = Here(tmp_path, FAKE_SLEEP="0", FAKE_EXIT="0")
+    here = Here(tmp_path, machine_path, FAKE_SLEEP="0", FAKE_EXIT="0")
     env = here.home / ".conda" / "envs" / "fastmdx-1.0"
     _tool(env / "bin" / "python", "echo '1.0|||'")
     # Writes a run folder the way explore does, then sleeps or fails on cue.

@@ -80,14 +80,35 @@ def _git(root: Path, *arguments: str) -> str | None:
     return finished.stdout.strip()
 
 
+def code_changed(root: Path, package: Path) -> bool | None:
+    """Whether the package's own files differ from the commit.
+
+    Only the package's files count: modified, deleted, or new and not yet
+    added, since a new module changes what runs as surely as an edited one.
+    A study file, a patch or a run folder left in the checkout's root is
+    not code, and counting it marked runs as made from uncommitted changes
+    they did not have, and stopped ``fastmdx remote`` from sending a study
+    from a checkout whose code was exactly its commit.
+
+    ``None`` where git could not answer: a failure is not an empty answer,
+    so it is reported as unknown rather than clean.
+    """
+    try:
+        scope = package.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        scope = "."
+    changed = _git(root, "status", "--porcelain", "--", scope)
+    return None if changed is None else bool(changed)
+
+
 @lru_cache(maxsize=1)
 def source_provenance() -> dict[str, Any] | None:
     """The commit a run was made from, or None where there is no checkout.
 
     Returns ``{"commit": ..., "dirty": bool}``, and ``branch`` where the
     checkout is on one. ``dirty`` is the important field: with uncommitted
-    changes the commit does not describe the code that ran, and saying so is
-    what keeps the commit from being decorative.
+    changes to the package the commit does not describe the code that ran,
+    and saying so is what keeps the commit from being decorative.
     """
     root = source_checkout()
     if root is None:
@@ -97,12 +118,9 @@ def source_provenance() -> dict[str, Any] | None:
     if not commit:
         return None
 
-    # An empty answer means nothing is modified. A failure is not an empty
-    # answer, so it is reported as unknown rather than clean.
-    changed = _git(root, "status", "--porcelain")
     record: dict[str, Any] = {
         "commit": commit[:_SHORT],
-        "dirty": None if changed is None else bool(changed),
+        "dirty": code_changed(root, Path(__file__).resolve().parent),
     }
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     if branch and branch != "HEAD":
