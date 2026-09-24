@@ -402,12 +402,19 @@ def _simulation_bullets(project_root: Path) -> list[str]:
 
     # `pressure_bar` is what was asked for and is None when the default was
     # taken; `pressure_bar_used` is what the barostat ran at. Reading the
-    # first called an NPT run at 1 bar an NVT one.
+    # first called an NPT run at 1 bar an NVT one. Neither says whether
+    # production had a barostat -- the runner records a pressure for an
+    # NVT run too -- so the ensemble is the one the run recorded.
+    from fastmdxplora.simulation.ensembles import NPT, recorded_ensemble
+
     temperature = r.get("temperature_K")
     pressure = r.get("pressure_bar_used") or r.get("pressure_bar")
+    ensemble = recorded_ensemble(r)
     if temperature:
         bullets.append(f"{temperature:g} K"
-                       + (f", {pressure:g} bar (NPT)" if pressure else " (NVT)"))
+                       + (f", {pressure:g} bar (NPT)"
+                          if ensemble == NPT and pressure
+                          else f" ({ensemble.upper()})"))
     timestep = r.get("timestep_fs")
     if timestep:
         bullets.append(f"{r.get('integrator', 'Langevin')} integrator, "

@@ -34,7 +34,8 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["NPT", "NVT", "ENSEMBLES", "resolve_ensemble", "describe_choice"]
+__all__ = ["NPT", "NVT", "ENSEMBLES", "resolve_ensemble", "recorded_ensemble",
+           "describe_choice"]
 
 NPT = "npt"
 NVT = "nvt"
@@ -60,6 +61,28 @@ def resolve_ensemble(simulation: dict[str, Any] | None) -> str:
     if stated in ENSEMBLES:
         return str(stated)
     return NPT if _npt_stage_steps(block) > 0 else NVT
+
+
+def recorded_ensemble(record: dict[str, Any] | None) -> str:
+    """Which ensemble a run's production ran in, from its simulation record.
+
+    The runner records its answer under ``resolved``. A record written
+    before it did is answered by the resolver, over the parameters the run
+    was handed and the NPT stage the runner recorded -- the two things the
+    runner decided from -- so the answer is still the runner's. Asked of
+    the parameters' ``npt_steps`` alone, a default study reads as NVT,
+    because the default stage is left unset there.
+    """
+    record = record or {}
+    resolved = record.get("resolved")
+    resolved = resolved if isinstance(resolved, dict) else {}
+    if resolved.get("ensemble") in ENSEMBLES:
+        return str(resolved["ensemble"])
+    asked = record.get("parameters")
+    block = dict(asked) if isinstance(asked, dict) else {}
+    if resolved.get("npt_steps") is not None:
+        block["npt_steps"] = resolved["npt_steps"]
+    return resolve_ensemble(block)
 
 
 def _npt_stage_steps(simulation: dict[str, Any]) -> int:

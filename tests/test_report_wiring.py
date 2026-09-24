@@ -1445,6 +1445,126 @@ class TestWhatTheRunResolvedIsRecorded:
         assert any("pressure" in gap for gap in gaps)
 
 
+class TestTheReportSaysWhatProductionRanIn:
+    """The ensemble and the pressure, as the run recorded them.
+
+    The settings list inferred the ensemble from `npt_steps`, which a study
+    leaving the NPT stage to its default does not set, so a default run --
+    NPT production at one bar -- was listed as NVT. The methods paragraph
+    wrote "in the NPT ensemble" for every production run and a pressure for
+    every run, and the slides called any run with a recorded pressure NPT,
+    so a study that asked for constant-volume production was described as
+    having run at constant pressure.
+    """
+
+    @staticmethod
+    def _record(*, asked=None, ran="npt", npt_stage=500_000, answered=True):
+        """A simulation record the shape the phase writes: every setting
+        under `parameters`, the unset ones as None, and what the runner
+        decided under `resolved`. `answered=False` is a record from before
+        the runner wrote down the ensemble."""
+        parameters = {
+            "duration_ns": 0.01, "timestep_fs": 2.0,
+            "integrator": "langevin_middle", "temperature_K": 300.0,
+            "friction_per_ps": 1.0, "barostat_frequency": 25,
+            "nvt_steps": None, "npt_steps": None, "production_steps": None,
+            "nvt_duration_ns": None, "npt_duration_ns": None,
+            "ensemble": None, "pressure_bar": None, "pressure_atm": None,
+            "trajectory_interval_steps": None, "platform": "auto",
+            "precision": "mixed", "minimize": True, "random_seed": 7,
+        }
+        parameters.update(asked or {})
+        resolved = {"nvt_steps": 250_000, "npt_steps": npt_stage,
+                    "production_steps": 5_000, "trajectory_interval_steps": 100,
+                    "checkpoint_interval_steps": 1_000, "pressure_bar": 1.0}
+        if answered:
+            resolved["ensemble"] = ran
+        # The runner records the pressure it resolved whatever the
+        # ensemble, which is why a pressure alone says nothing.
+        return {"phase": "simulation", "parameters": parameters,
+                "platform_used": "CPU", "pressure_bar_used": 1.0,
+                "resolved": resolved}
+
+    @staticmethod
+    def _report(root, record):
+        """What the methods paragraph, the settings list and the slides
+        say of a study with this record, built the way the report builds
+        them."""
+        import re
+        from types import SimpleNamespace
+
+        from fastmdxplora.report.context import load_phase_context
+        from fastmdxplora.report.document import _methods_section
+        from fastmdxplora.report.slides import _simulation_bullets
+
+        setup, _ = TestTheMethodsSectionReadsTheRealManifests._manifests()
+        for phase, written in (("setup", setup), ("simulation", record)):
+            (root / phase).mkdir(parents=True)
+            (root / phase / f"{phase}_parameters.json").write_text(
+                json.dumps(written), encoding="utf-8")
+        text = _methods_section(root, load_phase_context(root))
+        prose, settings = text.split("### Every setting used")
+        production = re.search(r"Production dynamics were run for [^.]*\.", prose)
+        assert production, "the methods paragraph says nothing of production"
+        pressure = [s for s in re.split(r"(?<=\.) ", prose)
+                    if " bar" in s or "barostat" in s]
+        return SimpleNamespace(production=production.group(0),
+                               pressure=pressure, settings=settings,
+                               slides=_simulation_bullets(root))
+
+    @pytest.mark.parametrize("answered", [True, False],
+                             ids=["recorded", "resolved from the record"])
+    def test_a_default_run_is_npt_at_one_bar_throughout(self, tmp_path, answered):
+        said = self._report(tmp_path, self._record(answered=answered))
+        assert "in the NPT ensemble" in said.production
+        assert said.pressure == ["Pressure was maintained at 1.0 bar, with "
+                                 "the barostat applied every 25 steps."]
+        assert "- **ensemble**: `npt`" in said.settings
+        assert r"- **pressure\_bar**: `1.0`" in said.settings
+        assert "300 K, 1 bar (NPT)" in said.slides
+
+    def test_constant_volume_production_is_nvt_throughout(self, tmp_path):
+        # Equilibrated at constant pressure, then produced at constant
+        # volume: the pressure belongs to the NPT stage and is said so.
+        said = self._report(
+            tmp_path, self._record(asked={"ensemble": "nvt"}, ran="nvt"))
+        assert "in the NVT ensemble" in said.production
+        assert "NPT" not in said.production
+        assert said.pressure
+        assert all("during NPT equilibration" in s for s in said.pressure)
+        assert "- **ensemble**: `nvt`" in said.settings
+        assert "- **ensemble**: `npt`" not in said.settings
+        assert "300 K (NVT)" in said.slides
+
+    def test_with_no_barostat_anywhere_no_pressure_is_stated(self, tmp_path):
+        said = self._report(
+            tmp_path, self._record(asked={"ensemble": "nvt", "npt_steps": 0},
+                                   ran="nvt", npt_stage=0))
+        assert "in the NVT ensemble" in said.production
+        assert said.pressure == []
+        assert "- **ensemble**: `nvt`" in said.settings
+        assert r"- **pressure\_bar**: `None`" in said.settings
+        assert "300 K (NVT)" in said.slides
+
+    @pytest.mark.parametrize("ensemble, npt_steps", [
+        ("npt", 0), ("nvt", 0), (None, 10), (None, 0)])
+    def test_the_runner_records_what_production_ran_in(
+            self, tmp_path, ensemble, npt_steps) -> None:
+        """The report's first source, so it has to be the runner's own
+        answer: stated where the config states it, inferred as the
+        runner inferred it where not."""
+        from fastmdxplora.simulation import runner
+        from tests._the_phase import a_prepared_water_box
+
+        files = a_prepared_water_box(tmp_path)
+        result = runner.run_simulation(
+            **files, output_dir=str(tmp_path / "out"), production_steps=10,
+            nvt_steps=0, npt_steps=npt_steps, minimize=False, platform="CPU",
+            ensemble=ensemble)
+        expected = ensemble or ("npt" if npt_steps else "nvt")
+        assert result.resolved["ensemble"] == expected
+
+
 class TestConvergenceSaysWhatARunCanSupport:
     """A hundred frames look like a hundred measurements.
 

@@ -283,7 +283,7 @@ def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
             "Production MD was performed with the following simulation parameters:"
         )
         lines.append("")
-        for k, v in _resolve_derived(dict(sim_params)).items():
+        for k, v in _resolve_derived(dict(sim_params), record=sim).items():
             lines.append(f"- **{_md_text(k)}**: `{_code_text(v)}`")
     else:
         lines.append("")
@@ -883,7 +883,8 @@ def _software_versions() -> dict[str, str]:
     return versions
 
 
-def _resolve_derived(params: dict[str, Any]) -> dict[str, Any]:
+def _resolve_derived(params: dict[str, Any], *,
+                     record: dict[str, Any] | None = None) -> dict[str, Any]:
     """Fill in what the given settings determine.
 
     A run given `duration_ns` has a production step count; a run given
@@ -892,6 +893,10 @@ def _resolve_derived(params: dict[str, Any]) -> dict[str, Any]:
     reader of "every setting used" was left to do the arithmetic. These
     are the record of what the run used, so they are filled from the
     timestep and each other. Values already set are left as they are.
+
+    ``record`` is the whole simulation record, which says what the
+    parameters cannot: the ensemble production ran in, and the pressure
+    the barostat held.
     """
     out = dict(params)
     dt_fs = out.get("timestep_fs")
@@ -920,21 +925,30 @@ def _resolve_derived(params: dict[str, Any]) -> dict[str, Any]:
         elif out.get(ns_key) is None and out.get(steps_key) is not None:
             out[ns_key] = ns_from(out[steps_key])
 
-    # The ensemble production ran in. Absent means "read it from
-    # npt_steps", which is how it always worked; the record should say
-    # what that read to, not that nothing was typed.
-    if out.get("ensemble") is None:
-        try:
-            npt = int(out.get("npt_steps") or 0)
-        except (TypeError, ValueError):
-            npt = 0
-        out["ensemble"] = "npt" if npt > 0 else "nvt"
+    # The ensemble production ran in, as the run recorded it. Asked of
+    # `npt_steps` here, a study leaving the stage to its default -- unset in
+    # the parameters, a positive stage in the runner -- would be listed as
+    # NVT when it ran at constant pressure.
+    from fastmdxplora.simulation.ensembles import NPT, recorded_ensemble
+
+    record = dict(record or {})
+    record.setdefault("parameters", params)
+    out["ensemble"] = recorded_ensemble(record)
+    ran = record.get("resolved") if isinstance(record.get("resolved"), dict) else {}
 
     bar, atm = out.get("pressure_bar"), out.get("pressure_atm")
+    stage = ran.get("npt_steps", out.get("npt_steps"))
+    barostat = out["ensemble"] == NPT or stage is None or bool(stage)
     if bar is None and atm is None:
-        # The runner's default when neither is given, as the methods
-        # paragraph says: "Pressure was maintained at 1.0 bar".
-        out["pressure_bar"], out["pressure_atm"] = 1.0, round(1.0 / 1.01325, 5)
+        # What the barostat ran at, as the runner recorded it; one bar
+        # where the record predates that. Where nothing held a pressure --
+        # no NPT stage and constant-volume production -- none is filled in,
+        # because one listed here would read as production's.
+        if barostat:
+            used = (record.get("pressure_bar_used") or ran.get("pressure_bar")
+                    or 1.0)
+            out["pressure_bar"] = used
+            out["pressure_atm"] = round(float(used) / 1.01325, 5)
     elif bar is None:
         try:
             out["pressure_bar"] = round(float(atm) * 1.01325, 5)

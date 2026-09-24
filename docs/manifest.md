@@ -174,10 +174,16 @@ count derived from a duration, or the force field `auto` chose.
   "nvt_steps": 50000,
   "npt_steps": 50000,
   "production_steps": 25000000,
+  "ensemble": "npt",
   "trajectory_interval_steps": 12500,
   "pressure_bar": 1.2159
 }
 ```
+
+`ensemble` is what production ran in, as the runner decided it, and the report
+reads it from here: a study that leaves the NPT stage to its default has no
+`npt_steps` in `parameters` and runs at constant pressure. `pressure_bar` is
+recorded whatever the ensemble, so on its own it says nothing about a barostat.
 
 **Decisions, not outcomes.** A step count worked out from a duration belongs
 here; the duration the run actually reached does not, and stays under

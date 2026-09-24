@@ -133,6 +133,14 @@ def _flatten(manifest: dict[str, Any]) -> dict[str, Any]:
     and no water model at all, because the resolution is where that lives.
     """
     flat = dict(manifest.get("parameters") or {})
+    # A setting left unset is answered by what the run recorded deciding,
+    # under the same name: `resolved` is written in the config's own terms.
+    # Without it a study given a duration has no production length here,
+    # and so no sentence saying what ensemble production ran in.
+    resolved = manifest.get("resolved")
+    for name, value in (resolved if isinstance(resolved, dict) else {}).items():
+        if flat.get(name) is None:
+            flat[name] = value
     for key, value in manifest.items():
         if key == "parameters":
             continue
@@ -162,8 +170,13 @@ def methods_paragraphs(
     written elsewhere in the report -- this is the part somebody pastes into a
     manuscript.
     """
+    from fastmdxplora.simulation.ensembles import NPT, recorded_ensemble
+
     parts: list[str] = []
     versions = versions or {}
+    # From the whole record, before it is flattened: the runner's own answer
+    # where it gave one, and its resolver over what it recorded where not.
+    production_ensemble = recorded_ensemble(sim)
     setup = _flatten(setup)
     sim = _flatten(sim)
 
@@ -434,7 +447,8 @@ def methods_paragraphs(
         if production:
             protocol.append(
                 f"Production dynamics were run for "
-                f"{_steps_to_ns(production, timestep)} in the NPT ensemble."
+                f"{_steps_to_ns(production, timestep)} in the "
+                f"{production_ensemble.upper()} ensemble."
             )
         if integrator and timestep:
             protocol.append(
@@ -449,13 +463,18 @@ def methods_paragraphs(
                    if friction is not None else "")
                 + "."
             )
-        if pressure is not None:
+        # The runner records a pressure whatever the ensemble, and a barostat
+        # acts only where there is one: through production at constant
+        # pressure, or through the NPT stage before constant-volume
+        # production. Stated without saying which, it reads as production's.
+        barostat = (f", with the barostat applied every {barostat_every} steps"
+                    if barostat_every else "")
+        if pressure is not None and production_ensemble == NPT:
+            protocol.append(f"Pressure was maintained at {pressure} bar{barostat}.")
+        elif pressure is not None and npt:
             protocol.append(
-                f"Pressure was maintained at {pressure} bar"
-                + (f", with the barostat applied every {barostat_every} steps"
-                   if barostat_every else "")
-                + "."
-            )
+                f"Pressure was maintained at {pressure} bar during NPT "
+                f"equilibration{barostat}.")
         if interval and timestep:
             protocol.append(
                 f"Coordinates were written every "

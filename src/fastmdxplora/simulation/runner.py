@@ -2838,6 +2838,11 @@ def run_simulation(
             "nvt_steps": int(plan["nvt_steps"]),
             "npt_steps": int(plan["npt_steps"]),
             "production_steps": int(plan["production_steps"]),
+            # What production ran in, as decided above. A default study's
+            # parameters leave both the ensemble and the NPT stage unset, so
+            # a reader inferring it from them has to know this runner's
+            # defaults to get it right.
+            "ensemble": "npt" if wants_npt_production else "nvt",
             "trajectory_interval_steps": int(trajectory_interval_steps),
             # As placed, on frames, which may be later than was asked.
             "checkpoint_interval_steps": int(checkpoint_interval_steps),
