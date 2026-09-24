@@ -554,19 +554,34 @@ class FastMDXplora:
     # Convenience: per-phase entry points (also called by the CLI)
     def setup(self, **kwargs: Any) -> PhaseResult:
         """Run only the setup phase."""
-        return self._run_phase("setup", kwargs)
+        return self._run_phase("setup", self._validated("setup", kwargs))
 
     def simulate(self, **kwargs: Any) -> PhaseResult:
         """Run only the simulation phase."""
-        return self._run_phase("simulation", kwargs)
+        return self._run_phase("simulation", self._validated("simulation", kwargs))
 
     def analyze(self, **kwargs: Any) -> PhaseResult:
         """Run only the analysis phase."""
-        return self._run_phase("analysis", kwargs)
+        return self._run_phase("analysis", self._validated("analysis", kwargs))
 
     def report(self, **kwargs: Any) -> PhaseResult:
         """Run only the report phase."""
-        return self._run_phase("report", kwargs)
+        return self._run_phase("report", self._validated("report", kwargs))
+
+    def _validated(self, phase: str, settings: dict[str, Any]) -> dict[str, Any]:
+        """The settings one phase is asked to run with, through the validator.
+
+        Running one phase -- ``simulate(temperature_K=...)`` here, ``fastmdx
+        simulate`` on the command line -- passed its settings straight to
+        the phase. A misspelled ``duraton_ns`` and a temperature of -50 K
+        were both taken, where a configuration holding them is refused.
+        """
+        if settings:
+            from fastmdxplora.config.loader import validate_config
+
+            validate_config({"systems": [{"system": str(self.system)}], phase: dict(settings)},
+                            require_systems=True)
+        return settings
 
     def compare(self, *, output_dir: str | os.PathLike | None = None) -> Path | None:
         """(Re)build the cross-run comparison report for a multi-run study.

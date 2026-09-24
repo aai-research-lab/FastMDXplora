@@ -36,3 +36,33 @@ def test_settings_the_validator_accepts_are_taken(tmp_path) -> None:
     study = FastMDXplora(system="1UBQ", options={"simulation": {"duration_ns": 0.001}},
                          output_dir=str(tmp_path / "study"))
     assert study.options["simulation"]["duration_ns"] == 0.001
+
+
+@pytest.mark.parametrize("settings, said", [
+    ({"duraton_ns": 0.001}, "did you mean 'duration_ns'"),
+    ({"temperature_K": -50}, "below the smallest value"),
+])
+def test_one_phase_run_on_its_own_is_validated(tmp_path, settings, said) -> None:
+    # simulate(...) passed its settings straight to the phase, which refused
+    # only because setup had not run, never over the settings themselves.
+    study = FastMDXplora(system="1UBQ", output_dir=str(tmp_path / "study"))
+    with pytest.raises(ConfigError) as caught:
+        study.simulate(**settings)
+    assert said in str(caught.value)
+    assert not (tmp_path / "study" / "simulation").exists()
+
+
+def test_a_phase_command_is_validated(tmp_path, capsys) -> None:
+    # `fastmdx simulate` builds the same keyword arguments from its flags.
+    from fastmdxplora.cli.main import main
+
+    try:
+        code = main(["simulate", "--system", "1UBQ", "--output", str(tmp_path / "study"),
+                     "--temperature-K", "-50"])
+    except ConfigError as refused:
+        said = str(refused)
+    else:
+        assert code != 0
+        printed = capsys.readouterr()
+        said = printed.out + printed.err
+    assert "below the smallest value" in said
