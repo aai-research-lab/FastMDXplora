@@ -54,7 +54,7 @@ output: runs/ubiquitin
 
 ---
 
-## The fourteen top-level keys
+## The fifteen top-level keys
 
 Nothing else is accepted at the top level; an unknown key is refused with the
 nearest match.
@@ -65,15 +65,15 @@ nearest match.
 |---|---|---|
 | `systems` | list | **Required.** One entry per system. See below |
 | `output` | str | Where everything goes. Defaults to `./fastmdxplora_<system>_study_<UTC timestamp>` |
-| `include` | list | Which phases to run: `setup`, `simulation`, `analysis`, `report` |
-| `exclude` | list | Which phases to skip. Mutually exclusive with `include` |
+| `include` | list | Which phases to run: `setup`, `simulation`, `analysis`, `report`. Also accepted as `include_phase`, which is the spelling `resolved_config.yml` writes |
+| `exclude` | list | Which phases to skip. Mutually exclusive with `include`. Also accepted as `exclude_phase` |
 
 ### The phases
 
 | Key | What it holds |
 |---|---|
 | `setup` | 43 settings — structure, ligand, membrane, solvent, force field, forces |
-| `simulation` | 41 settings — length, conditions, integrator, platform, enhanced sampling |
+| `simulation` | 44 settings — length, conditions, integrator, platform, enhanced sampling |
 | `analysis` | 13 settings — which measures, over which atoms, over which frames |
 | `report` | 11 settings — title, formats, highlighted regions |
 
@@ -94,6 +94,7 @@ Every setting in each is in the [Config reference](config_reference.md).
 | `verbose` | bool | `false` | Stream debug logging to the terminal |
 | `agent` | str | — | Records that the [Agent](agent.md) wrote this study: `assisted`, `autonomous` or `unvalidated` |
 | `agent_model` | str | — | Which model wrote it, as `provider/model` |
+| `budget_hours` | float | — | A ceiling on GPU hours. Checked after setup, where the solvated particle count and so the cost are first known, and the study refuses rather than overrunning it. Required by `--autonomous` |
 
 `agent` and `agent_model` are provenance, not behaviour. They are described in
 [The FastMDXplora Agent](agent.md).

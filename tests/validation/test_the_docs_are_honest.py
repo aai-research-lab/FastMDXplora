@@ -567,3 +567,78 @@ class TestTheApiReferenceIsComplete:
         for name in ("FastMDXplora", "AnalysisOrchestrator"):
             assert name in fastmdxplora.__all__
             assert f"fastmdxplora.{name}" in documented
+
+
+class TestThePagesThatEnumerateTheSchemaAreCurrent:
+    """Four counts and one list that had drifted by 2026-09-25.
+
+    Each was written true and went stale as the schema grew, because
+    nothing recomputed it. `docs/config.md` said fourteen top-level keys
+    against fifteen accepted and did not document `budget_hours` at all,
+    while claiming nothing else is accepted; it said simulation carries 41
+    settings against 44; `docs/developers.md` said fifteen harness
+    requests against fourteen; `docs/gui.md` listed two endpoints that no
+    longer exist.
+
+    The endpoint one is the sharpest: the page is the reference for what
+    the server refuses off loopback, so a name in that table that the
+    server does not have reads as a promise about a route nobody can call.
+    """
+
+    @staticmethod
+    def _page(name: str) -> str:
+        import re
+
+        return re.sub(r"\s+", " ", (DOCS / name).read_text(encoding="utf-8"))
+
+    def test_the_top_level_key_count_is_the_real_one(self) -> None:
+        from fastmdxplora.config.loader import TOP_LEVEL_KEYS
+
+        words = {14: "fourteen", 15: "fifteen", 16: "sixteen",
+                 17: "seventeen", 18: "eighteen"}
+        spelled = words.get(len(TOP_LEVEL_KEYS))
+        assert spelled, f"no word for {len(TOP_LEVEL_KEYS)}; extend the map"
+        assert f"The {spelled} top-level keys" in self._page("config.md")
+
+    def test_every_top_level_key_is_in_a_table_on_that_page(self) -> None:
+        """The page says nothing else is accepted, so a key it omits is a
+        key a reader cannot find. `budget_hours` was missing."""
+        from fastmdxplora.config.loader import TOP_LEVEL_KEYS
+
+        page = self._page("config.md")
+        missing = [key for key in sorted(TOP_LEVEL_KEYS)
+                   if f"`{key}`" not in page]
+        assert not missing, f"undocumented top-level keys: {missing}"
+
+    @pytest.mark.parametrize("phase", ["setup", "simulation", "analysis",
+                                       "report"])
+    def test_each_phase_setting_count_is_the_real_one(self, phase: str) -> None:
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        total = len(PHASE_SCHEMAS[phase].fields)
+        assert f"| `{phase}` | {total} settings" in self._page("config.md")
+
+    def test_the_harness_request_count_is_the_real_one(self) -> None:
+        from fastmdxplora.agent.evaluate import REQUESTS
+
+        words = {13: "Thirteen", 14: "Fourteen", 15: "Fifteen",
+                 16: "Sixteen", 17: "Seventeen"}
+        spelled = words.get(len(REQUESTS))
+        assert spelled, f"no word for {len(REQUESTS)}; extend the map"
+        assert f"{spelled} requests across three tiers" in \
+            self._page("developers.md")
+
+    def test_every_endpoint_the_gui_page_names_exists(self) -> None:
+        """Read from the server rather than from a list kept beside it."""
+        import re
+
+        import fastmdxplora.gui as gui
+
+        server = (Path(gui.__file__).parent / "server.py").read_text(
+            encoding="utf-8")
+        served = set(re.findall(r'"(/api/[a-z0-9/_-]+)"', server))
+        named = set(re.findall(r"`(/api/[a-z0-9/_-]+)`",
+                               (DOCS / "gui.md").read_text(encoding="utf-8")))
+        assert named, "the page names no endpoints; the regex has drifted"
+        gone = sorted(named - served)
+        assert not gone, f"docs/gui.md names endpoints the server lacks: {gone}"

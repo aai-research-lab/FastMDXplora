@@ -327,7 +327,7 @@ ANTHROPIC_API_KEY=... python scripts/measure_nli.py --terse   # no help text
   refusals seen: config.option.unknown x2
 ```
 
-Fifteen requests across three tiers, reported apart — one number over three
+Fourteen requests across three tiers, reported apart — one number over three
 difficulties hides where a model stops rather than whether it succeeds.
 **Easy** states the value outright. **Medium** makes the model supply what the
 sentence did not: the number behind "physiological", a microsecond in

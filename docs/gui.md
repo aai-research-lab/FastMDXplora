@@ -305,7 +305,7 @@ somebody decides otherwise. Among the routes refused off loopback:
 |---|---|
 | `/api/browse`, `/api/inspect-directory` | They walk the filesystem for the folder picker |
 | `/api/load-config`, `/api/check-config` | They read a file the caller names and quote the line a parse error came from, which is a file-content oracle. A planted token and an AWS key were both recovered this way |
-| `/api/run`, `/api/run-config`, `/api/explore/start`, `/api/explore/stop`, `/api/explore/validate` | They start and stop work on this machine |
+| `/api/run`, `/api/run-config`, `/api/explore/stop` | They start and stop work on this machine |
 | `/api/explore/switch` | It changes which folder is served, and so which files `/artifacts/` hands out |
 | `/api/open-output` | It opens a folder on the machine running the server |
 | `/api/agent/model`, `/api/agent/propose` | One stores an API key, the other spends it |
