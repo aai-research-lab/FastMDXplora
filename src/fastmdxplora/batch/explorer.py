@@ -524,6 +524,9 @@ def _execute_run(
                 options=options,
                 study_options=spec_dict.get("study") or None,
                 verbose=verbose,
+                # Validated as the study it was expanded from, before the
+                # expansion; a run's settings are that study's, not a person's.
+                _expanded_from_a_validated_study=True,
             )
             # A single-system explore() returns a one-element list of
             # RunResult; take its phases and re-stamp the run's identity.

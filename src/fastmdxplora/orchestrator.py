@@ -222,6 +222,7 @@ class FastMDXplora:
         exclude_phase: list[str] | None = None,
         include: list[str] | None = None,
         exclude: list[str] | None = None,
+        _expanded_from_a_validated_study: bool = False,
     ) -> None:
         include, exclude = _phase_selection(
             include_phase, exclude_phase, include, exclude)
@@ -286,12 +287,17 @@ class FastMDXplora:
 
         self.system: str = str(system)
 
-        # The same validation every other route passes. A system given here
+        # The same validation every other route passes, except for the runs
+        # the batch layer makes from a study it has validated already: their
+        # settings are that study expanded -- an umbrella window's `centre`
+        # in place of `from`, `to` and `n_windows` -- which is not what a
+        # person writes, and every umbrella window was refused as though it
+        # were. A system given here
         # with its options reached the phases unchecked, so a misspelled
         # `duraton_ns` ran the default million production steps without a
         # word, and a temperature of -50 K was planned as given. Before
         # anything is created, so a refused study leaves nothing behind.
-        if options or study_options:
+        if (options or study_options) and not _expanded_from_a_validated_study:
             from fastmdxplora.config.loader import validate_config
 
             validate_config({"systems": [{"system": self.system}],

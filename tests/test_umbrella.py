@@ -1863,3 +1863,27 @@ class TestAnUnsampledBinIsNotAMeasurement:
         result = self._pmf(gap=True)
         values = [v for v in result["pmf"]["free_energy_kjmol"] if v is not None]
         assert min(values) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_every_window_is_constructed_from_its_expanded_settings(tmp_path, monkeypatch) -> None:
+    """A window's settings are its study expanded: `centre` and `index` where
+    the study said `from`, `to` and `n_windows`. Validated again as if a
+    person had written them, every window, and the preparation shared by
+    them, was refused before anything ran."""
+    from fastmdxplora import orchestrator
+    from fastmdxplora.batch.explorer import BatchExplorer, _execute_run
+
+    study = tmp_path / "study.yml"
+    study.write_text(
+        "systems:\n  - system: 1L2Y\n"
+        "simulation:\n  umbrella:\n    collective_variable: distance\n"
+        '    selection_a: "resid 0 and name CA"\n    selection_b: "resid 19 and name CA"\n'
+        "    from: 1.0\n    to: 2.0\n    n_windows: 5\n    force_constant: 1000\n",
+        encoding="utf-8")
+    batch = BatchExplorer(config=study, output_dir=str(tmp_path / "out"))
+    ran = []
+    monkeypatch.setattr(orchestrator.FastMDXplora, "explore",
+                        lambda self, **kwargs: ran.append(self.options["simulation"]["umbrella"]) or [])
+    for spec in batch.run_specs:
+        _execute_run(spec.to_dict(), str(tmp_path / "out" / spec.run_id), None, None, False, None)
+    assert [window["centre"] for window in ran] == [1.0, 1.25, 1.5, 1.75, 2.0]
