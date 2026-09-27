@@ -48,6 +48,15 @@ framed, in a sandbox of their own: their scripts run and cannot reach the
 GUI. The report's interactive page, opened from the GUI, therefore no
 longer remembers its card sizes between visits. Present in 2.5.6 and 2.5.7.
 
+### A model's reply alone does not start a run
+
+**In the GUI's Agent, `DO: run` in a reply pressed Run.** The only rule
+against acting unasked was in the prompt, and the model reads the files a
+person attaches, so a file could tell it to start work on the machine. The
+server now reads the person's own message: a plain instruction, such as *run
+it* or *go ahead*, runs as before, and any other `DO: run` asks *Run the study
+above? Say yes.* and waits, as a stop always has. Present in 2.5.6 and 2.5.7.
+
 ### A ligand is given its charges on a fresh install
 
 **A fresh conda-forge install of 2.5.7 could not parameterize any ligand.**

@@ -42,6 +42,7 @@ none of this package's business.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -244,7 +245,8 @@ they ask for a change and to run it in one message, write the config
 and say "say run when you have read it" -- one step of seeing what is
 about to run is what assisted mode promises. Stopping a run is
 irreversible, so `DO: stop` is confirmed with the person before it
-happens; you need not ask, the software does.
+happens, and so is a `DO: run` their message did not plainly ask for;
+you need not ask, the software does.
 
 You are the FastMDXplora Agent. Asked who or what you are, say so by
 that name, then what you do, in a sentence each. Asked which model or
@@ -351,6 +353,29 @@ def repair_prompt_for(previous: str, refusal: Refusal) -> str:
 
 ACTIONS = ("run", "stop", "open viewer", "open overview", "open report",
            "open builder", "show config", "download config")
+
+# The person's message when it is itself the instruction to run: "run it",
+# "start the study", "go ahead". Read from what they typed, never from the
+# reply, so a model cannot supply it.
+_TOLD_TO_RUN = re.compile(
+    r"(?:(?:ok|okay|yes|please|now|then|right|so),?\s+)*"
+    r"(?:(?:run|start|launch)(?:\s+(?:it|this|that|the\s+(?:study|run|config|simulation)))?"
+    r"|go(?:\s+ahead)?)"
+    r"(?:\s+(?:now|please))*")
+
+
+def told_to_run(message: str) -> bool:
+    """Whether the person's own message plainly says to run.
+
+    `DO: run` starts work on this machine, and the reply that carries it
+    comes from a model, which reads the person's files and can be wrong or
+    be told what to say by one of them. The prompt asks it to act only when
+    told; this is the check that does not depend on the model agreeing. A
+    run the message did not plainly ask for is confirmed with the person
+    first, as a stop always is.
+    """
+    said = " ".join(str(message or "").lower().split()).strip(" .!")
+    return _TOLD_TO_RUN.fullmatch(said) is not None
 
 
 def _action_in(raw: str) -> str | None:

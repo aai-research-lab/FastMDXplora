@@ -166,8 +166,15 @@ def propose_endpoint(payload: dict[str, Any],
         where = ""
         if proposal.action == "stop":
             where = _where_the_run_is(runtime)
-        return {"ok": False, "action": proposal.action, "where": where,
-                "attempts": attempts}
+        answer = {"ok": False, "action": proposal.action, "where": where,
+                  "attempts": attempts}
+        if proposal.action == "run":
+            # Run without asking only when the person's own words said to.
+            # The browser asks first unless this says it need not.
+            from fastmdxplora.agent.propose import told_to_run
+
+            answer["confirm"] = not told_to_run(request)
+        return answer
     if proposal.answer:
         # A question was asked, not a study. A paragraph back.
         return {"ok": False, "answer": proposal.answer, "attempts": attempts}

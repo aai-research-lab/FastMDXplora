@@ -332,6 +332,7 @@
     persist();
     pending = null;
     stopPending = null;
+    runPending = null;
     lastReply = null;
     currentConfig = null;
     for (var j = history.length - 1; j >= 0; j--) {
@@ -487,6 +488,11 @@
       scrollToEnd();
       return;
     }
+    if (runPending) {
+      confirmRun(typed, box);
+      scrollToEnd();
+      return;
+    }
     note(box, "Thinking\u2026");
     scrollToEnd();
     el("agent-propose").disabled = true;
@@ -508,7 +514,13 @@
          * uses. The thread says what was done, so nothing happens
          * silently. */
         history.push({ role: "agent", text: "DO: " + data.action });
-        if (data.action === "stop") {
+        /* A run the person's own message did not plainly ask for is
+         * asked about first. The server says which from what they typed;
+         * without its word, ask. */
+        var confirmRunFirst = data.action === "run" && data.confirm !== false;
+        if (confirmRunFirst) {
+          transcript.push({ role: "agent", kind: "question", text: RUN_QUESTION });
+        } else if (data.action === "stop") {
           /* Asked, not done. A stop is recorded when it is confirmed, so
            * a reloaded thread never says "Did: stop" about a run that was
            * never stopped -- which it did, and the person's "yes" then
@@ -519,7 +531,7 @@
           transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
         }
         persist();
-        act(data.action, data.where || "", box, r);
+        act(data.action, data.where || "", box, r, confirmRunFirst);
         scrollToEnd();
         return;
       }
@@ -576,11 +588,20 @@
   /* ---- Acting -------------------------------------------------------- */
 
   /* The last reply that carried a config, so "run it" has something to
-   * run. And a stop that is waiting for a "yes". */
+   * run. And a stop, or a run, that is waiting for a "yes". */
   var lastReply = null;
   var stopPending = null;
+  var runPending = null;
+  var RUN_QUESTION = "Run the study above? Say yes.";
 
-  function act(action, where, box, r) {
+  /* Yes, or the verb being confirmed: "stop it" confirms a stop and not
+   * a run, and "run it" a run and not a stop. */
+  function saidYes(typed, verb) {
+    return new RegExp("^\\s*(yes|y|yes please|do it|" + verb + " it|confirm)\\s*\\.?\\s*$", "i")
+      .test(typed);
+  }
+
+  function act(action, where, box, r, confirmFirst) {
     if (action === "run") {
       if (!lastReply) {
         note(box, "Nothing to run yet. Describe a study first.");
@@ -592,6 +613,14 @@
          * button does nothing, and "Starting the run" over nothing was
          * a lie -- reported after Run here had been pressed first. */
         note(box, "It is already running.");
+        return;
+      }
+      if (confirmFirst) {
+        /* The reply came from a model, which reads attached files and can
+         * be wrong or be told what to say. Starting work on this machine
+         * waits for the person, as a stop does. */
+        runPending = true;
+        note(box, RUN_QUESTION);
         return;
       }
       note(box, "Starting the run.", true);
@@ -632,8 +661,22 @@
     note(box, "I do not know how to " + action + ".");
   }
 
+  function confirmRun(typed, box) {
+    runPending = null;
+    if (!saidYes(typed, "run")) {
+      note(box, "Not run.");
+      transcript.push({ role: "agent", kind: "answer", text: "Not run." });
+      persist();
+      return;
+    }
+    transcript.push({ role: "agent", kind: "action", action: "run", where: "" });
+    history.push({ role: "agent", text: "DO: run" });
+    persist();
+    act("run", "", box, null, false);
+  }
+
   function confirmStop(typed, box) {
-    var yes = /^\s*(yes|y|yes please|do it|stop it|confirm)\s*\.?\s*$/i.test(typed);
+    var yes = saidYes(typed, "stop");
     stopPending = null;
     if (!yes) {
       note(box, "Not stopped.");
@@ -826,6 +869,7 @@
           // A stop confirmation that was the last thing said is still
           // waiting for its yes after a reload.
           stopPending = /^Stop the run.*\? Say yes\.$/.test(e.text || "") ? true : null;
+          runPending = e.text === RUN_QUESTION ? true : null;
         } else if (e.kind === "action") {
           note(box, e.action === "stop" ? "Stopped the run." : "Did: " + e.action + ".", true);
           history.push({ role: "agent", text: "DO: " + e.action });
@@ -840,6 +884,9 @@
       if (!(last && last.kind === "question" && /^Stop the run.*\? Say yes\.$/.test(last.text || ""))) {
         stopPending = null;
       }
+      if (!(last && last.kind === "question" && last.text === RUN_QUESTION)) {
+        runPending = null;
+      }
       scrollToEnd();
   }
 
@@ -850,7 +897,7 @@
     function resetThread() {
       el("agent-thread").innerHTML = "";
       history = []; transcript = []; currentConfig = null; pending = null;
-      stopPending = null; lastReply = null;
+      stopPending = null; runPending = null; lastReply = null;
     }
     var fresh = el("agent-new");
     if (fresh) {

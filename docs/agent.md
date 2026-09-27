@@ -483,6 +483,16 @@ not because it thinks you would want it, and never twice in one reply. A
 reply that names an action and then keeps talking is shown as prose and not
 carried out.
 
+**A run you did not plainly ask for is confirmed.** The model reads what you
+attach, and a file can tell it what to say, so the prompt is not what decides.
+The software reads your own message: *run it*, *start the study*, *go ahead*
+and the like run at once; after anything else a `run` asks first, and only
+*yes* or *run it* starts it:
+
+```
+Run the study above? Say yes.
+```
+
 **Stopping is confirmed.** A run stopped is hours gone, so `stop` asks first,
 naming where the run is:
 
