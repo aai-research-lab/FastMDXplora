@@ -83,9 +83,11 @@ wrong will simulate perfectly well.
 
 ### Choosing between them
 
-Nothing has to be declared. If the structure holds a residue of that name with
-a matching count of heavy atoms, its coordinates are used; if it does not, the
-file's are. The files already say which situation it is.
+Nothing has to be declared. If the structure holds a residue of that name
+whose heavy atoms match the file's, element for element and bond for bond, its
+coordinates are used, each atom on its own crystal position whatever order the
+two files list them in; if it does not, the file's are. The files already say
+which situation it is.
 
 The choice can also be pinned, as `setup.ligand_pose`:
 

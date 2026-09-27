@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A ligand's pose is taken atom for atom
+
+**With the pose taken from the structure, the supplied file's heavy atoms took
+the crystal positions in the order the two files happened to list them.** Only
+the count was checked, so two files listing the atoms differently put atoms
+on each other's places: a C-C bond of 1.5 A came out at 3.0 and 4.5 A with no
+error, since the clash check measures the ligand against the protein, not
+against itself. Each atom now goes to the crystal atom of the same element
+bonded to the same neighbours, the crystal's bonds read from its geometry;
+where symmetry allows more than one answer, the one that fits the supplied
+geometry best is taken. A residue whose atoms cannot be matched that way is
+not used as the pose: `ligand_pose: structure` refuses, `auto` keeps the
+file's coordinates and says why. Present in 2.5.6 and 2.5.7.
+
 ### `duration_ns: 0` equilibrates and stops
 
 `duration_ns` is the production length, so zero now means no production: the

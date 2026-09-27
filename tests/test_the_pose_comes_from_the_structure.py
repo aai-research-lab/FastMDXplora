@@ -50,9 +50,10 @@ class _Molecule:
 
     def __init__(self, offset: float = 5.0):
         self.atoms = [_Atom(6)] * 6 + [_Atom(1)] * 6
-        ring = np.array([[np.cos(a), np.sin(a), 0.0]
+        # Benzene's own geometry, in Angstrom: C-C 1.40, C-H 1.08.
+        unit = np.array([[np.cos(a), np.sin(a), 0.0]
                          for a in np.linspace(0, 2 * np.pi, 6, endpoint=False)])
-        hydrogens = ring * 1.8
+        ring, hydrogens = unit * 1.40, unit * 2.48
         self._conformers = [_Quantity(np.vstack([ring, hydrogens]) * 0.1
                                       + offset)]
 
@@ -61,13 +62,20 @@ class _Molecule:
         return self._conformers
 
 
+#: A benzene ring in the plane z = 0, centred on (2, 0, 0) Angstrom, its
+#: carbons in the order the stand-in molecule lists them.
+RING_A = np.array([[2.0 + 1.4 * np.cos(a), 1.4 * np.sin(a), 0.0]
+                   for a in np.linspace(0, 2 * np.pi, 6, endpoint=False)])
+
+
 def _structure(tmp_path: Path, resname: str = "BNZ", atoms: int = 6) -> Path:
     """A PDB holding a residue at a known place."""
     lines = []
     for index in range(atoms):
+        x, y, z = RING_A[index]
         lines.append(
             f"HETATM{index + 1:5d}  C{index + 1:<2d} {resname:>3s} A 999    "
-            f"{index:8.3f}{0.0:8.3f}{0.0:8.3f}  1.00  0.00           C")
+            f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C")
     lines.append("END")
     path = tmp_path / "input.pdb"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -80,10 +88,8 @@ class TestThePoseIsTakenFromTheStructure:
         moved, said = pose_from_structure(
             molecule, _structure(tmp_path), "BNZ")
         placed = moved.conformers[0].m_as("nanometer")[:6]
-        # The structure has its carbons along x at 0,1,2... Angstrom, and
         # mdtraj returns nanometres: a tenth of the number in the file.
-        assert np.allclose(placed[:, 0], [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
-                           atol=1e-3)
+        assert np.allclose(placed, RING_A / 10.0, atol=1e-3)
         assert said and "rather than the supplied file's" in said
 
     def test_the_hydrogens_come_along(self, tmp_path: Path) -> None:
