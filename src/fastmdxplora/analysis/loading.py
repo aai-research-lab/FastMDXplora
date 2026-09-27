@@ -188,27 +188,42 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
     """
     if trajectory.unitcell_vectors is None:
         return trajectory
+    from fastmdxplora.analysis.residues import _is_polymer
+
     try:
         topology = trajectory.topology
         molecules = topology.find_molecules()
         solute = [m for m in molecules
                   if not all(a.residue.is_water for a in m)]
-        large = [m for m in solute
-                 if any(a.residue.is_protein or a.residue.is_nucleic for a in m)]
+        # Older MDTraj raises from ``is_nucleic``; _is_polymer answers anyway.
+        large = [m for m in solute if any(_is_polymer(a.residue) for a in m)]
         anchors = large or solute
         trajectory.image_molecules(inplace=True, anchor_molecules=anchors or None)
-        if large:
-            anchored = {id(m) for m in large}
-            _nearest_copies(trajectory, large,
-                            [m for m in solute if id(m) not in anchored])
     except Exception as exc:  # MDTraj raises a variety of types
         logger.warning(
             "Could not image molecules across the periodic boundary (%s); "
             "the trajectory is analysed as stored. If it was written without "
             "molecules made whole, contacts and shape measures will be wrong "
-            "in ways that do not announce themselves.", exc,
+            "in ways that do not announce themselves.", _named(exc),
         )
+        return trajectory
+    if large:
+        anchored = {id(m) for m in large}
+        try:
+            _nearest_copies(trajectory, large,
+                            [m for m in solute if id(m) not in anchored])
+        except Exception as exc:  # the molecules are whole; only placement is lost
+            logger.warning(
+                "Molecules were made whole, but could not be moved to the copy "
+                "nearest the macromolecule (%s); a ligand or ion may be measured "
+                "in a periodic copy up to a box length away.", _named(exc),
+            )
     return trajectory
+
+
+def _named(exc: Exception) -> str:
+    """An exception as its type and message, so an empty message still says something."""
+    return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
 
 
 def _nearest_copies(trajectory: md.Trajectory, anchors: list, others: list) -> None:

@@ -84,7 +84,9 @@ wrong copy: on the T4 unbound control, 150 of 2,000 frames, the radius of
 gyration of protein and benzene off by up to 0.028 nm. The protein and nucleic
 chains now anchor, and every other solute molecule is moved to the copy
 nearest them, searched exactly, in any box shape. A bound ligand is unchanged.
-Present in 2.5.6 and 2.5.7.
+Present in 2.5.6 and 2.5.7. The choice of anchors also works on the older
+MDTraj that Python 3.10 installs, where asking whether a residue is nucleic
+raises, and if the placement fails the molecules are still made whole.
 
 ### Off loopback, only the run's results leave the machine
 
