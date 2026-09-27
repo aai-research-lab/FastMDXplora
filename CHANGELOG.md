@@ -7,6 +7,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The records and pages say what happened
+
+- **The methods said each heterogen decision was recorded in
+  `setup_parameters.json`; it was only logged.** The decisions, with their
+  reasons and copies, are now written there as `heterogen_decisions`, and the
+  sentence appears only where they are.
+- **The report's settings list said "Production MD was performed" of a study
+  that ran none** (`duration_ns: 0`).
+- **The GUI showed studies that finished as failed.** Every study was held to
+  a prepared system in its own `setup/` and a finished simulation, so an
+  analysis of a supplied trajectory, a setup-only study, a run given
+  `setup_from` and a study of several runs failed on exit; a run the GUI
+  adopted was judged by a Manifest `status` that does not exist. A study is
+  now held to the phases it recorded, and a failure names the phase or the
+  runs that failed.
+- **A slide deck that could not be written was said at debug level and
+  recorded nowhere.** It is recorded in `not_produced.json` beside a missing
+  PDF, each entry with the code `report.format.unavailable`.
+
 ### Each sugar and each ion is judged by its own bonds
 
 **A free sugar was discarded as a glycan when another copy of its name was on

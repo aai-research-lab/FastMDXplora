@@ -206,8 +206,9 @@ a binding loop; it draws what you tell it to and calls it what you call it.
 
 **Writes** `report.md`, `report.pdf`, `slides.pptx`, `slides_outline.md`,
 `dashboard.html`, `analysis_summary.png`, `project_bundle.zip`. The PDF needs
-WeasyPrint; where it is absent the run records that in `not_produced.json` and
-writes the rest.
+WeasyPrint; where it or the slide deck cannot be written, the run records which
+and why in `not_produced.json` (code `report.format.unavailable`) and writes the
+rest.
 
 `dashboard.html` is a self-contained file that opens in a browser with no
 server. It is not the [FastMDXplora GUI](gui.md), which is a live interface

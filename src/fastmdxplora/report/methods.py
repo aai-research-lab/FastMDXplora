@@ -248,14 +248,15 @@ def methods_paragraphs(
                         "prepared, crystallographic water and buffer were "
                         "removed, and setup stopped rather than guess where "
                         "the structure did not determine what to simulate",
-                "drop": "all non-standard residues were removed, and what "
-                        "went is recorded",
+                "drop": "all non-standard residues were removed",
                 "keep": "all non-standard residues were retained",
             }.get(str(heterogens), f"heterogens were handled under the `{heterogens}` policy")
-            preparation.append(
-                f"Heterogens: {policy}. The decision taken for each is "
-                "recorded in `setup/setup_parameters.json`."
-            )
+            # Said only where it is true: the record holds a decision per
+            # component under `auto`, and none under `drop` or `keep`.
+            recorded = (" The decision taken for each, with its reason, is "
+                        "recorded in `setup_parameters.json`."
+                        if _get(setup, "heterogen_decisions") else "")
+            preparation.append(f"Heterogens: {policy}.{recorded}")
 
         resolved = setup.get("resolved_forcefield")
         resolved = resolved if isinstance(resolved, dict) else {}

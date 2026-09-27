@@ -123,6 +123,7 @@ def run(
             orchestrator=orchestrator,
             output_dir=output_dir,
             title=title,
+            not_produced=not_produced,
         )
         artifacts.extend(slide_artifacts)
         if presenter:
@@ -152,7 +153,8 @@ def run(
     if not_produced:
         (output_dir / "not_produced.json").write_text(
             json.dumps(
-                [{"artifact": name, "reason": why} for name, why in not_produced],
+                [{"artifact": name, "code": "report.format.unavailable",
+                  "reason": why} for name, why in not_produced],
                 indent=2),
             encoding="utf-8")
         artifacts.append("not_produced.json")

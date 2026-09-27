@@ -2257,7 +2257,8 @@ class TestARequestedOutputThatCouldNotBeMadeIsRecorded:
         artifacts = report_run_module.run(orchestrator=SimpleNamespace(output_dir=root, system="1UBQ"),
                                           output_dir=root / "report", slides=False, bundle=False)
         record = json.loads((root / "report" / "not_produced.json").read_text(encoding="utf-8"))
-        assert record == [{"artifact": "report.pdf", "reason": "WeasyPrint is not installed."}]
+        assert record == [{"artifact": "report.pdf", "code": "report.format.unavailable",
+                           "reason": "WeasyPrint is not installed."}]
         assert "not_produced.json" in artifacts and "report.md" in artifacts
 
     def test_a_later_run_that_made_it_clears_the_record(self, tmp_path, monkeypatch) -> None:

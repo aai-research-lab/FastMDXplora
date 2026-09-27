@@ -134,6 +134,38 @@ def _terminate_process(pid: int, *, force: bool = False) -> None:
         pass
 
 
+#: Phase and run statuses that mean something went wrong.
+FAILED_STATUSES = frozenset({"error", "failed"})
+
+
+def _phases_recorded(root: Path) -> dict[str, dict[str, Any]]:
+    manifest = _json_mapping(Path(root) / "manifest.json")
+    return {str(p.get("name")): p for p in (manifest.get("phases") or [])
+            if isinstance(p, dict) and p.get("name")}
+
+
+def _runs_that_failed(root: Path) -> list[str] | None:
+    """The members of a study of several runs that failed; None where the
+    folder is a study of one."""
+    batch = _json_mapping(Path(root) / "batch_manifest.json")
+    if not batch:
+        return None
+    return [str(r.get("run_id")) for r in (batch.get("runs") or [])
+            if isinstance(r, dict) and str(r.get("status") or "").lower() in FAILED_STATUSES]
+
+
+def _finished_cleanly(root: Path) -> bool:
+    """Whether a study that is no longer running finished without a failed
+    phase or run, from what it recorded."""
+    failed = _runs_that_failed(root)
+    if failed is not None:
+        batch = _json_mapping(Path(root) / "batch_manifest.json")
+        return bool(batch.get("runs")) and not failed
+    phases = _phases_recorded(root)
+    return bool(phases) and not any(
+        str(p.get("status") or "").lower() in FAILED_STATUSES for p in phases.values())
+
+
 class _AdoptedProcess:
     """A run this server did not start, held by its PID.
 
@@ -156,9 +188,9 @@ class _AdoptedProcess:
             return self._returncode
         if self._alive():
             return None
-        manifest = _json_mapping(self.root / "manifest.json")
-        done = str(manifest.get("status") or "").lower() in {"completed", "complete", "success"}
-        self._returncode = 0 if done else 1
+        # The Manifest has no overall status to read: it was looked for and
+        # never found, so every adopted run that finished read as failed.
+        self._returncode = 0 if _finished_cleanly(self.root) else 1
         return self._returncode
 
     def terminate(self) -> None:
@@ -580,14 +612,45 @@ class DashboardRuntime:
                 self._record_completion_failure(self.completion_error)
 
     def _completed_run_error(self) -> str | None:
-        """Reject a false-success child that produced no simulation results."""
+        """Reject a false-success child that produced no simulation results.
+
+        Only what the study set out to do is asked for. Every study was
+        held to a prepared system in its own ``setup/`` and a finished
+        simulation, so an analysis of a supplied trajectory, a setup-only
+        study, a run given `setup_from` and a study of several runs all
+        exited cleanly and were shown as failed.
+        """
         root = self.active_root
         if root is None or not self.command or "explore" not in self.command:
             return None
 
+        failed_runs = _runs_that_failed(root)
+        if failed_runs is not None:
+            if not failed_runs:
+                return None
+            return (
+                f"{len(failed_runs)} of the study's runs failed "
+                f"({', '.join(failed_runs)}). See "
+                f"{self.log_path or root / 'exploration.log'} for the full log.")
+
+        phases = _phases_recorded(root)
+        failed = [name for name, p in phases.items()
+                  if str(p.get("status") or "").lower() in FAILED_STATUSES]
+        if failed:
+            message = str(phases[failed[0]].get("message") or "").strip()
+            return (f"The {failed[0]} phase failed" + (f": {message}" if message else ".")
+                    + f" See {self.log_path or root / 'exploration.log'} for the full log.")
+        ran = {name for name, p in phases.items()
+               if str(p.get("status") or "").lower() == "ok"}
+        # Without a Manifest nothing says what was planned, so the whole of
+        # an ordinary study is asked for, as before.
+        check_setup = not phases or "setup" in ran
+        check_simulation = not phases or "simulation" in ran
+
         setup_dir = root / "setup"
         required_setup = ("system.xml", "state.xml", "topology.pdb")
-        missing_setup = [name for name in required_setup if not (setup_dir / name).is_file()]
+        missing_setup = ([name for name in required_setup if not (setup_dir / name).is_file()]
+                         if check_setup else [])
         if missing_setup:
             setup_manifest = _json_mapping(setup_dir / "setup_parameters.json")
             detail = _manifest_note(setup_manifest)
@@ -598,6 +661,8 @@ class DashboardRuntime:
                 f"{self.log_path or root / 'exploration.log'} for the full log."
             )
 
+        if not check_simulation:
+            return None
         simulation_dir = root / "simulation"
         simulation_manifest = _json_mapping(
             simulation_dir / "simulation_parameters.json"

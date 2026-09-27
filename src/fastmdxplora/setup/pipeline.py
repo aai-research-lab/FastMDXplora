@@ -762,6 +762,7 @@ def _ions_beside_a_supplied_ligand(params: dict, input_pdb, setup_dir):
     if not ions:
         return None
     refuse_undetermined(ions)
+    params["_heterogen_decisions"] = decision_records(ions)
     logger.info("Ion decisions beside the supplied ligand:\n%s",
                 summarize(ions))
     waters = [d for d in decisions if d.resname in WATER_NAMES]
@@ -770,6 +771,15 @@ def _ions_beside_a_supplied_ligand(params: dict, input_pdb, setup_dir):
         return None
     return {d.resname: d.count for d in decisions
             if not any(d is k for k in kept)}
+
+
+def decision_records(decisions: list[Any]) -> list[dict[str, Any]]:
+    """Each heterogen decision as the setup record keeps it: the component,
+    what was done with it, why, and which copies. The methods section said
+    these were recorded, and they were only logged."""
+    return [{"component": d.resname, "action": getattr(d.action, "value", str(d.action)),
+             "reason": d.reason, "copies": [h.label for h in d.instances]}
+            for d in decisions]
 
 
 def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> list[str]:
@@ -797,6 +807,7 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
 
     decisions = resolve(input_pdb, keep_water=bool(params.get("keep_water")))
     logger.info("Heterogen decisions:\n%s", summarize(decisions))
+    params["_heterogen_decisions"] = decision_records(decisions)
 
     # Settled here, before anything below can return: a structure with
     # nothing else to simulate returns next, and PDBFixer then strips every
@@ -1421,6 +1432,10 @@ def _write_manifest(
         # so a methods section had to take it from CRYST1 by hand.
         "box": box,
         "resolved_forcefield": resolved_ff,
+        # What was decided about each heterogen, and why: kept, discarded,
+        # or re-added with its own chemistry. Empty where no decision was
+        # taken per component (the `drop` and `keep` policies).
+        "heterogen_decisions": list(params.get("_heterogen_decisions") or []),
         # Settings this phase decided, under their config names, for
         # `resolved_config.yml` to carry. The force field resolution above
         # answers the same question in its own shape and stays where it is;

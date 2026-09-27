@@ -495,10 +495,13 @@ def build_slides(
     orchestrator: "FastMDXplora",
     output_dir: Path,
     title: str,
+    not_produced: list[tuple[str, str]] | None = None,
 ) -> list[str]:
     """Render the slide deck.
 
-    Returns the list of artifact paths (relative to ``output_dir``).
+    Returns the list of artifact paths (relative to ``output_dir``). Where
+    the ``.pptx`` cannot be written, why is appended to ``not_produced``, so
+    the report records it as it records a missing PDF.
     """
     artifacts: list[str] = []
 
@@ -514,12 +517,19 @@ def build_slides(
         artifacts.append("slides.pptx")
         logger.debug("slides: wrote %s", pptx_path)
     except ImportError:
-        logger.debug(
-            "slides: python-pptx not importable; wrote markdown outline only. "
-            "python-pptx is a core dependency, so this usually means a broken "
-            "install — try `pip install --force-reinstall python-pptx`."
-        )
+        # Said at the level a missing PDF is said: a deck asked for and not
+        # written is not a detail for the debug log.
+        reason = (
+            "python-pptx could not be imported; it is a core dependency, so "
+            "this usually means a broken install. Try `pip install "
+            "--force-reinstall python-pptx`. The outline was written.")
+        logger.warning("slides: %s", reason)
+        if not_produced is not None:
+            not_produced.append(("slides.pptx", reason))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("slides: pptx generation failed: %s", exc)
+        reason = f"the deck could not be built ({type(exc).__name__}: {exc}). The outline was written."
+        logger.warning("slides: %s", reason)
+        if not_produced is not None:
+            not_produced.append(("slides.pptx", reason))
 
     return artifacts

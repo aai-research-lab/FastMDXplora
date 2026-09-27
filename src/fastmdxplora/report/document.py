@@ -309,7 +309,12 @@ def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
     lines.append("### Molecular dynamics simulation")
     if sim_params:
         lines.append("")
+        # Said of a run that ran none it was false: `duration_ns: 0`
+        # equilibrates and stops.
+        production = (sim.get("resolved") or {}).get("production_steps")
         lines.append(
+            "No production was run; the simulation phase equilibrated with "
+            "the following parameters:" if production == 0 else
             "Production MD was performed with the following simulation parameters:"
         )
         lines.append("")
