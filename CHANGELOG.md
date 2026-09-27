@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A ligand charge that cannot be read is refused
+
+**A supplied ligand whose net charge could not be read went ahead as
+"unknown", and a stated `ligand_net_charge` went into the record unchecked.**
+Formal charges in an SDF or MOL2 are whole numbers, so failing to sum them
+means the file was not read as the chemistry it describes, and the check that
+refuses a stated charge the file contradicts was skipped in exactly that case.
+Setup now refuses with `setup.chemistry.charge_undetermined` and says to check
+the file's hydrogens and formal charges. Present in 2.5.6 and 2.5.7.
+
 ### A stated zero equilibration is zero
 
 **`npt_duration_ns: 0` ran a nanosecond of NPT and recorded NVT.** The runner

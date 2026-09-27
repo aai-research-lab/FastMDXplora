@@ -425,7 +425,22 @@ def load_ligand(
     # absent from two independent tools. Both were right about the molecule
     # they were given.
     inferred = _infer_net_charge(molecule)
-    if net_charge is not None and inferred is not None and net_charge != inferred:
+    if inferred is None:
+        # Refused rather than carried as "unknown". Formal charges in an
+        # SDF or MOL2 are whole numbers, so failing to sum them to one means
+        # the file was not read as the chemistry it describes -- and the
+        # check below, which stops a stated charge standing against the
+        # file's, was skipped whenever it happened, so the stated number went
+        # into the record unchecked.
+        raise StudyError(
+            f"Ligand {name}: the formal charges in {path.name} could not be "
+            "read as a whole-number net charge, so the charge this run would "
+            "record cannot be taken from the file or checked against one "
+            "stated in the study. Check that the file carries explicit "
+            "hydrogens and its formal charges (an SDF's `M  CHG` lines), and "
+            "supply it again."
+        , code="setup.chemistry.charge_undetermined", resname=name)
+    if net_charge is not None and net_charge != inferred:
         raise StudyError(
             f"Ligand {name}: the study states a net charge of {net_charge:+d}, "
             f"and {path.name} carries formal charges summing to "
