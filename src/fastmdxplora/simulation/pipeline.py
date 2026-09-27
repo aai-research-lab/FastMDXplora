@@ -393,6 +393,9 @@ def setup_records_of(run_dir: str | Path) -> Path | None:
     ``setup_parameters.json`` counts.
     """
     run = Path(run_dir)
+    reference = _prepared_system_recorded(run)
+    if reference is not None:
+        return _the_system_recorded(run, reference)
     candidates: list[Path] = []
     taken = _setup_taken_from(run)
     if taken is not None:
@@ -403,6 +406,101 @@ def setup_records_of(run_dir: str | Path) -> Path | None:
     for candidate in candidates:
         if (candidate / "setup_parameters.json").is_file():
             return candidate
+    return None
+
+
+def system_digest(setup_dir: Path) -> str | None:
+    """The SHA-256 of a prepared system's ``system.xml``: which atoms, which
+    force field, which box. Two preparations of one molecule differ in it,
+    since water is not placed the same way twice."""
+    import hashlib
+
+    try:
+        return hashlib.sha256((Path(setup_dir) / "system.xml").read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def prepared_system_reference(setup_dir: Path, run_dir: Path,
+                              given: Any) -> dict[str, Any]:
+    """How a run records the prepared system it simulated, when that system
+    is not its own: as it was given, as it resolved, relative to the run,
+    and by content. The relative form still finds a system moved or copied
+    together with the run; the digest says whether what is found is it."""
+    import os
+
+    setup_dir, run_dir = Path(setup_dir).resolve(), Path(run_dir).resolve()
+    return {
+        "given": str(given),
+        "resolved": str(setup_dir),
+        "relative_to_run": os.path.relpath(setup_dir, run_dir),
+        "system_xml_sha256": system_digest(setup_dir),
+    }
+
+
+def _prepared_system_recorded(run: Path) -> dict[str, Any] | None:
+    try:
+        record = json.loads((run / "simulation" / "simulation_parameters.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    reference = record.get("prepared_system") if isinstance(record, dict) else None
+    if isinstance(reference, dict) and reference.get("system_xml_sha256"):
+        return reference
+    return None
+
+
+def _the_system_recorded(run: Path, reference: dict[str, Any]) -> Path | None:
+    """The prepared system a run's record names, found by where it sits
+    relative to the run, then where it was, then as it was typed, and
+    accepted only if its content is the one recorded.
+
+    A path alone named whatever sat there: move a study and nothing was
+    found, or put a different prepared system at the old path and it was
+    used without a word. Not found is said and returns None; found and
+    different is refused.
+    """
+    wanted = reference["system_xml_sha256"]
+    candidates: list[Path] = []
+    if reference.get("relative_to_run"):
+        candidates.append(run / str(reference["relative_to_run"]))
+    for named in (reference.get("resolved"), _setup_taken_from(run),
+                  reference.get("given")):
+        if named:
+            candidates.append(where_a_prepared_system_sits(_as_named(named)))
+    different: list[Path] = []
+    looked: list[Path] = []
+    for candidate in candidates:
+        try:
+            candidate = candidate.resolve()
+        except OSError:
+            continue
+        if candidate in looked:
+            continue
+        looked.append(candidate)
+        digest = system_digest(candidate)
+        if digest is None:
+            continue
+        if digest == wanted:
+            return candidate
+        different.append(candidate)
+    if different:
+        raise MissingResultError(
+            f"{run} simulated the prepared system recorded as "
+            f"{reference.get('resolved')} (system.xml SHA-256 {wanted[:12]}), "
+            f"and what is there now is a different system: "
+            + ", ".join(f"{path} ({system_digest(path)[:12]})" for path in different)
+            + ". Its record, ligand chemistry included, would describe atoms "
+            "this run never simulated. Put the prepared system this run used "
+            f"back at {reference.get('relative_to_run')} relative to the run, "
+            "or at its recorded path.",
+            code="analysis.data.not_this_system",
+            recorded=reference.get("resolved"), found=[str(p) for p in different])
+    logger.warning(
+        "The prepared system %s simulated is not where its record points "
+        "(looked in %s). Readers that need it -- the setup record, the "
+        "ligand's chemistry -- have nothing to read; move or copy it together "
+        "with the run.", run, ", ".join(str(p) for p in looked) or "nowhere")
     return None
 
 
@@ -482,6 +580,10 @@ def run(
         params.get("setup_from") or params.get("prepared_from"),
     )
     system_xml, state_xml, topology = _setup_outputs_present(setup_dir)
+    prepared_system = (
+        prepared_system_reference(setup_dir, orchestrator.output_dir,
+                                  params.get("setup_from") or params.get("prepared_from"))
+        if prepared_elsewhere and system_xml is not None else None)
     if system_xml is None and prepared_elsewhere:
         # Named explicitly, so this is a wrong path rather than a phase that
         # has not run yet, and saying "run setup first" would send somebody
@@ -666,6 +768,7 @@ def run(
             n_frames=result.n_production_frames,
             duration_ns_actual=result.duration_ns_actual,
             resolved=result.resolved,
+            prepared_system=prepared_system,
         )
     except ImportError as exc:
         notes.append(f"OpenMM unavailable: {exc}")
@@ -684,7 +787,8 @@ def run(
         notes.append(f"Simulation failed: {type(exc).__name__}: {exc}")
         if presenter:
             presenter.step(f"Simulation error: {exc}", status="error")
-        _write_manifest(output_dir, params, artifacts, notes, platform_used=None)
+        _write_manifest(output_dir, params, artifacts, notes, platform_used=None,
+                        prepared_system=prepared_system)
         # Re-raise so the orchestrator marks the phase as errored.
         raise
 
@@ -708,6 +812,7 @@ def _write_manifest(
     duration_ns_actual: float | None = None,
     pressure_bar_used: float | None = None,
     resolved: dict[str, Any] | None = None,
+    prepared_system: dict[str, Any] | None = None,
 ) -> None:
     """Write ``simulation_parameters.json`` with full provenance.
 
@@ -745,6 +850,11 @@ def _write_manifest(
         # resume_from said it nowhere, and the study folder read as an
         # unrelated run of the same system. The study says it for itself.
         "continues": _continuation_of(params),
+        # The prepared system simulated, where it is not this run's own:
+        # found by where it sits relative to the run and recognised by its
+        # content, so a moved study still finds it and a different system
+        # at the old path is not taken for it.
+        "prepared_system": prepared_system,
         "n_production_frames": n_frames,
         "duration_ns_actual": duration_ns_actual,
         "artifacts_planned": canonical,

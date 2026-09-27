@@ -1916,12 +1916,25 @@ class BatchExplorer:
             ],
             "sweep": self._raw.get("sweep") or {},
             "planned": [spec.to_dict() for spec in self.run_specs],
-            "runs": [r.to_dict() for r in self.results],
+            "runs": [self._with_relative_dir(r.to_dict()) for r in self.results],
         }
         path = self.output_dir / "batch_manifest.json"
         with path.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2, default=str)
         logger.debug("Wrote batch manifest: %s", path)
+
+    def _with_relative_dir(self, run: dict[str, Any]) -> dict[str, Any]:
+        """A member's folder relative to the batch too, so a campaign moved
+        or copied elsewhere still finds its members."""
+        import os
+
+        if run.get("output_dir"):
+            try:
+                run["output_dir_relative"] = os.path.relpath(
+                    Path(run["output_dir"]).resolve(), self.output_dir.resolve())
+            except ValueError:  # another drive
+                pass
+        return run
 
     # ------------------------------------------------------------------
     def _print_summary(self) -> None:

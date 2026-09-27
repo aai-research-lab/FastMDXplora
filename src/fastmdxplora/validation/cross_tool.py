@@ -215,8 +215,8 @@ def trajectory_and_topology(run_dir: Path, manifest: dict) -> tuple[Path, Path]:
         for conventional, note in (
             (run_dir / "simulation" / "trajectory_topology.pdb",
              "topology taken from the one saved with the trajectory"),
-            (run_dir / "setup" / "topology.pdb",
-             "topology taken from the conventional layout"),
+            (_setup_of(run_dir) / "topology.pdb",
+             "topology taken from the prepared system the run simulated"),
         ):
             if conventional.exists():
                 top = conventional
@@ -227,6 +227,15 @@ def trajectory_and_topology(run_dir: Path, manifest: dict) -> tuple[Path, Path]:
                  f"(traj={traj}, top={top}); inspect manifest.json")
     print(f"[discovered] trajectory: {traj.name}   topology: {top.name}")
     return traj, top
+
+
+def _setup_of(run_dir: Path) -> Path:
+    """The setup record of the system the run simulated: its own, or, for a
+    run given `setup_from`, the named system's, which is where that run's
+    atoms and ligand were decided."""
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    return setup_records_of(run_dir) or run_dir / "setup"
 
 
 def _configured_ligand_resname(run_dir: Path) -> str | None:
@@ -245,7 +254,7 @@ def _configured_ligand_resname(run_dir: Path) -> str | None:
     """
     import json
 
-    setup = run_dir / "setup" / "setup_parameters.json"
+    setup = _setup_of(run_dir) / "setup_parameters.json"
     try:
         data = json.loads(setup.read_text(encoding="utf-8"))
     except (OSError, ValueError):

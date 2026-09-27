@@ -265,5 +265,6 @@ A few you are likely to meet, and what each means.
 | `analysis.unknown` | An analysis name that does not exist. The message names the nearest match and the full list |
 | `analysis.option.inapplicable` | A per-analysis option that analysis does not take |
 | `analysis.data.absent` | The trajectory or prepared system named is not there. Every candidate path is listed |
+| `analysis.data.not_this_system` | The prepared system where a run's record points is not the one it simulated (its `system.xml` differs). Both paths are named |
 | `analysis.sampling.*` | The run is sound and too short. `sampling_shortfall` says by how much |
 | `simulation.resume.bias_not_carried` | A metadynamics or steered run cannot be split into segments |

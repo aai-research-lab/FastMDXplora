@@ -1349,7 +1349,7 @@ def _results_payload(root: Path) -> dict[str, Any]:
     reports.sort(key=lambda record: _report_order(record["path"]))
     dashboard = by_path.get("report/dashboard.html")
     summary = _summary_records(root, manifest, analysis_manifest, sim_manifest)
-    setup_manifest = _load_json(root / "setup" / "setup_parameters.json")
+    setup_manifest = _load_json(_setup_of(root) / "setup_parameters.json")
     system = _system_info(root, manifest, analysis_manifest, sim_manifest)
     return {
         "refreshed_at": _iso_now(),
@@ -1758,7 +1758,7 @@ def _crystal_positions(root: Path) -> dict[str, list[str]]:
     rather than plumbed through the setup pipeline -- the file is already in
     every run directory.
     """
-    source = root / "setup" / "input.pdb"
+    source = _setup_of(root) / "input.pdb"
     if not source.is_file():
         return {}
     info = count_structure(source)
@@ -1775,12 +1775,24 @@ def _crystal_positions(root: Path) -> dict[str, list[str]]:
     return positions
 
 
+def _setup_of(root: Path) -> Path:
+    """The setup record of the system a run simulated: its own ``setup/``,
+    or, for a run given `setup_from`, the named system's. A run that
+    prepared nothing showed no setup details and no ligand positions."""
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    try:
+        return setup_records_of(root) or root / "setup"
+    except Exception:  # noqa: BLE001 - a page to draw, not a record to write
+        return root / "setup"
+
+
 def _system_name(root: Path, manifest: dict[str, Any]) -> str:
     """What this run is of, from whichever record has it yet."""
     named = manifest.get("system")
     if named:
         return str(named)
-    setup_manifest = _load_json(root / "setup" / "setup_parameters.json")
+    setup_manifest = _load_json(_setup_of(root) / "setup_parameters.json")
     recorded = setup_manifest.get("input")
     if isinstance(recorded, dict) and recorded.get("system"):
         return str(recorded["system"])

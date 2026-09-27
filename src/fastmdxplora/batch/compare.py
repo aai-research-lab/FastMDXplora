@@ -35,6 +35,7 @@ import numpy as np
 
 from fastmdxplora.analysis.plotting import new_figure, save_figure
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.batch.aggregate import member_directory
 from fastmdxplora.analysis.plotting import closes_what_it_opens as _closes_what_it_opens
 
 logger = get_logger("compare")
@@ -233,7 +234,7 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
     for run in runs:
         rid = run["run_id"]
         per_run_scalars[rid] = {}
-        run_out = Path(run["output_dir"])
+        run_out = member_directory(root, run)
         for analysis, (_label, _unit, summary_kind) in _OVERLAY_ANALYSES.items():
             series = _load_series(_run_analysis_dir(run_out, analysis))
             if series is None or not len(series):
@@ -266,7 +267,7 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
         trend_points: list[tuple[float, float]] = []
         for run in runs:
             rid = run["run_id"]
-            run_out = Path(run["output_dir"])
+            run_out = member_directory(root, run)
             series = _load_series(_run_analysis_dir(run_out, analysis))
             if series is None or not len(series):
                 continue

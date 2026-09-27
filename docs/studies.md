@@ -748,6 +748,14 @@ prepared system has 36075 particles and the pull's trajectory has 36087"*. A
 `setup_from` pointing at no prepared system is refused rather than quietly
 prepared around.
 
+**The run records which system it was, not only where.** Its
+`simulation_parameters.json` names the prepared system as given, as resolved,
+relative to the run, and by the SHA-256 of its `system.xml`. Move or copy the
+study with the prepared system beside it and re-analysis and the report still
+find it; a different preparation at the old path is refused
+(`analysis.data.not_this_system`) rather than read. A campaign's
+`batch_manifest.json` lists each member relative to the campaign as well.
+
 ### Where the windows start
 
 Windows started from a single structure are strained at the far end of the

@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A moved study still finds the system it simulated, and only that one
+
+**A run given `setup_from` recorded the prepared system by path alone, as it
+was typed.** Moving or copying the study, or fetching it to another machine,
+left re-analysis, the report and replica comparison unable to find it, and a
+different prepared system at the old path was used without a word: its
+ligand chemistry and atom count described atoms the run never simulated. The
+run now records the system as given, as resolved, relative to itself and by
+the SHA-256 of its `system.xml`, finds it relative to the run first, and
+refuses a system whose content differs (`analysis.data.not_this_system`). A
+campaign's manifest lists members relative to the campaign, and aggregation
+and the comparison report read them that way. The GUI and the cross-tool
+comparison read the setup record of the system a run simulated rather than
+the run's own `setup/`, which a run given `setup_from` does not have. Present
+in 2.5.6 and 2.5.7.
+
 ### A ligand's pose is taken atom for atom
 
 **With the pose taken from the structure, the supplied file's heavy atoms took

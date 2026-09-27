@@ -635,6 +635,11 @@ CODES: tuple[Code, ...] = (
          "What the analysis reads was not produced by this study.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("analysis", "needs")),
+    Code("analysis.data.not_this_system",
+         "The prepared system found where a run's record points is not the "
+         "one the run simulated.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("recorded", "found")),
 
     # -- analysis: not enough to answer with --------------------------------
     # The family this software exists to take seriously. Separated from
