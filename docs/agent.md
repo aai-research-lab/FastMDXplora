@@ -305,9 +305,10 @@ validator that hands over the fix turns every rejection into a well-specified
 task — and the rule the whole design turns on is that *the validator may say
 what the schema permits, and may never say what the chemistry requires*.
 
-**Cycles are counted and capped.** `--attempts` defaults to 3. Cheap validation
-invites thrashing, and a Config that validates on the fortieth mutation
-validates for reasons nobody chose. Exhausting the cap is a refusal, not a
+**Cycles are counted and capped.** Three attempts in all, the first included,
+from the command line (`--attempts`), the browser and Python alike. Cheap
+validation invites thrashing, and a Config that validates on the fortieth
+mutation validates for reasons nobody chose. Exhausting the cap is a refusal, not a
 fall-through to whatever last nearly worked.
 
 `--phases` chooses which parts of the Config it writes; the default is
@@ -401,7 +402,7 @@ proposal = propose_config(
     "Simulate ubiquitin at pH 7.4 for 10 ns",
     complete=completion_for(load_choice()),
     phases=["setup", "simulation"],
-    max_cycles=4,
+    max_cycles=3,       # attempts in all, the first included
 )
 
 proposal.accepted   # True
@@ -509,17 +510,21 @@ when you have read it*. One step of seeing what is about to run is what
 ### Continuing a study that stopped
 
 Say *continue it*, or *continue to 0.5 ns total*, on a study that reached
-production and stopped. The Agent is handed a config that continues it,
-planned from the record: the parent's resolved config has the equilibration
-lengths, the checkpoint's sidecar has the step, and the remainder is
-subtraction. Stopped at whole-run step 321,000 with 100,000 of
-equilibration, 0.442 ns of production is done; 0.5 ns in all leaves 0.058.
-The config reuses the prepared system, resumes from the checkpoint, and
-neither minimises nor equilibrates — which is what makes it the same
-trajectory rather than a new run from a snapshot. The Agent sets only the
-duration and never writes `resume_from` by hand. Where a study cannot be
-continued — no production checkpoint, or a method whose bias a checkpoint
-does not carry — it says why and offers a fresh run.
+production and stopped. The Agent is handed a config that continues it:
+`simulation.resume_from` naming the study, and `duration_ns` as the total
+production the study should end with (or `extra_ns` for an amount more), the
+same meanings the command line gives them. What is done is read from the
+record: the parent's resolved config has the equilibration lengths, the
+checkpoint's sidecar has the step. Stopped at whole-run step 321,000 with
+100,000 of equilibration, 0.442 ns of production is done; 0.5 ns in all
+leaves 0.058. The study is extended in place from its last checkpoint, with
+the same prepared system and no minimisation or equilibration, which is what
+makes it the same trajectory rather than a new run from a snapshot; every
+segment is then joined and the analyses rerun, and the GUI watches the study
+while it does. The Agent never writes `resume_from` by hand. Where a study
+cannot be continued, because it has no production checkpoint or its method
+deposits bias a checkpoint does not carry, it says why and offers a fresh
+run.
 
 ## What the Agent will not do
 

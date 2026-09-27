@@ -861,6 +861,9 @@ class DashboardRuntime:
             # Users_someone_work sitting inside the launch directory -- which
             # is neither where they pointed nor anywhere they would look.
             source: Mapping[str, Any] = config if config is not None else (state or {})
+            continued = self._study_being_continued(source)
+            if continued is not None:
+                return self._continue_in_place(continued, state, config, dashboard_url)
             requested = str(dict(source).get("output") or "").strip()
             if not requested:
                 # Timestamped, as the CLI's and the builder's defaults are.
@@ -935,6 +938,51 @@ class DashboardRuntime:
                 "config_path": prepared["config_path"],
                 **started,
             }
+
+    def _study_being_continued(self, source: Mapping[str, Any]) -> Path | None:
+        """The study a config extends in place, where it does.
+
+        `simulation.resume_from` naming a study directory is a continuation
+        of that study: the command line runs its next segment inside it,
+        joins every segment and reruns the analyses there. A checkpoint file
+        is the raw mechanism, an ordinary run of its own.
+        """
+        simulation = dict(source).get("simulation") or {}
+        named = simulation.get("resume_from") if isinstance(simulation, Mapping) else None
+        if not named:
+            return None
+        from fastmdxplora.gui.browse import is_study
+
+        study = Path(str(named)).expanduser()
+        if not study.is_absolute():
+            study = self.exploration_root / study
+        study = study.resolve()
+        return study if study.is_dir() and is_study(study) else None
+
+    def _continue_in_place(self, study: Path, state: Mapping[str, Any] | None,
+                           config: Mapping[str, Any] | None,
+                           dashboard_url: str | None) -> dict[str, Any]:
+        """Extend a study where it is, and watch it there.
+
+        The GUI launched a continuation into a new folder and watched that,
+        while the run wrote its segment, the join and the new analyses into
+        the study it continued: the folder watched stayed empty and the run
+        was marked failed. The config is kept beside the other continuations
+        in the workspace rather than in the study, where it would replace
+        the study's own record of how it was started.
+        """
+        from fastmdxplora.gui.run_from_config import prepare_run
+
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        kept = self.workspace_root / "continuations" / f"{study.name}-{stamp}"
+        prepared = prepare_run(dict(state) if state else None, kept,
+                               config=dict(config) if config is not None else None)
+        if not prepared["ok"]:
+            return prepared
+        self.data_stale = False
+        started = self._spawn(prepared["command"], study, dashboard_url)
+        return {"ok": True, "error": None, "config_path": prepared["config_path"],
+                "continues": str(study), **started}
 
     def launch_existing_config(
         self,

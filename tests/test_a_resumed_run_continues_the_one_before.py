@@ -704,8 +704,9 @@ class TestContinuingAStudyThatStopped(unittest.TestCase):
 
         status = _run_status(Runtime())
         self.assertIn("continuing this study: production done 0.442 ns", status)
-        self.assertIn("resume_from:", status)
-        self.assertIn("minimize: false", status)
+        self.assertIn(f"resume_from: {s.resolve()}", status)
+        self.assertIn("duration_ns is the TOTAL", status)
+        self.assertIn("no minimisation or equilibration", status)
         from fastmdxplora.agent.propose import prompt_for
 
         self.assertIn("never write `resume_from` from scratch", prompt_for("x"))

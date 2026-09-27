@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent is told one thing, whichever way it is asked
+
+- **Attempts.** The command line gave the Agent three attempts in all and
+  its help called them corrections, which would be four; the browser and
+  Python gave four. It is three in all, the first included, everywhere.
+- **Continuing a study.** The prompt told the Agent to continue a study by
+  naming it in `resume_from`, with `duration_ns` the total production it
+  should end with. The browser's run status handed it the raw checkpoint
+  form instead, with `duration_ns` the amount more, which ran as a separate
+  study and joined nothing. The browser now offers the study form. A config
+  continuing a study is run inside that study, its segments joined and its
+  analyses rerun, and the GUI watches the study while it does: it had
+  watched a new, empty folder and marked the run failed. The config is kept
+  under the workspace's `continuations/`, so the study's own record of how
+  it was started is not replaced.
+
 ### The records and pages say what happened
 
 - **The methods said each heterogen decision was recorded in

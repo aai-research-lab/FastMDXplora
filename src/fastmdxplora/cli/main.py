@@ -1135,10 +1135,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--attempts",
         type=int,
         metavar="N",
-        default=3,
+        default=None,
         help=(
-            "How many times it may correct itself before giving up "
-            "(default: 3). Each attempt is checked before anything runs, "
+            "How many attempts it gets in all, the first included, before "
+            "giving up (default: 3, as in the browser and from Python). "
+            "Each attempt is checked before anything runs, "
             "so they cost seconds rather than GPU time. Three is measured "
             "rather than guessed: claude-sonnet-4-6 took at most two on "
             "the evaluation set with the schema's help text, and at most "
@@ -2464,12 +2465,15 @@ def _run_agent(args: Any) -> int:
             "holds for anything run under it."
         )
 
+    from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
+
     print("Writing a config...")
     try:
         proposal = propose_config(
             request, complete,
             phases=[p.strip() for p in args.phases.split(",") if p.strip()],
-            max_cycles=int(args.attempts))
+            max_cycles=(DEFAULT_ATTEMPTS if args.attempts is None
+                        else int(args.attempts)))
     except StudyError as exc:
         print(refusal_of(exc).message)
         return 1

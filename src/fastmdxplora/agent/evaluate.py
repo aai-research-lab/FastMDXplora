@@ -44,7 +44,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastmdxplora.agent.propose import Completion, propose_config
+from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS, Completion, propose_config
 
 __all__ = ["Request", "Outcome", "Report", "REQUESTS", "measure"]
 
@@ -294,7 +294,7 @@ def measure(
     complete: Completion,
     *,
     requests: "tuple[Request, ...] | None" = None,
-    max_cycles: int = 4,
+    max_cycles: int = DEFAULT_ATTEMPTS,
     verbose_schema: bool = True,
 ) -> Report:
     """Run every request and report what happened.

@@ -213,14 +213,15 @@ study -- nothing else. A request for a new study, even of the same
 molecule, is a new config written from what the person asked for; do
 not answer it with the continuation block, and do not tell somebody who
 asked for a fresh run that a study cannot be continued. When they do ask
-to continue, use that config as the base; it resumes from the study's checkpoint in the same solvated
-system with no minimisation and no equilibration, which is what makes it
-the same trajectory. Set only `simulation.duration_ns` to how much more
-production is wanted, subtracting what is already done when a total is
-asked for. Never turn `minimize`, `nvt_steps` or `npt_steps` back on in
-a continuation, and never write `resume_from` from scratch when that
-block is there; where it says the study cannot be continued, say why
-and offer a fresh run instead.
+to continue, answer with the config that block gives: it names the study
+in `resume_from`, so the study is extended in place from where it last
+stopped, in the same solvated system with no minimisation and no
+equilibration. `duration_ns` there is the TOTAL production the study
+should end with, as above; set it to the total asked for, or replace it
+with `extra_ns` for an amount more. Never add `minimize`, `nvt_steps`
+or `npt_steps` to a continuation, and never write `resume_from` from scratch
+when that block is there; where it says the study cannot be continued,
+say why and offer a fresh run instead.
 
 "The same settings as that one" refers to a config you can see: the
 current config, or the config the active run used, which the run status
@@ -441,12 +442,22 @@ def _parse(raw: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+#: Attempts in all, the first included, before a request is refused. One
+#: meaning and one number for every way in: the command line's
+#: ``--attempts``, the browser, and the Python call. The command line said
+#: three and meant three in all while the others said four, and its help
+#: called them corrections, which would have been four. Three is measured:
+#: on the evaluation set a valid Config took at most two with the schema's
+#: help text and at most three without it.
+DEFAULT_ATTEMPTS = 3
+
+
 def propose_config(
     request: str,
     complete: Completion,
     *,
     phases: list[str] | None = None,
-    max_cycles: int = 4,
+    max_cycles: int = DEFAULT_ATTEMPTS,
     verbose_schema: bool = True,
     history: list[dict[str, str]] | None = None,
     current_config: str | None = None,
@@ -462,10 +473,11 @@ def propose_config(
     complete
         Prompt in, text out. No client is constructed here.
     max_cycles
-        Attempts before giving up. Four is a judgement: a model that has
-        not produced a valid config in four passes over a generated schema
-        description is not converging, and further passes mostly produce
-        configs that validate for reasons nobody chose.
+        Attempts in all, the first included, before giving up
+        (:data:`DEFAULT_ATTEMPTS`). A model that has not produced a valid
+        config in that many passes over a generated schema description is
+        not converging, and further passes mostly produce configs that
+        validate for reasons nobody chose.
 
     Returns
     -------

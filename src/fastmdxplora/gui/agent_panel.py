@@ -112,6 +112,7 @@ def propose_endpoint(payload: dict[str, Any],
     import yaml
 
     from fastmdxplora.agent import completion_for, propose_config
+    from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
     from fastmdxplora.refusals import StudyError, refusal_of
 
     request = str(payload.get("request") or "").strip()
@@ -146,7 +147,7 @@ def propose_endpoint(payload: dict[str, Any],
     try:
         proposal = propose_config(
             request, complete, phases=list(phases),
-            max_cycles=int(payload.get("attempts") or 4),
+            max_cycles=int(payload.get("attempts") or DEFAULT_ATTEMPTS),
             history=history or None, current_config=current,
             run_status=_run_status(runtime), attachments=attachments or None)
     except StudyError as exc:
@@ -911,16 +912,25 @@ def _continuation_summary(root: Any) -> str:
         if "no checkpoint" in (cont.refusal or ""):
             return ""
         return f"continuing this study: {cont.as_text()}"
-    short = dict(cont.config)
+    # The study itself, extended in place: its next segment runs inside
+    # it, every segment is joined and the analyses rerun over the whole.
+    # This offered the raw checkpoint mechanism instead, with duration_ns as
+    # the amount MORE, while the prompt described the study form with
+    # duration_ns as the TOTAL: two meanings of one setting, and a run that
+    # was a separate, unjoined study.
+    planned = cont.production_planned_ns
+    short = {"simulation": {"resume_from": str(Path(root).resolve()),
+                            "duration_ns": round(float(planned), 6)}}
     text = yaml.safe_dump(short, sort_keys=False, default_flow_style=False).strip()
-    # Named, because "checkpoint.chk" alone reads as the study's own.
-    where = (f". It has been extended, so that is {Path(last).name}'s checkpoint, "
-             f"where it last stopped, and the production done counts every segment"
+    where = (f" It has been extended; {Path(last).name} is where it last stopped, "
+             f"and the production done counts every segment."
              if extended else "")
     return (
-        f"continuing this study: {cont.as_text()}{where}. To continue it, use this "
-        f"config as the base and set simulation.duration_ns to how much MORE "
-        f"production is wanted (the remainder of the plan is filled in); "
-        f"for a total, subtract {cont.production_done_ns:.3f} ns already done. "
-        f"Do not turn minimisation or equilibration back on:\n```yaml\n{text}\n```"
+        f"continuing this study: {cont.as_text()}.{where} To continue it, answer "
+        f"with this config. It extends the study in place from where it "
+        f"stopped, with no minimisation or equilibration, joins every segment "
+        f"and reruns the analyses. duration_ns is the TOTAL production the "
+        f"study should end with ({cont.production_done_ns:.3f} ns are done); "
+        f"to say how much MORE instead, replace it with extra_ns:"
+        f"\n```yaml\n{text}\n```"
     )
