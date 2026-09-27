@@ -26,6 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from fastmdxplora.setup.ligand import pose_from_structure
 
@@ -125,18 +126,22 @@ class TestItDeclinesRatherThanForces:
 
     def test_a_different_number_of_atoms_is_refused(self, tmp_path: Path) -> None:
         """Sharing a residue name is not being the same molecule, and forcing
-        the coordinates across would produce a plausible wrong geometry."""
-        molecule = _Molecule()
-        _, said = pose_from_structure(
-            molecule, _structure(tmp_path, atoms=4), "BNZ")
-        assert said and "not the same molecule" in said
+        the coordinates across would produce a plausible wrong geometry.
+        Falling back to the file's coordinates instead starts the ligand away
+        from the site the structure says it occupies, so neither is done."""
+        from fastmdxplora.setup.ligand import LigandError
 
-    def test_an_unreadable_structure_is_not_an_error(self, tmp_path: Path) -> None:
+        with pytest.raises(LigandError, match="not the same molecule"):
+            pose_from_structure(_Molecule(), _structure(tmp_path, atoms=4), "BNZ")
+
+    def test_an_unreadable_structure_is_refused(self, tmp_path: Path) -> None:
+        """Unread, whether it holds the ligand is not known."""
+        from fastmdxplora.setup.ligand import LigandError
+
         broken = tmp_path / "input.pdb"
         broken.write_text("not a pdb\n", encoding="utf-8")
-        molecule = _Molecule()
-        moved, said = pose_from_structure(molecule, broken, "BNZ")
-        assert moved is molecule
+        with pytest.raises(LigandError, match="could not be read"):
+            pose_from_structure(_Molecule(), broken, "BNZ")
 
     def test_a_missing_structure_is_not_an_error(self, tmp_path: Path) -> None:
         molecule = _Molecule()

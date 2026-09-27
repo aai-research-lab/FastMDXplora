@@ -82,8 +82,9 @@ with one end free.
 | `ligand_clash_threshold_nm` | float | `0.15` | What counts as a clash |
 
 `ligand_pose: auto` takes the pose from the structure where it holds a residue
-of that name, and from the supplied file where it does not. That is usually
-right, and [Worked examples](examples.md#a-protein-with-a-ligand) covers the
+of that name, and from the supplied file where it does not. Where the structure
+holds the residue and its atoms cannot be matched to the file's, it refuses
+rather than start the ligand away from the site. That is usually right, and [Worked examples](examples.md#a-protein-with-a-ligand) covers the
 two cases and how to pin either.
 
 `ligand_pose` accepts any string — the three values above are the ones it acts

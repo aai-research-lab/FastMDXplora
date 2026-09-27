@@ -380,9 +380,10 @@ SETUP = PhaseSchema(
         Field("ligand_pose", str, "auto",
               "Where the ligand's starting coordinates come from. `auto` "
               "takes the pose from the structure where it holds the residue "
-              "and from the supplied file where it does not. `structure` "
-              "requires the structure's pose, refusing instead of quietly "
-              "falling back to the file's arbitrary geometry. `file` keeps "
+              "and from the supplied file where it does not, and refuses "
+              "where the structure holds the residue but its atoms cannot "
+              "be matched to the file's. `structure` also refuses a "
+              "structure without the residue. `file` keeps "
               "the supplied file's coordinates even on a complex -- a "
               "deliberately unbound start, e.g. as a known-negative control "
               "for the contact analyses. The clash check still applies.",

@@ -166,13 +166,10 @@ class TestNotTheSameMolecule:
         molecule = _Supplied(PARACETAMOL)
         isomer = _Supplied("CC(=O)Nc1cccc(O)c1")
         structure = _deposit(tmp_path, molecule, isomer.heavy, positions_of=isomer)
-        before = molecule.conformers[0].m_as("nanometer").copy()
-        placed, said = pose_from_structure(molecule, structure, "LIG")
-        assert "do not match" in said
-        assert np.allclose(placed.conformers[0].m_as("nanometer"), before)
-        with pytest.raises(LigandError) as refused:
-            pose_from_structure(molecule, structure, "LIG", required=True)
-        assert refused.value.code == "setup.ligand.pose_unavailable"
+        for required in (False, True):
+            with pytest.raises(LigandError, match="do not match") as refused:
+                pose_from_structure(molecule, structure, "LIG", required=required)
+            assert refused.value.code == "setup.ligand.pose_unavailable"
 
     def test_a_broken_deposited_geometry_is_not_taken(self, tmp_path: Path) -> None:
         molecule = _Supplied(PARACETAMOL)

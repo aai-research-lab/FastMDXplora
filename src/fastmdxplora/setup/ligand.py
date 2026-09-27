@@ -127,7 +127,10 @@ def pose_by_policy(molecule: Any, structure: str | Path, resname: str,
     """Apply the pose the config asked for, or the one the files imply.
 
     ``auto`` is :func:`pose_from_structure` deciding by looking, and is the
-    default because the files usually do say. The other two exist for the
+    default because the files usually do say. Where the structure holds the
+    residue and its pose cannot be taken, ``auto`` refuses rather than
+    guess; the file's pose stands only where the structure has no such
+    residue. The other two exist for the
     cases where what the author wants is not what the files imply, and both
     were discovered by a run that wanted them:
 
@@ -137,10 +140,9 @@ def pose_by_policy(molecule: Any, structure: str | Path, resname: str,
     out to be the known-negative the contact analyses needed. A control
     should be a choice rather than an accident.
 
-    ``structure`` requires the structure's pose, so every quiet fall-back to
-    the file's arbitrary geometry -- a residue name that matches nothing, an
-    atom count that does not -- becomes a refusal. On a bound run those
-    fallbacks are the seventeen-Angstroms failure returning silently.
+    ``structure`` requires the structure's pose, so a structure with no
+    residue of that name is refused as well. On a bound run that fallback
+    is the seventeen-Angstroms failure returning silently.
     """
     chosen = str(policy).strip().lower()
     if chosen not in POSE_POLICIES:
@@ -194,32 +196,56 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
     checking here can establish.
 
     Returns the molecule and a sentence about what happened, or ``None``
-    where the structure has no such residue and the SDF's own coordinates
-    stand -- which is right when the ligand is being placed deliberately
-    rather than read from a complex.
+    where there is no structure, or it has no such residue, and the SDF's
+    own coordinates stand -- which is right when the ligand is being placed
+    deliberately rather than read from a complex.
 
-    With ``required=True`` every one of those fallbacks refuses instead of
-    standing, with the same sentence it would have logged. On the T4 system
-    the silent version of each was a run of benzene floating in solvent that
-    looked in every respect like a run of benzene in a binding site.
+    Where the structure does hold a residue of this name and its pose
+    cannot be taken -- too few copies, a different atom count, bonds that
+    do not match, a structure that will not read -- this refuses. Those
+    fell back to the file's coordinates, and on the T4 system the silent
+    version of each was a run of benzene floating in solvent that looked in
+    every respect like a run of benzene in a binding site. With
+    ``required=True`` a structure without the residue refuses too.
     """
 
     def _stand(reason: str) -> tuple[Any, str]:
+        """A pose the structure should give and cannot: refused, under
+        ``auto`` as under ``structure``. ``auto`` fell back to the file's
+        coordinates here, which on a complex is a ligand simulated away
+        from its site with nothing but a log line to say so."""
         if required:
             raise LigandError(
                 f"ligand_pose: structure was asked for, but {reason}.", code="setup.ligand.pose_unavailable")
-        return molecule, reason
+        raise LigandError(
+            f"The ligand's pose cannot be taken from the structure: {reason}. "
+            "Setup stops rather than place it at the supplied file's own "
+            "coordinates, which on a complex are not in the binding site. "
+            "Where the file's pose is the one meant -- a docked or "
+            "deliberately unbound start -- say so with ligand_pose: file.",
+            code="setup.ligand.pose_unavailable")
 
     import numpy as _np
 
+    if not Path(structure).is_file():
+        # No structure at all, as for a system given as a sequence: nothing
+        # holds a pose, and the file's is the only one there is.
+        if required:
+            raise LigandError(
+                f"ligand_pose: structure was asked for, but there is no "
+                f"structure at {structure} to take a pose from.",
+                code="setup.ligand.pose_unavailable")
+        return molecule, None
     try:
         import mdtraj as _md  # noqa: PLC0415
 
         frame = _md.load(str(structure))
     except Exception as exc:  # noqa: BLE001 - a structure that will not read
+        # Unread, whether it holds the ligand is not known.
         return _stand(
-            f"could not read {Path(structure).name} for the ligand's pose "
-            f"({type(exc).__name__}), so the file's own coordinates stand")
+            f"{Path(structure).name} could not be read for it "
+            f"({type(exc).__name__}), so whether it holds the ligand is not "
+            "known")
 
     # By residue, not by name across the structure. A component can appear
     # more than once -- two copies of a substrate, a cofactor in each half of
@@ -240,9 +266,9 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
         return molecule, None
     if copy >= len(matches):
         return _stand(
-            f"{Path(structure).name} holds {len(matches)} copies of {wanted} "
-            f"and this is copy {copy + 1}, so there is none left to place it "
-            "at and the file's own coordinates stand")
+            f"{Path(structure).name} holds {len(matches)} "
+            f"cop{'y' if len(matches) == 1 else 'ies'} of {wanted} and this "
+            f"is copy {copy + 1}, so there is none left to place it at")
 
     residue = matches[copy]
     indices = [atom.index for atom in residue.atoms]
@@ -256,7 +282,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
         return _stand(
             f"{wanted} in {Path(structure).name} has {len(indices)} atoms and "
             f"the supplied file has {len(heavy)} heavy atoms, so they are not "
-            "the same molecule and the file's own coordinates stand")
+            "the same molecule (or the deposited residue is incomplete)")
 
     positions = _np.array(molecule.conformers[0].m_as("nanometer")
                           if molecule.conformers else None, dtype=float)
@@ -281,8 +307,7 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
             f"the bonds between the atoms of {wanted} in "
             f"{Path(structure).name} do not match the supplied file's, "
             "element for element, so they are not the same molecule (or the "
-            "deposited geometry is broken) and the file's own coordinates "
-            "stand")
+            "deposited geometry is broken)")
     reordered = order != list(range(len(heavy)))
     moved = positions.copy()
     moved[heavy] = crystal[order]

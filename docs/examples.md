@@ -86,15 +86,17 @@ wrong will simulate perfectly well.
 Nothing has to be declared. If the structure holds a residue of that name
 whose heavy atoms match the file's, element for element and bond for bond, its
 coordinates are used, each atom on its own crystal position whatever order the
-two files list them in; if it does not, the file's are. The files already say
-which situation it is.
+two files list them in. If it holds no residue of that name, the file's are.
+If it holds one that cannot be matched (another atom count, other bonds, too
+few copies), setup refuses rather than guess, and says so. The files already
+say which situation it is.
 
 The choice can also be pinned, as `setup.ligand_pose`:
 
 | Value | What it does |
 |---|---|
 | `auto` | The rule above. The default |
-| `structure` | Refuse the fallback — a complex whose ligand is somehow absent becomes an error rather than a benzene floating in solvent |
+| `structure` | Refuse the fallback too: a complex whose ligand is somehow absent becomes an error rather than a benzene floating in solvent |
 | `file` | The supplied pose stands whether or not the structure holds one. This is how a deliberately unbound run — a negative control — differs from a bound study by a line of configuration rather than an accident of coordinates |
 
 Either way the run states which pose stood and why.

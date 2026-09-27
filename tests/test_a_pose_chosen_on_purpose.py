@@ -31,7 +31,7 @@ from tests.test_the_pose_comes_from_the_structure import _Molecule, _structure
 
 
 class TestAuto:
-    """The default, and unchanged: the files decide."""
+    """The default: the files decide, and where they cannot, it refuses."""
 
     def test_auto_is_the_default_everywhere(self) -> None:
         from fastmdxplora.config.schema import SETUP
@@ -52,6 +52,23 @@ class TestAuto:
             _Molecule(), _structure(tmp_path, resname="HED"), "BNZ",
             policy="auto")
         assert said is None
+
+    @pytest.mark.parametrize("structure", ["four atoms", "one copy for two"])
+    def test_a_residue_whose_pose_cannot_be_taken_is_refused(
+            self, tmp_path: Path, structure: str) -> None:
+        """The structure says the ligand is there and its pose cannot be
+        read off it. `auto` fell back to the file's coordinates, which on a
+        complex start the ligand away from its site with a log line to say
+        so; it refuses now, and says how to ask for the file's pose."""
+        path = _structure(tmp_path, atoms=4 if structure == "four atoms" else 6)
+        copy = 1 if structure == "one copy for two" else 0
+        with pytest.raises(LigandError) as refused:
+            pose_by_policy(_Molecule(), path, "BNZ", policy="auto", copy=copy)
+        assert refused.value.code == "setup.ligand.pose_unavailable"
+        assert "ligand_pose: file" in str(refused.value)
+        # Asked for by name, the file's pose still stands on the same files.
+        _, said = pose_by_policy(_Molecule(), path, "BNZ", policy="file", copy=copy)
+        assert "by request" in said
 
 
 class TestFile:

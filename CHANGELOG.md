@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A ligand pose the structure holds and cannot give is refused
+
+**With `ligand_pose: auto`, a structure holding a residue of the ligand's name
+whose pose could not be taken fell back to the supplied file's coordinates**:
+a different atom count, bonds that do not match, fewer copies than ligands,
+or a structure that would not read. On a complex that starts the ligand away
+from its site, the seventeen-Angstrom failure, with a log line to say so.
+Setup now refuses (`setup.ligand.pose_unavailable`) and says to use
+`ligand_pose: file` where the file's pose is the one meant. The file's pose
+still stands where the structure holds no residue of that name, or where
+there is no structure at all.
+
 ### One segment number is one folder
 
 **`segment-1` and `segment-001` were both segment one.** The join held
