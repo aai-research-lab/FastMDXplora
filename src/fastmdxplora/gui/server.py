@@ -27,7 +27,9 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from fastmdxplora.gui.browse import is_study
 from fastmdxplora.gui.exploration import (
+    _NO_CURRENT_RUN,
     DashboardRuntime,
 )
 from fastmdxplora.ligand_detection import detect_ligands, normalise_ligand_resname
@@ -93,6 +95,57 @@ MOST_A_BODY_MAY_BE = 1_000_000
 #: the caller names, and store or spend an API key. Building a config from
 #: the posted form reads no file and changes nothing, so it alone is open.
 POSTS_ANSWERED_BEYOND_LOOPBACK = frozenset({"/api/config"})
+
+#: The GET routes a dashboard bound beyond loopback still answers, listed for
+#: the same reason as the POSTs: a route added later is refused there until
+#: somebody decides otherwise. What is listed is what watching a run needs,
+#: the page, its assets, and the run's status, results and files. Walking the
+#: disk, opening a folder and reading the agent's conversations are not.
+GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
+    "/", "/index", "/results", "/live",
+    "/api/app-state", "/api/explore/state", "/api/schema",
+    "/api/status", "/api/metrics", "/api/events", "/api/report",
+    "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
+    "/api/file-text", "/api/protein-preview", "/api/structure-info",
+    "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
+    "/api/playback-info", "/analysis-figures-svg.zip",
+    "/structure/topology.pdb", "/structure/live-frame.pdb",
+    "/structure/playback.pdb",
+})
+GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/")
+
+
+def _get_answered_beyond_loopback(path: str) -> bool:
+    return (path in GETS_ANSWERED_BEYOND_LOOPBACK
+            or path.startswith(GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK))
+
+
+def _private(parts: tuple[str, ...]) -> bool:
+    """A path inside a run that is not one of its results.
+
+    Hidden files and folders, and the agent's conversations, which hold what
+    somebody typed and the content of files they attached. They are kept in
+    the study, so the file list offered them and, beyond loopback,
+    `/artifacts/` and `/api/file-text` handed out what the conversation
+    routes refuse. Never listed, and never served beyond loopback.
+    """
+    from fastmdxplora.gui.agent_panel import CONVERSATIONS_SUBDIR
+
+    if any(part.startswith(".") for part in parts):
+        return True
+    store = CONVERSATIONS_SUBDIR.parts
+    return any(parts[i:i + len(store)] == store for i in range(len(parts)))
+
+
+def _served_beyond_loopback(root: Path, target: Path) -> bool:
+    """Whether a public bind may send this file: inside the watched run once
+    links are followed, and one of its results."""
+    try:
+        parts = target.resolve().relative_to(root.resolve()).parts
+    except (OSError, ValueError):
+        return False
+    return not _private(parts)
+
 
 PLOT_TITLE_ALIASES = {
     "rmsd": "RMSD",
@@ -299,18 +352,21 @@ def make_handler(
             parsed = urlparse(self.path)
             path = parsed.path
             root = app_runtime.data_root()
+            if not allow_control:
+                if not _get_answered_beyond_loopback(path):
+                    # Refused unless listed as open; see the list for why.
+                    self._refuse_beyond_loopback()
+                    return
+                if not is_study(root):
+                    # `--output` can name any folder, a home folder
+                    # included. Beyond loopback one FastMDXplora did not
+                    # write is served as no run at all.
+                    root = app_runtime.workspace_root / _NO_CURRENT_RUN
             if path in {"/", "/index", "/results", "/live"}:
                 self._send_html(html)
                 return
             if path == "/api/app-state" or path == "/api/explore/state":
                 self._send_json(app_runtime.snapshot())
-                return
-            if (path in {"/api/agent/conversation", "/api/agent/conversations"}
-                    and not allow_control):
-                # A conversation holds what somebody asked the agent and the
-                # content of files they attached. Every POST that writes one
-                # is refused beyond loopback; reading one back is no safer.
-                self._refuse_beyond_loopback()
                 return
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import read_conversation
@@ -323,11 +379,16 @@ def make_handler(
                 # the Agent's + accepts.
                 from fastmdxplora.gui.agent_panel import read_text_file
 
+                # The run being watched, as `/artifacts/` reads it. The
+                # workspace was the fallback, and with no run open that is
+                # wherever `fastmdx gui` was typed, often a home folder.
                 wanted = (parse_qs(parsed.query).get("path") or [""])[0]
-                root = app_runtime.active_root or app_runtime.workspace_root
-                answer = read_text_file(
-                    Path(str(root)) / wanted if not Path(str(wanted)).is_absolute() else wanted,
-                    within=root)
+                target = root / wanted
+                if not allow_control and not _served_beyond_loopback(root, target):
+                    self._send_json({"ok": False,
+                                     "error": "That file is outside this study."})
+                    return
+                answer = read_text_file(target, within=root)
                 if answer.get("ok") and answer.get("suffix") in ("md", "markdown"):
                     from fastmdxplora.gui.report_page import render_markdown
 
@@ -338,25 +399,6 @@ def make_handler(
                 from fastmdxplora.gui.agent_panel import list_conversations
 
                 self._send_json(list_conversations(app_runtime))
-                return
-            if path in {"/api/browse", "/api/inspect-directory"} and not allow_control:
-                # These walk the filesystem for a folder picker, which is a
-                # reasonable thing for a tool on your own machine and not for
-                # one reachable over a network. They were outside the gate:
-                # bound to a non-loopback address the workflow-control
-                # endpoints returned 403 while `/api/browse?path=/etc` listed
-                # any directory on the host to anyone who asked, unauthenticated.
-                self._send_json(
-                    {
-                        "ok": False,
-                        "error": (
-                            "Browsing the server's filesystem is disabled "
-                            "when the dashboard is bound to a non-loopback "
-                            "address."
-                        ),
-                    },
-                    status=403,
-                )
                 return
             if path == "/api/browse":
                 # Typing a path is a poor ask, and a browser cannot offer a
@@ -428,7 +470,9 @@ def make_handler(
                 self._send_json(_results_payload(root))
                 return
             if path == "/api/protein-preview":
-                regenerate = parsed.query == "regenerate=1"
+                # Beyond loopback a viewer reads what the run has; it does
+                # not set this machine redoing work on request.
+                regenerate = allow_control and parsed.query == "regenerate=1"
                 self._send_json(protein_preview_payload(root, regenerate=regenerate))
                 return
             if path == "/api/structure-info":
@@ -446,12 +490,12 @@ def make_handler(
                 return
             if path == "/api/playback-info":
                 max_frames = cfg.max_browser_frames
-                if "max=" in parsed.query:
+                if "max=" in parsed.query and allow_control:
                     try:
                         max_frames = int(parsed.query.split("max=", 1)[1].split("&")[0])
                     except ValueError:
                         pass
-                force = "force=1" in parsed.query
+                force = allow_control and "force=1" in parsed.query
                 sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
                 duration_ns = sim_manifest.get("duration_ns_actual")
                 self._send_json(playback_info(
@@ -462,16 +506,6 @@ def make_handler(
                 ))
                 return
             if path == "/api/open-output":
-                if not allow_control:
-                    self._send_json(
-                        {
-                            "opened": False,
-                            "path": str(root),
-                            "detail": "Opening local folders is disabled for remote dashboards.",
-                        },
-                        status=403,
-                    )
-                    return
                 opened, detail = _open_local_path(root)
                 self._send_json({
                     "opened": opened,
@@ -791,7 +825,8 @@ def make_handler(
             except ValueError:
                 self.send_error(403, "Artifact path is outside the output directory")
                 return
-            if not target.is_file():
+            if not target.is_file() or (
+                    not allow_control and not _served_beyond_loopback(root, target)):
                 self.send_error(404, "Artifact not found")
                 return
             content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
@@ -811,7 +846,8 @@ def make_handler(
 
         def _send_svg_bundle(self, root: Path) -> None:
             """Download every generated SVG analysis/report figure as one ZIP."""
-            svg_paths = _svg_figure_paths(root)
+            svg_paths = [path for path in _svg_figure_paths(root)
+                         if allow_control or _served_beyond_loopback(root, path)]
             if not svg_paths:
                 self.send_error(404, "No SVG figures are available yet")
                 return
@@ -1044,9 +1080,9 @@ def start_dashboard_session(
         if not _is_loopback_host(host):
             # Said out loud, because the alternative is that somebody
             # discovers it afterwards. There is no login: `allow_control`
-            # turns off the endpoints that browse the filesystem, read a
-            # config or start a run, and what is left is still a live view
-            # of this run to anyone who can reach the port.
+            # leaves only the routes listed as open, and what is left is
+            # still a live view of this run and its results to anyone who
+            # can reach the port.
             logger.warning(
                 "Serving on %s, which is not loopback. There is no login. "
                 "Browsing, config reading and run control are disabled, and "
@@ -1120,14 +1156,21 @@ def _artifact_records(root: Path) -> list[dict[str, str]]:
     except OSError:
         # A folder removed while it was walked: list what was reached.
         pass
+    real_root = Path(os.path.realpath(root))
     for path in sorted(found):
         if path.suffix == ".tmp" or "__pycache__" in path.parts:
             continue
         try:
-            rel = path.relative_to(root).as_posix()
+            relative = path.relative_to(root)
             info = path.stat()
+            inside = Path(os.path.realpath(path)).relative_to(real_root)
         except (OSError, ValueError):
             continue
+        # Nothing offered that `/artifacts/` would refuse: a link that
+        # leads out of the run, or a file that is not one of its results.
+        if _private(relative.parts) or _private(inside.parts):
+            continue
+        rel = relative.as_posix()
         if not _stat.S_ISREG(info.st_mode):
             continue
         label, group = _artifact_label(rel)
@@ -1140,30 +1183,6 @@ def _artifact_records(root: Path) -> list[dict[str, str]]:
                 "download_href": f"/artifacts/{rel}?download=1&v={version}",
                 "size": str(info.st_size),
                 "mtime": str(info.st_mtime),
-                "display_path": _compact_path(rel),
-                "label": label,
-                "group": group,
-            }
-        )
-    return records
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        try:
-            rel = path.relative_to(root).as_posix()
-        except ValueError:
-            continue
-        if "__pycache__" in path.parts:
-            continue
-        label, group = _artifact_label(rel)
-        records.append(
-            {
-                "path": rel,
-                "name": path.name,
-                "href": f"/artifacts/{rel}?v={int(path.stat().st_mtime)}",
-                "download_href": (
-                    f"/artifacts/{rel}?download=1&v={int(path.stat().st_mtime)}"
-                ),
-                "size": str(path.stat().st_size),
-                "mtime": str(path.stat().st_mtime),
                 "display_path": _compact_path(rel),
                 "label": label,
                 "group": group,

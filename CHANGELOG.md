@@ -7,6 +7,27 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Off loopback, only the run's results leave the machine
+
+**2.5.7 bound beyond loopback served the Agent's conversations, and with no
+run open, text files under the folder the GUI was started in.**
+
+The conversation routes are refused off loopback, but 2.5.7 keeps a study's
+conversations inside it, at `agent/conversations/`, and `/artifacts/`,
+`/api/file-text` and the file list served everything in the study. With no
+run open, `/api/file-text` read under the workspace, which is wherever
+`fastmdx gui` was typed; from a home folder that reached the API key
+the Agent stores in `~/.config/fastmdxplora/model.json`. 2.5.6 had neither.
+
+Off loopback every GET is now refused unless it is listed, as every POST
+already was; the list is what watching a run needs. Files are served there
+only from the run being watched, only from a folder FastMDXplora wrote, and
+never a hidden file or the Agent's conversations, which the file list no
+longer offers on loopback either. The Files preview reads the run being
+watched, never the workspace. A viewer off loopback can no longer have the
+preview or the playback rebuilt, or ask for more frames than the server was
+started with. A dashboard on loopback, the default, was not exposed.
+
 ### A ligand is given its charges on a fresh install
 
 **A fresh conda-forge install of 2.5.7 could not parameterize any ligand.**

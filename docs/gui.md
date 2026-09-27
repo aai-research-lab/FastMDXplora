@@ -298,7 +298,9 @@ same machine can reach it; nothing else on the network can.
 
 `--host 0.0.0.0` opens it to the network, and FastMDXplora reduces what it will
 do. Off loopback every POST returns **403** except `/api/config`, which builds a
-config from the form and reads no file; a route added later is refused until
+config from the form and reads no file. Every GET returns **403** except those
+watching a run needs: the page and its assets, the run's status, results and
+structures, and its files. In both cases a route added later is refused until
 somebody decides otherwise. Among the routes refused off loopback:
 
 | Refused off loopback | Why |
@@ -310,6 +312,13 @@ somebody decides otherwise. Among the routes refused off loopback:
 | `/api/open-output` | It opens a folder on the machine running the server |
 | `/api/agent/model`, `/api/agent/propose` | One stores an API key, the other spends it |
 | `/api/agent/conversation`, `/api/agent/conversations`, read as well as written | They hold what was asked of the agent and the content of files attached to it |
+
+Files are served off loopback only from the run being watched, and only when
+that folder is one FastMDXplora wrote; `--output` naming any other folder, a
+home folder say, is served as no run at all. Inside the run, hidden files and
+the agent's conversations (`agent/conversations/`) are neither listed nor
+served. A viewer off loopback cannot ask for the preview or the playback to be
+rebuilt, or for more frames than the server was started with.
 
 What remains is the live view of the run and its artifacts, which is what a
 colleague watching a job needs. That is a **narrower** exposure, not a safe one,
