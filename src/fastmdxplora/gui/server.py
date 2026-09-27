@@ -28,6 +28,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from fastmdxplora.gui.browse import is_study
+from fastmdxplora.gui.hosting import SECRET_HEADER, Hosting
 from fastmdxplora.gui.exploration import (
     _NO_CURRENT_RUN,
     DashboardRuntime,
@@ -299,7 +300,14 @@ def make_handler(
     template_html: str | None = None,
     runtime: DashboardRuntime | None = None,
     allow_control: bool = True,
+    hosting: Hosting | None = None,
 ) -> type[BaseHTTPRequestHandler]:
+    """The request handler. With `hosting`, the GUI is served to someone
+    else through a proxy; see :mod:`fastmdxplora.gui.hosting`."""
+    if hosting is not None:
+        # The proxy's secret and the listed names are the trust; the bind
+        # address is not, since the proxy reaches it over a network.
+        allow_control = True
     root = Path(project_root).resolve()
     app_runtime = runtime or DashboardRuntime(
         workspace_root=root,
@@ -363,6 +371,8 @@ def make_handler(
         def _dispatch(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+            if self._refused_as_not_through_the_proxy():
+                return
             if self._refused_as_from_elsewhere(api=path.startswith("/api/")):
                 return
             root = app_runtime.data_root()
@@ -407,7 +417,8 @@ def make_handler(
                     from fastmdxplora.gui.report_page import render_markdown
 
                     answer["html"], answer["rendered"] = render_markdown(answer["text"])
-                self._send_json(answer)
+                # A file's contents are shown as they are on disk.
+                self._send_json(answer, verbatim=("text", "html"))
                 return
             if path == "/api/agent/conversations":
                 from fastmdxplora.gui.agent_panel import list_conversations
@@ -423,7 +434,20 @@ def make_handler(
                 query = parse_qs(parsed.query)
                 where = query.get("path", [""])[0]
                 kind = query.get("kind", [""])[0]
-                self._send_json(browse(where or None, kind or None))
+                if hosting is None:
+                    self._send_json(browse(where or None, kind or None))
+                    return
+                inside = self._inside_or_refuse(where)
+                if inside is None:
+                    return
+                listing = browse(inside, kind or None)
+                if listing.get("ok"):
+                    # The workspace is the top: nothing above it to go to.
+                    here = Path(listing["path"])
+                    if here == hosting.workspace:
+                        listing["parent"] = None
+                    listing["home"] = str(hosting.workspace)
+                self._send_json(listing)
                 return
             if path == "/api/inspect-directory":
                 # Someone with a trajectory already should be able to point at
@@ -437,6 +461,11 @@ def make_handler(
                         {"ok": False, "error": "No directory given."}, status=400
                     )
                     return
+                if hosting is not None:
+                    inside = self._inside_or_refuse(target)
+                    if inside is None:
+                        return
+                    target = str(inside)
                 self._send_json(inspect_directory(target))
                 return
             if path == "/api/schema":
@@ -520,6 +549,12 @@ def make_handler(
                 ))
                 return
             if path == "/api/open-output":
+                if hosting is not None:
+                    # A file manager would open on the server, not in front
+                    # of the person; the Files tab is how they reach it.
+                    self._send_json({"opened": False, "path": str(root),
+                                     "detail": "Not available in a hosted GUI."})
+                    return
                 opened, detail = _open_local_path(root)
                 self._send_json({
                     "opened": opened,
@@ -557,6 +592,8 @@ def make_handler(
         def _dispatch_post(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+            if self._refused_as_not_through_the_proxy(posting=True):
+                return
             if self._refused_as_from_elsewhere(api=True, posting=True):
                 return
             if not allow_control and path not in POSTS_ANSWERED_BEYOND_LOOPBACK:
@@ -624,17 +661,21 @@ def make_handler(
                 if isinstance(given, dict):
                     self._send_json(state_from_config(given))
                 else:
-                    self._send_json(
-                        load_config_into_state(str(request.get("path") or ""))
-                    )
+                    named = self._path_for(request.get("path"))
+                    if named is None:
+                        return
+                    self._send_json(load_config_into_state(named))
                 return
             if path == "/api/run-config":
                 # Running a config exactly as it stands, which is a different
                 # act from running what the form currently describes.
                 request = payload or {}
+                named = self._path_for(request.get("path"))
+                if named is None:
+                    return
                 self._send_json(
                     app_runtime.launch_existing_config(
-                        str(request.get("path") or ""),
+                        named,
                         output=request.get("output"),
                         dashboard_url=self.headers.get("Origin"),
                     )
@@ -646,9 +687,10 @@ def make_handler(
                 # still runs before an hour of compute queues behind it.
                 from fastmdxplora.gui.config_builder import check_config_file
 
-                self._send_json(
-                    check_config_file(str((payload or {}).get("path") or ""))
-                )
+                named = self._path_for((payload or {}).get("path"))
+                if named is None:
+                    return
+                self._send_json(check_config_file(named))
                 return
             if path == "/api/config":
                 # The file the page would run, handed back instead. A laptop
@@ -687,29 +729,41 @@ def make_handler(
             if path == "/api/agent/conversation/open":
                 from fastmdxplora.gui.agent_panel import open_conversation
 
+                study = self._optional_path_for((payload or {}).get("study"))
+                if study is False:
+                    return
                 self._send_json(open_conversation(app_runtime,
                                                   (payload or {}).get("id"),
-                                                  (payload or {}).get("study")))
+                                                  study))
                 return
             if path == "/api/agent/attachment":
                 from fastmdxplora.gui.agent_panel import read_attachment
 
-                self._send_json(read_attachment((payload or {}).get("path")))
+                named = self._path_for((payload or {}).get("path"))
+                if named is None:
+                    return
+                self._send_json(read_attachment(named), verbatim=("text",))
                 return
             if path == "/api/agent/conversation/attach":
                 from fastmdxplora.gui.agent_panel import attach_conversation
 
-                self._send_json(attach_conversation(app_runtime,
-                                                    (payload or {}).get("study"),
+                study = self._optional_path_for((payload or {}).get("study"))
+                from_study = self._optional_path_for((payload or {}).get("from_study"))
+                if study is False or from_study is False:
+                    return
+                self._send_json(attach_conversation(app_runtime, study,
                                                     (payload or {}).get("id"),
-                                                    (payload or {}).get("from_study")))
+                                                    from_study))
                 return
             if path == "/api/agent/conversation/delete":
                 from fastmdxplora.gui.agent_panel import delete_conversation
 
+                study = self._optional_path_for((payload or {}).get("study"))
+                if study is False:
+                    return
                 self._send_json(delete_conversation(app_runtime,
                                                     (payload or {}).get("id"),
-                                                    (payload or {}).get("study")))
+                                                    study))
                 return
             if path == "/api/explore/switch":
                 folder = str((payload or {}).get("folder") or "").strip()
@@ -717,7 +771,10 @@ def make_handler(
                     self._send_json({"ok": False, "error": "No folder given."},
                                     status=400)
                     return
-                self._send_json(app_runtime.switch_to(folder))
+                named = self._path_for(folder)
+                if named is None:
+                    return
+                self._send_json(app_runtime.switch_to(named))
                 return
             self.send_error(404, "Not found")
 
@@ -738,14 +795,18 @@ def make_handler(
             A script or `curl` sends no Origin and is answered as before.
             """
             host = self.headers.get("Host") or ""
-            if allow_control and host and not _names_this_machine(host):
+            if hosting is not None and not hosting.answers_to(host):
+                why = "This server does not answer to that name."
+            elif hosting is None and allow_control and host and not _names_this_machine(host):
                 why = "This server answers only to localhost."
             else:
                 origin = self.headers.get("Origin")
                 fetched_from = (self.headers.get("Sec-Fetch-Site") or "").lower()
                 crossing = fetched_from in {"cross-site", "same-site"}
                 if posting and origin is not None:
-                    crossing = crossing or origin.lower() != f"http://{host.lower()}"
+                    own = (hosting.own_origin(origin) if hosting is not None
+                           else origin.lower() == f"http://{host.lower()}")
+                    crossing = crossing or not own
                 if not (crossing and (api or posting)):
                     return False
                 why = "A request from another site is refused."
@@ -753,6 +814,49 @@ def make_handler(
                 self._drain_request_body()
             self._send_json({"ok": False, "error": why}, status=403)
             return True
+
+        def _refused_as_not_through_the_proxy(self, *, posting: bool = False) -> bool:
+            """Hosted, refuse whatever did not come through the proxy.
+
+            The proxy signs the person in and adds the secret; a caller who
+            reaches the port some other way has neither. Refused before the
+            request is looked at, with nothing that says what is served.
+            """
+            if hosting is None or hosting.admits(self.headers.get(SECRET_HEADER)):
+                return False
+            if posting:
+                self._drain_request_body()
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return True
+
+        def _inside_or_refuse(self, given: Any) -> Path | None:
+            """Hosted, the path a request named, inside the workspace; or
+            None, after refusing it."""
+            assert hosting is not None
+            inside = hosting.inside(given)
+            if inside is None:
+                self._send_json({"ok": False,
+                                 "error": "That is outside your workspace."},
+                                status=403)
+            return inside
+
+        def _path_for(self, given: Any) -> str | None:
+            """A path a request named, as the route reads it: as given on a
+            person's own machine; hosted, inside the workspace or refused."""
+            if hosting is None:
+                return str(given or "")
+            inside = self._inside_or_refuse(given)
+            return None if inside is None else str(inside)
+
+        def _optional_path_for(self, given: Any) -> Any:
+            """As `_path_for`, for a path that may be absent (None stays
+            None). False means it was refused and answered."""
+            if hosting is None or not given:
+                return given
+            named = self._path_for(given)
+            return False if named is None else named
 
         # ---- Generic response helpers ----
         def _refuse_beyond_loopback(self) -> None:
@@ -840,7 +944,14 @@ def make_handler(
                 raise StudyError("JSON body must be an object", code="config.option.wrong_type")
             return data
 
-        def _send_json(self, payload: dict[str, Any], *, status: int = 200) -> None:
+        def _send_json(self, payload: dict[str, Any], *, status: int = 200,
+                       verbatim: tuple[str, ...] = ()) -> None:
+            if hosting is not None:
+                # Every answer, so a route added later cannot show a path
+                # on the server by forgetting to hide it. The fields named
+                # in `verbatim` are a file's own contents, shown as on disk.
+                kept = {key: payload[key] for key in verbatim if key in payload}
+                payload = {**hosting.scrub(payload), **kept}
             body = json.dumps(payload, default=str).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1038,6 +1149,7 @@ def serve_dashboard(
     home_mode: bool = False,
     exploration_root: str | Path | None = None,
     on_ready: Callable[[str], None] | None = None,
+    hosting: Hosting | None = None,
 ) -> None:
     session = start_dashboard_session(
         output=output,
@@ -1046,6 +1158,7 @@ def serve_dashboard(
         config=config,
         home_mode=home_mode,
         exploration_root=exploration_root,
+        hosting=hosting,
     )
     print(f"FastMDXplora GUI running at {session.url}")
     if on_ready is not None:
@@ -1105,15 +1218,24 @@ def start_dashboard_session(
     config: DashboardConfig | None = None,
     home_mode: bool = False,
     exploration_root: str | Path | None = None,
+    hosting: Hosting | None = None,
 ) -> DashboardSession:
-    """Start the local dashboard server in a background thread."""
+    """Start the dashboard server in a background thread.
+
+    With `hosting`, it is served to someone else through a proxy, and the
+    workspace is the one folder it reads and writes: new studies go there,
+    and nothing outside it is opened.
+    """
     root = Path(output).resolve()
     root.mkdir(parents=True, exist_ok=True)
+    if hosting is not None:
+        exploration_root = hosting.workspace
     runtime = DashboardRuntime(
         workspace_root=root,
         exploration_root=Path(exploration_root).resolve() if exploration_root is not None else root.parent,
         active_root=None if home_mode else root,
     )
+    runtime.hosting = hosting
     requested_port = int(port)
     candidates = [0] if requested_port == 0 else range(requested_port, requested_port + max_port_tries)
     last_error: OSError | None = None
@@ -1124,12 +1246,18 @@ def start_dashboard_session(
                 config=config,
                 runtime=runtime,
                 allow_control=_is_loopback_host(host),
+                hosting=hosting,
             )
             server = _DashboardServer((host, int(candidate)), handler)
         except OSError as exc:
             last_error = exc
             continue
-        if not _is_loopback_host(host):
+        if hosting is not None:
+            logger.info(
+                "Hosted: answering only requests that carry the proxy's secret, "
+                "under %s, inside %s.",
+                ", ".join(sorted(hosting.allowed_hosts)), hosting.workspace)
+        elif not _is_loopback_host(host):
             # Said out loud, because the alternative is that somebody
             # discovers it afterwards. There is no login: `allow_control`
             # leaves only the routes listed as open, and what is left is

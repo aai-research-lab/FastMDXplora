@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The GUI can be served to other people
+
+**`fastmdx gui --hosted` serves the GUI behind a proxy that signs people in.**
+It answers only requests carrying the proxy's secret (read from
+`FASTMDX_PROXY_SECRET`), only under the names given with `--allowed-host`, and
+only inside `--workspace`: every path a request names is read there, one
+outside it is refused, and answers show paths as `~/...`, never the server's
+layout. It refuses to start without a secret, a name, or with the top of the
+file system as its workspace. Nothing changes without `--hosted`. See
+`docs/hosting.md`.
+
 ### Python continues a study as the command line does
 
 **`simulation.resume_from` naming a study directory was a continuation only on

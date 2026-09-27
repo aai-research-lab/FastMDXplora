@@ -467,6 +467,9 @@ class DashboardRuntime:
     # adopts the run of a study the person has already left.
     _adoption_root: Path | None = field(default=None, repr=False)
     _adoption_thread: threading.Thread | None = field(default=None, repr=False)
+    #: Set when the GUI is served to someone else (`fastmdx gui --hosted`):
+    #: then every folder a run is written to must be inside its workspace.
+    hosting: Any = None
 
     def __post_init__(self) -> None:
         self.workspace_root = self.workspace_root.expanduser().resolve()
@@ -830,6 +833,19 @@ class DashboardRuntime:
             "state": self.snapshot(),
         }
 
+    def _output_folder(self, requested: str) -> Path | None:
+        """Where a run named `requested` is written: an absolute path as it
+        is, a bare name beside the others this GUI made. Hosted, only inside
+        the workspace, a path shown as ``~/...`` included; None otherwise."""
+        if self.hosting is not None:
+            if requested.startswith("~") or Path(requested).is_absolute() or "/" in requested:
+                return self.hosting.inside(requested)
+            return (self.exploration_root / _slug(requested)).resolve()
+        candidate = Path(requested).expanduser()
+        if candidate.is_absolute():
+            return candidate.resolve()
+        return (self.exploration_root / _slug(requested)).resolve()
+
     def launch_from_config(
         self,
         state: Mapping[str, Any] | None,
@@ -874,12 +890,11 @@ class DashboardRuntime:
                 from fastmdxplora.naming import default_output_name, system_of
 
                 requested = default_output_name(system_of(dict(source)))
-            candidate = Path(requested).expanduser()
-            if candidate.is_absolute():
-                output_dir = candidate.resolve()
-            else:
-                # A bare name is a folder beside the others this GUI made.
-                output_dir = (self.exploration_root / _slug(requested)).resolve()
+            # A bare name is a folder beside the others this GUI made.
+            output_dir = self._output_folder(requested)
+            if output_dir is None:
+                return {"ok": False,
+                        "error": "The output folder must be inside your workspace."}
 
             # An output directory must be empty or absent, as `launch` and
             # `launch_existing_config` both already require. Two reasons, and
@@ -1015,12 +1030,10 @@ class DashboardRuntime:
             source = Path(checked["path"])
             requested = (output or "").strip()
             if requested:
-                candidate = Path(requested).expanduser()
-                output_dir = (
-                    candidate.resolve()
-                    if candidate.is_absolute()
-                    else (self.exploration_root / _slug(requested)).resolve()
-                )
+                output_dir = self._output_folder(requested)
+                if output_dir is None:
+                    return {"ok": False,
+                            "error": "The output folder must be inside your workspace."}
             else:
                 # Beside the config, under a name taken from it, so a config
                 # kept with its data leaves its results there too.
@@ -1152,6 +1165,9 @@ class DashboardRuntime:
         with self.lock:
             self._refresh_process()
             path = Path(folder).expanduser().resolve()
+            if self.hosting is not None and self.hosting.inside(path) is None:
+                return {"ok": False, "error": "That folder is outside your workspace.",
+                        "state": self.snapshot()}
             if not path.is_dir():
                 return {"ok": False, "error": f"No such folder: {path}",
                         "state": self.snapshot()}

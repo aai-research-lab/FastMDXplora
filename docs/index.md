@@ -145,6 +145,7 @@ agent
 production
 clusters
 remote
+hosting
 ```
 
 ```{toctree}

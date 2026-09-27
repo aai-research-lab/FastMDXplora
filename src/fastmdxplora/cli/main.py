@@ -1023,6 +1023,24 @@ def _build_parser() -> argparse.ArgumentParser:
     gui.add_argument("--binding-pocket-cutoff-A", type=float, default=None,
                      metavar="ANGSTROM",
                      help="Binding-pocket cutoff used by the viewer.")
+    hosted = gui.add_argument_group(
+        "serving it to someone else",
+        "For a service that runs the GUI for other people, behind a proxy "
+        "that signs them in. The proxy adds a secret to every request, read "
+        "here from FASTMDX_PROXY_SECRET; requests without it are refused. "
+        "See docs/hosting.md.")
+    hosted.add_argument("--hosted", action="store_true",
+                        help="Serve through a signing-in proxy: answer only "
+                             "requests carrying its secret, under the names "
+                             "given with --allowed-host, inside --workspace.")
+    hosted.add_argument("--workspace", default=None, metavar="DIR",
+                        help="With --hosted: the one folder the GUI reads and "
+                             "writes. New studies go here, and nothing outside "
+                             "it is opened. Default: the current directory.")
+    hosted.add_argument("--allowed-host", action="append", default=[],
+                        metavar="NAME",
+                        help="With --hosted: a name the proxy serves this GUI "
+                             "under, such as app.example.org. Repeat for more.")
 
 
     # ---------- agent: write a study from a sentence ------------------------
@@ -2328,6 +2346,25 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     # the GUI open on the overview of that run -- an overview of nothing.
     watching_a_run = bool(getattr(args, "output", None))
     output = Path(args.output) if watching_a_run else Path.cwd()
+    hosting = None
+    if getattr(args, "hosted", False):
+        from fastmdxplora.gui.hosting import Hosting, HostingError
+
+        try:
+            hosting = Hosting.from_environment(
+                args.workspace or Path.cwd(), args.allowed_host)
+        except HostingError as exc:
+            print(f"fastmdx gui: {exc}", file=sys.stderr)
+            return 2
+        # The workspace is where the person starts, with no study open, and
+        # there is no browser on this machine to open.
+        output = hosting.workspace
+        watching_a_run = False
+        args.no_browser = True
+    elif getattr(args, "workspace", None) or getattr(args, "allowed_host", None):
+        print("fastmdx gui: --workspace and --allowed-host apply only with --hosted.",
+              file=sys.stderr)
+        return 2
     config = DashboardConfig(
         ligand_resname=getattr(args, "ligand_resname", None),
         binding_pocket_cutoff_A=float(
@@ -2358,6 +2395,7 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
         config=config,
         home_mode=not watching_a_run,
         on_ready=on_ready,
+        hosting=hosting,
     )
     return 0
 

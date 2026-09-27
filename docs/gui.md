@@ -263,6 +263,9 @@ finished, and read there — see
 | `--no-browser` | Print the URL instead of opening a tab | opens a tab |
 | `--ligand-resname NAME` | Which residue the viewer treats as the ligand | auto-detected |
 | `--binding-pocket-cutoff-A X` | How near counts as the pocket | `5.0` |
+| `--hosted` | Serve it to someone else, through a proxy that signs them in; see [Serving the GUI to other people](hosting.md) | off |
+| `--workspace DIR` | With `--hosted`: the one folder it reads and writes | current directory |
+| `--allowed-host NAME` | With `--hosted`: a name the proxy serves it under; repeat for more | none; required |
 
 **That is the whole of it.** The dashboard flags — `--dashboard-host`,
 `--dashboard-port`, `--dashboard-refresh-seconds`,
@@ -289,7 +292,9 @@ fastmdx explore … --dashboard
 ## Who can reach it
 
 **There is no login anywhere, so the bind address is the whole of the trust
-model.**
+model.** A service that runs the GUI for other people puts a sign-in in front
+of it and starts it with `--hosted`, which is described in
+[Serving the GUI to other people](hosting.md).
 
 By default that is `127.0.0.1`, the loopback interface. A browser tab on the
 same machine can reach it; nothing else on the network can.
@@ -345,7 +350,7 @@ loopback the server therefore answers only to a loopback name (`localhost`,
 Anywhere, it refuses a POST whose `Origin` is not its own, and an API request
 that a browser tab marks as coming from another site. A script or `curl` sends
 no `Origin` and is answered as before. A proxy in front of the GUI must pass
-it a loopback `Host`.
+it a loopback `Host`, unless it is started with `--hosted`.
 
 ### On a shared machine, loopback is not private
 
