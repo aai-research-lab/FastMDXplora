@@ -106,7 +106,8 @@ _SETUP_OPTIONS: list[tuple[str, str, dict[str, Any]]] = [
 
 _SIMULATION_OPTIONS: list[tuple[str, str, dict[str, Any]]] = [
     ("duration-ns", "duration_ns", {"type": float,
-        "help": "Production length in ns (standard MD convention; equilibration is independent)."}),
+        "help": ("Production length in ns (standard MD convention; equilibration is "
+                 "independent). 0 equilibrates and stops, with no production.")}),
     ("nvt-duration-ns", "nvt_duration_ns", {"type": float,
         "help": "NVT equilibration in ns (default: fixed 500 ps regardless of production length)."}),
     ("npt-duration-ns", "npt_duration_ns", {"type": float,

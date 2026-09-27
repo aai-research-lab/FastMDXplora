@@ -450,6 +450,8 @@ def methods_paragraphs(
                 f"{_steps_to_ns(production, timestep)} in the "
                 f"{production_ensemble.upper()} ensemble."
             )
+        elif production == 0:
+            protocol.append("No production was run: the study equilibrated only.")
         if integrator and timestep:
             protocol.append(
                 f"Equations of motion were integrated with the {integrator} "
@@ -469,13 +471,13 @@ def methods_paragraphs(
         # production. Stated without saying which, it reads as production's.
         barostat = (f", with the barostat applied every {barostat_every} steps"
                     if barostat_every else "")
-        if pressure is not None and production_ensemble == NPT:
+        if pressure is not None and production_ensemble == NPT and production != 0:
             protocol.append(f"Pressure was maintained at {pressure} bar{barostat}.")
         elif pressure is not None and npt:
             protocol.append(
                 f"Pressure was maintained at {pressure} bar during NPT "
                 f"equilibration{barostat}.")
-        if interval and timestep:
+        if interval and timestep and production != 0:
             protocol.append(
                 f"Coordinates were written every "
                 f"{_steps_to_ns(interval, timestep)}."

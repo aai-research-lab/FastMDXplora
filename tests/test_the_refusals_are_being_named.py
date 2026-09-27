@@ -38,6 +38,9 @@ NOT_REFUSALS = frozenset({
     # and the adopted-process handle raises the same so the runtime's
     # stop() can catch it by name whichever kind of process it holds.
     "TimeoutExpired",
+    # A phase with nothing to do saying so: the study is not refused, and
+    # the phase is recorded as skipped with the reason it carries.
+    "PhaseSkipped",
 })
 
 #: Helpers that carry an inner refusal's code out to an outer raise. A site

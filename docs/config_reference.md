@@ -167,7 +167,7 @@ independent of production length** — a 500 ns production run gets the same
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `duration_ns` | int or float | 2 ns | Production length |
+| `duration_ns` | int or float | 2 ns | Production length; 0 equilibrates and stops |
 | `nvt_duration_ns` | int or float | 500 ps | NVT equilibration |
 | `npt_duration_ns` | int or float | 1 ns | NPT equilibration |
 | `production_steps` | int | 1,000,000 | Overrides `duration_ns` |

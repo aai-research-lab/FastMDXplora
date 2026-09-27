@@ -96,6 +96,20 @@ def run(
 
     presenter = getattr(orchestrator, "_presenter", None)
 
+    # A study that asked for no production (`duration_ns: 0`) has nothing to
+    # analyse, and says so as a skip with its reason rather than as a
+    # deferral waiting for a trajectory that will never come.
+    if not Path(traj_path).exists() and _production_was_zero(project_root):
+        from fastmdxplora.orchestrator import PhaseSkipped
+
+        reason = ("the study equilibrated only, with no production, so there "
+                  "is no trajectory to analyse")
+        manifest_path = output_dir / "analysis_manifest.json"
+        with manifest_path.open("w", encoding="utf-8") as fh:
+            json.dump({"phase": "analysis", "status": "skipped", "note": reason},
+                      fh, indent=2)
+        raise PhaseSkipped(reason, ["analysis_manifest.json"])
+
     # Graceful degradation when the simulation phase hasn't produced
     # a real trajectory yet.
     if not Path(traj_path).exists():
@@ -277,3 +291,15 @@ def _detect_ligand_resname(project_root: Path) -> str | None:
         return None
     name = ligand.get("name")
     return str(name) if name else None
+
+
+def _production_was_zero(project_root: Path) -> bool:
+    """Whether the run's record says it ran no production steps."""
+    import json
+
+    record = Path(project_root) / "simulation" / "simulation_parameters.json"
+    try:
+        resolved = json.loads(record.read_text(encoding="utf-8")).get("resolved") or {}
+    except (OSError, ValueError, AttributeError):
+        return False
+    return isinstance(resolved, dict) and resolved.get("production_steps") == 0

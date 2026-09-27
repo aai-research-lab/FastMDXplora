@@ -1279,7 +1279,8 @@ def plan_stages(
       - ``duration_ns``: production time.
 
     Step-count overrides win over duration-ns overrides if both are
-    supplied (lower-level wins; explicit beats inferred). A stated
+    supplied (lower-level wins; explicit beats inferred). ``duration_ns: 0``
+    is a study that equilibrates and stops, with no production. A stated
     equilibration length of zero is zero, as ``npt_steps: 0`` is: it was
     read as unset, so ``npt_duration_ns: 0`` ran the default nanosecond of
     NPT while the ensemble resolver, the cost estimate and the record read
@@ -1287,7 +1288,7 @@ def plan_stages(
     """
     if production_steps is not None:
         auto_prod = int(production_steps)
-    elif duration_ns is not None and duration_ns > 0:
+    elif duration_ns is not None and duration_ns >= 0:
         steps_per_ns = int(round(1_000_000.0 / float(timestep_fs)))
         auto_prod = int(round(duration_ns * steps_per_ns))
     else:

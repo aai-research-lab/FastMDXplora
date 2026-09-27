@@ -58,6 +58,21 @@ logger = get_logger("project")
 PHASES: tuple[str, ...] = ("setup", "simulation", "analysis", "report")
 
 
+class PhaseSkipped(Exception):
+    """Raised by a phase that has nothing to do, and says why.
+
+    Recorded as ``skipped`` with the reason, not as ``ok``: an analysis of a
+    study that ran no production wrote "Phase 'analysis' completed." over a
+    manifest saying it had deferred, and a reader of the record could not
+    tell it from one that measured something.
+    """
+
+    def __init__(self, reason: str, artifacts: list[str] | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.artifacts = list(artifacts or [])
+
+
 @dataclass
 class PhaseResult:
     """Lightweight record of a single phase invocation."""
@@ -519,7 +534,10 @@ class FastMDXplora:
             self._presenter.phase_start(phase)
             result = self._run_phase(phase, merged_options.get(phase, {}))
             self.results.append(result)
-            self._presenter.phase_end(phase, status=result.status)
+            self._presenter.phase_end(
+                phase, status=result.status,
+                message=(f"{phase} skipped: {result.message}"
+                         if result.status == "skipped" else None))
             self._mark_dashboard_phase_end(dashboard_writer, phase, result)
             if result.status == "error":
                 logger.error("Phase '%s' failed: %s", phase, result.message)
@@ -1094,6 +1112,17 @@ class FastMDXplora:
                 finished_at=finished,
                 message=f"Phase '{phase}' completed.",
                 artifacts=list(artifacts or []),
+                produced_by=self._phase_provenance(),
+            )
+        except PhaseSkipped as skipped:
+            return PhaseResult(
+                name=phase,
+                status="skipped",
+                output_dir=phase_dir,
+                started_at=started,
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                message=skipped.reason,
+                artifacts=skipped.artifacts,
                 produced_by=self._phase_provenance(),
             )
         except Exception as exc:  # noqa: BLE001 -- we log and record

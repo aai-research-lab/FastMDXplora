@@ -494,7 +494,8 @@ SIMULATION = PhaseSchema(
               example="unvalidated"),
         Field("duration_ns", (int, float), None,
               "Production length in ns (standard MD convention — "
-              "equilibration is independent). Default: 2 ns.",
+              "equilibration is independent). 0 equilibrates and stops, "
+              "with no production. Default: 2 ns.",
               example=100.0,
                     minimum=0.0),
         Field("nvt_duration_ns", (int, float), None,

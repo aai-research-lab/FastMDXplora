@@ -151,13 +151,16 @@ class TestPlanStages:
         assert plan["npt_steps"] == _runner.DEFAULT_NPT_STEPS
         assert plan["production_steps"] == 5_000_000
 
-    def test_zero_duration_falls_through_to_defaults(self):
+    def test_zero_duration_runs_no_production(self):
+        # `duration_ns` is the production length, so zero equilibrates and
+        # stops. It used to fall through to the 2 ns default while the cost
+        # estimate counted no production.
         plan = _runner.plan_stages(
             duration_ns=0.0, timestep_fs=2.0,
             nvt_steps=None, npt_steps=None, production_steps=None,
         )
         assert plan["nvt_steps"] == 250_000
-        assert plan["production_steps"] == 1_000_000
+        assert plan["production_steps"] == 0
 
 
 class TestTrajectoryInterval:

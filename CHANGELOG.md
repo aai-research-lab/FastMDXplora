@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `duration_ns: 0` equilibrates and stops
+
+`duration_ns` is the production length, so zero now means no production: the
+study is set up, minimised and equilibrated, and ends there. The runner read
+zero as unset and ran the default 2 ns, while the cost estimate counted none.
+The analysis phase of such a study is recorded as skipped, with the reason,
+rather than as completed, and the methods paragraph says no production was
+run instead of describing coordinates that were never written.
+
 ### A ligand charge that cannot be read is refused
 
 **A supplied ligand whose net charge could not be read went ahead as
