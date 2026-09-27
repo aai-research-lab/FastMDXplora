@@ -1279,7 +1279,11 @@ def plan_stages(
       - ``duration_ns``: production time.
 
     Step-count overrides win over duration-ns overrides if both are
-    supplied (lower-level wins; explicit beats inferred).
+    supplied (lower-level wins; explicit beats inferred). A stated
+    equilibration length of zero is zero, as ``npt_steps: 0`` is: it was
+    read as unset, so ``npt_duration_ns: 0`` ran the default nanosecond of
+    NPT while the ensemble resolver, the cost estimate and the record read
+    it as no NPT stage and constant-volume production.
     """
     if production_steps is not None:
         auto_prod = int(production_steps)
@@ -1292,7 +1296,7 @@ def plan_stages(
     # NVT: fixed default, optionally overridden by ns-flavored kwarg
     if nvt_steps is not None:
         auto_nvt = int(nvt_steps)
-    elif nvt_duration_ns is not None and nvt_duration_ns > 0:
+    elif nvt_duration_ns is not None and nvt_duration_ns >= 0:
         steps_per_ns = int(round(1_000_000.0 / float(timestep_fs)))
         auto_nvt = int(round(nvt_duration_ns * steps_per_ns))
     else:
@@ -1301,7 +1305,7 @@ def plan_stages(
     # NPT: same pattern
     if npt_steps is not None:
         auto_npt = int(npt_steps)
-    elif npt_duration_ns is not None and npt_duration_ns > 0:
+    elif npt_duration_ns is not None and npt_duration_ns >= 0:
         steps_per_ns = int(round(1_000_000.0 / float(timestep_fs)))
         auto_npt = int(round(npt_duration_ns * steps_per_ns))
     else:

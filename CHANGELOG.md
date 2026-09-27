@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A stated zero equilibration is zero
+
+**`npt_duration_ns: 0` ran a nanosecond of NPT and recorded NVT.** The runner
+read a zero equilibration length as unset and ran the default, while the
+ensemble resolver, the cost estimate and the run's record read it as no stage:
+the record said constant-volume production of a run that produced at constant
+pressure. `nvt_duration_ns: 0` ran the default 500 ps the same way. A stated
+zero is now zero everywhere, as `npt_steps: 0` always was. Present in 2.5.6 and
+2.5.7.
+
 ### Re-analysing an older run keeps the version that produced it
 
 **A Manifest merged onto one from before phases recorded their version lost
