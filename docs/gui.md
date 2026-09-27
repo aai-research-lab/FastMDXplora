@@ -336,6 +336,17 @@ Then open `http://localhost:8765` at home. SSH carries the traffic, your SSH
 key is the authentication, and the GUI still believes it is serving a local
 browser tab. It chains through a jump host, which covers the cluster case.
 
+### Other websites open beside it
+
+A browser tab on any website can send requests to `127.0.0.1`, so on loopback
+"only this machine" would include every page open while the GUI runs. On
+loopback the server therefore answers only to a loopback name (`localhost`,
+`127.0.0.1`, `[::1]`), which defeats a name made to resolve to your machine.
+Anywhere, it refuses a POST whose `Origin` is not its own, and an API request
+that a browser tab marks as coming from another site. A script or `curl` sends
+no `Origin` and is answered as before. A proxy in front of the GUI must pass
+it a loopback `Host`.
+
 ### On a shared machine, loopback is not private
 
 This is the case the gate above does not cover, and it is worth reading twice.

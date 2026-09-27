@@ -363,6 +363,8 @@ def make_handler(
         def _dispatch(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+            if self._refused_as_from_elsewhere(api=path.startswith("/api/")):
+                return
             root = app_runtime.data_root()
             if not allow_control:
                 if not _get_answered_beyond_loopback(path):
@@ -555,6 +557,8 @@ def make_handler(
         def _dispatch_post(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+            if self._refused_as_from_elsewhere(api=True, posting=True):
+                return
             if not allow_control and path not in POSTS_ANSWERED_BEYOND_LOOPBACK:
                 # Refused unless listed as open; see the list for why.
                 self._refuse_beyond_loopback()
@@ -719,6 +723,36 @@ def make_handler(
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             return
+
+        def _refused_as_from_elsewhere(self, *, api: bool, posting: bool = False) -> bool:
+            """Refuse what a page on another site asked a browser to send.
+
+            A browser sends a request to 127.0.0.1 for any page it has open,
+            so on loopback "only this machine" meant "any website visited
+            while the GUI runs": a form posted as text/plain switched the
+            served folder, stored a model and key, or started a run, and a
+            name that resolves to 127.0.0.1 (DNS rebinding) let a page read
+            the answers too. On loopback the server answers only to a
+            loopback name, and anywhere it refuses a POST whose Origin is
+            not its own, and an API request a browser marks as cross-site.
+            A script or `curl` sends no Origin and is answered as before.
+            """
+            host = self.headers.get("Host") or ""
+            if allow_control and host and not _names_this_machine(host):
+                why = "This server answers only to localhost."
+            else:
+                origin = self.headers.get("Origin")
+                fetched_from = (self.headers.get("Sec-Fetch-Site") or "").lower()
+                crossing = fetched_from in {"cross-site", "same-site"}
+                if posting and origin is not None:
+                    crossing = crossing or origin.lower() != f"http://{host.lower()}"
+                if not (crossing and (api or posting)):
+                    return False
+                why = "A request from another site is refused."
+            if posting:
+                self._drain_request_body()
+            self._send_json({"ok": False, "error": why}, status=403)
+            return True
 
         # ---- Generic response helpers ----
         def _refuse_beyond_loopback(self) -> None:
@@ -2119,3 +2153,20 @@ def _open_local_path(path: Path) -> tuple[bool, str]:
 def _is_loopback_host(host: str) -> bool:
     normalized = str(host).strip().lower().strip("[]")
     return normalized in {"127.0.0.1", "localhost", "::1"}
+
+
+def _names_this_machine(host_header: str) -> bool:
+    """Whether a Host header names this machine by loopback, port aside."""
+    import ipaddress
+
+    value = host_header.strip().lower()
+    if value.startswith("["):
+        name = value[1:value.find("]")] if "]" in value else value[1:]
+    else:
+        name = value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False

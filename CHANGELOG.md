@@ -57,6 +57,18 @@ server now reads the person's own message: a plain instruction, such as *run
 it* or *go ahead*, runs as before, and any other `DO: run` asks *Run the study
 above? Say yes.* and waits, as a stop always has. Present in 2.5.6 and 2.5.7.
 
+### A page on another site cannot drive the GUI
+
+**Any website open in the person's browser could use the GUI on loopback.**
+A browser sends requests to `127.0.0.1` for any page, and the server
+answered whatever reached it: a form posted as text/plain could switch the
+served folder, store a model and key, or start a run, and a name made to
+resolve to `127.0.0.1` let a page read the answers, conversations included.
+On loopback the server now answers only to a loopback name, and it refuses a
+POST whose `Origin` is not its own and an API request the browser marks as
+cross-site. Scripts and `curl`, which send no `Origin`, are answered as
+before. Present in 2.5.6 and 2.5.7.
+
 ### A ligand is given its charges on a fresh install
 
 **A fresh conda-forge install of 2.5.7 could not parameterize any ligand.**
