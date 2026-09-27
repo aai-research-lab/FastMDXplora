@@ -677,3 +677,69 @@ def test_the_resolved_config_exists_before_the_first_phase_runs(tmp_path):
     assert first_write < loop, "the resolved config must be written before the loop"
     # And still written at the end, so what actually ran is the final record.
     assert source.count("self._write_resolved_config()") >= 2
+
+
+class TestAnOlderRunReanalysedKeepsItsVersion:
+    """A manifest written before phases recorded `produced_by`.
+
+    Re-analysing a 2.5.4 benchmark run under 2.5.7 left a manifest saying
+    2.5.7, `versions_seen` absent, and nothing anywhere saying the trajectory
+    came from 2.5.4: the phases carried no `produced_by`, and the top-level
+    version that did say it was overwritten.
+    """
+
+    def _older(self, tmp_path: Path, **extra) -> None:
+        (tmp_path / "manifest.json").write_text(json.dumps({
+            "tool": "FastMDXplora", "version": "2.5.4",
+            "phases": [{"name": "setup", "status": "ok"},
+                       {"name": "simulation", "status": "ok"},
+                       {"name": "analysis", "status": "ok"}],
+            "options": {}, **extra,
+        }, indent=2))
+
+    def _reanalyse(self, tmp_path: Path) -> dict:
+        from fastmdxplora import __version__
+
+        fmdx = FastMDXplora(system="x.pdb", output_dir=tmp_path)
+        fmdx.results.append(PhaseResult(
+            name="analysis", status="ok", produced_by={"version": __version__}))
+        fmdx._write_manifest()
+        return json.loads((tmp_path / "manifest.json").read_text())
+
+    def test_the_carried_phases_say_which_version_wrote_them(self, tmp_path) -> None:
+        from fastmdxplora import __version__
+
+        self._older(tmp_path)
+        manifest = self._reanalyse(tmp_path)
+        by_name = {p["name"]: p for p in manifest["phases"]}
+        for name in ("setup", "simulation"):
+            assert by_name[name]["produced_by"] == {"version": "2.5.4", "inferred": True}
+        assert by_name["analysis"]["produced_by"] == {"version": __version__}
+
+    def test_versions_seen_lists_both(self, tmp_path) -> None:
+        from fastmdxplora import __version__
+
+        self._older(tmp_path)
+        manifest = self._reanalyse(tmp_path)
+        assert manifest["versions_seen"] == ["2.5.4", __version__]
+        assert manifest["version"] == __version__
+
+    def test_a_version_seen_earlier_is_not_dropped(self, tmp_path) -> None:
+        """Seen once, kept, even after every phase it produced is re-run."""
+        from fastmdxplora import __version__
+
+        self._older(tmp_path, versions_seen=["2.5.3", "2.5.4"])
+        manifest = self._reanalyse(tmp_path)
+        assert manifest["versions_seen"] == ["2.5.3", "2.5.4", __version__]
+
+    def test_a_recorded_version_is_never_replaced_by_an_inferred_one(
+            self, tmp_path) -> None:
+        (tmp_path / "manifest.json").write_text(json.dumps({
+            "tool": "FastMDXplora", "version": "2.5.6",
+            "phases": [{"name": "setup", "status": "ok",
+                        "produced_by": {"version": "2.5.5", "host": "h"}}],
+            "options": {},
+        }))
+        manifest = self._reanalyse(tmp_path)
+        setup = next(p for p in manifest["phases"] if p["name"] == "setup")
+        assert setup["produced_by"] == {"version": "2.5.5", "host": "h"}

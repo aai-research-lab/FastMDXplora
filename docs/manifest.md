@@ -136,7 +136,10 @@ in place and keeps the rest, in first-seen order.
 
 Where phases came from different versions, the top-level `version` is the
 session that wrote the file, `versions_seen` lists them all, and a
-`version_note` says so.
+`version_note` says so. A phase carried over from a Manifest written before
+phases recorded `produced_by` gets `{"version": ..., "inferred": true}`: the
+version that wrote the Manifest it was in, which produced it or came after the
+one that did.
 
 The Manifest is written at the end of a session. A session that crashes partway
 through a phase leaves no Manifest for that session — but the phase's own

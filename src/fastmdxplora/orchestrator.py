@@ -1206,6 +1206,20 @@ class FastMDXplora:
             phase_records[name] = record
             if name not in phase_order:
                 phase_order.append(name)
+        # A phase carried over from a manifest written before phases recorded
+        # `produced_by` names no version, and the top-level `version` that
+        # did is about to be replaced by this session's. Re-analysing a 2.5.4
+        # run under 2.5.7 then left a manifest saying 2.5.7 with nothing
+        # anywhere saying the trajectory came from 2.5.4. The version that
+        # wrote the manifest the phase was in is written onto it instead,
+        # marked inferred: the phase was produced by that version or an
+        # earlier one, which is less than a record and more than nothing.
+        previous_version = previous.get("version")
+        if previous_version:
+            for record in phase_records.values():
+                if not isinstance(record.get("produced_by"), dict):
+                    record["produced_by"] = {"version": str(previous_version),
+                                             "inferred": True}
         current_phases = [result.to_dict() for result in self.results]
         for record in current_phases:
             name = str(record["name"])
@@ -1225,7 +1239,14 @@ class FastMDXplora:
         # version appears the manifest says so here, so that a reader who
         # checks only the top of the file is not told a single version
         # produced the lot.
+        # What earlier sessions already recorded, then the phases, then this
+        # one, so a version is not lost when the phase it produced is re-run.
         versions_seen: list[str] = []
+        earlier = previous.get("versions_seen")
+        for version in [*(earlier if isinstance(earlier, list) else []),
+                        previous_version]:
+            if version and str(version) not in versions_seen:
+                versions_seen.append(str(version))
         for name in phase_order:
             produced = phase_records[name].get("produced_by")
             version = (produced or {}).get("version") if isinstance(produced, dict) else None

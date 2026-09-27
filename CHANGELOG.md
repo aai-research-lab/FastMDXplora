@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Re-analysing an older run keeps the version that produced it
+
+**A Manifest merged onto one from before phases recorded their version lost
+it.** Re-analysing a 2.5.4 run under 2.5.7 left `"version": "2.5.7"`, no
+`versions_seen`, and nothing saying the trajectory came from 2.5.4. A phase
+carried over without `produced_by` now gets `{"version": <the version that
+wrote the Manifest it was in>, "inferred": true}`, and `versions_seen` keeps
+every version recorded before, including one whose phases have all been
+re-run since.
+
 ### An interaction is counted for the chain it happened in
 
 **`pl_interactions` added the same residue of two chains together.** Its
