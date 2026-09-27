@@ -113,10 +113,11 @@ Settled = Equilibrated
 def statistical_inefficiency(series: np.ndarray) -> float:
     """Frames per independent sample: ``g = 1 + 2 sum (1 - t/n) C(t)``.
 
-    ``C`` is the normalised fluctuation autocorrelation. The sum is truncated
-    at the first non-positive ``C``, which is the standard convention: past
-    that point the estimates are noise, and summing them adds variance rather
-    than information.
+    ``C`` is the normalised fluctuation autocorrelation. Past the lag where
+    it has decayed the estimates are noise, and summing them adds variance
+    rather than information, so the sum stops there. Where it stops is taken
+    from adjacent pairs, ``C(2k) + C(2k+1)``, not from single lags: see
+    :func:`_inefficiency_and_reach`.
 
     A constant series has no fluctuations to correlate, so ``g`` is one: every
     frame agrees, and there is nothing for a correlation time to describe.
@@ -144,29 +145,51 @@ def _inefficiency_and_reach(
 ) -> tuple[float, bool]:
     """The inefficiency, and whether the correlation decayed within the run.
 
-    The sum truncates at the first non-positive correlation. When it instead
-    runs out of series, the correlation was still positive at the longest lag
-    the run can measure, and everything past that is missing from the sum: the
-    inefficiency comes back too small and the independent-sample count too
-    large. On a series of 4000 frames with a true inefficiency of 2000, the
-    estimate was 361 -- and 11 apparent independent samples cleared a
-    threshold of 10.
+    Summed over adjacent pairs of lags, ``P(k) = C(2k) + C(2k+1)``, up to the
+    first pair that is not positive: Geyer's initial positive sequence
+    (Statistical Science 7, 473, 1992). His monotone variant, which holds
+    each pair no larger than the one before, was tried and left out: on a
+    run joined from segments with small offsets between them it read the
+    weak, long correlation lower still than the single-lag rule did, and an
+    inefficiency read low is a standard error read small. The sum ran over single lags and stopped at the first ``C``
+    that was not positive, and a series whose frames alternate stops there
+    at once. A stiff restraint sampled slower than the mode it restrains
+    does exactly that, so a window read ``g = 1`` whatever moved underneath:
+    on a series whose true inefficiency is 120, a slow mode under a fast
+    one that alternates frame to frame, the single-lag rule returned 1.0.
+    That is a correlation time of nothing, which the halving test then
+    passes as having nothing to resolve. A pair of lags cancels the
+    alternation and keeps what is slow. Where the correlation decays without
+    alternating, the two rules stop at the same place and agree.
 
-    So the second value is not a detail. It is the difference between a
+    The second value says whether a pair went non-positive before the series
+    ran out. When it did not, the correlation was still positive at the
+    longest lag the run can measure, and everything past that is missing from
+    the sum: the inefficiency comes back too small and the independent-sample
+    count too large. On a series of 4000 frames with a true inefficiency of
+    2000, the estimate was 361 -- and 11 apparent independent samples cleared
+    a threshold of 10. So it is not a detail. It is the difference between a
     measurement and a lower bound, and a run in that state is too short to
     say how short it is.
     """
-    total = 0.0
-    decayed = False
-    for lag in range(1, n - 1):
-        correlation = float(
+    def correlation(lag: int) -> float:
+        if lag == 0:
+            return 1.0
+        return (1.0 - lag / n) * float(
             np.mean(fluctuation[: n - lag] * fluctuation[lag:]) / variance)
-        if correlation <= 0.0:
+
+    total = -1.0
+    decayed = False
+    pair = 0
+    while 2 * pair + 1 < n - 1:
+        value = correlation(2 * pair) + correlation(2 * pair + 1)
+        if value <= 0.0:
             decayed = True
             break
-        total += (1.0 - lag / n) * correlation
+        total += 2.0 * value
+        pair += 1
 
-    return max(1.0, 1.0 + 2.0 * total), decayed
+    return max(1.0, total), decayed
 
 
 #: How far the inefficiency may move when the series is halved before the
@@ -319,8 +342,9 @@ def summarise(
         # lower bound, and a number wrong in a knowable direction is worse
         # than no number: the caveat is read once and the figure is used
         # thereafter. Measured on ten replicas of one system differing only
-        # by integrator seed, errors computed this way came out five to eight
-        # times smaller than the spread of the ten means.
+        # by integrator seed, 20 ns each, errors computed from one run came
+        # out about ten times smaller than the spread of the ten means, and
+        # no better in the runs whose correlation this test called resolved.
         standard_error=float(np.std(kept, ddof=1) / np.sqrt(effective))
         if (effective > 1 and resolved) else float("nan"),
         standard_deviation=float(np.std(kept, ddof=1)),
@@ -334,9 +358,9 @@ def summarise(
             f"count of {effective:.1f} is an upper bound, so an error computed "
             "from it would be a lower bound -- and none is reported here "
             "rather than one that is wrong in a knowable direction. On ten "
-            "replicas of one system differing only by seed, errors of this "
-            "kind were five to eight times smaller than the spread of the ten "
-            "means. The remedy is a longer run, or replicas.",
+            "replicas of one system differing only by seed, errors computed "
+            "from one run were about ten times smaller than the spread of the "
+            "ten means. The remedy is a longer run, or better, replicas.",
             code="analysis.sampling.correlation_unresolved",
             frames=int(kept.size), independent=float(effective),
             statistical_inefficiency=float(g),

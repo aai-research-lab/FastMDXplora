@@ -71,7 +71,10 @@ of reading a result.
 **A number, plainly.** A settled mean arrives with a standard error and the
 number of **independent observations** behind it, not the number of frames.
 Saving frames more often makes a file larger without making a measurement
-better, so the effective sample count is the figure to read.
+better, so the effective sample count is the figure to read. The correlation
+behind it is summed over pairs of lags, so frames that alternate, as a stiff
+restraint sampled more slowly than it oscillates makes them, do not read as
+independent when something slower moves underneath.
 
 **A number, with a statement of what it does not support.** A finding carrying
 `not_a_measurement` is still reported, because the value is often the best
@@ -167,8 +170,10 @@ produced them.
 Members differing only by random seed are repeats of one measurement, so the
 spread of their means is the **error** on it, and it is set against the error
 each run estimated for itself; where the replicas spread much wider, the
-single-run estimate was reading a correlation time off a trajectory too short
-to contain it. Members differing by system, mutation or parameter are different
+single-run estimate missed correlation its run could not see. On ten 20 ns
+replicas of one protein and ligand, the spread was about ten times the error
+one run estimated, including in runs whose correlation time was resolved, so
+replicas are the measure of that error, not a check on it. Members differing by system, mutation or parameter are different
 measurements, so the spread between them is the **result**. The file says which
 it decided and why.
 

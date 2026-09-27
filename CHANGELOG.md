@@ -7,6 +7,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Frames that alternate no longer read as independent
+
+**A slow correlation under a fast, alternating one was invisible.** The
+statistical inefficiency summed the autocorrelation lag by lag and stopped at
+the first lag that was not positive. A stiff restraint sampled more slowly
+than the mode it restrains makes consecutive frames anti-correlated, so the
+sum stopped at lag one and every frame counted as independent: on a series
+whose true inefficiency is 120 it returned 1.0, and the halving test then
+called the correlation resolved. 21 of the 35 windows of the benzamidine
+unbinding study reported a correlation time they could not have measured. The
+sum now runs over adjacent pairs of lags (Geyer's initial positive sequence),
+which recovers the slow part and gives the same answer as before where
+nothing alternates. Standard errors, block lengths and the resolved verdict
+all follow. The message withholding an error now quotes the replica
+calibration: one run's error was about ten times smaller than the spread of
+ten replicas. Present in 2.5.6 and 2.5.7.
+
 ### A molecule away from the protein is measured beside it
 
 **A ligand that had left the pocket could be measured a box length away.**
