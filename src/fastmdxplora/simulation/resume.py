@@ -672,6 +672,19 @@ def extension_of(study: str | Path, *, total_ns: float | None = None,
                         config=config)
 
 
+def study_to_continue(config: dict[str, Any] | None) -> Path | None:
+    """The study a config continues, where ``simulation.resume_from`` names a
+    study directory; None where it names a checkpoint file, which is the raw
+    mechanism and an ordinary run, or nothing. One reading for the command
+    line, the Python API and the GUI, which launches through the first."""
+    simulation = (config or {}).get("simulation") or {}
+    named = simulation.get("resume_from") if isinstance(simulation, dict) else None
+    if not named:
+        return None
+    study = Path(str(named)).expanduser()
+    return study if study.is_dir() else None
+
+
 def extend_study(study: str | Path, *, total_ns: float | None = None,
                  more_ns: float | None = None,
                  analyse: bool = True) -> dict[str, Any]:
@@ -746,7 +759,13 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     from fastmdxplora import FastMDXplora
 
     study_run = FastMDXplora(config_data=plan.config, output_dir=str(segment))
-    study_run.explore()
+    ran = study_run.explore()
+    failed = [r for r in ran if r.status != "ok"]
+    if failed:
+        # Said as what it is. Left to the join, a segment that failed read
+        # as one that could not be joined.
+        return {"ok": False, "stage": "simulation", "segment": str(segment),
+                "error": failed[0].message or f"{segment.name} did not finish."}
 
     # Every finished segment, in one trajectory, in the study's own folder.
     joined_dir = root / "joined"

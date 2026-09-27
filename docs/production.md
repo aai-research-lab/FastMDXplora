@@ -462,6 +462,19 @@ written from, and refusing rather than proceeding on a mismatch. That is the
 mechanism segments are built on, and the table above says which methods may use
 it.
 
+Naming a study directory instead continues that study in place: its next
+segment runs inside it, every segment is joined, and the analyses and report
+are rerun over the whole. `duration_ns` is then the total production the study
+should end with, and `extra_ns` an amount more. The same config does this from
+the command line, from Python and from the GUI:
+
+```python
+from fastmdxplora import FastMDXplora
+
+FastMDXplora(config_data={"simulation": {"resume_from": "runs/study",
+                                         "extra_ns": 5}}).explore()
+```
+
 If the run became unstable rather than being killed, the message says which
 atoms went wrong and what that points at — see
 [When a run fails](studies.md#when-a-run-fails). Nothing is retried

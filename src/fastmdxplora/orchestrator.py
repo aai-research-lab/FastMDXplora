@@ -178,6 +178,23 @@ class RunResult:
         return None
 
 
+
+def _phases_recorded_in(root: Path) -> list[PhaseResult]:
+    """The phases a study's Manifest records, as results."""
+    try:
+        manifest = json.loads((Path(root) / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    known = set(PhaseResult.__dataclass_fields__)
+    out = []
+    for record in manifest.get("phases") or []:
+        if isinstance(record, dict) and record.get("name") and record.get("status"):
+            fields = {k: v for k, v in record.items() if k in known}
+            if fields.get("output_dir"):
+                fields["output_dir"] = Path(fields["output_dir"])
+            out.append(PhaseResult(**fields))
+    return out
+
 class FastMDXplora:
     """Project-level orchestrator for end-to-end MD studies.
 
@@ -599,6 +616,17 @@ class FastMDXplora:
         is private.
         """
         from fastmdxplora.batch import BatchExplorer
+        from fastmdxplora.simulation.resume import study_to_continue
+
+        if self._config_data is not None:
+            config = self._config_data
+        else:
+            from fastmdxplora.config import load_config_file
+
+            config = load_config_file(self._config_path)
+        continued = study_to_continue(config)
+        if continued is not None:
+            return self._continue_study(continued, config, dry_run=dry_run)
 
         batch = BatchExplorer(
             config=self._config_path,
@@ -630,6 +658,56 @@ class FastMDXplora:
         self.output_dir = batch.output_dir
         self.results = run_results
         return run_results
+
+    def _continue_study(self, study: Path, config: dict[str, Any], *,
+                        dry_run: bool = False) -> list[RunResult]:
+        """Extend a study in place: its next segment, the join, and the
+        analyses and report over the whole, as ``fastmdx explore`` does.
+
+        `simulation.resume_from` naming a study was continued only by the
+        command line. From Python the same config reached the batch layer,
+        which read the study directory as a checkpoint to start a new,
+        separate run from, or refused it for naming no system. The lengths
+        mean what they mean there: `duration_ns` the total production the
+        study should end with, `extra_ns` an amount more.
+        """
+        from fastmdxplora.simulation.resume import extend_study, extension_of
+
+        simulation = dict(config.get("simulation") or {})
+        total, more = simulation.get("duration_ns"), simulation.get("extra_ns")
+        root = study.resolve()
+        self.output_dir = root
+        manifest = {}
+        try:
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        system = str(manifest.get("system") or root.name)
+        if dry_run:
+            plan = extension_of(root, total_ns=total, more_ns=more)
+            result = RunResult(
+                run_id="s1", system=system, output_dir=root,
+                status="planned" if plan.possible else "error",
+                message=(f"Would extend {root.name}: {plan.as_text()}"
+                         if plan.possible else str(plan.refusal)))
+            self.results = [result]
+            return self.results
+        answer = extend_study(root, total_ns=total, more_ns=more)
+        if not answer.get("ok"):
+            result = RunResult(run_id="s1", system=system, status="error",
+                               output_dir=root, message=str(answer.get("error")),
+                               error_type=str(answer.get("stage") or "") or None)
+        else:
+            joined = answer.get("joined") or {}
+            said = (f"Ran {Path(answer['segment']).name} and joined segments "
+                    f"{joined.get('segments') or '?'}.")
+            if answer.get("analysed"):
+                said += f" Analyses and report rerun over {answer['trajectory']}."
+            result = RunResult(run_id="s1", system=system, status="ok",
+                               output_dir=root, message=said,
+                               phases=_phases_recorded_in(root))
+        self.results = [result]
+        return self.results
 
     # Convenience: per-phase entry points (also called by the CLI)
     def setup(self, **kwargs: Unpack[SetupSettings]) -> PhaseResult:

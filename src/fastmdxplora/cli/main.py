@@ -1570,10 +1570,11 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     # wants. The study being continued supplies the systems and the phases,
     # which is why the usual "explore requires a system" check comes after
     # this rather than before it.
+    from fastmdxplora.simulation.resume import study_to_continue
+
     simulation = config.get("simulation") or {}
-    resume_from = simulation.get("resume_from")
-    continuing = bool(resume_from) and Path(str(resume_from)).is_dir()
-    if continuing and not getattr(args, "dry_run", False):
+    resume_from = study_to_continue(config)
+    if resume_from is not None and not getattr(args, "dry_run", False):
         from fastmdxplora.simulation.resume import extend_study
 
         answer = extend_study(resume_from,

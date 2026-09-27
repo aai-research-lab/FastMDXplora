@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Python continues a study as the command line does
+
+**`simulation.resume_from` naming a study directory was a continuation only on
+the command line.** From Python the same config went to the batch layer, which
+refused it for naming no system. `FastMDXplora(config=...).explore()` now
+extends the study in place as `fastmdx explore` does, with `duration_ns` the
+total and `extra_ns` an amount more, returns one result for the study, and a
+dry run says what it would run. A segment that fails is reported as a failed
+simulation rather than as a join that could not be made.
+
 ### A ligand pose the structure holds and cannot give is refused
 
 **With `ligand_pose: auto`, a structure holding a residue of the ligand's name
