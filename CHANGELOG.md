@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Each sugar and each ion is judged by its own bonds
+
+**A free sugar was discarded as a glycan when another copy of its name was on
+an asparagine.** Whether a sugar belonged to a glycan was decided per residue
+name, and an inner sugar counted as glycan whenever the structure was
+glycosylated anywhere, so a NAG in an active site beside a glycosylated
+asparagine, or a lactose bonded only to itself, was removed without a
+question. The glycan is now followed from the protein, sugar by sugar,
+through the LINK records; a component with glycan copies and free copies
+stops and names both. **An ion LINKed only to a water was kept as
+"coordinated by the protein"**, 30 A from it: a LINK now counts only to a
+partner that stays in the system, and the reason names it. **An NMR entry's
+heterogens were counted once per model**, so a zinc read as twenty atoms and
+setup asked for an SDF; only the first model, the one prepared, is read.
+Present in 2.5.6 and 2.5.7.
+
 ### A moved study still finds the system it simulated, and only that one
 
 **A run given `setup_from` recorded the prepared system by path alone, as it

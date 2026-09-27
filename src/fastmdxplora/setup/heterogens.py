@@ -186,6 +186,14 @@ class Heterogen:
     icode: str
     atoms: tuple[Atom, ...]
     covalent_to: tuple[str, ...] = ()
+    #: The residues on the other end of each LINK, as (resname, chain,
+    #: resseq, icode): which residue, not only what kind, so a glycan can be
+    #: followed from the protein through its sugars.
+    linked_to: tuple[tuple, ...] = ()
+
+    @property
+    def key(self) -> tuple:
+        return (self.resname, self.chain, self.resseq, self.icode)
 
     @property
     def altlocs(self) -> frozenset[str]:
@@ -276,25 +284,49 @@ def _standard_residues() -> frozenset[str]:
     return frozenset(amino + modified + nucleic)
 
 
-def parse_structure(pdb_path: str | Path) -> tuple[list[Atom], list[Atom], dict[tuple, set[str]]]:
+#: The partner of a LINK record too malformed to name one.
+UNNAMED_PARTNER = ("", "", 0, " ")
+
+
+def parse_structure(pdb_path: str | Path) -> tuple[list[Atom], list[Atom], dict[tuple, set[tuple]]]:
     """Read a PDB file into polymer atoms, heterogen atoms, and covalent links.
+
+    Only the first model is read. An NMR entry holds twenty or more, and
+    reading them all counted every heterogen once per model: a zinc became
+    twenty zincs, not one ion, and setup asked for an SDF to describe it.
+    Every later step prepares the first model too.
 
     Returns
     -------
     polymer, heterogens, linked
-        ``linked`` maps each residue key named in a LINK record to the names of
-        the residues on the other end. The partner is recorded, not merely the
-        fact of a link, because a LINK to a monatomic ion means coordination
-        while a LINK to an amino acid means covalency, and the two demand
-        opposite answers.
+        ``linked`` maps each residue key named in a LINK record to the keys
+        of the residues on the other end. The partner is recorded, not merely
+        the fact of a link, because a LINK to a monatomic ion means
+        coordination while a LINK to an amino acid means covalency, and the
+        two demand opposite answers; and which residue it is, so a glycan
+        can be followed sugar by sugar from the protein.
     """
     standard = _standard_residues()
     polymer: list[Atom] = []
     heteroatoms: list[Atom] = []
-    linked: dict[tuple, set[str]] = defaultdict(set)
+    linked: dict[tuple, set[tuple]] = defaultdict(set)
+    models = 0
 
     for raw in Path(pdb_path).read_text(encoding="utf-8", errors="ignore").splitlines():
         record = raw[:6].strip()
+
+        if record == "MODEL":
+            models += 1
+            if models > 1:
+                logger.info("%s holds more than one model; the first is the "
+                            "one read, as it is the one prepared.",
+                            Path(pdb_path).name)
+                break
+            continue
+        if record == "ENDMDL":
+            # LINK records precede the coordinates, so nothing after the
+            # first model is needed.
+            break
 
         if record == "LINK":
             # LINK records name the two partners of a bond by residue. Columns
@@ -314,12 +346,12 @@ def parse_structure(pdb_path: str | Path) -> tuple[list[Atom], list[Atom], dict[
                     ends.append((resname, chain, int(seq), icode))
             if len(ends) == 2:
                 first, second = ends
-                linked[first].add(second[0])
-                linked[second].add(first[0])
+                linked[first].add(second)
+                linked[second].add(first)
             elif len(ends) == 1:
                 # A malformed half-record still announces that something is
                 # bonded here; record it without a partner name.
-                linked[ends[0]].add("")
+                linked[ends[0]].add(UNNAMED_PARTNER)
             continue
 
         if record not in {"ATOM", "HETATM"}:
@@ -346,7 +378,7 @@ def parse_structure(pdb_path: str | Path) -> tuple[list[Atom], list[Atom], dict[
 
 
 def group_heterogens(
-    heteroatoms: list[Atom], linked: dict[tuple, set[str]]
+    heteroatoms: list[Atom], linked: dict[tuple, set[tuple]]
 ) -> list[Heterogen]:
     """Collect heterogen atoms into residue instances."""
     grouped: dict[tuple, list[Atom]] = defaultdict(list)
@@ -355,7 +387,8 @@ def group_heterogens(
 
     out: list[Heterogen] = []
     for (resname, chain, resseq, icode), atoms in sorted(grouped.items()):
-        partners = tuple(sorted(linked.get((resname, chain, resseq, icode), ())))
+        ends = tuple(sorted(linked.get((resname, chain, resseq, icode), ())))
+        partners = tuple(sorted(end[0] for end in ends))
         out.append(
             Heterogen(
                 resname=resname,
@@ -364,6 +397,7 @@ def group_heterogens(
                 icode=icode,
                 atoms=_one_position_per_ion(resname, atoms),
                 covalent_to=partners,
+                linked_to=ends,
             )
         )
     return out
@@ -391,6 +425,14 @@ def _one_position_per_ion(resname: str, atoms: list[Atom]) -> tuple[Atom, ...]:
         resname, chosen.chain, chosen.resseq, chosen.icode.strip(),
         " and ".join(codes), chosen.altloc, chosen.occupancy)
     return (chosen,)
+
+
+def _held_by_link(het: Heterogen) -> tuple[str, ...]:
+    """The LINK partners that hold an ion in place: anything but water and
+    other ions, which setup removes or places afresh. A partner the record
+    was too malformed to name still counts, as it always has."""
+    return tuple(partner for partner in het.covalent_to
+                 if partner not in WATER_NAMES and partner not in ION_NAMES)
 
 
 def _min_distance_to_polymer(het: Heterogen, polymer: list[Atom]) -> float:
@@ -505,24 +547,43 @@ def classify(
     for het in heterogens:
         by_name[het.resname].append(het)
 
-    # An N-glycan is a chain: only its first sugar is bonded to the protein and
-    # the rest hang off each other. Whether the structure is glycosylated at
-    # all is therefore a question about the whole structure, not about any one
-    # residue, and is answered once here. Without it a glycan's inner sugar
-    # looks exactly like a free oligosaccharide -- which is what lysozyme's
-    # NAG3 substrate is, and that one must stay a question.
-    glycosylated = any(
-        het.resname in SUGARS and partner in GLYCOSYLATION_RESIDUES
-        for het in heterogens for partner in het.covalent_to
-    )
-
     decisions: list[Decision] = []
+    glycan = _glycan_residues(heterogens)
     for resname, instances in sorted(by_name.items()):
         decisions.append(
             _classify_one(resname, instances, polymer, keep_water,
-                          glycosylated=glycosylated)
+                          glycan=glycan)
         )
     return decisions
+
+
+def _glycan_residues(heterogens: list[Heterogen]) -> dict[tuple, str]:
+    """Each sugar that is part of a glycan, and the residue the glycan is on.
+
+    An N-glycan is a chain: only its first sugar is bonded to the protein and
+    the rest hang off each other. So the glycan is followed from each sugar
+    LINKed to an asparagine, serine, threonine, hydroxyproline or tryptophan,
+    sugar to sugar through their own LINK records. A sugar not reached that
+    way is not part of a glycan, whatever its name and whatever else in the
+    structure is glycosylated: a free NAG beside a glycosylated asparagine,
+    or a lactose bonded only to itself, is a free sugar.
+    """
+    sugars = {het.key: het for het in heterogens if het.resname in SUGARS}
+    carried: dict[tuple, str] = {}
+    queue: list[tuple] = []
+    for key, het in sorted(sugars.items()):
+        sites = sorted(f"{end[0]} {end[1]}{end[2]}{end[3].strip()}"
+                       for end in het.linked_to if end[0] in GLYCOSYLATION_RESIDUES)
+        if sites:
+            carried[key] = sites[0]
+            queue.append(key)
+    while queue:
+        key = queue.pop(0)
+        for end in sugars[key].linked_to:
+            if end in sugars and end not in carried:
+                carried[end] = carried[key]
+                queue.append(end)
+    return carried
 
 
 def _classify_one(
@@ -531,7 +592,7 @@ def _classify_one(
     polymer: list[Atom],
     keep_water: bool,
     *,
-    glycosylated: bool = False,
+    glycan: dict[tuple, str] | None = None,
 ) -> Decision:
     pack = tuple(instances)
 
@@ -583,16 +644,23 @@ def _classify_one(
         # every LINK as covalent made every metalloprotein refuse, which is
         # most of the zinc, iron, magnesium, and calcium structures in the
         # PDB. The geometric test below is the one that answers the question.
-        linked = [h for h in instances if h.covalent_to]
+        # A LINK counts only to something that stays in the system: a water
+        # or another ion is removed or placed again, so an ion LINKed to
+        # nothing else was kept "coordinated by the protein" 30 A from it.
+        linked = [h for h in instances if _held_by_link(h)]
         coordinated = [
             h for h in instances
-            if h.covalent_to
+            if _held_by_link(h)
             or _min_distance_to_polymer(h, polymer) <= COORDINATION_CUTOFF_A
         ]
         if coordinated and len(coordinated) == len(instances):
-            how = "named in a LINK record" if linked else f"within {COORDINATION_CUTOFF_A} A"
+            partners = sorted({p for h in linked for p in _held_by_link(h)})
+            by = ("by the protein" if not partners or all(
+                p in _standard_residues() for p in partners) else "")
+            how = (f"named in a LINK record to {', '.join(p or '?' for p in partners)}"
+                   if linked else f"within {COORDINATION_CUTOFF_A} A")
             return Decision(resname, Action.SIMULATE,
-                            f"coordinated by the protein ({how})", pack)
+                            f"coordinated {by} ({how})".replace("  ", " "), pack)
         if not coordinated:
             return Decision(resname, Action.DISCARD,
                             "not coordinated by the protein; from the "
@@ -635,19 +703,28 @@ def _classify_one(
         # choice and what a protein-only force field can represent; refusing
         # instead would stop every glycoprotein over a question the deposition
         # already answered.
-        attached = sorted({
-            partner for h in instances for partner in h.covalent_to
-            if partner in GLYCOSYLATION_RESIDUES
-        })
-        # An inner sugar of a glycan is bonded only to other sugars. It counts
-        # as part of the glycan when the structure is glycosylated somewhere;
-        # in a structure that is not, the same bonding pattern is a free
-        # oligosaccharide and the question stands.
-        if not attached and glycosylated and any(
-            partner in SUGARS for h in instances for partner in h.covalent_to
-        ):
-            attached = ["the glycan"]
-        if attached:
+        # Copy by copy: one NAG on an asparagine says nothing about another
+        # NAG in the active site.
+        glycan = glycan or {}
+        on = [h for h in instances if h.key in glycan]
+        free = [h for h in instances if h.key not in glycan]
+        attached = sorted({glycan[h.key] for h in on})
+        if on and free:
+            return Decision(
+                resname,
+                Action.STOP,
+                f"{', '.join(h.label for h in on)} "
+                f"{'is' if len(on) == 1 else 'are'} part of a glycan on "
+                f"{', '.join(attached)}, and {', '.join(h.label for h in free)} "
+                f"{'is' if len(free) == 1 else 'are'} bonded to no glycosylated "
+                "residue, so a free sugar that can be a substrate or a "
+                "cryoprotectant. The glycan is prepared without; state the "
+                "intent for the free copies: keep them with --setup-ligand "
+                "and carbohydrate parameters, or exclude the component with "
+                "--setup-heterogens drop",
+                pack,
+            )
+        if on:
             return Decision(
                 resname,
                 Action.DISCARD,
