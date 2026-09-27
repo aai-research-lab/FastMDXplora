@@ -74,3 +74,51 @@ def _a_test_closes_the_figures_it_opens():
     yield
     for number in set(plt.get_fignums()) - before:
         plt.close(number)
+
+
+@pytest.fixture(autouse=True)
+def _no_run_outlives_the_test_that_started_it(monkeypatch):
+    """A study the GUI's runtime started during a test is stopped after it.
+
+    `_spawn` starts `fastmdx explore` in a session of its own, so a run
+    outlives the server that started it; that is the point of it, and it
+    meant a test that launched one left it running. Tests that check what
+    a launch writes started real studies of 1UAO and 1L2Y and let them
+    run: eight were found still going an hour after the suite, taking most
+    of a two-core machine and roughly doubling the suite's time. The runs
+    a test started are stopped here, their whole process group, and a test
+    that needs one running still has it while it runs.
+    """
+    import os
+    import signal
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    import functools
+
+    started = []
+    spawn = DashboardRuntime._spawn
+
+    # Wrapped, so a test reading the method's source still reads its own.
+    @functools.wraps(spawn)
+    def spawn_and_remember(self, *args, **kwargs):
+        result = spawn(self, *args, **kwargs)
+        if getattr(self, "process", None) is not None:
+            started.append(self.process)
+        return result
+
+    monkeypatch.setattr(DashboardRuntime, "_spawn", spawn_and_remember)
+    yield
+    for process in started:
+        if process.poll() is not None:
+            continue
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=10)
+        except ProcessLookupError:
+            continue
+        except Exception:  # noqa: BLE001 - it must not outlive the suite either way
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
