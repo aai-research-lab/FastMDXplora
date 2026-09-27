@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### An interaction is counted for the chain it happened in
+
+**`pl_interactions` added the same residue of two chains together.** Its
+residue rows and pair rows were named by residue name and number alone, so on
+a dimer the frames in which a ligand touched SER45 of either chain were one
+row with one occupancy, and 184 and 184A of one chain merged the same way.
+Rows are now named by chain where there are several (`A:SER45`) and by
+insertion code (`GLY184A`), as `pl_contacts` already named them, from one
+helper for both. A single chain without insertion codes reads as before.
+Present in 2.5.6 and 2.5.7.
+
 ### Frames that alternate no longer read as independent
 
 **A slow correlation under a fast, alternating one was invisible.** The

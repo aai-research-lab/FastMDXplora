@@ -218,7 +218,9 @@ against another tool.
 
 - **Interaction occupancy per residue** is the union of that residue's atom
   pairs' frames, written to `pl_interactions_by_residue.dat` beside the pair
-  table. It cannot be recovered from the pair table: pairs firing in the same
+  table. A residue is named by chain as well where the structure has several
+  (`A:SER45`) and by insertion code where it has one (`GLY184A`), in this
+  table, the pair table and `pl_contacts` alike. It cannot be recovered from the pair table: pairs firing in the same
   frames give the largest single pair, pairs that never coincide give their
   sum, and every real case lies between.
 

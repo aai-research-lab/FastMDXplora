@@ -180,3 +180,17 @@ def plot_by_chain(ax: Any, table: Any, value: str, *, spread: str | None = None,
             ax.fill_between(x, y - s, y + s, alpha=0.12, color=line.get_color())
     if "chain" in table:
         ax.legend(fontsize="small", ncol=min(4, table["chain"].nunique()))
+
+
+def named(residue: Any, *, qualified: bool) -> str:
+    """One residue by name for a table row: ``ASP189``, ``GLY184A`` with an
+    insertion code, and ``A:ASP189`` where the chain is qualified.
+
+    ``str(residue)`` gives the name and number alone, so the same residue of
+    two chains, or 184 and 184A of one, shared a row and their frames were
+    added together."""
+    try:
+        base = f"{residue.name}{residue.resSeq}{insertion_code(residue)}"
+    except (AttributeError, TypeError):
+        base = str(residue)
+    return f"{chain_name(residue)}:{base}" if qualified else base

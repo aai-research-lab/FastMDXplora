@@ -270,9 +270,19 @@ class ProteinLigandInteractions(Analysis):
         # still in hand. Written beside the pair table rather than replacing
         # it: the pairs say which atoms touch, and this says how often the
         # residue does, and neither can be derived from the other.
+        # Named by chain and insertion code as well where the structure has
+        # them, as `pl_contacts` names its rows: by name and number alone,
+        # the same residue of two chains of a dimer was one row, and its
+        # frames were added together.
+        from fastmdxplora.analysis.residues import named, several_chains
+
+        qualified = several_chains(traj.topology)
+
+        def residue_of(index: int) -> str:
+            return named(traj.topology.atom(index).residue, qualified=qualified)
+
         self._by_residue = summary.residue_occupancies(
-            found, traj.n_frames,
-            lambda index: str(traj.topology.atom(index).residue))
+            found, traj.n_frames, residue_of)
 
         if not occupancies:
             return pd.DataFrame(columns=[
@@ -285,7 +295,7 @@ class ProteinLigandInteractions(Analysis):
         rows = []
         for entry in occupancies:
             record = entry.as_record()
-            record["residue"] = str(traj.topology.atom(entry.protein_atom).residue)
+            record["residue"] = residue_of(entry.protein_atom)
             # The atom names, because the indices are the only thing that
             # distinguishes one row from another and an index is not
             # readable. A trypsin run puts four hydrogen bonds to ASP189 and
