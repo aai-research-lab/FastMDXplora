@@ -62,18 +62,21 @@
   }
 
   /* The little markdown a reply may carry -- bold, italic, code, a link --
-   * and nothing else. Escaped first, so the model cannot put markup in
-   * the page; then the four patterns, in an order that keeps code spans
-   * from being reinterpreted. Paragraphs are blank-line separated. */
+   * and nothing else. Escaped first, quotes included, so the model cannot
+   * put markup in the page or close the link's attribute; then the four
+   * patterns, in an order that keeps code spans from being reinterpreted.
+   * A link ends at a quote, as it would in prose. Paragraphs are
+   * blank-line separated. */
   function prose(text) {
     var s = String(text || "")
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
     s = s.replace(/`([^`\n]+)`/g, function (_, c) { return "<code>" + c + "</code>"; });
     s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
     /* Italic needs a non-space just inside each star, so "a * b * c" --
      * an arithmetic asterisk with spaces -- stays as typed. */
     s = s.replace(/(^|[^*])\*(\S(?:[^*\n]*\S)?)\*(?!\*)/g, "$1<em>$2</em>");
-    s = s.replace(/\bhttps?:\/\/[^\s<)]+/g, function (u) {
+    s = s.replace(/\bhttps?:\/\/(?:(?!&quot;|&#39;|&lt;|&gt;)[^\s<)])+/g, function (u) {
       return '<a href="' + u + '" target="_blank" rel="noopener">' + u + "</a>";
     });
     return s;

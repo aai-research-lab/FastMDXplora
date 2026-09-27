@@ -88,8 +88,12 @@ def _markdown_to_html(text: str, title: str) -> str:
     and named in no manifest is a dependency nobody knows about until it is
     missing -- which is what the dependency guard exists to catch, and did.
     """
+    from html import escape
+
+    from fastmdxplora.report.markdown_html import markdown_as_html
+
     try:
-        import markdown as markdown_lib
+        body = markdown_as_html(text)
     except ImportError as exc:
         raise _NoMarkdownConverter(
             "Rendering the report as a PDF needs a Markdown converter. "
@@ -97,12 +101,12 @@ def _markdown_to_html(text: str, title: str) -> str:
             "conda install -c conda-forge markdown weasyprint."
         ) from exc
 
-    body = markdown_lib.markdown(
-        text, extensions=["tables", "fenced_code", "toc"])
-
+    # Inert: raw HTML is shown as written and a link reaches only the web,
+    # mail or the report's own folder, so a name in the report cannot have
+    # WeasyPrint fetch or attach a file from this machine.
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
-        f"<title>{title}</title></head><body>{body}</body></html>"
+        f"<title>{escape(title)}</title></head><body>{body}</body></html>"
     )
 
 

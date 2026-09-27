@@ -92,13 +92,15 @@ def render_markdown(text: str) -> tuple[str, str]:
     installed. One renderer for the report page and the Files tab's
     preview, so a .md file reads the same on both and there is nothing
     vendored: the browser has no Markdown of its own, and the Python
-    library is the one this software already trusts for its report."""
+    library is the one this software already trusts for its report.
+    Raw HTML in the text is shown as written, and a link goes only to the
+    web, to mail or within the study: see `fastmdxplora.report.markdown_html`."""
+    from fastmdxplora.report.markdown_html import markdown_as_html
+
     try:
-        import markdown
+        return markdown_as_html(text), "html"
     except ImportError:
         return '<pre class="report-plain">' + _escape(text) + "</pre>", "plain"
-    return (markdown.markdown(text, extensions=["tables", "fenced_code", "toc"],
-                              output_format="html5"), "html")
 
 
 def _study_of_runs_payload(base: Path) -> dict[str, Any]:

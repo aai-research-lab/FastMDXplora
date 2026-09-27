@@ -545,6 +545,11 @@
     }
     if (ext === "pdf" || ext === "html") {
       var frame = document.createElement("iframe");
+      /* A page from the study runs as a page from nowhere: its scripts
+       * work, and it cannot reach this one or act as it. The server sends
+       * the same sandbox, for Open. A PDF is left out because Chrome will
+       * not show one in a sandboxed frame, and a PDF runs no page script. */
+      if (ext === "html") frame.setAttribute("sandbox", "allow-scripts");
       frame.src = item.href;
       frame.title = item.name;
       body.appendChild(frame);

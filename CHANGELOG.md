@@ -28,6 +28,26 @@ watched, never the workspace. A viewer off loopback can no longer have the
 preview or the playback rebuilt, or ask for more frames than the server was
 started with. A dashboard on loopback, the default, was not exposed.
 
+### Text from a study is shown as text
+
+**A name in a study could run script in the GUI.** The report page and the
+Files preview rendered Markdown with its raw HTML, and a link could be
+`javascript:`. A report quotes the names a structure file and a config
+give, and the preview renders any `.md` in a study, so a name carrying
+`<img onerror=...>` ran as the GUI, which can start runs and read the
+Agent's conversations; the overview loads the report, so opening the study
+was enough. A link in the Agent's reply could close its own attribute and
+add a handler. An HTML file in a study was shown in an unsandboxed frame,
+with the GUI's standing.
+
+Raw HTML in Markdown is now shown as written, and a link or image goes only
+to the web, to mail or within the study; the PDF is rendered the same way,
+so a name cannot have WeasyPrint fetch or attach a local file. A reply's
+link ends at a quote. HTML, SVG and XML files from a study are served, and
+framed, in a sandbox of their own: their scripts run and cannot reach the
+GUI. The report's interactive page, opened from the GUI, therefore no
+longer remembers its card sizes between visits. Present in 2.5.6 and 2.5.7.
+
 ### A ligand is given its charges on a fresh install
 
 **A fresh conda-forge install of 2.5.7 could not parameterize any ligand.**

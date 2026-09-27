@@ -115,6 +115,18 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
 GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/")
 
 
+#: How a document from a study is served: in a sandbox of its own origin,
+#: so a script in it, the report dashboard's or anybody's, runs without the
+#: GUI's standing. Its forms, popups and navigation of the page are off.
+ARTIFACT_SANDBOX = "sandbox allow-scripts"
+
+
+def _can_run_script(content_type: str) -> bool:
+    """HTML, SVG and XML documents can carry script when opened as pages."""
+    kind = content_type.split(";")[0].strip().lower()
+    return "html" in kind or "xml" in kind
+
+
 def _get_answered_beyond_loopback(path: str) -> bool:
     return (path in GETS_ANSWERED_BEYOND_LOOPBACK
             or path.startswith(GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK))
@@ -834,6 +846,12 @@ def make_handler(
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if _can_run_script(content_type):
+                # A study's own page, or one somebody put in it, runs as a
+                # page from nowhere: its scripts work, and it can neither
+                # read this server's answers nor act as the GUI does.
+                self.send_header("Content-Security-Policy", ARTIFACT_SANDBOX)
             if download:
                 safe_name = target.name.replace('"', "")
                 self.send_header(
