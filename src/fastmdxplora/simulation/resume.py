@@ -616,10 +616,13 @@ def production_done_ns(study: str | Path) -> float:
     """Production across every finished segment of this study."""
     import yaml
 
+    from fastmdxplora.analysis.joining import survey_segments
+
     root = Path(study)
     total = 0.0
-    for index in segments_so_far(root):
-        folder = root if index == 0 else root / f"segment-{index:03d}"
+    # Each piece's own folder, as found. Rebuilt from its number as
+    # segment-NNN, a folder named segment-1 was never read.
+    for folder in (piece.directory for piece in survey_segments(root)):
         resolved = folder / "resolved_config.yml"
         try:
             config = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
@@ -709,17 +712,18 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     # trajectory and calls it whole.
     keep_frames: dict[int, int] = {}
     uncountable: list[int] = []
+    folders: dict[int, Path] = {}
     for piece in survey_segments(root):
         if piece.finished:
             continue
-        folder = root if piece.index == 0 else root / f"segment-{piece.index:03d}"
-        keep = frames_before_checkpoint(folder)
+        folders[piece.index] = piece.directory
+        keep = frames_before_checkpoint(piece.directory)
         if keep is None:
             uncountable.append(piece.index)
         else:
             keep_frames[piece.index] = keep
     if uncountable:
-        where = ", ".join(("the study's own run" if i == 0 else f"segment-{i:03d}")
+        where = ", ".join(("the study's own run" if i == 0 else folders[i].name)
                           for i in uncountable)
         return {"ok": False, "stage": "planning", "unsealed": uncountable,
                 "error": f"{where} did not finish cleanly, and how much of its "

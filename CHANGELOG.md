@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### One segment number is one folder
+
+**`segment-1` and `segment-001` were both segment one.** The join held
+whichever listed later and a continuation resumed from whichever it met
+first. Two readers also rebuilt a segment's folder from its number as
+`segment-NNN`, so a folder named `segment-1` was counted and never read: its
+production was left out of what was done, and a killed one's frames were not
+trimmed. Two folders with one number are refused
+(`simulation.resume.segment_named_twice`) with both named, and every reader
+uses the folder it found.
+
 ### The Agent is told one thing, whichever way it is asked
 
 - **Attempts.** The command line gave the Agent three attempts in all and

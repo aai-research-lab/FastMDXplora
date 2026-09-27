@@ -189,6 +189,23 @@ def survey_segments(root: Path | str, *,
     # same only while every index has three digits: segment-1000 lists
     # before segment-101.
     pieces.sort(key=lambda piece: piece.index)
+    # `segment-1` and `segment-001` are both segment one. Kept, the join
+    # held whichever listed later twice over or in the wrong place, and the
+    # continuation resumed from whichever `max` met first.
+    seen: dict[int, list[Path]] = {}
+    for piece in pieces:
+        seen.setdefault(piece.index, []).append(piece.directory)
+    twice = {index: folders for index, folders in seen.items() if len(folders) > 1}
+    if twice:
+        index, folders = sorted(twice.items())[0]
+        names = " and ".join(("the study's own run" if f == base else f.name)
+                             for f in folders)
+        raise StudyError(
+            f"{names} in {base} are both segment {index}, so which one is "
+            "that part of the trajectory would be decided by the order the "
+            "folders happen to list in. Rename or move the one that is not.",
+            code="simulation.resume.segment_named_twice", path=str(base),
+            index=index, folders=[str(f) for f in folders])
     return pieces
 
 

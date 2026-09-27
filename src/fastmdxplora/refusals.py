@@ -579,6 +579,11 @@ CODES: tuple[Code, ...] = (
          "trajectory would change the time a frame represents partway.",
          Kind.SEMANTIC, Disclosure.ACTION,
          detail_keys=("path", "intervals")),
+    Code("simulation.resume.segment_named_twice",
+         "Two segment folders of one study read as the same segment number, "
+         "so which of them the join takes would be decided by listing order.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("path", "index", "folders")),
     Code("simulation.resume.timestep_differs",
          "A checkpoint was to be continued with a different timestep from "
          "the one that wrote it; the integrator state it carries is for the "
