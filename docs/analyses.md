@@ -209,6 +209,13 @@ against another tool.
 - **Contacts and hydrogen bonds** measure across the periodic boundary where
   the trajectory carries a unit cell.
 
+- **Molecules are made whole when a trajectory is loaded**, and put in one
+  periodic copy. The protein and nucleic chains are kept together, and every
+  other solute molecule (a ligand, an ion) is moved to the copy whose centre
+  is nearest theirs, searched exactly for any box shape. So a radius of
+  gyration, SASA or RMSD of a selection that includes a ligand which has left
+  the pocket measures the ligand beside the protein, not a box length away.
+
 - **Interaction occupancy per residue** is the union of that residue's atom
   pairs' frames, written to `pl_interactions_by_residue.dat` beside the pair
   table. It cannot be recovered from the pair table: pairs firing in the same

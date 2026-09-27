@@ -169,12 +169,17 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
     every one of them succeeds, writes its file, draws its figure and
     reports ``status="ok"``.
 
-    Anchored on the solute where there is one, so the protein stays whole
-    and the ligand is imaged into the protein's copy rather than each being
-    made whole in its own. The benchmark helper in ``validation/cross_tool``
-    had been imaging these trajectories before the pipeline did, with
-    MDTraj's own choice of anchor through :func:`image_whole` rather than
-    this one.
+    Anchored on the macromolecules where there are any, so the protein
+    stays whole, and every other solute molecule is then moved to the copy
+    of it nearest them (:func:`_nearest_copies`). The ligand and ions were
+    anchors too, and MDTraj keeps an anchor in whichever copy it was stored
+    in: a ligand that had left the pocket was measured in the copy the
+    engine wrote, up to a box length away, and a radius of gyration of
+    protein and ligand came out that much too large. MDTraj's own placement
+    of the others rounds fractional coordinates, which is exact only for a
+    rectangular box and misses in the dodecahedron and octahedron setup
+    builds by default, hence the exact search. Where there is no
+    macromolecule, every solute molecule anchors, as before.
 
     Failure is not fatal: a topology without bonds cannot be made whole, and
     an analysis of what was loaded beats refusing to load it. The reason is
@@ -184,14 +189,18 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
     if trajectory.unitcell_vectors is None:
         return trajectory
     try:
-        solute = trajectory.topology.select("not water and not resname HOH")
-        anchors = None
-        if solute is not None and len(solute):
-            molecules = trajectory.topology.find_molecules()
-            wanted = set(int(i) for i in solute)
-            anchors = [m for m in molecules
-                       if any(a.index in wanted for a in m)]
+        topology = trajectory.topology
+        molecules = topology.find_molecules()
+        solute = [m for m in molecules
+                  if not all(a.residue.is_water for a in m)]
+        large = [m for m in solute
+                 if any(a.residue.is_protein or a.residue.is_nucleic for a in m)]
+        anchors = large or solute
         trajectory.image_molecules(inplace=True, anchor_molecules=anchors or None)
+        if large:
+            anchored = {id(m) for m in large}
+            _nearest_copies(trajectory, large,
+                            [m for m in solute if id(m) not in anchored])
     except Exception as exc:  # MDTraj raises a variety of types
         logger.warning(
             "Could not image molecules across the periodic boundary (%s); "
@@ -200,6 +209,35 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
             "in ways that do not announce themselves.", exc,
         )
     return trajectory
+
+
+def _nearest_copies(trajectory: md.Trajectory, anchors: list, others: list) -> None:
+    """Move each molecule in ``others`` to its copy nearest the anchors.
+
+    Nearest by centre: the lattice vector that puts the molecule's centroid
+    closest to the anchors' centroid, frame by frame. Searched exactly, over
+    every lattice vector within two cells of the fractional-rounding guess,
+    which covers the reduced boxes OpenMM writes whatever their shape.
+    Molecules are moved whole, so they stay made whole.
+    """
+    if not others:
+        return
+    xyz = trajectory.xyz
+    box = np.asarray(trajectory.unitcell_vectors, dtype=np.float64)   # (F, 3, 3), rows
+    inverse = np.linalg.inv(box)
+    shifts = np.array(list(np.ndindex(5, 5, 5)), dtype=np.float64) - 2.0   # (125, 3)
+    lattice = np.einsum("kj,fji->fki", shifts, box)                      # (F, 125, 3)
+    anchor_atoms = np.fromiter((a.index for m in anchors for a in m), dtype=np.int64)
+    centre = xyz[:, anchor_atoms, :].astype(np.float64).mean(axis=1)    # (F, 3)
+    for molecule in others:
+        atoms = np.fromiter((a.index for a in molecule), dtype=np.int64)
+        offset = xyz[:, atoms, :].astype(np.float64).mean(axis=1) - centre
+        guess = -np.rint(np.einsum("fi,fij->fj", offset, inverse))
+        offset = offset + np.einsum("fj,fji->fi", guess, box)
+        candidates = offset[:, None, :] + lattice                        # (F, 125, 3)
+        best = np.argmin(np.einsum("fki,fki->fk", candidates, candidates), axis=1)
+        move = np.einsum("fj,fji->fi", guess, box) + lattice[np.arange(len(best)), best]
+        xyz[:, atoms, :] += move[:, None, :].astype(xyz.dtype)
 
 
 def _with_one_clock(trajectory: md.Trajectory, n_files: int) -> md.Trajectory:

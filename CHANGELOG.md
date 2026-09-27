@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A molecule away from the protein is measured beside it
+
+**A ligand that had left the pocket could be measured a box length away.**
+Loading a trajectory made every solute molecule an anchor, and an anchor
+stays in whichever periodic copy the engine wrote it. The radius of gyration,
+SASA or RMSD of a selection holding such a ligand was then measured from the
+wrong copy: on the T4 unbound control, 150 of 2,000 frames, the radius of
+gyration of protein and benzene off by up to 0.028 nm. The protein and nucleic
+chains now anchor, and every other solute molecule is moved to the copy
+nearest them, searched exactly, in any box shape. A bound ligand is unchanged.
+Present in 2.5.6 and 2.5.7.
+
 ### Off loopback, only the run's results leave the machine
 
 **2.5.7 bound beyond loopback served the Agent's conversations, and with no
