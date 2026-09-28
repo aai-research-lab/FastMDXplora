@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A hosted GUI can send a study to its service's compute
+
+**`fastmdx gui --hosted --runs-url PATH`** adds **Run on a GPU** beside
+**Run here** in the builder, and **Run it on a GPU** beside **Run it as it
+is** for a config file. The first saves the config in the workspace, beside
+the results folder it will write (`<folder>.yml`, never over an existing
+file); both then open the service's page with the config and the folder
+filled in, where the person confirms. The GUI starts nothing itself: the
+compute is the service's. Only a path on the same site is accepted.
+
 ### `fastmdx resume` in a new container
 
 **`fastmdx resume` no longer takes a new process for the run it carries on.** A

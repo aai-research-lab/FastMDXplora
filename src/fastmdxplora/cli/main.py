@@ -1045,6 +1045,12 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="With --hosted: the service's own page for the "
                              "person, linked from the sidebar, as a path on "
                              "the same site, such as /account/.")
+    hosted.add_argument("--runs-url", default="", metavar="PATH",
+                        help="With --hosted: the service's page that runs a "
+                             "study on its compute, as a path on the same "
+                             "site, such as /runs. The builder then offers "
+                             "Run on a GPU, which saves the config in the "
+                             "workspace and opens that page with it.")
 
 
     resume = sub.add_parser(
@@ -2399,7 +2405,7 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
         try:
             hosting = Hosting.from_environment(
                 args.workspace or Path.cwd(), args.allowed_host,
-                getattr(args, "account_url", ""))
+                getattr(args, "account_url", ""), getattr(args, "runs_url", ""))
         except HostingError as exc:
             print(f"fastmdx gui: {exc}", file=sys.stderr)
             return 2
@@ -2409,9 +2415,9 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
         watching_a_run = False
         args.no_browser = True
     elif (getattr(args, "workspace", None) or getattr(args, "allowed_host", None)
-          or getattr(args, "account_url", None)):
-        print("fastmdx gui: --workspace, --allowed-host and --account-url apply only "
-              "with --hosted.", file=sys.stderr)
+          or getattr(args, "account_url", None) or getattr(args, "runs_url", None)):
+        print("fastmdx gui: --workspace, --allowed-host, --account-url and --runs-url "
+              "apply only with --hosted.", file=sys.stderr)
         return 2
     config = DashboardConfig(
         ligand_resname=getattr(args, "ligand_resname", None),

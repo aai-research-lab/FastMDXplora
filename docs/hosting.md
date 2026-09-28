@@ -59,6 +59,26 @@ fastmdx gui --hosted ... --account-url /account/
 Only a path on the same site is accepted: one leading slash, plain
 characters, no scheme and no query.
 
+## Sending a study to the service's compute
+
+A service may run studies on compute of its own, such as a GPU it rents,
+from a page of its own. `--runs-url` names that page, and the builder then
+offers **Run on a GPU** beside **Run here**, and **Run it on a GPU** beside
+**Run it as it is** for a config file:
+
+```bash
+fastmdx gui --hosted ... --runs-url /runs
+```
+
+**Run on a GPU** saves the builder's config in the workspace, beside the
+results folder it will write, as `<folder>.yml` (`<folder>-2.yml` and so on
+after an earlier one; a file is never written over), and refuses a results
+folder that exists already, as **Run here** does. Both then open the page
+with `config` and `output` in its query, as the person sees them
+(`~/ub-run.yml`, `~/ub-run`). The page is the service's: the GUI starts
+nothing, and the person confirms there. The same rule as `--account-url`
+applies to the path.
+
 ## One folder is the whole world
 
 Every path a request names is read inside the workspace: the file picker,

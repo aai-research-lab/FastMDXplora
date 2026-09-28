@@ -342,6 +342,22 @@ def make_handler(
         account_link = (f'<a class="sidebar-service" href="{_escape(hosting.account_url)}" '
                         'title="Your account on this service">Your account</a>')
     html = html.replace("<!--__FASTMDX_ACCOUNT_LINK__-->", account_link)
+    # And, when the service runs studies on its own compute, a way to send
+    # one there: the service's page opens with the config, for the person to
+    # confirm. Never started from here.
+    elsewhere = as_it_is_elsewhere = ""
+    if hosting is not None and hosting.runs_url:
+        runs = _escape(hosting.runs_url)
+        elsewhere = (
+            f'<button type="button" class="ghost-btn" id="run-elsewhere" data-runs-url="{runs}" '
+            'disabled title="Save the config in your workspace, then open the page that runs '
+            'it on a GPU">Run on a GPU</button>')
+        as_it_is_elsewhere = (
+            f'<button type="button" class="ghost-btn" id="run-as-is-elsewhere" '
+            f'data-runs-url="{runs}" disabled title="Open the page that runs this config on '
+            'a GPU">Run it on a GPU</button>')
+    html = html.replace("<!--__FASTMDX_RUN_ELSEWHERE__-->", elsewhere)
+    html = html.replace("<!--__FASTMDX_RUN_AS_IS_ELSEWHERE__-->", as_it_is_elsewhere)
 
     class LiveDashboardHandler(BaseHTTPRequestHandler):
         server_version = "FastMDXLive/1.0"
@@ -698,6 +714,16 @@ def make_handler(
                 if named is None:
                     return
                 self._send_json(check_config_file(named))
+                return
+            if path == "/api/save-config":
+                # Hosted, for the service's page that runs a study on its
+                # own compute (--runs-url): the builder's config saved in
+                # the workspace, for that page to open with. Offered only
+                # when the service said where that page is.
+                if hosting is None or not hosting.runs_url:
+                    self._send_json({"ok": False, "error": "Not offered here."}, status=404)
+                    return
+                self._send_json(app_runtime.save_config_for_elsewhere(payload or {}))
                 return
             if path == "/api/config":
                 # The file the page would run, handed back instead. A laptop

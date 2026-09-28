@@ -1021,6 +1021,51 @@ class DashboardRuntime:
         return {"ok": True, "error": None, "config_path": prepared["config_path"],
                 "continues": str(study), **started}
 
+    def save_config_for_elsewhere(self, state: Mapping[str, Any]) -> dict[str, Any]:
+        """The builder's config saved in the workspace, beside the folder the
+        run will write, for a service to run on its own compute.
+
+        Hosted only (`--runs-url`). Nothing is started here: the service's
+        page opens with the two paths filled in, and the person confirms
+        there, since the compute is the service's to give. The results
+        folder must be new, as it must for a run here; the config is
+        ``<results folder>.yml`` beside it, or ``-2``, ``-3`` and so on
+        after an earlier one, and a file is never written over.
+        """
+        from fastmdxplora.gui.config_builder import config_yaml
+        from fastmdxplora.naming import default_output_name, system_of
+
+        if self.hosting is None:
+            return {"ok": False, "error": "Only a hosted GUI saves a config for elsewhere."}
+        source = dict(state or {})
+        requested = str(source.get("output") or "").strip()
+        if not requested:
+            requested = default_output_name(system_of(source))
+        output_dir = self._output_folder(requested)
+        if output_dir is None or output_dir == self.hosting.workspace:
+            return {"ok": False,
+                    "error": "The results folder must be a new folder inside your workspace."}
+        if output_dir.exists():
+            return {"ok": False,
+                    "error": f"{self.hosting.shown(output_dir)} is in your workspace already. "
+                             "Give a new results folder."}
+        source["output"] = requested
+        built = config_yaml(source, full=bool(source.get("full")))
+        if not built["ok"]:
+            return {"ok": False, "error": built["error"]}
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        for n in range(1, 1000):
+            target = output_dir.parent / (f"{output_dir.name}.yml" if n == 1
+                                          else f"{output_dir.name}-{n}.yml")
+            try:
+                with target.open("x", encoding="utf-8") as out:
+                    out.write(built["yaml"])
+            except FileExistsError:
+                continue
+            return {"ok": True, "error": None, "config": str(target),
+                    "output": str(output_dir)}
+        return {"ok": False, "error": "Too many configs of that name; give another folder."}
+
     def launch_existing_config(
         self,
         config_path: str,

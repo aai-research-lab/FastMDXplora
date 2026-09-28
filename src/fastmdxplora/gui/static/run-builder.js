@@ -1141,7 +1141,7 @@
     }
     const can = ready();
     ["run-start-button", "run-download", "run-copy-command",
-     "run-download-script"].forEach((id) => {
+     "run-download-script", "run-elsewhere"].forEach((id) => {
       const button = el(id);
       if (button) button.disabled = !can;
     });
@@ -1371,7 +1371,7 @@
     note.dataset.ok = String(Boolean(verdict.ok));
     state.configVerdict = verdict;
     // Opening and running are only offered once the file is known to be sound.
-    ["run-open-config", "run-as-is"].forEach((id) => {
+    ["run-open-config", "run-as-is", "run-as-is-elsewhere"].forEach((id) => {
       const button = el(id);
       if (button) button.disabled = !verdict.ok;
     });
@@ -1453,6 +1453,49 @@
     if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
       window.FastMDXDashboard.navigate("overview");
     }
+  }
+
+  /* Hosted behind a service that runs studies on its own compute (a GPU it
+   * rents): the config is saved in the workspace beside the folder it will
+   * write, and the service's page opens with both filled in. The person
+   * confirms there -- the compute is the service's to give, so it asks. */
+  function openRunsPage(base, config, output) {
+    const query = new URLSearchParams({ config });
+    if (output) query.set("output", output);
+    window.location.assign(base + "?" + query.toString());
+  }
+
+  async function runElsewhere() {
+    const button = el("run-elsewhere");
+    button.disabled = true;
+    text(el("run-note"), "Saving the config\u2026");
+    let saved;
+    try {
+      const response = await fetch("/api/save-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentState()),
+      });
+      saved = await response.json();
+    } catch (error) {
+      text(el("run-note"), "Could not reach the server.");
+      button.disabled = false;
+      return;
+    }
+    if (!saved.ok) {
+      text(el("run-note"), saved.error || "Could not save the config.");
+      button.disabled = false;
+      return;
+    }
+    text(el("run-note"), `Saved ${saved.config}. Opening the page that runs it\u2026`);
+    openRunsPage(button.dataset.runsUrl, saved.config, saved.output);
+  }
+
+  function runAsItStandsElsewhere() {
+    const path = el("run-config-path").value.trim();
+    if (!path) return;
+    openRunsPage(el("run-as-is-elsewhere").dataset.runsUrl, path,
+                 el("run-output").value.trim());
   }
 
   function resetEverything() {
@@ -1551,6 +1594,10 @@
     if (openButton) openButton.addEventListener("click", loadConfigIntoForm);
     const asIsButton = el("run-as-is");
     if (asIsButton) asIsButton.addEventListener("click", runAsItStands);
+    const asIsElsewhere = el("run-as-is-elsewhere");
+    if (asIsElsewhere) asIsElsewhere.addEventListener("click", runAsItStandsElsewhere);
+    const elsewhere = el("run-elsewhere");
+    if (elsewhere) elsewhere.addEventListener("click", runElsewhere);
 
     const preview = el("run-preview");
     if (preview) preview.addEventListener("click", showConfig);

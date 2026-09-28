@@ -267,6 +267,7 @@ finished, and read there — see
 | `--workspace DIR` | With `--hosted`: the one folder it reads and writes | current directory |
 | `--allowed-host NAME` | With `--hosted`: a name the proxy serves it under; repeat for more | none; required |
 | `--account-url PATH` | With `--hosted`: the service's page for the person, linked from the sidebar | none; no link |
+| `--runs-url PATH` | With `--hosted`: the service's page that runs a study on its compute; adds **Run on a GPU** to the builder | none; not offered |
 
 **That is the whole of it.** The dashboard flags — `--dashboard-host`,
 `--dashboard-port`, `--dashboard-refresh-seconds`,
