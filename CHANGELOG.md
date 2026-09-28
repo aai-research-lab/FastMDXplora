@@ -114,6 +114,14 @@ multi-model file was counted, so a 20-model NMR entry showed twenty times its
 atoms and its ligand twenty times over. The first model is counted, and the
 number of models is given beside it.
 
+### Joining finds a moved study's segments by their record
+
+**Joining identifies a continued study by the prepared system its segments
+recorded.** A segment's config names the study it continued by the path it
+had, relative to wherever the command ran, so for a moved study it named
+nothing and the join fell back to comparing settings. The segment's own record,
+found relative to it and checked by content, is read first.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

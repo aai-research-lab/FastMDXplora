@@ -120,6 +120,35 @@ class TestAContinuationIsTheSameStudy(unittest.TestCase):
                            "prepared_from": str(root)}}), encoding="utf-8")
         self.assertEqual(_config_digest(segment), _config_digest(root))
 
+    def test_moved_the_segment_still_finds_its_parent(self):
+        """The config names the parent by the path it had; the run's record
+        names it relative to the segment and by content, and the join reads
+        that, so a moved study keeps its identity rather than falling back
+        to comparing settings, which differ here as a real resolved config's
+        do."""
+        import json
+        import shutil
+
+        from fastmdxplora.simulation.pipeline import prepared_system_reference
+
+        root = _study()
+        (root / "setup").mkdir()
+        (root / "setup" / "system.xml").write_text("<System/>", encoding="utf-8")
+        segment = root / "segment-001"
+        (segment / "simulation").mkdir(parents=True)
+        (segment / "resolved_config.yml").write_text(yaml.safe_dump({
+            "systems": [{"id": "s1", "system": "1L2Y"}],
+            "setup": {"solvent_padding_nm": 1.2, "ligand_resname": "LIG"},
+            "simulation": {"duration_ns": 0.1, "setup_from": str(root)}}),
+            encoding="utf-8")
+        (segment / "simulation" / "simulation_parameters.json").write_text(json.dumps({
+            "prepared_system": prepared_system_reference(
+                root / "setup", segment, str(root))}), encoding="utf-8")
+        expected = _config_digest(root)
+        moved = root.parent / "moved"
+        shutil.move(str(root), str(moved))
+        self.assertEqual(_config_digest(moved / "segment-001"), expected)
+
     def test_a_different_study_is_still_different(self):
         a, b = _study(), _study()
         (b / "resolved_config.yml").write_text(yaml.safe_dump({
