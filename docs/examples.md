@@ -115,13 +115,14 @@ fastmdx explore --system 1AFO \
   --output runs/glycophorin
 ```
 
-`--setup-membrane-orient` turns the structure so its longest axis lies along
-the membrane normal, which a PDB entry usually does not. It is checked both
-ways — before, that there is a longest axis worth using; after, that the result
-has the hydrophobic belt a bilayer-spanning protein has.
+`--setup-membrane-orient` turns the structure onto the membrane normal fitted
+from where its lipid-facing surface is apolar, which a PDB entry's frame has
+no relation to. A structure that is not a membrane protein is refused rather
+than embedded. An OPM file needs no flag: its frame is recognised and kept.
 
-The restraint holds the protein while the lipids pack around it. See
-[Membrane systems](studies.md#membrane-systems).
+The restraint holds the protein while the lipids pack around it. The area per
+lipid, thickness and chain order of the bilayer are measured after the run.
+See [Membrane proteins](membranes.md).
 
 ---
 

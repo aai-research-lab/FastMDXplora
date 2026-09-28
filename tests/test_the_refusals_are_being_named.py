@@ -53,7 +53,8 @@ FORWARDERS = frozenset({"_rewrapped"})
 #: means this finder cannot see it at the raise, and counting them as
 #: uncoded understates the work by thirteen sites. Named explicitly rather
 #: than accepting any call, so an actual uncoded helper cannot hide here.
-BUILDERS = frozenset({"_validation_error", "_explain_unparameterized"})
+BUILDERS = frozenset({"_validation_error", "_explain_unparameterized",
+                      "_no_belt", "_tilted"})
 
 #: Sites allowed to raise without saying which refusal they are. None.
 #:

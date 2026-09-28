@@ -1728,98 +1728,93 @@ class TestAStructureIsCheckedBeforeItIsSolvated:
 
 
 class TestCopiesOfAChainFaceTheSameWay:
-    """Every other membrane check asks about one chain at a time, and each
-    copy passes them whichever way up it is. 6B73 completed with 193,605
-    atoms and its two receptors antiparallel -- long axes at z -0.81 and
-    +0.80, dot product -0.99 -- with their soluble partners on opposite faces
-    of one bilayer."""
+    """The structure is placed as one object, and each copy of a chain passes
+    every check on its own whichever way up it is. 6B73 completed with
+    193,605 atoms and its two receptors antiparallel, their soluble partners
+    on opposite faces of one bilayer. The copies are judged by the symmetry
+    that relates them, which in one bilayer turns the normal onto itself."""
 
-    def _chains(self, *specs):
-        """specs: (axis direction, residue count) per chain."""
+    @staticmethod
+    def _copies(*rotations, residues: int = 60, drop: int = 0):
+        """A chain, and a copy of it turned by each rotation (about the
+        chain's centre), keyed as the check reads them."""
         import numpy as np
 
-        coordinates: list = []
-        chains: dict[int, list[int]] = {}
-        counts: dict[int, int] = {}
-        for index, (direction, residues) in enumerate(specs):
-            start = len(coordinates)
-            unit = np.asarray(direction, dtype=float)
-            unit = unit / np.linalg.norm(unit)
-            for residue in range(residues):
-                for atom in range(5):
-                    coordinates.append(
-                        unit * (residue * 0.35)
-                        + np.array([atom * 0.05, index * 3.0, 0.0])
-                    )
-            chains[index] = list(range(start, len(coordinates)))
-            counts[index] = residues
-        return chains, counts, np.asarray(coordinates)
+        rng = np.random.default_rng(3)
+        template = rng.normal(scale=1.2, size=(residues, 3))
+        coordinates, copies = [], {}
+        for index, rotation in enumerate((np.eye(3), *rotations)):
+            label = chr(ord("A") + index)
+            copies[label] = {}
+            placed = template @ np.asarray(rotation).T + [index * 6.0, 0, 0]
+            for number, point in enumerate(placed, start=1):
+                if index and number <= drop:
+                    continue
+                copies[label][(number, "ALA")] = len(coordinates)
+                coordinates.append(point)
+        return copies, np.asarray(coordinates)
 
-    #: The axes measured on 6B73's built system.
-    RECEPTOR_DOWN = (-0.08, -0.58, -0.81)
-    RECEPTOR_UP = (-0.08, 0.59, 0.80)
-    PARTNER_A = (-1.00, -0.07, -0.06)
-    PARTNER_B = (-0.95, 0.32, -0.06)
+    @staticmethod
+    def _about(axis, degrees):
+        import numpy as np
 
-    def test_the_real_case_is_caught(self) -> None:
-        from fastmdxplora.setup.membrane import inverted_chain_pairs
+        axis = np.asarray(axis, dtype=float) / np.linalg.norm(axis)
+        angle = np.radians(degrees)
+        k = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]],
+                      [-axis[1], axis[0], 0]])
+        return np.eye(3) + np.sin(angle) * k + (1 - np.cos(angle)) * k @ k
 
-        found = inverted_chain_pairs(
-            *self._chains((self.RECEPTOR_DOWN, 289), (self.RECEPTOR_UP, 281))
-        )
-        assert found == [(0, 1)]
+    def test_a_trimer_about_the_normal_is_accepted(self) -> None:
+        """A porin's three copies, related by a three-fold along the normal.
+        The long-axis test refused 2POR's."""
+        from fastmdxplora.setup.membrane import misoriented_copies
+
+        copies = self._copies(self._about((0, 0, 1), 120), self._about((0, 0, 1), 240))
+        assert misoriented_copies(*copies) == []
+
+    def test_a_copy_upside_down_is_caught(self) -> None:
+        from fastmdxplora.setup.membrane import misoriented_copies
+
+        (first, other, angle), = misoriented_copies(*self._copies(self._about((1, 0, 0), 180)))
+        assert (first, other) == ("A", "B")
+        assert angle == pytest.approx(180.0, abs=1e-6)
+
+    def test_a_two_fold_at_an_angle_to_the_normal_is_caught(self) -> None:
+        """6B73: a two-fold neither along the normal nor across it, which no
+        orientation of the pair puts both in one bilayer."""
+        from fastmdxplora.setup.membrane import misoriented_copies
+
+        found = misoriented_copies(*self._copies(self._about((1, 0, 1), 180)))
+        assert len(found) == 1 and found[0][2] == pytest.approx(90.0, abs=1e-6)
 
     def test_ragged_ends_do_not_make_two_copies_different_molecules(self) -> None:
-        """289 and 281 residues: the same receptor, with a different number of
-        unresolved terminal residues declined at each end. Requiring equal
-        counts read them as different molecules and compared nothing, which
-        is why the first version of this check passed on 6B73."""
-        from fastmdxplora.setup.membrane import inverted_chain_pairs
+        """289 and 281 residues: the same receptor with different terminal
+        residues unresolved."""
+        from fastmdxplora.setup.membrane import misoriented_copies
 
-        assert inverted_chain_pairs(
-            *self._chains((self.RECEPTOR_DOWN, 289), (self.RECEPTOR_UP, 281))
-        )
+        assert misoriented_copies(*self._copies(self._about((1, 0, 0), 180), drop=4))
 
-    def test_chains_lying_in_the_plane_are_left_alone(self) -> None:
-        """6B73's two partners sit at z -0.06: chains lying in the membrane
-        plane, not chains pointing down. A sign test on a number that small
-        reports noise as a fault."""
-        from fastmdxplora.setup.membrane import inverted_chain_pairs
+    def test_different_molecules_are_not_compared(self) -> None:
+        """A receptor and its partner point differently for good reasons."""
+        from fastmdxplora.setup.membrane import misoriented_copies
 
-        assert inverted_chain_pairs(
-            *self._chains((self.PARTNER_A, 126), (self.PARTNER_B, 126))
-        ) == []
-
-    def test_copies_facing_the_same_way_are_accepted(self) -> None:
-        from fastmdxplora.setup.membrane import inverted_chain_pairs
-
-        assert inverted_chain_pairs(
-            *self._chains((self.RECEPTOR_DOWN, 289), ((0.08, 0.58, -0.81), 281))
-        ) == []
+        copies, coordinates = self._copies(self._about((1, 0, 0), 180))
+        copies["B"] = {(number, "GLY"): index for (number, _), index in copies["B"].items()}
+        assert misoriented_copies(copies, coordinates) == []
 
     def test_one_copy_cannot_disagree_with_itself(self) -> None:
-        from fastmdxplora.setup.membrane import inverted_chain_pairs
+        from fastmdxplora.setup.membrane import misoriented_copies
 
-        assert inverted_chain_pairs(*self._chains((self.RECEPTOR_DOWN, 289))) == []
-
-    def test_chains_of_genuinely_different_length_are_not_copies(self) -> None:
-        """A receptor and its partner point differently for good reasons."""
-        from fastmdxplora.setup.membrane import inverted_chain_pairs
-
-        assert inverted_chain_pairs(
-            *self._chains((self.RECEPTOR_DOWN, 289), (self.RECEPTOR_UP, 140))
-        ) == []
+        assert misoriented_copies(*self._copies()) == []
 
     def test_the_message_says_what_to_do(self) -> None:
-        # Two chains pointing opposite ways across a bilayer: the refusal
-        # names the database to check against and the alternative, not only
-        # the symptom.
         from fastmdxplora.setup.membrane import check_chains_point_the_same_way
 
         problem = check_chains_point_the_same_way(*_two_antiparallel_helices())
         assert problem is not None
         assert "opm.phar.umich.edu" in problem
-        assert "building one copy" in problem
+        assert "`chains: A`" in problem
+        assert "180 degrees" in problem
 
     def test_it_runs_inside_the_membrane_path(self, tmp_path, monkeypatch) -> None:
         # Asked for a membrane, and not for water. Run through prepare_system
@@ -2036,161 +2031,6 @@ class TestChainsCanBeChosen:
         assert field is not None and field.default is None
 
 
-class TestTheBeltIsMeasuredOnTheSurface:
-    """Every folded protein buries its hydrophobic residues and exposes its
-    charged ones, so comparing all of them measures burial -- true of a
-    soluble protein as much as a membrane one. That is why this check passed
-    on a structure 51 nm across and on one with a receptor upside down.
-
-    What distinguishes a membrane protein is a band of hydrophobic residues
-    on its outside, where a soluble protein has polar ones."""
-
-    def _blob(self, count: int, radius: float, half_height: float, seed: int = 0):
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
-        direction = rng.normal(size=(count, 3))
-        direction /= np.linalg.norm(direction, axis=1)[:, None]
-        points = direction * (rng.random(count) ** (1 / 3))[:, None]
-        points[:, :2] *= radius
-        points[:, 2] *= half_height
-        return points, rng
-
-    def _membrane_like(self):
-        from fastmdxplora.setup.membrane import surface_residues
-
-        points, rng = self._blob(400, 2.0, 3.0)
-        exposed = surface_residues(points)
-        kinds = [
-            ("hydrophobic" if abs(points[i, 2]) < 1.6 else "charged")
-            if exposed[i]
-            else ("hydrophobic" if rng.random() < 0.7 else "charged")
-            for i in range(len(points))
-        ]
-        return points, kinds
-
-    def _soluble_like(self):
-        from fastmdxplora.setup.membrane import surface_residues
-
-        points, rng = self._blob(400, 2.2, 2.2, seed=1)
-        exposed = surface_residues(points)
-        kinds = [
-            ("hydrophobic" if rng.random() < 0.35 else "charged")
-            if exposed[i]
-            else ("hydrophobic" if rng.random() < 0.7 else "charged")
-            for i in range(len(points))
-        ]
-        return points, kinds
-
-    def test_a_banded_surface_reads_low(self) -> None:
-        from fastmdxplora.setup.membrane import surface_belt_ratio
-
-        points, kinds = self._membrane_like()
-        assert surface_belt_ratio(points, kinds)[2] < 0.5
-
-    def test_a_mixed_surface_reads_high(self) -> None:
-        from fastmdxplora.setup.membrane import surface_belt_ratio
-
-        points, kinds = self._soluble_like()
-        assert surface_belt_ratio(points, kinds)[2] > 0.7
-
-    def test_the_two_separate_further_than_burial_does(self) -> None:
-        """Burial gave 0.55 against 0.79 -- a factor of one and a half, with
-        the threshold sitting inside the noise between them."""
-        from fastmdxplora.setup.membrane import surface_belt_ratio
-
-        membrane = surface_belt_ratio(*self._membrane_like())[2]
-        soluble = surface_belt_ratio(*self._soluble_like())[2]
-        assert soluble / membrane > 1.8
-
-    def test_too_few_residues_says_nothing(self) -> None:
-        """A claim from ten residues would be a claim from nothing."""
-        from fastmdxplora.setup.membrane import surface_belt_ratio
-
-        points, _ = self._blob(12, 2.0, 2.0)
-        assert surface_belt_ratio(points, ["hydrophobic"] * 12) is None
-
-    def test_only_one_kind_present_says_nothing(self) -> None:
-        from fastmdxplora.setup.membrane import surface_belt_ratio
-
-        points, _ = self._blob(400, 2.0, 3.0)
-        assert surface_belt_ratio(points, ["hydrophobic"] * 400) is None
-
-    def test_the_surface_is_a_relative_cut(self) -> None:
-        """An absolute neighbour count depends on how big and how densely
-        packed the structure is."""
-        from fastmdxplora.setup.membrane import surface_residues
-
-        for count in (100, 400):
-            points, _ = self._blob(count, 2.0, 3.0)
-            exposed = surface_residues(points)
-            assert 0.2 < exposed.mean() < 0.6, count
-
-    def test_a_helix_has_no_inside(self) -> None:
-        """A single helix is all surface. Restricting to the least-surrounded
-        residues picks its two ends, which says nothing about the arrangement
-        between them -- and made the check pass on the soluble arrangement it
-        exists to refuse."""
-        import numpy as np
-
-        from fastmdxplora.setup.membrane import surface_residues
-
-        rng = np.random.RandomState(0)
-        helix = np.array([[0.0, 0.0, (i - 15) * 0.15] for i in range(30)])
-        helix = helix + rng.normal(scale=0.05, size=(30, 3))
-        assert surface_residues(helix).all()
-
-    def test_an_extended_chain_has_no_inside_either(self) -> None:
-        """Even with enough residues to have a core, a structure whose
-        residues are all similarly surrounded does not have one."""
-        import numpy as np
-
-        from fastmdxplora.setup.membrane import surface_residues
-
-        rng = np.random.RandomState(1)
-        chain = np.array([[0.0, 0.0, i * 0.15] for i in range(200)])
-        chain = chain + rng.normal(scale=0.05, size=(200, 3))
-        assert surface_residues(chain).all()
-
-    def test_a_globule_does(self) -> None:
-        from fastmdxplora.setup.membrane import surface_residues
-
-        points, _ = self._blob(400, 2.0, 2.0)
-        exposed = surface_residues(points)
-        assert 0.2 < exposed.mean() < 0.6
-
-    def test_the_refusal_renders(self) -> None:
-        """The check reached the right verdict and then raised a NameError
-        explaining it: the message named two variables a refactor had moved
-        into the measurement. Nothing here caught it, because building the
-        message needed a real topology and OpenMM, which the tests that would
-        have reached it skip without."""
-        from fastmdxplora.setup.membrane import belt_refusal
-
-        text = belt_refusal(0.92, 1.10, 0.84)
-        for number in ("0.92", "1.10", "0.84"):
-            assert number in text, number
-        assert "opm.phar.umich.edu" in text
-
-    def test_the_measurement_returns_what_the_message_quotes(self) -> None:
-        """Three numbers, in the order the refusal reads them."""
-        from fastmdxplora.setup.membrane import surface_belt_ratio
-
-        points, kinds = self._membrane_like()
-        hydrophobic, charged, ratio = surface_belt_ratio(points, kinds)
-        assert ratio == pytest.approx(hydrophobic / charged)
-
-    def test_giving_up_is_said_out_loud(self, caplog) -> None:
-        """The check further down reports the padding the config asked for
-        and knows nothing of what was tried. Silent, this advised raising
-        0.80 nm without mentioning that a larger value had already been
-        tried; the message names the padding it would take."""
-        box = _a_box_builder(shape="cube", extent_nm=0.8)
-        _solvate(box, cutoff_nm=1.5, padding_nm=0.4, caplog=caplog)
-        said = next(m for m in caplog.messages if m.startswith("Stopping at"))
-        assert "0.40 nm padding" in said and "1.50 nm" in said
-        assert "would need about" in said
-
 class TestEveryStageShowsProgress:
     """`_run_md_stage` took `on_step_progress` and drove the bar;
     `_run_md_stage_with_live_metrics` had no such parameter. That second one
@@ -2291,9 +2131,8 @@ def _solvate(box, *, cutoff_nm, padding_nm, caplog):
 def _two_antiparallel_helices():
     """Two copies of one chain, one embedded upside down: each a long axis
     along the membrane normal with a bulky head at one end, as a receptor
-    has its soluble domain, so its direction along the normal is defined;
-    the second is the first mirrored in z. Over 100 atoms each, which is
-    the size below which the check does not judge a chain."""
+    has its soluble domain; the second is the first turned 180 degrees about
+    x. Numbered alike, as copies in a deposited structure are."""
     import numpy as np
     pytest.importorskip("openmm.app")
     from openmm import app, unit
@@ -2302,9 +2141,9 @@ def _two_antiparallel_helices():
     topology = app.Topology()
     positions = []
     for chain_index, flip in enumerate((1.0, -1.0)):
-        chain = topology.addChain()
+        chain = topology.addChain(id="AB"[chain_index])
         for i in range(60):
-            residue = topology.addResidue("ALA", chain)
+            residue = topology.addResidue("ALA", chain, id=str(i + 1))
             z = i * 0.15 - 4.5
             # A head: the last twelve residues fan out wide, so the mass
             # sits at one end and the axis has a direction.
@@ -2313,7 +2152,7 @@ def _two_antiparallel_helices():
                 topology.addAtom(name, app.element.carbon, residue)
                 x = spread * np.cos(i * 1.7) + chain_index * 4.0 + rng.normal(0, 0.02)
                 y = spread * np.sin(i * 1.7) + rng.normal(0, 0.02)
-                positions.append((x, y, flip * z))
+                positions.append((x, flip * y, flip * z))
     return topology, positions * unit.nanometer
 
 

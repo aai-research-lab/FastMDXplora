@@ -101,6 +101,10 @@ class SimulationResult:
     #: barostat used was known only inside the runner, and a methods section
     #: had to report the pressure of an NPT run as unrecorded.
     pressure_bar_used: float | None = None
+    #: Which barostat the constant-pressure stages used: "membrane" (x and y
+    #: coupled, z free, no surface tension) or "isotropic"; None where no
+    #: stage ran at constant pressure. The methods section states it.
+    barostat: str | None = None
     minimized_state: Path | None = None
     #: Settings this run decided for itself, under their config names.
     #:
@@ -2414,12 +2418,15 @@ def run_simulation(
         # `ensemble` says what production runs in. Resolved above, because
         # the warning needs the same answer.
         barostat_index = None
+        barostat_kind = None
         if plan["npt_steps"] > 0 or wants_npt_production:
+            membrane_system = is_membrane_system(topology)
+            barostat_kind = "membrane" if membrane_system else "isotropic"
             barostat_index = _add_barostat(
                 omm, system,
                 temperature_K=temperature_K,
                 pressure_bar=resolved_pressure_bar,
-                membrane=is_membrane_system(topology),
+                membrane=membrane_system,
                 frequency=barostat_frequency,
             )
             simulation.context.reinitialize(preserveState=True)
@@ -2820,6 +2827,7 @@ def run_simulation(
         log_file=log_path,
         platform_used=platform_name,
         pressure_bar_used=resolved_pressure_bar,
+        barostat=barostat_kind,
         n_production_frames=int(n_frames),
         duration_ns_actual=float(duration_ns_actual),
         minimized_state=minimized_state_path if minimize else None,

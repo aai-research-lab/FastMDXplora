@@ -154,20 +154,25 @@ CORPUS: tuple[Expectation, ...] = (
             "protein -- cannot be built from its entry without a force field "
             "that describes the linkage."
         ),
-        notes="Its belt fits at 4.4 nm, 8 degrees off the principal axis.",
+        notes=("The membrane fit finds OPM's normal within 7 degrees from any "
+               "starting frame, at a hydrophobic thickness of 3.2 to 3.4 nm."),
     ),
     Expectation(
         pdb_id="2POR",
         kind="membrane-barrel",
         description="porin, a beta-barrel membrane protein",
         membrane="POPC",
-        residues=(280, 320),
-        refused=(
-            "Refused. The belt check compares hydrophobic and charged "
-            "residues over the whole surface, and a barrel keeps its polar "
-            "residues in the lumen and its belt outside -- which accessible "
-            "area cannot tell apart. Measured at 1.17 against a 0.75 "
-            "threshold."
+        residues=(880, 940),
+        notes=(
+            "The biological assembly, a trimer of 304-residue barrels. The "
+            "belt check refused it at 1.17 against a 0.75 threshold, and then "
+            "the long-axis copy check refused the trimer as inverted, since a "
+            "monomer is as wide as it is tall. The slab fit counts only the "
+            "surface a lipid can reach, so the charged lumen does not count "
+            "against the belt, and the copies are compared by the three-fold "
+            "that relates them. Built 2026-09-28: 279,657 atoms, 442 POPC "
+            "lipids (221 per leaflet), 84% of the protein's atoms between the "
+            "phosphate planes."
         ),
     ),
     Expectation(
@@ -178,11 +183,13 @@ CORPUS: tuple[Expectation, ...] = (
         membrane="POPC",
         residues=(400, 520),
         refused=(
-            "Refused at 0.80. A T4L fusion is a whole soluble protein bolted "
-            "on, and the belt comparison runs over the entire molecule, so "
-            "the fusion swamps the belt. Most GPCR crystal structures are "
-            "fusion constructs, so this is a common case rather than an "
-            "exotic one."
+            "Refused before the bilayer, for its heterogens: ACM and PLM are "
+            "covalently bonded to cysteines, and GLC is a free sugar whose "
+            "role the structure does not say. The membrane itself is no longer "
+            "the obstacle: the belt check refused it at 0.80, because the T4L "
+            "fusion swamped a comparison over the whole molecule, and the slab "
+            "fit that replaced it places this receptor within a few degrees of "
+            "OPM's orientation."
         ),
     ),
     Expectation(

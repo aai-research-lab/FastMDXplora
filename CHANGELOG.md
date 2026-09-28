@@ -114,6 +114,48 @@ membrane.** `POP` is OpenMM's name for POPC and the PDB's code for
 pyrophosphate, and one residue of it was enough to choose the membrane
 barostat. A system is now a bilayer when it holds at least 20 lipids.
 
+### A membrane protein is placed before its bilayer is built
+
+**The protein is oriented and centred for the bilayer, by a fit checked against
+OPM.** OpenMM builds the bilayer in the xy plane at z = 0 and takes the
+protein's frame as it is. Nothing centred it, so the bilayer sat at z = 0 of
+whatever frame the file was in, and `membrane_orient` rotated a structure by
+its longest axis and centred it on its centroid, which is wrong for anything
+with a soluble domain: a GPCR with a fusion partner or a G protein. The
+membrane normal, centre and hydrophobic thickness are now fitted from where
+the protein's lipid-facing surface is apolar. Across 65 membrane proteins in
+OPM (170 fits from random starting frames, 25 proteins held out) the fitted
+normal came within 21° of OPM's every time and 3 to 4° at the median, and the
+centre within 0.1 nm at the median. A structure that is not a membrane protein
+is refused (`setup.membrane.no_belt`), and one lying at an angle to z with
+nothing said about it is refused with the angle stated. Copies of one chain
+are compared by the symmetry that relates them, which in one bilayer turns the
+normal onto itself: the old test compared each copy's longest axis, and
+refused a porin trimer, whose monomers are as wide as they are tall.
+
+**An OPM file is recognised and keeps its frame.** Its membrane marker
+pseudo-atoms were read as a molecule to parameterise; they are now taken out,
+and OPM's orientation, centre and published thickness are used.
+
+**`membrane_center_z_nm`** places the bilayer in a structure oriented
+elsewhere, with `membrane_orientation_checked: true`.
+
+**The setup record says how the protein was placed and what was built**, under
+`bilayer`: the placement, the fitted thickness, the tilt of the input, the
+rotation, the number of lipids in each leaflet and the box. The methods
+paragraph says the same, instead of describing a dodecahedron box of water and
+an isotropic barostat, and the simulation record names the barostat.
+
+**Advice before a membrane run:** a bilayer below or within 6 K of its lipid's
+main transition (DPPC at the default 300 K is in the gel phase's range), and
+NPT equilibration under 1 ns, which is short for a bilayer's area to settle.
+The box-too-small advice no longer fires on a membrane's rectangular box.
+Setup says what it is doing while OpenMM packs the bilayer, which reports
+nothing for minutes, and names a component the force field cannot describe
+there as it does during solvation. A four-site water given with a membrane is
+refused in words; it failed inside the packing with OpenMM's advice to call a
+Modeller method.
+
 ### The bilayer is measured
 
 **`area_per_lipid`, `bilayer_thickness` and `lipid_order`** measure the
@@ -125,7 +167,9 @@ against before anything about the protein in it is believed. The bilayer
 centre is found across the periodic boundary, lipids are assigned to leaflets
 every frame, chains are found from the bonds so any force field's naming
 works (AMBER's split head and tail residues included), and lipids that do not
-form a bilayer normal to z are refused rather than measured.
+form a bilayer normal to z are refused rather than measured. A new page,
+`docs/membranes.md`, covers the lipids and their transition temperatures,
+placement, equilibration, and what to compare the bilayer against.
 
 ### What the records say matches what the code does
 

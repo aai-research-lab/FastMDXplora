@@ -39,6 +39,7 @@ class SetupSettings(TypedDict, total=False):
     membrane: Literal['POPC', 'POPE', 'DLPC', 'DLPE', 'DMPC', 'DOPC', 'DPPC']
     membrane_orient: bool
     membrane_orientation_checked: bool
+    membrane_center_z_nm: float
     solvent_padding_nm: float
     box_shape: Literal['cube', 'dodecahedron', 'octahedron']
     ion_positive: str

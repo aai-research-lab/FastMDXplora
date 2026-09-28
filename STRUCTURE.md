@@ -27,8 +27,8 @@ FastMDXplora/
 │       │   ├── heterogens.py      # What to keep from the entry, and why
 │       │   ├── ccd.py             # Chemical Component Dictionary lookups
 │       │   ├── protonation.py     # Protonation states at the run's pH
-│       │   ├── membrane.py        # Bilayer construction
-│       │   └── membrane_fit.py    # Orienting the protein in the bilayer, checked not assumed
+│       │   ├── membrane.py        # Placing the protein for its bilayer, and the checks the build needs
+│       │   └── membrane_fit.py    # The membrane normal, centre and thickness, fitted to the protein
 │       ├── simulation/
 │       │   ├── pipeline.py        # Phase driver
 │       │   ├── runner.py          # minimize → NVT → NPT → production, reporters, platforms

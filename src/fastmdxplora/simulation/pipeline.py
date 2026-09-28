@@ -819,6 +819,7 @@ def run(
             output_dir, params, artifacts, notes,
             platform_used=result.platform_used,
             pressure_bar_used=result.pressure_bar_used,
+            barostat=getattr(result, "barostat", None),
             n_frames=result.n_production_frames,
             duration_ns_actual=result.duration_ns_actual,
             resolved=result.resolved,
@@ -865,6 +866,7 @@ def _write_manifest(
     n_frames: int | None = None,
     duration_ns_actual: float | None = None,
     pressure_bar_used: float | None = None,
+    barostat: str | None = None,
     resolved: dict[str, Any] | None = None,
     prepared_system: dict[str, Any] | None = None,
 ) -> None:
@@ -893,6 +895,9 @@ def _write_manifest(
         # can be given in bar or atmospheres and unset means one bar, so the
         # number used was known only inside the runner.
         "pressure_bar_used": pressure_bar_used,
+        # Which barostat: a bilayer is coupled in its plane and along its
+        # normal separately, and the methods say so.
+        **({"barostat": barostat} if barostat else {}),
         # What this run set out to do, so `resolved_config.yml` can say it
         # rather than asking the derivation again on whatever version is
         # replaying. `duration_ns_actual` below is the opposite: what the

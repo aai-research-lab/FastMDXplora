@@ -94,12 +94,14 @@ on.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `membrane` | str | — | `POPC`, `POPE`, `DLPC`, `DLPE`, `DMPC`, `DOPC` or `DPPC` |
-| `membrane_orient` | bool | `false` | Rotate the structure so its longest axis lies along the membrane normal |
-| `membrane_orientation_checked` | bool | `false` | Proceed with the structure's orientation as it is |
+| `membrane` | str | — | `POPC`, `POPE`, `DLPC`, `DLPE`, `DMPC`, `DOPC` or `DPPC`. The bilayer is built in the xy plane at z = 0 around the placed protein |
+| `membrane_orient` | bool | `false` | Rotate the structure onto its fitted membrane normal and centre it on the fitted bilayer |
+| `membrane_orientation_checked` | bool | `false` | Keep the structure's orientation; its centre along z is fitted |
+| `membrane_center_z_nm` | float | — | The bilayer centre along z in the structure's frame, in nm. Needs `membrane_orientation_checked` |
 
-See [Studies beyond a box of water](studies.md#membrane-systems) — the
-orientation check has two refusals and a barostat that is chosen for you.
+An OPM file is recognised and keeps its own frame, with none of these set.
+See [Membrane proteins](membranes.md) for how the protein is placed, what is
+refused, and the barostat that is chosen for you.
 
 ### Solvent, ions and the box
 

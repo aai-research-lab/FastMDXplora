@@ -72,7 +72,9 @@ def advise(structure: dict[str, Any] | None,
 
     for check in (_a_metal_in_a_site, _a_box_too_small_for_the_cutoff,
                   _a_switch_the_force_field_does_not_want,
-                  _a_ligand_with_no_chemistry, _a_density_never_equilibrated):
+                  _a_ligand_with_no_chemistry, _a_density_never_equilibrated,
+                  _a_bilayer_near_or_below_its_transition,
+                  _a_bilayer_barely_equilibrated):
         said = check(structure, settings)
         if said is not None:
             found.append(said)
@@ -127,7 +129,9 @@ def _a_box_too_small_for_the_cutoff(structure: dict[str, Any],
             choice = _REGISTRY.get(AUTO_FORCEFIELD)
         cutoff = choice.nonbonded[0] if choice is not None else FALLBACK_CUTOFF_NM
     extents = structure.get("extents_angstrom")
-    if padding is None or not extents:
+    if padding is None or not extents or settings.get("membrane"):
+        # A bilayer's box is rectangular and made of whole patches about
+        # 6 nm across, so the dodecahedron's arithmetic does not apply.
         return None
 
     # A dodecahedron's smallest width is far narrower than solute plus
@@ -239,4 +243,94 @@ def _a_density_never_equilibrated(structure: dict[str, Any],
         remedy=(
             "Give npt_steps a value unless the run is deliberately at fixed "
             "volume. The run reports the density it ended up at either way."),
+    )
+
+
+#: How close above a lipid's main transition a bilayer is still worth a word:
+#: fluid, but where the transition a force field reproduces only roughly is a
+#: few kelvin away.
+NEAR_TRANSITION_K = 6.0
+
+
+def _a_bilayer_near_or_below_its_transition(
+        structure: dict[str, Any], settings: dict[str, Any]) -> Advisory | None:
+    """A bilayer below its main transition belongs in the gel phase.
+
+    Below the lipid's main transition the equilibrium is the gel, which a
+    simulation reaches, if at all, over far longer than a run, and which
+    force fields reproduce less well than the fluid. The area per lipid and
+    thickness then describe neither phase. DPPC at the default 300 K is the
+    case (41 C transition).
+    """
+    lipid = str(settings.get("membrane") or "").upper()
+    if not lipid:
+        return None
+    from fastmdxplora.setup.membrane import MAIN_TRANSITION_K
+
+    transition = MAIN_TRANSITION_K.get(lipid)
+    if transition is None:
+        return None
+    temperature = float(settings.get("temperature_K") or 300.0)
+    if temperature >= transition + NEAR_TRANSITION_K:
+        return None
+    celsius = transition - 273.15
+    if temperature < transition:
+        return Advisory(
+            setting="temperature_K",
+            summary=(f"{lipid} is below its main transition at {temperature:g} K "
+                     f"({transition:g} K, {celsius:.0f} °C)."),
+            detail=(
+                "Its equilibrium there is the gel phase, which a simulation "
+                "reaches, if at all, over far longer than a run, and which "
+                "force fields reproduce less well than the fluid: the area "
+                "per lipid and thickness describe neither phase."),
+            remedy=(
+                f"Simulate above {transition + NEAR_TRANSITION_K:g} K, or choose "
+                "a lipid that is fluid at this temperature (POPC or DOPC)."),
+        )
+    return Advisory(
+        setting="temperature_K",
+        summary=(f"{lipid} at {temperature:g} K is {temperature - transition:.0f} K "
+                 f"above its main transition ({transition:g} K)."),
+        detail=(
+            "The bilayer is fluid, but near a transition a force field "
+            "reproduces only roughly, where its area and thickness change "
+            "steeply with temperature."),
+        remedy=(
+            f"Simulate at {transition + NEAR_TRANSITION_K:g} K or above for a "
+            "bilayer clear of it, or keep this temperature deliberately."),
+    )
+
+
+#: NPT equilibration under which a bilayer's area has not settled: its area
+#: per lipid relaxes over nanoseconds, where water's density takes
+#: picoseconds.
+BILAYER_NPT_NS = 1.0
+
+
+def _a_bilayer_barely_equilibrated(
+        structure: dict[str, Any], settings: dict[str, Any]) -> Advisory | None:
+    """A bilayer's area relaxes over nanoseconds at constant pressure."""
+    if not settings.get("membrane"):
+        return None
+    timestep = float(settings.get("timestep_fs") or 2.0)
+    if settings.get("npt_steps") is not None:
+        npt_ns = int(settings["npt_steps"]) * timestep / 1e6
+    elif settings.get("npt_duration_ns") is not None:
+        npt_ns = float(settings["npt_duration_ns"])
+    else:
+        npt_ns = 1.0  # the default NPT stage
+    if npt_ns >= BILAYER_NPT_NS:
+        return None
+    return Advisory(
+        setting="npt_duration_ns",
+        summary=f"{npt_ns:g} ns of NPT equilibration is short for a bilayer.",
+        detail=(
+            "A bilayer's area per lipid relaxes over nanoseconds at constant "
+            "pressure, where water's density takes picoseconds, so production "
+            "will begin while the membrane is still settling."),
+        remedy=(
+            "Give NPT equilibration a few nanoseconds (npt_duration_ns), or "
+            "read the area per lipid the membrane analysis reports and "
+            "discard the stretch before it levels off."),
     )

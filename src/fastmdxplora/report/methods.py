@@ -122,6 +122,71 @@ def missing_from_methods(setup: dict[str, Any], sim: dict[str, Any]) -> list[str
     return gaps
 
 
+#: How each placement reads in a methods section.
+_PLACED_BY = {
+    "OPM frame": "in the orientation and position published by the OPM database",
+    "fitted orientation and centre": (
+        "on the membrane normal and centre fitted to its apolar lipid-facing "
+        "surface"),
+    "structure's own orientation; centre fitted along z": (
+        "in its own orientation, at the membrane centre fitted to its apolar "
+        "lipid-facing surface"),
+    "stated orientation; centre fitted along z": (
+        "in the orientation supplied, at the membrane centre fitted to its "
+        "apolar lipid-facing surface"),
+    "stated orientation and centre": "in the orientation and position supplied",
+}
+
+
+#: The lipid force field each file OpenMM ships carries, by the name its
+#: developers publish it under.
+_LIPID_FORCE_FIELDS = {
+    "amber14-all.xml": "AMBER Lipid17",
+    "amber14/lipid17.xml": "AMBER Lipid17",
+    "charmm36.xml": "CHARMM36",
+}
+
+
+def _lipid_parameters_clause(source: Any) -> str:
+    """Which force field described the lipids, where it was recorded."""
+    if not source:
+        return ""
+    named = _LIPID_FORCE_FIELDS.get(str(source))
+    return (f", described by {named} ({source})" if named
+            else f", described by {source}")
+
+
+def _bilayer_sentence(bilayer: dict[str, Any], padding: Any, positive: str,
+                      negative: str, concentration: Any) -> str:
+    """The protein embedded in its bilayer, as a sentence: how it was placed,
+    the fitted hydrophobic thickness, which lipid, how many and per leaflet,
+    and the water and ions around it."""
+    lipid = bilayer.get("lipid") or "lipid"
+    count = bilayer.get("lipids")
+    leaflets = bilayer.get("lipids_per_leaflet") or []
+    placed = _PLACED_BY.get(str(bilayer.get("placed_by")),
+                            str(bilayer.get("placed_by") or "as given"))
+    published = bilayer.get("opm_hydrophobic_thickness_nm")
+    thickness = bilayer.get("hydrophobic_thickness_nm")
+    if bilayer.get("placed_by") == "OPM frame" and published:
+        said = f" (hydrophobic thickness {float(published):.1f} nm in OPM)"
+    elif thickness:
+        said = f" (fitted hydrophobic thickness {float(thickness):.1f} nm)"
+    else:
+        said = ""
+    text = (f"The protein was placed {placed}" + said
+            + f" and embedded in a {lipid} bilayer"
+            + (f" of {count} lipids ({leaflets[0]} and {leaflets[1]} per leaflet)"
+               if count and len(leaflets) == 2 else "")
+            + _lipid_parameters_clause(bilayer.get("lipid_parameters"))
+            + " built with OpenMM's Modeller, in a rectangular box")
+    if padding is not None:
+        text += f" with at least {_nm(padding)} of padding"
+    if concentration is not None:
+        text += f", and {positive}/{negative} ions at {concentration} M"
+    return text + "."
+
+
 def _flatten(manifest: dict[str, Any]) -> dict[str, Any]:
     """One mapping from a manifest that nests.
 
@@ -177,6 +242,8 @@ def methods_paragraphs(
     # From the whole record, before it is flattened: the runner's own answer
     # where it gave one, and its resolver over what it recorded where not.
     production_ensemble = recorded_ensemble(sim)
+    bilayer = setup.get("bilayer") if isinstance(setup.get("bilayer"), dict) else None
+    barostat_kind = sim.get("barostat") if isinstance(sim, dict) else None
     setup = _flatten(setup)
     sim = _flatten(sim)
 
@@ -306,7 +373,10 @@ def methods_paragraphs(
                      "n_atoms", "atom_count")
 
         solvation = []
-        if padding is not None:
+        if bilayer:
+            solvation.append(_bilayer_sentence(bilayer, padding, positive,
+                                               negative, concentration))
+        elif padding is not None:
             solvation.append(
                 f"The complex was solvated in a {box or 'cubic'} box with "
                 f"{_nm(padding)} of padding"
@@ -472,6 +542,11 @@ def methods_paragraphs(
         # production. Stated without saying which, it reads as production's.
         barostat = (f", with the barostat applied every {barostat_every} steps"
                     if barostat_every else "")
+        if barostat_kind == "membrane":
+            # A bilayer's area and thickness move separately; an isotropic
+            # barostat would couple them and squeeze it.
+            barostat += (" (a membrane barostat: x and y coupled, z "
+                         "independent, zero surface tension)")
         if pressure is not None and production_ensemble == NPT and production != 0:
             protocol.append(f"Pressure was maintained at {pressure} bar{barostat}.")
         elif pressure is not None and npt:

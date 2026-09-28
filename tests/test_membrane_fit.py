@@ -8,8 +8,9 @@ or a beta-barrel's polar lumen swamps the belt being looked for -- which is
 why the calibration set overlapped, with a porin refused at 1.17 and
 adenylate kinase refused at 0.91.
 
-These tests exercise the arithmetic, which needs neither OpenMM nor a real
-structure. The measurement against known proteins is a separate exercise.
+These tests exercise the arithmetic and the chemistry on constructed
+structures, which need neither OpenMM nor a download. The measurement
+against OPM's orientations is `tests/validation/test_the_membrane_is_where_opm_puts_it.py`.
 """
 
 from __future__ import annotations
@@ -156,117 +157,168 @@ class TestTheRotation:
         assert abs(float(np.median(band)) - fit.centre_nm) < 0.4
 
 
-def _molecule():
-    """A real mdtraj topology: a methyl and a water.
-
-    Built rather than mocked, because what is being tested is a chemistry
-    decision -- which surface counts as apolar -- and a mock would only
-    return whatever it was told to.
-    """
+def _protein(parts, *, normal=(0, 0, 1), seed=0):
+    """A protein built from (residue, atom, element, coordinates) parts,
+    rotated so that z in the parts lands on ``normal``."""
     import mdtraj as md
+
+    from fastmdxplora.setup.membrane_fit import rotation_onto_z
 
     top = md.Topology()
     chain = top.add_chain()
-
-    methyl = top.add_residue("MET", chain)
-    carbon = top.add_atom("C", md.element.carbon, methyl)
-    hydrogens = [
-        top.add_atom(f"H{i}", md.element.hydrogen, methyl) for i in range(4)]
-    for hydrogen in hydrogens:
-        top.add_bond(carbon, hydrogen)
-
-    water = top.add_residue("HOH", chain)
-    oxygen = top.add_atom("O", md.element.oxygen, water)
-    hydroxyl = top.add_atom("H1", md.element.hydrogen, water)
-    top.add_bond(oxygen, hydroxyl)
-
-    coordinates = np.array([
-        [0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [-0.1, 0.0, 0.0],
-        [0.0, 0.1, 0.0], [0.0, -0.1, 0.0],
-        [1.0, 0.0, 0.0], [1.1, 0.0, 0.0],
-    ], dtype=float)
-    return top, coordinates
+    points = []
+    for resname, atom, element, xyz in parts:
+        residue = top.add_residue(resname, chain)
+        top.add_atom(atom, getattr(md.element, element), residue)
+        points.append(xyz)
+    rotation = rotation_onto_z(normal).T
+    return top, np.asarray(points, dtype=float) @ rotation.T
 
 
-class TestSurfaceIsSplitByWhatALipidWouldTouch:
-    """A bilayer is happy against carbon and sulfur and unhappy against
-    nitrogen and oxygen. Hydrogen goes with whatever it is bonded to: the
-    surface of a methyl is apolar and the surface of a hydroxyl's hydrogen
-    is not, which is a chemistry decision rather than an element lookup."""
-
-    def test_a_methyl_is_apolar_including_its_hydrogens(self) -> None:
-        from fastmdxplora.setup.membrane_fit import areas_by_character
-
-        top, coordinates = _molecule()
-        _, apolar, polar = areas_by_character(top, coordinates)
-        methyl = [a.index for a in top.atoms if a.residue.name == "MET"]
-
-        assert all(apolar[i] > 0 for i in methyl)
-        assert all(polar[i] == 0 for i in methyl)
-
-    def test_a_hydroxyl_is_polar_including_its_hydrogen(self) -> None:
-        from fastmdxplora.setup.membrane_fit import areas_by_character
-
-        top, coordinates = _molecule()
-        _, apolar, polar = areas_by_character(top, coordinates)
-        water = [a.index for a in top.atoms if a.residue.name == "HOH"]
-
-        assert all(polar[i] > 0 for i in water)
-        assert all(apolar[i] == 0 for i in water)
-
-    def test_every_atom_lands_in_exactly_one(self) -> None:
-        """An atom contributes to one or the other, never both, or the slab
-        score would double-count it."""
-        from fastmdxplora.setup.membrane_fit import areas_by_character
-
-        top, coordinates = _molecule()
-        _, apolar, polar = areas_by_character(top, coordinates)
-        assert not np.any((apolar > 0) & (polar > 0))
-
-    def test_the_coordinates_come_back_in_nanometres(self) -> None:
-        from fastmdxplora.setup.membrane_fit import areas_by_character
-
-        top, coordinates = _molecule()
-        returned, _, _ = areas_by_character(top, coordinates)
-        assert np.allclose(returned, coordinates)
-
-    def test_the_areas_are_a_surface_not_a_count(self) -> None:
-        """Shrake-Rupley areas in nm^2: a buried atom has less than an
-        exposed one, and nothing has a negative surface."""
-        from fastmdxplora.setup.membrane_fit import areas_by_character
-
-        top, coordinates = _molecule()
-        _, apolar, polar = areas_by_character(top, coordinates)
-        assert (apolar >= 0).all() and (polar >= 0).all()
-        assert (apolar.sum() + polar.sum()) > 0
+def _ring(radius, z, count):
+    angles = np.linspace(0.0, 2.0 * np.pi, count, endpoint=False)
+    return [(radius * np.cos(a), radius * np.sin(a), z) for a in angles]
 
 
-class TestFittingFromATopology:
-    def test_it_returns_a_fit_or_says_it_cannot(self) -> None:
-        """Seven atoms is far too few to speak of a membrane, and the honest
-        answer is nothing rather than a slab through a methyl."""
+def _barrel(*, lumen="charged", normal=(0, 0, 1)):
+    """A beta-barrel as wide as a porin's: an apolar outer belt 3 nm high,
+    charged rims and loops above and below it, and a lumen lined with
+    charged groups."""
+    parts = []
+    for z in np.arange(-1.4, 1.41, 0.35):
+        parts += [("LEU", "CD1", "carbon", p) for p in _ring(2.6, z, 48)]
+        lining = ("LYS", "NZ", "nitrogen") if lumen == "charged" else ("LEU", "CD1", "carbon")
+        parts += [(*lining, p) for p in _ring(1.9, z, 36)]
+    for z in (-2.4, -2.1, -1.8, 1.8, 2.1, 2.4):
+        parts += [("GLU", "OE1", "oxygen", p) for p in _ring(2.6, z, 48)]
+    return _protein(parts, normal=normal)
+
+
+def _globule(seed=3, count=900):
+    rng = np.random.default_rng(seed)
+    direction = rng.normal(size=(count, 3))
+    direction /= np.linalg.norm(direction, axis=1)[:, None]
+    kinds = rng.choice(3, size=count, p=[0.45, 0.35, 0.20])
+    table = {0: ("LEU", "CD1", "carbon"), 1: ("SER", "OG", "oxygen"),
+             2: ("LYS", "NZ", "nitrogen")}
+    parts = [(*table[k], tuple(2.2 * d)) for k, d in zip(kinds, direction)]
+    return _protein(parts)
+
+
+class TestSurfaceIsWeighedByWhatItCostsABilayer:
+    """A charged group in a hydrocarbon core costs several times a neutral
+    polar one; a backbone N or O in a transmembrane helix is hydrogen-bonded
+    in the helix. Weighted alike, a slab lying across a compact helix bundle
+    scored as well as the true one."""
+
+    def test_each_atom_has_its_class(self) -> None:
+        import mdtraj as md
+
+        from fastmdxplora.setup.membrane_fit import (
+            APOLAR, BACKBONE_POLAR, CHARGED, SIDE_CHAIN_POLAR, surface_classes)
+
+        top = md.Topology()
+        chain = top.add_chain()
+        wanted = []
+        for resname, atom, element, cls in [
+                ("LYS", "NZ", "nitrogen", CHARGED), ("ARG", "NH1", "nitrogen", CHARGED),
+                ("ASP", "OD2", "oxygen", CHARGED), ("GLU", "OE1", "oxygen", CHARGED),
+                ("ALA", "OXT", "oxygen", CHARGED), ("ALA", "N", "nitrogen", BACKBONE_POLAR),
+                ("ALA", "O", "oxygen", BACKBONE_POLAR), ("SER", "OG", "oxygen", SIDE_CHAIN_POLAR),
+                ("ASN", "ND2", "nitrogen", SIDE_CHAIN_POLAR), ("LEU", "CD1", "carbon", APOLAR),
+                ("MET", "SD", "sulfur", APOLAR)]:
+            residue = top.add_residue(resname, chain)
+            top.add_atom(atom, getattr(md.element, element), residue)
+            wanted.append(cls)
+        assert list(surface_classes(top)) == wanted
+
+
+class TestALipidReachesOnlyTheOutside:
+    def test_a_lumen_is_not_lipid_facing(self) -> None:
+        """A porin's lumen is lined with charged groups and filled with
+        water; counted as surface the bilayer covers, it pushed the fit
+        sideways for every trimeric porin."""
+        from fastmdxplora.setup.membrane_fit import lipid_facing
+
+        top, points = _barrel()
+        facing = lipid_facing(points, (0, 0, 1))
+        radius = np.hypot(points[:, 0], points[:, 1])
+        belt = np.abs(points[:, 2]) < 1.5
+        assert facing[belt & (radius > 2.5)].all()
+        assert not facing[belt & (radius < 2.0)].any()
+
+
+class TestAProteinIsFitted:
+    @pytest.mark.parametrize("normal", [(0, 0, 1), (0.6, -0.3, 0.74), (1, 0, 0)])
+    def test_a_barrel_is_found_whatever_its_lumen_holds(self, normal) -> None:
         from fastmdxplora.setup.membrane_fit import fit_membrane
 
-        top, coordinates = _molecule()
-        assert fit_membrane(top, coordinates) is None
+        top, points = _barrel(normal=normal)
+        fit = fit_membrane(top, points)
+        wanted = np.asarray(normal, dtype=float) / np.linalg.norm(normal)
+        assert abs(float(fit.normal @ wanted)) > np.cos(np.radians(5))
+        assert fit.thickness_nm == pytest.approx(3.0, abs=0.5)
+        assert fit.looks_like_a_membrane_protein
+        assert fit.details["lipid_facing_share"] < 0.9
 
-    def test_a_belted_slab_is_found_through_the_topology(self) -> None:
-        """The same recovery the geometry tests make, but entered through the
-        topology path that needs mdtraj -- the half that had no test."""
+    def test_the_plane_is_placed_where_the_belt_is(self) -> None:
+        from fastmdxplora.setup.membrane_fit import fit_membrane
+
+        top, points = _barrel()
+        shifted = points + np.array([3.0, -2.0, 5.0])
+        fit = fit_membrane(top, shifted)
+        assert fit.plane_point @ fit.normal == pytest.approx(
+            np.array([3.0, -2.0, 5.0]) @ fit.normal, abs=0.2)
+
+    def test_a_soluble_protein_does_not_look_like_one(self) -> None:
+        from fastmdxplora.setup.membrane_fit import fit_membrane
+
+        top, points = _globule()
+        fit = fit_membrane(top, points)
+        assert fit is not None and not fit.looks_like_a_membrane_protein
+
+    def test_too_little_protein_is_no_answer(self) -> None:
+        from fastmdxplora.setup.membrane_fit import fit_membrane
+
+        top, points = _protein([("ALA", "CB", "carbon", (0, 0, i * 0.1)) for i in range(5)])
+        assert fit_membrane(top, points) is None
+
+    def test_only_protein_heavy_atoms_are_fitted(self) -> None:
+        """Measured on heavy atoms, as a deposited structure has them;
+        hydrogens added by preparation, and water, are left out."""
         import mdtraj as md
 
         from fastmdxplora.setup.membrane_fit import fit_membrane
 
-        top = md.Topology()
+        top, points = _barrel()
+        heavy = fit_membrane(top, points)
         chain = top.add_chain()
-        points, apolar, _ = _belted((0, 0, 1), count=400)
-        for index in range(len(points)):
-            residue = top.add_residue("LIG", chain)
-            # Carbon where the belt is, oxygen outside it: the same
-            # arrangement the geometry tests build by hand.
-            element = md.element.carbon if apolar[index] > 0.1 else md.element.oxygen
-            top.add_atom("X", element, residue)
+        water = top.add_residue("HOH", chain)
+        top.add_atom("O", md.element.oxygen, water)
+        hydrogen = top.add_residue("LEU", chain)
+        top.add_atom("HD11", md.element.hydrogen, hydrogen)
+        more = np.vstack([points, [[0.0, 0.0, 0.0], [1.9, 0.0, 0.1]]])
+        again = fit_membrane(top, more)
+        assert again.score_nm2 == pytest.approx(heavy.score_nm2)
 
-        fit = fit_membrane(top, points)
-        assert fit is not None
-        assert abs(float(fit.normal[2])) > 0.9
+
+class TestAKnownNormal:
+    def test_the_centre_is_found_along_it(self) -> None:
+        from fastmdxplora.setup.membrane_fit import fit_along
+
+        top, points = _barrel()
+        fit = fit_along(top, points + np.array([0.0, 0.0, 2.5]), (0, 0, 1))
+        assert float(fit.plane_point[2]) == pytest.approx(2.5, abs=0.2)
+        assert fit.thickness_nm == pytest.approx(3.0, abs=0.5)
+
+    def test_the_tilt_is_either_way_up(self) -> None:
+        from fastmdxplora.setup.membrane_fit import SlabFit, tilt_deg
+
+        def fit(normal):
+            return SlabFit(normal=np.asarray(normal, dtype=float), centre_nm=0.0,
+                           half_thickness_nm=1.5, buried_hydrophobic_nm2=1.0,
+                           buried_polar_nm2=0.0, score_nm2=1.0)
+
+        assert tilt_deg(fit((0, 0, -1))) == pytest.approx(0.0)
+        assert tilt_deg(fit((1, 0, 0))) == pytest.approx(90.0)
+        assert tilt_deg(fit((0, np.sin(np.radians(30)), np.cos(np.radians(30))))) == pytest.approx(30.0)

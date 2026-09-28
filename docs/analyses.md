@@ -70,7 +70,8 @@ minimum in g(r) — never assumed, because the radius decides the number.
 The three numbers a membrane run is checked against before anything about the
 protein in it is believed: each is measured by experiment, and each moves when
 the force field, the temperature or the barostat is wrong. They run only where
-there is a bilayer.
+there is a bilayer. See [Membrane proteins](membranes.md) for what each
+computes, and what to compare it with.
 
 ### Conformations
 

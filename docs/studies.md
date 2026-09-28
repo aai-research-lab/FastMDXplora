@@ -100,51 +100,21 @@ That is a membrane protein from a PDB identifier to a finished report in one
 command. Seven lipids are available — POPC, POPE, DLPC, DLPE, DMPC, DOPC and
 DPPC — and OpenMM packs the bilayer, so no external packing tool is needed.
 
-### Orientation
+### Placement, the barostat, and checking the bilayer
 
-OpenMM's `addMembrane` places the bilayer in the xy plane and assumes the
-protein is already lying along z. A structure taken from the PDB usually is
-not: crystallographic axes have no relation to a membrane normal, and 1AFO's
-NMR frame has its helices lying in the plane the membrane is about to occupy.
-Embedding it anyway packs lipids around a protein lying flat in them, the run
-completes, and every number describes a structure nobody would recognise.
+OpenMM builds the bilayer in the xy plane and takes the protein's frame as it
+is, so the protein is placed first: an OPM file keeps OPM's frame, and
+`setup.membrane_orient` rotates anything else onto a membrane normal fitted
+from where its lipid-facing surface is apolar. The fit was checked against
+OPM's orientations for 65 membrane proteins. A structure that is not a
+membrane protein, or one lying on its side with nothing said about it, is
+refused. The barostat is the membrane one, chosen from the topology, and three
+analyses measure the bilayer itself: area per lipid, thickness and chain
+order.
 
-So the setup phase checks, and `setup.membrane_orient` rotates the structure so
-its longest axis lies along the normal. That is the right answer for a
-transmembrane helix or a bundle of them, where the protein is longest along the
-direction it spans.
-
-**It is checked rather than trusted.** Two refusals guard it:
-
-- **Before rotating**, whether there is a longest axis worth rotating onto. A
-  protein roughly as long in two directions has its "longest" chosen by noise,
-  and the same structure from a different starting frame would come out
-  differently.
-- **After rotating**, whether the result looks like a membrane protein. A
-  bilayer-spanning fold has hydrophobic side chains banded around its middle
-  and charged ones at the two interfaces. Where the hydrophobic residues are
-  not gathered near the centre, either the structure is soluble or the rotation
-  put it in the wrong frame.
-
-Neither can tell which way **up** the protein ends: a rotation putting the
-extracellular side down is as valid to the calculation as one putting it up.
-Where that matters, the [OPM database](https://opm.phar.umich.edu) publishes
-structures oriented against a real transfer energy, and their coordinates can
-be used directly. `setup.membrane_orientation_checked: true` proceeds with a
-structure as it is, for somebody who knows theirs.
-
-### The barostat
-
-A membrane gets a different one, and this is the part that goes wrong quietly.
-An ordinary barostat scales x, y and z together, which squeezes a bilayer that
-should be free to change thickness independently of its area — and area per
-lipid is what membrane simulations are validated against. The run completes and
-is wrong.
-
-FastMDXplora uses `MonteCarloMembraneBarostat` with the plane coupled, the
-normal free, and no imposed surface tension. It is chosen from the topology
-rather than from a setting, because it has to be right whether or not anybody
-remembered to say so.
+[Membrane proteins](membranes.md) has all of it: which lipid at which
+temperature, the four ways a protein is placed, what is refused, how long to
+equilibrate, and what to compare the bilayer against.
 
 ---
 

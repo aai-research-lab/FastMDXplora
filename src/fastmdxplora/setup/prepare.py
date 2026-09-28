@@ -433,6 +433,8 @@ def prepare_system(
     membrane: str | None = None,
     membrane_orientation_checked: bool = False,
     membrane_orient: bool = False,
+    membrane_frame: str | None = None,
+    membrane_center_z_nm: float | None = None,
     box_shape: str = "cube",
     ion_positive: str = "Na+",
     ion_negative: str = "Cl-",
@@ -473,7 +475,22 @@ def prepare_system(
         Minimum distance in nm between any solute atom and the periodic
         box wall.
     box_shape : {"cube", "dodecahedron", "octahedron"}, default "cube"
-        Periodic box geometry.
+        Periodic box geometry. Not used with a membrane, whose box is
+        rectangular and made of whole patches.
+    membrane : str, optional
+        A lipid OpenMM can build a bilayer from; the bilayer is built in
+        the xy plane at z = 0, after the protein is placed for it by
+        :func:`~fastmdxplora.setup.membrane.place_for_membrane`.
+    membrane_orient : bool, default False
+        Rotate the protein onto its fitted membrane normal.
+    membrane_orientation_checked : bool, default False
+        Keep the protein's orientation as it is.
+    membrane_frame : {"opm"}, optional
+        The structure's frame is OPM's, with the membrane centre at z = 0.
+        Set by the setup pipeline when it finds OPM's membrane markers.
+    membrane_center_z_nm : float, optional
+        The membrane centre along z in the structure's frame, with
+        ``membrane_orientation_checked``.
     ion_positive, ion_negative : str
         Counter-ions. Defaults to NaCl.
     ion_concentration_M : float, default 0.15
@@ -502,7 +519,9 @@ def prepare_system(
     -------
     dict
         Mapping artifact-name -> ``Path``: ``solvated_pdb``,
-        ``topology_pdb``, ``system_xml``, ``state_xml``.
+        ``topology_pdb``, ``system_xml``, ``state_xml``; and ``membrane``,
+        how the protein was placed and the bilayer built (``None`` without
+        a membrane).
     """
     omm = _import_openmm()
     unit = omm["unit"]
@@ -583,6 +602,20 @@ def prepare_system(
     # ----- 2. Build force field (+ ligand) -----
     modeller = omm["Modeller"](pdb.topology, pdb.positions)
     system_generator = None
+    lipid_parameters: str | None = None
+    if membrane:
+        # Lipid parameters, or the run fails at system creation with a
+        # message about a residue template for POPC -- which names the
+        # symptom rather than the missing file. Found for either branch, and
+        # recorded: the file that describes the lipids is part of the
+        # methods, and `amber14-all.xml` carries them without saying so.
+        from fastmdxplora.setup.membrane import (
+            lipid_parameter_file,
+            membrane_forcefield_files,
+        )
+
+        force_field = membrane_forcefield_files(list(force_field), str(membrane).upper())
+        lipid_parameters = lipid_parameter_file(force_field, str(membrane).upper())
     if ligands:
         # Protein-ligand: load the ligand as an OpenFF Molecule, build a
         # SystemGenerator that combines the protein/water force field with
@@ -641,13 +674,6 @@ def prepare_system(
                     ligand_name=name,
                 )
     else:
-        if membrane:
-            # Lipid parameters, or the run fails at system creation with a
-            # message about a residue template for POPC -- which names the
-            # symptom rather than the missing file.
-            from fastmdxplora.setup.membrane import membrane_forcefield_files
-
-            force_field = membrane_forcefield_files(list(force_field))
         logger.info("Building ForceField: %s", force_field)
         ff = omm["ForceField"](*force_field)
 
@@ -675,12 +701,18 @@ def prepare_system(
     if water_model is not None:
         add_solvent_kwargs["model"] = water_model
 
+    membrane_record: dict[str, Any] | None = None
     if membrane:
         # A bilayer instead of a box of water. OpenMM packs the lipids and
         # solvates around them, so no external packing tool is needed -- but
-        # it assumes the protein is already oriented with the membrane normal
-        # along z, and does not check.
-        from fastmdxplora.setup.membrane import LIPIDS, check_orientation
+        # it builds the bilayer in the xy plane at z = 0 and takes the
+        # protein's frame as it is, so the protein is oriented and placed
+        # first, by the rule the study's settings choose.
+        from fastmdxplora.setup.membrane import (
+            LIPIDS,
+            check_chains_point_the_same_way,
+            place_for_membrane,
+        )
 
         lipid = str(membrane).upper()
         if lipid not in LIPIDS:
@@ -689,77 +721,79 @@ def prepare_system(
                 f"Available: {', '.join(sorted(LIPIDS))}."
             , code="setup.membrane.lipid_unparameterized")
 
-        if membrane_orient and not membrane_orientation_checked:
-            # Whether the rotation can be trusted, before doing it. A protein
-            # with no clearly longest axis gets one chosen by noise, and the
-            # same structure in a different starting frame would come out
-            # differently.
-            from fastmdxplora.setup.membrane import check_axis_is_well_defined
+        placement = place_for_membrane(
+            modeller.topology, modeller.positions, lipid=lipid,
+            orient=membrane_orient, orientation_checked=membrane_orientation_checked,
+            frame=membrane_frame, center_z_nm=membrane_center_z_nm)
+        modeller.positions = placement.positions
+        membrane_record = dict(placement.record)
+        if lipid_parameters:
+            membrane_record["lipid_parameters"] = lipid_parameters
+        logger.info("Placed for the bilayer: %s.", membrane_record["placed_by"])
 
-            problem = check_axis_is_well_defined(
-                modeller.topology, modeller.positions)
-            if problem:
-                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
-
-        if membrane_orient:
-            # Asked for rather than done quietly: rotating by principal axes
-            # is right for a transmembrane helix or a bundle of them, and
-            # wrong for a protein with a large soluble domain that drags the
-            # axis away from the normal.
-            from fastmdxplora.setup.membrane import orient_for_membrane
-
-            modeller.positions = orient_for_membrane(
-                modeller.topology, modeller.positions)
-            logger.info(
-                "Rotated the structure so its longest axis lies along the "
-                "membrane normal. This is right for a transmembrane bundle "
-                "and wrong where a soluble domain dominates the shape; it "
-                "cannot tell which way up the protein ends, so where that "
-                "matters use an oriented structure from OPM."
-            )
-
-        if not membrane_orientation_checked:
-            problem = check_orientation(modeller.topology, modeller.positions)
-            if problem:
-                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
-
-            # And whether what came out looks like a membrane protein at all.
-            # Rotating by principal axes is right for a transmembrane bundle
-            # and wrong where a soluble domain dominates the shape; until this
-            # check existed, the wrong case proceeded silently.
-            from fastmdxplora.setup.membrane import check_hydrophobic_belt
-
-            problem = check_hydrophobic_belt(
-                modeller.topology, modeller.positions)
-            if problem:
-                raise StudyError(problem, code="setup.membrane.orientation_unchecked")
-
-            # And whether the copies agree with each other. Each one passes
-            # the checks above whichever way up it is; only together do they
-            # show that one was inverted.
-            from fastmdxplora.setup.membrane import check_chains_point_the_same_way
-
+        if not membrane_orientation_checked and membrane_frame != "opm":
+            # Whether the copies agree with each other. One slab holds the
+            # whole complex, and two copies related by a symmetry that is
+            # not perpendicular to the membrane cannot both span it the same
+            # way up; each alone looks right.
             problem = check_chains_point_the_same_way(
                 modeller.topology, modeller.positions)
             if problem:
                 raise StudyError(problem, code="setup.membrane.orientation_unchecked")
-            logger.info(
-                "Hydrophobic belt check passed: the hydrophobic residues sit "
-                "nearer the middle than the charged ones, as a bilayer-"
-                "spanning protein's do."
-            )
 
-        modeller.addMembrane(
-            ff,
-            lipidType=lipid,
-            minimumPadding=solvent_padding_nm * unit.nanometer,
-            positiveIon=ion_positive,
-            negativeIon=ion_negative,
-            ionicStrength=ion_concentration_M * unit.molar,
-            neutralize=neutralize,
-        )
+        # Said before, because nothing is said during: OpenMM tiles its
+        # patch, removes the lipids the protein overlaps, and then runs
+        # twenty steps for every angstrom of the protein's width while the
+        # protein grows back from half of it, with no progress of its own to
+        # report. About a minute on a two-core CPU with amber14 for a
+        # 25,000-atom system; with CHARMM36, whose pair-specific lipid
+        # corrections OpenMM evaluates as a custom force, one force
+        # evaluation took over a second there, so a thousand steps take
+        # twenty minutes.
+        slow = any("charmm" in str(name).lower() for name in (force_field or []))
+        logger.info(
+            "Packing the %s bilayer round the protein: OpenMM tiles its patch, "
+            "removes the lipids the protein overlaps, and relaxes the rest "
+            "with a short simulation, reporting nothing until it is done.%s",
+            lipid, (" With CHARMM36 on a CPU this can take tens of minutes."
+                    if slow else ""))
+        try:
+            modeller.addMembrane(
+                ff,
+                lipidType=lipid,
+                membraneCenterZ=0.0 * unit.nanometer,
+                minimumPadding=solvent_padding_nm * unit.nanometer,
+                positiveIon=ion_positive,
+                negativeIon=ion_negative,
+                ionicStrength=ion_concentration_M * unit.molar,
+                neutralize=neutralize,
+            )
+        except ValueError as exc:
+            if "HOH" in str(exc) and "extra site" in str(exc):
+                # OpenMM's patches carry three-site water, and a four-site
+                # model's template does not match it. Refused in words: the
+                # raw message suggests a Modeller call nobody can make from
+                # a study.
+                raise StudyError(
+                    "A bilayer is built from OpenMM's pre-equilibrated "
+                    "patches, which carry three-site water, and the force "
+                    "field given describes a water with an extra site "
+                    "(TIP4P-Ew, OPC or similar). The lipid parameters "
+                    "available here, AMBER Lipid17 and CHARMM36, were "
+                    "developed with TIP3P as well. Use a TIP3P water with a "
+                    "membrane: the `amber14` or `charmm36` force field as "
+                    "named, or `amber14/tip3p.xml` in place of the water file.",
+                    code="config.option.conflicting") from exc
+            # The relaxation builds a system of lipids and protein, and
+            # reaches a component the force field cannot describe before
+            # createSystem does, as solvation does.
+            raise _explain_unparameterized(exc, ff, modeller.topology) from exc
         n_atoms_solvated = modeller.topology.getNumAtoms()
-        logger.info("Membrane system: %d atoms", n_atoms_solvated)
+        membrane_record.update(_bilayer_built(modeller, unit))
+        logger.info(
+            "Membrane system: %d atoms, %d %s lipids (%d and %d per leaflet).",
+            n_atoms_solvated, membrane_record["lipids"], lipid,
+            *membrane_record["lipids_per_leaflet"])
     else:
         try:
             try:
@@ -932,6 +966,10 @@ def prepare_system(
         # image convention constrains, and for a dodecahedron they are shorter
         # than the edge lengths, so both are kept.
         "box": _box_record(modeller),
+        # How the protein was placed for its bilayer, and what was built
+        # around it: the lipid, how many, per leaflet, and the fitted
+        # thickness the placement found. None for a box of water.
+        "membrane": membrane_record,
         # Settings this phase decided for itself, under their config names,
         # for `resolved_config.yml` to carry. Named values rather than a
         # filtered copy of the parameters, so nothing private leaks in.
@@ -946,6 +984,41 @@ def prepare_system(
                if stated[name] is None},
         },
     }
+
+
+def _bilayer_built(modeller: Any, unit: Any) -> dict[str, Any]:
+    """What was built: how many lipids, how many in each leaflet, the box.
+
+    A leaflet is told by which side of the centre (z = 0) a lipid's
+    phosphorus sits, or its centre where it has none. The area per lipid of
+    the box includes the protein's cross-section, so it is recorded as the
+    box's, not the bilayer's.
+    """
+    import numpy as np
+
+    from fastmdxplora.lipids import is_lipid
+
+    positions = np.asarray(modeller.positions.value_in_unit(unit.nanometer))
+    upper = lower = 0
+    for residue in modeller.topology.residues():
+        if not is_lipid(residue.name):
+            continue
+        atoms = list(residue.atoms())
+        phosphorus = [a.index for a in atoms if a.name.upper().startswith("P")
+                      and (a.element is None or a.element.symbol == "P")]
+        z = float(positions[phosphorus or [a.index for a in atoms], 2].mean())
+        if z >= 0:
+            upper += 1
+        else:
+            lower += 1
+    vectors = modeller.topology.getPeriodicBoxVectors()
+    width = [float(vectors[i][i].value_in_unit(unit.nanometer)) for i in range(3)]
+    lipids = upper + lower
+    record = {"lipids": lipids, "lipids_per_leaflet": [upper, lower],
+              "box_nm": [round(w, 3) for w in width]}
+    if lipids:
+        record["box_area_per_lipid_nm2"] = round(width[0] * width[1] / (lipids / 2.0), 3)
+    return record
 
 
 def _box_record(modeller: Any) -> dict[str, Any] | None:

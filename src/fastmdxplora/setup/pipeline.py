@@ -203,6 +203,49 @@ def _the_chains_to_simulate(orchestrator: Any, input_pdb: Path, input_form: str,
     return input_pdb
 
 
+def _with_opm_s_thickness(membrane: dict[str, Any] | None,
+                          opm: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The bilayer record, with the hydrophobic thickness OPM published."""
+    if not membrane or not opm or not opm.get("half_thickness_nm"):
+        return membrane
+    return {**membrane,
+            "opm_hydrophobic_thickness_nm": round(2 * float(opm["half_thickness_nm"]), 2)}
+
+
+def _take_out_opm_markers(input_pdb: Path) -> dict[str, Any] | None:
+    """Remove the `DUM` pseudo-atoms an OPM file marks its membrane with.
+
+    Returns what the file said -- how many markers, and the half-thickness
+    from its header -- or None where it is not an OPM file. Only a file
+    that has the markers is rewritten.
+    """
+    path = Path(input_pdb)
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+    except OSError:
+        return None
+    markers = [i for i, line in enumerate(lines)
+               if line.startswith(("HETATM", "ATOM")) and line[17:20].strip() == "DUM"]
+    if not markers:
+        return None
+    half = None
+    for line in lines[:20]:
+        if "1/2 of bilayer thickness" in line:
+            try:
+                half = float(line.split(":")[-1].split()[0]) / 10.0
+            except (ValueError, IndexError):
+                half = None
+    serials = {lines[i][6:11].strip() for i in markers}
+    dropped = set(markers)
+    kept = [line for i, line in enumerate(lines)
+            if i not in dropped
+            and not (line.startswith("CONECT")
+                     and any(line[j:j + 5].strip() in serials
+                             for j in range(6, min(len(line), 31), 5)))]
+    path.write_text("".join(kept), encoding="utf-8")
+    return {"markers": len(markers), "half_thickness_nm": half}
+
+
 def _select_chains(
     input_pdb: Path, chains: str | list[str], *, presenter: Any = None,
     quiet: bool = False,
@@ -1007,6 +1050,7 @@ def run(
     # and a fetch that never landed both end here, and both are honest.
     orchestrator._structure_provenance = None
     orchestrator._assembly = None
+    opm: dict[str, Any] | None = None
 
     # ---- Stage 1: resolve input ----------------------------------------
     try:
@@ -1018,6 +1062,20 @@ def run(
         # from, not what this run then did to it.
         orchestrator._structure_provenance = structure_provenance(
             orchestrator.system, input_form, input_pdb)
+
+        # An OPM file marks its membrane with pseudo-atoms, which are not a
+        # molecule: read as one they were a component to parameterise. Taken
+        # out, and the file's frame -- oriented, centred at z = 0 -- kept for
+        # a bilayer.
+        opm = _take_out_opm_markers(input_pdb)
+        if opm is not None:
+            params["_membrane_frame"] = "opm"
+            logger.info(
+                "OPM file: %d membrane marker pseudo-atoms taken out; its frame "
+                "(membrane normal along z, centre at z = 0%s) is kept.",
+                opm["markers"],
+                (f", hydrophobic thickness {opm['half_thickness_nm'] * 2:.1f} nm"
+                 if opm.get("half_thickness_nm") else ""))
 
         input_pdb = _the_chains_to_simulate(
             orchestrator, input_pdb, input_form, params, presenter=presenter)
@@ -1192,6 +1250,9 @@ def run(
             membrane_orient=bool(params.get("membrane_orient", False)),
             membrane_orientation_checked=bool(
                 params.get("membrane_orientation_checked", False)),
+            membrane_frame=params.get("_membrane_frame"),
+            membrane_center_z_nm=(None if params.get("membrane_center_z_nm") is None
+                                  else float(params["membrane_center_z_nm"])),
             box_shape=str(params["box_shape"]),
             ion_positive=str(params["ion_positive"]),
             ion_negative=str(params["ion_negative"]),
@@ -1276,7 +1337,9 @@ def run(
     _write_manifest(setup_dir, orchestrator, input_form, params, artifacts, notes,
                     n_atoms_solvated=(produced or {}).get("n_atoms_solvated"),
                     box=(produced or {}).get("box"),
-                    resolved=(produced or {}).get("resolved"))
+                    resolved=(produced or {}).get("resolved"),
+                    membrane=_with_opm_s_thickness(
+                        (produced or {}).get("membrane"), opm))
     artifacts.append("setup_parameters.json")
 
     if presenter:
@@ -1339,6 +1402,7 @@ def _write_manifest(
     n_atoms_solvated: int | None = None,
     box: dict[str, Any] | None = None,
     resolved: dict[str, Any] | None = None,
+    membrane: dict[str, Any] | None = None,
 ) -> None:
     """Write ``setup_parameters.json`` with the full provenance record.
 
@@ -1421,6 +1485,12 @@ def _write_manifest(
         # volume. Computed on every setup and, until now, read by nothing,
         # so a methods section had to take it from CRYST1 by hand.
         "box": box,
+        # For a bilayer: how the protein was placed for it (OPM's frame, the
+        # fitted orientation, or its own), the fitted hydrophobic thickness,
+        # and what was built -- the lipid, how many, per leaflet. Absent for
+        # a box of water.
+        # Under its own name: `membrane` in `parameters` is the lipid asked for.
+        **({"bilayer": membrane} if membrane else {}),
         "resolved_forcefield": resolved_ff,
         # What was decided about each heterogen, and why: kept, discarded,
         # or re-added with its own chemistry. Empty where no decision was

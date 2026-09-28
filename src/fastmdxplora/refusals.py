@@ -467,6 +467,12 @@ CODES: tuple[Code, ...] = (
          "the membrane normal has not been established.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("lipid",)),
+    Code("setup.membrane.no_belt",
+         "A bilayer was asked for and the structure has no surface a bilayer "
+         "would hold: its best-fitting hydrophobic slab buries too little "
+         "apolar surface for a membrane protein.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("lipid", "score_nm2")),
     Code("setup.membrane.lipid_unparameterized",
          "The force field files given do not describe the chosen lipid.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
