@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
     # For editors and type checkers only: what each phase method accepts,
@@ -194,6 +194,32 @@ def _phases_recorded_in(root: Path) -> list[PhaseResult]:
                 fields["output_dir"] = Path(fields["output_dir"])
             out.append(PhaseResult(**fields))
     return out
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _logging_to_its_folder(method: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Log to the study's own file for the length of one call, and no longer.
+
+    The file log was attached when the object was made and never taken off,
+    so whatever the process logged after a study ended went into that
+    study's folder, and moving the folder broke logging for the rest of the
+    process. Nested calls share the outer call's attachment. Typed so the
+    method keeps its signature for a type checker.
+    """
+    import functools
+
+    @functools.wraps(method)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        study = args[0]
+        study._attach_its_log()  # type: ignore[attr-defined]
+        try:
+            return method(*args, **kwargs)
+        finally:
+            study._detach_its_log()  # type: ignore[attr-defined]
+    return wrapper
+
 
 class FastMDXplora:
     """Project-level orchestrator for end-to-end MD studies.
@@ -405,6 +431,7 @@ class FastMDXplora:
     # ------------------------------------------------------------------
     # Orchestration entry point
     # ------------------------------------------------------------------
+    @_logging_to_its_folder
     def explore(
         self,
         *,
@@ -716,18 +743,22 @@ class FastMDXplora:
         return self.results
 
     # Convenience: per-phase entry points (also called by the CLI)
+    @_logging_to_its_folder
     def setup(self, **kwargs: Unpack[SetupSettings]) -> PhaseResult:
         """Run only the setup phase."""
         return self._run_phase("setup", self._validated("setup", kwargs))
 
+    @_logging_to_its_folder
     def simulate(self, **kwargs: Unpack[SimulateSettings]) -> PhaseResult:
         """Run only the simulation phase."""
         return self._run_phase("simulation", self._validated("simulation", kwargs))
 
+    @_logging_to_its_folder
     def analyze(self, **kwargs: Unpack[AnalyzeSettings]) -> PhaseResult:
         """Run only the analysis phase."""
         return self._run_phase("analysis", self._validated("analysis", kwargs))
 
+    @_logging_to_its_folder
     def report(self, **kwargs: Unpack[ReportSettings]) -> PhaseResult:
         """Run only the report phase."""
         return self._run_phase("report", self._validated("report", kwargs))
@@ -1482,6 +1513,31 @@ class FastMDXplora:
 
         if _console_handler is not None:
             _console_handler.setLevel(console_level)
+
+    def _its_log(self) -> Path | None:
+        return (self.output_dir / "fastmdxplora.log"
+                if getattr(self, "output_dir", None) is not None else None)
+
+    def _attach_its_log(self) -> None:
+        """Attached for the outermost call, unless still attached from
+        construction or an enclosing call."""
+        from fastmdxplora.utils.logging import attach_file_logger, file_logger_path
+
+        self._log_depth = getattr(self, "_log_depth", 0) + 1
+        path = self._its_log()
+        if self._log_depth > 1 or path is None:
+            return
+        attached = file_logger_path()
+        if attached is None or attached.resolve() != path.resolve():
+            attach_file_logger(path, level=logging.DEBUG)
+
+    def _detach_its_log(self) -> None:
+        from fastmdxplora.utils.logging import detach_file_logger
+
+        self._log_depth = getattr(self, "_log_depth", 1) - 1
+        path = self._its_log()
+        if self._log_depth == 0 and path is not None:
+            detach_file_logger(path)
 
     def _configure_presenter(self):
         """Create the session presenter for structural output.

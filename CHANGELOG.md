@@ -98,6 +98,15 @@ and `workers: 3`, three runs shared one card, each slower than alone, and
 nothing said so. The dry run and the run say how many runs will share a card,
 and that listing a device twice is how two runs on one card are asked for.
 
+### A study's log holds only the study
+
+**A study's log file is detached when the call that ran it returns.** It was
+attached when the study was made and never taken off, so what a Python session
+logged afterwards went into that study's `fastmdxplora.log`, and moving the
+folder broke logging for the rest of the session. Each call (`explore`,
+`setup`, `simulate`, `analyze`, `report`) now logs to the file for its own
+length.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

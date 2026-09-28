@@ -401,6 +401,45 @@ def attach_file_logger(
     return base
 
 
+def file_logger_path() -> Path | None:
+    """The file the package's file log is writing to, or None."""
+    base = logging.getLogger("fastmdx")
+    handler = _file_handler if _file_handler in base.handlers else \
+        _find_owned_handler(base, _FILE_KIND)
+    name = getattr(handler, "baseFilename", None)
+    return Path(name) if name else None
+
+
+def detach_file_logger(path: str | Path | None = None) -> bool:
+    """Detach and close the package's file log, if it is writing to
+    ``path`` (to anything, when ``path`` is None). Returns whether one was.
+
+    A study's log stayed attached after the study ended, so whatever the
+    process logged next was written into that study's folder, and moving
+    the folder broke logging for the rest of the process.
+    """
+    global _file_handler
+    base = logging.getLogger("fastmdx")
+    handler = _file_handler if _file_handler in base.handlers else \
+        _find_owned_handler(base, _FILE_KIND)
+    if handler is None:
+        return False
+    if path is not None:
+        try:
+            same = Path(handler.baseFilename).resolve() == Path(path).resolve()
+        except (AttributeError, OSError):
+            same = False
+        if not same:
+            return False
+    try:
+        base.removeHandler(handler)
+        handler.close()
+    except Exception:  # noqa: BLE001 -- cleanup must never raise
+        pass
+    _file_handler = None
+    return True
+
+
 def get_logger(name: str | None = None) -> logging.Logger:
     """Return the package logger or a namespaced child.
 

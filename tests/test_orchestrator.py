@@ -756,3 +756,48 @@ class TestAnOlderRunReanalysedKeepsItsVersion:
         manifest = self._reanalyse(tmp_path)
         setup = next(p for p in manifest["phases"] if p["name"] == "setup")
         assert setup["produced_by"] == {"version": "2.5.5", "host": "h"}
+
+
+class TestTheStudyLogIsTheStudysOnly:
+    """The file log was attached when the object was made and never taken
+    off, so what the process logged after a study ended went into that
+    study's folder, and moving the folder broke logging for the rest of the
+    process."""
+
+    def _study(self, tmp_path: Path) -> FastMDXplora:
+        pdb = _make_pdb_stub(tmp_path)
+        return FastMDXplora(config=None, system=str(pdb), output_dir=tmp_path / "run",
+                            options=FAST_SIM)
+
+    def test_it_is_detached_when_the_study_ends(self, tmp_path: Path) -> None:
+        from fastmdxplora.utils.logging import file_logger_path, get_logger
+
+        fmdx = self._study(tmp_path)
+        fmdx.explore(include=["setup"])
+        assert file_logger_path() is None
+        get_logger().warning("after the study: not its business")
+        log = (fmdx.output_dir / "fastmdxplora.log").read_text(encoding="utf-8")
+        assert "not its business" not in log
+
+    def test_a_second_call_logs_to_it_again(self, tmp_path: Path) -> None:
+        from fastmdxplora.utils.logging import file_logger_path
+
+        fmdx = self._study(tmp_path)
+        fmdx.explore(include=["setup"])
+        log = fmdx.output_dir / "fastmdxplora.log"
+        before = log.read_text(encoding="utf-8")
+        fmdx.explore(include=["simulation"], force=True)
+        assert file_logger_path() is None
+        added = log.read_text(encoding="utf-8")[len(before):]
+        assert "simulation" in added.lower()
+
+    def test_moved_after_it_ended_nothing_breaks(self, tmp_path: Path, capsys) -> None:
+        import shutil
+
+        from fastmdxplora.utils.logging import get_logger
+
+        fmdx = self._study(tmp_path)
+        fmdx.explore(include=["setup"])
+        shutil.move(str(fmdx.output_dir), str(tmp_path / "moved"))
+        get_logger().warning("the process carries on")
+        assert "Logging error" not in capsys.readouterr().err
