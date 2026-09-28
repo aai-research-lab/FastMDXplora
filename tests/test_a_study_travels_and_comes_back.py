@@ -55,9 +55,12 @@ def _tool(path: Path, body: str) -> None:
 #: has installed: a scheduler, a GPU, conda, a container runtime, or a
 #: FastMDXplora of its own. With sbatch on PATH the stand-in would be a
 #: cluster, and a test runner with SLURM installed would fail these.
+#: `sha256sum` too: macOS has none, and a stand-in using it passed on Linux
+#: and failed only on the macOS runners.
 _NOT_ON_THE_MACHINE = frozenset({
     "sbatch", "sinfo", "squeue", "sacct", "scancel", "nvidia-smi",
     "conda", "mamba", "micromamba", "apptainer", "singularity", "fastmdx",
+    "sha256sum",
 })
 
 
@@ -350,7 +353,7 @@ RUNS_FROM_A_PREPARED_SYSTEM = '''
 out=run; while [ $# -gt 0 ]; do [ "$1" = --output ] && out=$2; shift; done
 mkdir -p "$out/simulation"
 echo '{"version": "1.0"}' > "$out/manifest.json"
-digest=$(sha256sum inputs/prepared/setup/system.xml | cut -d' ' -f1)
+digest=$(shasum -a 256 inputs/prepared/setup/system.xml | cut -d' ' -f1)
 there=$(cd inputs/prepared/setup && pwd -P)
 printf '{"prepared_system": {"given": "inputs/prepared", "resolved": "%s", "relative_to_run": "../inputs/prepared/setup", "system_xml_sha256": "%s"}}' "$there" "$digest" > "$out/simulation/simulation_parameters.json"
 echo "working"'''
