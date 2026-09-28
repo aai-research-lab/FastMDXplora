@@ -728,7 +728,9 @@ class BatchExplorer:
         self.run_specs = self._build_run_specs(raw)
         self.is_single = len(self.run_specs) == 1
         self.results: list[dict[str, Any]] = []
-        _say_if_the_replicas_will_not_share_water(self.run_specs)
+        if not self._is_umbrella:
+            # Windows prepared alike already share one preparation.
+            _say_if_the_replicas_will_not_share_water(self.run_specs)
 
     # ------------------------------------------------------------------
     def _build_run_specs(self, raw: dict[str, Any]) -> list[RunSpec]:
@@ -1008,10 +1010,7 @@ class BatchExplorer:
         # prepared differently from one another. Sharing then would quietly
         # ignore what the sweep asked for, which is worse than preparing
         # seven times.
-        preparations = {
-            json.dumps(spec.options.get("setup") or {}, sort_keys=True, default=str)
-            for spec in self.run_specs
-        }
+        preparations = self._setup_blocks()
         if len(preparations) != 1:
             logger.warning(
                 "The windows are swept over %d different setup settings, so "
@@ -1605,6 +1604,51 @@ class BatchExplorer:
             logger.warning("Comparison report failed (runs are unaffected): %s", exc)
 
     # ------------------------------------------------------------------
+    def _named_prepared_system(self, spec) -> str | None:
+        """The prepared system a run's `setup_from` names, as written."""
+        simulation = spec.options.get("simulation") or {}
+        return simulation.get("setup_from") or simulation.get("prepared_from")
+
+    def _setup_blocks(self) -> set[str]:
+        """The distinct setup blocks across the runs, for sharing one
+        preparation: windows swept over setup each prepare their own."""
+        return {json.dumps(spec.options.get("setup") or {}, sort_keys=True, default=str)
+                for spec in self.run_specs}
+
+    def _one_preparation_for_every_window(self, plan: list[str]) -> bool:
+        """Whether `run` would prepare one system for every umbrella window,
+        as `_maybe_prepare_once` decides it."""
+        return (self._is_umbrella and "setup" in plan and plan != ["setup"]
+                and not any(self._named_prepared_system(s) for s in self.run_specs)
+                and len(self._setup_blocks()) == 1)
+
+    def _what_setup_would_do(self, spec, plan: list[str]) -> tuple[bool, str]:
+        """Whether the run would skip preparing its own system, and what it
+        would do instead, in words ("" where it prepares as planned)."""
+        if "setup" not in plan:
+            return False, ""
+        named = self._named_prepared_system(spec)
+        if named:
+            from fastmdxplora.simulation.pipeline import (
+                _a_prepared_system_sits_in,
+                _as_named,
+                where_a_prepared_system_sits,
+            )
+
+            where = where_a_prepared_system_sits(_as_named(named))
+            if _a_prepared_system_sits_in(where):
+                return True, f"not run; simulates the system prepared in {where}"
+            if self._is_umbrella:
+                return True, (f"`setup_from` names {named}, where there is no "
+                              "prepared system, so the study stops before any window")
+            return False, (f"`setup_from` names {named}, where there is no "
+                           "prepared system, so the simulation will refuse")
+        if self._one_preparation_for_every_window(plan):
+            return True, (f"prepared once, in {self.output_dir / 'shared_setup'}, "
+                          "for every window")
+        return False, ""
+
+    # ------------------------------------------------------------------
     def dry_run(self) -> list["RunResult"]:
         """Report the plan without executing anything.
 
@@ -1625,12 +1669,24 @@ class BatchExplorer:
             plan = list(PHASES)
 
         n = len(self.run_specs)
+        # What each run would really do about setup, as `run` decides it: a
+        # run naming a prepared system prepares nothing, and umbrella
+        # windows share one preparation. The plan listed setup for every
+        # run either way.
+        setups = [self._what_setup_would_do(spec, plan) for spec in self.run_specs]
+        plans = [[p for p in plan if p != "setup" or not skips]
+                 for skips, _ in setups]
         layout = "flat" if self.is_single else "runs/<id>/"
         print("\nFastMDXplora dry run (no execution)")
         print("=" * 50)
         print(f"  runs:    {n}")
         print(f"  output:  {self.output_dir}  ({layout} layout)")
-        print(f"  phases:  {' → '.join(plan) if plan else '(none)'}")
+        uniform = len({(tuple(p), words) for p, (_, words) in zip(plans, setups)}) <= 1
+        if uniform:
+            phases = plans[0] if plans else plan
+            print(f"  phases:  {' → '.join(phases) if phases else '(none)'}")
+            if setups and setups[0][1]:
+                print(f"  setup:   {setups[0][1]}")
         if self.mode == "parallel":
             print(f"  mode:    parallel ({self._resolve_workers()} workers"
                   + (f", devices={self.devices}" if self.devices else "") + ")")
@@ -1648,6 +1704,10 @@ class BatchExplorer:
                     f"{k}={v}" for k, v in spec.sweep_values.items()) + "]"
             print(f"  [{i}/{n}] {label}{sweep}")
             print(f"          → {run_out}")
+            if not uniform:
+                print(f"          phases: {' → '.join(plans[i - 1]) or '(none)'}")
+                if setups[i - 1][1]:
+                    print(f"          setup:  {setups[i - 1][1]}")
             planned.append(RunResult(
                 run_id=spec.run_id, system=spec.system, status="planned",
                 output_dir=run_out, sweep_values=spec.sweep_values, phases=[],

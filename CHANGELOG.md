@@ -24,6 +24,17 @@ advice to fetch `ZN_ideal.sdf`. Setup now stops and names the residue and its
 atoms, since which ions they are is not the structure's to say. Such a copy
 away from the protein is discarded, as before.
 
+### A dry run says what each run will do about setup
+
+**`--dry-run` no longer lists setup for runs that prepare nothing.** A run
+whose `setup_from` names a prepared system simulates that system, and umbrella
+windows prepared alike share one preparation, but a campaign's dry run listed
+setup for every run. It now leaves setup out where it is skipped and says why:
+the system that will be simulated, the shared folder the windows' system is
+prepared in, or that `setup_from` names a folder with no prepared system in it
+and the simulation will refuse. Umbrella windows are no longer warned that each
+will solvate a box of its own.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes
