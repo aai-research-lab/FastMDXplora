@@ -254,9 +254,11 @@ splitting, not about the method.
 Measured on the CPU platform with argon in a periodic box, because the answer
 differs between constant volume and constant pressure.
 
-A **constant-volume** run resumed from a checkpoint reproduces the run it
-continued to within 8×10⁻⁸ nm. Positions, velocities and box vectors all come
-back exactly.
+A **constant-volume** run resumed from a checkpoint at the same thread count
+reproduces the run it continued to within about 1×10⁻⁹ nm over fifty steps.
+Positions, velocities and box vectors all come back exactly. At another thread
+count the thermostat draws different noise, so the resumed run continues the
+ensemble rather than the trajectory.
 
 A **constant-pressure** run does not, and seeding the barostat does not fix it.
 The Monte Carlo barostat's adaptive volume-move size is not in the checkpoint

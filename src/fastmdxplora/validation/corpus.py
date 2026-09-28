@@ -1035,7 +1035,8 @@ def _constant_pressure_run_split_into_segments() -> Any:
     """Splitting an NPT run: sound, and not free.
 
     Measured on the CPU platform. A constant-volume run resumed from a
-    checkpoint reproduces the run it continued to within 8e-8 nm. The same
+    checkpoint at the same thread count reproduces the run it continued to
+    within about 1e-9 nm over fifty steps. The same
     run at constant pressure does not, and seeding the barostat does not
     fix it: the Monte Carlo barostat's adaptive volume-move size is not in
     the checkpoint and is not a Context parameter.

@@ -57,7 +57,7 @@ What is kept, what is repaired, and how it is protonated.
 | `keep_heterogens` | bool | `false` | Equivalent to `heterogens: keep` |
 | `keep_water` | bool | `false` | Retain crystallographic waters |
 | `replace_nonstandard_residues` | bool | `true` | Substitute selenomethionine, oxidised cysteine and the like with their standard equivalents |
-| `chains` | list | every chain | Chains to simulate, by deposited ID — `[A, B]` |
+| `chains` | list | the declared assembly | Chains to simulate, by deposited ID, as `[A, B]`. Unset, the biological assembly the file declares, or every chain where it declares none |
 | `build_missing_termini` | bool | `false` | Build unresolved residues past the ends of a chain, not only the gaps between resolved ones |
 | `fixed_pdb` | str | — | An already-fixed PDB to use directly, skipping PDBFixer |
 | `mutations` | list | — | Point substitutions, as `L99A` or `LEU-99-ALA` |

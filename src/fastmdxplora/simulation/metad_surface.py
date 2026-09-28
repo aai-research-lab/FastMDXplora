@@ -324,10 +324,10 @@ def surface_from_hills(
 ) -> np.ndarray:
     """The free energy on ``grid``, from the first ``upto`` hills.
 
-    The bias is the sum of the deposited Gaussians. For a well-tempered run
-    the bias approaches -(1 - 1/γ) F, so the free energy is the bias scaled by
-    γ/(γ - 1) and negated. Without tempering the bias approaches -F directly,
-    and the scaling would divide by zero, so that case is its own.
+    The free energy is the negated sum of the Gaussians in HILLS, with no
+    rescaling for either tempering: for a well-tempered run PLUMED writes
+    each height already multiplied by γ/(γ - 1), so the sum converges on -F
+    as an untempered run's does (see the comment below).
 
     Shifted so the lowest point is zero, because only differences mean
     anything: the absolute value of a free energy from metadynamics is set by

@@ -304,7 +304,9 @@ SETUP = PhaseSchema(
               "the polymer, and few force fields describe them directly."),
         Field("chains", list, None,
               "Chains to simulate, by their deposited ID -- for example "
-              "[A, B]. Default: every chain in the structure. A deposited "
+              "[A, B]. Default: the biological assembly the file declares "
+              "(built from its symmetry operators where the file holds only "
+              "part of it), or every chain where it declares none. A deposited "
               "entry is what the experiment produced, not what anyone means "
               "to simulate: a crystal may hold two copies where one is "
               "wanted, and a complex may hold partners that belong to a "

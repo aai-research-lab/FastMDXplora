@@ -490,6 +490,19 @@ def test_a_study_level_agent_reaches_the_manifest(tmp_path: Path) -> None:
     manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
     assert manifest["agent"]["study"] == "assisted"
     assert manifest["agent"]["checked"] == {phase: True for phase in PHASES}
+    # And which model: the resolved config kept it and the manifest did not.
+    assert manifest["agent"]["model"] == config["agent_model"]
+
+
+def test_a_model_named_without_a_mode_is_recorded_too(tmp_path: Path) -> None:
+    pdb = _make_pdb_stub(tmp_path)
+    config = {"systems": [{"id": "s1", "system": str(pdb)}],
+              "agent_model": "someprovider/some-model-2026-09-01", **FAST_SIM}
+    fmdx = FastMDXplora(config_data=config, output_dir=tmp_path / "run")
+    fmdx.explore()
+
+    manifest = json.loads((fmdx.output_dir / "manifest.json").read_text())
+    assert manifest["agent"] == {"model": "someprovider/some-model-2026-09-01"}
 
 
 def test_a_phase_agreeing_with_the_study_is_not_a_departure(

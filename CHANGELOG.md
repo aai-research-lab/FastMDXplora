@@ -77,6 +77,20 @@ CHARMM36's lipids are in `charmm36.xml`, which is what is added now, and the
 lipid's template is checked to be there once any file is added, rather than
 failing later at the residue template.
 
+### What the records say matches what the code does
+
+**Help, docs and records that said something the code does not are
+corrected.** The `chains` help and the configuration reference said the
+default is every chain; setup takes the biological assembly the file declares,
+and every chain only where it declares none. `MIN_PYTHON` said 3.9 while the
+package requires 3.10. The resume figure quoted 8×10⁻⁸ nm where the code and
+its test measure about 1×10⁻⁹ nm at the same thread count. The manifest now
+records which model wrote an agent-written study (`agent.model`), which only
+the resolved config kept. The config language shown to a model gives each
+number's range and says what each section is for, and describes `execution`
+when asked. Stale docstrings (checkpoint sealing, sequence input, the
+metadynamics surface) now describe the code.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

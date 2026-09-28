@@ -1446,13 +1446,13 @@ def check_continuation(path: str | Path, *, minimize: bool, nvt_steps: int,
 
 
 def seal_checkpoint(path: str | Path) -> Path:
-    """Record a finished checkpoint's size and digest beside it.
+    """Record a written checkpoint's size and digest beside it.
 
-    Written after a run completes, which makes the sidecar two things at
-    once: a way to detect a truncated file, and a marker that the segment
-    which produced it got to the end. A segment killed mid-write leaves a
-    checkpoint and no seal, and the next segment refuses rather than
-    continuing from a partial one.
+    Written after every checkpoint, along the way and at the end, so the
+    seal says one thing: the file is whole. A process killed mid-write
+    leaves a checkpoint and no seal, and a resume refuses rather than
+    continuing from a partial one. Whether the run finished is said in the
+    checkpoint's sidecar, not here.
 
     Necessary because OpenMM will not catch this. A checkpoint truncated
     to half its length loads without complaint and yields the right

@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from fastmdxplora.config.schema import (
+    EXECUTION,
     PHASE_SCHEMAS,
     TOP_LEVEL,
     Field,
@@ -55,6 +56,25 @@ def _type_name(declared: type | tuple[type, ...]) -> str:
     }.get(declared, getattr(declared, "__name__", str(declared)))
 
 
+def _bounds(field: Field) -> str:
+    """The range validation holds a number to, in words; "" where none.
+    Shown because a value outside it is refused, and a reader told the
+    range does not propose one."""
+    low, high = field.minimum, field.maximum
+    if low is not None and high is not None:
+        return f"from {low:g} to {high:g}"
+    if low is not None:
+        return f"at least {low:g}"
+    if high is not None:
+        return f"at most {high:g}"
+    return ""
+
+
+def _schema(name: str) -> PhaseSchema | None:
+    """A phase's schema, or `execution`'s, which is not a phase."""
+    return EXECUTION if name == "execution" else PHASE_SCHEMAS.get(name)
+
+
 def describe_field(field: Field, *, verbose: bool = True) -> str:
     """One setting, as a line.
 
@@ -70,6 +90,9 @@ def describe_field(field: Field, *, verbose: bool = True) -> str:
     parts = [f"{field.name} ({_type_name(field.type)})"]
     if field.choices:
         parts.append("one of: " + ", ".join(str(c) for c in field.choices))
+    bounds = _bounds(field)
+    if bounds:
+        parts.append(bounds)
     if field.default is not None:
         parts.append(f"default {field.default!r}")
     head = "  - " + "; ".join(parts)
@@ -81,8 +104,10 @@ def describe_field(field: Field, *, verbose: bool = True) -> str:
 
 def _phase_section(name: str, schema: PhaseSchema, *, verbose: bool) -> str:
     lines = [f"## {name}"]
-    if getattr(schema, "help", None):
-        lines.append(" ".join(str(schema.help).split()))
+    # `description`, which every schema has: this read `help`, which none
+    # has, so no section ever said what it was for.
+    if schema.description:
+        lines.append(" ".join(str(schema.description).split()))
     for field in schema.fields:
         lines.append(describe_field(field, verbose=verbose))
     return "\n".join(lines)
@@ -98,10 +123,14 @@ def describe_schema(
     Parameters
     ----------
     phases
-        Which phase blocks to include. All of them by default. A caller
+        Which phase blocks to include. The four phases by default. A caller
         working on setup alone can leave the other three out, which is
         worth doing: a shorter description is a cheaper call and a model
-        cannot propose a setting it was never shown.
+        cannot propose a setting it was never shown. ``execution``, how a
+        campaign's runs are scheduled on this machine, is described only
+        when named: it is about the machine rather than the study, and a
+        model proposing GPU indices for a machine it cannot see would be
+        guessing.
     verbose
         Include each setting's help text. On by default, because the help
         is where the refusals are explained and a model that has read them
@@ -126,7 +155,7 @@ def describe_schema(
         _phase_section("top level", TOP_LEVEL, verbose=verbose),
     ]
     for phase in wanted:
-        schema = PHASE_SCHEMAS.get(phase)
+        schema = _schema(phase)
         if schema is not None:
             sections.append("")
             sections.append(_phase_section(phase, schema, verbose=verbose))
@@ -150,6 +179,10 @@ def schema_as_json(*, phases: Iterable[str] | None = None) -> dict[str, Any]:
                 entry["enum"] = list(field.choices)
             if field.default is not None:
                 entry["default"] = field.default
+            if field.minimum is not None:
+                entry["minimum"] = field.minimum
+            if field.maximum is not None:
+                entry["maximum"] = field.maximum
             if field.help:
                 entry["description"] = " ".join(str(field.help).split())
             out[field.name] = entry
@@ -158,7 +191,7 @@ def schema_as_json(*, phases: Iterable[str] | None = None) -> dict[str, Any]:
     wanted = list(phases) if phases is not None else list(PHASE_SCHEMAS)
     document = {"top_level": block(TOP_LEVEL)}
     for phase in wanted:
-        schema = PHASE_SCHEMAS.get(phase)
+        schema = _schema(phase)
         if schema is not None:
             document[phase] = block(schema)
     return document

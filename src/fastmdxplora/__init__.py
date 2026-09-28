@@ -71,15 +71,15 @@ __bibtex__ = """@article{aina2026fastmd,
 # Canonical Python version range for the full conda install (setup +
 # simulation stages). MAX_PYTHON is the *exclusive* upper bound, so 3.13.x
 # is the highest supported, matching `pyproject.toml`'s
-# ``requires-python = ">=3.9, <3.14"``. Update all three (this file,
+# ``requires-python = ">=3.10, <3.14"``. Update all three (this file,
 # pyproject, and environment.yml) together when
 # the OpenMM / PDBFixer compatibility window moves.
-MIN_PYTHON: tuple[int, int] = (3, 9)
+MIN_PYTHON: tuple[int, int] = (3, 10)
 MAX_PYTHON: tuple[int, int] = (3, 14)
 
 
 def python_range_string() -> str:
-    """Human-readable supported Python range, e.g. ``"Python 3.9-3.13"``."""
+    """Human-readable supported Python range, e.g. ``"Python 3.10-3.13"``."""
     return (
         f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}"
         f"\u2013{MAX_PYTHON[0]}.{MAX_PYTHON[1] - 1}"

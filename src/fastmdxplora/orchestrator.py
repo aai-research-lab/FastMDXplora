@@ -205,8 +205,8 @@ class FastMDXplora:
 
         - Path to a PDB / CIF file (e.g. ``"protein.pdb"``)
         - 4-character PDB ID (e.g. ``"1L2Y"``), fetched from RCSB
-        - One-letter amino-acid sequence, if structure prediction is
-          available (future)
+        A one-letter amino-acid sequence is recognised and refused: it
+        needs a structure predictor, which this software does not carry.
 
         Mutually exclusive with ``config``.
     config : str | os.PathLike | None
@@ -313,8 +313,7 @@ class FastMDXplora:
         if system is None:
             raise StudyError(
                 "FastMDXplora requires either a `system` input (a PDB/CIF "
-                "file path, a 4-character PDB ID, or a one-letter sequence) "
-                "or a `config` file."
+                "file path or a 4-character PDB ID) or a `config` file."
             , code="config.option.missing_companion")
 
         self.system: str = str(system)
@@ -1406,8 +1405,16 @@ class FastMDXplora:
             # also said `setup: {agent: assisted}` recorded that phase as
             # *departing* from a study value the resolver could not see.
             modes = resolve_agent_modes({**options, **self.study_options})
-            if modes.study is not None or modes.departures:
-                manifest["agent"] = modes.as_record()
+            # Which model, too: `agent_model` was kept in the resolved
+            # config and not here, so the manifest said a model was
+            # involved and not which one.
+            model = self.study_options.get("agent_model")
+            if modes.study is not None or modes.departures or model:
+                record = (modes.as_record()
+                          if modes.study is not None or modes.departures else {})
+                if model:
+                    record["model"] = str(model)
+                manifest["agent"] = record
         except Exception:  # noqa: BLE001 - a manifest is worth writing anyway
             logger.debug("Could not record how this study was written.")
         if len(versions_seen) > 1:
