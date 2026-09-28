@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A Docker image with each release
+
+**Each release is published as `ghcr.io/aai-research-lab/fastmdxplora:<version>`**,
+beside the Apptainer image on the release page, for services that run
+FastMDXplora in containers. It is written from `container/fastmdx.def` by
+`container/docker_from_def.py`, so the installation and the checks that fail a
+bad build are the Apptainer image's own, and a study gives the same answer in
+either. It runs as a user that is not root, with `/workspace` as its home and
+working folder. See `docs/hosting.md`.
+
 ### The GUI can be served to other people
 
 **`fastmdx gui --hosted` serves the GUI behind a proxy that signs people in.**

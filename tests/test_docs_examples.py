@@ -291,6 +291,8 @@ def test_every_fastmdx_flag_the_docs_name_exists() -> None:
         "--platform", "--system-site-packages", "--job-name", "--gres",
         "--cpus-per-task", "--time", "--nv", "--fakeroot",
         "--download-only", "--offline",
+        # Docker's, running the container image.
+        "--entrypoint", "--gpus",
     }
 
     missing = {}

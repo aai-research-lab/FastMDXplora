@@ -65,3 +65,33 @@ structure or a trajectory, and those are read by the run, not by the GUI. In a
 hosted service each person's workspace runs in a container of its own, and the
 container is the boundary for those. Setting `HOME` to the workspace keeps the
 Agent's stored model choice with the person's other files.
+
+## The container image
+
+Each release is published as a Docker image as well as the Apptainer image on
+its release page:
+
+```bash
+docker pull ghcr.io/aai-research-lab/fastmdxplora:2.5.8
+```
+
+Both come from one recipe, `container/fastmdx.def`. The Docker build is
+written from it by `container/docker_from_def.py`, which copies the
+installation and the checks that fail a bad build, so the two images hold the
+same software and a study gives the same answer in either. The Docker image
+adds what a service needs: it runs as a user that is not root, `/workspace` is
+its `HOME` and working folder, and it offers port 8765.
+
+A person's GUI, with their workspace on a volume and the GPU passed through:
+
+```bash
+docker run -d --gpus all -p 8765:8765 \
+    -v person-42:/workspace \
+    -e FASTMDX_PROXY_SECRET="$SECRET_FOR_PERSON_42" \
+    ghcr.io/aai-research-lab/fastmdxplora:2.5.8 \
+    gui --hosted --host 0.0.0.0 --workspace /workspace \
+    --allowed-host app.example.org
+```
+
+The image's own test runs with
+`docker run --rm --entrypoint bash <image> /opt/fastmdx/test.sh`.
