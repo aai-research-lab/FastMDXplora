@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,6 +69,10 @@ def _name_of(host: str) -> str:
     return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
 
 
+#: A path on the GUI's own site: one leading slash (two would be another
+#: site), then plain characters. Nothing a browser would read as a scheme.
+_SAME_SITE_PATH = re.compile(r"^/(?!/)[A-Za-z0-9._~/-]*$")
+
 @dataclass(frozen=True)
 class Hosting:
     """What a hosted GUI trusts, and the one folder it may use."""
@@ -75,10 +80,15 @@ class Hosting:
     workspace: Path
     allowed_hosts: frozenset[str]
     secret: str
+    #: The service's own page for the person (their account, their runs,
+    #: signing out), linked from the GUI's sidebar. A path on the same site,
+    #: or empty for no link.
+    account_url: str = ""
 
     @classmethod
     def from_environment(cls, workspace: str | Path,
-                         allowed_hosts: list[str] | tuple[str, ...]) -> Hosting:
+                         allowed_hosts: list[str] | tuple[str, ...],
+                         account_url: str = "") -> Hosting:
         """Hosted mode as the command line starts it.
 
         Refuses to start rather than start open: without a secret the proxy
@@ -107,7 +117,14 @@ class Hosting:
                 "--workspace cannot be the top of the file system; give the "
                 "one folder this person's studies live in.",
                 code="config.option.not_permitted", setting="--workspace")
-        return cls(workspace=root, allowed_hosts=names, secret=secret)
+        account_url = (account_url or "").strip()
+        if account_url and not _SAME_SITE_PATH.match(account_url):
+            raise HostingError(
+                f"--account-url {account_url!r} is not a path on this site. Give the "
+                "service's page as a path, such as /account/.",
+                code="config.option.not_permitted", setting="--account-url")
+        return cls(workspace=root, allowed_hosts=names, secret=secret,
+                   account_url=account_url)
 
     # ---- who is answered ----
     def admits(self, presented: str | None) -> bool:

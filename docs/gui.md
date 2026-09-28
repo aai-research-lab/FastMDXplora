@@ -266,6 +266,7 @@ finished, and read there — see
 | `--hosted` | Serve it to someone else, through a proxy that signs them in; see [Serving the GUI to other people](hosting.md) | off |
 | `--workspace DIR` | With `--hosted`: the one folder it reads and writes | current directory |
 | `--allowed-host NAME` | With `--hosted`: a name the proxy serves it under; repeat for more | none; required |
+| `--account-url PATH` | With `--hosted`: the service's page for the person, linked from the sidebar | none; no link |
 
 **That is the whole of it.** The dashboard flags — `--dashboard-host`,
 `--dashboard-port`, `--dashboard-refresh-seconds`,

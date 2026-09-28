@@ -2501,6 +2501,18 @@ body.col-dragging iframe, body.col-dragging canvas { pointer-events: none; }
     font-family: inherit;
 }
 .sidebar-account:hover, .sidebar-account[aria-expanded="true"] { background: var(--background-elevated); }
+/* Hosted behind a service: a link back to its page for the person, just
+   above the settings trigger, in the footer pinned to the sidebar's foot. */
+.sidebar-service {
+    display: block;
+    padding: 8px;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    font-size: 12px;
+    text-decoration: none;
+    border-radius: 8px;
+}
+.sidebar-service:hover { background: var(--background-elevated); }
 .sidebar-account-avatar {
     width: 28px; height: 28px; border-radius: 50%; flex: none;
     background: var(--border-primary);
@@ -2817,6 +2829,11 @@ body { overflow: hidden; }
     background: var(--background-secondary);
 }
 .sidebar-account { position: sticky; bottom: 0; z-index: 2; background: var(--background-secondary); }
+/* The foot holds the settings trigger and, when hosted, the link above it;
+   pinned as one, so the link is never scrolled under the trigger. */
+.sidebar-foot { margin-top: auto; position: sticky; bottom: 0; z-index: 2;
+    background: var(--background-secondary); }
+.sidebar-foot .sidebar-account { width: 100%; margin-top: 0; }
 .main { display: flex; flex-direction: column; }
 .page-shell { flex: 1; }
 /* A reading width for the centre. With the side panel collapsed the

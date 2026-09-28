@@ -1041,6 +1041,10 @@ def _build_parser() -> argparse.ArgumentParser:
                         metavar="NAME",
                         help="With --hosted: a name the proxy serves this GUI "
                              "under, such as app.example.org. Repeat for more.")
+    hosted.add_argument("--account-url", default="", metavar="PATH",
+                        help="With --hosted: the service's own page for the "
+                             "person, linked from the sidebar, as a path on "
+                             "the same site, such as /account/.")
 
 
     resume = sub.add_parser(
@@ -2370,7 +2374,8 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
 
         try:
             hosting = Hosting.from_environment(
-                args.workspace or Path.cwd(), args.allowed_host)
+                args.workspace or Path.cwd(), args.allowed_host,
+                getattr(args, "account_url", ""))
         except HostingError as exc:
             print(f"fastmdx gui: {exc}", file=sys.stderr)
             return 2
@@ -2379,9 +2384,10 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
         output = hosting.workspace
         watching_a_run = False
         args.no_browser = True
-    elif getattr(args, "workspace", None) or getattr(args, "allowed_host", None):
-        print("fastmdx gui: --workspace and --allowed-host apply only with --hosted.",
-              file=sys.stderr)
+    elif (getattr(args, "workspace", None) or getattr(args, "allowed_host", None)
+          or getattr(args, "account_url", None)):
+        print("fastmdx gui: --workspace, --allowed-host and --account-url apply only "
+              "with --hosted.", file=sys.stderr)
         return 2
     config = DashboardConfig(
         ligand_resname=getattr(args, "ligand_resname", None),

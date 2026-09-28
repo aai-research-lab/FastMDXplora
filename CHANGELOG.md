@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A hosted GUI links back to its service
+
+**`fastmdx gui --hosted --account-url PATH`** shows **Your account** in the
+sidebar, linking to the service's own page for the person. Without it a
+person inside the GUI had no way back to the service's pages, signing out
+included. Only a path on the same site is accepted.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

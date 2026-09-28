@@ -45,6 +45,20 @@ starts do not inherit it.
 Give each person's GUI its own secret. A secret shared between workspaces
 would let one person's GUI be reached with another's.
 
+## A way back to the service
+
+The GUI knows nothing of the service around it: its accounts, its other
+pages, signing out. `--account-url` names the service's own page for the
+person, as a path on the same site, and the sidebar shows it as
+**Your account**:
+
+```bash
+fastmdx gui --hosted ... --account-url /account/
+```
+
+Only a path on the same site is accepted: one leading slash, plain
+characters, no scheme and no query.
+
 ## One folder is the whole world
 
 Every path a request names is read inside the workspace: the file picker,

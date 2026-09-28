@@ -335,6 +335,13 @@ def make_handler(
     html = html.replace("__FASTMDX_DOI__", _escape(__doi__))
     html = html.replace("__FASTMDX_VERSION__", _escape(__version__))
     html = html.replace("__FASTMDX_BIBTEX__", _escape(__bibtex__))
+    # Hosted behind a service, the sidebar links to the service's own page
+    # for the person; the GUI has no other way back to it.
+    account_link = ""
+    if hosting is not None and hosting.account_url:
+        account_link = (f'<a class="sidebar-service" href="{_escape(hosting.account_url)}" '
+                        'title="Your account on this service">Your account</a>')
+    html = html.replace("<!--__FASTMDX_ACCOUNT_LINK__-->", account_link)
 
     class LiveDashboardHandler(BaseHTTPRequestHandler):
         server_version = "FastMDXLive/1.0"
