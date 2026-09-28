@@ -14,6 +14,16 @@ sidebar, linking to the service's own page for the person. Without it a
 person inside the GUI had no way back to the service's pages, signing out
 included. Only a path on the same site is accepted.
 
+### A residue of an ion's name holding several atoms is a question
+
+**A copy of an ion's name with more than one atom in it is no longer kept as
+one ion.** A residue named ZN holding two zinc atoms, coordinated by the
+protein, was written into the structure as it stood, where no force field
+template matches it; from a local file it was sent for chemistry instead, with
+advice to fetch `ZN_ideal.sdf`. Setup now stops and names the residue and its
+atoms, since which ions they are is not the structure's to say. Such a copy
+away from the protein is discarded, as before.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

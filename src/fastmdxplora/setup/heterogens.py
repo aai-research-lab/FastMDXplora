@@ -678,6 +678,25 @@ def _classify_one(
             if _held_by_link(h)
             or _min_distance_to_polymer(h, polymer) <= COORDINATION_CUTOFF_A
         ]
+        # An ion is one atom. A copy of an ion's name holding several atoms
+        # is not one ion, and kept as it stands it matched no force field
+        # template; from a local file it was sent for chemistry that only a
+        # PDB entry can supply. Which ions its atoms are is not the
+        # structure's to say, so a copy that would be kept is a question.
+        crowded = [h for h in coordinated if len(h.atoms) > 1]
+        if crowded:
+            said = "; ".join(
+                f"{h.label} holds {len(h.atoms)} atoms "
+                f"({', '.join(a.name for a in h.atoms)})" for h in crowded)
+            return Decision(
+                resname,
+                Action.STOP,
+                f"{said}, and an ion is one atom, so the structure does not "
+                "say which ions these are. Give each ion a residue of its "
+                "own, or, for a molecule that is not an ion, a residue name "
+                "of its own and its chemistry as a ligand file",
+                pack,
+            )
         if coordinated and len(coordinated) == len(instances):
             partners = sorted({p for h in linked for p in _held_by_link(h)})
             by = ("by the protein" if not partners or all(

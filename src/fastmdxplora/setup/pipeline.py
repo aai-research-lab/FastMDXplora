@@ -665,7 +665,7 @@ def _keep_in_place(params: dict, input_pdb, setup_dir, decisions) -> list:
     nothing when there is no ion to keep, and PDBFixer then strips the
     heterogens itself.
     """
-    from fastmdxplora.setup.heterogens import ION_NAMES, WATER_NAMES, Action
+    from fastmdxplora.setup.heterogens import WATER_NAMES, Action
 
     simulate = [d for d in decisions if d.action is Action.SIMULATE]
 
@@ -714,9 +714,9 @@ def _keep_in_place(params: dict, input_pdb, setup_dir, decisions) -> list:
     # out to an SDF and re-added came back renamed, in a different chain, and
     # at coordinates that were not its coordination site. Retained water
     # goes into the same structure, because PDBFixer keeps all it is given
-    # from it and does not read its own water option.
-    in_place = ions + [d for d in simulate
-                       if not d.is_monatomic and d.resname in ION_NAMES]
+    # from it and does not read its own water option. A copy of an ion's
+    # name holding several atoms is not kept: the classifier stops on it.
+    in_place = ions
     if not in_place:
         return []
     params["_retained_pdb"] = str(
@@ -799,7 +799,7 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
         resolve_forcefield,
     )
     from fastmdxplora.setup.heterogens import (
-        ION_NAMES, WATER_NAMES, Action, resolve, summarize,
+        WATER_NAMES, Action, resolve, summarize,
     )
     from fastmdxplora.setup.protonation import (
         POISED_MARGIN, apply_settled_state, settle,
@@ -853,19 +853,7 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
             "heterogens policy to 'drop' to exclude them."
         , code="setup.structure.undetermined")
 
-    ions = [d for d in wanted if d.resname in ION_NAMES]
-    molecules = [d for d in wanted if d.resname not in ION_NAMES]
-    if ions:
-        logger.info(
-            "Keeping %s in the structure; the protein force field provides "
-            "ion parameters.",
-            ", ".join(f"{d.resname} x{d.count}" if d.count > 1 else d.resname
-                      for d in ions),
-        )
-    if not molecules:
-        return []
-
-    copies = [(d, het) for d in molecules for het in d.instances]
+    copies = [(d, het) for d in wanted for het in d.instances]
     # setup_dir is already the setup directory: input.pdb and prepared.pdb
     # sit directly in it. Appending "setup" again buried the ligands in
     # setup/setup/ligands.
