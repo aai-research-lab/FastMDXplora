@@ -1353,6 +1353,24 @@ def _infer_system_from_output(output_dir: str | None) -> str | None:
     return None
 
 
+def _no_systems_in(config: dict[str, Any], path: Any) -> str:
+    """What to say about a config with no `systems:` list.
+
+    `system:` at the top level is the natural thing to write for one
+    structure, and it was answered with "explore requires a system", which
+    reads as though the file had not been read. Its value is shown in the
+    shape the key wants.
+    """
+    where = f" in {path}" if path else ""
+    given = config.get("system")
+    if given is None:
+        return (f"fastmdx: the config{where} has no `systems:` list, so there "
+                "is no structure to run. Add one, or pass -s/--system PATH.")
+    return (f"fastmdx: the config{where} has a top-level `system:`; the key is "
+            "`systems:`, a list, so that one file can hold several:\n\n"
+            f"  systems:\n    - system: {given}\n")
+
+
 def _make_orchestrator(args: argparse.Namespace, *, phase: str | None = None) -> FastMDXplora:
     """Build a single-system orchestrator for the per-phase subcommands.
 
@@ -1376,7 +1394,9 @@ def _make_orchestrator(args: argparse.Namespace, *, phase: str | None = None) ->
         from fastmdxplora.batch.sweep import normalize_systems
 
         raw = load_config_file(config)
-        systems = normalize_systems(raw.get("systems") or [])
+        if not raw.get("systems"):
+            raise SystemExit(_no_systems_in(raw, config))
+        systems = normalize_systems(raw["systems"])
         system = systems[0]["system"]
     else:
         system = args.system or inferred_system
@@ -1631,6 +1651,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         return 0
 
     if not config.get("systems"):
+        if "system" in config:
+            print(_no_systems_in(config, getattr(args, "config", None)),
+                  file=sys.stderr)
+            return 2
         print(
             "fastmdx: explore requires a system — pass -s/--system PATH, a "
             "--config file with a `systems:` list, or "

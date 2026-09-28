@@ -189,6 +189,18 @@ for a saved subset hands the DCD writer double-precision coordinates and the
 writer warns about the cast, at the start of every run that leaves the water
 out, which is every run by default.
 
+### A Config with `system:` is told the key is `systems:`
+
+**A Config naming its structure with a top-level `system:` is answered with the
+key it wants.** `explore` said "explore requires a system", which reads as
+though the file had not been read, and the per-phase commands said "`systems`
+must be a non-empty list of mappings". Both now show the value given as
+`systems:` with one `- system:` entry.
+
+**`OrientationWarning` is deprecated.** Nothing raises it since the orientation
+check became a fit; importing it still works and says it will be removed in
+3.0.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

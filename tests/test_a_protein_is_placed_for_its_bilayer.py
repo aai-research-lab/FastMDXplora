@@ -368,3 +368,32 @@ def test_a_four_site_water_is_refused_in_words(tmp_path, monkeypatch) -> None:
     assert refused.value.code == "config.option.conflicting"
     assert "three-site water" in str(refused.value)
     assert "addExtraParticles" not in str(refused.value)
+
+
+def test_a_real_bilayer_is_built_round_an_opm_file(tmp_path) -> None:
+    """Setup for real, on a tripeptide given as an OPM file: the markers are
+    taken out, OPM's frame is kept, OpenMM packs a DMPC bilayer round it, and
+    the record says so. The rest of this file stops before the packing."""
+    pytest.importorskip("openmm")
+    pytest.importorskip("pdbfixer")
+    from fastmdxplora import FastMDXplora
+    from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
+
+    atoms = [line for line in TRI_ALANINE.splitlines() if line.startswith(("ATOM", "HETATM"))]
+    opm = tmp_path / "tri_opm.pdb"
+    opm.write_text("REMARK      1/2 of bilayer thickness:   13.0\n" + "\n".join(atoms) + "\n"
+                   "HETATM 9001  N   DUM  9001      20.000  20.000 -13.000\n"
+                   "HETATM 9002  O   DUM  9002      20.000  20.000  13.000\nEND\n",
+                   encoding="utf-8")
+    study = FastMDXplora(system=str(opm), output_dir=str(tmp_path / "run"),
+                         options={"setup": {"membrane": "DMPC", "forcefield": "amber14"}})
+    results = study.explore(include_phase=["setup"])
+    assert results[0].status == "ok", results[0].message
+    record = json.loads((tmp_path / "run" / "setup" / "setup_parameters.json")
+                        .read_text(encoding="utf-8"))
+    bilayer = record["bilayer"]
+    assert bilayer["placed_by"] == "OPM frame"
+    assert bilayer["opm_hydrophobic_thickness_nm"] == pytest.approx(2.6)
+    assert bilayer["lipids"] == sum(bilayer["lipids_per_leaflet"]) > 20
+    assert bilayer["lipid_parameters"] == "amber14-all.xml"
+    assert "DUM" not in (tmp_path / "run" / "setup" / "input.pdb").read_text(encoding="utf-8")

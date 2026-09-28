@@ -49,7 +49,6 @@ __all__ = [
     "place_for_membrane",
     "check_chains_point_the_same_way",
     "misoriented_copies",
-    "OrientationWarning",
 ]
 
 
@@ -79,8 +78,27 @@ _LIPID_PARAMETERS = {
 }
 
 
-class OrientationWarning(UserWarning):
-    """The protein does not look like it is oriented for a membrane."""
+def __getattr__(name: str) -> Any:
+    """`OrientationWarning`, still importable and on its way out.
+
+    Nothing raises it: the orientation check it belonged to is a refusal
+    now, or a line in the log. Removing a public name belongs to a major
+    release, so until then an import of it works and says so.
+    """
+    if name == "OrientationWarning":
+        import warnings
+
+        warnings.warn(
+            "fastmdxplora.setup.membrane.OrientationWarning is never raised and "
+            "will be removed in 3.0; nothing needs to catch it.",
+            DeprecationWarning, stacklevel=2)
+
+        class OrientationWarning(UserWarning):
+            """The protein does not look like it is oriented for a membrane."""
+
+        globals()["OrientationWarning"] = OrientationWarning
+        return OrientationWarning
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def lipid_parameter_file(files: list[str], lipid: str) -> str | None:

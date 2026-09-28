@@ -271,3 +271,17 @@ def _prepared(where, monkeypatch, *, failing=None, **options):
         log.removeHandler(heard)
         log.setLevel(level)
     return SimpleNamespace(placed_by=placed_by, checked=checked, said=said, asked=asked)
+
+
+def test_the_unused_warning_class_still_imports_and_says_it_is_going(monkeypatch) -> None:
+    """Nothing raises OrientationWarning any more. A public name is removed in
+    a major release, so until then importing it works and warns."""
+    from fastmdxplora.setup import membrane
+
+    monkeypatch.delitem(vars(membrane), "OrientationWarning", raising=False)
+    with pytest.warns(DeprecationWarning, match="removed in 3.0"):
+        found = membrane.OrientationWarning
+    assert issubclass(found, UserWarning)
+    assert "OrientationWarning" not in membrane.__all__
+    with pytest.raises(AttributeError):
+        membrane.NoSuchThing  # noqa: B018
