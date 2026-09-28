@@ -826,8 +826,46 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
     # them would leave a report whose numbers are for a run that is no
     # longer the whole of it. The segments themselves are never touched.
     FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+    _production_carried_on(root, record)
     return {"ok": True, "segment": segment_text, "joined": record,
             "analysed": True, "trajectory": str(joined_dir / "production.dcd")}
+
+
+def _production_carried_on(root: Path, joined: dict[str, Any]) -> None:
+    """Record a production that stopped and was carried on as done.
+
+    The study's Manifest kept the simulation phase as it stopped, an
+    interruption, beside the analyses of the joined trajectory. So a second
+    `fastmdx resume` read a study still to carry on, and tried to join the
+    stopped piece again, which the join refuses. The phase now says it was
+    carried on and joined, and keeps the stop it came back from.
+    """
+    import json
+
+    manifest = root / "manifest.json"
+    try:
+        record = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    changed = False
+    for phase in record.get("phases") or []:
+        refusal = phase.get("refusal") if isinstance(phase, dict) else None
+        if (phase.get("name") == "simulation" and phase.get("status") == "error"
+                and isinstance(refusal, dict) and refusal.get("retryable") is True):
+            phase["status"] = "ok"
+            phase["carried_on_from"] = {"message": phase.get("message"),
+                                        "refusal": refusal}
+            phase["refusal"] = None
+            phase["message"] = (
+                "Production stopped and was carried on from its checkpoint; "
+                f"segments {joined.get('segments')} are joined in "
+                "joined/production.dcd "
+                f"({joined.get('frames')} frames).")
+            changed = True
+    if changed:
+        partial = manifest.with_name(manifest.name + ".new")
+        partial.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+        partial.replace(manifest)
 
 
 def json_dumps(value: Any) -> str:

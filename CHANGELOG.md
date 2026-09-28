@@ -257,6 +257,17 @@ which the plan refuses (`analyze` is the command; the phase is `analysis`). It
 now says `--include-phase analysis report`. The message also reads "OpenMM and
 PDBFixer" and "it is" for one package.
 
+### A study carried on after a stop is finished
+
+**A second `fastmdx resume` of a study carried on after a stop has nothing to
+do.** The study's Manifest kept its simulation phase as it had stopped, beside
+the analyses of the joined trajectory, so a second resume read a study still
+to carry on and tried to join the stopped piece again, which the join refuses:
+"Segments [0] did not finish". Once production is carried on and joined, the
+phase says so, with the segments and frames joined, and keeps the stop it came
+back from as `carried_on_from`. Found resuming a stopped study of several runs
+twice.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -136,6 +136,18 @@ class TestTheSignalIsNoted:
         assert runner._cap_for_stopping(5000, 0, 0.0) == 5000
 
 
+def test_a_study_with_no_record_is_left_as_it_is(tmp_path) -> None:
+    """Carried on and joined, a study whose Manifest cannot be read is not
+    given one."""
+    from fastmdxplora.simulation.resume import _production_carried_on
+
+    _production_carried_on(tmp_path, {"segments": [0, 1], "frames": 6})
+    assert not (tmp_path / "manifest.json").exists()
+    (tmp_path / "manifest.json").write_text("{not json", encoding="utf-8")
+    _production_carried_on(tmp_path, {"segments": [0, 1], "frames": 6})
+    assert (tmp_path / "manifest.json").read_text(encoding="utf-8") == "{not json"
+
+
 @unittest.skipUnless(HAS_BACKENDS, "OpenMM, PDBFixer and MDTraj are needed")
 class TestARealRunStoppedMidProduction(unittest.TestCase):
     """A real run sent SIGTERM 130 steps into a 300-step production, between
@@ -211,3 +223,13 @@ class TestARealRunStoppedMidProduction(unittest.TestCase):
                              top=str(study / "simulation" / "trajectory_topology.pdb"))
         self.assertEqual(joined.n_frames, 6)
         self.assertTrue((study / "report" / "report.md").is_file())
+        # The record says production was carried on, so a second resume
+        # has nothing to do; it tried to join the stopped piece again.
+        manifest = json.loads((study / "manifest.json").read_text(encoding="utf-8"))
+        simulation = next(p for p in manifest["phases"] if p["name"] == "simulation")
+        self.assertEqual(simulation["status"], "ok")
+        self.assertEqual(simulation["carried_on_from"]["refusal"]["code"], STOPPED_CODE)
+        self.assertIn("6 frames", simulation["message"])
+        again = resume_study(study)
+        self.assertTrue(again["ok"], again.get("error"))
+        self.assertEqual(again["did"], "nothing")
