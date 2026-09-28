@@ -54,6 +54,16 @@ logger = get_logger("setup")
 DEFAULTS: dict[str, Any] = SETUP.defaults()
 
 
+def _the_list_is_the_name(name: Any, xmls: Any) -> bool:
+    """Whether a raw force-field list is exactly what a named one resolves to."""
+    from fastmdxplora.setup.forcefields import resolve_forcefield
+
+    try:
+        return list(resolve_forcefield(str(name)).xmls) == [str(x) for x in xmls]
+    except Exception:  # noqa: BLE001 - an unknown name is refused below
+        return False
+
+
 def _classify_input(system: str | None) -> str:
     """Return one of ``{"pdb_file", "pdb_id", "sequence"}``.
 
@@ -1019,7 +1029,18 @@ def run(
     # Force-field selection is either the named selector OR a raw XML list,
     # not both. Check the user-supplied options (not merged defaults), since
     # `forcefield` always has a default.
-    if options.get("forcefield") is not None and options.get("force_field"):
+    #
+    # Except where the list is what the name resolves to. A study's
+    # resolved_config.yml records both, the name as asked and the files it
+    # became, and says it can be fed back to reproduce the study; fed back,
+    # it was refused here, and a resume that had to start a run again failed
+    # on it. The name decides then, as it did the first time: it also
+    # decides the cutoff and whether a ligand can be parameterized, which a
+    # bare list cannot.
+    if (options.get("forcefield") is not None and options.get("force_field")
+            and _the_list_is_the_name(options["forcefield"], options["force_field"])):
+        params["force_field"] = None
+    elif options.get("forcefield") is not None and options.get("force_field"):
         raise StudyError(
             "Specify either `forcefield` (a named force field) or "
             "`force_field` (a raw list of OpenMM XML files), not both. "

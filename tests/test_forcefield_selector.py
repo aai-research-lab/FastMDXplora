@@ -116,8 +116,35 @@ class TestForceFieldPlumbing:
                 orchestrator=stub_orchestrator,
                 output_dir=out_dir,
                 forcefield="charmm36",
-                force_field=["charmm36.xml", "charmm36/water.xml"],
+                force_field=["amber14-all.xml", "amber14/tip3p.xml"],
             )
+
+    def test_an_unknown_name_is_not_its_list(self):
+        from fastmdxplora.setup.pipeline import _the_list_is_the_name
+
+        assert not _the_list_is_the_name("bogus-ff", ["amber14-all.xml"])
+        assert not _the_list_is_the_name("charmm36", ["amber14-all.xml", "amber14/tip3p.xml"])
+
+    @pytest.mark.parametrize("name", ["auto", "amber14"])
+    def test_a_list_that_is_the_name_resolved_is_read_as_the_name(
+            self, stub_orchestrator, name):
+        """What a resolved_config.yml records: the name asked for and the
+        files it became. Fed back, it was refused, so the file that says it
+        reproduces a study could not be run, and neither could a resume
+        that had to start a run again."""
+        out_dir = stub_orchestrator.output_dir / "setup"
+        out_dir.mkdir()
+        from fastmdxplora.setup import prepare as _prepare_mod
+        with patch.object(_prepare_mod, "prepare_system", return_value={}) as prepared:
+            setup_run(
+                orchestrator=stub_orchestrator,
+                output_dir=out_dir,
+                forcefield=name,
+                force_field=["amber14-all.xml", "amber14/tip3p.xml"],
+            )
+        if prepared.called:  # not reached without PDBFixer
+            assert prepared.call_args.kwargs["forcefield"] == name
+            assert prepared.call_args.kwargs["force_field"] is None
 
     def test_unknown_named_ff_raises(self, stub_orchestrator):
         out_dir = stub_orchestrator.output_dir / "setup"

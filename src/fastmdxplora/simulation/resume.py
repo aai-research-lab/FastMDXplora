@@ -1198,7 +1198,19 @@ def resume_study(study: str | Path, *,
     if device_index is not None:
         again["simulation"] = {**(again.get("simulation") or {}),
                                "device_index": device_index}
-    FastMDXplora(config_data=again, output_dir=str(root)).explore(force=True)
+    # Its structure found where the study is, not where the resume runs.
+    again["systems"] = [
+        {**entry, "system": _found_from(root, entry.get("system"))}
+        if isinstance(entry, dict) else entry
+        for entry in again.get("systems") or []]
+    ran = FastMDXplora(config_data=again, output_dir=str(root)).explore(force=True)
+    # Said as it ended. It was reported as run whatever happened, so a
+    # study that failed again the same way came back as carried on.
+    failed = [result for result in ran if result.status != "ok"]
+    if failed:
+        return {**base, "ok": False, "did": RESUMED_FROM_START,
+                "error": failed[0].message or "Run again from its start, it did "
+                                              "not finish."}
     return {**base, "ok": True, "did": RESUMED_FROM_START,
             "detail": "Production had not begun; the study was run from its start."}
 
@@ -1221,7 +1233,10 @@ def _found_from(root: Path, given: Any) -> Any:
     path = Path(given).expanduser()
     if path.is_absolute() or path.exists():
         return given
-    for base in (root.parent, root):
+    # The nearest folder holding it, from the study outwards: a run of a
+    # campaign sits two folders below the study, and the study beside the
+    # folder it was started from.
+    for base in (root, *Path(root).parents):
         if (base / path).is_file():
             return str((base / path).resolve())
     return given

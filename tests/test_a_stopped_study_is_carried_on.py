@@ -58,7 +58,10 @@ EVERY_PHASE = [{"name": p, "status": "ok"} for p in ("setup", "simulation", "ana
 @pytest.fixture()
 def ran(monkeypatch):
     """What a resume asked to run, instead of running it."""
-    calls: list[tuple[str, dict]] = []
+    class Calls(list):
+        """What was run, and what the next run from the start ends with."""
+
+    calls: Calls = Calls()
 
     class Recorder:
         def __init__(self, *, config_data, output_dir):
@@ -67,6 +70,12 @@ def ran(monkeypatch):
         def explore(self, force=False):
             calls.append(("explore", {"config": self.config, "output": self.output,
                                       "force": force}))
+            from types import SimpleNamespace
+
+            return [SimpleNamespace(status=explored["status"], message=explored["message"])]
+
+    explored = {"status": "ok", "message": ""}
+    calls.explored = explored  # type: ignore[attr-defined]
 
     import fastmdxplora
 
@@ -138,6 +147,15 @@ class TestWhatIsLeftDecidesWhatRuns:
         assert kind == "explore" and call["force"] is True
         assert call["output"] == str(study.resolve())
         assert "include_phase" not in call["config"]
+
+    def test_a_run_from_the_start_that_fails_again_says_so(self, tmp_path, ran, monkeypatch) -> None:
+        """It was reported as run whatever became of it."""
+        study = _study(tmp_path / "s")
+        _progress(monkeypatch, done=0.0, planned=1.0, refusal="no checkpoint")
+        ran.explored.update(status="error", message="setup: a residue no template matches")
+        answer = resume_study(study)
+        assert (answer["ok"], answer["did"]) == (False, "restarted")
+        assert answer["error"] == "setup: a residue no template matches"
 
     def test_production_that_cannot_be_continued_is_not_thrown_away(self, tmp_path, ran, monkeypatch) -> None:
         """Written production is not discarded by starting again; the

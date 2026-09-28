@@ -268,6 +268,25 @@ phase says so, with the segments and frames joined, and keeps the stop it came
 back from as `carried_on_from`. Found resuming a stopped study of several runs
 twice.
 
+### A study's resolved config runs again
+
+**A `resolved_config.yml` fed back is no longer refused.** It records the
+force field as asked (`forcefield: auto`) and the files that became
+(`force_field: [amber14-all.xml, amber14/tip3p.xml]`), and says it can be fed
+back to reproduce the study; fed back, setup refused it with "Specify either
+`forcefield` ... or `force_field`, not both". A list that is exactly what the
+name resolves to is now read as the name, which also decides the cutoff and
+whether a ligand can be parameterized, as it did the first time. A name and a
+different list are still refused. Found when a resume had to start a stopped
+run again from its setup.
+
+**A run started again by `fastmdx resume` says how it ended.** Where
+production had not begun, the study is run from its start; it was reported as
+done whatever became of that run, so one that failed again came back as
+carried on. Its structure is also found from the study's folder outwards, so a
+run of a campaign finds a structure named relative to where the study was
+started, wherever the resume is run.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
