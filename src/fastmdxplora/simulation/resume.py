@@ -959,10 +959,16 @@ RESUMED_FROM_START = "restarted"
 
 def _still_running(root: Path) -> bool:
     """Whether a run of this study is alive, by the record it keeps while
-    it runs and the process that record names."""
+    it runs and the process that record names.
+
+    Not when the record was written on another machine or before this one
+    booted, and never this resume or what started it: in a new container,
+    where process numbers start again, the old record's number can be the
+    resume's own or its shell's, and the study was refused as still
+    running by the very command sent to carry it on."""
     import json
 
-    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
 
     try:
         record = json.loads((root / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
@@ -971,9 +977,33 @@ def _still_running(root: Path) -> bool:
     pid = record.get("pid") if isinstance(record, dict) else None
     if not isinstance(pid, int) or pid <= 0:
         return False
+    if record_is_from_elsewhere(record) or pid in _this_process_and_its_parents():
+        return False
     from fastmdxplora.gui.exploration import _process_is_this_run
 
     return bool(_process_is_this_run(pid, root, record.get("argv")))
+
+
+def _this_process_and_its_parents() -> set[int]:
+    """This process and every process above it, as far as can be read, but
+    not process 1: a container's first process can be the run itself, still
+    going, with this resume started beside it."""
+    import os
+
+    found = {os.getpid(), os.getppid()} - ({1} if os.getpid() != 1 else set())
+    pid = os.getppid()
+    for _ in range(64):
+        try:
+            # The parent is the fourth field; the name before it is in
+            # parentheses and may hold spaces.
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            pid = int(stat.rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+        if pid <= 1 or pid in found:
+            break
+        found.add(pid)
+    return found
 
 
 def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | None]:

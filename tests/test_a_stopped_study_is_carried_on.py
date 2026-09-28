@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -167,9 +169,16 @@ class TestWhatIsNotRunAgain:
         from fastmdxplora.orchestrator import RUN_PROCESS_FILE
 
         study = _study(tmp_path / "s")
-        (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": os.getpid()}))
-        monkeypatch.setattr(exploration, "_process_is_this_run", lambda pid, root, argv=None: True)
-        answer = resume_study(study)
+        # Another live process: the resume's own number is never the run's.
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        try:
+            (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": other.pid}))
+            monkeypatch.setattr(exploration, "_process_is_this_run",
+                                lambda pid, root, argv=None: True)
+            answer = resume_study(study)
+        finally:
+            other.kill()
+            other.wait()
         assert answer["ok"] is False and "still going" in answer["error"]
         assert ran == []
 

@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `fastmdx resume` in a new container
+
+**`fastmdx resume` no longer takes a new process for the run it carries on.** A
+study stopped in one container and carried on in another met its old run's
+record naming a process number that, in the new container, could be the
+resume's own or its shell's, and the resume refused the study as still running.
+A run's record now says which host and boot wrote it, a record from another is
+not a live run here, and the resume never counts itself or the processes that
+started it. The GUI no longer tries to adopt a run recorded on another machine.
+
 ### A budget works on a machine never measured
 
 **`--budget-hours` no longer refuses every study on a machine without a stored

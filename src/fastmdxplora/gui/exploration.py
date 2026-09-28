@@ -1104,6 +1104,12 @@ class DashboardRuntime:
         pid = record.get("pid")
         if not isinstance(pid, int) or pid <= 0:
             return False
+        from fastmdxplora.orchestrator import record_is_from_elsewhere
+
+        if record_is_from_elsewhere(record):
+            # Written on another machine, or before a reboot: its process
+            # number names nothing of this study here.
+            return False
         identity = _identify_run(pid, Path(root), record.get("argv"))
         if identity is None:
             # Alive, and not yet identifiable. Not adopted -- the sidebar

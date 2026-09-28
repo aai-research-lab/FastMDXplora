@@ -1567,6 +1567,37 @@ def _same_directory(first: Path, second: Path) -> bool:
 RUN_PROCESS_FILE = ".fastmdxplora_run.json"
 
 
+def this_machine() -> dict[str, str]:
+    """What a run record says about where it was written: the host's name
+    and, on Linux, which boot. A process number means something only on the
+    machine, and in the boot, that gave it out."""
+    import socket
+
+    try:
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip()
+    except OSError:
+        boot = ""
+    return {"host": socket.gethostname(), "boot": boot}
+
+
+def record_is_from_elsewhere(record: dict) -> bool:
+    """Whether a run record was written on another machine, or before this
+    one last booted, so the process it names is not one here.
+
+    A container, a cloud GPU's sandbox and a cluster node each have a name
+    of their own, and each starts numbering processes again from one: a
+    study carried on in a new one would find its old record naming a
+    process number that, there, belongs to someone else. Records written
+    before hosts were recorded say nothing either way.
+    """
+    here = this_machine()
+    for key in ("host", "boot"):
+        there = record.get(key)
+        if isinstance(there, str) and there and here.get(key) and there != here[key]:
+            return True
+    return False
+
+
 def _record_run_process(output_dir: Path) -> None:
     import atexit
     import json
@@ -1579,6 +1610,7 @@ def _record_run_process(output_dir: Path) -> None:
             "pid": os.getpid(),
             "argv": list(sys.argv),
             "started_at": datetime.now(timezone.utc).isoformat(),
+            **this_machine(),
         }), encoding="utf-8")
     except OSError:
         return
