@@ -2597,6 +2597,11 @@ def run_simulation(
         # where the solvent is finding its arrangement and the solute should
         # not be moving while it does.
         _hold_at(0.0)
+        if restraint_parameters and plan["nvt_steps"] + plan["npt_steps"] > 0:
+            _log_step("The solute is held by its restraints while the "
+                      "water settles")
+            if on_explain:
+                on_explain("restraints")
 
         # The ladder was sampled at two points -- once before NVT and once
         # before NPT -- so a four-rung ladder reached 1000 and 100 and never
@@ -2746,6 +2751,11 @@ def run_simulation(
                 frequency=barostat_frequency,
             )
             simulation.context.reinitialize(preserveState=True)
+            if membrane_system:
+                _log_step("Pressure coupled in the membrane plane and along "
+                          "its normal separately")
+                if on_explain:
+                    on_explain("membrane_barostat")
         if plan["npt_steps"] > 0:
             if telemetry is not None:
                 telemetry.mark_stage("npt", "current", status="running", current_step=current_step)

@@ -591,8 +591,8 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         # The "why" filter had nothing to show: the explain text was
         # printed by the caller's hook and never written as an event. A
         # short real run, opened in the dashboard, with the filter on "why".
-        # The production step's explanation carries no citation, so it is
-        # shown there by the level it was written with and nothing else.
+        # The production step's explanation is found there by the level it
+        # was written with, the citation beneath it being no part of that.
         import tempfile
 
         import pytest
@@ -612,7 +612,6 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
                        platform="CPU", live_telemetry=True, telemetry_interval=10,
                        trajectory_interval_steps=10)
         production = explain("production")
-        self.assertIsNone(production.reference)
         opening = production.why.strip()[:40]
         session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
         try:

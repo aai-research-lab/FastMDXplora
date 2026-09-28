@@ -83,8 +83,9 @@ EXPLANATIONS: dict[str, Explanation] = {
         why=(
             "The protein force field knows the twenty amino acids and "
             "nothing else, so a bound ligand has no parameters until "
-            "somebody makes them. OpenFF generates them from the ligand's "
-            "chemistry, which is why the chemistry had to be settled first."
+            "somebody makes them. A small-molecule force field (OpenFF's, "
+            "by default) generates them from the ligand's chemistry, which "
+            "is why the chemistry had to be settled first."
         ),
         reference="Qiu et al., OpenFF 2.0.0 Sage, J Chem Theory Comput 2021",
     ),
@@ -118,6 +119,9 @@ EXPLANATIONS: dict[str, Explanation] = {
             "motion. Minimisation walks the structure downhill to a nearby "
             "arrangement with no such forces in it, before anything moves."
         ),
+        reference=(
+            "Braun et al., Best Practices for Foundations in Molecular "
+            "Simulations, LiveCoMS 2019 (doi:10.33011/livecoms.1.1.5957)"),
     ),
     "restraints": Explanation(
         why=(
@@ -202,6 +206,10 @@ EXPLANATIONS: dict[str, Explanation] = {
             "equilibrium, and the frames written now are the ones every "
             "later number comes from."
         ),
+        reference=(
+            "Grossfield et al., Best Practices for Quantification of "
+            "Uncertainty and Sampling Quality in Molecular Simulations, "
+            "LiveCoMS 2018 (doi:10.33011/livecoms.1.1.5067)"),
     ),
     "metadynamics": Explanation(
         why=(

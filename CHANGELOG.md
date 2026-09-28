@@ -346,6 +346,23 @@ figure, 0 for the curve with no interval. Two hundred stays the default, and
 the count used is recorded in `pmf.json`. A value that is not a whole number
 of 0 or more is refused.
 
+### Every step's explanation reaches the person
+
+**The seven explanations nothing printed are said beneath the step they
+explain.** Why heterogens are classified, beneath the decisions; why a
+ligand's chemistry is looked up, and why it needs parameters of its own, where
+setup takes them; why the solute is held while the water settles, as
+equilibration starts; why a bilayer's pressure is coupled in its plane and
+along its normal separately, where that barostat goes on; why a mean is given
+with the independent samples it rests on, beneath the analyses; and why
+interactions are typed rather than counted, after the interaction analysis.
+Each was written and none reached anyone.
+
+**`minimize` and `production` cite what is worth reading**: Braun et al.
+(LiveCoMS 2019) on preparing a system, and Grossfield et al. (LiveCoMS 2018)
+on what a trajectory supports. The ligand parameters text no longer says
+OpenFF makes them whatever force field was chosen.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

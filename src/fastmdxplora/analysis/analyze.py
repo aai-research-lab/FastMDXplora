@@ -185,6 +185,12 @@ def run(
                 name, r.status, path + "/", elapsed, name_width=name_width,
                 reason=r.message if r.status != "ok" else None,
             )
+        # Why the figures say how many independent samples a mean rests on,
+        # and why interactions are typed rather than counted.
+        if any(r.status == "ok" for r in results.values()):
+            presenter.explanation("convergence")
+        if getattr(results.get("pl_interactions"), "status", None) == "ok":
+            presenter.explanation("interactions")
 
     artifacts: list[str] = []
     for r in results.values():

@@ -1155,6 +1155,10 @@ def run(
             setup_dir,
             orchestrator.system if input_form == "pdb_id" else None,
         )
+        # Said beneath the decisions just listed, which are what it explains;
+        # a structure with nothing beside the polymer has nothing to explain.
+        if presenter and params.get("_heterogen_decisions"):
+            presenter.explanation("heterogens")
         if discovered:
             params["ligand"] = discovered
             _validate_ligand_forcefield(params)
@@ -1162,6 +1166,11 @@ def run(
                 "Prepared %d ligand file(s) from the structure: %s",
                 len(discovered), ", ".join(Path(d).name for d in discovered),
             )
+            if presenter:
+                presenter.step(
+                    "Ligand chemistry from the Chemical Component Dictionary: "
+                    + ", ".join(Path(d).stem for d in discovered),
+                    explain="ligand_chemistry")
     elif params.get("ligand"):
         params["_reinstated_heterogens"] = _explicit_ligand_resnames(params)
         if auto:
@@ -1320,6 +1329,13 @@ def run(
             presenter.step(f"Solvated and parameterized ({ff_label})",
                            explain=("membrane" if params.get("membrane")
                                     else "solvation"))
+            if params.get("ligand"):
+                small = (((produced.get("resolved_forcefield") or {}).get("ligand")
+                          or {}).get("forcefield")
+                         or params.get("ligand_forcefield"))
+                presenter.step(
+                    "Ligand parameters generated" + (f" ({small})" if small else ""),
+                    explain="ligand_parameters")
             presenter.step("Wrote system.xml, state.xml, topology.pdb")
     except ImportError as exc:
         missing = missing_dependencies()

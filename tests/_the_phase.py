@@ -162,7 +162,8 @@ def what_preparation_receives(root: Path, monkeypatch, **options: Any) -> dict:
     return received
 
 
-def a_real_setup(root: Path, prepare_system: Any = None, **options: Any) -> SimpleNamespace:
+def a_real_setup(root: Path, prepare_system: Any = None, *, pdb_text: str | None = None,
+                 **options: Any) -> SimpleNamespace:
     """The setup phase, run on a three-residue peptide as it runs on
     anything -- PDBFixer, hydrogens, solvent. Returns where it wrote, what
     prepare_system returned, the steps the presenter was told and the log
@@ -175,10 +176,11 @@ def a_real_setup(root: Path, prepare_system: Any = None, **options: Any) -> Simp
     from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
 
     structure = root / "peptide.pdb"
-    structure.write_text(TRI_ALANINE, encoding="utf-8")
+    structure.write_text(pdb_text or TRI_ALANINE, encoding="utf-8")
     (root / "setup").mkdir(parents=True, exist_ok=True)
     returned: dict = {}
     steps: list[str] = []
+    explained: list[str] = []
     messages: list[str] = []
     real = prepare_system or prepare.prepare_system
 
@@ -196,7 +198,8 @@ def a_real_setup(root: Path, prepare_system: Any = None, **options: Any) -> Simp
     level = logger.level
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
-    presenter = SimpleNamespace(step=lambda message, **kwargs: steps.append(message))
+    presenter = SimpleNamespace(step=lambda message, **kwargs: steps.append(message),
+                                explanation=explained.append)
     try:
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(prepare, "prepare_system", watched)
@@ -208,7 +211,8 @@ def a_real_setup(root: Path, prepare_system: Any = None, **options: Any) -> Simp
     finally:
         logger.removeHandler(handler)
         logger.setLevel(level)
-    return SimpleNamespace(root=root, returned=returned, steps=steps, messages=messages)
+    return SimpleNamespace(root=root, returned=returned, steps=steps, messages=messages,
+                           explained=explained)
 
 
 def a_run_s_progress(root: Path, *, telemetry: bool) -> list[tuple[str, int, int]]:

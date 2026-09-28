@@ -10,8 +10,9 @@ user. An entry is only ever printed if some call site names its key --
 This file exists to stop the number drifting. It was reported as seven
 unreachable, then eleven, then five, in the course of one afternoon,
 because each count was taken by a different hand-written regex over the
-source rather than by one function everyone uses. It is eight, and it is
-computed here once.
+source rather than by one function everyone uses. It was eight, then seven,
+and now none: each is said beneath the step it explains. It is computed
+here once.
 """
 
 from __future__ import annotations
@@ -25,27 +26,18 @@ from fastmdxplora.explain import EXPLANATIONS
 
 SRC = pathlib.Path(__file__).resolve().parents[1] / "src"
 
-#: The eight with no call site, named so that wiring one is a visible
-#: change to this list rather than a silent improvement to a number.
-#:
-#: Each needs a step that already prints, so the explanation attaches to
-#: something the reader is looking at rather than arriving on its own.
-UNWIRED = {
-    "convergence",
-    "heterogens",
-    "interactions",
-    "ligand_chemistry",
-    "ligand_parameters",
-    "membrane_barostat",
-    "restraints",
-}
+#: Those with no call site, named so that adding one is a visible change to
+#: this set rather than a silent drop in a number. Empty: every explanation
+#: is said beneath the step it explains.
+UNWIRED: set[str] = set()
 
 
 def _keys_named_anywhere() -> set[str]:
     """Every explanation key some call site actually asks for.
 
-    Both spellings, because both are in use: the keyword form on
-    `presenter.step`/`info`, and `on_explain` in the simulation runner --
+    Every spelling in use: the keyword form on `presenter.step`/`info`,
+    `presenter.explanation` beneath output that is not a step, and
+    `on_explain` in the simulation runner --
     which also reaches three keys through the `_STAGE_EXPLANATIONS` table
     rather than by literal. A count that misses one form undercounts, which
     is how "five" was reported for what is eight.
@@ -55,7 +47,7 @@ def _keys_named_anywhere() -> set[str]:
         for path in SRC.rglob("*.py")
         if path.name != "explain.py"
     )
-    named = set(re.findall(r'(?:on_explain|_explain)\(\s*["\'](\w+)["\']', blob))
+    named = set(re.findall(r'(?:on_explain|_explain|\.explanation)\(\s*["\'](\w+)["\']', blob))
     named |= set(re.findall(r'explain=\(?["\'](\w+)["\']', blob))
     named |= set(re.findall(r'else\s+["\'](\w+)["\']\)', blob))
     table = re.search(r"_STAGE_EXPLANATIONS\s*[:=][^{]*\{(.*?)\}", blob, re.S)
@@ -103,12 +95,12 @@ class TestWhatIsWiredActuallyResolves:
 
 
 class TestTheOnesWithoutACitation:
-    """`minimize` and `production` carry no reference, against a README
-    saying every step "cites the paper worth reading". Pinned rather than
-    fixed: which paper belongs on each is a judgement, and inventing one to
-    make a test pass would be worse than the gap."""
+    """`minimize` and `production` carried no reference. They now cite the
+    two LiveCoMS best-practice papers that cover them: Braun et al. 2019 on
+    preparing a system, and Grossfield et al. 2018 on what a trajectory
+    supports. Pinned, so an entry added without one is seen."""
 
-    WITHOUT = {"minimize", "production"}
+    WITHOUT: set[str] = set()
 
     def test_the_list_is_accurate(self) -> None:
         missing = {name for name, entry in EXPLANATIONS.items()
@@ -120,3 +112,23 @@ class TestTheOnesWithoutACitation:
             if name in self.WITHOUT:
                 continue
             assert getattr(entry, "reference", None), name
+
+
+def test_the_heterogens_are_explained_beneath_their_decisions(tmp_path) -> None:
+    """Only where there were decisions to explain: a bare peptide has none."""
+    from tests._the_phase import a_real_setup
+    from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
+
+    sulfate = "".join(
+        f"HETATM{900 + i:5d} {name:<4} SO4 B 901    {x:8.3f}{y:8.3f}{z:8.3f}"
+        f"  1.00  0.00           {element}\n"
+        for i, (name, element, x, y, z) in enumerate([
+            ("S", "S", 12.0, 12.0, 12.0), ("O1", "O", 13.4, 12.0, 12.0),
+            ("O2", "O", 11.5, 13.3, 12.0), ("O3", "O", 11.5, 11.3, 13.2),
+            ("O4", "O", 11.5, 11.3, 10.8)]))
+    with_sulfate = TRI_ALANINE.replace("END", sulfate + "END")
+    ran = a_real_setup(tmp_path, pdb_text=with_sulfate)
+    assert "heterogens" in ran.explained
+    (tmp_path / "bare").mkdir()
+    bare = a_real_setup(tmp_path / "bare")
+    assert "heterogens" not in bare.explained
