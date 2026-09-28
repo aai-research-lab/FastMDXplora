@@ -97,6 +97,15 @@ from fastmdxplora.analysis import (  # noqa: F401, E402
 from fastmdxplora.analysis import (  # noqa: F401, E402
     pair_distance as _pair_distance,
 )
+# The bilayer's own structure: area per lipid, thickness, chain order. Run
+# only where there is a bilayer.
+from fastmdxplora.analysis import (  # noqa: F401, E402
+    area_per_lipid as _area_per_lipid,
+)
+from fastmdxplora.analysis import (  # noqa: F401, E402
+    bilayer_thickness as _bilayer_thickness,
+)
+from fastmdxplora.analysis import lipid_order as _lipid_order  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water

@@ -1,0 +1,129 @@
+"""Area per lipid: how much of the bilayer's plane each lipid has.
+
+The area a lipid occupies in the plane of the bilayer, per frame: the box's
+area in xy, less the protein's cross section in the hydrophobic core, shared
+among the lipids of one leaflet. It is the first number a membrane
+simulation is checked against, because it is measured by experiment and moves
+with everything that can be wrong: the force field, the temperature, the
+barostat, and a bilayer not yet equilibrated.
+
+Read it as a series before as a mean. A bilayer packed around a protein
+relaxes over nanoseconds, and the early frames show it; below the lipid's
+main transition it is too small and falls further as the bilayer orders.
+Compare the settled value with experiment at the same temperature (Kucerka,
+Nieh and Katsaras, Biochim Biophys Acta 1808, 2761 (2011) for the
+phosphatidylcholines).
+"""
+
+from __future__ import annotations
+
+import mdtraj as md
+import numpy as np
+
+from fastmdxplora.analysis.bilayer import (
+    CROSS_SECTION_PLANES_NM,
+    LIPID_PROBE_NM,
+    BilayerSeries,
+    _area_xy,
+    _radii,
+    _wrapped,
+    box_vectors,
+    cross_section,
+    find_bilayer,
+    leaflets,
+)
+from fastmdxplora.analysis.orchestrator import register_analysis
+from fastmdxplora.lipids import is_sterol
+
+__all__ = ["AreaPerLipid"]
+
+
+class AreaPerLipid(BilayerSeries):
+    """Area per lipid in the plane of the bilayer, per frame.
+
+    The box's area in xy, less the protein's cross section in the
+    hydrophobic core, shared among the lipids of one leaflet::
+
+        APL = (A_box - A_protein) / (N_lipids / 2)
+
+    ``A_protein`` is the protein's cross section in planes at
+    :data:`CROSS_SECTION_PLANES_NM` about the bilayer centre, averaged over
+    the planes: the van der Waals discs of every atom that is not lipid,
+    water or an ion, with the crevices a methylene group
+    (:data:`LIPID_PROBE_NM`) cannot enter and the gaps between packed
+    helices counted as protein. It is zero for a bilayer with nothing in it,
+    which is then the plain box area per lipid. A sterol counts as a lipid.
+
+    The correction is a convention, as every protein correction to an area
+    per lipid is: the lipids next to a protein do not pack as those in bulk
+    do. It is small for one or two helices in a box of a hundred lipids and
+    large for a big bundle in a small box, and the findings give the
+    protein's share of the box so the reader can tell which this is.
+
+    Output
+    ------
+    ``area_per_lipid.dat`` -- one column, nm^2, one row per frame.
+    """
+
+    name = "area_per_lipid"
+    description = "Area per lipid"
+    reweightable = (None, "Area per lipid (nm2)")
+
+    def compute(self, traj: md.Trajectory) -> np.ndarray:
+        bilayer = find_bilayer(traj.topology)
+        sides = leaflets(traj, bilayer)
+        vectors = box_vectors(traj)
+        area = _area_xy(vectors)
+        protein = np.zeros(traj.n_frames)
+        if len(bilayer.occupants):
+            radii = _radii(traj.topology, bilayer.occupants)
+            xyz = traj.xyz[:, bilayer.occupants].astype(np.float64)
+            for frame in range(traj.n_frames):
+                cell = vectors[frame, :2, :2]
+                height = vectors[frame, 2, 2]
+                sections = []
+                for plane in CROSS_SECTION_PLANES_NM:
+                    dz = _wrapped(xyz[frame, :, 2] - (sides.centre[frame] + plane),
+                                  height)
+                    cut = np.abs(dz) < radii
+                    sections.append(cross_section(
+                        xyz[frame, cut, :2], np.sqrt(radii[cut] ** 2 - dz[cut] ** 2),
+                        cell, probe=LIPID_PROBE_NM))
+                protein[frame] = float(np.mean(sections))
+        per_leaflet = len(bilayer.heads) / 2.0
+        result = (area - protein) / per_leaflet
+
+        self._note_composition(bilayer, sides)
+        self.findings["area"] = {
+            "box_area_nm2_mean": float(area.mean()),
+            "protein_cross_section_nm2_mean": float(protein.mean()),
+            "cross_section_planes_nm": list(CROSS_SECTION_PLANES_NM),
+            "method": (
+                "(box area in xy - protein cross section in the hydrophobic "
+                "core) / (lipids / 2); the cross section is the area inside "
+                "the outline a methylene probe traces round the protein's van "
+                "der Waals discs, averaged over planes about the bilayer "
+                "centre"),
+            "probe_nm": LIPID_PROBE_NM,
+        }
+        if protein.mean() > 0:
+            share = float(protein.mean() / area.mean())
+            self.findings["protein_share"] = (
+                f"The protein takes {share:.0%} of the box's area in the "
+                "bilayer core. The area per lipid is corrected for it, and the "
+                "correction is an estimate: lipids next to a protein pack "
+                "differently from those in bulk, and where the boundary between "
+                "them is drawn is a convention. The larger the protein's share, "
+                "the more the value depends on it.")
+        if any(is_sterol(name) for name in bilayer.composition):
+            self.findings["sterols"] = (
+                "Sterols are counted as lipids, so this is the mean area per "
+                "molecule of the mixture, which is smaller than the area per "
+                "phospholipid.")
+        return result
+
+    def default_ylabel(self) -> str | None:
+        return "Area per lipid (nm2)"
+
+
+register_analysis(AreaPerLipid.name, AreaPerLipid)

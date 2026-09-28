@@ -114,6 +114,19 @@ membrane.** `POP` is OpenMM's name for POPC and the PDB's code for
 pyrophosphate, and one residue of it was enough to choose the membrane
 barostat. A system is now a bilayer when it holds at least 20 lipids.
 
+### The bilayer is measured
+
+**`area_per_lipid`, `bilayer_thickness` and `lipid_order`** measure the
+bilayer itself, and run automatically wherever there is one: the area per
+lipid with the protein's cross section in the hydrophobic core taken out, the
+phosphate-to-phosphate thickness, and the deuterium order parameter S_CD of
+every acyl-chain carbon by chain. They are what a membrane run is checked
+against before anything about the protein in it is believed. The bilayer
+centre is found across the periodic boundary, lipids are assigned to leaflets
+every frame, chains are found from the bonds so any force field's naming
+works (AMBER's split head and tail residues included), and lipids that do not
+form a bilayer normal to z are refused rather than measured.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -69,6 +69,10 @@ ANALYSIS_NAMES = (
     # frame and none of them needed a new phase.
     "coordination_number", "end_to_end", "moments_of_inertia",
     "pair_distance",
+    # A lipid bilayer's area per lipid, thickness and acyl-chain order,
+    # measured where there is one: what a membrane run is checked against
+    # before anything about the protein in it is believed.
+    "area_per_lipid", "bilayer_thickness", "lipid_order",
 )
 
 

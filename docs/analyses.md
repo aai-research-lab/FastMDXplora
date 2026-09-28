@@ -1,6 +1,6 @@
 # The FastMDXplora analyses
 
-Twenty-four analyses of the trajectory, and three more that read what a biased
+Twenty-seven analyses of the trajectory, and three more that read what a biased
 run itself produced.
 
 Each writes its data, its figure, and the settings it actually used:
@@ -58,6 +58,19 @@ minimum in g(r) — never assumed, because the radius decides the number.
 | `pair_distance` | The separation of two selections, by centre of mass or closest approach, folded into the periodic cell |
 | `end_to_end` | The distance between the two ends of a chain, the coarsest description of extension there is |
 | `moments_of_inertia` | The three principal moments, which separate a rod from a disc where the radius of gyration cannot |
+
+### The bilayer
+
+| | |
+|---|---|
+| `area_per_lipid` | The area a lipid occupies in the plane of the bilayer, with the protein's cross section taken out |
+| `bilayer_thickness` | The distance between the two leaflets' phosphate planes, D_PP |
+| `lipid_order` | The acyl-chain order parameter S_CD of every carbon, the quantity deuterium NMR measures |
+
+The three numbers a membrane run is checked against before anything about the
+protein in it is believed: each is measured by experiment, and each moves when
+the force field, the temperature or the barostat is wrong. They run only where
+there is a bilayer.
 
 ### Conformations
 
@@ -153,6 +166,7 @@ question rather than measuring it.
 | Amide hydrogens | `order_parameters` | The topology has backbone N–H pairs |
 | Crystallographic B-factors | `bfactor_comparison` | The input PDB carries real B-factors |
 | A state record | `thermodynamics` | `simulation/energy.csv` exists |
+| A bilayer | `area_per_lipid`, `bilayer_thickness`, `lipid_order` | The trajectory holds at least 20 lipids and a periodic box |
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any aligning measure | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
@@ -275,9 +289,9 @@ arrangement of a document in which that should be readable without the five.
 
 **What is corrected:** the analyses reporting one value per frame — RMSD,
 radius of gyration, hydrogen bonds, SASA, the fraction of native contacts,
-ligand RMSD, the coordination number, the end-to-end distance and the distance
-between two selections — along with cluster populations, which are weighted
-counts.
+ligand RMSD, the coordination number, the end-to-end distance, the distance
+between two selections, the area per lipid and the bilayer thickness — along
+with cluster populations, which are weighted counts.
 
 **What is not.** Reweighting does not fix which clusters exist: the clustering
 ran on the biased frames, so the states themselves are shaped by where the bias
@@ -368,6 +382,15 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.moments_of_inertia
+   :members:
+
+.. automodule:: fastmdxplora.analysis.area_per_lipid
+   :members:
+
+.. automodule:: fastmdxplora.analysis.bilayer_thickness
+   :members:
+
+.. automodule:: fastmdxplora.analysis.lipid_order
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

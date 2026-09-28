@@ -324,17 +324,18 @@ Nothing leaves the machine: these are files in the run directory that the
 | `exclude` | list | — | Everything but these. Mutually exclusive with `include` |
 | `options` | mapping | — | Per-analysis settings, keyed by analysis name |
 
-The 27 names `include` and `exclude` accept:
+The 30 names `include` and `exclude` accept:
 
 ```
 rmsd  rmsf  rg  hbonds  ss  sasa  dihedrals  qvalue  cluster  dimred
 water_sites  ligand_rmsd  ligand_rmsf  pl_contacts  pl_hbonds  pl_interactions
 order_parameters  bfactor_comparison  thermodynamics  rdf  coordination_number
 end_to_end  moments_of_inertia  pair_distance  pmf  metad_surface  steered_work
+area_per_lipid  bilayer_thickness  lipid_order
 ```
 
 Several do not run by default and are gated on what the run contains — a
-ligand, water, a periodic box, a biased run. Naming one in `include` runs it
+ligand, water, a periodic box, a bilayer, a biased run. Naming one in `include` runs it
 anyway. [The FastMDXplora analyses](analyses.md) has what each measures and
 what gates it.
 

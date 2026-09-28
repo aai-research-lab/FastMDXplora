@@ -50,6 +50,8 @@ FastMDXplora/
 │       │   ├── contacts.py ligand_rmsd.py ligand_rmsf.py pl_hbonds.py   # protein-ligand
 │       │   ├── pl_interactions.py interactions.py ligand_chemistry.py   # what holds the ligand
 │       │   ├── pmf.py metad_surface.py steered_work.py   # the result of a biased run
+│       │   ├── bilayer.py         # Where a bilayer is: its lipids, centre and leaflets
+│       │   ├── area_per_lipid.py bilayer_thickness.py lipid_order.py   # the bilayer itself
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs

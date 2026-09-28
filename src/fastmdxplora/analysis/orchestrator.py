@@ -661,6 +661,25 @@ class AnalysisOrchestrator:
             cls = _REGISTRY[name]
             return has_water or not getattr(cls, "requires_water", False)
 
+        def _bilayer_ok(name: str) -> bool:
+            """A bilayer's area, thickness and chain order need a bilayer.
+
+            Every protein simulation that is not in a membrane would
+            otherwise refuse three analyses, and a refusal in every study
+            reads as a fault. Counted, not named: a pyrophosphate ligand is
+            `POP`, like OpenMM's POPC.
+            """
+            cls = _REGISTRY[name]
+            if not getattr(cls, "requires_bilayer", False):
+                return True
+            traj = getattr(self, "traj", None)
+            if traj is None:
+                return True
+            from fastmdxplora.lipids import is_bilayer
+
+            return (getattr(traj, "unitcell_lengths", None) is not None
+                    and is_bilayer(r.name for r in traj.topology.residues))
+
         def _named_ok(name: str) -> bool:
             """Some analyses have no subject until somebody names one.
 
@@ -703,7 +722,7 @@ class AnalysisOrchestrator:
                 n for n in all_names
                 if n not in exclude and _ligand_ok(n) and _water_ok(n)
                 and _amide_ok(n) and _bfactor_ok(n) and _state_ok(n)
-                and _box_ok(n) and _named_ok(n)
+                and _box_ok(n) and _named_ok(n) and _bilayer_ok(n)
                 and _umbrella_ok(n) and _metadynamics_ok(n)
                 and _steered_ok(n) and _fold_ok(n)
                 and _alignable(n)
@@ -714,7 +733,7 @@ class AnalysisOrchestrator:
         return [n for n in all_names
                 if _ligand_ok(n) and _water_ok(n) and _amide_ok(n)
                 and _bfactor_ok(n) and _state_ok(n) and _box_ok(n)
-                and _named_ok(n) and _umbrella_ok(n)
+                and _named_ok(n) and _bilayer_ok(n) and _umbrella_ok(n)
                 and _metadynamics_ok(n) and _steered_ok(n)
                 and _fold_ok(n) and _alignable(n)]
 

@@ -170,6 +170,11 @@ class Analysis(ABC):
     #: explicitly requested via ``include``.
     requires_ligand: bool = False
 
+    #: True for analyses of a lipid bilayer (area per lipid, thickness,
+    #: chain order). Left out of the automatic plan of a system without one,
+    #: and honoured when named in ``include``, where they say why not.
+    requires_bilayer: bool = False
+
     #: Whether ``compute`` returns one value per frame.
     #:
     #: A quantity measured every frame has a mean, and a mean is not a

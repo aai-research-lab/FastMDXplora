@@ -120,13 +120,15 @@ class AnalyzeSettings(TypedDict, total=False):
         'rmsd', 'rmsf', 'rg', 'hbonds', 'ss', 'sasa', 'dihedrals', 'qvalue', 'cluster', 'dimred',
         'water_sites', 'ligand_rmsd', 'ligand_rmsf', 'pl_contacts', 'pl_hbonds', 'pl_interactions',
         'order_parameters', 'bfactor_comparison', 'thermodynamics', 'rdf', 'pmf', 'metad_surface',
-        'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance'
+        'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
+        'area_per_lipid', 'bilayer_thickness', 'lipid_order'
     ]]
     exclude: list[Literal[
         'rmsd', 'rmsf', 'rg', 'hbonds', 'ss', 'sasa', 'dihedrals', 'qvalue', 'cluster', 'dimred',
         'water_sites', 'ligand_rmsd', 'ligand_rmsf', 'pl_contacts', 'pl_hbonds', 'pl_interactions',
         'order_parameters', 'bfactor_comparison', 'thermodynamics', 'rdf', 'pmf', 'metad_surface',
-        'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance'
+        'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
+        'area_per_lipid', 'bilayer_thickness', 'lipid_order'
     ]]
     select_atoms: str
     selection: str
