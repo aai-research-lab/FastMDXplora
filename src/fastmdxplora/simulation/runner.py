@@ -729,24 +729,16 @@ def _attach_checkpoint_reporter(
 
     OpenMM writes a portable ``.chk`` file every ``interval`` steps.
 
-    There is no ``--resume`` in this software, and the checkpoint alone is not
-    enough to add one safely. The positions and velocities come back; the
-    biasing state does not.
-
-    PLUMED does not re-read ``HILLS`` unless its script says ``RESTART``, and
-    no script here does. A metadynamics run resumed without it would begin
-    again from zero bias with the system sitting in a well it had already
-    filled, and produce a free energy surface that is wrong without saying
-    so. A steered pull is worse: the moving restraint is placed by absolute
-    step number, so resuming mid-pull puts the anchor somewhere the protein
-    is not.
-
-    Resuming is straightforward only for unbiased runs and for umbrella
-    windows, whose restraint does not depend on time. Doing it properly means
-    emitting ``RESTART`` where it applies, refusing where it does not, and
-    recording in the manifest that a run resumed and from where -- because a
-    trajectory assembled from two pieces is not the same object as one that
-    ran through, and the analyses read that provenance.
+    A study stopped part-way is carried on from its last checkpoint by
+    `fastmdx resume` (``simulation/resume.py``). The positions and velocities
+    come back; a biasing state does not, which is why only a study that
+    `segmentability` allows is continued: an unbiased run, or an umbrella
+    window, whose restraint does not depend on time. A metadynamics run
+    resumed without ``RESTART`` would begin again from zero bias in a well it
+    had already filled, and a steered pull places its restraint by absolute
+    step, so both are refused rather than resumed. The continuation is
+    recorded as a segment of the study, and the joined trajectory says where
+    the pieces meet.
 
     Skipped cleanly when ``interval <= 0``.
     """

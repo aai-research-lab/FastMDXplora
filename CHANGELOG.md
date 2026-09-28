@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `fastmdx resume` carries a stopped study on to its end
+
+**A study stopped part-way, by a restart, a time limit or a GPU taken back, is
+finished by one command.** `fastmdx resume STUDY` reads how far it got and does
+what is left, once: nothing if it finished; the analyses and report if
+production did; the rest of production from the last sealed checkpoint if it
+had begun; the whole study again if it had not. It refuses a study still
+running and one that stopped with a refusal, unless the refusal is marked worth
+retrying, and it does not discard production it cannot continue. Running it
+twice does the work once, so a service can run it whenever a job restarts;
+`--json` prints the outcome for a program. The help for
+`checkpoint_interval_steps` and the runner's notes no longer say there is no
+resume.
+
 ### A Docker image with each release
 
 **Each release is published as `ghcr.io/aai-research-lab/fastmdxplora:<version>`**,

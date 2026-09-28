@@ -445,10 +445,36 @@ recorded with its refusal rather than stopping the rest.
 
 ## When it stops early
 
-Every run writes checkpoints. If it dies, the checkpoint is in the simulation
-directory and the [Manifest](manifest.md) records how far it got.
+Every run writes checkpoints during production, each sealed as it is written
+and placed on a frame. A run that is killed, whether by a machine restarting, a
+job reaching its time limit or a rented GPU taken back, leaves its last one
+behind.
 
-**Recovery is at phase boundaries.** A finished setup or trajectory in a
+**`fastmdx resume` carries the study on to the end of its plan.** It reads how
+far the study got and does what is left, once:
+
+```bash
+fastmdx resume runs/study
+```
+
+| What the study holds | What is run |
+|---|---|
+| Every phase of its plan recorded as done | Nothing |
+| All of production, and not its analyses or report | The analyses and the report, over the whole trajectory |
+| Part of production | The rest of it, from the last sealed checkpoint, then the join and the analyses, as [extending a study](#long-runs-and-segments) does |
+| No production yet | The whole study again: setup and equilibration leave nothing a run can continue from |
+
+It refuses a folder that is not a study, a study that is still running, and a
+study of several runs (resume each run by name). A study that stopped with a
+refusal is not run again, since that was its answer; one the refusal registry
+marks as worth retrying, such as a GPU that went away, counts as an
+interruption. Production that is written and cannot be continued, a checkpoint
+off the frame grid for instance, is not thrown away by starting again: the
+reason is said instead. Running `fastmdx resume` twice does the work once, so a
+service can run it every time a job restarts; `--json` prints the outcome as
+one line for a program to read.
+
+**By hand, recovery is at phase boundaries.** A finished setup or trajectory in a
 directory is reused rather than redone, and `--include` picks up from the phase
 that stopped:
 

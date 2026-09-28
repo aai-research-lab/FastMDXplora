@@ -31,6 +31,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx info` | What is installed, and how to get what is not |
 | `fastmdx remote` | Inspect other machines over SSH: [Other machines](remote.md) |
+| `fastmdx resume` | Carry a study that stopped part-way on to its end: [When it stops early](production.md#when-it-stops-early) |
 
 Plus two global flags, which go **before** the subcommand:
 
@@ -485,6 +486,22 @@ fastmdx remote forget gpu-box                      # remove the record
 the machine; `install` runs nothing without a yes at the terminal. Exits **0**
 when the action is done (a machine inspected, ready or not), and **1** when a
 machine cannot be reached, is not ready for `send`, or a name is not known.
+
+---
+
+## `resume`
+
+```bash
+fastmdx resume runs/study          # says what it did
+fastmdx resume runs/study --json   # the same, as one line of JSON
+```
+
+Reads how far a study got and does what is left: nothing, the analyses and
+report, the rest of production from its last sealed checkpoint, or the whole
+study again if production had not begun. It exits 0 when the study is
+finished, whether or not it ran anything, and 1 when it could not carry the
+study on, with the reason. See
+[When it stops early](production.md#when-it-stops-early).
 
 ---
 

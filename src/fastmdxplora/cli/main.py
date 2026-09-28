@@ -1043,6 +1043,24 @@ def _build_parser() -> argparse.ArgumentParser:
                              "under, such as app.example.org. Repeat for more.")
 
 
+    resume = sub.add_parser(
+        "resume",
+        help="Carry a study that stopped part-way on to the end of its plan.",
+        description=(
+            "Read how far a study got and do what is left: nothing if it "
+            "finished; the analyses and report if production did; the rest "
+            "of production from its last sealed checkpoint if production "
+            "had begun; the whole study again if it had not. A study that "
+            "stopped with a refusal is not run again, since that was its "
+            "answer. Running this twice does the work once, so a service "
+            "can run it every time a job restarts."
+        ),
+    )
+    resume.add_argument("study", metavar="STUDY",
+                        help="The study folder, as given to --output when it ran.")
+    resume.add_argument("--json", action="store_true",
+                        help="Print the outcome as one line of JSON, for a program to read.")
+
     # ---------- agent: write a study from a sentence ------------------------
     ag = sub.add_parser(
         "agent",
@@ -2400,6 +2418,29 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     return 0
 
 
+def _cmd_resume(args: argparse.Namespace) -> int:
+    """`fastmdx resume STUDY`: carry a stopped study on to its end."""
+    import json
+
+    from fastmdxplora.simulation.resume import resume_study
+
+    answer = resume_study(args.study)
+    if getattr(args, "json", False):
+        print(json.dumps(answer, default=str))
+    elif answer.get("ok"):
+        said = {
+            "nothing": "Nothing to do: the study finished.",
+            "analysed": "Production was complete; the analyses and report were run.",
+            "continued": "Production was carried on from its last checkpoint, "
+                         "joined, and analysed.",
+            "restarted": "Production had not begun, so the study was run from its start.",
+        }
+        print(said.get(answer.get("did"), "Done."))
+    else:
+        print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
+    return 0 if answer.get("ok") else 1
+
+
 def _startup_dashboard_details(argv: Sequence[str]) -> tuple[str, bool]:
     """Resolve the GUI address shown by the startup wordmark."""
     host = "127.0.0.1"
@@ -2718,6 +2759,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_init_config(args)
     if args.command == "gui":
         return _cmd_gui(args)
+    if args.command == "resume":
+        return _cmd_resume(args)
 
     # Commands that build an orchestrator can hit config-file errors;
     # surface those cleanly rather than as a traceback.

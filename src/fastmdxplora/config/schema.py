@@ -657,10 +657,11 @@ SIMULATION = PhaseSchema(
               "reporting an empty result.",
               example="all"),
         Field("checkpoint_interval_steps", int, 10000,
-              "Binary checkpoint (.chk) interval in steps. Written for "
-              "recovery by hand with OpenMM's loadCheckpoint; this software "
-              "has no resume of its own yet -- see the note in the runner "
-              "for why that is more than a missing flag. 0 disables it."),
+              "Binary checkpoint (.chk) interval in steps, placed on a "
+              "frame. Each is sealed as it is written, and a study stopped "
+              "part-way is carried on from its last one with `fastmdx "
+              "resume`, so this is the most production an interruption can "
+              "cost. 0 disables it, and with it resuming."),
         Field("live_telemetry", bool, True,
               "Write live_status.json, live_metrics.csv, and live_events.log "
               "for the local live dashboard. Also writes a live-frame PDB so "

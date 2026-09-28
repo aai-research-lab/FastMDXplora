@@ -95,3 +95,13 @@ docker run -d --gpus all -p 8765:8765 \
 
 The image's own test runs with
 `docker run --rm --entrypoint bash <image> /opt/fastmdx/test.sh`.
+
+## When a job is interrupted
+
+A rented GPU can be taken back part-way through a run. The job that runs a
+study again after that runs `fastmdx resume <study> --json` rather than the
+study itself: it finishes a study that had finished nothing, carries on one
+that was in production from its last checkpoint, and does nothing to one that
+had finished, so the same command is right every time the job restarts.
+Checkpoints are written every `checkpoint_interval_steps` (10,000 steps by
+default, seconds to minutes of work), which bounds what an interruption costs.
