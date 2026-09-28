@@ -344,6 +344,16 @@ installation guide says Windows is not supported. `fastmdx info` states the
 platform, and on Windows says plainly that it is not supported; nothing
 refuses to run there.
 
+### An occupancy tie is decided by one rule
+
+**An ion written at two alternate locations of one residue took the first
+where they tied**, and the higher however slight the lead, while the same tie
+between two residues, or between a ligand's conformations, stopped setup. It
+now stops too, and a lead of less than 0.10 is a tie for all three. **The
+0.10 tolerance was compared in floating point**, so occupancies of 0.55 and
+0.45 resolved while 0.60 and 0.50 tied; both differ by 0.10, and both now
+resolve. Present in 2.5.6 and 2.5.7.
+
 ## [2.5.7] — 2026-09-24
 
 This release is for running a study where the compute is, and for carrying on

@@ -127,6 +127,13 @@ COORDINATION_CUTOFF_A = 2.8
 OCCUPANCY_TIE_TOLERANCE = 0.10
 
 
+def _indistinguishable(first: float, second: float) -> bool:
+    """Two occupancies too close to prefer one. Compared at the precision a
+    PDB writes them: in floating point 0.55 - 0.45 is a hair over 0.10 and
+    0.60 - 0.50 a hair under, so one pair resolved and the other tied."""
+    return round(abs(float(first) - float(second)), 6) < OCCUPANCY_TIE_TOLERANCE
+
+
 @dataclass(frozen=True)
 class Atom:
     """One ATOM or HETATM record, reduced to what classification needs."""
@@ -409,8 +416,10 @@ def _one_position_per_ion(resname: str, atoms: list[Atom]) -> tuple[Atom, ...]:
     A zinc modelled at locations A and B inside one residue is two records
     for one atom. Counted as two atoms it is not monatomic, and setup would
     ask for a ZN SDF describing bonds that do not exist. The location of
-    highest occupancy is taken, the first where they tie: the usual reading
-    of alternate locations.
+    highest occupancy is taken. Where the two lead by less than the tie
+    tolerance the atoms are left as they are, and the classifier stops on
+    them as it does for any tie: the first of a tie was taken here, while
+    the same tie between two residues stopped.
     """
     if resname not in ION_NAMES or len(atoms) < 2:
         return tuple(atoms)
@@ -418,7 +427,10 @@ def _one_position_per_ion(resname: str, atoms: list[Atom]) -> tuple[Atom, ...]:
     if len({a.name for a in atoms}) != 1 or not all(codes) \
             or len(set(codes)) != len(codes):
         return tuple(atoms)
-    chosen = max(atoms, key=lambda a: a.occupancy)
+    ranked = sorted(atoms, key=lambda a: a.occupancy, reverse=True)
+    if _indistinguishable(ranked[0].occupancy, ranked[1].occupancy):
+        return tuple(atoms)
+    chosen = ranked[0]
     logger.info(
         "%s %s%s%s: alternate locations %s of one ion; location %s, at "
         "occupancy %.2f, is the one kept.",
@@ -501,7 +513,7 @@ def _resolve_by_occupancy(site: list[Heterogen]) -> tuple[Heterogen | None, str]
     """The copy a shared site keeps and why, or None where occupancy ties."""
     ranked = sorted(site, key=_occupancy, reverse=True)
     best, runner_up = _occupancy(ranked[0]), _occupancy(ranked[1])
-    if abs(best - runner_up) < OCCUPANCY_TIE_TOLERANCE:
+    if _indistinguishable(best, runner_up):
         return None, ", ".join(f"{_occupancy(h):.2f}" for h in ranked)
     others = ", ".join(f"{h.label} at {_occupancy(h):.2f}" for h in ranked[1:])
     return ranked[0], (
@@ -523,7 +535,7 @@ def _altloc_decision(het: Heterogen) -> tuple[bool, str]:
     occupancies = het.occupancy_by_altloc
     ranked = sorted(occupancies.items(), key=lambda kv: kv[1], reverse=True)
     (top_code, top_occ), (next_code, next_occ) = ranked[0], ranked[1]
-    if abs(top_occ - next_occ) < OCCUPANCY_TIE_TOLERANCE:
+    if _indistinguishable(top_occ, next_occ):
         return False, (
             f"alternate conformations {top_code} and {next_code} have "
             f"indistinguishable occupancies ({top_occ:.2f} and {next_occ:.2f})"
@@ -608,6 +620,19 @@ def _classify_one(
         # both puts two atoms within bonding distance, which the force field
         # rejects, and would be wrong even if it did not. Each site is decided
         # by its own copies, and keeps exactly the one it chose.
+        # An ion written at two locations of one residue that tie: kept as
+        # both by _one_position_per_ion, and a question like any other tie.
+        within = [f"{h.label}: {explanation}" for h in instances
+                  if len(h.altlocs) > 1
+                  for resolved, explanation in [_altloc_decision(h)] if not resolved]
+        if within:
+            return Decision(
+                resname,
+                Action.STOP,
+                f"{'; '.join(within)}, so they are two readings of one ion and "
+                "the structure does not say which is real. Choose one",
+                pack,
+            )
         tied: list[str] = []
         superseded: list[Heterogen] = []
         explanations: list[str] = []
