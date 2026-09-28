@@ -110,7 +110,11 @@ total = float(sum(cation.partial_charges.m_as("elementary_charge")))
 assert abs(total - 1.0) < 1e-3, (
     f"AM1-BCC charges on methylammonium sum to {total:+.4f}, not +1")
 print(f"am1bcc: methylammonium charged by AmberTools, total {total:+.3f}")
-print("openmm", openmm.version.version)
+# OpenMM's `version` reads "8.4.0.dev-4768436" for a release build too (its
+# `release` flag is never set), which is how an image was taken to carry a
+# development build. The release number and the commit, said apart.
+print("openmm", openmm.version.short_version,
+      "(git " + openmm.version.git_revision[:7] + ")")
 print("fastmdxplora", getattr(fastmdxplora, "__version__", "unknown"))
 CHECK
 
@@ -135,6 +139,6 @@ from openff.toolkit.utils.toolkits import AmberToolsToolkitWrapper
 assert AmberToolsToolkitWrapper.is_available(), 'no AmberTools, so no ligand charges'
 from openmmplumed import PlumedForce
 print('fastmdxplora', fastmdxplora.__version__ if hasattr(fastmdxplora, '__version__') else '')
-print('openmm', openmm.version.version)
+print('openmm', openmm.version.short_version, '(git ' + openmm.version.git_revision[:7] + ')')
 print('the ligand path is present')
 "

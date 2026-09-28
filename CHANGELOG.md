@@ -429,6 +429,22 @@ look at the results carried on as though a failed study had succeeded. The
 default is unchanged until the next breaking release, when a failure will
 raise by default.
 
+### The GUI runs a study once, and CI runs supersede only their own kind
+
+**`python -m fastmdxplora` runs the `fastmdx` command**, and the GUI starts
+every study that way. It used `python -m fastmdxplora.cli.main`, which the CLI
+package had already imported, so Python ran the module a second time as the
+program, with every class in it defined twice, and a RuntimeWarning opened
+every GUI-started run's log.
+
+**A CI run cancels only a run of the same kind on the same branch.** A push
+followed by `gh workflow run` cancelled the push's run with the one just asked
+for, and a push near 03:00 cancelled the nightly corpus run.
+
+**The container's build check names OpenMM's release and commit apart.**
+OpenMM reports a release build as `8.4.0.dev-4768436` (its `release` flag is
+never set), which read as an image carrying a development build.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

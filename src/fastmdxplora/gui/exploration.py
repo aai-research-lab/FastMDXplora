@@ -3,7 +3,7 @@
 The live dashboard normally watches an existing project output directory.
 This module adds a small, deliberately conservative exploration layer so the
 same local server can start before a run exists, validate a configuration,
-and launch the normal ``fastmdxplora.cli.main explore`` workflow in a child
+and launch the normal ``python -m fastmdxplora explore`` workflow in a child
 process.  It does not reimplement any setup, simulation, analysis, or report
 science.
 """
@@ -1136,7 +1136,7 @@ class DashboardRuntime:
             self.data_stale = False
 
             command = [
-                sys.executable, "-m", "fastmdxplora.cli.main", "explore",
+                sys.executable, "-m", "fastmdxplora", "explore",
                 "--config", str(source), "--output", str(output_dir),
             ]
             started = self._spawn(command, output_dir, dashboard_url)

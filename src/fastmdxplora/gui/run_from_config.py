@@ -61,7 +61,7 @@ def prepare_run(state: dict[str, Any] | None, output_dir: str | Path, *,
     command = [
         sys.executable,
         "-m",
-        "fastmdxplora.cli.main",
+        "fastmdxplora",
         "explore",
         "--config",
         str(config_path),

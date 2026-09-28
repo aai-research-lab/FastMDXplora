@@ -14,8 +14,13 @@ on:
 # a twenty-job account ceiling meant an afternoon of pushes queued for hours
 # behind runs whose commits were already history -- and the one hand-canceled
 # run read as a mystery failure until the workflow was read closely.
+#
+# Grouped by event as well. With the branch alone, `git push && gh workflow
+# run` cancelled the push's run with the dispatch it had just asked for, and
+# a push near 03:00 cancelled the nightly corpus run. A run now supersedes
+# only a run of its own kind.
 concurrency:
-  group: tests-${{ github.ref }}
+  group: tests-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
