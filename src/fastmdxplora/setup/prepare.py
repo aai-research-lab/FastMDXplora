@@ -439,9 +439,9 @@ def prepare_system(
     ion_concentration_M: float = DEFAULT_IONIC_STRENGTH_M,
     neutralize: bool = True,
     nonbonded_method: str = "PME",
-    nonbonded_cutoff_nm: float = 1.0,
+    nonbonded_cutoff_nm: float | None = None,
     ewald_error_tolerance: float = 0.0005,
-    use_switching_function: bool = True,
+    use_switching_function: bool | None = None,
     switch_distance_nm: float | None = None,
     dispersion_correction: bool = True,
     remove_cm_motion: bool = True,
@@ -481,8 +481,11 @@ def prepare_system(
     neutralize : bool, default True
         Add ions to neutralize the net solute charge before reaching the
         target concentration.
-    nonbonded_cutoff_nm : float, default 1.0
-        PME real-space cutoff in nm.
+    nonbonded_cutoff_nm : float, optional
+        PME real-space cutoff in nm. ``None``, the default, takes the force
+        field's own (:func:`~fastmdxplora.setup.forcefields.nonbonded_scheme`).
+    use_switching_function : bool, optional
+        ``None``, the default, switches as the force field is developed.
     constraints : {"None", "HBonds", "AllBonds", "HAngles"}, default "HBonds"
         Bond constraints. ``HBonds`` is the standard choice for 2 fs
         timesteps with water.
@@ -516,8 +519,15 @@ def prepare_system(
     # `forcefield` selector to its XML set and default water model. A named
     # choice and a raw list together is rejected upstream (setup pipeline).
     ff_choice = None
+    stated = {"nonbonded_cutoff_nm": nonbonded_cutoff_nm,
+              "use_switching_function": use_switching_function}
     if force_field:
         force_field = list(force_field)
+        (nonbonded_cutoff_nm, use_switching_function,
+         switch_distance_nm, _) = nonbonded_scheme(
+            None, cutoff_nm=nonbonded_cutoff_nm,
+            use_switching_function=use_switching_function,
+            switch_distance_nm=switch_distance_nm)
     else:
         ff_choice = resolve_forcefield(forcefield)
         force_field = list(ff_choice.xmls)
@@ -927,6 +937,13 @@ def prepare_system(
         # filtered copy of the parameters, so nothing private leaks in.
         "resolved": {
             "switch_distance_nm": resolved_switch_distance_nm,
+            # The cutoff and the switch this run used where nobody stated
+            # them. Recorded, because the report said 1.0 nm -- the value the
+            # schema handed over -- for a CHARMM36 run cut off at 1.2.
+            **{name: value for name, value in (
+                ("nonbonded_cutoff_nm", nonbonded_cutoff_nm),
+                ("use_switching_function", bool(use_switching_function)))
+               if stated[name] is None},
         },
     }
 

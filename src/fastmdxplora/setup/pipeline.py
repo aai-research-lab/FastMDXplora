@@ -1210,9 +1210,11 @@ def run(
             ion_concentration_M=float(params["ion_concentration_M"]),
             neutralize=bool(params["neutralize"]),
             nonbonded_method=str(params["nonbonded_method"]),
-            nonbonded_cutoff_nm=float(params["nonbonded_cutoff_nm"]),
+            nonbonded_cutoff_nm=(None if params.get("nonbonded_cutoff_nm") is None
+                                 else float(params["nonbonded_cutoff_nm"])),
             ewald_error_tolerance=float(params["ewald_error_tolerance"]),
-            use_switching_function=bool(params["use_switching_function"]),
+            use_switching_function=(None if params.get("use_switching_function") is None
+                                    else bool(params["use_switching_function"])),
             switch_distance_nm=params["switch_distance_nm"],
             dispersion_correction=bool(params["dispersion_correction"]),
             remove_cm_motion=bool(params["remove_cm_motion"]),

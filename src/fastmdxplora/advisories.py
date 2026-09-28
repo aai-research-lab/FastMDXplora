@@ -115,7 +115,17 @@ def _a_box_too_small_for_the_cutoff(structure: dict[str, Any],
     this is the arithmetic that decides whether it will have to.
     """
     padding = settings.get("solvent_padding_nm")
-    cutoff = settings.get("nonbonded_cutoff_nm", 1.0)
+    cutoff = settings.get("nonbonded_cutoff_nm")
+    if cutoff is None:
+        # Not stated: the force field's own, as setup will use it.
+        from fastmdxplora.setup.forcefields import FALLBACK_CUTOFF_NM, _REGISTRY
+
+        choice = _REGISTRY.get(str(settings.get("forcefield") or "auto").lower())
+        if choice is None and str(settings.get("forcefield") or "auto").lower() == "auto":
+            from fastmdxplora.setup.forcefields import AUTO_FORCEFIELD
+
+            choice = _REGISTRY.get(AUTO_FORCEFIELD)
+        cutoff = choice.nonbonded[0] if choice is not None else FALLBACK_CUTOFF_NM
     extents = structure.get("extents_angstrom")
     if padding is None or not extents:
         return None

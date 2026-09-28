@@ -354,6 +354,21 @@ now stops too, and a lead of less than 0.10 is a tie for all three. **The
 0.45 resolved while 0.60 and 0.50 tied; both differ by 0.10, and both now
 resolve. Present in 2.5.6 and 2.5.7.
 
+### A stated cutoff or switch is kept
+
+**`nonbonded_cutoff_nm: 1.0` written in a config was ignored for CHARMM36.** The
+schema handed over 1.0 nm and a switching function whether or not anybody wrote
+them, so setup could not tell a stated 1.0 nm from silence: the run used the
+force field's 1.2 nm, and a stated `use_switching_function` was replaced by the
+force field's either way, each with only a log line. The record kept the
+schema's 1.0 nm, so the methods paragraph of a CHARMM36 run cut off at 1.2 said
+1.0. Both settings now default to unset: the force field decides only then,
+what it decided is recorded in `setup_parameters.json` and
+`resolved_config.yml`, and a stated value is kept even where it equals the
+force field's own. The GUI offers the switch as default, on or off rather than
+a checkbox that read "off" for a run that switched. Present in 2.5.6 and
+2.5.7.
+
 ## [2.5.7] — 2026-09-24
 
 This release is for running a study where the compute is, and for carrying on

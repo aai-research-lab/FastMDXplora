@@ -189,17 +189,16 @@ def resolve_forcefield(name: str | None) -> ForceFieldChoice:
         , code="setup.forcefield.unknown", given=name, permitted=sorted(_REGISTRY))
     return choice
 
-#: What the schema hands over when nobody chose. A value equal to this is
-#: taken as "not chosen" so the force field's own scheme can apply; a value
-#: different from it was typed by somebody and is left alone.
-SCHEMA_CUTOFF_DEFAULT_NM = 1.0
+#: The cutoff where neither the config nor the force field says one: an
+#: explicit `force_field` XML list, which cannot be looked up.
+FALLBACK_CUTOFF_NM = 1.0
 
 
 def nonbonded_scheme(
-    name: str,
+    name: str | None,
     *,
     cutoff_nm: float | None,
-    use_switching_function: bool,
+    use_switching_function: bool | None,
     switch_distance_nm: float | None,
 ) -> tuple[float, bool, float | None, str | None]:
     """The cutoff, the switch, and a sentence if either was decided here.
@@ -212,39 +211,52 @@ def nonbonded_scheme(
     than CHARMM's force-based one -- close enough to be the protocol
     CHARMM-GUI prescribes for OpenMM, and not the same function.
 
-    An explicit setting always wins. What this decides is what happens when
-    nobody chose, which until now was one cutoff and one switch for every
-    force field: the wrong distance for CHARMM36 and a switch AMBER should
-    never have had.
+    A stated setting always wins; ``None`` means not stated, and only then
+    does the force field decide. The schema used to hand over 1.0 nm and a
+    switch whether or not anybody wrote them, so a stated 1.0 nm could not
+    be told from silence and became CHARMM36's 1.2, and a stated switch was
+    replaced by the force field's either way, each with only a log line.
     """
-    choice = _REGISTRY.get(str(name).lower())
+    choice = _REGISTRY.get(str(name or "").lower())
     if choice is None:
-        return (cutoff_nm or SCHEMA_CUTOFF_DEFAULT_NM,
-                use_switching_function, switch_distance_nm, None)
+        # An explicit XML list: nothing to consult, so the fallbacks.
+        cutoff = float(cutoff_nm) if cutoff_nm is not None else FALLBACK_CUTOFF_NM
+        switching = True if use_switching_function is None else bool(use_switching_function)
+        return cutoff, switching, switch_distance_nm, None
 
     wanted_cutoff, wanted_switch = choice.nonbonded
-    chosen = (cutoff_nm is not None
-              and abs(float(cutoff_nm) - SCHEMA_CUTOFF_DEFAULT_NM) > 1e-9)
+    cutoff = float(cutoff_nm) if cutoff_nm is not None else wanted_cutoff
+    if use_switching_function is not None:
+        switching = bool(use_switching_function)
+    else:
+        # A switch distance named without the flag asks for a switch.
+        switching = switch_distance_nm is not None or wanted_switch is not None
+    distance = switch_distance_nm
+    if switching and distance is None and wanted_switch is not None \
+            and wanted_switch < cutoff:
+        distance = wanted_switch
 
-    cutoff = float(cutoff_nm) if chosen else wanted_cutoff
-    if switch_distance_nm is not None:
-        # Somebody named the switch; the cutoff scheme is theirs to set.
-        return cutoff, use_switching_function, switch_distance_nm, None
-
-    switching = wanted_switch is not None
-    said = None
-    if not chosen:
-        if switching:
-            said = (
-                f"{choice.name} is developed at {wanted_cutoff:g} nm with "
-                f"switching from {wanted_switch:g} nm, so that is what this "
-                "run uses. OpenMM offers the potential-based switch rather "
-                "than CHARMM's force-based one; it is the protocol CHARMM-GUI "
-                "prescribes for OpenMM, and it is not the same function.")
-        else:
-            said = (
-                f"{choice.name} is developed with hard truncation at "
-                f"{wanted_cutoff:g} nm and no switching function, so none is "
-                "applied. A switch here would move the run away from the "
-                "parameterisation rather than towards it.")
-    return cutoff, switching, wanted_switch, said
+    decided = []
+    if cutoff_nm is None:
+        decided.append(f"a {cutoff:g} nm cutoff")
+    if use_switching_function is None and switch_distance_nm is None:
+        decided.append(
+            f"switching from {distance:g} nm" if switching and distance
+            else f"switching from {0.9 * cutoff:g} nm, nine tenths of the cutoff"
+            if switching else "no switching function")
+    if not decided:
+        return cutoff, switching, distance, None
+    how = (f"developed at {wanted_cutoff:g} nm with switching from "
+           f"{wanted_switch:g} nm" if wanted_switch is not None
+           else f"developed with hard truncation at {wanted_cutoff:g} nm and no "
+                "switching function")
+    said = (f"{choice.name} is {how}; with nothing stated, this run uses "
+            f"{' and '.join(decided)}.")
+    if wanted_switch is not None and switching:
+        said += (" OpenMM offers the potential-based switch rather than "
+                 "CHARMM's force-based one; it is the protocol CHARMM-GUI "
+                 "prescribes for OpenMM, and it is not the same function.")
+    elif wanted_switch is None and not switching:
+        said += (" A switch here would move the run away from the "
+                 "parameterisation rather than towards it.")
+    return cutoff, switching, distance, said

@@ -74,8 +74,9 @@ of the truncation, and its other parameters compensate for that. CHARMM36 is
 developed at 1.2 nm with switching from 1.0; the AMBER force fields are
 developed with hard truncation near 1.0 and are not switched at all, since
 switching them moves a run away from the parameterisation rather than towards
-it. Setting `setup.nonbonded_cutoff_nm` or `setup.switch_distance_nm` overrides
-this, and the run records which it used.
+it. Setting `setup.nonbonded_cutoff_nm`, `setup.use_switching_function` or
+`setup.switch_distance_nm` overrides this, a stated 1.0 nm included, and the
+run records what it used in `setup_parameters.json`.
 
 The switching function is potential-based. A force-based switch is a different
 function and is not available here, so a protocol specifying one cannot be

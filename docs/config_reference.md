@@ -140,15 +140,16 @@ Defaults suit a solvated protein. Changing one changes the physics.
 | Setting | Type | Default | What it does |
 |---|---|---|---|
 | `nonbonded_method` | str | `PME` | `NoCutoff`, `CutoffNonPeriodic`, `CutoffPeriodic`, `PME`, `Ewald` |
-| `nonbonded_cutoff_nm` | float | `1.0` | Real-space cutoff |
+| `nonbonded_cutoff_nm` | float | the force field's | Real-space cutoff |
 | `ewald_error_tolerance` | float | `0.0005` | Ewald/PME error tolerance |
-| `use_switching_function` | bool | `true` | Apply a switching function near the cutoff |
-| `switch_distance_nm` | int or float | 0.9 × cutoff | Where the switching function turns on |
+| `use_switching_function` | bool | the force field's | Apply a switching function near the cutoff |
+| `switch_distance_nm` | int or float | the force field's, else 0.9 × cutoff | Where the switching function turns on |
 | `dispersion_correction` | bool | `true` | Long-range dispersion (vdW tail) correction |
 | `remove_cm_motion` | bool | `true` | Add a centre-of-mass motion remover |
 
-The cutoff is taken from the force field when you do not set it —
-see [How FastMDXplora works](how_it_works.md#the-nonbonded-cutoff-comes-from-the-force-field).
+The cutoff and the switch are taken from the force field when you do not set
+them, and what you set is kept, even where it equals the force field's own. See
+[How FastMDXplora works](how_it_works.md#the-nonbonded-cutoff-comes-from-the-force-field).
 
 ---
 

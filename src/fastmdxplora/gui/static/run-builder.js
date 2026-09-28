@@ -566,6 +566,22 @@
           box.checked = chosen.has(box.value);
         });
       };
+    } else if (field.control === "tristate") {
+      // Unset, on or off. Unset sends nothing, so the run decides as it
+      // would had the setting never been shown.
+      input = document.createElement("select");
+      [["", "Default (see note)"], ["true", "On"], ["false", "Off"]].forEach(
+        ([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          input.appendChild(option);
+        });
+      input.readValue = () =>
+        input.value === "" ? "" : input.value === "true";
+      input.writeValue = (value) => {
+        input.value = value === true ? "true" : value === false ? "false" : "";
+      };
     } else if (field.control === "checkbox") {
       input = document.createElement("input");
       input.type = "checkbox";

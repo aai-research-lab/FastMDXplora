@@ -21,11 +21,10 @@ from __future__ import annotations
 
 import pytest
 
-from fastmdxplora.setup.forcefields import (
-    SCHEMA_CUTOFF_DEFAULT_NM, _REGISTRY, nonbonded_scheme)
+from fastmdxplora.setup.forcefields import _REGISTRY, nonbonded_scheme
 
 
-def _resolve(name, cutoff=SCHEMA_CUTOFF_DEFAULT_NM, switching=True, switch=None):
+def _resolve(name, cutoff=None, switching=None, switch=None):
     return nonbonded_scheme(name, cutoff_nm=cutoff,
                             use_switching_function=switching,
                             switch_distance_nm=switch)
@@ -57,12 +56,13 @@ class TestWhatSomebodyChoseIsKept:
     def test_a_named_cutoff_wins(self) -> None:
         cutoff, _, _, said = _resolve("charmm36", cutoff=1.5)
         assert cutoff == pytest.approx(1.5)
-        assert said is None, "it decided nothing, so it should say nothing"
+        # Only the switch, which nobody stated, was decided and is said.
+        assert "cutoff" not in said.split("uses")[1] and "switching from 1" in said
 
     def test_a_named_switch_wins(self) -> None:
         _, switching, switch, said = _resolve("amber14", switch=0.85)
         assert switch == pytest.approx(0.85) and switching is True
-        assert said is None
+        assert "switch" not in said.split("uses")[1]
 
     def test_an_unknown_force_field_is_left_alone(self) -> None:
         """A raw XML list is not in the registry and carries no scheme."""
@@ -85,7 +85,7 @@ class TestItSaysWhatItDecided:
         assert "away from the parameterisation" in said
 
     def test_nothing_is_said_when_nothing_was_decided(self) -> None:
-        assert _resolve("charmm36", cutoff=1.4)[3] is None
+        assert _resolve("charmm36", cutoff=1.4, switching=True)[3] is None
 
 
 class TestThePreparationUsesIt:

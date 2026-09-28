@@ -442,16 +442,24 @@ SETUP = PhaseSchema(
               "CutoffPeriodic, PME, or Ewald.",
               choices=("NoCutoff", "CutoffNonPeriodic", "CutoffPeriodic",
                        "PME", "Ewald")),
-        Field("nonbonded_cutoff_nm", float, 1.0,
-              "Real-space nonbonded cutoff in nm (cutoff/PME/Ewald methods).",
+        Field("nonbonded_cutoff_nm", float, None,
+              "Real-space nonbonded cutoff in nm (cutoff/PME/Ewald methods). "
+              "Default: the force field's own, 1.0 nm for AMBER and 1.2 nm "
+              "for CHARMM36; 1.0 nm for an explicit `force_field` list.",
+              example=1.0,
                     minimum=0.0),
         Field("ewald_error_tolerance", float, 0.0005,
               "Ewald/PME error tolerance."),
-        Field("use_switching_function", bool, True,
-              "Apply a switching function near the cutoff (cutoff methods)."),
+        Field("use_switching_function", bool, None,
+              "Apply a switching function near the cutoff (cutoff methods). "
+              "Default: as the force field is developed, none for AMBER and "
+              "from 1.0 nm for CHARMM36; on for an explicit `force_field` "
+              "list.",
+              example=False),
         Field("switch_distance_nm", (int, float), None,
               "Switching-function turn-on distance in nm. "
-              "Default: 0.9 × cutoff.",
+              "Default: the force field's own where it switches, otherwise "
+              "0.9 × cutoff.",
               example=0.9),
         Field("dispersion_correction", bool, True,
               "Apply the long-range dispersion (vdW tail) correction."),

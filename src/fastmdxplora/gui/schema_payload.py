@@ -48,6 +48,12 @@ def _control(field: Any) -> str:
         # a file on the machine that runs was the one path in the form
         # without the Browse control every other path has.
         return "script"
+    if field.type is bool and field.default is None:
+        # Three answers, not two: on, off, or as the force field is
+        # developed. A checkbox drawn unticked said "off" for a setting the
+        # run would switch on, and ticking it and back wrote an explicit
+        # false the person never meant.
+        return "tristate"
     if field.choices:
         # A list of choices is not a choice. `include` and `exclude` take
         # several analyses, and offered as a single select the form could

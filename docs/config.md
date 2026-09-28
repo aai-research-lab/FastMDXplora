@@ -367,7 +367,8 @@ setup:
   forcefield: auto
   force_field: [amber14-all.xml, amber14/tip3p.xml]   # what `auto` chose
   water_model: tip3p
-  switch_distance_nm: 0.9   # nine tenths of the cutoff, worked out
+  nonbonded_cutoff_nm: 1.0  # the force field's own, as nothing was stated
+  use_switching_function: false   # AMBER is not switched
 analysis:
   include: [rmsd, rmsf, rg, cluster]   # the default set, named
 ```
