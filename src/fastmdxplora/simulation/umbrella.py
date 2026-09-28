@@ -938,6 +938,42 @@ def cone_the_windows_ran_under(directories: "dict[int, Any]") -> "Cone | None":
     return Cone.from_record(next(iter(records.values())))
 
 
+def windows_run_otherwise(directories: "dict[int, Any]",
+                          plan: "UmbrellaPlan") -> list[str]:
+    """Windows whose own record disagrees with the plan, described.
+
+    The plan is rebuilt from the config, and a window is recombined with the
+    centre and force constant the plan gives it. A window that ran with
+    another, because the config was edited after it ran, would be unbiased
+    by the wrong spring and the free energy shifted by the difference, with
+    nothing on the curve to show it. A window that recorded nothing is not
+    judged.
+    """
+    import json
+    from pathlib import Path
+
+    planned = {w.index: w for w in plan.windows}
+    differ: list[str] = []
+    for index, directory in sorted(directories.items()):
+        window = planned.get(int(index))
+        written = Path(directory) / "simulation" / "umbrella_window.json"
+        if window is None or not written.is_file():
+            continue
+        try:
+            record = json.loads(written.read_text(encoding="utf-8"))
+            centre = float(record["centre"])
+            force = float(record["force_constant"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if not (math.isclose(centre, window.centre, rel_tol=1e-9, abs_tol=1e-9)
+                and math.isclose(force, window.force_constant, rel_tol=1e-9)):
+            differ.append(
+                f"window {index} ran at {centre:g} nm with {force:g} "
+                f"kJ/mol/nm^2, and the config gives it {window.centre:g} nm "
+                f"with {window.force_constant:g}")
+    return differ
+
+
 def wall_bias_where_the_bound_state_is(
     directories: "dict[int, Any]", plan: "UmbrellaPlan",
     bound_below: float, *, equilibration_fraction: float | None = None,

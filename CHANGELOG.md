@@ -402,6 +402,22 @@ four things the standard-state conversion rests on.** Each is recorded under
 said nowhere. The console now gives the number with its standard error, or
 why it was withheld, and each warning.
 
+### An umbrella window runs again in place
+
+**`fastmdx explore --config study.yml --rerun-window 9`** runs window 9 again
+in `runs/window-09`, with whatever the Config now gives it (a stiffer spring in
+its place in the `force_constant` list, a longer run), keeps every other
+window, and recombines the free energy from the whole set. The earlier run is
+moved to `superseded/`. From Python, `explore(rerun_windows=[9])`. Before, a
+study that refused over one window could only be run again whole, or as a
+subset config that renumbered from `window_00`.
+
+**A free energy is no longer recombined from windows that ran otherwise.**
+Each window is unbiased with the centre and spring the Config gives it, and a
+Config edited after the windows ran recombined them with the new ones,
+shifting the curve with nothing to show it. Each window's own record is now
+compared with the Config, and a window that differs is named instead.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

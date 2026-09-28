@@ -461,6 +461,7 @@ class FastMDXplora:
         force: bool = False,
         include: list[str] | None = None,
         exclude: list[str] | None = None,
+        rerun_windows: list[int] | None = None,
     ) -> list[RunResult]:
         """Run the full pipeline, end to end.
 
@@ -481,6 +482,12 @@ class FastMDXplora:
             If True, print the plan — every run, its system, swept values,
             output directory, and the phases that would execute — and
             return without running anything.
+        rerun_windows : list of int, optional
+            For an umbrella study that has run: the windows to run again, in
+            place, with whatever the config now gives them (a stiffer
+            spring, a longer run). Every other window is kept, and the free
+            energy is recombined from the whole set. The earlier runs of the
+            windows named are moved to ``superseded/``.
 
         Returns
         -------
@@ -515,8 +522,13 @@ class FastMDXplora:
         if self._config_path is not None or self._config_data is not None:
             return self._explore_config(
                 include=include, exclude=exclude, report=report, dry_run=dry_run,
-                force=force,
+                force=force, rerun_windows=rerun_windows,
             )
+        if rerun_windows:
+            raise StudyError(
+                "`rerun_windows` names umbrella windows, and a study of one "
+                "system given without a config has none.",
+                code="config.option.inapplicable")
 
         # Config-file phase selection is the fallback when this call omits it.
         if include is None and exclude is None:
@@ -656,6 +668,7 @@ class FastMDXplora:
         report: bool,
         dry_run: bool = False,
         force: bool = False,
+        rerun_windows: list[int] | None = None,
     ) -> list[RunResult]:
         """Run a config-driven study through the internal batch machinery.
 
@@ -682,6 +695,7 @@ class FastMDXplora:
             output_dir=self._deferred_output_dir,
             verbose=self._deferred_verbose,
             force=force,
+            **({"rerun_windows": rerun_windows} if rerun_windows else {}),
         )
         # explore()-level phase overrides win over the config file.
         if include is not None:

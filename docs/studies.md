@@ -748,6 +748,28 @@ things from their trajectories and records them under `binding.reference` in
 The console says the binding free energy, or why it was withheld, and each
 warning, below the line naming `pmf.json`.
 
+### Running windows again in place
+
+A study that refused because a window slid off its centre, or sampled too
+little, does not need running again whole. Give that window what it needs in
+the Config (a stiffer spring in its place in the `force_constant` list, say),
+then name it:
+
+```bash
+fastmdx explore --config study.yml --rerun-window 9
+```
+
+Window 9 runs again in `runs/window-09`, from the same prepared system and the
+same starting structure; every other window is kept as it is, and the free energy is
+recombined from the whole set. The earlier run of window 9 is moved to
+`superseded/`, not deleted. From Python, `explore(rerun_windows=[9])`.
+
+Before anything moves, the study checks that each kept window has finished
+and ran with the centre and spring the Config now gives it, since a window is
+unbiased with the spring it is given. The same check stands before every
+recombination: a Config edited after its windows ran is refused by name
+rather than recombined with the wrong springs.
+
 ### One system, many windows
 
 The windows are the same molecule held at different points along the

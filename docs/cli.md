@@ -118,6 +118,7 @@ Giving both `--include` and `--exclude` exits **2** with a message.
 |---|---|
 | `--dry-run` | Validate everything, print the plan, run nothing. Creates no output directory |
 | `--force-overwrite`, `--force` | Run into an output directory that already holds results |
+| `--rerun-window N [N ...]` | Umbrella studies: run these windows again in place, keep the rest, recombine |
 
 Without `--force`, a second run into an occupied directory is refused. The
 check looks only at the phases *this* run will produce, so running `analyze`

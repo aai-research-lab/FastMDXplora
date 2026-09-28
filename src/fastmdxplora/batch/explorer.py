@@ -398,6 +398,12 @@ def _a_binding_free_energy_belongs_here(payload: dict[str, Any],
     return bool(payload.get("pmf")) and _the_coordinate_has_a_volume(plan)
 
 
+class _WindowsRanOtherwise(StudyError):
+    """Windows on disk that ran with settings the config no longer gives."""
+
+    default_code = "config.option.conflicting"
+
+
 def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
     """The binding free energy as the console says it, with its warnings.
 
@@ -992,6 +998,7 @@ class BatchExplorer:
         continue_on_error: bool | None = None,
         force: bool = False,
         resume: bool = False,
+        rerun_windows: "list[int] | None" = None,
     ) -> None:
         if config is None and config_data is None:
             raise StudyError("BatchExplorer requires `config` (path) or `config_data` (dict).", code="config.option.missing_companion")
@@ -1009,6 +1016,16 @@ class BatchExplorer:
         # from where it got to, and each that never started is run.
         self.resume = bool(resume)
         self.verbose = verbose
+        # Umbrella windows to run again in place, every other window kept.
+        # Carried out as a resume of the study with those windows moved
+        # aside, so a kept window is left as it is and a named one starts
+        # afresh with whatever the config now gives it.
+        self.rerun_windows = sorted({int(i) for i in rerun_windows or []})
+        if self.rerun_windows and self.force:
+            raise StudyError(
+                "--rerun-window keeps every window it does not name, and "
+                "--force-overwrite runs them all again. Choose one.",
+                code="config.option.conflicting")
 
         # Execution settings
         execution = raw.get("execution") or {}
@@ -1115,6 +1132,79 @@ class BatchExplorer:
                 "--force-overwrite to overwrite them."
             , code="environment.path.exists")
 
+    def _make_way_for_the_windows_named(self) -> None:
+        """Move the windows to be run again aside, once the rest are checked.
+
+        Refused, before anything moves, where this is not an umbrella study,
+        a window named is not one of its windows, a window is still running,
+        or a window kept has not finished or ran with settings the config no
+        longer gives it: recombined with the new ones, it would be unbiased
+        by the wrong spring. A window run again is moved, not deleted, to
+        ``superseded/``, beside the study.
+        """
+        import shutil
+        from datetime import datetime, timezone
+
+        from fastmdxplora.simulation.resume import _still_running
+        from fastmdxplora.simulation.umbrella import (
+            plan_from_expanded,
+            windows_run_otherwise,
+        )
+
+        plan = plan_from_expanded(self._raw or {})
+        if plan is None:
+            raise StudyError(
+                "--rerun-window names umbrella windows, and this study has "
+                "none. Run the study, or `fastmdx resume` a stopped one.",
+                code="config.option.inapplicable")
+        directories: dict[int, Path] = {}
+        for spec in self.run_specs:
+            block = (spec.options.get("simulation") or {}).get("umbrella") or {}
+            if block.get("index") is not None:
+                directories[int(block["index"])] = self._run_output_dir(spec)
+        unknown = [i for i in self.rerun_windows if i not in directories]
+        if unknown:
+            raise StudyError(
+                f"This study has no window {', '.join(str(i) for i in unknown)}. "
+                f"Its windows are numbered 0 to {max(directories)}.",
+                code="config.option.not_permitted")
+        going = [f"window {i}" for i, where in sorted(directories.items())
+                 if where.is_dir() and _still_running(where)]
+        if going:
+            raise StudyError(
+                f"{', '.join(going)} {'is' if len(going) == 1 else 'are'} still "
+                "running. Run windows again once the study has stopped.",
+                code="environment.path.exists")
+        kept = {i: where for i, where in directories.items()
+                if i not in self.rerun_windows}
+        unfinished = [i for i, where in sorted(kept.items())
+                      if not (where / "simulation" / "COLVAR").is_file()]
+        if unfinished:
+            raise StudyError(
+                "Windows "
+                f"{', '.join(str(i) for i in unfinished)} have no production to "
+                "keep. Carry the study on first with `fastmdx resume`, or name "
+                "them with --rerun-window too.",
+                code="analysis.data.absent")
+        differ = windows_run_otherwise(kept, plan)
+        if differ:
+            raise StudyError(
+                "Kept windows ran with settings the config no longer gives "
+                f"them: {'; '.join(differ)}. Name them with --rerun-window too, "
+                "or restore the settings they ran with.",
+                code="config.option.conflicting")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        aside = self.output_dir / "superseded"
+        for index in self.rerun_windows:
+            where = directories[index]
+            if not where.exists():
+                continue
+            aside.mkdir(parents=True, exist_ok=True)
+            moved = aside / f"{where.name}-{stamp}"
+            shutil.move(str(where), str(moved))
+            print(f"Window {index} will run again; its earlier run is in "
+                  f"{moved.relative_to(self.output_dir)}")
+
     def _resuming(self) -> dict[str, bool]:
         """``resume`` for `_execute_run`, passed only when resuming, so a run
         started afresh calls it as it always has."""
@@ -1183,6 +1273,10 @@ class BatchExplorer:
         n = len(self.run_specs)
         include = self._raw.get("include_phase")
         exclude = self._raw.get("exclude_phase")
+
+        if self.rerun_windows:
+            self._make_way_for_the_windows_named()
+            self.resume = True
 
         # Checked here, before anything starts. Each run also refuses to
         # overwrite its own directory, but that refusal is raised inside a
@@ -1694,7 +1788,18 @@ class BatchExplorer:
             if block.get("index") is not None:
                 directories[int(block["index"])] = self._run_output_dir(spec)
 
+        from fastmdxplora.simulation.umbrella import windows_run_otherwise
+
+        differ = windows_run_otherwise(directories, plan)
         try:
+            if differ:
+                raise _WindowsRanOtherwise(
+                    "The windows did not all run with the settings the config "
+                    "now gives them: " + "; ".join(differ) + ". Each window is "
+                    "recombined with the spring it is given, so a free energy "
+                    "from these would be shifted by the difference. Restore "
+                    "the settings they ran with, or run those windows again "
+                    "with --rerun-window.")
             # The plan's fraction, not the function's default: a study
             # that asked to discard a third and quietly got a fifth
             # would report the third in `pmf.json` and have used the
@@ -1702,7 +1807,7 @@ class BatchExplorer:
             samples = collect_samples(
                 directories,
                 equilibration_fraction=plan.equilibration_fraction)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, _WindowsRanOtherwise) as exc:
             # Some window did not produce sampling. Recorded rather than
             # raised: the runs that did work are still on disk and worth
             # keeping.

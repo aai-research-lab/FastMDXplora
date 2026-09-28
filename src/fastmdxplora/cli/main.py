@@ -893,6 +893,20 @@ def _build_parser() -> argparse.ArgumentParser:
                 "overwriting them. Without this a second run is refused."
             ),
         )
+        ep.add_argument(
+            "--rerun-window",
+            dest="rerun_windows",
+            nargs="+",
+            type=int,
+            action=_Accumulate,
+            metavar="N",
+            help=(
+                "For an umbrella study that has run: run these windows again "
+                "in place, with whatever the config now gives them, keep every "
+                "other window, and recombine the free energy. The earlier runs "
+                "are moved to superseded/."
+            ),
+        )
         # The setting is `include_phase`, so the flag is too. `--include`
         # and `--exclude` still work: they are what every script and every
         # set of notes already says, and breaking them to rename a flag
@@ -1718,6 +1732,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         results = fmdx.explore(
             dry_run=getattr(args, "dry_run", False),
             force=getattr(args, "force", False),
+            # Passed only when given, so an explore that takes no such
+            # argument is called as it always was.
+            **({"rerun_windows": args.rerun_windows}
+               if getattr(args, "rerun_windows", None) else {}),
         )
     except KeyboardInterrupt:
         if session is not None:
