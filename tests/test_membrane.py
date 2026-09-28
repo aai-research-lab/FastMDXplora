@@ -172,7 +172,24 @@ class TestTheBarostatKnowsItIsAMembrane:
         from fastmdxplora.simulation.runner import is_membrane_system
 
         assert not is_membrane_system(self._topology(["ALA", "HOH"]))
-        assert is_membrane_system(self._topology(["ALA", "POP", "HOH"]))
+        assert is_membrane_system(self._topology(["ALA", *["POP"] * 40, "HOH"]))
+
+    def test_a_ligand_named_like_a_lipid_is_not_a_bilayer(self) -> None:
+        """`POP` is pyrophosphate in the PDB, `PC` phosphocholine and `CHL`
+        chlorophyll b. An enzyme with one bound is coupled isotropically."""
+        pytest.importorskip("openmm", reason="requires the [md] extra")
+
+        from fastmdxplora.simulation.runner import is_membrane_system
+
+        for ligand in ("POP", "PC", "CHL"):
+            assert not is_membrane_system(self._topology(["ALA", ligand, "HOH"]))
+
+    def test_a_split_lipid_is_counted_once(self) -> None:
+        from fastmdxplora.lipids import BILAYER_MINIMUM_LIPIDS, is_bilayer, lipid_count
+
+        assert lipid_count(["PA", "PC", "OL"] * 3) == 3
+        assert not is_bilayer(["PA", "PC", "OL"] * (BILAYER_MINIMUM_LIPIDS - 1))
+        assert is_bilayer(["PA", "PC", "OL"] * BILAYER_MINIMUM_LIPIDS)
 
     def test_a_membrane_gets_the_membrane_barostat(self) -> None:
         pytest.importorskip("openmm", reason="requires the [md] extra")

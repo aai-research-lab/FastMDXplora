@@ -98,6 +98,22 @@ CHARMM36's lipids are in `charmm36.xml`, which is what is added now, and the
 lipid's template is checked to be there once any file is added, rather than
 failing later at the residue template.
 
+### Every bilayer OpenMM builds gets the membrane barostat
+
+**DMPC, DOPC, DPPC, DLPC and DLPE membranes are now coupled as membranes.**
+OpenMM names the lipids it builds by its patches' three-character names
+(`DMP`, `DOP`, `DPP`, `DLP`, `POP`), and the check that chooses the barostat
+knew only `POP` and the full names, so only POPC and POPE bilayers got the
+membrane barostat; the others were coupled isotropically, which squeezes the
+bilayer and gives the wrong area per lipid. The crash diagnosis and the
+default bilayer of a `membrane_depth` coordinate missed the same lipids. All
+three now read one list (`fastmdxplora.lipids`).
+
+**A soluble protein with pyrophosphate bound is no longer coupled as a
+membrane.** `POP` is OpenMM's name for POPC and the PDB's code for
+pyrophosphate, and one residue of it was enough to choose the membrane
+barostat. A system is now a bilayer when it holds at least 20 lipids.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

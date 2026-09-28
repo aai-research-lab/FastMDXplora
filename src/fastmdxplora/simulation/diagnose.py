@@ -75,11 +75,9 @@ class Diagnosis:
         return "\n".join(lines)
 
 
-#: Residue names OpenMM gives lipids, repeated from the simulation runner
-#: rather than imported, because a diagnosis should not fail to load because
-#: something else did.
-_LIPIDS = frozenset({"POP", "POPC", "POPE", "DLPC", "DLPE", "DMPC", "DOPC",
-                     "DPPC"})
+#: Lipid residue names, from a module that imports nothing, so a diagnosis
+#: cannot fail to load because something else did.
+from fastmdxplora.lipids import LIPID_RESIDUE_NAMES as _LIPIDS  # noqa: E402
 _SOLVENT = frozenset({"HOH", "WAT", "TIP3", "NA", "CL", "K", "MG", "CA"})
 _STANDARD_RESIDUES = frozenset({
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",

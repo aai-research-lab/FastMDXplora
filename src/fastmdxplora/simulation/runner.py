@@ -425,23 +425,20 @@ def _make_integrator(
     return integ
 
 
-#: Residue names OpenMM gives the lipids it builds a bilayer from. A system
-#: containing them is a membrane system and needs a barostat that knows it.
-_LIPID_RESIDUES = frozenset({
-    "POP", "POPC", "POPE", "DLPC", "DLPE", "DMPC", "DOPC", "DPPC",
-})
-
-
 def is_membrane_system(topology: Any) -> bool:
     """Whether this system contains a lipid bilayer.
 
     Detected from the topology rather than taken as a setting, because the
     barostat has to be right whether or not anybody remembered to say so.
     A membrane run given an isotropic barostat completes and is wrong, which
-    is not a failure mode worth leaving to somebody's memory.
+    is not a failure mode worth leaving to somebody's memory. The names are
+    :mod:`fastmdxplora.lipids`': the list kept here missed the names OpenMM
+    gives five of its seven built lipids. And a count, not one name: `POP`
+    is also pyrophosphate, and an enzyme with one bound is not a membrane.
     """
-    return any(residue.name.upper() in _LIPID_RESIDUES
-               for residue in topology.residues())
+    from fastmdxplora.lipids import is_bilayer
+
+    return is_bilayer(residue.name for residue in topology.residues())
 
 
 def _add_barostat(omm: dict, system: Any, *, temperature_K: float,

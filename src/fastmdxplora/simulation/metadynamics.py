@@ -466,7 +466,9 @@ def plan_from_config(
         # The bilayer centre is the reference, and it moves: a membrane
         # drifts in the box over a long run, so depth measured against a
         # fixed plane slowly becomes depth against nothing.
-        bilayer = spec.get("bilayer_selection") or "resname POP POPC POPE DOPC DPPC DMPC DLPC DLPE"
+        from fastmdxplora.lipids import lipid_selection
+
+        bilayer = spec.get("bilayer_selection") or lipid_selection()
         atoms["bilayer"] = select(str(bilayer), "bilayer")
     elif variable == "angle":
         expression = spec.get("selection")
