@@ -973,7 +973,7 @@ def _still_running(root: Path) -> bool:
         return False
     from fastmdxplora.gui.exploration import _process_is_this_run
 
-    return bool(_process_is_this_run(pid, root))
+    return bool(_process_is_this_run(pid, root, record.get("argv")))
 
 
 def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | None]:

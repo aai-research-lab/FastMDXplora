@@ -274,7 +274,7 @@ def study_a_run_belongs_to(root: Path) -> dict[str, Any] | None:
             "values": member.get("values") or {}}
 
 
-def _identify_run(pid: int, root: Path) -> bool | None:
+def _identify_run(pid: int, root: Path, argv: Any = None) -> bool | None:
     """Whether the PID is this study's run: True, False, or None for cannot
     tell yet.
 
@@ -291,16 +291,31 @@ def _identify_run(pid: int, root: Path) -> bool | None:
     line = _command_line_of(pid)
     if line is None:
         return None
-    return _command_line_is_a_run(line, root)
+    return _command_line_is_a_run(line, root, argv)
 
 
-def _process_is_this_run(pid: int, root: Path) -> bool:
-    """The PID is alive and its command line names this study or the
-    program. "Cannot tell" is not "yes": undetermined is not adopted."""
-    return _identify_run(pid, root) is True
+def _process_is_this_run(pid: int, root: Path, argv: Any = None) -> bool:
+    """The PID is alive and its command line is the one the run recorded,
+    or, for a record without one, names this study or the program.
+    "Cannot tell" is not "yes": undetermined is not adopted."""
+    return _identify_run(pid, root, argv) is True
 
 
-def _command_line_is_a_run(line: str, root: Path) -> bool:
+def _carries_the_recorded_arguments(tokens: list[str], argv: list[str]) -> bool:
+    """Whether the arguments the run recorded appear, in order, in the live
+    command line. Only the arguments: the program itself is written one way
+    in `sys.argv` (a script's path) and another on the command line (`-m`
+    and a module, or an `.exe`), and is judged by the check below. Both are
+    split the same way, so an argument holding a space compares as the same
+    words."""
+    wanted = [tok.strip('"\'') for tok in " ".join(argv[1:]).split()]
+    if not wanted:
+        return True
+    return any(tokens[start:start + len(wanted)] == wanted
+               for start in range(len(tokens) - len(wanted) + 1))
+
+
+def _command_line_is_a_run(line: str, root: Path, argv: Any = None) -> bool:
     """Whether a command line is FastMDXplora running this study.
 
     Judged by what is being run, never by where the interpreter lives.
@@ -315,6 +330,13 @@ def _command_line_is_a_run(line: str, root: Path) -> bool:
     # Quotes off, as a Windows command line carries them; either
     # separator, as either platform writes paths.
     tokens = [tok.strip('"\'') for tok in line.split()]
+    # And the arguments the run recorded, where it recorded them. Any
+    # `fastmdx` process was taken for this run, so with two studies
+    # running, a stale record whose PID the other study's run had been
+    # given was adopted, and Stop would have stopped the other study.
+    if (isinstance(argv, list) and argv
+            and not _carries_the_recorded_arguments(tokens, [str(a) for a in argv])):
+        return False
     study = str(root)
     study_norm = study.replace("\\", "/").rstrip("/").lower()
     for token in tokens:
@@ -1082,7 +1104,7 @@ class DashboardRuntime:
         pid = record.get("pid")
         if not isinstance(pid, int) or pid <= 0:
             return False
-        identity = _identify_run(pid, Path(root))
+        identity = _identify_run(pid, Path(root), record.get("argv"))
         if identity is None:
             # Alive, and not yet identifiable. Not adopted -- the sidebar
             # says idle, which is the honest word for "cannot tell" -- but
@@ -1139,7 +1161,7 @@ class DashboardRuntime:
                 return  # the run finished and took its record with it
             # Outside the lock: on Windows this can take ten seconds, and
             # the page's own requests must not wait behind it.
-            identity = _identify_run(pid, root)
+            identity = _identify_run(pid, root, record.get("argv"))
             if identity is False:
                 return
             if identity is True:

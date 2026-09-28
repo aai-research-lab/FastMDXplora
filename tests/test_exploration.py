@@ -642,6 +642,34 @@ def test_a_run_is_judged_by_what_it_runs_not_where_the_interpreter_lives():
     assert not _command_line_is_a_run(r'"C:\envs\fastmdxplora\python.exe" -c "import time"', win)
 
 
+def test_a_recorded_command_tells_two_runs_of_the_program_apart():
+    # Any `fastmdx` process was taken for the run: with two studies
+    # running, a stale record whose PID the other study's run had been
+    # given was adopted, and Stop would have stopped the other study.
+    from fastmdxplora.gui.exploration import _command_line_is_a_run
+
+    study = Path("/lab/a")
+    recorded = ["/env/bin/fastmdx", "explore", "-c", "/lab/a.yml"]
+    assert _command_line_is_a_run(
+        "/env/bin/python3 /env/bin/fastmdx explore -c /lab/a.yml", study, recorded)
+    assert not _command_line_is_a_run(
+        "/env/bin/python3 /env/bin/fastmdx explore -c /lab/b.yml", study, recorded)
+    # The program is written differently in sys.argv and on the command
+    # line when it runs as a module; the arguments are what identify it.
+    assert _command_line_is_a_run(
+        "/usr/bin/python3 -m fastmdxplora.cli.main explore --output /tmp/s", study,
+        ["/site/fastmdxplora/cli/main.py", "explore", "--output", "/tmp/s"])
+    # An argument holding a space, split the same way on both sides.
+    assert _command_line_is_a_run(
+        "/env/bin/fastmdx explore -c /My Lab/a.yml", study,
+        ["/env/bin/fastmdx", "explore", "-c", "/My Lab/a.yml"])
+    # Still the program: a recorded command does not make any process a run.
+    assert not _command_line_is_a_run(
+        "/usr/bin/python3 other.py explore -c /lab/a.yml", study, recorded)
+    # A record from before the command was kept is judged as before.
+    assert _command_line_is_a_run("/env/bin/fastmdx explore -c /lab/b.yml", study)
+
+
 def test_liveness_never_touches_the_process():
     # On Windows os.kill(pid, 0) is TerminateProcess: the POSIX liveness
     # check killed the process it was checking. The primitive must leave a

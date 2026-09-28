@@ -168,7 +168,7 @@ class TestWhatIsNotRunAgain:
 
         study = _study(tmp_path / "s")
         (study / RUN_PROCESS_FILE).write_text(json.dumps({"pid": os.getpid()}))
-        monkeypatch.setattr(exploration, "_process_is_this_run", lambda pid, root: True)
+        monkeypatch.setattr(exploration, "_process_is_this_run", lambda pid, root, argv=None: True)
         answer = resume_study(study)
         assert answer["ok"] is False and "still going" in answer["error"]
         assert ran == []

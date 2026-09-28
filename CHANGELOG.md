@@ -122,6 +122,14 @@ had, relative to wherever the command ran, so for a moved study it named
 nothing and the join fell back to comparing settings. The segment's own record,
 found relative to it and checked by content, is read first.
 
+### The GUI adopts only the run a study recorded
+
+**A running study is adopted by the GUI only when its process has the command
+the run recorded.** Any `fastmdx` process was taken for the run, so with two
+studies running, a stale record whose process number had gone to the other
+study's run was adopted, and Stop would have stopped the other study. `fastmdx
+resume` uses the same check to tell whether a study is still running.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes
