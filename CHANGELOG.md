@@ -237,6 +237,26 @@ asked for, and the aggregate, an umbrella study's free energy and the
 comparison are rebuilt. A structure the study named by a relative path is found
 beside the study's folder. A study any run of which is still going is refused.
 
+### A study run without OpenMM names what is missing
+
+**Setup that prepared no system is no longer shown as complete.** Without
+OpenMM or PDBFixer, setup still reads the structure and records its heterogen
+decisions, and the record still says it finished, since leaving an optional
+backend uninstalled is a choice. On screen it now ends with a warning, "setup
+finished without preparing a system", where it said "setup complete" over a
+folder with no `system.xml`. A sequence given as the system is shown the same
+way.
+
+**The simulation names the missing package.** It said "No setup outputs found,
+run setup first" before naming OpenMM, sending somebody to rerun a phase that
+would stop in the same place. It now says only what is missing and how to
+install it.
+
+**The advice for analysis alone works.** It said `--include analyze report`,
+which the plan refuses (`analyze` is the command; the phase is `analysis`). It
+now says `--include-phase analysis report`. The message also reads "OpenMM and
+PDBFixer" and "it is" for one package.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

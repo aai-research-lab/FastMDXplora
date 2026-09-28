@@ -73,6 +73,24 @@ class PhaseSkipped(Exception):
         self.artifacts = list(artifacts or [])
 
 
+def _how_it_ended(result: "PhaseResult") -> dict[str, Any]:
+    """The line a finished phase is shown with.
+
+    A setup that could not prepare a system (no OpenMM or PDBFixer, a
+    sequence given as the system) is recorded as done, since not installing
+    an optional backend is a choice, and was shown as "setup complete" over
+    a folder with no ``system.xml``. It is shown as finishing with a warning,
+    the reason having been said above it.
+    """
+    if result.status == "skipped":
+        return {"status": "skipped", "message": f"{result.name} skipped: {result.message}"}
+    if (result.name == "setup" and result.status == "ok"
+            and not result.taken_from and "system.xml" not in result.artifacts):
+        return {"status": "warning",
+                "message": "setup finished without preparing a system (see above)"}
+    return {"status": result.status}
+
+
 @dataclass
 class PhaseResult:
     """Lightweight record of a single phase invocation."""
@@ -584,10 +602,7 @@ class FastMDXplora:
             self._presenter.phase_start(phase)
             result = self._run_phase(phase, merged_options.get(phase, {}))
             self.results.append(result)
-            self._presenter.phase_end(
-                phase, status=result.status,
-                message=(f"{phase} skipped: {result.message}"
-                         if result.status == "skipped" else None))
+            self._presenter.phase_end(phase, **_how_it_ended(result))
             self._mark_dashboard_phase_end(dashboard_writer, phase, result)
             if result.status == "error":
                 logger.error("Phase '%s' failed: %s", phase, result.message)

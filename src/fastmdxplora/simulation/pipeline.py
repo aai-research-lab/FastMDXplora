@@ -48,7 +48,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastmdxplora.dependencies import MissingBackendError, missing_dependencies
+from fastmdxplora.dependencies import (
+    MissingBackendError, dependency_error_message, missing_dependencies)
 from fastmdxplora.config.schema import SIMULATION
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import MissingResultError
@@ -650,11 +651,16 @@ def run(
             "that finished its setup phase, or the setup directory itself."
         , code="analysis.data.absent")
     if system_xml is None:
+        # Without OpenMM, setup could not have prepared a system either, and
+        # "run setup first" sends somebody to rerun a phase that will stop
+        # in the same place. The missing package is the reason; say that.
+        missing = missing_dependencies()
         notes.append(
+            dependency_error_message(missing) if missing else
             f"Setup outputs not found in {setup_dir} (system.xml / state.xml / "
             f"topology.pdb). Run the setup phase first, or skip simulation."
         )
-        if presenter:
+        if presenter and not missing:
             presenter.step(
                 "No setup outputs found — run setup first to produce "
                 "system.xml/state.xml/topology.pdb",
@@ -662,7 +668,6 @@ def run(
             )
         _write_manifest(output_dir, params, artifacts, notes, platform_used=None)
         artifacts.append("simulation_parameters.json")
-        missing = missing_dependencies()
         if missing:
             raise MissingBackendError(missing)
         raise MissingResultError(

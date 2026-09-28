@@ -44,14 +44,17 @@ def install_command(missing: list[MissingDependency]) -> str:
 
 def dependency_error_message(missing: list[MissingDependency]) -> str:
     """Return one actionable message shared by CLI, API, and dashboard."""
-    labels = ", ".join(item.label for item in missing)
+    names = [item.label for item in missing]
+    labels = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    they, them = ("it is", "it") if len(names) == 1 else ("they are", "them")
     command = install_command(missing)
     return (
-        f"This workflow needs {labels}, but they are not installed in the "
-        "Python environment running FastMDXplora. Install them in that same "
+        f"This workflow needs {labels}, but {they} not installed in the "
+        f"Python environment running FastMDXplora. Install {them} in that same "
         f"environment with:\n\n    {command}\n\n"
         "Then restart the terminal or dashboard and try again. "
-        "For analysis-only work, run with `--include analyze report`."
+        "To analyse a trajectory you already have, run only "
+        "`--include-phase analysis report`."
     )
 
 

@@ -1779,7 +1779,9 @@ def _cmd_phase(phase: str, args: argparse.Namespace) -> int:
         fmdx._presenter.phase_start(phase)  # noqa: SLF001 -- internal hook
         result = method(**kwargs)
         fmdx.results.append(result)
-        fmdx._presenter.phase_end(phase, status=result.status)
+        from fastmdxplora.orchestrator import _how_it_ended
+
+        fmdx._presenter.phase_end(phase, **_how_it_ended(result))
         fmdx._write_manifest()  # noqa: SLF001 -- single-phase still records
     except KeyboardInterrupt:
         if session is not None:
