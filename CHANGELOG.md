@@ -46,6 +46,17 @@ taken from (`seeded_from.json`), relative to itself and by the SHA-256 of its
 `system.xml`, and the setup record is found through it, also after the study
 has moved. A different preparation at that place is refused, as for any run.
 
+### A shared umbrella system is reused only when it is checked
+
+**An umbrella study run again no longer reuses a shared system it cannot
+check.** A shared system prepared before `prepared_for.json` was written was
+reused with a warning, whatever it had been prepared from. It is now checked
+against its own setup record, and one with neither record is refused with the
+new code `setup.prepared.unverifiable`. The structure is identified by the
+SHA-256 of its file as well as by its path, so a structure edited in place is
+another structure, and the same file under another path is the same one.
+`--force-overwrite` prepares the system again, as before.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

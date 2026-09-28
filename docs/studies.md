@@ -729,6 +729,14 @@ A sweep over `setup` settings turns the sharing off, because the windows are
 being asked to be prepared differently and quietly ignoring that would be worse
 than preparing seven times.
 
+A study run again reuses its shared system only when it is the one asked for.
+`shared_setup/prepared_for.json` records the structure (by the SHA-256 of its
+file, where it is one) and the setup settings it was prepared from; a system
+prepared before that record existed is checked against its own
+`setup/setup_parameters.json`. Anything different is refused
+(`setup.prepared.mismatch`), as is a system with neither record
+(`setup.prepared.unverifiable`); `--force-overwrite` prepares it again.
+
 The same setting is available on its own, for a system prepared elsewhere:
 
 ```yaml

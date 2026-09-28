@@ -1170,10 +1170,15 @@ class TestOneSystemForEveryWindow:
         return BatchExplorer(config=config, output_dir=str(tmp_path / "out"))
 
     @staticmethod
-    def _pretend_it_is_prepared(directory):
+    def _pretend_it_is_prepared(directory, system="181L"):
+        """Its three files and the setup record the phase writes."""
+        import json
+
         directory.mkdir(parents=True, exist_ok=True)
         for name in ("system.xml", "state.xml", "topology.pdb"):
             (directory / name).write_text("<x/>", encoding="utf-8")
+        (directory / "setup_parameters.json").write_text(json.dumps(
+            {"input": {"system": system}, "parameters": {"ph": 7.4}}), encoding="utf-8")
 
     def test_a_study_prepares_once(self, tmp_path) -> None:
         study = self._study(tmp_path)

@@ -1230,6 +1230,8 @@ def _a_prepared_peptide(setup: Path) -> None:
     (setup / "topology.pdb").write_text(TRI_ALANINE, encoding="utf-8")
     for name in ("system.xml", "state.xml"):
         (setup / name).write_text("<x/>", encoding="utf-8")
+    (setup / "setup_parameters.json").write_text(json.dumps(
+        {"input": {"system": "1UBQ"}, "parameters": {}}), encoding="utf-8")
 
 
 def _ok():

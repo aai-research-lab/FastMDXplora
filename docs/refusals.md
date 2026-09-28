@@ -255,6 +255,8 @@ A few you are likely to meet, and what each means.
 | `setup.structure.undetermined` | The structure does not determine what to simulate. Usually a ligand whose chemistry could not be looked up — supply an SDF |
 | `setup.chemistry.protonation_undetermined` | A ligand's pKa sits inside the pH margin. A decision about the science |
 | `environment.path.exists` | The output directory already holds results. `--force-overwrite` if you mean to |
+| `setup.prepared.mismatch` | An umbrella study's shared prepared system was built from another structure or other setup settings. The settings are named; `--force-overwrite` prepares it again |
+| `setup.prepared.unverifiable` | A shared prepared system records neither what it was prepared from nor its setup, so it cannot be checked. `--force-overwrite` prepares it again |
 | `environment.path.not_found` | A named file is not where the run was started from |
 | `environment.service.unreachable` | RCSB did not answer. The message carries the exact `curl` to run elsewhere |
 | `environment.service.machine_unreachable` | `ssh` could not reach a machine. The message quotes `ssh`'s own reason; try `ssh <name>` in the same terminal |

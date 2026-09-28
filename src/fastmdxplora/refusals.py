@@ -363,6 +363,12 @@ CODES: tuple[Code, ...] = (
          "the study now asks for.",
          Kind.SEMANTIC, Disclosure.ACTION,
          detail_keys=("changed",)),
+    Code("setup.prepared.unverifiable",
+         "A shared prepared system records neither what it was prepared from "
+         "nor its setup, so whether it is the one the study asks for cannot "
+         "be checked.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("path",)),
     Code("setup.structure.assembly_ambiguous",
          "The structure's biological assemblies hold different things, so "
          "which is simulated has to be named.",

@@ -637,6 +637,75 @@ def _say_if_the_replicas_will_not_share_water(run_specs) -> None:
         len(run_specs))
 
 
+def _file_digest(system: Any) -> str | None:
+    """The SHA-256 of a structure given as a file; None for anything else."""
+    import hashlib
+
+    path = Path(str(system)).expanduser()
+    try:
+        if not path.is_file():
+            return None
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _what_it_was_prepared_for(shared: Path) -> dict[str, Any] | None:
+    """What a shared system was prepared from: its `prepared_for.json`, or,
+    for one prepared before that was written, its own setup record. None
+    where neither can be read."""
+    try:
+        found = json.loads((shared / "prepared_for.json").read_text(encoding="utf-8"))
+        if isinstance(found, dict):
+            return found
+    except (OSError, ValueError):
+        pass
+    try:
+        setup = json.loads((shared / "setup" / "setup_parameters.json")
+                           .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(setup, dict) or not isinstance(setup.get("parameters"), dict):
+        return None
+    given = setup.get("input") or {}
+    return {"system": given.get("system"), "setup": setup["parameters"],
+            "structure_sha256": (given.get("structure") or {}).get("sha256"),
+            "read_from": "setup record"}
+
+
+def _same_setting(first: Any, second: Any) -> bool:
+    """One setting, compared as a value: 7 and 7.0 are one pH."""
+    numbers = (int, float)
+    if (isinstance(first, numbers) and isinstance(second, numbers)
+            and not isinstance(first, bool) and not isinstance(second, bool)):
+        return float(first) == float(second)
+    return json.dumps(first, sort_keys=True, default=str) == json.dumps(
+        second, sort_keys=True, default=str)
+
+
+def _what_differs(found: dict[str, Any], wanted: dict[str, Any]) -> list[str]:
+    """The settings, and the system, a shared preparation differs from a
+    study in. A setup record holds every setting the phase used, defaults
+    included, so it is checked on what the study states; a setting it does
+    not hold cannot be confirmed and counts as different."""
+    if found.get("structure_sha256") and wanted.get("structure_sha256"):
+        same_system = found["structure_sha256"] == wanted["structure_sha256"]
+    else:
+        same_system = str(found.get("system")) == str(wanted["system"])
+    stated = wanted.get("setup") or {}
+    held = found.get("setup") or {}
+    if found.get("read_from") == "setup record":
+        keys = set(stated)
+    else:
+        keys = set(stated) | set(held)
+    changed = sorted(key for key in keys
+                     if key not in held or key not in stated
+                     or not _same_setting(held[key], stated[key]))
+    if not same_system:
+        changed.insert(0, "system")
+    return changed
+
+
 class BatchExplorer:
     """Run one or more FastMDXplora studies (systems × sweep).
 
@@ -1025,13 +1094,16 @@ class BatchExplorer:
         # prepared before, while its resolved config said 5.0.
         wanted = {"system": str(self.run_specs[0].system),
                   "setup": json.loads(next(iter(preparations)))}
+        # The structure's bytes too, where it is a file: the path alone
+        # passed a structure edited in place.
+        digest = _file_digest(self.run_specs[0].system)
+        if digest is not None:
+            wanted["structure_sha256"] = digest
         record = shared / "prepared_for.json"
         if _a_prepared_system_is_there(prepared):
-            try:
-                found = json.loads(record.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                found = None
-            if found != wanted and self.force:
+            found = _what_it_was_prepared_for(shared)
+            changed = None if found is None else _what_differs(found, wanted)
+            if (found is None or changed) and self.force:
                 logger.info("The shared system was prepared from %s, not what this study "
                             "asks for; --force-overwrite prepares it again.",
                             "settings it did not record" if found is None else "other settings")
@@ -1039,15 +1111,16 @@ class BatchExplorer:
 
                 shutil.rmtree(shared)
             elif found is None:
-                logger.warning(
-                    "The shared system in %s was prepared before what it was prepared "
-                    "from was recorded, so whether it matches this study's setup cannot "
-                    "be checked. It is reused; --force-overwrite prepares it again.", shared)
-            elif found != wanted:
-                changed = sorted(key for key in set(found["setup"]) | set(wanted["setup"])
-                                 if found["setup"].get(key) != wanted["setup"].get(key))
-                if found["system"] != wanted["system"]:
-                    changed.insert(0, "system")
+                # An older shared system with neither record was reused with
+                # a warning, whatever it had been prepared from.
+                raise StudyError(
+                    f"The shared system in {shared} records neither what it was "
+                    "prepared from (prepared_for.json) nor its setup "
+                    "(setup/setup_parameters.json), so whether it is the system "
+                    "this study asks for cannot be checked. Re-run with "
+                    "--force-overwrite to prepare it again.",
+                    code="setup.prepared.unverifiable", path=str(shared))
+            elif changed:
                 raise StudyError(
                     f"The shared system in {shared} was prepared with different "
                     f"settings from this study's ({', '.join(changed)}), so every "
@@ -1055,6 +1128,13 @@ class BatchExplorer:
                     "Re-run with --force-overwrite to prepare it again, or restore the settings "
                     "it was prepared with.",
                     code="setup.prepared.mismatch", changed=changed)
+            elif found.get("read_from") == "setup record":
+                logger.info(
+                    "The shared system in %s was prepared before what it was "
+                    "prepared from was recorded; its setup record agrees with "
+                    "this study, so it is reused.", shared)
+                record.write_text(json.dumps(wanted, indent=2, sort_keys=True, default=str),
+                                  encoding="utf-8")
         if self.force and shared.exists() and not _a_prepared_system_is_there(prepared):
             # A half-written shared setup from an interrupted study: with
             # --force the intent is plainly to start again, and leaving the
