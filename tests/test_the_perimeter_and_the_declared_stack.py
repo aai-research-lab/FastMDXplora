@@ -344,6 +344,14 @@ class TestTheCorpusHasSomewhereToRun:
         assert "-m network" in run
         assert "tests/validation" in run
 
+    def test_and_the_marked_tests_outside_the_corpus(self) -> None:
+        """`test_cli.py` and `test_protonation.py` carry network tests too,
+        and the job ran `tests/validation` only, so they ran nowhere."""
+        steps = self._workflow()["jobs"]["corpus"]["steps"]
+        runs = [str(step.get("run", "")) for step in steps]
+        assert any("-m network tests " in run and "--ignore=tests/validation" in run
+                   for run in runs)
+
     def test_it_installs_the_extras_no_job_ever_has(self) -> None:
         """`[validation]` brings MDAnalysis and ProLIF. Without it
         `cross_tool.py` -- 853 lines of independent comparison against

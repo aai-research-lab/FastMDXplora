@@ -108,6 +108,12 @@ jobs:
       - name: Run the tests that need a real OpenMM
         run: pytest tests/test_seeding_end_to_end.py -v --timeout-method=signal --timeout=600
 
+      # The network-marked tests outside the corpus: a PDB ID fetched through
+      # the command line, and PROPKA on a real complex. The step below runs
+      # tests/validation only, so these ran in no job at all.
+      - name: Run the other network-marked tests
+        run: pytest -m network tests --ignore=tests/validation -v --timeout-method=signal --timeout=600
+
       - name: Run the network-marked corpus
         run: pytest -m network tests/validation -v --timeout-method=signal --timeout=2400
 
@@ -181,8 +187,8 @@ jobs:
           # has, and the jobs that lacked OpenMM were the ones that found
           # an unguarded import, a missing markdown fallback and a launch
           # that never checked its stack. Best-effort elsewhere: a job that
-          # cannot install it skips those tests, and coverage is merged
-          # across jobs so the physics lines are counted where they run.
+          # cannot install it skips those tests. Coverage is measured and
+          # uploaded from the ubuntu 3.11 job only, not merged across jobs.
           if [ "${{ matrix.python-version }}" = "3.10" ]; then echo "::notice::the floor job runs the base install, without the [md] extra, on purpose"; else
           python -m pip install -e ".[md]" || echo "::notice::the [md] extra has no wheels here; physics-dependent tests will skip"
           fi
