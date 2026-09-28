@@ -344,6 +344,15 @@ installation guide says Windows is not supported. `fastmdx info` states the
 platform, and on Windows says plainly that it is not supported; nothing
 refuses to run there.
 
+### An umbrella study runs again
+
+**2.5.7 refused every umbrella study before it started**, saying "`from` is
+missing". Each window was checked as though a person had written it, after
+the study had been expanded into windows that carry a centre and an index in
+place of the study's `from`, `to` and `n_windows`. The study is still checked
+as it was written, before it is expanded; the windows made from it are not
+checked a second time. Present in 2.5.7 only.
+
 ### An occupancy tie is decided by one rule
 
 **An ion written at two alternate locations of one residue took the first
