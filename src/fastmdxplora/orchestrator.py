@@ -382,12 +382,19 @@ class FastMDXplora:
         # config's values. A banner that reports different settings from the
         # ones in force is worse than no banner.
         simulation = dict(self.options.get("simulation") or {})
+        # And setup's, which it read only from a config named on the command
+        # line: a study given from Python announced pH 7.4 and the automatic
+        # force field while it prepared at pH 7.0 with CHARMM36.
+        setup = dict(self.options.get("setup") or {})
         self._presenter.banner(
             System=self.system,
             Output=str(self.output_dir),
             Version=__version__,
             **{key: str(value) for key, value in simulation.items()
                if isinstance(value, (int, float, str, bool))},
+            **{f"setup_{key}": str(setup[key])
+               for key in ("ph", "ion_concentration_M", "forcefield")
+               if setup.get(key) is not None},
         )
 
         # The banner already shows system/output to the user; this log

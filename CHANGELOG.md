@@ -369,6 +369,12 @@ force field's own. The GUI offers the switch as default, on or off rather than
 a checkbox that read "off" for a run that switched. Present in 2.5.6 and
 2.5.7.
 
+### The banner shows a Python study's own setup
+
+The run's opening banner read its setup values only from a config named on the
+command line, so a study given from Python announced pH 7.4 and the automatic
+force field while it prepared at the pH and with the force field it was given.
+
 ## [2.5.7] — 2026-09-24
 
 This release is for running a study where the compute is, and for carrying on

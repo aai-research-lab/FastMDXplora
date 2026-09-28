@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import io
 import re
 
@@ -63,6 +66,25 @@ class TestBanner:
         for drawing in ("╭", "╮", "╰", "╯", "│"):
             assert drawing not in out
         assert "x.pdb" in out and "/tmp/out" in out
+
+    def test_a_study_given_from_python_shows_its_own_setup(self, monkeypatch):
+        """The setup section was read from a config named on the command
+        line only, so a study given from Python showed the defaults."""
+        from fastmdxplora import FastMDXplora
+        from fastmdxplora.utils import presenter as presenter_module
+
+        monkeypatch.setattr("sys.argv", ["python"])
+        shown = []
+        banner = presenter_module.SessionPresenter.banner
+        monkeypatch.setattr(presenter_module.SessionPresenter, "banner",
+                            lambda self, **fields: shown.append(fields))
+        FastMDXplora(system="1UBQ", output_dir=str(Path(tempfile.mkdtemp()) / "run"),
+                     options={"setup": {"ph": 7.0, "forcefield": "charmm36"}})
+        [fields] = shown
+        p, buf = _presenter()
+        banner(p, **fields)
+        out = buf.getvalue()
+        assert "charmm36" in out and "7.0" in out and "amber" not in out
 
     def test_includes_all_supplied_fields(self):
         p, buf = _presenter()
