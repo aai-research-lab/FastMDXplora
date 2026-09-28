@@ -669,12 +669,33 @@ def _attach_dcd_reporter(
         # is written beside it: a trajectory of 2,600 atoms read against a
         # topology of 30,750 does not fail, it misaligns, and every
         # measurement afterwards is of the wrong atoms.
-        from mdtraj.reporters import DCDReporter as _SubsetDCDReporter
-
-        reporter = _SubsetDCDReporter(
+        reporter = _subset_dcd_reporter()(
             str(dcd_path), interval, atomSubset=atom_subset)
     simulation.reporters.append(reporter)
     return reporter
+
+
+def _subset_dcd_reporter() -> type:
+    """MDTraj's DCD reporter, without its warning about its own coordinates.
+
+    It hands the DCD writer the double-precision positions OpenMM returns,
+    and the writer, which stores single precision as every DCD does, warns
+    about the cast: a line of MDTraj's source on the console at the start of
+    every production run that saves a subset, which is every run by default.
+    The cast loses nothing the file could hold.
+    """
+    import warnings
+
+    from mdtraj.reporters import DCDReporter
+
+    class _SubsetDCDReporter(DCDReporter):
+        def report(self, simulation: Any, state: Any) -> None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message="Casting xyz dtype=float64")
+                super().report(simulation, state)
+
+    return _SubsetDCDReporter
 
 
 def write_trajectory_topology(

@@ -488,8 +488,13 @@ class OrderParameters(Analysis):
 
         The base writer stamps `no column header` on any array, which is
         true of two columns whose meaning the analysis name gives away and
-        false of three."""
-        if result.ndim != 2 or result.shape[1] < 3:
+        false of three.
+
+        A homo-oligomer's result is a table with the chain named, which the
+        base writer saves with its header; written as numbers it failed, so
+        the order parameters of every symmetric dimer were computed and lost.
+        """
+        if not isinstance(result, np.ndarray) or result.ndim != 2 or result.shape[1] < 3:
             return super().save_data(result, path)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savetxt(

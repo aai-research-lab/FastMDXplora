@@ -100,13 +100,35 @@ class TestThePeriodicBoundary:
 
 
 class TestWhatItRefuses:
-    def test_several_chains_without_by_chain_is_refused(self):
+    def test_one_distance_across_several_chains_is_refused(self):
         """First chain's start to last chain's end describes neither."""
         with pytest.raises(StudyError) as raised:
-            EndToEndDistance().compute(_straight_chains(chains=3))
+            EndToEndDistance(by_chain=False).compute(_straight_chains(chains=3))
 
         assert "spans 3 chains" in str(raised.value)
         assert raised.value.code == "analysis.selection.arity"
+
+    def test_by_default_several_chains_are_measured_each(self):
+        """A default run of a dimer failed here, in every study of one."""
+        result = EndToEndDistance().compute(_straight_chains(chains=3))
+        assert result.shape[1] == 3
+        assert list(result.columns) == ["chain 0", "chain 1", "chain 2"]
+        assert np.allclose(result, EndToEndDistance(by_chain=True).compute(
+            _straight_chains(chains=3)))
+
+    def test_several_chains_are_drawn_and_saved_by_name(self, tmp_path):
+        result = EndToEndDistance(output_dir=tmp_path).run(_straight_chains(chains=2))
+        assert result.status == "ok", result.message
+        assert result.data_path.read_text().splitlines()[0] == "chain 0,chain 1"
+        assert result.figure_path.is_file()
+
+    def test_several_chains_are_not_reweighted_as_one(self):
+        """The reweighting read the first column of a table as the run's
+        distance; a table naming the chains is not read so."""
+        from fastmdxplora.analysis.reweighted_averages import frame_series
+
+        result = EndToEndDistance().compute(_straight_chains(chains=3))
+        assert frame_series(result, EndToEndDistance.reweightable, len(result)) is None
 
     def test_a_single_residue_has_only_one_end(self):
         with pytest.raises(StudyError) as raised:

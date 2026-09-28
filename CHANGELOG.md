@@ -171,6 +171,24 @@ form a bilayer normal to z are refused rather than measured. A new page,
 `docs/membranes.md`, covers the lipids and their transition temperatures,
 placement, equilibration, and what to compare the bilayer against.
 
+### Found running a membrane dimer end to end
+
+**`order_parameters` saves a homo-oligomer's values.** Copies numbered alike
+come back as a table naming the chain, and saving that as numbers failed, so
+the order parameters of every symmetric dimer were computed and lost.
+
+**`end_to_end` measures each chain where the selection spans several.** It
+refused a selection of several chains unless `by_chain: true` was set, so the
+default plan failed on every multi-chain protein. `by_chain` now defaults to
+true: one distance per chain, as a table naming each chain, and one column as
+before for a single chain. `by_chain: false` still refuses several chains
+rather than measure from one chain's start to another's end.
+
+**A production run no longer prints a line of MDTraj's source.** Its reporter
+for a saved subset hands the DCD writer double-precision coordinates and the
+writer warns about the cast, at the start of every run that leaves the water
+out, which is every run by default.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

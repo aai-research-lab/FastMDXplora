@@ -93,18 +93,19 @@ class EndToEndDistance(Analysis):
         Which atom of each terminal residue marks the end. ``None`` takes
         the first atom of the first residue and the last atom of the last,
         for chains with no named backbone.
-    by_chain : bool, default False
-        Measure every chain separately and report one column each, in
-        addition to the first chain's distance. With a single chain this
-        changes nothing.
+    by_chain : bool, default True
+        Measure every chain separately and report one column each; a
+        selection of one chain gives its one distance either way. The
+        default, so a run of a dimer measures each copy rather than failing.
+        ``False`` asks for one distance, and is refused for several chains.
     selection : str, optional
         MDTraj atom selection applied before the chains are read. Defaults
         to ``"protein"``, so solvent does not present itself as a chain.
 
     Output
     ------
-    ``end_to_end.dat`` -- one column, the distance in nm per frame; or
-    ``frame, chain0, chain1, ...`` when ``by_chain=True``.
+    ``end_to_end.dat`` -- one column, the distance in nm per frame; or, for
+    several chains, a table with one column per chain, named by chain.
     """
 
     name = "end_to_end"
@@ -117,7 +118,7 @@ class EndToEndDistance(Analysis):
         self,
         *,
         atom: str | None = "CA",
-        by_chain: bool = False,
+        by_chain: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -168,7 +169,8 @@ class EndToEndDistance(Analysis):
                 code="analysis.selection.empty",
             )
 
-        if not self.by_chain and n_chains > 1:
+        by_chain = self.by_chain
+        if not by_chain and n_chains > 1:
             raise StudyError(
                 f"Selection {self.selection!r} spans {n_chains} chains, and "
                 "an end-to-end distance is a property of one chain. "
@@ -181,21 +183,30 @@ class EndToEndDistance(Analysis):
 
         columns: list[np.ndarray] = []
         pairs: list[tuple[int, int]] = []
-        for chain_index in range(n_chains if self.by_chain else 1):
+        for chain_index in range(n_chains if by_chain else 1):
             pair = _terminal_atoms(sub.topology, self.atom, chain_index)
             pairs.append(pair)
             columns.append(self._distances(sub, pair))
 
-        result = (
-            columns[0] if len(columns) == 1 else np.column_stack(columns)
-        )
+        if len(columns) == 1:
+            result = columns[0]
+        else:
+            # A table naming each chain, rather than bare columns: nothing
+            # reads the first of several chains' distances as the run's
+            # end-to-end distance, which the reweighting and the mean both
+            # did with a column of numbers.
+            import pandas as pd
+
+            result = pd.DataFrame({
+                f"chain {getattr(sub.topology.chain(i), 'chain_id', None) or i}": column
+                for i, column in enumerate(columns)})
         self.findings["ends"] = {
             "atom": self.atom,
             "chains": len(columns),
             "atom_pairs": [[int(i), int(j)] for i, j in pairs],
         }
         self._note_if_the_convention_is_strained(
-            sub, result if result.ndim == 1 else result.max(axis=1)
+            sub, np.max(np.column_stack(columns), axis=1)
         )
         return result
 
@@ -205,11 +216,11 @@ class EndToEndDistance(Analysis):
             if self._traj_for_plot is not None
             else np.arange(result.shape[0])
         )
-        if result.ndim == 1:
+        if np.ndim(result) == 1:
             ax.plot(x, result, linewidth=1.4)
         else:
-            for i in range(result.shape[1]):
-                ax.plot(x, result[:, i], linewidth=1.2, label=f"chain {i}")
+            for label in result.columns:
+                ax.plot(x, result[label].to_numpy(), linewidth=1.2, label=label)
             ax.legend(loc="best")
 
     _traj_for_plot: md.Trajectory | None = None

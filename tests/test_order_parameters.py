@@ -168,3 +168,15 @@ class TestTheAnalysisSaysWhatItRests_On:
         with pytest.raises(ValueError, match="at least three"):
             OrderParameters(align_selection="resid 0 and name CA").compute(
                 traj)
+
+
+def test_a_homodimer_s_order_parameters_are_saved(tmp_path) -> None:
+    """Two copies numbered alike come back as a table naming the chain, and
+    saving it as numbers failed: a symmetric dimer's run lost them."""
+    one = _peptide()
+    two = one.stack(one)
+    result = OrderParameters(output_dir=tmp_path).run(two)
+    assert result.status == "ok", result.message
+    lines = result.data_path.read_text().splitlines()
+    assert lines[0] == "chain,residue,s2"
+    assert {line.split(",")[0] for line in lines[1:]} == {"A", "B"}
