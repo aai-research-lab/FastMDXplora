@@ -747,13 +747,91 @@ PERIODIC_RANGES: dict[str, tuple[str, str, float]] = {
     "torsion": ("-pi", "pi", 2.0 * math.pi),
 }
 
+#: Variables bounded by their definition, though not periodic. An ``ANGLE``
+#: lies in [0, pi]; Q is a weighted mean of switching functions each in
+#: (0, 1), with weights summing to one.
+DEFINED_RANGES: dict[str, tuple[str, str, float]] = {
+    "angle": ("0", "pi", math.pi),
+    "q": ("0", "1", 1.0),
+}
+
+#: Variables bounded by the periodic cell. PLUMED measures a ``DISTANCE`` by
+#: the minimum image, which can be no longer than
+#: :func:`longest_minimum_image_nm`; a membrane depth is the z component of
+#: one, which in a rectangular cell is at most half its height.
+CELL_BOUNDED = frozenset({"distance", "ligand_distance", "membrane_depth"})
+
+#: How much the cell may grow during production beyond the one measured
+#: when the bias is attached, after equilibration: a tenth in each length,
+#: a third in volume, far past what a liquid at constant pressure does. A
+#: box that grows more than that has blown up, and PLUMED stopping the run
+#: is then the right answer.
+CELL_GROWTH_ALLOWED = 1.10
+
 #: Grid points per sigma. PLUMED's own guidance is a spacing no coarser than
 #: half the smallest sigma; five is comfortably inside that and still cheap --
 #: a 2-CV torsion grid at sigma 0.35 is 90x90 doubles.
 GRID_POINTS_PER_SIGMA = 5
 
+#: The most points a grid may hold, over all its dimensions. PLUMED keeps the
+#: bias and its derivative at each, so 2,000,000 is about 50 MB for two
+#: variables; a finer one is left to the hill sum rather than filling memory.
+GRID_POINTS_ALLOWED = 2_000_000
 
-def _grid_keywords(biased: "list[tuple[str, float]]") -> str:
+
+def longest_minimum_image_nm(box_nm) -> float:
+    """The longest distance the minimum image convention can return.
+
+    The minimum image of a separation is its shortest copy, so the longest
+    one is the farthest a point can be from every lattice point: the
+    farthest vertex of the cell's Voronoi cell (a cube's corner, a rhombic
+    dodecahedron's vertex). Found as the vertices of the half-spaces nearer
+    the origin than each neighbouring lattice point. Half the longest body
+    diagonal bounds it too, but for the dodecahedron a study is built in
+    that is half as long again, and the grid would be that much larger.
+    """
+    import numpy as np
+    from scipy.spatial import HalfspaceIntersection
+
+    cell = np.asarray(box_nm, dtype=float)
+    shifts = np.array([[i, j, k] for i in (-2, -1, 0, 1, 2)
+                       for j in (-2, -1, 0, 1, 2) for k in (-2, -1, 0, 1, 2)
+                       if (i, j, k) != (0, 0, 0)], dtype=float)
+    images = shifts @ cell
+    # x . v <= |v|^2 / 2, as scipy writes a half-space: A x + b <= 0.
+    halfspaces = np.hstack([images, -0.5 * np.sum(images * images, axis=1)[:, None]])
+    vertices = HalfspaceIntersection(halfspaces, np.zeros(3)).intersections
+    return float(np.max(np.linalg.norm(vertices, axis=1)))
+
+
+def _range_of(plan: "MetadynamicsPlan", box_nm) -> tuple[str, str, float] | None:
+    """``(GRID_MIN, GRID_MAX, width)`` for a variable, or None if it has no
+    bound the run can know."""
+    import numpy as np
+
+    name = plan.collective_variable
+    if name in PERIODIC_RANGES:
+        return PERIODIC_RANGES[name]
+    if name in DEFINED_RANGES:
+        return DEFINED_RANGES[name]
+    if name == "coordination":
+        # Each pair counts at most one, so the sum cannot pass the number
+        # of pairs.
+        pairs = len(plan.atoms.get("selection_a") or ()) * len(plan.atoms.get("selection_b") or ())
+        return ("0", f"{pairs:d}", float(pairs)) if pairs else None
+    if name not in CELL_BOUNDED or box_nm is None:
+        return None
+    if name == "membrane_depth":
+        cell = np.asarray(box_nm, dtype=float)
+        if not np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-6):
+            return None  # a z component in a sheared cell has no simple bound
+        half = 0.5 * float(cell[2][2]) * CELL_GROWTH_ALLOWED
+        return (f"{-half:.4f}", f"{half:.4f}", 2.0 * half)
+    top = longest_minimum_image_nm(box_nm) * CELL_GROWTH_ALLOWED
+    return ("0", f"{top:.4f}", top)
+
+
+def _grid_keywords(biased: "list[MetadynamicsPlan]", box_nm=None) -> str:
     """``GRID_*`` for a METAD line, when every biased variable has real bounds.
 
     Without a grid PLUMED evaluates the bias by summing over every hill
@@ -768,34 +846,39 @@ def _grid_keywords(biased: "list[tuple[str, float]]") -> str:
     cumulative average speed as though it were constant, so it reads low
     all the way and slides upward for the length of the run.
 
-    Only where the bounds are the variable's own geometry, which is why
-    this is a table and not a heuristic. A distance, a ligand RMSD or a
-    radius of gyration has no ceiling the setup can know, and PLUMED stops
-    the run when a variable steps outside its grid -- so an assumed
-    ceiling would trade a slow run for one that dies partway through, at
-    an unpredictable point, having written a partial HILLS. Walls do not
-    make a variable bounded either: they are restraints, and a soft one is
-    crossed.
+    Only where the bounds are real, because PLUMED stops the run when a
+    variable steps outside its grid, and an assumed ceiling would trade a
+    slow run for one that dies partway through with a partial HILLS. A
+    torsion is periodic; an angle and Q are bounded by definition, and a
+    coordination number by its count of pairs. A distance is bounded by the
+    periodic cell, since PLUMED measures it by the minimum image, so it is
+    gridded once the cell is known (``box_nm``, the cell after
+    equilibration, in nm). A ligand RMSD and a radius of gyration have no
+    such ceiling. Walls do not make a variable bounded: they are
+    restraints, and a soft one is crossed.
 
     Returns the keywords with a leading space, or an empty string, so the
     caller can concatenate unconditionally.
     """
-    if not biased or not all(name in PERIODIC_RANGES for name, _ in biased):
+    ranges = [_range_of(plan, box_nm) for plan in biased]
+    if not biased or any(found is None for found in ranges):
         return ""
     mins, maxes, bins = [], [], []
-    for name, sigma in biased:
-        low, high, width = PERIODIC_RANGES[name]
+    for plan, (low, high, width) in zip(biased, ranges):
         mins.append(low)
         maxes.append(high)
         # Bins, not spacing: PLUMED derives one from the other, and stating
         # the count keeps the script readable and the test arithmetic exact.
-        bins.append(str(max(
-            1, math.ceil(width / (float(sigma) / GRID_POINTS_PER_SIGMA)))))
+        bins.append(max(
+            1, math.ceil(width / (float(plan.sigma) / GRID_POINTS_PER_SIGMA))))
+    if math.prod(bin_ + 1 for bin_ in bins) > GRID_POINTS_ALLOWED:
+        return ""
     return (f" GRID_MIN={','.join(mins)} GRID_MAX={','.join(maxes)} "
-            f"GRID_BIN={','.join(bins)}")
+            f"GRID_BIN={','.join(str(bin_) for bin_ in bins)}")
 
 
-def build_plumed_script(plan: MetadynamicsPlan, reference_pdb: str | None = None) -> str:
+def build_plumed_script(plan: MetadynamicsPlan, reference_pdb: str | None = None,
+                        *, box_nm=None) -> str:
     """The PLUMED input for a plan.
 
     Written out rather than hidden, because it is the thing that decides what
@@ -819,7 +902,7 @@ def build_plumed_script(plan: MetadynamicsPlan, reference_pdb: str | None = None
         f"BIASFACTOR={plan.bias_factor:g} "
         f"TEMP={plan.temperature_K:g} "
         "FILE=HILLS"
-        + _grid_keywords([(plan.collective_variable, plan.sigma)])
+        + _grid_keywords([plan], box_nm)
     )
     if plan.walls:
         lines.append("")
@@ -963,7 +1046,7 @@ def plan_pair_from_config(
 
 
 def build_plumed_script_pair(
-    pair: MetadynamicsPair, reference_pdb: str | None = None
+    pair: MetadynamicsPair, reference_pdb: str | None = None, *, box_nm=None
 ) -> str:
     """The PLUMED input for two variables under one deposition."""
     first, second = pair.plans
@@ -988,8 +1071,7 @@ def build_plumed_script_pair(
         f"BIASFACTOR={first.bias_factor:g} "
         f"TEMP={first.temperature_K:g} "
         "FILE=HILLS"
-        + _grid_keywords([(first.collective_variable, first.sigma),
-                          (second.collective_variable, second.sigma)])
+        + _grid_keywords([first, second], box_nm)
     )
 
     for plan, arg in zip(pair.plans, ("cv1", "cv2")):

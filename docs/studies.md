@@ -193,6 +193,28 @@ The collective variable and the bias are written to `COLVAR` every deposition,
 because a run whose convergence cannot be checked has not measured a free
 energy.
 
+**The bias is kept on a grid wherever the variable has a real bound.** Without
+one, PLUMED adds up every hill deposited so far at every step, and a long run
+slows without end: on one torsion run, the slowing measured over its first
+8,000 hills puts 100 ns at about 19 hours, against about 7 on a grid.
+A grid only works if the variable can never leave it, since PLUMED stops the
+run when it does, so the bound has to be one the variable cannot cross:
+
+| Variable | Grid |
+|---|---|
+| `torsion` | −π to π, periodic |
+| `angle` | 0 to π |
+| `q` | 0 to 1 |
+| `coordination` | 0 to the number of pairs |
+| `distance`, `ligand_distance` | 0 to the longest separation the minimum image allows in the cell (a cube's half diagonal), a tenth larger, set from the cell equilibration leaves |
+| `membrane_depth` | ± half the cell's height, a tenth larger, in a rectangular cell |
+| `ligand_rmsd`, `radius_of_gyration` | none: nothing bounds them |
+
+A distance is measured by the minimum image, so the periodic cell bounds it,
+and the tenth covers any growth of the cell under pressure. A grid that would
+need more than two million points is left out. Walls do not count as a bound:
+they are restraints, and a soft one is crossed. The grid is in `plumed.dat`.
+
 ### Bounding where the ligand goes
 
 A run biasing a ligand's distance will, given time, push the ligand out into

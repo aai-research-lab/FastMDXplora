@@ -19,6 +19,8 @@ module does not.
 
 from __future__ import annotations
 
+import functools
+
 import time as _time
 
 import csv
@@ -741,6 +743,26 @@ def write_trajectory_topology(
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.atom_slice(atom_subset).save_pdb(str(path))
     return path
+
+
+def _grid_by_the_cell(simulation: Any, script_in: Callable[[Any], str],
+                      path: Path, *, unit: Any) -> None:
+    """Rewrite the metadynamics input with the cell production starts in.
+
+    A distance is measured by the minimum image, so the cell bounds it, and
+    with the cell known the bias can be kept on a grid rather than summed
+    over every hill at every step, which slows a long run without bound.
+    """
+    import numpy as np
+
+    box_nm = np.asarray(simulation.context.getState().getPeriodicBoxVectors(
+        asNumpy=True).value_in_unit(unit.nanometer), dtype=float)
+    before = path.read_text(encoding="utf-8")
+    after = script_in(box_nm=box_nm)
+    if after != before:
+        path.write_text(after, encoding="utf-8")
+        logger.info("Metadynamics bias kept on a grid bounded by the periodic "
+                    "cell as equilibration left it.")
 
 
 def _write_checkpoint_pair(simulation: Any, chk_path: Path) -> None:
@@ -2244,6 +2266,10 @@ def run_simulation(
         if reanchor_after_equilibration:
             plumed["reanchor"] = reanchor_after_equilibration
 
+    # The metadynamics input again, with the cell known: a distance is
+    # bounded by the periodic cell, so it can be gridded once equilibration
+    # has settled the cell, which is when the bias goes on.
+    metad_script_in: Callable[[Any], str] | None = None
     if metadynamics:
         # A named collective variable becomes PLUMED input, which the existing
         # integration then runs. Written to the output directory rather than
@@ -2278,6 +2304,8 @@ def run_simulation(
                          if needs_reference & set(biased) else None)
             script = build_plumed_script_pair(
                 bias_plan, reference_pdb=reference)
+            metad_script_in = functools.partial(
+                build_plumed_script_pair, bias_plan, reference_pdb=reference)
             described = " and ".join(biased)
             bias_factor = bias_plan.first.bias_factor
         else:
@@ -2287,6 +2315,8 @@ def run_simulation(
                          if bias_plan.collective_variable in needs_reference
                          else None)
             script = build_plumed_script(bias_plan, reference_pdb=reference)
+            metad_script_in = functools.partial(
+                build_plumed_script, bias_plan, reference_pdb=reference)
             described = bias_plan.collective_variable
             bias_factor = bias_plan.bias_factor
 
@@ -2459,6 +2489,9 @@ def run_simulation(
             _anchor_the_pull_where_it_starts(
                 simulation, topology, reanchor,
                 Path(plumed["script"]), topology_path)
+        if metad_script_in is not None:
+            _grid_by_the_cell(simulation, metad_script_in, Path(plumed["script"]),
+                              unit=omm["unit"])
 
         # PLUMED prints its whole setup at the moment the context takes the
         # force: which atoms the variable is built from, the hill width, the

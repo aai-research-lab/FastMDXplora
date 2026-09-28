@@ -313,6 +313,28 @@ once; a second Ctrl-C still means stop now.
 each run's status from the run's own folder, which a run being carried on no
 longer writes, so it stood at the step where the run had stopped.
 
+### Metadynamics on a distance runs on a grid
+
+**A bias on `distance` or `ligand_distance` is kept on a grid.** Only
+torsions were gridded, because PLUMED stops a run whose variable leaves its
+grid and a distance was taken to have no ceiling, so every distance study ran
+on the hill sum, whose cost per step grows with every hill: on one torsion
+run the slowing over its first 8,000 hills puts 100 ns at about 19 hours,
+against about 7 on a grid. A distance does have a ceiling, since PLUMED
+measures it by the minimum image: the farthest vertex of the periodic cell's
+Voronoi cell (half the diagonal of a cube, the image distance over the square
+root of two for the rhombic dodecahedron studies are built in). The grid runs
+from 0 to that, a tenth larger to cover any growth of the cell, taken from the
+cell equilibration leaves when the bias goes on.
+
+**So are `angle` (0 to π), `q` (0 to 1), `coordination` (0 to its number of
+pairs) and `membrane_depth` in a rectangular cell (half its height either
+side, a tenth larger).** Each bound is one the variable cannot cross. A grid
+over two million points is left out; `ligand_rmsd` and `radius_of_gyration`
+have no bound and stay on the hill sum. Checked with PLUMED 2.9 on each
+variable: the variable never left its grid, and the bias on the grid matched
+the hill sum to 0.0005 kJ/mol over 3,000 depositions.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
