@@ -68,6 +68,15 @@ writes that beside the results as `fetched.json`, and the prepared system is
 found there, checked by the SHA-256 of its `system.xml`. Fetch names any run
 whose prepared system is not on this computer or has been prepared again since.
 
+### CHARMM36 membranes take their lipids from `charmm36.xml`
+
+**A membrane built with a CHARMM36 force field list lacking lipid templates
+now gets them.** The lipid fallback named `charmm36/waters.xml`, which OpenMM
+does not ship, so such a list was refused over a file that does not exist.
+CHARMM36's lipids are in `charmm36.xml`, which is what is added now, and the
+lipid's template is checked to be there once any file is added, rather than
+failing later at the residue template.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

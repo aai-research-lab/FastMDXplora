@@ -113,6 +113,29 @@ class TestTheForceFieldNeedsLipidParameters:
             ["amber14/protein.ff14SB.xml", "amber14/tip3p.xml"])
         assert any("lipid" in f for f in found)
 
+    def test_charmm36_gets_its_own_lipids(self) -> None:
+        """CHARMM36's lipids are in `charmm36.xml`. The fallback named
+        `charmm36/waters.xml`, which OpenMM does not ship, so a CHARMM36 list
+        without the main file was refused for a file that does not exist."""
+        pytest.importorskip("openmm", reason="requires the [md] extra")
+
+        from openmm.app import ForceField
+
+        from fastmdxplora.setup.membrane import membrane_forcefield_files
+
+        found = membrane_forcefield_files(["charmm36/water.xml"], lipid="DOPC")
+        assert found == ["charmm36/water.xml", "charmm36.xml"]
+        assert any(name.startswith("DOPC") for name in ForceField(*found)._templates)
+
+    def test_a_file_that_loads_without_the_lipid_is_refused(self, monkeypatch) -> None:
+        pytest.importorskip("openmm", reason="requires the [md] extra")
+
+        from fastmdxplora.setup import membrane
+
+        monkeypatch.setitem(membrane._LIPID_PARAMETERS, "amber14", "amber14/tip3p.xml")
+        with pytest.raises(ValueError, match="template for POPC"):
+            membrane.membrane_forcefield_files(["amber14/protein.ff14SB.xml"])
+
     def test_a_force_field_with_no_lipids_available_says_so(self) -> None:
         pytest.importorskip("openmm", reason="requires the [md] extra")
 

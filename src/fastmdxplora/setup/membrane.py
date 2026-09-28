@@ -56,9 +56,12 @@ LIPIDS: dict[str, str] = {
 #: they go with. A membrane system built against a force field with no lipid
 #: parameters fails when the system is created, with a message about a
 #: residue template rather than about the missing file.
+#: CHARMM36's lipids are in its main file, beside the protein: OpenMM
+#: ships no separate lipid file for it, and `charmm36/waters.xml`, named here
+#: before, does not exist.
 _LIPID_PARAMETERS = {
     "amber14": "amber14/lipid17.xml",
-    "charmm36": "charmm36/waters.xml",
+    "charmm36": "charmm36.xml",
 }
 
 
@@ -95,12 +98,20 @@ def membrane_forcefield_files(existing: list[str], lipid: str = "POPC") -> list[
             try:
                 from openmm.app import ForceField
 
-                ForceField(*candidate)
+                templates = ForceField(*candidate)._templates
             except Exception as exc:  # noqa: BLE001
                 raise StudyError(
                     f"Adding {parameters} for the {lipid} bilayer did not "
                     f"work: {exc}"
                 , code="setup.membrane.lipid_unparameterized", lipid=lipid) from exc
+            # Checked, not assumed: a file that loads and carries no
+            # template for the lipid fails later, at the residue template.
+            if not any(name.startswith(lipid) for name in templates):
+                raise StudyError(
+                    f"Adding {parameters} did not give the force field a "
+                    f"template for {lipid}. Add a lipid parameter file that "
+                    f"carries it to `force_field` yourself.",
+                    code="setup.membrane.lipid_unparameterized", lipid=lipid)
             return candidate
 
     raise StudyError(
