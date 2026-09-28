@@ -254,6 +254,14 @@ Trajectories and checkpoints stay on the machine unless `--with-trajectory` is
 given; fetch says how many it left and where. It also reads the run's manifest
 and says so if the code that ran is not the code that sent it.
 
+A study sent with a prepared system (`simulation.setup_from`) names it there as
+`inputs/<name>`. Fetch writes `fetched.json` beside the results, recording the
+folder here each input was sent from, so re-analysis and the report read the
+prepared system's setup record from where it is on this computer. The run's
+record carries the SHA-256 of that system's `system.xml`, so a folder prepared
+again since is refused rather than read, and fetch names any run whose
+prepared system it cannot find here.
+
 ```bash
 fastmdx remote cancel lysozyme
 ```

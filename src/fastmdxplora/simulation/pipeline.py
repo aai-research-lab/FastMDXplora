@@ -483,6 +483,8 @@ def _the_system_recorded(run: Path, reference: dict[str, Any], *,
     candidates: list[Path] = []
     if reference.get("relative_to_run"):
         candidates.append(run / str(reference["relative_to_run"]))
+    candidates.extend(where_a_prepared_system_sits(path)
+                      for path in _sent_from(run, reference.get("given")))
     for named in (reference.get("resolved"), _setup_taken_from(run),
                   reference.get("given")):
         if named:
@@ -521,6 +523,39 @@ def _the_system_recorded(run: Path, reference: dict[str, Any], *,
         "ligand's chemistry -- have nothing to read; move or copy it together "
         "with the run.", run, verb, ", ".join(str(p) for p in looked) or "nowhere")
     return None
+
+
+#: Written by `fastmdx remote fetch` at the top of a study it brought back:
+#: where each input the study was sent with is on this computer.
+FETCHED_RECORD = "fetched.json"
+
+
+def _sent_from(run: Path, given: Any) -> list[Path]:
+    """For a study fetched back from another machine, the folder on this
+    computer a prepared system named `inputs/<name>` there was sent from:
+    named so by the config there, or by its full path in the job's folder,
+    as a seed records the preparation it was taken from."""
+    given = str(given or "").replace("\\", "/")
+    if "inputs/" not in given:
+        return []
+    try:
+        folders = [run.resolve(), *run.resolve().parents][:3]
+    except OSError:
+        return []
+    for folder in folders:
+        try:
+            record = json.loads((folder / FETCHED_RECORD).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        inputs = record.get("inputs") if isinstance(record, dict) else None
+        remote = str(record.get("remote_dir") or "").rstrip("/")
+        found = []
+        for name, source in (inputs or {}).items():
+            for prefix in (f"inputs/{name}", f"{remote}/inputs/{name}"):
+                if given == prefix or given.startswith(prefix + "/"):
+                    found.append(Path(str(source)) / given[len(prefix):].lstrip("/"))
+        return found
+    return []
 
 
 def _setup_taken_from(run: Path) -> Path | None:

@@ -57,6 +57,17 @@ SHA-256 of its file as well as by its path, so a structure edited in place is
 another structure, and the same file under another path is the same one.
 `--force-overwrite` prepares the system again, as before.
 
+### A fetched study finds the prepared system it was sent with
+
+**`fastmdx remote fetch` ties a study back to the prepared system it was sent
+with.** A study given `setup_from` travels with the prepared system under
+`inputs/<name>` and records that name, which means nothing on this computer, so
+a study fetched back found no setup record for re-analysis or the report, and
+fetch said nothing. The job now records where each input was sent from, fetch
+writes that beside the results as `fetched.json`, and the prepared system is
+found there, checked by the SHA-256 of its `system.xml`. Fetch names any run
+whose prepared system is not on this computer or has been prepared again since.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

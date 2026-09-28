@@ -32,6 +32,7 @@ from fastmdxplora.remote.machines import REQUIRED_BACKENDS, save_machine
 from fastmdxplora.remote.plan import backends_plan
 from fastmdxplora.remote.send import cancel, fetch, job_script, prepare, send, status
 from fastmdxplora.remote.transport import Transport
+from fastmdxplora.simulation.pipeline import setup_records_of
 
 pytestmark = pytest.mark.skipif(
     os.name == "nt" or not shutil.which("sh") or not shutil.which("rsync"),
@@ -331,3 +332,84 @@ def test_the_code_that_ran_is_checked_against_the_code_that_sent_it(machine):
     manifest = json.loads((machine.back / "manifest.json").read_text())
     assert same_code(RELEASE, CodeIdentity(manifest["version"]))[0]
     assert not any("does not name the code" in w for w in warnings)
+
+
+# ---------------------------------------------------------------------------
+# A fetched study finds the prepared system it was sent with
+# ---------------------------------------------------------------------------
+# A study given `setup_from` travels with the prepared system under
+# `inputs/<name>`, and its run records that name. Fetched back, the name meant
+# nothing on this computer: re-analysis and the report found no setup record
+# for the run, and `fetch` said nothing. The fetch now records where each
+# input was sent from (`fetched.json`), the run's own record decides whether
+# what is there is still it, and `fetch` says which runs cannot find theirs.
+#: The stand-in installation, recording the prepared system it was given as
+#: the simulation phase does: as named there, resolved there, relative to
+#: the run and by the SHA-256 of its `system.xml`.
+RUNS_FROM_A_PREPARED_SYSTEM = '''
+out=run; while [ $# -gt 0 ]; do [ "$1" = --output ] && out=$2; shift; done
+mkdir -p "$out/simulation"
+echo '{"version": "1.0"}' > "$out/manifest.json"
+digest=$(sha256sum inputs/prepared/setup/system.xml | cut -d' ' -f1)
+there=$(cd inputs/prepared/setup && pwd -P)
+printf '{"prepared_system": {"given": "inputs/prepared", "resolved": "%s", "relative_to_run": "../inputs/prepared/setup", "system_xml_sha256": "%s"}}' "$there" "$digest" > "$out/simulation/simulation_parameters.json"
+echo "working"'''
+
+
+@pytest.fixture
+def sent(machine):
+    """A study naming a prepared system on this computer, run there."""
+    _tool(machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx",
+          RUNS_FROM_A_PREPARED_SYSTEM)
+    prepared = machine.study.parent / "prepared" / "setup"
+    prepared.mkdir(parents=True)
+    for name in ("system.xml", "state.xml", "topology.pdb"):
+        (prepared / name).write_text(f"<{name}/>", encoding="utf-8")
+    (prepared / "setup_parameters.json").write_text("{}", encoding="utf-8")
+    machine.study.write_text(
+        "systems:\n  - system: top.pdb\ninclude_phase: [simulation]\n"
+        "simulation:\n  setup_from: prepared\n", encoding="utf-8")
+    job = _send(machine)
+    assert job.extra["inputs"]["prepared"] == str(prepared.parent.resolve())
+    assert _until_finished(machine, "trial").state == "done"
+    # The machine's folders are not on this computer; here they would be,
+    # since the machine is this computer, and would be found by their path.
+    shutil.rmtree(Path(job.remote_dir) / "inputs")
+    machine.prepared = prepared
+    return machine
+
+
+def _fetch(here):
+    return fetch("trial", transport=here.transport(), local_runner=here.local,
+                 code=RELEASE)
+
+
+def test_it_finds_the_prepared_system_it_was_sent_from(sent) -> None:
+    _, warnings = _fetch(sent)
+    assert not warnings
+    record = json.loads((sent.back / "fetched.json").read_text(encoding="utf-8"))
+    assert record["inputs"]["prepared"] == str(sent.prepared.parent.resolve())
+    assert setup_records_of(sent.back) == sent.prepared.resolve()
+
+
+def test_one_prepared_again_since_is_said_and_not_read(sent) -> None:
+    (sent.prepared / "system.xml").write_text("<another/>", encoding="utf-8")
+    _, warnings = _fetch(sent)
+    assert len(warnings) == 1 and "different system" in warnings[0]
+
+
+def test_one_gone_since_is_said(sent) -> None:
+    shutil.rmtree(sent.prepared.parent)
+    _, warnings = _fetch(sent)
+    assert len(warnings) == 1
+    assert "'inputs/prepared'" in warnings[0] and "not on this computer" in warnings[0]
+    assert setup_records_of(sent.back) is None
+
+
+def test_a_study_sent_without_one_is_fetched_as_before(machine) -> None:
+    _send(machine)
+    _until_finished(machine, "trial")
+    _, warnings = _fetch(machine)
+    assert len(warnings) == 1 and "1 trajectory" in warnings[0]
+    assert json.loads((Path(machine.back) / "fetched.json").read_text())["inputs"] == {
+        "top.pdb": str((machine.study.parent / "top.pdb").resolve())}

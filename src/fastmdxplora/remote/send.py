@@ -284,7 +284,12 @@ def send(sending: Sending, *, transport: Transport | None = None,
                     "dirty": code.dirty, "checkout": code.checkout},
               local_output=sending.local_output,
               state=READY if sending.scheduler == "slurm" else RUNNING,
-              extra={"installation": sending.installation.path})
+              extra={"installation": sending.installation.path,
+                     # Where each input came from here, so the results can
+                     # be tied back to it: a prepared system sent as
+                     # `inputs/<name>` is recorded under that name there.
+                     "inputs": {travelled: str(source) for travelled, source
+                                in sending.inputs.files.items()}})
     save_job(job)
     return job
 
@@ -444,8 +449,53 @@ def fetch(name: str, *, with_trajectory: bool = False,
             warnings.append(f"The run's manifest does not name the code that "
                             f"sent it: {why}.")
     job.fetched_at = now_utc()
+    warnings += _tie_back_to_its_inputs(job, target)
     save_job(job)
     return job, warnings
+
+
+def _tie_back_to_its_inputs(job: Job, target: Path) -> list[str]:
+    """Record where the study's inputs are on this computer, and say which
+    prepared systems its runs cannot find here.
+
+    A run given a prepared system records it as it was named there,
+    `inputs/<name>`, which on this computer names nothing: re-analysis and
+    the report found no setup record for a study fetched back, and nothing
+    said so. `fetched.json` maps each input to the file or folder it was
+    sent from, and the run's own record, digest included, decides whether
+    what is there is still it.
+    """
+    from fastmdxplora.refusals import CodedError
+    from fastmdxplora.simulation.pipeline import FETCHED_RECORD, setup_records_of
+
+    (target / FETCHED_RECORD).write_text(json.dumps({
+        "job": job.name, "machine": job.machine, "remote_dir": job.remote_dir,
+        "fetched_at": job.fetched_at, "inputs": job.extra.get("inputs") or {},
+    }, indent=2), encoding="utf-8")
+
+    runs = [target] + sorted(p for p in (target / "runs").glob("*") if p.is_dir())
+    warnings: list[str] = []
+    for run in runs:
+        record = run / "simulation" / "simulation_parameters.json"
+        try:
+            named = json.loads(record.read_text(encoding="utf-8")).get("prepared_system")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not isinstance(named, dict):
+            continue
+        where = run.relative_to(target).as_posix() if run != target else job.name
+        try:
+            found = setup_records_of(run)
+        except CodedError as exc:
+            warnings.append(f"{where}: {exc}")
+            continue
+        if found is None:
+            warnings.append(
+                f"{where} simulated the prepared system {named.get('given')!r} "
+                f"from {job.machine}, and it is not on this computer: no input "
+                "was sent from here under that name, or it has since moved. "
+                "Re-analysis and the report read its setup record from there.")
+    return warnings
 
 
 def cancel(name: str, *, transport: Transport | None = None) -> Job:
