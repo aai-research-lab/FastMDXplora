@@ -106,12 +106,13 @@ def __getattr__(name: str):
     raise AttributeError(name)
 
 
-from fastmdxplora.refusals import Refusal, refusal_of
+from fastmdxplora.refusals import Refusal, StudyFailed, refusal_of
 
 __all__ = [
     "FastMDXplora",
     "AnalysisOrchestrator",
     "Refusal",
+    "StudyFailed",
     "refusal_of",
     "MIN_PYTHON",
     "MAX_PYTHON",

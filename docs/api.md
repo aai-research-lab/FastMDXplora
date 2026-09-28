@@ -170,6 +170,7 @@ class RunResult:
     error_type: str | None
     def to_dict(self) -> dict
     def phase(self, name: str) -> PhaseResult | None
+    def raise_for_status(self) -> None   # raises StudyFailed if it failed
 ```
 
 ```python
@@ -228,6 +229,24 @@ same record is already there:
 ```python
 runs[0].phase("setup").refusal["code"]
 ```
+
+A study that fails is returned, not raised: the refusal is on the phase, and
+a script that does not look carries on as though it had succeeded. To have it
+raise instead, ask:
+
+```python
+from fastmdxplora import StudyFailed
+
+try:
+    runs = study.explore(check=True)
+except StudyFailed as exc:
+    exc.code            # the failed phase's refusal code
+    exc.failed          # every run that failed
+    exc.results         # everything the study returned
+```
+
+`run.raise_for_status()` does the same for one run. Both leave the study's
+records on disk as they would be without them.
 
 See [FastMDXplora refusals](refusals.md) for the four kinds and what each one
 means you should do.
@@ -405,7 +424,7 @@ notice. Every package declares an `__all__`; that is the contract.
 The top-level `__all__`:
 
 ```python
-FastMDXplora, AnalysisOrchestrator, Refusal, refusal_of,
+FastMDXplora, AnalysisOrchestrator, Refusal, StudyFailed, refusal_of,
 MIN_PYTHON, MAX_PYTHON, python_range_string,
 __version__, __author__, __license__, __expansion__, __citation__, __doi__
 ```

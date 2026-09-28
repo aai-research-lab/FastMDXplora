@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import refusal_of
 from fastmdxplora.refusals import OutputExistsError
-from fastmdxplora.refusals import RunStopped, StudyError
+from fastmdxplora.refusals import RunStopped, StudyError, StudyFailed
 
 logger = get_logger("project")
 
@@ -185,6 +185,16 @@ class RunResult:
             "message": self.message,
             "error_type": self.error_type,
         }
+
+    def raise_for_status(self) -> None:
+        """Raise :class:`~fastmdxplora.refusals.StudyFailed` if this run failed.
+
+        Its refusal is the failed phase's, so ``exc.code`` is what that phase
+        recorded. A run that finished, or did not start, returns quietly.
+        """
+        failure = StudyFailed.from_results([self])
+        if failure is not None:
+            raise failure
 
     # Convenience: treat a RunResult a bit like its phase list, so common
     # patterns (iterating phases, checking a phase status) stay ergonomic.
@@ -462,6 +472,7 @@ class FastMDXplora:
         include: list[str] | None = None,
         exclude: list[str] | None = None,
         rerun_windows: list[int] | None = None,
+        check: bool = False,
     ) -> list[RunResult]:
         """Run the full pipeline, end to end.
 
@@ -488,6 +499,11 @@ class FastMDXplora:
             spring, a longer run). Every other window is kept, and the free
             energy is recombined from the whole set. The earlier runs of the
             windows named are moved to ``superseded/``.
+        check : bool, default False
+            Raise :class:`~fastmdxplora.refusals.StudyFailed` if any run
+            failed, rather than returning the failure in the results. The
+            study still runs to where it would have stopped, and its records
+            are written; the exception carries the results as ``results``.
 
         Returns
         -------
@@ -502,6 +518,17 @@ class FastMDXplora:
         config file passed to the constructor, the config-file values are
         used. Explicit arguments to this method always win.
         """
+        if check:
+            # The same call, then the same results looked at: every path
+            # below returns, and this is the one place they all come back to.
+            results = self.explore(
+                include_phase=include_phase, exclude_phase=exclude_phase,
+                options=options, report=report, dry_run=dry_run, force=force,
+                include=include, exclude=exclude, rerun_windows=rerun_windows)
+            failure = StudyFailed.from_results(results)
+            if failure is not None:
+                raise failure
+            return results
         include, exclude = _phase_selection(
             include_phase, exclude_phase, include, exclude)
         # This call's results, and only this call's. `self.results` was set

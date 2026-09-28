@@ -418,6 +418,17 @@ Config edited after the windows ran recombined them with the new ones,
 shifting the curve with nothing to show it. Each window's own record is now
 compared with the Config, and a window that differs is named instead.
 
+### A failed study raises, when asked
+
+**`explore(check=True)`** raises `StudyFailed` if any run failed, instead of
+returning the failure among the results; **`RunResult.raise_for_status()`**
+does the same for one run. The exception's refusal is the failed phase's, so
+`exc.code` is what that phase recorded; `exc.failed` holds every run that
+failed and `exc.results` everything the study returned. A script that did not
+look at the results carried on as though a failed study had succeeded. The
+default is unchanged until the next breaking release, when a failure will
+raise by default.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

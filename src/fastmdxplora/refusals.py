@@ -66,6 +66,7 @@ __all__ = [
     "CODES",
     "CodedError",
     "StudyError",
+    "StudyFailed",
     "RunStopped",
     "CodedKeyError",
     "MissingResultError",
@@ -1150,6 +1151,56 @@ class StudyError(CodedError, ValueError):
     """
 
     default_code = "unclassified"
+
+
+class StudyFailed(CodedError, RuntimeError):
+    """A study that ended in a refusal, raised because the caller asked.
+
+    `explore()` records a failure rather than raising it: a run stops at its
+    first errored phase and the refusal is on that phase. A script that does
+    not look carries on as though it had succeeded. `explore(check=True)` and
+    `RunResult.raise_for_status()` raise this instead.
+
+    Its refusal is the first failed phase's, code and particulars included,
+    so a caller branches on it as on any other; the sentence names the run
+    and the phase. ``failed`` holds every run that failed, and ``results``
+    everything the study returned.
+    """
+
+    def __init__(self, message: str = "", /, *args: Any,
+                 code: str | None = None, failed: "list[Any] | None" = None,
+                 results: "list[Any] | None" = None, **details: Any) -> None:
+        super().__init__(message, *args, code=code, **details)
+        self.failed = list(failed or [])
+        self.results = list(results or [])
+
+    @classmethod
+    def from_results(cls, results: "list[Any]") -> "StudyFailed | None":
+        """The failure among ``results``, or None where every run is fine."""
+        failed = [run for run in results if getattr(run, "status", None) == "error"]
+        if not failed:
+            return None
+        first = failed[0]
+        phase = next((p for p in getattr(first, "phases", None) or []
+                      if getattr(p, "status", None) == "error"), None)
+        recorded = (Refusal.from_record(phase.refusal)
+                    if phase is not None and getattr(phase, "refusal", None)
+                    else None)
+        why = (recorded.message if recorded is not None
+               else getattr(phase, "message", "") or getattr(first, "message", "")
+               or "it did not finish")
+        where = f" in {phase.name}" if phase is not None else ""
+        message = f"Run {first.run_id} failed{where}: {why}"
+        if len(failed) > 1:
+            others = ", ".join(str(run.run_id) for run in failed[1:4])
+            more = len(failed) - 4
+            message += (f" ({len(failed) - 1} more failed: {others}"
+                        + (f" and {more} more" if more > 0 else "") + ")")
+        particulars = {key: value for key, value in
+                       (recorded.details if recorded is not None else {}).items()
+                       if key not in ("code", "failed", "results")}
+        return cls(message, code=recorded.code if recorded is not None else None,
+                   failed=failed, results=results, **particulars)
 
 
 class RunStopped(BaseException):
