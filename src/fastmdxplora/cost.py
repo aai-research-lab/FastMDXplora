@@ -55,6 +55,7 @@ __all__ = [
     "calibration_path",
     "calibrate",
     "measure_this_machine",
+    "measure_prepared_system",
     "calibrate_from_runs",
     "costs_under",
     "Fit",
@@ -481,6 +482,70 @@ def measure_this_machine(
     return calibrate(particles=particles, steps=steps, seconds=elapsed,
                      platform_name=measured_on, precision=precision,
                      path=path, save=save)
+
+
+def measure_prepared_system(
+    setup_dir: Path | str,
+    *,
+    platform_name: str = "auto",
+    precision: str = "mixed",
+    steps: int = 2000,
+    path: Path | None = None,
+    save: bool = True,
+) -> Calibration:
+    """Time the study's own prepared system here, and record what it cost.
+
+    Where :func:`measure_this_machine` times argon with a plain cutoff,
+    this times the system the study is about to simulate: its own
+    particles, force field, constraints and PME, on the platform the
+    simulation phase would choose. That is the better constant, and it is
+    available exactly when a budget needs one, just after setup. Argon
+    leaves out the reciprocal-space sum, so a constant from it prices a
+    solvated protein low; a budget checked against it would pass studies
+    that do not fit.
+
+    The system is minimised briefly and integrated at 1 fs, which keeps an
+    unrelaxed box stable for a few thousand steps; the cost of a step does
+    not depend on its length. The first steps are not timed, since they
+    pay for kernel compilation.
+
+    Raises
+    ------
+    BackendUnavailable
+        Where OpenMM is not installed, or no platform asked for is usable.
+    OSError
+        Where setup left no ``system.xml`` or ``state.xml``.
+    """
+    import time as _time
+
+    from fastmdxplora.simulation.runner import _import_openmm, select_platform
+
+    omm = _import_openmm()
+    mm, unit = omm["openmm"], omm["unit"]
+    setup_dir = Path(setup_dir)
+    system = mm.XmlSerializer.deserialize(
+        (setup_dir / "system.xml").read_text(encoding="utf-8"))
+    state = mm.XmlSerializer.deserialize(
+        (setup_dir / "state.xml").read_text(encoding="utf-8"))
+    platform, properties, measured_on = select_platform(
+        omm, requested=platform_name or "auto", precision=precision)
+    integrator = mm.LangevinMiddleIntegrator(
+        300 * unit.kelvin, 1 / unit.picosecond, 1 * unit.femtosecond)
+    context = mm.Context(system, integrator, platform, properties)
+    context.setPeriodicBoxVectors(*state.getPeriodicBoxVectors())
+    context.setPositions(state.getPositions())
+    mm.LocalEnergyMinimizer.minimize(context, 10.0, 100)
+    context.setVelocitiesToTemperature(300 * unit.kelvin, 1)
+
+    integrator.step(max(100, steps // 10))
+    context.getState(getEnergy=True)
+    started = _time.perf_counter()
+    integrator.step(steps)
+    context.getState(getEnergy=True)  # make the queue drain
+    elapsed = _time.perf_counter() - started
+
+    return calibrate(particles=system.getNumParticles(), steps=steps, seconds=elapsed,
+                     platform_name=measured_on, precision=precision, path=path, save=save)
 
 
 @dataclass(frozen=True)

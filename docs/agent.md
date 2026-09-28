@@ -191,9 +191,10 @@ number.
 
 Two other ways it stops: a setup that records no particle count, because
 running on would spend an unknown amount — the one thing an unattended run must
-not do; and an unmeasured machine, because no calibration means no ceiling. See
-[Production runs and GPUs](production.md#knowing-how-long-before-committing-the-card)
-for how to measure one.
+not do; and a machine that cannot be measured, because no calibration means no
+ceiling. A machine never measured is measured on the study's own prepared system
+first; see
+[Production runs and GPUs](production.md#knowing-how-long-before-committing-the-card).
 
 ### `unvalidated` — mark the work as unchecked
 

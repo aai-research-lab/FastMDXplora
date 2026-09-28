@@ -83,6 +83,18 @@ run enormously.
 The calibration is stored beside the model choice, in
 `$XDG_CONFIG_HOME/fastmdxplora/calibration.json`.
 
+**A budget measures the machine itself when it has to.** A study given
+`--budget-hours` is priced for the platform the simulation phase will choose
+(`simulation.platform`, with `auto` resolved as that phase resolves it) and
+the config's precision. Where the machine has no measurement for that
+platform, or one taken under other settings, the study's own prepared system
+is timed there, just after setup: a brief minimisation, then 2,000 steps at
+1 fs after a warm-up. That constant covers PME and the study's own force
+field, which argon leaves out, and it is stored for the next study. A new
+container, a fresh cloud GPU or a new cluster node therefore prices its first
+study instead of refusing it. Only when that timing cannot be made either
+does the study stop with `environment.calibration.absent`.
+
 ### Three refusals rather than three guesses
 
 | Code | Means |

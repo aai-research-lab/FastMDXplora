@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A budget works on a machine never measured
+
+**`--budget-hours` no longer refuses every study on a machine without a stored
+measurement.** It stopped after setup with "This machine has not been measured",
+which a new container, a fresh cloud GPU or a new cluster node always is, and it
+priced the platform "unknown", so a machine measured on CUDA was refused as a
+different machine too. The study is now priced for the platform the simulation
+phase will choose, and a machine with no measurement for it is measured on the
+study's own prepared system, which covers PME and its force field, as argon did
+not. Only a machine that cannot be timed at all stops for want of a number.
+
 ### A hosted GUI links back to its service
 
 **`fastmdx gui --hosted --account-url PATH`** shows **Your account** in the

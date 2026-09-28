@@ -16,6 +16,14 @@ So an autonomous run goes in two parts:
     estimate              -- from that count, on this machine
     simulation onwards    -- the expensive part, if the estimate fits
 
+The estimate is for the platform the simulation phase will choose, read
+from the config as that phase reads it. A machine not yet measured for that
+platform, or measured under other settings, is measured on the spot, on the
+study's own prepared system: a new container or a fresh GPU has never been
+measured, and refusing there made the budget unusable exactly where it is
+meant for. Only when that measurement cannot be made either does the study
+stop for want of a number.
+
 The gate sits where the information first exists and before the cost is
 incurred. Anywhere earlier and it would be guessing; anywhere later and
 there would be nothing left to stop.
@@ -123,8 +131,9 @@ def run_in_stages(
     *,
     budget_hours: float | None = None,
     platform_name: str = "",
-    precision: str = "mixed",
+    precision: str = "",
     explore: Any = None,
+    measure: Any = None,
 ) -> StagedRun:
     """Run setup, price the rest, and continue only if it fits.
 
@@ -134,9 +143,15 @@ def run_in_stages(
         The ceiling. ``None`` runs without one, which is right for a
         caller who is watching and wrong for one who is not -- so
         `--autonomous` supplies it and refuses without it.
+    platform_name, precision
+        The platform and precision to price, when not the config's own
+        (`simulation.platform`, default auto, and `simulation.precision`).
     explore
         Substituted in tests. Not so a caller can substitute the science:
         whatever this is, the config still goes through the validator.
+    measure
+        Substituted in tests: times the prepared system when the machine
+        has no usable measurement (:func:`measure_prepared_system`).
     """
     from fastmdxplora.cost import estimate_study
 
@@ -166,16 +181,42 @@ def run_in_stages(
         )
         return staged
 
+    platform_name, precision = _what_it_will_run_on(config, platform_name, precision)
     try:
         estimate = estimate_study(
             config, particles=staged.particles,
             platform_name=platform_name, precision=precision)
     except StudyError as exc:
-        # An unmeasured machine, or one measured under other settings. Both
-        # mean there is no ceiling, and no ceiling is the thing the budget
-        # exists to provide.
-        staged.refusal = refusal_of(exc)
-        return staged
+        refused = refusal_of(exc)
+        if refused.code not in ("environment.calibration.absent",
+                                "environment.calibration.stale"):
+            staged.refusal = refused
+            return staged
+        # An unmeasured machine, or one measured under other settings: time
+        # the prepared system here, on that platform, and price from that.
+        from fastmdxplora.cost import measure_prepared_system
+        from fastmdxplora.simulation.pipeline import setup_records_of
+
+        timer = measure or measure_prepared_system
+        try:
+            calibration = timer(setup_records_of(out) or out / "setup",
+                                platform_name=platform_name, precision=precision)
+        except Exception as why:  # noqa: BLE001 - said, with the first refusal
+            # Nothing measured means no ceiling, and no ceiling is the thing
+            # the budget exists to provide.
+            staged.refusal = Refusal(
+                code=refused.code,
+                message=(f"{refused.message} Timing the prepared system here did not "
+                         f"work either ({why}), so there is still no number."),
+                details=dict(refused.details))
+            return staged
+        staged.notes.append(
+            f"Measured this machine on the prepared system: {calibration.steps:,} steps "
+            f"of {calibration.particles:,} particles in {calibration.seconds:.1f} s on "
+            f"{calibration.machine.get('platform')}.")
+        estimate = estimate_study(config, particles=staged.particles,
+                                  platform_name=calibration.machine.get("platform", ""),
+                                  precision=precision, calibration=calibration)
     staged.estimate_seconds = estimate.seconds
     staged.notes.append(str(estimate))
 
@@ -212,6 +253,29 @@ def run_in_stages(
         return staged
     staged.simulated = True
     return staged
+
+
+def _what_it_will_run_on(config: dict[str, Any], platform_name: str,
+                         precision: str) -> tuple[str, str]:
+    """The platform and precision the simulation phase would use, as it
+    reads them from the config, with `auto` resolved as it resolves it.
+
+    Pricing "unknown" against a measurement taken on CUDA refused as a
+    different machine, so a budget from the command line could never pass,
+    however the machine had been measured.
+    """
+    simulation = config.get("simulation") or {}
+    precision = precision or str(simulation.get("precision") or "mixed")
+    requested = platform_name or str(simulation.get("platform") or "auto")
+    if requested != "auto":
+        return requested, precision
+    try:
+        from fastmdxplora.simulation.runner import _import_openmm, select_platform
+
+        return select_platform(_import_openmm(), requested="auto",
+                               precision=precision)[2], precision
+    except Exception:  # noqa: BLE001 - no OpenMM here: nothing to resolve it with
+        return "", precision
 
 
 def _explore(*, config: dict[str, Any], output_dir: str) -> Any:
