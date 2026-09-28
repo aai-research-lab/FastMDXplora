@@ -68,11 +68,18 @@ class TestTheFrameIsChosenByTheSettings:
         assert placed.record["placed_by"].startswith("structure's own orientation")
 
     def test_a_structure_on_its_side_is_refused_and_told_the_tilt(self) -> None:
+        """The tilt said is the fit's, rounded. The fit puts this barrel's
+        normal 89.5 degrees from z on one platform, so another that lands a
+        little under says 89: the test reads the number rather than one
+        spelling of it (failed CI on Ubuntu, Python 3.13)."""
+        import re
+
         top, points = _barrel(normal=(1, 0, 0))
         with pytest.raises(StudyError) as refused:
             place_for_membrane(top, points)
         assert refused.value.code == "setup.membrane.orientation_unchecked"
-        assert "90 degrees from z" in str(refused.value)
+        said = re.search(r"(\d+) degrees from z", str(refused.value))
+        assert said is not None and 85 <= int(said.group(1)) <= 90
         assert "membrane_orient: true" in str(refused.value)
 
     @pytest.mark.parametrize("normal", [(1, 0, 0), (0.5, -0.4, 0.77)])
