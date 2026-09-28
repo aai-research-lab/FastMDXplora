@@ -398,6 +398,29 @@ def _a_binding_free_energy_belongs_here(payload: dict[str, Any],
     return bool(payload.get("pmf")) and _the_coordinate_has_a_volume(plan)
 
 
+def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
+    """The binding free energy as the console says it, with its warnings.
+
+    It was written to `pmf.json` and said nowhere, so the number a study of
+    this kind exists for, or the reason it was withheld, had to be looked for.
+    """
+    if not isinstance(binding, dict):
+        return []
+    lines = []
+    value = binding.get("delta_g_kjmol")
+    if value is not None:
+        error = binding.get("delta_g_standard_error_kjmol")
+        spread = f" +/- {error:.1f}" if error is not None else ""
+        lines.append(f"Binding:        {value:.1f}{spread} kJ/mol "
+                     "(standard state, 1 M)")
+    elif binding.get("refused"):
+        lines.append("Binding:        not reported -- "
+                     + str(binding["refused"]).split(". ")[0].rstrip(".") + ".")
+    for warning in (binding.get("reference") or {}).get("warnings") or []:
+        lines.append(f"Warning:        {warning}")
+    return lines
+
+
 def _a_prepared_system_is_there(setup_dir: Path) -> bool:
     """Whether the three files a simulation starts from are on disk.
 
@@ -1800,6 +1823,9 @@ class BatchExplorer:
                         cone=cone, wall_bias_kjmol=wall,
                         resampled=payload.get("derived"),
                     )
+                    payload["binding"] = self._with_the_reference_checked(
+                        payload["binding"], payload["pmf"], plan, directories,
+                        temperature=temperature, cone=cone)
 
         destination = Path(self.output_dir) / "pmf.json"
         destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -1825,6 +1851,8 @@ class BatchExplorer:
         else:
             drawn_note = f", drawn in {drawn.parent.name}/" if drawn else ""
             print(f"Free energy:    {destination}{drawn_note}")
+        for line in _what_the_binding_says(payload.get("binding")):
+            print(line)
 
         # Printed when the study refused, or when it passed with windows off
         # their centres -- the two cases where the person is about to choose
@@ -1839,6 +1867,76 @@ class BatchExplorer:
                   f"worst overlap {design['worst_predicted_overlap']:.2f} "
                   "predicted")
             print(as_a_config_block(design), end="")
+
+    def _with_the_reference_checked(self, binding: dict[str, Any],
+                                    pmf: dict[str, Any], plan: Any,
+                                    directories: dict[int, Any], *,
+                                    temperature: float, cone: Any) -> dict[str, Any]:
+        """The binding free energy, with what its reference rests on measured.
+
+        The shell at the outer range, a membrane, the path the pull took and
+        the ligand's orientation (see `simulation.reference_state`). A shell
+        that is not open, or a membrane without a cone, withholds the number;
+        the other two are said beside it. Advice about the number rather than
+        the number itself, so a failure here leaves the number as it was and
+        says the checks were not made.
+        """
+        from fastmdxplora.simulation.binding import BULK_RESIDUAL_KJMOL
+        from fastmdxplora.simulation.metadynamics import (
+            detect_ligand,
+            with_general_selection_names,
+        )
+        from fastmdxplora.simulation.reference_state import check_the_reference
+
+        if plan.collective_variable != "ligand_distance":
+            return {**binding, "reference": {"not_checked": (
+                "The coordinate is a distance between two selections, not "
+                "from a ligand to its site.")}}
+        first = next((((spec.options.get("simulation") or {}).get("umbrella") or {})
+                      for spec in self.run_specs
+                      if ((spec.options.get("simulation") or {}).get("umbrella") or {})
+                      .get("index") is not None), {})
+        window = with_general_selection_names(dict(first), "ligand_distance")
+        centres = {w.index: float(w.centre) for w in plan.windows}
+        points = [(y, x) for x, y in zip(pmf.get("coordinate") or [],
+                                         pmf.get("free_energy_kjmol") or [])
+                  if y is not None]
+        bound_at = (binding.get("minimum_at_nm")
+                    or (min(points)[1] if points else None))
+        bulk_from = binding.get("bulk_from_nm")
+        if bound_at is None or bulk_from is None:
+            return binding
+        try:
+            resname = str(window.get("ligand_resname") or window.get("ligand_name") or "")
+            if not resname:
+                import mdtraj as md
+
+                some = next(iter(directories.values()))
+                resname = detect_ligand(md.load_topology(
+                    str(Path(some) / "simulation" / "trajectory_topology.pdb"))) or ""
+            checks = check_the_reference(
+                directories, centres, ligand_resname=resname,
+                site_selection=str(window.get("site_selection") or ""),
+                bound_at_nm=float(bound_at), bulk_from_nm=float(bulk_from),
+                temperature_K=temperature, cone=cone,
+                allowed_kjmol=BULK_RESIDUAL_KJMOL,
+                skip=plan.equilibration_fraction)
+        except Exception as exc:  # noqa: BLE001 - the number stands, unchecked, and says so
+            logger.debug("The reference checks failed", exc_info=True)
+            return {**binding, "reference": {"not_checked": str(exc)}}
+        if cone is not None:
+            checks["exit"] = (
+                "The cone chose one way out. The binding free energy does not "
+                "depend on which, but the barrier and the path along the "
+                "curve describe that exit only.")
+        if checks.get("refused") and binding.get("delta_g_kjmol") is not None:
+            kept = {key: binding.get(key) for key in (
+                "bulk_residual_kjmol", "bulk_from_nm", "minimum_at_nm",
+                "bound_cutoff_nm", "cone", "cone_correction_kjmol",
+                "cone_wall_bias_kjmol", "standard_volume_nm3")}
+            return {"delta_g_kjmol": None, **kept, "reference": checks,
+                    "refused": checks["refused"]}
+        return {**binding, "reference": checks}
 
     def _clear_previous_drawing(self) -> None:
         """Remove a figure from an earlier study of this directory.

@@ -211,6 +211,7 @@ def binding_free_energy(
         return {
             "delta_g_kjmol": None,
             "bulk_residual_kjmol": residual,
+            "bulk_from_nm": float(radius[-n_bulk]),
             "refused": (
                 f"The outer {n_bulk} points depart from a free ligand's "
                 f"shape by {residual:.2f} kJ/mol, against "
@@ -324,6 +325,9 @@ def binding_free_energy(
             float(np.max(spread) - np.min(spread)) if len(spread) > 1
             else None),
         "bulk_residual_kjmol": residual,
+        # Where the range taken as bulk begins: the reference is read beyond
+        # it, and what is checked about the reference is checked there.
+        "bulk_from_nm": float(radius[-n_bulk]),
         "minimum_at_nm": minimum_at,
         "standard_volume_nm3": STANDARD_VOLUME_NM3,
         "convention": (

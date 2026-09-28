@@ -381,6 +381,27 @@ program (`am1bcc`: AmberTools or OpenEye) with AmberTools' version, and
 PLUMED's version, read from the conda environment. Neither is a Python module,
 so nothing recorded which build ran. pandas and matplotlib are recorded too.
 
+### A binding free energy says where its reference state does not hold
+
+**An umbrella study along `ligand_distance` now measures, from its windows,
+four things the standard-state conversion rests on.** Each is recorded under
+`binding.reference` in `pmf.json`.
+
+- The ligand must be free on the shell (or the cone's cap) where the curve is
+  read as bulk. Where protein occupies part of it, the number is withheld with
+  the radius, the open share and what it would cost (`kT ln(1/f)`), measured
+  against the tail's own 0.6 kJ/mol.
+- In a system with a bilayer and no cone, the number is withheld, since bulk
+  is a slab of water.
+- A warning names any window whose ligand sits where the bound state has
+  backbone, since the pull went through the protein there.
+- A warning names any window whose ligand turned too slowly for its
+  orientation to be sampled.
+
+**The binding free energy is printed.** It was written to `pmf.json` and
+said nowhere. The console now gives the number with its standard error, or
+why it was withheld, and each warning.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

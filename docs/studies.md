@@ -716,6 +716,38 @@ answer must not. Run two cone angles and compare: 20° and 45° differ by
 3.8 kJ/mol in the correction, so if the corrected binding free energies agree
 the correction is being applied properly, and if they do not, it is not.
 
+### What else a binding free energy rests on
+
+A smooth curve and a tail of the right shape do not make the standard-state
+conversion valid. Once the windows have run, the study measures four more
+things from their trajectories and records them under `binding.reference` in
+`pmf.json`:
+
+- **Whether the shell is open where the curve is read as bulk.** In each of
+  the outer windows the ligand, in the pose it held, is placed at every point
+  of the sphere at its radius (of the cap, under a cone) and counted as free
+  where none of its heavy atoms comes within 0.4 nm of anything that is not
+  solvent. The reference assumes all of it is open, so a share `f` that is
+  not makes the answer too negative by `kT ln(1/f)`. Where that exceeds the
+  0.6 kJ/mol the tail's shape is allowed, the number is **withheld**, with the
+  radius, the share and the cost. On trypsin with benzamidine the cap was 18%
+  to 58% open across the outer range, about 3 kJ/mol; no length of run
+  changes that.
+- **Whether the system has a membrane.** Bulk is then a slab of water. Without
+  a cone the number is withheld; with one, the cap is measured as above, the
+  bilayer counting as something the ligand is not free beside.
+- **Whether the pull went through the protein.** Each window between the bound
+  state and bulk has its ligand placed, as the window began, in the bound
+  state's protein. Where it overlaps backbone in every frame of that state, the
+  window is sampling a protein the pull deformed, and a **warning** names it.
+- **Whether the ligand's orientation was sampled.** A distance restrains where
+  the ligand is and not how it is turned. Where a window's ligand turned too
+  slowly for it to see ten independent orientations, a **warning** names the
+  window.
+
+The console says the binding free energy, or why it was withheld, and each
+warning, below the line naming `pmf.json`.
+
 ### One system, many windows
 
 The windows are the same molecule held at different points along the
