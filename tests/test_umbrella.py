@@ -840,11 +840,13 @@ class TestItLooksWhereTheRunsActuallyWent:
 
         A test that makes its own work cheap can make the product cheap by
         the same edit, and the error bar on a free energy is the last thing
-        that should thin out because a test was slow. So this asserts the
-        default path says nothing about resamples and `compute_pmf` keeps
-        its own -- captured from the call the explorer actually makes,
-        rather than read off the signature.
+        that should thin out because a test was slow. So this asserts a
+        study that sets no count gets the default -- captured from the call
+        the explorer actually makes, rather than read off the signature. A
+        study sets its own as `bootstrap_resamples` in its umbrella block.
         """
+        from fastmdxplora.uncertainty import DEFAULT_RESAMPLES
+
         from fastmdxplora.simulation import umbrella
 
         seen = {}
@@ -872,9 +874,9 @@ class TestItLooksWhereTheRunsActuallyWent:
         explorer._maybe_build_pmf()
 
         assert seen, "the explorer did not reach compute_pmf"
-        assert "bootstrap_resamples" not in seen, (
-            "a study must inherit compute_pmf's own resample count; passing "
-            "one here is how a default quietly becomes whatever a test wanted"
+        assert seen["bootstrap_resamples"] == DEFAULT_RESAMPLES, (
+            "a study that sets no count must get the default; a smaller one "
+            "here is how a default quietly becomes whatever a test wanted"
         )
 
 

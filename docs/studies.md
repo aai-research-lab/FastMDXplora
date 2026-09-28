@@ -432,6 +432,17 @@ energy matters:
 The refusal states the threshold it applied, so a genuine gap can be told from
 a strict setting.
 
+The curve's interval comes from resampling each window's sampling, two hundred
+times by default, and a binding free energy's with it. That settles an
+interval to a few per cent and is the part of recombination that takes time:
+on seventeen windows the curve took a twentieth of a second and its interval
+fourteen seconds. `bootstrap_resamples` sets the count, fewer for a quick look,
+more for a figure, 0 for the curve alone; the count used is in `pmf.json`.
+
+```yaml
+    bootstrap_resamples: 50
+```
+
 `force_constant` therefore has **no default**: it decides how far a window
 wanders and so whether neighbours meet. Too stiff and they do not; too soft and
 the system escapes towards the nearest minimum.

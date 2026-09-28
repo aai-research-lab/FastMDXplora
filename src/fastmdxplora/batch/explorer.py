@@ -422,6 +422,7 @@ def _first_error_phase_message(phases: list[Any]) -> str:
 _UMBRELLA_ONLY = frozenset({
     "centres", "centers", "centre", "from", "to", "n_windows",
     "force_constant", "minimum_overlap", "minimum_samples",
+    "bootstrap_resamples",
     # The wall on the angle is umbrella's own: the coordinate layer biases a
     # distance and knows nothing about the cone around it.
     "cone",
@@ -1641,8 +1642,8 @@ class BatchExplorer:
         here -- 0, 8, 20, 25, 30, 40 -- because `compute_pmf` takes one
         directly; this path was the only one that could not, so the only
         test that takes it was paying two hundred resamples to check a
-        directory name. `None` keeps `compute_pmf`'s own default, so a study
-        is unchanged.
+        directory name. `None` takes the study's own count, which its
+        umbrella block sets as `bootstrap_resamples`.
         """
         import json
 
@@ -1707,8 +1708,11 @@ class BatchExplorer:
                     where, curve, temperature_K=_t).get("delta_g_kjmol")
 
             wants_binding = _the_coordinate_has_a_volume(plan)
-            how_many = ({} if bootstrap_resamples is None
-                        else {"bootstrap_resamples": int(bootstrap_resamples)})
+            # The caller's count, else the study's own (its umbrella block's
+            # `bootstrap_resamples`, two hundred unless it says otherwise).
+            how_many = {"bootstrap_resamples": int(
+                plan.bootstrap_resamples if bootstrap_resamples is None
+                else bootstrap_resamples)}
             payload = compute_pmf(samples, plan, temperature_K=temperature,
                                   also=_binding_from if wants_binding else None,
                                   **how_many)

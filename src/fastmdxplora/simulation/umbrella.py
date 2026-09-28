@@ -475,6 +475,13 @@ class UmbrellaPlan:
     #: recombination's bulk reference assumes the ligand visits all of that
     #: sphere -- which a run of any affordable length does not.
     cone: "Cone | None" = None
+    #: Resamples behind the free energy's interval, and a binding free
+    #: energy's. The curve itself takes a fraction of a second; two hundred
+    #: resamples of seventeen windows took 13.6 s, and a study of thirty-five
+    #: windows minutes before any curve could be looked at. Fewer give a
+    #: rougher interval; none gives the curve with no interval, and the
+    #: record says so.
+    bootstrap_resamples: int = DEFAULT_RESAMPLES
 
     def as_record(self) -> dict[str, Any]:
         forces = [w.force_constant for w in self.windows]
@@ -499,6 +506,7 @@ class UmbrellaPlan:
             "minimum_overlap": self.minimum_overlap,
             "minimum_samples": self.minimum_samples,
             "cone": self.cone.as_record() if self.cone else None,
+            "bootstrap_resamples": self.bootstrap_resamples,
         }
 
 
@@ -509,6 +517,7 @@ _UMBRELLA_OWN_KEYS: frozenset[str] = frozenset({
     "force_constant", "centres", "centers", "from", "to", "n_windows",
     "equilibration_fraction",
     "minimum_overlap", "minimum_samples",
+    "bootstrap_resamples",
     # A finished pull to take starting structures from, instead of running
     # another. Documented in the schema before it was accepted here, which
     # is a config error waiting for the first person to follow the
@@ -543,7 +552,7 @@ _READING_ORDER: tuple[str, ...] = (
     "collective_variable", "from", "to", "n_windows", "centres", "centers",
     "force_constant",
     "equilibration_fraction", "minimum_overlap", "minimum_samples",
-    "seed_from",
+    "bootstrap_resamples", "seed_from",
 )
 
 
@@ -618,6 +627,18 @@ def _checked_fraction(value: Any) -> float:
     return fraction
 
 
+def _checked_resamples(value: Any) -> int:
+    """The resample count, refused where it is not a count."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) \
+            or float(value) != int(value) or int(value) < 0:
+        raise StudyError(
+            f"bootstrap_resamples is {value!r}; it is a whole number of "
+            "resamples, 0 or more. 0 recombines without an interval; two "
+            "hundred, the default, settles one to a few per cent.",
+            code="config.option.wrong_type")
+    return int(value)
+
+
 def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
     """Read an umbrella block into a set of windows.
 
@@ -676,6 +697,8 @@ def plan_windows(spec: dict[str, Any]) -> UmbrellaPlan:
         minimum_overlap=float(spec.get("minimum_overlap", 0.03)),
         minimum_samples=int(spec.get("minimum_samples", 200)),
         cone=cone_from_config(spec.get("cone")),
+        bootstrap_resamples=_checked_resamples(
+            spec.get("bootstrap_resamples", DEFAULT_RESAMPLES)),
     )
 
 
@@ -805,6 +828,7 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
     fraction = 0.2
     minimum = 0.03
     fewest = 200
+    resamples = DEFAULT_RESAMPLES
     cone: "Cone | None" = None
     for entry in systems:
         block = ((entry.get("simulation") or {}).get("umbrella")
@@ -816,6 +840,7 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
             block.get("equilibration_fraction", fraction))
         minimum = float(block.get("minimum_overlap", minimum))
         fewest = int(block.get("minimum_samples", fewest))
+        resamples = _checked_resamples(block.get("bootstrap_resamples", resamples))
         if block.get("cone"):
             cone = cone_from_config(block["cone"])
         windows.append(Window(
@@ -832,6 +857,7 @@ def plan_from_expanded(config: dict[str, Any]) -> UmbrellaPlan | None:
         minimum_overlap=minimum,
         minimum_samples=fewest,
         cone=cone,
+        bootstrap_resamples=resamples,
     )
 
 

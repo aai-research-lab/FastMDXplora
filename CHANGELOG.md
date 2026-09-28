@@ -335,6 +335,17 @@ have no bound and stay on the hill sum. Checked with PLUMED 2.9 on each
 variable: the variable never left its grid, and the bias on the grid matched
 the hill sum to 0.0005 kJ/mol over 3,000 depositions.
 
+### An umbrella study sets its own resample count
+
+**`bootstrap_resamples` in the umbrella block.** The resamples behind a free
+energy's interval, and a binding free energy's, were fixed at two hundred for
+every study: on seventeen windows the curve took 0.04 s and its interval
+13.6 s, and a study of thirty-five windows spent minutes before any curve could
+be looked at. A study now sets the count: fewer for a quick look, more for a
+figure, 0 for the curve with no interval. Two hundred stays the default, and
+the count used is recorded in `pmf.json`. A value that is not a whole number
+of 0 or more is refused.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
