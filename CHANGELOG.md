@@ -107,6 +107,13 @@ folder broke logging for the rest of the session. Each call (`explore`,
 `setup`, `simulate`, `analyze`, `report`) now logs to the file for its own
 length.
 
+### The structure summary counts the first model
+
+**The GUI's structure summary counts what setup will read.** Every model of a
+multi-model file was counted, so a 20-model NMR entry showed twenty times its
+atoms and its ligand twenty times over. The first model is counted, and the
+number of models is given beside it.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

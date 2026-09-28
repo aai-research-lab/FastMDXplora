@@ -91,10 +91,21 @@ def _count_structure_cached(
     min_coords = [float("inf"), float("inf"), float("inf")]
     max_coords = [float("-inf"), float("-inf"), float("-inf")]
 
+    # The first model only. Every model of an NMR entry was counted, so a
+    # 20-model file showed twenty times its atoms. Setup reads the first
+    # model, and this describes what setup will read.
+    models = 0
+    past_the_first = False
     try:
         with p.open("r", encoding="utf-8", errors="ignore") as fh:
             for line in fh:
-                if not line.startswith(("ATOM", "HETATM")):
+                if line.startswith("MODEL"):
+                    models += 1
+                    continue
+                if line.startswith("ENDMDL"):
+                    past_the_first = True
+                    continue
+                if past_the_first or not line.startswith(("ATOM", "HETATM")):
                     continue
 
                 atoms += 1
@@ -156,6 +167,7 @@ def _count_structure_cached(
         "valid": True,
         "path": p.as_posix(),
         "size": file_size,
+        "models": max(models, 1),
         "atoms": atoms,
         "protein_atoms": protein_atoms,
         "hetatm_atoms": hetatm_atoms,
@@ -195,6 +207,8 @@ def ligand_atom_counts(path: str | Path) -> dict[str, int]:
     try:
         with p.open("r", encoding="utf-8", errors="ignore") as fh:
             for line in fh:
+                if line.startswith("ENDMDL"):
+                    break  # the first model, as setup reads it
                 if not line.startswith(("ATOM", "HETATM")):
                     continue
                 resname = line[17:20].strip().upper()
