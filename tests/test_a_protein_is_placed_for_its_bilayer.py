@@ -19,7 +19,7 @@ import pytest
 
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.setup.membrane import FRAME_TOLERANCE_DEG, place_for_membrane
-from fastmdxplora.setup.membrane_fit import fit_along, rotation_onto_z, tilt_deg
+from fastmdxplora.setup.membrane_fit import fit_along, rotation_onto_z
 from tests.test_membrane_fit import _barrel, _globule
 
 
@@ -77,17 +77,26 @@ class TestTheFrameIsChosenByTheSettings:
 
     @pytest.mark.parametrize("normal", [(1, 0, 0), (0.5, -0.4, 0.77)])
     def test_orienting_puts_the_fitted_normal_on_z_and_the_centre_at_zero(self, normal) -> None:
+        """Judged against the barrel's own normal, not by fitting again: a
+        second fit adds its own error to the first's, and the two together
+        crossed a 5 degree line on some CI platforms and not others."""
+        from fastmdxplora.setup.membrane_fit import fit_membrane
+
         top, points = _barrel(normal=normal)
-        placed = place_for_membrane(top, points + [3, -1, 4], orient=True)
+        start = points + [3, -1, 4]
+        placed = place_for_membrane(top, start, orient=True)
         moved = np.asarray(placed.positions)
         again = fit_along(top, moved, (0, 0, 1))
         assert again.plane_point[2] == pytest.approx(0.0, abs=0.15)
-        from fastmdxplora.setup.membrane_fit import fit_membrane
-
-        assert tilt_deg(fit_membrane(top, moved)) < 5.0
         assert placed.record["placed_by"] == "fitted orientation and centre"
         rotation = np.asarray(placed.record["rotation"])
         assert np.allclose(rotation @ rotation.T, np.eye(3), atol=1e-5)
+        # The fitted normal goes exactly onto z ...
+        assert rotation @ fit_membrane(top, start).normal == pytest.approx(
+            [0.0, 0.0, 1.0], abs=1e-5)
+        # ... and the barrel's true normal within what the fit resolves.
+        true = np.asarray(normal, dtype=float) / np.linalg.norm(normal)
+        assert np.degrees(np.arccos(abs((rotation @ true)[2]))) < 8.0
 
     def test_a_rotation_preserves_the_molecule(self) -> None:
         top, points = _barrel(normal=(0.5, -0.4, 0.77))

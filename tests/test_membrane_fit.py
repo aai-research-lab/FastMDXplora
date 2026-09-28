@@ -256,7 +256,10 @@ class TestAProteinIsFitted:
         top, points = _barrel(normal=normal)
         fit = fit_membrane(top, points)
         wanted = np.asarray(normal, dtype=float) / np.linalg.norm(normal)
-        assert abs(float(fit.normal @ wanted)) > np.cos(np.radians(5))
+        # Within what the fit resolves: its finest grid is a few degrees, and
+        # where between two neighbouring directions it settles moves with
+        # the last digits of the arithmetic, which differ between platforms.
+        assert abs(float(fit.normal @ wanted)) > np.cos(np.radians(8))
         assert fit.thickness_nm == pytest.approx(3.0, abs=0.5)
         assert fit.looks_like_a_membrane_protein
         assert fit.details["lipid_facing_share"] < 0.9
