@@ -82,9 +82,10 @@ on.
 four that **more computing can fix**. A caller that can extend a run should be
 able to recognise that without reading prose.
 
-`retryable` is true only for transient external failures — a service that did
-not answer may answer next time. A missing package is not retryable: something
-has to be installed first, which is a change.
+`retryable` is true only where the identical study may succeed unchanged: a
+service that did not answer may answer next time, and a run stopped by a
+signal is carried on by `fastmdx resume`. A missing package is not retryable:
+something has to be installed first, which is a change.
 
 ---
 
@@ -231,7 +232,7 @@ except StudyError as exc:
     if r.kind == "structural" and r.permitted:
         ...          # answerable by reading the Config
     elif r.retryable:
-        ...          # a service did not answer; try again
+        ...          # a service did not answer, or the run was stopped; try again
     else:
         raise        # a decision, or the machine
 ```
@@ -272,4 +273,5 @@ A few you are likely to meet, and what each means.
 | `simulation.resume.segment_named_twice` | Two segment folders of one study read as the same number (`segment-1` and `segment-001`). Both are named |
 | `analysis.data.not_this_system` | The prepared system where a run's record points is not the one it simulated (its `system.xml` differs). Both paths are named |
 | `analysis.sampling.*` | The run is sound and too short. `sampling_shortfall` says by how much |
+| `simulation.run.stopped` | The run was asked to stop (SIGTERM or Ctrl-C) and ended on a frame, with a checkpoint there. Retryable: `fastmdx resume` carries it on |
 | `simulation.resume.bias_not_carried` | A metadynamics or steered run cannot be split into segments |

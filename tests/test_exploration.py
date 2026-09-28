@@ -119,7 +119,10 @@ def test_existing_config_launch_refuses_nonempty_output_directory(tmp_path: Path
     popen.assert_not_called()
 
 
-def test_runtime_stop_escalates_after_terminate_timeout(tmp_path: Path) -> None:
+def test_runtime_stop_escalates_after_terminate_timeout(tmp_path: Path, monkeypatch) -> None:
+    from fastmdxplora.simulation.runner import STOP_GRACE_ENV
+
+    monkeypatch.delenv(STOP_GRACE_ENV, raising=False)
     runtime = DashboardRuntime(
         workspace_root=tmp_path / "workspace",
         exploration_root=tmp_path / "runs",
@@ -144,7 +147,9 @@ def test_runtime_stop_escalates_after_terminate_timeout(tmp_path: Path) -> None:
     result = runtime.stop()
 
     assert result["stopped"] is True
-    assert calls == ["terminate", "wait:5", "kill", "wait:5"]
+    # Long enough for a run in production to reach its next frame and
+    # write a checkpoint there before it is killed.
+    assert calls == ["terminate", "wait:30", "kill", "wait:5"]
 
 
 def test_runtime_rejects_zero_exit_without_simulation_outputs(tmp_path: Path) -> None:

@@ -201,6 +201,21 @@ must be a non-empty list of mappings". Both now show the value given as
 check became a fit; importing it still works and says it will be removed in
 3.0.
 
+### A run asked to stop ends on a frame
+
+**SIGTERM or Ctrl-C during production ends the run where it can be carried
+on.** A scheduler, a cloud provider taking a machine back, a container
+platform and the GUI's Stop button all send SIGTERM, and the run ended at
+once, keeping only its last interval checkpoint, so up to
+`checkpoint_interval_steps` of production were run again by `fastmdx resume`.
+Now the run steps on to its next frame, writes a checkpoint there, and ends
+with a refusal marked retryable (`simulation.run.stopped`), which `fastmdx
+resume` reads as an interruption; the joined trajectory keeps its spacing. It
+does so when the next frame can be reached within 20 seconds, inside the 30 or
+so a scheduler allows before it kills; `FASTMDX_STOP_GRACE_SECONDS` sets the 20.
+A second signal is obeyed at once. The GUI's Stop waits for it rather than
+killing the run after five seconds.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

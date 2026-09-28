@@ -743,6 +743,219 @@ def write_trajectory_topology(
     return path
 
 
+def _write_checkpoint_pair(simulation: Any, chk_path: Path) -> None:
+    """Write the context's checkpoint and its seal as a pair.
+
+    The checkpoint and its seal are one fact in two files, so they are
+    written as a pair: both to .new, then renamed in, the checkpoint first
+    and the seal second. A kill during the writes leaves the live pair
+    untouched; a kill between the two renames leaves a new checkpoint whose
+    seal has not landed, and the .new seal it was written with is still
+    there for the loader to verify against. There is no moment at which a
+    whole checkpoint cannot be shown to be whole.
+    """
+    import hashlib
+    import os as _os
+
+    payload = simulation.context.createCheckpoint()
+    new_chk = chk_path.with_suffix(chk_path.suffix + ".new")
+    seal_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    new_seal = seal_path.with_suffix(seal_path.suffix + ".new")
+    new_chk.write_bytes(payload)
+    new_seal.write_text(
+        f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
+        encoding="utf-8")
+    _os.replace(new_chk, chk_path)
+    _os.replace(new_seal, seal_path)
+
+
+# ---------------------------------------------------------------------------
+# Stopping where a run can be carried on.
+#
+# A job scheduler, a cloud provider taking a machine back, a container being
+# replaced, and the GUI's Stop button all ask a run to end with SIGTERM, and
+# a person at a terminal with Ctrl-C. Obeyed at once, the run keeps only its
+# last interval checkpoint, and up to `checkpoint_interval_steps` of
+# production are run again. A checkpoint written the moment the signal
+# arrives would sit between two frames, and the frames of the run that
+# carries it on would then fall off the grid of the ones before, changing
+# the joined trajectory's spacing at the join -- which `fastmdx resume`
+# refuses. So a stop during production steps on to the next frame, where a
+# checkpoint belongs, when that can be done inside the time a scheduler
+# allows between asking and killing; writes the checkpoint there; and ends
+# with a refusal marked retryable, which is what `fastmdx resume` reads as
+# an interruption.
+# ---------------------------------------------------------------------------
+
+#: Seconds a run asked to stop may keep integrating to reach the next frame.
+#: Schedulers allow about 30 between SIGTERM and SIGKILL (Slurm's KillWait,
+#: Kubernetes' grace period, a preemptible cloud VM), so 20 leaves time to
+#: write the checkpoint. Set by the environment variable below, for a
+#: platform that allows more or less.
+DEFAULT_STOP_GRACE_SECONDS = 20.0
+STOP_GRACE_ENV = "FASTMDX_STOP_GRACE_SECONDS"
+
+#: While a stop can be asked for, no single call into OpenMM runs longer than
+#: this, because a signal is only noticed between calls.
+STOP_NOTICE_SECONDS = 5.0
+
+#: The refusal a stopped run ends with; retryable, so resume carries it on.
+STOPPED_CODE = "simulation.run.stopped"
+
+
+def stop_grace_seconds() -> float:
+    """The grace period, from the environment or the default."""
+    import os as _os
+
+    try:
+        value = float(_os.environ.get(STOP_GRACE_ENV, DEFAULT_STOP_GRACE_SECONDS))
+    except ValueError:
+        return DEFAULT_STOP_GRACE_SECONDS
+    return max(0.0, value)
+
+
+class _StopRequests:
+    """SIGTERM and SIGINT during production, noted rather than obeyed at once.
+
+    A second signal is obeyed at once, as the first would have been: a
+    person pressing Ctrl-C twice means now. Installed only on the main
+    thread, the only one Python lets set a handler; elsewhere a run keeps
+    the old behaviour.
+    """
+
+    def __init__(self) -> None:
+        self.signal: int | None = None
+        self.at_step: int | None = None
+        self.on_frame = False
+        self._previous: dict[int, Any] = {}
+
+    @property
+    def requested(self) -> bool:
+        return self.signal is not None
+
+    @property
+    def name(self) -> str:
+        import signal as _signal
+
+        try:
+            return _signal.Signals(self.signal).name
+        except (ValueError, TypeError):
+            return f"signal {self.signal}"
+
+    def __enter__(self) -> "_StopRequests":
+        import signal as _signal
+        import threading
+
+        if threading.current_thread() is not threading.main_thread():
+            return self
+        for number in (_signal.SIGTERM, _signal.SIGINT):
+            try:
+                self._previous[number] = _signal.signal(number, self._note)
+            except (ValueError, OSError):  # pragma: no cover - a platform without it
+                continue
+        return self
+
+    def _note(self, number: int, _frame: Any) -> None:
+        import os as _os
+        import signal as _signal
+
+        if self.signal is None:
+            self.signal = number
+            logger.warning(
+                "%s received: production will stop at the next frame, where it "
+                "can be carried on, if that can be reached within %.0f s. "
+                "Send it again to stop now.", self.name, stop_grace_seconds())
+            return
+        self._restore()
+        if number == _signal.SIGINT:
+            raise KeyboardInterrupt
+        _os.kill(_os.getpid(), number)
+
+    def _restore(self) -> None:
+        import signal as _signal
+
+        for number, previous in self._previous.items():
+            try:
+                _signal.signal(number, previous)
+            except (ValueError, OSError, TypeError):  # pragma: no cover
+                pass
+        self._previous = {}
+
+    def __exit__(self, *_exc: Any) -> bool:
+        self._restore()
+        return False
+
+
+def _cap_for_stopping(chunk: int, done: int, elapsed: float) -> int:
+    """A chunk short enough that a stop is noticed within STOP_NOTICE_SECONDS."""
+    if done <= 0 or elapsed <= 0:
+        return chunk
+    return max(1, min(chunk, int(STOP_NOTICE_SECONDS * done / elapsed)))
+
+
+def _step_to_a_frame(simulation: Any, stop: _StopRequests, *, done: int,
+                     frame_interval: int | None, elapsed: float,
+                     limit: int | None = None) -> int:
+    """Steps taken to reach the next frame, after a stop was asked for.
+
+    None taken where the frame is further than the grace period allows, or
+    lies past the ``limit`` steps left of production: the last interval
+    checkpoint then stands, and the run says so.
+    """
+    stop.at_step = done
+    interval = int(frame_interval or 0)
+    if interval <= 0:
+        stop.on_frame = False
+        return 0
+    to_go = (-done) % interval
+    if to_go == 0:
+        stop.on_frame = True
+        return 0
+    seconds = to_go * elapsed / done if done > 0 and elapsed > 0 else float("inf")
+    if (limit is not None and to_go > int(limit)) or seconds > stop_grace_seconds():
+        stop.on_frame = False
+        return 0
+    simulation.step(to_go)
+    stop.at_step = done + to_go
+    stop.on_frame = True
+    return to_go
+
+
+def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
+                         checkpoint: Path, sidecar: dict[str, Any],
+                         planned_steps: int, trajectory_interval_steps: int | None,
+                         timestep_fs: float) -> None:
+    """Write the checkpoint a stopped run is carried on from, and end it.
+
+    Raises the retryable refusal a resume reads as an interruption.
+    """
+    from fastmdxplora.refusals import StudyError
+
+    step = int(stop.at_step or 0)
+    done_ns = step * float(timestep_fs) / 1e6
+    planned_ns = int(planned_steps) * float(timestep_fs) / 1e6
+    frame = step // int(trajectory_interval_steps) if trajectory_interval_steps else None
+    where = checkpoint.parent.parent
+    if stop.on_frame and step > 0:
+        _write_checkpoint_pair(simulation, checkpoint)
+        write_checkpoint_sidecar(checkpoint, step=step, finished=False, **sidecar)
+        said = (f"A checkpoint was written on frame {frame}, so `fastmdx resume "
+                f"{where}` carries it on from there, and the joined trajectory "
+                "keeps its spacing.")
+    else:
+        said = ("The next frame was further than the "
+                f"{stop_grace_seconds():.0f} s allowed ({STOP_GRACE_ENV}), so the "
+                "last interval checkpoint stands; `fastmdx resume "
+                f"{where}` carries the run on from it, running again the steps "
+                "after it.")
+    raise StudyError(
+        f"Production was stopped by {stop.name} at step {step:,} "
+        f"({done_ns:.3f} of {planned_ns:.3f} ns). {said}",
+        code=STOPPED_CODE,
+        details={"signal": stop.name, "step": step,
+                 "checkpoint_on_frame": bool(stop.on_frame and step > 0)})
+
+
 def _attach_checkpoint_reporter(
     omm: dict, simulation: Any, chk_path: Path, *, interval: int,
     sidecar: dict[str, Any] | None = None,
@@ -778,28 +991,7 @@ def _attach_checkpoint_reporter(
                 return inner.describeNextReport(sim)
 
             def report(self, sim, state):
-                # The checkpoint and its seal are one fact in two files, so
-                # they are written as a pair: both to .new, then renamed in,
-                # the checkpoint first and the seal second. A kill during
-                # the writes leaves the live pair untouched; a kill between
-                # the two renames leaves a new checkpoint whose seal has not
-                # landed, and the .new seal it was written with is still
-                # there for the loader to verify against. There is no moment
-                # at which a whole checkpoint cannot be shown to be whole.
-                import hashlib
-                import os as _os
-
-                payload = sim.context.createCheckpoint()
-                new_chk = chk_path.with_suffix(chk_path.suffix + ".new")
-                seal_path = chk_path.with_suffix(
-                    chk_path.suffix + CHECKPOINT_DIGEST_SUFFIX)
-                new_seal = seal_path.with_suffix(seal_path.suffix + ".new")
-                new_chk.write_bytes(payload)
-                new_seal.write_text(
-                    f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
-                    encoding="utf-8")
-                _os.replace(new_chk, chk_path)
-                _os.replace(new_seal, seal_path)
+                _write_checkpoint_pair(sim, chk_path)
                 try:
                     # Sealed as it is written, not only at a clean finish.
                     # The seal says the file is whole -- that a kill did not
@@ -1125,8 +1317,15 @@ def _run_md_stage(
     on_step_progress: Callable[..., None] | None = None,
     timestep_fs: float | None = None,
     on_fraction: Callable[[float], None] | None = None,
-) -> None:
-    """Run ``n_steps`` of MD. Skips cleanly if ``n_steps <= 0``.
+    stop: _StopRequests | None = None,
+    frame_interval: int | None = None,
+) -> int:
+    """Run ``n_steps`` of MD, returning the steps run. Skips cleanly if
+    ``n_steps <= 0``.
+
+    With ``stop``, a stop asked for part-way ends the stage at the next
+    frame (``frame_interval`` steps apart) where the grace period allows,
+    and the steps run are fewer than asked.
 
     ``on_fraction`` is told how far through the stage it is after each
     chunk, exactly as the live-metrics stage tells it -- which is what steps
@@ -1135,7 +1334,7 @@ def _run_md_stage(
     through NVT and NPT and let go of them all at once at production.
     """
     if n_steps <= 0:
-        return
+        return 0
     if on_progress:
         on_progress(f"{label}: {n_steps:,} steps")
     if on_explain:
@@ -1154,6 +1353,8 @@ def _run_md_stage(
     started = _time.monotonic()
     while done < total:
         this = min(chunk, total - done)
+        if stop is not None:
+            this = _cap_for_stopping(this, done, _time.monotonic() - started)
         try:
             simulation.step(this)
         except Exception as exc:  # noqa: BLE001
@@ -1162,6 +1363,12 @@ def _run_md_stage(
                 label, f"OpenMM integration failed ({exc})",
                 topology=failed_topology, positions=failed_positions) from exc
         done += this
+        if stop is not None and stop.requested:
+            done += _step_to_a_frame(simulation, stop, done=done,
+                                     frame_interval=frame_interval,
+                                     elapsed=_time.monotonic() - started,
+                                     limit=total - done)
+            return done
         if on_fraction is not None:
             on_fraction(done / total)
         if on_step_progress is not None:
@@ -1176,6 +1383,7 @@ def _run_md_stage(
                     rate = ns_per_day
                     left = (total - done) / steps_per_second
             on_step_progress(label, done, total, rate, left)
+    return done
 
 
 def _run_md_stage_with_live_metrics(
@@ -1194,8 +1402,12 @@ def _run_md_stage_with_live_metrics(
     trajectory_interval_steps: int | None = None,
     on_step_progress: Callable[..., None] | None = None,
     on_fraction: Callable[[float], None] | None = None,
+    stop: _StopRequests | None = None,
 ) -> int:
     """Run an MD stage in chunks so live telemetry can sample real state.
+
+    With ``stop``, a stop asked for part-way ends the stage at the next
+    frame, as in :func:`_run_md_stage`; the step returned is where it ended.
 
     ``trajectory_interval_steps`` is passed only where a trajectory is being
     written, so the frame count reports the frames on disk. Left unset during
@@ -1212,6 +1424,9 @@ def _run_md_stage_with_live_metrics(
     started = _time.monotonic()
     while remaining > 0:
         chunk = min(interval, remaining)
+        if stop is not None:
+            chunk = _cap_for_stopping(chunk, int(n_steps) - remaining,
+                                      _time.monotonic() - started)
         try:
             simulation.step(chunk)
         except Exception as exc:  # noqa: BLE001
@@ -1221,6 +1436,12 @@ def _run_md_stage_with_live_metrics(
                 topology=failed_topology, positions=failed_positions) from exc
         current_step += chunk
         remaining -= chunk
+        if stop is not None and stop.requested:
+            extra = _step_to_a_frame(
+                simulation, stop, done=int(n_steps) - remaining,
+                frame_interval=trajectory_interval_steps,
+                elapsed=_time.monotonic() - started, limit=remaining)
+            return current_step + extra
         # Frames written so far, from steps actually run. The count used to
         # arrive once, when production ended, so a page watching a run showed
         # a dash where the frame count goes for the whole of it.
@@ -2678,33 +2899,50 @@ def run_simulation(
             else:
                 telemetry.mark_stage("production", "skipped", status="running", current_step=current_step)
                 telemetry.event("Production skipped (0 steps)")
-        if telemetry is not None:
-            current_step = _run_md_stage_with_live_metrics(
-                omm,
-                simulation,
-                telemetry,
-                n_steps=plan["production_steps"],
-                label="Production",
-                on_progress=_log_step,
-                on_explain=on_explain,
-                current_step=current_step,
-                total_steps=total_planned_steps,
-                timestep_fs=timestep_fs,
-                telemetry_interval=telemetry_interval,
+        # A stop asked for now ends production on a frame, with a
+        # checkpoint there (see `_StopRequests`).
+        with _StopRequests() as stop:
+            if telemetry is not None:
+                current_step = _run_md_stage_with_live_metrics(
+                    omm,
+                    simulation,
+                    telemetry,
+                    n_steps=plan["production_steps"],
+                    label="Production",
+                    on_progress=_log_step,
+                    on_explain=on_explain,
+                    current_step=current_step,
+                    total_steps=total_planned_steps,
+                    timestep_fs=timestep_fs,
+                    telemetry_interval=telemetry_interval,
+                    trajectory_interval_steps=trajectory_interval_steps,
+                    on_step_progress=_bar,
+                    stop=stop,
+                )
+            else:
+                current_step += _run_md_stage(
+                    simulation,
+                    n_steps=plan["production_steps"],
+                    label="Production",
+                    on_progress=_log_step,
+                    on_explain=on_explain,
+                    on_step_progress=_bar,
+                    timestep_fs=timestep_fs,
+                    stop=stop,
+                    frame_interval=trajectory_interval_steps,
+                )
+        if stop.requested:
+            _end_the_stopped_run(
+                simulation, stop, checkpoint=output_dir / "checkpoint.chk",
+                sidecar={"stage": "production",
+                         "ensemble": "npt" if wants_npt_production else "nvt",
+                         "temperature_K": float(temperature_K),
+                         "timestep_fs": float(timestep_fs),
+                         "study": str(output_dir.parent),
+                         "trajectory_interval_steps": int(trajectory_interval_steps)},
+                planned_steps=int(plan["production_steps"]),
                 trajectory_interval_steps=trajectory_interval_steps,
-                on_step_progress=_bar,
-            )
-        else:
-            _run_md_stage(
-                simulation,
-                n_steps=plan["production_steps"],
-                label="Production",
-                on_progress=_log_step,
-                on_explain=on_explain,
-                on_step_progress=_bar,
-                timestep_fs=timestep_fs,
-            )
-            current_step += plan["production_steps"]
+                timestep_fs=float(timestep_fs))
 
         # ---- Finalize -------------------------------------------------
         # Capture the final State for restarts.

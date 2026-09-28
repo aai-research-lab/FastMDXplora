@@ -464,6 +464,17 @@ and placed on a frame. A run that is killed, whether by a machine restarting, a
 job reaching its time limit or a rented GPU taken back, leaves its last one
 behind.
 
+**A run asked to stop ends on a frame.** SIGTERM, which a scheduler, a cloud
+provider, a container platform and the GUI's Stop button all send, and Ctrl-C
+at a terminal, are noted during production rather than obeyed at once. The run
+steps on to its next frame, writes a checkpoint there, and ends; `fastmdx
+resume` carries it on from that frame, so nothing after the last interval
+checkpoint is run twice and the joined trajectory keeps its spacing. It does
+so only when the next frame can be reached within 20 seconds, which leaves
+time inside the 30 or so a scheduler allows before it kills; otherwise the last
+interval checkpoint stands. `FASTMDX_STOP_GRACE_SECONDS` sets the 20 for a
+platform that allows more or less. A second signal is obeyed at once.
+
 **`fastmdx resume` carries the study on to the end of its plan.** It reads how
 far the study got and does what is left, once:
 

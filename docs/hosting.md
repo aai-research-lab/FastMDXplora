@@ -119,3 +119,7 @@ that was in production from its last checkpoint, and does nothing to one that
 had finished, so the same command is right every time the job restarts.
 Checkpoints are written every `checkpoint_interval_steps` (10,000 steps by
 default, seconds to minutes of work), which bounds what an interruption costs.
+A run sent SIGTERM during production costs less: it steps on to its next frame,
+writes a checkpoint there and ends, when that frame is within 20 seconds.
+Set `FASTMDX_STOP_GRACE_SECONDS` in the container to a little less than the
+platform's own grace period between SIGTERM and SIGKILL.

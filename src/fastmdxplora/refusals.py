@@ -174,7 +174,8 @@ class Code:
         One of :class:`Disclosure`.
     retryable : bool
         Whether the identical study may succeed on a later attempt without
-        anything changing. True only for transient external failures. A
+        anything changing. True only for transient external failures and a
+        run stopped by a signal, which `fastmdx resume` carries on. A
         missing backend is not retryable: something has to be installed
         first, which is a change.
     since : str
@@ -556,6 +557,11 @@ CODES: tuple[Code, ...] = (
          "measurement.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("path", "reason")),
+    Code("simulation.run.stopped",
+         "The run was asked to stop by a signal and stopped where it can be "
+         "carried on.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
+         detail_keys=("signal", "step", "checkpoint_on_frame")),
     Code("simulation.resume.checkpoint_truncated",
          "A checkpoint that is not the whole file that was written.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,

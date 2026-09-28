@@ -690,7 +690,10 @@ SIMULATION = PhaseSchema(
               "frame. Each is sealed as it is written, and a study stopped "
               "part-way is carried on from its last one with `fastmdx "
               "resume`, so this is the most production an interruption can "
-              "cost. 0 disables it, and with it resuming."),
+              "cost. A run asked to stop (SIGTERM, Ctrl-C) during production "
+              "writes one on its next frame first, where that is within "
+              "`FASTMDX_STOP_GRACE_SECONDS` (20). 0 disables it, and with it "
+              "resuming."),
         Field("live_telemetry", bool, True,
               "Write live_status.json, live_metrics.csv, and live_events.log "
               "for the local live dashboard. Also writes a live-frame PDB so "

@@ -74,12 +74,15 @@ class TestTheRegistryIsWellFormed(unittest.TestCase):
     def test_only_external_failures_are_retryable(self):
         # Retryable means the identical study may succeed unchanged. A
         # missing package does not qualify: something has to be installed,
-        # which is a change to the machine.
+        # which is a change to the machine. A run stopped by a signal
+        # qualifies: nothing about it was wrong, and it is carried on as it
+        # stands.
         for code in CODES:
             if code.retryable:
                 with self.subTest(code=code.id):
                     self.assertEqual(code.kind, Kind.ENVIRONMENTAL)
-                    self.assertTrue(code.id.startswith("environment.service."))
+                    self.assertTrue(code.id.startswith("environment.service.")
+                                    or code.id == "simulation.run.stopped")
 
     def test_superseded_identifiers_resolve_to_live_ones(self):
         for old, new in SUPERSEDED.items():

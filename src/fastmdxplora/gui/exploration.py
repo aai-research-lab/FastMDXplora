@@ -1240,14 +1240,23 @@ class DashboardRuntime:
                 return {"stopped": False, "detail": "No workflow is currently running.", "state": self.snapshot()}
             self.process.terminate()
             if hasattr(self.process, "wait"):
+                # Long enough for a run in production to step on to its next
+                # frame and write a checkpoint there, which it does when asked
+                # to stop, so that it can be carried on. Five seconds killed it
+                # first, and it was carried on from its last interval
+                # checkpoint instead.
+                from fastmdxplora.simulation.runner import stop_grace_seconds
+
                 try:
-                    self.process.wait(timeout=5)
+                    self.process.wait(timeout=int(stop_grace_seconds()) + 10)
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait(timeout=5)
             self._refresh_process()
             return {
                 "stopped": True,
-                "detail": "Workflow terminated.",
+                "detail": ("Workflow stopped. A run in production ends at its next "
+                           "frame with a checkpoint there, and `fastmdx resume` "
+                           "carries it on."),
                 "state": self.snapshot(),
             }
