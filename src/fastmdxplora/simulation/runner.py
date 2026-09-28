@@ -1087,16 +1087,40 @@ def _close_one_reporter(simulation: Any, reporter: Any) -> None:
     """
     if reporter is None:
         return
+    _close_the_file_of(reporter)
+    try:
+        simulation.reporters.remove(reporter)
+    except ValueError:
+        pass
+
+
+def _close_the_file_of(reporter: Any) -> None:
+    """Close the file a reporter writes to, where the reporter opened it.
+
+    OpenMM's own reporters have no close(), so a reporter's `close` alone
+    closed nothing for them: the equilibration log, taken off when production
+    began, kept its file open until the reporter was collected, which in a
+    study of several runs in one process was never, one file per run.
+    """
+    import sys as _sys
+
     close = getattr(reporter, "close", None)
     if callable(close):
         try:
             close()
         except Exception:  # noqa: BLE001
             pass
-    try:
-        simulation.reporters.remove(reporter)
-    except ValueError:
-        pass
+        return
+    borrowed = {id(stream) for stream in (_sys.stdout, _sys.stderr,
+                                          _sys.__stdout__, _sys.__stderr__)}
+    out = getattr(reporter, "_out", None)
+    opened_here = getattr(reporter, "_openedFile", True)
+    if (out is not None and opened_here and id(out) not in borrowed
+            and callable(getattr(out, "close", None))):
+        try:
+            out.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _detach_all_reporters(simulation: Any) -> None:
@@ -1111,26 +1135,8 @@ def _detach_all_reporters(simulation: Any) -> None:
     reporter opened it; one handed a stream it did not open, such as
     StateDataReporter writing to stdout, is left alone.
     """
-    import sys as _sys
-
-    borrowed = {id(stream) for stream in (_sys.stdout, _sys.stderr,
-                                          _sys.__stdout__, _sys.__stderr__)}
     for r in simulation.reporters:
-        close = getattr(r, "close", None)
-        if callable(close):
-            try:
-                close()
-            except Exception:  # noqa: BLE001
-                pass
-            continue
-        out = getattr(r, "_out", None)
-        opened_here = getattr(r, "_openedFile", True)
-        if (out is not None and opened_here and id(out) not in borrowed
-                and callable(getattr(out, "close", None))):
-            try:
-                out.close()
-            except Exception:  # noqa: BLE001
-                pass
+        _close_the_file_of(r)
     simulation.reporters.clear()
 
 

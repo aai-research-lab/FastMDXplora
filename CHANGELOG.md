@@ -445,6 +445,15 @@ for, and a push near 03:00 cancelled the nightly corpus run.
 OpenMM reports a release build as `8.4.0.dev-4768436` (its `release` flag is
 never set), which read as an image carrying a development build.
 
+### The equilibration log is closed when production begins
+
+**A run no longer keeps `equilibration_energy.csv` open after it ends.** The
+log was taken off the simulation when production began and "closed" through a
+`close()` that OpenMM's reporter does not have, so the file stayed open until
+the reporter was collected: one open file for every run of a study run in one
+process. The suite, which was thought to need more than 1,024 open files,
+passes in two halves at a limit of 1,024 with at most 69 open at once.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
