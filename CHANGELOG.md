@@ -7,6 +7,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.5.8] - 2026-09-28
+
+This release closes the GUI to other machines and other sites, and fixes
+results that 2.5.7 could get wrong without a warning. Off loopback the GUI
+serves only the watched run's results, text from a study is shown as text, a
+reply from the Agent alone no longer starts a run, and a page on another site
+can no longer drive the GUI. A molecule away from the protein is measured in
+its nearest periodic copy; the correlation time no longer misses a slow mode,
+so standard errors and withheld verdicts can differ from 2.5.7's where frames
+alternate; interaction rows are named by chain; a ligand's pose is matched
+atom for atom; a stated cutoff is kept; and umbrella studies, which 2.5.7
+refused, run again. Some studies that ran under 2.5.7 now stop with a reason:
+a ligand whose net charge cannot be read, a ligand pose the structure holds and
+cannot give, and an ion whose alternate locations tie. For services that run
+FastMDXplora for other people, the GUI can be served behind a proxy that signs
+people in, each release is published as a Docker image, and `fastmdx resume`
+carries a stopped study on to its end. AmberTools is now a declared
+dependency, and Windows is no longer supported.
+
 ### `fastmdx resume` carries a stopped study on to its end
 
 **A study stopped part-way, by a restart, a time limit or a GPU taken back, is
