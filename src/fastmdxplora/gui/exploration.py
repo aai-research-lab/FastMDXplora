@@ -134,6 +134,24 @@ def _terminate_process(pid: int, *, force: bool = False) -> None:
         pass
 
 
+def _end_what_is_left_of(group: int) -> None:
+    """Kill whatever is left in a stopped run's process group.
+
+    Nothing, normally: a parallel study's parent passes a stop on to its
+    workers and waits for them. Only where the parent had to be killed are
+    its workers still there, and they are ended with it rather than left
+    running a study nobody can see. Not on Windows, which has no groups.
+    """
+    import signal
+
+    if _WINDOWS or not hasattr(os, "killpg"):
+        return
+    try:
+        os.killpg(int(group), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError, ValueError):
+        pass
+
+
 #: Phase and run statuses that mean something went wrong.
 FAILED_STATUSES = frozenset({"error", "failed"})
 
@@ -1297,6 +1315,12 @@ class DashboardRuntime:
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait(timeout=5)
+                # A run this server started is in a session of its own, so
+                # its group is its own: a parallel study's workers outlive a
+                # parent that had to be killed, and are ended with it. Not a
+                # run adopted from an earlier server, whose group is unknown.
+                if isinstance(self.process, subprocess.Popen):
+                    _end_what_is_left_of(self.process.pid)
             self._refresh_process()
             return {
                 "stopped": True,

@@ -60,7 +60,7 @@ from fastmdxplora.batch.sweep import (
 )
 from fastmdxplora.config import load_config_file, validate_config
 from fastmdxplora.utils.logging import get_logger
-from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import RunStopped, StudyError
 from fastmdxplora.refusals import MissingResultError
 from fastmdxplora.refusals import OutputExistsError
 
@@ -144,7 +144,16 @@ def _how_far_along(run_dirs) -> str:
     """
     parts = []
     for run_id, run_dir in run_dirs:
-        status_path = Path(run_dir) / "simulation" / "live_status.json"
+        # A run being carried on writes its status in the segment it runs
+        # now, so the newest is read; the run's own stood still at the step
+        # where it stopped for as long as the rest took.
+        found = [Path(run_dir) / "simulation" / "live_status.json",
+                 *Path(run_dir).glob("segment-*/simulation/live_status.json")]
+        try:
+            status_path = max((path for path in found if path.is_file()),
+                              key=lambda path: path.stat().st_mtime)
+        except (ValueError, OSError):
+            continue
         try:
             status = json.loads(status_path.read_text())
         except Exception:  # noqa: BLE001 -- absent, partial, or unreadable
@@ -188,6 +197,161 @@ def _give_this_worker_its_share(threads: int) -> None:
                      "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
                      "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
         os.environ[variable] = str(threads)
+    _listen_for_a_stop_in_this_worker()
+
+
+#: Set while a worker is running a run, so a stop that reaches an idle
+#: worker (between runs, waiting for work) is not raised into the pool's
+#: own loop, which would break the pool and every run in it.
+_running_a_run = False
+
+#: What a run ended by a stop outside production is recorded as, where no
+#: phase was running to carry the refusal.
+STOPPED_ERROR_TYPE = "Stopped"
+
+
+def _listen_for_a_stop_in_this_worker() -> None:
+    """Have a stop end this worker's run with a record, not end the worker.
+
+    Without it, SIGTERM or Ctrl-C reaching a worker outside production
+    killed it, and a worker dying breaks a ``ProcessPoolExecutor``: every
+    run still going lost its result with it. Production has its own
+    listener, which ends on a frame (see ``simulation/runner.py``); outside
+    it, the phase that was running ends with the retryable refusal
+    ``simulation.run.stopped``, and `fastmdx resume` runs that phase again.
+    """
+    import signal
+    import threading
+
+    if threading.current_thread() is not threading.main_thread():  # pragma: no cover
+        return
+    for number in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(number, _stop_this_run)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            continue
+
+
+def _stop_this_run(number: int, _frame: Any) -> None:
+    """The worker's stop listener; see :func:`_listen_for_a_stop_in_this_worker`."""
+    import signal
+
+    from fastmdxplora.simulation.runner import _a_stop_heard
+
+    heard = _a_stop_heard(number)
+    if heard == "again":
+        return
+    if heard == "now":
+        # Asked twice: stop now, as the signal would have with no listener.
+        signal.signal(number, signal.SIG_DFL)
+        os.kill(os.getpid(), number)
+        return
+    if not _running_a_run:
+        return
+    from fastmdxplora.refusals import RunStopped
+
+    raise RunStopped(signal.Signals(number).name)
+
+
+def _was_stopped(result: Any) -> bool:
+    """Whether a run ended because it was asked to stop."""
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    # A run carried on to the end keeps the record of the stop it came back
+    # from; only one that ended stopped counts.
+    if getattr(result, "status", None) != "error":
+        return False
+    if getattr(result, "error_type", None) == STOPPED_ERROR_TYPE:
+        return True
+    return any((getattr(phase, "refusal", None) or {}).get("code") == STOPPED_CODE
+               for phase in getattr(result, "phases", None) or ())
+
+
+class _StudyStop:
+    """SIGTERM and SIGINT to the parent of a parallel study.
+
+    No further run is started, each run in progress ends where it can be
+    carried on, and the study then writes its record and returns. SIGTERM
+    is passed on to every worker, since it is sent to one process: a Stop
+    pressed in the GUI signals this one alone, and before this the workers
+    never heard it. Ctrl-C reaches them from the terminal. A second, later
+    one is obeyed at once.
+    """
+
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
+        self.signal: int | None = None
+        self._previous: dict[int, Any] = {}
+
+    @property
+    def requested(self) -> bool:
+        return self.signal is not None
+
+    def __enter__(self) -> "_StudyStop":
+        import signal
+        import threading
+
+        from fastmdxplora.simulation.runner import _listen_afresh
+
+        if threading.current_thread() is not threading.main_thread():
+            return self
+        _listen_afresh()
+        for number in (signal.SIGTERM, signal.SIGINT):
+            try:
+                self._previous[number] = signal.signal(number, self._heard)
+            except (ValueError, OSError):  # pragma: no cover
+                continue
+        return self
+
+    def _pass_on(self, number: int) -> None:
+        import signal
+
+        # Ctrl-C reaches the workers already: a terminal sends it to the
+        # whole process group. SIGTERM is sent to one process.
+        if number != signal.SIGTERM:
+            return
+        # Private to the executor, and the only list of its workers there is.
+        for pid in list(getattr(self.pool, "_processes", None) or {}):
+            try:
+                os.kill(int(pid), number)
+            except (ProcessLookupError, PermissionError, OSError, ValueError):
+                continue
+
+    def _heard(self, number: int, _frame: Any) -> None:
+        import signal
+
+        from fastmdxplora.simulation.runner import _a_stop_heard, stop_grace_seconds
+
+        heard = _a_stop_heard(number)
+        if heard == "again":
+            return
+        self._pass_on(number)
+        if heard == "first":
+            self.signal = number
+            logger.warning(
+                "%s received: each run in progress ends where it can be carried "
+                "on (in production, at its next frame if that is within %.0f s), "
+                "and no further run starts. Send it again to stop now.",
+                signal.Signals(number).name, stop_grace_seconds())
+            return
+        self._restore()
+        if number == signal.SIGINT:
+            raise KeyboardInterrupt
+        os.kill(os.getpid(), number)
+
+    def _restore(self) -> None:
+        import signal
+
+        for number, previous in self._previous.items():
+            try:
+                signal.signal(number, previous)
+            except (ValueError, OSError, TypeError):  # pragma: no cover
+                pass
+        self._previous = {}
+
+    def __exit__(self, *_exc: Any) -> bool:
+        self._restore()
+        return False
 
 
 def _threads_for_each(n_workers: int) -> int:
@@ -406,8 +570,14 @@ def _resume_run(spec_dict: dict[str, Any], run_out: str,
         with quiet_banner(_os.path.join(run_out, "run.log")) if quiet \
                 else _nothing_to_silence():
             answer = resume_study(run_out, device_index=device_override)
-    except Exception as exc:  # noqa: BLE001 -- isolate per-run failures
-        answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    except (Exception, RunStopped) as exc:  # noqa: BLE001 -- isolate per-run failures
+        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.simulation.runner import STOPPED_CODE
+
+        if isinstance(exc, RunStopped):
+            exc = exc.as_error()
+        answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}",
+                  "stopped": refusal_of(exc).code == STOPPED_CODE}
     ok = bool(answer.get("ok"))
     return RunResult(
         run_id=spec_dict["run_id"],
@@ -418,7 +588,8 @@ def _resume_run(spec_dict: dict[str, Any], run_out: str,
         phases=_phases_recorded_in(Path(run_out)),
         message=(answer.get("detail") or f"resumed: {answer.get('did')}") if ok
         else str(answer.get("error") or "it could not be resumed"),
-        error_type=None if ok else "ResumeRefused",
+        error_type=None if ok else (STOPPED_ERROR_TYPE if answer.get("stopped")
+                                    else "ResumeRefused"),
     )
 
 
@@ -544,9 +715,18 @@ def _execute_run(
         sim["device_index"] = device_override
         options["simulation"] = sim
 
+    # A stop reaching a worker from here on ends this run with a record.
+    global _running_a_run
+    from fastmdxplora.simulation.runner import _listen_afresh
+
+    _listen_afresh()
+    _running_a_run = True
     if resume and (Path(run_out) / "resolved_config.yml").is_file():
-        return _resume_run(spec_dict, run_out, device_override, quiet=quiet,
-                           quiet_banner=_QuietBanner)
+        try:
+            return _resume_run(spec_dict, run_out, device_override, quiet=quiet,
+                               quiet_banner=_QuietBanner)
+        finally:
+            _running_a_run = False
     if resume:
         # Never started: whatever a killed parent left in its folder (the
         # folder itself, at most) is not a result to protect.
@@ -589,7 +769,13 @@ def _execute_run(
             message=message,
             error_type="PhaseError" if status == "error" else None,
         )
-    except Exception as exc:  # noqa: BLE001 -- isolate per-run failures
+    except (Exception, RunStopped) as exc:  # noqa: BLE001 -- isolate per-run failures
+        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.simulation.runner import STOPPED_CODE
+
+        if isinstance(exc, RunStopped):
+            exc = exc.as_error()
+        stopped = refusal_of(exc).code == STOPPED_CODE
         return RunResult(
             run_id=spec_dict["run_id"],
             system=spec_dict["system"],
@@ -598,8 +784,10 @@ def _execute_run(
             sweep_values=spec_dict["sweep_values"],
             phases=[],
             message=f"{type(exc).__name__}: {exc}",
-            error_type=type(exc).__name__,
+            error_type=STOPPED_ERROR_TYPE if stopped else type(exc).__name__,
         )
+    finally:
+        _running_a_run = False
 
 
 def _not_submitted(after: str, *, umbrella: bool) -> str:
@@ -1868,6 +2056,15 @@ class BatchExplorer:
         return planned
 
     # ------------------------------------------------------------------
+    def _not_started(self, specs) -> list["RunResult"]:
+        """The runs a stopped study did not start, each saying so."""
+        return [_skipped_run_result(
+            spec, self._run_output_dir(spec),
+            "Not started: the study was asked to stop. `fastmdx resume "
+            f"{self.output_dir}` runs it, and carries on the runs that were "
+            "stopped.") for spec in specs]
+
+    # ------------------------------------------------------------------
     def _run_sequential(self, include, exclude) -> list["RunResult"]:
         results: list[RunResult] = []
         n = len(self.run_specs)
@@ -1886,6 +2083,9 @@ class BatchExplorer:
                 force=self.force, **self._resuming(),
             )
             results.append(result)
+            if _was_stopped(result):
+                results.extend(self._not_started(self.run_specs[i:]))
+                break
             if result.status == "error" and not self.continue_on_error:
                 logger.error(
                     "Stopping after failed run '%s': %s",
@@ -2003,7 +2203,9 @@ class BatchExplorer:
             mp_context=get_context("spawn"),
             initializer=_give_this_worker_its_share,
             initargs=(threads_each,))
+        stop = _StudyStop(pool)
         try:
+            stop.__enter__()
             for _ in range(min(n_workers, n)):
                 submit_next(pool)
 
@@ -2028,6 +2230,12 @@ class BatchExplorer:
                     print(f"      {_why_it_failed(result)}")
                 results.append(result)
 
+                if _was_stopped(result) and not stop.requested:
+                    # Stopped directly, not through this process: the
+                    # study was asked to stop all the same.
+                    stop.signal = -1
+                if stop.requested:
+                    continue
                 if result.status == "error" and not self.continue_on_error:
                     stopped_after = spec.run_id
                     logger.error(
@@ -2037,6 +2245,9 @@ class BatchExplorer:
 
                 if stopped_after is None:
                     submit_next(pool)
+
+            if stop.requested:
+                results.extend(self._not_started(self.run_specs[next_index:]))
 
             if stopped_after is not None:
                 # Do not submit new work. Running tasks cannot always be
@@ -2083,6 +2294,7 @@ class BatchExplorer:
                         ),
                     ))
         finally:
+            stop.__exit__(None, None, None)
             pool.shutdown(wait=True, cancel_futures=True)
 
         # Preserve deterministic (submission) order in the manifest.
@@ -2156,11 +2368,17 @@ class BatchExplorer:
         ok = sum(1 for r in self.results if r.status == "ok")
         err = sum(1 for r in self.results if r.status == "error")
         skipped = sum(1 for r in self.results if r.status == "skipped")
+        stopped = sum(1 for r in self.results if _was_stopped(r))
         print(f"\n{'=' * 40}")
         print(
-            f"Batch complete: {ok} ok, {err} error(s), "
-            f"{skipped} skipped, {len(self.results)} total"
+            f"{'Batch stopped' if stopped else 'Batch complete'}: {ok} ok, "
+            f"{err} error(s), {skipped} skipped, {len(self.results)} total"
         )
+        if stopped:
+            # One command for all of it: resuming each run by name carries
+            # the runs on and leaves the comparison across them unbuilt.
+            print(f"`fastmdx resume {self.output_dir}` carries on the "
+                  f"{stopped} run(s) stopped and runs the ones not started.")
         print(f"Batch output:   {self.output_dir}")
         print(f"Manifest:       {self.output_dir / 'batch_manifest.json'}")
 

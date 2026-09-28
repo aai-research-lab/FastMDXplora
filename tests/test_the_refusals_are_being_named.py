@@ -41,6 +41,9 @@ NOT_REFUSALS = frozenset({
     # A phase with nothing to do saying so: the study is not refused, and
     # the phase is recorded as skipped with the reason it carries.
     "PhaseSkipped",
+    # A stop asked for, carried past every handler to the phase, which
+    # records it under its code, `simulation.run.stopped`.
+    "RunStopped",
 })
 
 #: Helpers that carry an inner refusal's code out to an outer raise. A site

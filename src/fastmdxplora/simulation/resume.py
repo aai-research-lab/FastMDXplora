@@ -766,9 +766,15 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     ran = study_run.explore()
     failed = [r for r in ran if r.status != "ok"]
     if failed:
+        from fastmdxplora.simulation.runner import STOPPED_CODE
+
         # Said as what it is. Left to the join, a segment that failed read
-        # as one that could not be joined.
+        # as one that could not be joined. A segment asked to stop says so,
+        # so a study of several runs knows to start no more.
+        stopped = any((phase.refusal or {}).get("code") == STOPPED_CODE
+                      for result in failed for phase in result.phases)
         return {"ok": False, "stage": "simulation", "segment": str(segment),
+                "stopped": stopped,
                 "error": failed[0].message or f"{segment.name} did not finish."}
 
     return _join_and_analyse(root, plan.config, segment=segment,

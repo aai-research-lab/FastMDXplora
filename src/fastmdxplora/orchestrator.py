@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import refusal_of
 from fastmdxplora.refusals import OutputExistsError
-from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import RunStopped, StudyError
 
 logger = get_logger("project")
 
@@ -1242,6 +1242,19 @@ class FastMDXplora:
                 finished_at=finished,
                 message=f"Phase '{phase}' completed.",
                 artifacts=list(artifacts or []),
+                produced_by=self._phase_provenance(),
+            )
+        except RunStopped as stopped:
+            # Past every handler that would have made it something else.
+            error = stopped.as_error()
+            return PhaseResult(
+                name=phase,
+                status="error",
+                output_dir=phase_dir,
+                started_at=started,
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                message=str(error),
+                refusal=refusal_of(error).as_dict(),
                 produced_by=self._phase_provenance(),
             )
         except PhaseSkipped as skipped:

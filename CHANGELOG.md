@@ -287,6 +287,32 @@ carried on. Its structure is also found from the study's folder outwards, so a
 run of a campaign finds a structure named relative to where the study was
 started, wherever the resume is run.
 
+### A study of several runs stops as one
+
+**The GUI's Stop reaches every run of a parallel study.** It signals the
+process it started, which for a study running its runs in parallel is the
+parent, and the workers never heard it: they ran on until the GUI gave up
+waiting and killed the parent, and were left running with no one watching.
+The parent now passes SIGTERM on to each worker (Ctrl-C reaches them from the
+terminal), and the GUI ends whatever is left of a run it had to kill.
+
+**A worker stopped outside production ends its run with a record.** It died,
+and a worker dying breaks the pool, so every other run lost its result with
+it. The phase it was in now ends with the retryable refusal
+`simulation.run.stopped`, and `fastmdx resume` runs that phase again. In
+production the run ends on a frame, as before.
+
+**A stopped study starts nothing more.** Run one at a time, a study stopped in
+one run went on to the next. Now no further run starts, each run not started
+says so, and the study ends with "Batch stopped" and the one command that
+carries all of it on. A second SIGTERM within two seconds of the first, as
+when one is sent to the process group and passed on by the parent too, counts
+once; a second Ctrl-C still means stop now.
+
+**A run being carried on shows its progress.** The study's progress line read
+each run's status from the run's own folder, which a run being carried on no
+longer writes, so it stood at the step where the run had stopped.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

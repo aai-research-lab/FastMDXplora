@@ -473,7 +473,19 @@ checkpoint is run twice and the joined trajectory keeps its spacing. It does
 so only when the next frame can be reached within 20 seconds, which leaves
 time inside the 30 or so a scheduler allows before it kills; otherwise the last
 interval checkpoint stands. `FASTMDX_STOP_GRACE_SECONDS` sets the 20 for a
-platform that allows more or less. A second signal is obeyed at once.
+platform that allows more or less. A second signal is obeyed at once. A
+second SIGTERM within two seconds of the first is the same request arriving
+twice, as it does when sent to a whole process group, and counts once; a
+second Ctrl-C, however quick, means now.
+
+**A study of several runs stops as one.** Running its runs in parallel, the
+study passes SIGTERM on to each of them (Ctrl-C reaches them from the terminal
+itself): a run in production ends on a frame as
+above, and one in setup, equilibration or its analyses ends with the same
+retryable refusal, so the phase it was in runs again on resume. No further run
+starts, and those not started say so. The GUI's Stop, which signals the study
+alone, reaches every run this way. Run one at a time, a study stopped in one
+run does not start the next.
 
 **`fastmdx resume` carries the study on to the end of its plan.** It reads how
 far the study got and does what is left, once:
@@ -495,7 +507,8 @@ each that never started is run, they share out the workers and devices the
 study asked for, and the aggregate, an umbrella study's free energy and the
 comparison across runs are rebuilt once every run has its answer. A structure
 the study named by a relative path is found beside the study's folder, so the
-resume need not be run from where the study was.
+resume need not be run from where the study was. The study says, when it
+stops, the one command that carries all of it on.
 
 It refuses a folder that is not a study, and a study any run of which is still
 running. A study that stopped with a

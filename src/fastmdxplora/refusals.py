@@ -66,6 +66,7 @@ __all__ = [
     "CODES",
     "CodedError",
     "StudyError",
+    "RunStopped",
     "CodedKeyError",
     "MissingResultError",
     "MissingPathError",
@@ -1149,6 +1150,31 @@ class StudyError(CodedError, ValueError):
     """
 
     default_code = "unclassified"
+
+
+class RunStopped(BaseException):
+    """A run asked to stop outside production, raised where it was.
+
+    A ``BaseException``, as ``KeyboardInterrupt`` is, so that the handlers
+    turning any failure into a record of one do not catch it: raised inside
+    an OpenMM call during equilibration, a stop was caught as an integration
+    failure and recorded as the system becoming unstable, an answer a
+    resume refuses to run again. The phase it reaches records it as the
+    retryable refusal it is (:meth:`as_error`).
+    """
+
+    def __init__(self, signal_name: str) -> None:
+        super().__init__(signal_name)
+        self.signal_name = signal_name
+
+    def as_error(self) -> "StudyError":
+        return StudyError(
+            f"The run was stopped by {self.signal_name} outside production, "
+            "before it finished; `fastmdx resume` runs again the phase it "
+            "was in.",
+            code="simulation.run.stopped",
+            details={"signal": self.signal_name, "step": None,
+                     "checkpoint_on_frame": False})
 
 
 def refusal_of(value: Any) -> Refusal:

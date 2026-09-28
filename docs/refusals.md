@@ -273,5 +273,5 @@ A few you are likely to meet, and what each means.
 | `simulation.resume.segment_named_twice` | Two segment folders of one study read as the same number (`segment-1` and `segment-001`). Both are named |
 | `analysis.data.not_this_system` | The prepared system where a run's record points is not the one it simulated (its `system.xml` differs). Both paths are named |
 | `analysis.sampling.*` | The run is sound and too short. `sampling_shortfall` says by how much |
-| `simulation.run.stopped` | The run was asked to stop (SIGTERM or Ctrl-C) and ended on a frame, with a checkpoint there. Retryable: `fastmdx resume` carries it on |
+| `simulation.run.stopped` | The run was asked to stop (SIGTERM or Ctrl-C): in production it ended on a frame, with a checkpoint there; in a parallel study's other phases, where it was. Retryable: `fastmdx resume` carries it on |
 | `simulation.resume.bias_not_carried` | A metadynamics or steered run cannot be split into segments |

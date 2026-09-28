@@ -802,6 +802,43 @@ STOP_NOTICE_SECONDS = 5.0
 #: The refusal a stopped run ends with; retryable, so resume carries it on.
 STOPPED_CODE = "simulation.run.stopped"
 
+#: A second SIGTERM this soon after the first is the same request arriving
+#: twice, not a second request: one sent to a process group and the one the
+#: parent of a parallel study passes on both reach its workers. Not Ctrl-C,
+#: which a terminal sends to the whole group itself, so the parent does not
+#: pass it on, and pressed twice, however quickly, means stop now.
+STOP_REPEAT_SECONDS = 2.0
+
+#: When this process was first asked to stop, shared by everything here that
+#: listens, so the request is counted once whichever of them hears it.
+_first_stop_at: float | None = None
+
+
+def _listen_afresh() -> None:
+    """Forget an earlier stop: a new run, or its production, is starting."""
+    global _first_stop_at
+    _first_stop_at = None
+
+
+def _a_stop_heard(number: int | None = None) -> str:
+    """How a stop signal arriving now is to be taken.
+
+    ``"first"`` for the first; ``"again"`` for the same SIGTERM delivered
+    twice within :data:`STOP_REPEAT_SECONDS`; ``"now"`` for a later one, or
+    any second Ctrl-C, which means stop at once.
+    """
+    import signal as _signal
+    import time
+
+    global _first_stop_at
+    now = time.monotonic()
+    if _first_stop_at is None:
+        _first_stop_at = now
+        return "first"
+    if number == _signal.SIGINT:
+        return "now"
+    return "again" if now - _first_stop_at < STOP_REPEAT_SECONDS else "now"
+
 
 def stop_grace_seconds() -> float:
     """The grace period, from the environment or the default."""
@@ -848,6 +885,7 @@ class _StopRequests:
 
         if threading.current_thread() is not threading.main_thread():
             return self
+        _listen_afresh()
         for number in (_signal.SIGTERM, _signal.SIGINT):
             try:
                 self._previous[number] = _signal.signal(number, self._note)
@@ -859,6 +897,9 @@ class _StopRequests:
         import os as _os
         import signal as _signal
 
+        heard = _a_stop_heard(number)
+        if heard == "again":
+            return
         if self.signal is None:
             self.signal = number
             logger.warning(
