@@ -763,6 +763,13 @@ range, and the strain relaxes into the sampling as drift. The usual source is a
 steered run: pull once, take a frame near each window's centre, and each window
 begins near where it will sit.
 
+Each window's start is written to `seeds/window-NN/`: a copy of the prepared
+system, the chosen frame as `state.xml`, and `seeded_from.json`, which names the
+preparation it was taken from relative to the seed and by the SHA-256 of its
+`system.xml`. A window's setup record (force field, box, the ligand's chemistry)
+is read through it, so it is found after the study has moved, and a different
+preparation in its place is refused.
+
 The first fifth of each window is discarded before recombination, because a
 window begins away from where it settles and counting the approach biases the
 histogram towards where the run started.

@@ -25,6 +25,19 @@ md = pytest.importorskip("mdtraj")
 
 from openmm import unit  # noqa: E402
 
+import json  # noqa: E402
+import shutil  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from fastmdxplora.refusals import CodedError  # noqa: E402
+from fastmdxplora.simulation.pipeline import (  # noqa: E402
+    _write_manifest,
+    prepared_system_reference,
+    setup_records_of,
+    system_digest,
+)
+from fastmdxplora.simulation.seeding import SEEDED_FROM, seed_windows  # noqa: E402
+
 #: Small enough to build in milliseconds, big enough that a centre of mass
 #: is a centre of mass.
 SITE_ATOMS = 9
@@ -307,3 +320,67 @@ def test_the_seed_energy_check_runs_when_the_study_is_named_by_directory(
         "the seed energy check found no reference state, so it skipped "
         f"itself; it looked in {saw['directory']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# A seeded window finds the setup record it came from
+# ---------------------------------------------------------------------------
+# A seeded window simulates its seed: a copy of the prepared system and a
+# starting state, with no setup record in it. The window recorded the seed as
+# the system it simulated, so the report, re-analysis and the ligand's
+# chemistry looked for the setup record there and found nothing. Each seed now
+# records the preparation it was taken from, relative to itself and by
+# content, and the setup record is found through it, also when the study has
+# moved.
+def _seeded_study(a_finished_pull) -> tuple[Path, Path, Path]:
+    """Two windows seeded from the pull, each recorded as the simulation
+    phase records the system it ran: the seed, given as `prepared_from`."""
+    root, prepared, pull = a_finished_pull
+    (prepared / "setup_parameters.json").write_text(
+        json.dumps({"forcefield": "amber14"}), encoding="utf-8")
+    seeds = seed_windows(
+        pull, prepared, [1.00, 1.40], root / "seeds",
+        ligand_resname="LIG", site_selection="resname ALA and name CA",
+        temperature_K=300.0, random_seed=7)
+    for seed in seeds:
+        window = root / "runs" / f"w{seed.index}"
+        (window / "simulation").mkdir(parents=True)
+        _write_manifest(window / "simulation", {"prepared_from": seed.directory},
+                        [], [], platform_used="CPU",
+                        prepared_system=prepared_system_reference(
+                            Path(seed.directory), window, seed.directory))
+    return root, prepared, root / "runs" / "w0"
+
+
+def test_each_seed_says_what_it_was_taken_from(a_finished_pull) -> None:
+    root, prepared, _ = _seeded_study(a_finished_pull)
+    record = json.loads((root / "seeds" / "window-00" / SEEDED_FROM)
+                        .read_text(encoding="utf-8"))
+    assert record["relative_to_run"] == str(Path("..") / ".." / "shared_setup" / "setup")
+    assert record["system_xml_sha256"] == system_digest(prepared)
+    assert record["centre"] == pytest.approx(1.00)
+    assert isinstance(record["frame"], int)
+
+
+def test_a_window_finds_the_setup_record(a_finished_pull) -> None:
+    _, prepared, window = _seeded_study(a_finished_pull)
+    assert setup_records_of(window) == prepared.resolve()
+
+
+def test_moved_whole_it_still_finds_it(tmp_path, a_finished_pull) -> None:
+    root, _, _ = _seeded_study(a_finished_pull)
+    moved = tmp_path.parent / f"{tmp_path.name}-moved"
+    shutil.copytree(root, moved)
+    shutil.rmtree(root / "shared_setup")
+    assert setup_records_of(moved / "runs" / "w1") == (
+        moved / "shared_setup" / "setup").resolve()
+
+
+def test_another_preparation_where_it_was_is_refused(a_finished_pull) -> None:
+    _, prepared, window = _seeded_study(a_finished_pull)
+    with (prepared / "system.xml").open("a", encoding="utf-8") as handle:
+        handle.write("<!-- prepared again -->\n")
+    with pytest.raises(CodedError) as refused:
+        setup_records_of(window)
+    assert refused.value.code == "analysis.data.not_this_system"
+    assert "was seeded from" in str(refused.value)

@@ -35,6 +35,17 @@ prepared in, or that `setup_from` names a folder with no prepared system in it
 and the simulation will refuse. Umbrella windows are no longer warned that each
 will solvate a box of its own.
 
+### A seeded umbrella window finds its setup record
+
+**The windows of an umbrella study seeded from a pull find their setup
+record.** A seeded window simulates its seed, a copy of the prepared system with
+a starting state and no setup record, and it named the seed as the system it
+simulated. The report, re-analysis and the ligand's chemistry then found no
+setup record for the window. Each seed now records the preparation it was
+taken from (`seeded_from.json`), relative to itself and by the SHA-256 of its
+`system.xml`, and the setup record is found through it, also after the study
+has moved. A different preparation at that place is refused, as for any run.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes

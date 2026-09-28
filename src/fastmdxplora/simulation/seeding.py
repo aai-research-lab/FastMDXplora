@@ -621,6 +621,30 @@ def _prepared_files(prepared: Path) -> tuple[Path, Path]:
     return system, topology
 
 
+#: Written into each seed: the preparation it was taken from.
+SEEDED_FROM = "seeded_from.json"
+
+
+def record_the_preparation(seed: Path, prepared: Path, **detail: Any) -> None:
+    """Say, in a window's seed, which prepared system it was taken from.
+
+    A seed holds a copy of that system and a starting state, and no setup
+    record: the force field, the box and the ligand's chemistry stay with
+    the preparation. A window names its seed as the system it simulated, so
+    readers of its setup record found the seed and nothing in it. The
+    preparation is recorded as a run records one, relative to the seed and
+    by content, so it is found when the study moves.
+    """
+    import json
+
+    from fastmdxplora.simulation.pipeline import prepared_system_reference
+
+    record = prepared_system_reference(prepared, seed, prepared)
+    record.update(detail)
+    (Path(seed) / SEEDED_FROM).write_text(json.dumps(record, indent=2),
+                                          encoding="utf-8")
+
+
 def write_seeds(prepared: Path | str,
                 trajectory: Any,
                 chosen: list[tuple[int, float]],
@@ -711,6 +735,8 @@ def write_seeds(prepared: Path | str,
                                        encoding="utf-8")
         shutil.copy2(system_xml, out / "system.xml")
         shutil.copy2(topology_pdb, out / "topology.pdb")
+        record_the_preparation(out, prepared, frame=int(frame),
+                               centre=float(centre))
 
         # Asserted rather than assumed. A directory that is missing one of
         # the three loads as "no prepared system here" and the window

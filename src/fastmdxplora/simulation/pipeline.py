@@ -395,7 +395,8 @@ def setup_records_of(run_dir: str | Path) -> Path | None:
     run = Path(run_dir)
     reference = _prepared_system_recorded(run)
     if reference is not None:
-        return _the_system_recorded(run, reference)
+        found = _the_system_recorded(run, reference)
+        return _the_records_of(found) if found is not None else None
     candidates: list[Path] = []
     taken = _setup_taken_from(run)
     if taken is not None:
@@ -407,6 +408,23 @@ def setup_records_of(run_dir: str | Path) -> Path | None:
         if (candidate / "setup_parameters.json").is_file():
             return candidate
     return None
+
+
+def _the_records_of(prepared: Path) -> Path | None:
+    """Where a prepared system's setup record is: beside it, or, for an
+    umbrella window's seed, with the preparation the seed was taken from,
+    found as a run's reference is and checked by content the same way."""
+    from fastmdxplora.simulation.seeding import SEEDED_FROM
+
+    if (prepared / "setup_parameters.json").is_file():
+        return prepared
+    try:
+        reference = json.loads((prepared / SEEDED_FROM).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return prepared
+    if not isinstance(reference, dict) or not reference.get("system_xml_sha256"):
+        return prepared
+    return _the_system_recorded(prepared, reference, verb="was seeded from")
 
 
 def system_digest(setup_dir: Path) -> str | None:
@@ -450,7 +468,8 @@ def _prepared_system_recorded(run: Path) -> dict[str, Any] | None:
     return None
 
 
-def _the_system_recorded(run: Path, reference: dict[str, Any]) -> Path | None:
+def _the_system_recorded(run: Path, reference: dict[str, Any], *,
+                         verb: str = "simulated") -> Path | None:
     """The prepared system a run's record names, found by where it sits
     relative to the run, then where it was, then as it was typed, and
     accepted only if its content is the one recorded.
@@ -486,21 +505,21 @@ def _the_system_recorded(run: Path, reference: dict[str, Any]) -> Path | None:
         different.append(candidate)
     if different:
         raise MissingResultError(
-            f"{run} simulated the prepared system recorded as "
+            f"{run} {verb} the prepared system recorded as "
             f"{reference.get('resolved')} (system.xml SHA-256 {wanted[:12]}), "
             f"and what is there now is a different system: "
             + ", ".join(f"{path} ({system_digest(path)[:12]})" for path in different)
             + ". Its record, ligand chemistry included, would describe atoms "
-            "this run never simulated. Put the prepared system this run used "
-            f"back at {reference.get('relative_to_run')} relative to the run, "
-            "or at its recorded path.",
+            "this run never simulated. Put the prepared system it used back "
+            f"at {reference.get('relative_to_run')} relative to {run}, or at "
+            "its recorded path.",
             code="analysis.data.not_this_system",
             recorded=reference.get("resolved"), found=[str(p) for p in different])
     logger.warning(
-        "The prepared system %s simulated is not where its record points "
+        "The prepared system %s %s is not where its record points "
         "(looked in %s). Readers that need it -- the setup record, the "
         "ligand's chemistry -- have nothing to read; move or copy it together "
-        "with the run.", run, ", ".join(str(p) for p in looked) or "nowhere")
+        "with the run.", run, verb, ", ".join(str(p) for p in looked) or "nowhere")
     return None
 
 
