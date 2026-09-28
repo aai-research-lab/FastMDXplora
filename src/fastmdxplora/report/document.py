@@ -236,7 +236,8 @@ def _summary_section(phase_context: PhaseContext, project_root: Path) -> str:
     return "## Summary\n\n" + " ".join(said)
 
 
-def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
+def _methods_section(project_root: Path, phase_context: PhaseContext,
+                     orchestrator: Any = None) -> str:
     from fastmdxplora.simulation.pipeline import setup_records_of
 
     prepared_in = setup_records_of(project_root)
@@ -260,10 +261,15 @@ def _methods_section(project_root: Path, phase_context: PhaseContext) -> str:
     # `input`, and the force field the run resolved to sits beside them. The
     # first version passed `parameters` alone and produced a methods section
     # saying the coordinates came from "the input structure".
+    if orchestrator is None:
+        from types import SimpleNamespace
+
+        orchestrator = SimpleNamespace(output_dir=project_root, results=[])
+    made_with, tools, recorded = _recorded_software(orchestrator)
     prose = methods_paragraphs(
         project_root, setup, sim,
         system_name=(setup.get("input") or {}).get("system"),
-        versions=_software_versions(),
+        versions=tools, made_with=made_with, tools_recorded=recorded,
     )
     if prose:
         lines.append(prose)
@@ -769,7 +775,16 @@ def _reproducibility_section(
     lines = ["## Reproducibility", ""]
     from fastmdxplora.provenance import described, source_provenance
 
-    lines.append(f"- **FastMDXplora version**: `{__version__}`")
+    # By phase where they differ: a study simulated under one release, or on
+    # another machine, and reported under this one printed this one alone.
+    producers = _phase_producers(orchestrator)
+    made_by = {phase: (str(produced.get("version") or "")
+                       + (" or earlier" if produced.get("inferred") else ""))
+               for phase, produced in producers.items()}
+    ran_on = {phase: str((produced.get("environment") or {}).get("python") or "")
+              for phase, produced in producers.items()
+              if isinstance(produced.get("environment"), dict)}
+    lines.append(_by_phase("FastMDXplora version", made_by, str(__version__)))
     # A version string is written at install time, so from a source checkout
     # it can name a release the run could not have been made with. The commit
     # says what the version cannot, and the dirty flag says when the commit
@@ -777,7 +792,7 @@ def _reproducibility_section(
     from_source = described(source_provenance())
     if from_source:
         lines.append(f"- **Source commit**: `{from_source}`")
-    lines.append(f"- **Python**: `{sys.version.split()[0]}`")
+    lines.append(_by_phase("Python", ran_on, sys.version.split()[0]))
     lines.append(f"- **Platform**: `{platform.platform()}`")
     lines.append(f"- **System input**: `{_code_text(orchestrator.system)}`")
     lines.append(f"- **Output directory**: `{_code_text(orchestrator.output_dir)}`")
@@ -816,6 +831,20 @@ def _reproducibility_section(
     return "\n".join(lines)
 
 
+def _by_phase(label: str, recorded: dict[str, str], here: str) -> str:
+    """One line of the Reproducibility section, split by phase if it must be."""
+    values = {value for value in recorded.values() if value}
+    if not values or values == {here}:
+        return f"- **{label}**: `{here}`"
+    grouped: dict[str, list[str]] = {}
+    for phase, value in recorded.items():
+        if value:
+            grouped.setdefault(value, []).append(phase)
+    grouped.setdefault(here, []).append("this report")
+    return f"- **{label}**: " + "; ".join(
+        f"`{value}` ({', '.join(phases)})" for value, phases in grouped.items())
+
+
 def build_document(
     *,
     orchestrator: "FastMDXplora",
@@ -848,7 +877,7 @@ def build_document(
     sections.append(_summary_section(phase_context, project_root))
 
     if include_methods:
-        sections.append(_methods_section(project_root, phase_context))
+        sections.append(_methods_section(project_root, phase_context, orchestrator))
 
     sections.append(_results_section(project_root))
     convergence = _convergence_section(project_root)
@@ -916,6 +945,113 @@ def _software_versions() -> dict[str, str]:
         except Exception:  # noqa: BLE001 - a tool not installed did no work
             continue
     return versions
+
+
+#: How a Methods section names each package a phase records, in the order a
+#: study reaches for them.
+RECORDED_TOOLS: tuple[tuple[str, str], ...] = (
+    ("openmm", "OpenMM"), ("pdbfixer", "PDBFixer"), ("propka", "PROPKA"),
+    ("openff.toolkit", "OpenFF Toolkit"),
+    ("openmmforcefields", "OpenMM force fields"), ("ambertools", "AmberTools"),
+    ("rdkit", "RDKit"), ("openmmplumed", "OpenMM-PLUMED"), ("plumed", "PLUMED"),
+    ("mdtraj", "MDTraj"), ("numpy", "NumPy"), ("scipy", "SciPy"),
+    ("sklearn", "scikit-learn"), ("pandas", "pandas"),
+    ("matplotlib", "matplotlib"),
+)
+
+#: The phases whose software a Methods section names.
+WORK_PHASES = ("setup", "simulation", "analysis")
+
+
+def _producers_in(manifest: Path) -> dict[str, dict[str, Any]]:
+    """Each finished phase a manifest records, with what produced it."""
+    found: dict[str, dict[str, Any]] = {}
+    record = _load_json_safely(manifest) or {}
+    phases = record.get("phases")
+    for phase in phases if isinstance(phases, list) else []:
+        if (isinstance(phase, dict) and phase.get("status") == "ok"
+                and isinstance(phase.get("produced_by"), dict)):
+            found[str(phase.get("name"))] = phase["produced_by"]
+    return found
+
+
+def _phase_producers(orchestrator: Any) -> dict[str, dict[str, Any]]:
+    """What produced each phase whose outputs this report describes.
+
+    The manifest on disk holds the phases of earlier sessions; this
+    session's are on the orchestrator, since the manifest is written after
+    the last phase. A system prepared by another study (`setup_from`) was
+    produced by what that study's manifest says.
+    """
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    root = Path(orchestrator.output_dir)
+    producers = _producers_in(root / "manifest.json")
+    for result in getattr(orchestrator, "results", None) or []:
+        if getattr(result, "status", None) == "ok" and getattr(result, "produced_by", None):
+            producers[str(result.name)] = dict(result.produced_by)
+    if "setup" not in producers:
+        prepared_in = setup_records_of(root)
+        if prepared_in is not None and prepared_in != root / "setup":
+            elsewhere = _producers_in(prepared_in.parent / "manifest.json")
+            if "setup" in elsewhere:
+                producers["setup"] = elsewhere["setup"]
+    return {phase: producers[phase] for phase in WORK_PHASES if phase in producers}
+
+
+def _and(items: list[str]) -> str:
+    if len(items) < 2:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _recorded_software(orchestrator: Any) -> tuple[list[tuple[str, list[str]]], dict[str, str], bool]:
+    """What produced each phase, as a Methods section names it.
+
+    Returns the FastMDXplora version with the phases it produced, the
+    libraries by name with their versions, and whether those were recorded
+    by the run. A report made on another machine, or by a later release,
+    named its own installation: a study simulated under 2.5.4 and analysed
+    again under 2.5.8 was said to have been set up and simulated with 2.5.8
+    and whatever OpenMM the analysing machine had.
+    """
+    producers = _phase_producers(orchestrator)
+    made_with: list[tuple[str, list[str]]] = []
+    for phase, produced in producers.items():
+        version = produced.get("version")
+        if not version:
+            continue
+        shown = f"{version} or earlier" if produced.get("inferred") else str(version)
+        for entry in made_with:
+            if entry[0] == shown:
+                entry[1].append(phase)
+                break
+        else:
+            made_with.append((shown, [phase]))
+
+    environments = {phase: produced["environment"] for phase, produced in producers.items()
+                    if isinstance(produced.get("environment"), dict)}
+    if not environments:
+        return made_with, _software_versions(), False
+    tools: dict[str, str] = {}
+    for key, label in RECORDED_TOOLS:
+        by_version: dict[str, list[str]] = {}
+        for phase, environment in environments.items():
+            version = environment.get(key)
+            if version:
+                by_version.setdefault(str(version), []).append(phase)
+        if not by_version:
+            continue
+        named = {("" if version == "loaded" else version): phases
+                 for version, phases in by_version.items()}
+        if len(named) == 1:
+            version = next(iter(named))
+            tools[label] = version or "(version not recorded)"
+        else:
+            tools[label] = " and ".join(
+                f"{version or 'unrecorded'} ({_and(phases)})"
+                for version, phases in named.items())
+    return made_with, tools, True
 
 
 def _resolve_derived(params: dict[str, Any], *,

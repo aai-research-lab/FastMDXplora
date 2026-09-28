@@ -66,6 +66,41 @@ CHECKLIST: tuple[tuple[str, str], ...] = (
 )
 
 
+#: How the Methods names each phase in a sentence about its software.
+_PHASE_WORDS = {"setup": "system setup", "simulation": "simulation",
+                "analysis": "analysis"}
+
+
+def _made_with_sentence(made_with: list[tuple[str, list[str]]]) -> str:
+    """Which FastMDXplora produced which phases, as one sentence.
+
+    A study simulated under one release and analysed under another says so,
+    rather than crediting the release that wrote the report with all of it.
+    """
+    def words(phases: list[str]) -> str:
+        named = [_PHASE_WORDS.get(phase, phase) for phase in phases]
+        return named[0] if len(named) == 1 else (
+            ", ".join(named[:-1]) + " and " + named[-1])
+
+    said = [(version, phases) for version, phases in made_with if phases]
+    if not said:
+        from fastmdxplora import __version__
+
+        return (f"This report was written with FastMDXplora {__version__}; "
+                "the run does not record which version produced it.")
+    first_version, first_phases = said[0]
+    verb = "was" if len(first_phases) == 1 else "were"
+    clauses = [f"{words(first_phases)} {verb} performed with FastMDXplora "
+               f"{first_version}"]
+    clauses.extend(f"{words(phases)} with FastMDXplora {version}"
+                   for version, phases in said[1:])
+    if len(clauses) == 1:
+        sentence = clauses[0]
+    else:
+        sentence = ", ".join(clauses[:-1]) + ", and " + clauses[-1]
+    return sentence[0].upper() + sentence[1:] + "."
+
+
 def _get(params: dict[str, Any], *names: str, default: Any = None) -> Any:
     for name in names:
         if name in params and params[name] not in (None, ""):
@@ -227,6 +262,8 @@ def methods_paragraphs(
     *,
     system_name: str | None = None,
     versions: dict[str, str] | None = None,
+    made_with: list[tuple[str, list[str]]] | None = None,
+    tools_recorded: bool = True,
 ) -> str:
     """The methods text, as prose rather than a list of settings.
 
@@ -573,21 +610,28 @@ def methods_paragraphs(
         parts.append("**Simulation protocol.** " + " ".join(protocol))
 
     # ---- software -----------------------------------------------------
-    if versions:
+    if versions or made_with is not None:
         # FastMDXplora did the work -- setup, simulation and analysis -- and
         # the libraries it calls are the record of what it stood on. The
         # two are not the same kind of thing and were listed as one.
         ours = versions.get("FastMDXplora")
         tools = {k: v for k, v in versions.items() if k != "FastMDXplora"}
-        if ours:
+        if made_with is not None:
+            parts.append("**Software.** " + _made_with_sentence(made_with))
+        elif ours:
             parts.append(
                 "**Software.** System setup, simulation and analysis were "
                 f"performed with FastMDXplora {ours}."
             )
         if tools:
             named = ", ".join(f"{name} {version}" for name, version in
-                              sorted(tools.items()))
-            parts.append(f"**Tools.** FastMDXplora calls {named}.")
+                              sorted(tools.items(), key=lambda kv: kv[0].lower()))
+            sentence = f"**Tools.** FastMDXplora calls {named}."
+            if not tools_recorded:
+                sentence += (
+                    " The run did not record its libraries, so these are the "
+                    "versions installed where this report was written.")
+            parts.append(sentence)
 
     gaps = missing_from_methods(setup, sim)
     if gaps:

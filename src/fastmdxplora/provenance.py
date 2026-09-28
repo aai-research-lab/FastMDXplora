@@ -285,7 +285,8 @@ def described_structure(record: dict[str, Any] | None) -> str | None:
 #: Not every dependency: this is the list worth carrying in every manifest,
 #: chosen because each one decides a number. mdtraj measures the contacts,
 #: RDKit perceives the chemistry, OpenMM integrates, PLUMED biases, and the
-#: force-field toolkits assign the parameters.
+#: force-field toolkits assign the parameters. pandas and matplotlib write the
+#: tables and draw the figures a report shows, and its Methods names them.
 RESULT_BEARING_PACKAGES = (
     "mdtraj",
     "numpy",
@@ -298,7 +299,67 @@ RESULT_BEARING_PACKAGES = (
     "openmmplumed",
     "propka",
     "sklearn",
+    "pandas",
+    "matplotlib",
 )
+
+#: Programs that decide a number and are not Python modules, so nothing in
+#: ``sys.modules`` carries their version. AmberTools' ``sqm`` computes every
+#: ligand's AM1-BCC charges and PLUMED computes every bias; the Python
+#: packages beside them (the OpenFF toolkit, openmm-plumed) say nothing about
+#: which build of either ran. conda records both in the environment it
+#: installed them into.
+CONDA_RESULT_BEARING = ("ambertools", "plumed")
+
+
+def _conda_version(name: str) -> str | None:
+    """The version conda installed of ``name`` into this environment, or None.
+
+    Read from the environment's own record of what it holds
+    (``conda-meta``), so it answers for this interpreter's environment and
+    not for whatever ``conda`` is first on the PATH.
+    """
+    import json
+    import sys
+
+    meta = Path(sys.prefix) / "conda-meta"
+    try:
+        candidates = sorted(meta.glob(f"{name}-*.json"))
+    except OSError:
+        return None
+    for candidate in candidates:
+        try:
+            held = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(held, dict) and held.get("name") == name and held.get("version"):
+            return str(held["version"])
+    return None
+
+
+def _charges_and_bias() -> dict[str, str | None]:
+    """What computed the charges and the bias, where this run used them.
+
+    The same rule as the modules: a run that loaded no OpenFF toolkit gave
+    no ligand charges, and one that loaded no openmm-plumed applied no bias,
+    so each is ``None`` there rather than whatever happens to be installed.
+    """
+    import sys
+
+    said: dict[str, str | None] = {"am1bcc": None, "ambertools": None,
+                                   "plumed": None}
+    if sys.modules.get("openff.toolkit") is not None:
+        try:
+            from fastmdxplora.setup.ligand import am1bcc_provider
+
+            said["am1bcc"] = am1bcc_provider()
+        except Exception:  # noqa: BLE001 - describing a run must not stop it
+            said["am1bcc"] = None
+        if said["am1bcc"] == "AmberTools":
+            said["ambertools"] = _conda_version("ambertools") or "loaded"
+    if sys.modules.get("openmmplumed") is not None:
+        said["plumed"] = _conda_version("plumed") or "loaded"
+    return said
 
 
 def environment_record() -> dict[str, str | None]:
@@ -351,6 +412,11 @@ def environment_record() -> dict[str, str | None]:
         # "loaded, version unknown" stays distinguishable from "not
         # loaded", because the two say different things about a run.
         versions[name] = str(version) if version is not None else "loaded"
+
+    # Beside the modules, the two programs they call. `am1bcc` names what
+    # computed the charges (AmberTools or OpenEye), since the toolkit's
+    # version does not say.
+    versions.update(_charges_and_bias())
 
     versions["python"] = ".".join(str(n) for n in sys.version_info[:3])
     versions["platform"] = sys.platform

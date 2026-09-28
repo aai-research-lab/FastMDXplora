@@ -363,6 +363,24 @@ Each was written and none reached anyone.
 on what a trajectory supports. The ligand parameters text no longer says
 OpenFF makes them whatever force field was chosen.
 
+### A report names the software that produced each phase
+
+**The Methods and Reproducibility sections no longer credit the installation
+that wrote the report.** A study simulated under one release and analysed or
+reported again under another was said to have been set up, simulated and
+analysed with the later one, and the libraries named were those installed
+where the report was written. Each phase's own record is now read: "System
+setup and simulation were performed with FastMDXplora 2.5.4, and analysis with
+FastMDXplora 2.5.8", with a library whose version differs between phases given
+by phase. A system prepared by another study (`setup_from`) is credited to
+what that study recorded. A run that recorded nothing says so.
+
+**The Manifest records what computed the charges and the bias.** Beside the
+Python packages, each phase's `environment` now names the AM1-BCC charge
+program (`am1bcc`: AmberTools or OpenEye) with AmberTools' version, and
+PLUMED's version, read from the conda environment. Neither is a Python module,
+so nothing recorded which build ran. pandas and matplotlib are recorded too.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
