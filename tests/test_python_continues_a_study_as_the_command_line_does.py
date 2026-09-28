@@ -130,6 +130,8 @@ class TestARealStudyContinuedFromPython(unittest.TestCase):
         self.assertEqual(joined["segments"], [0, 1])
         analysed = json.loads(
             (self.output / "analysis" / "analysis_manifest.json").read_text())
-        self.assertEqual(pathlib.Path(analysed["trajectory_input"]),
-                         self.output / "joined" / "production.dcd")
+        # Resolved on both sides: a temporary folder behind a link (macOS
+        # keeps /var under /private) is written resolved by the study.
+        self.assertEqual(pathlib.Path(analysed["trajectory_input"]).resolve(),
+                         (self.output / "joined" / "production.dcd").resolve())
         self.assertEqual(analysed["n_frames"], joined["frames"])
