@@ -687,7 +687,8 @@ def study_to_continue(config: dict[str, Any] | None) -> Path | None:
 
 def extend_study(study: str | Path, *, total_ns: float | None = None,
                  more_ns: float | None = None,
-                 analyse: bool = True) -> dict[str, Any]:
+                 analyse: bool = True,
+                 device_index: str | int | None = None) -> dict[str, Any]:
     """Run the next segment, join the study, and analyse the whole.
 
     Three steps, so that asking for more sampling is one instruction
@@ -747,6 +748,11 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
         # the runner refuses unless it is told. OpenMM still refuses one it
         # cannot read, which is what a torn write leaves.
         plan.config.setdefault("simulation", {})["resume_unsealed"] = True
+
+    if device_index is not None:
+        # The device this run was given now, where a campaign shares out
+        # its cards, rather than the one it had before it stopped.
+        plan.config.setdefault("simulation", {})["device_index"] = device_index
 
     segment = Path(plan.config["output"])
     config_path = segment.with_name(segment.name + ".yml")
@@ -1054,7 +1060,8 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
     return all(states.get(p) in ("ok", "skipped") for p in planned), None
 
 
-def resume_study(study: str | Path) -> dict[str, Any]:
+def resume_study(study: str | Path, *,
+                 device_index: str | int | None = None) -> dict[str, Any]:
     """Carry a study that stopped part-way on to the end of its plan.
 
     Reads how far it got and does what is left, once:
@@ -1070,9 +1077,12 @@ def resume_study(study: str | Path) -> dict[str, Any]:
       (``"restarted"``).
 
     Refused, with ``ok`` false: a folder that is not a study, a study still
-    running, a study that stopped with a refusal or an error (that is its
-    answer, and running it again would give the same one), and a study of
-    several runs, whose runs are each resumed by name.
+    running, and a study that stopped with a refusal or an error (that is its
+    answer, and running it again would give the same one).
+
+    A study of several runs is carried on run by run
+    (:func:`resume_batch`). ``device_index`` puts a run's simulation on the
+    device given, where a campaign shares out its cards again.
     """
     import yaml
 
@@ -1087,10 +1097,7 @@ def resume_study(study: str | Path) -> dict[str, Any]:
                 "error": f"{root} is not a study to resume: it has no "
                          "resolved_config.yml, which every study writes as it starts."}
     if (root / "batch_manifest.json").is_file():
-        return {**base, "ok": False, "did": RESUMED_NOTHING,
-                "error": "This is a study of several runs. Resume each run in "
-                         "its runs/ folder by name; the comparison across them "
-                         "is rebuilt when the batch is run again."}
+        return resume_batch(root)
     if _still_running(root):
         return {**base, "ok": False, "did": RESUMED_NOTHING,
                 "error": "A run of this study is still going. Resume it once it "
@@ -1111,7 +1118,7 @@ def resume_study(study: str | Path) -> dict[str, Any]:
 
     plan = extension_of(root)
     if plan.possible:
-        answer = extend_study(root)
+        answer = extend_study(root, device_index=device_index)
         return {**base, **answer, "did": RESUMED_PRODUCTION,
                 "production_done_ns": plan.production_done_ns,
                 "production_planned_ns": plan.production_planned_ns}
@@ -1150,6 +1157,88 @@ def resume_study(study: str | Path) -> dict[str, Any]:
     # Nothing a run can continue from: setup or equilibration was under way.
     # They are the cheap part of a study, so it starts again from the top.
     again = {key: value for key, value in config.items() if key != "output"}
+    if device_index is not None:
+        again["simulation"] = {**(again.get("simulation") or {}),
+                               "device_index": device_index}
     FastMDXplora(config_data=again, output_dir=str(root)).explore(force=True)
     return {**base, "ok": True, "did": RESUMED_FROM_START,
             "detail": "Production had not begun; the study was run from its start."}
+
+
+#: What `resume_batch` did, as a program reads it.
+RESUMED_RUNS = "runs"
+
+
+def _found_from(root: Path, given: Any) -> Any:
+    """A structure path the study named, made absolute where the study's
+    folder shows where it was.
+
+    A config names its structure relative to where `fastmdx` was run, and a
+    resume may be run from anywhere. A run that started has its structure in
+    its own folder; one that never started needs the file, so a relative
+    path found beside the study, or inside it, is used from there.
+    """
+    if not isinstance(given, str) or not given:
+        return given
+    path = Path(given).expanduser()
+    if path.is_absolute() or path.exists():
+        return given
+    for base in (root.parent, root):
+        if (base / path).is_file():
+            return str((base / path).resolve())
+    return given
+
+
+def resume_batch(root: str | Path) -> dict[str, Any]:
+    """Carry a study of several runs on to the end of its plan.
+
+    Each run that started is carried on as :func:`resume_study` carries on a
+    study of one, each that never started is run, and the study's own
+    results across them (the aggregate, an umbrella study's free energy, the
+    comparison) are rebuilt once every run has its answer. Runs share out
+    the workers and devices the study asked for, as they did the first time.
+    Refused while any run of the study is still going.
+    """
+    import yaml
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    root = Path(root).expanduser().resolve()
+    base = {"study": str(root)}
+    if _still_running(root):
+        return {**base, "ok": False, "did": RESUMED_NOTHING,
+                "error": "The study is still running. Resume it once it has stopped."}
+    runs = root / "runs"
+    going = [member.name for member in sorted(runs.iterdir())
+             if member.is_dir() and _still_running(member)] if runs.is_dir() else []
+    if going:
+        return {**base, "ok": False, "did": RESUMED_NOTHING,
+                "error": f"{', '.join(going)} of this study "
+                         f"{'is' if len(going) == 1 else 'are'} still running. "
+                         "Resume it once every run has stopped."}
+    try:
+        config = yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return {**base, "ok": False, "did": RESUMED_NOTHING,
+                "error": f"The study's config could not be read: {exc}"}
+    config["systems"] = [
+        {**entry, "system": _found_from(root, entry.get("system"))}
+        if isinstance(entry, dict) else entry
+        for entry in (config.get("systems") or [])]
+    config["output"] = str(root)
+    try:
+        batch = BatchExplorer(config_data=config, output_dir=str(root), resume=True)
+        results = batch.run()
+    except Exception as exc:  # noqa: BLE001 - said, not raised, as a resume is
+        from fastmdxplora.refusals import refusal_of
+
+        return {**base, "ok": False, "did": RESUMED_NOTHING, "error": str(exc),
+                "refusal": refusal_of(exc).as_dict()}
+    listed = [{"run": r.run_id, "status": r.status, "message": r.message}
+              for r in results]
+    failed = [r for r in results if r.status != "ok"]
+    answer = {**base, "ok": not failed, "did": RESUMED_RUNS, "runs": listed}
+    if failed:
+        answer["error"] = (f"{len(failed)} of {len(results)} runs did not finish: "
+                           + "; ".join(f"{r.run_id}: {r.message}" for r in failed[:3]))
+    return answer

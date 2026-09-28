@@ -489,8 +489,16 @@ fastmdx resume runs/study
 | Part of production | The rest of it, from the last sealed checkpoint, then the join and the analyses, as [extending a study](#long-runs-and-segments) does |
 | No production yet | The whole study again: setup and equilibration leave nothing a run can continue from |
 
-It refuses a folder that is not a study, a study that is still running, and a
-study of several runs (resume each run by name). A study that stopped with a
+**A study of several runs is carried on run by run.** A sweep, several systems
+or an umbrella study's windows: each run that started is carried on as above,
+each that never started is run, they share out the workers and devices the
+study asked for, and the aggregate, an umbrella study's free energy and the
+comparison across runs are rebuilt once every run has its answer. A structure
+the study named by a relative path is found beside the study's folder, so the
+resume need not be run from where the study was.
+
+It refuses a folder that is not a study, and a study any run of which is still
+running. A study that stopped with a
 refusal is not run again, since that was its answer; one the refusal registry
 marks as worth retrying, such as a GPU that went away, counts as an
 interruption. Production that is written and cannot be continued, a checkpoint

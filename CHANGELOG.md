@@ -216,6 +216,17 @@ so a scheduler allows before it kills; `FASTMDX_STOP_GRACE_SECONDS` sets the 20.
 A second signal is obeyed at once. The GUI's Stop waits for it rather than
 killing the run after five seconds.
 
+### `fastmdx resume` carries on a study of several runs
+
+**A sweep, several systems or an umbrella study's windows are resumed by one
+command.** `fastmdx resume` refused a study of several runs, whose runs had to
+be resumed one by one, and nothing then rebuilt what the study says across
+them. Now each run that started is carried on as a study of one is, each that
+never started is run, the runs share out the workers and devices the study
+asked for, and the aggregate, an umbrella study's free energy and the
+comparison are rebuilt. A structure the study named by a relative path is found
+beside the study's folder. A study any run of which is still going is refused.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

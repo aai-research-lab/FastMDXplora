@@ -2464,6 +2464,8 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             "continued": "Production was carried on from its last checkpoint, "
                          "joined, and analysed.",
             "restarted": "Production had not begun, so the study was run from its start.",
+            "runs": "Every run of the study was carried on or run, and the "
+                    "study's comparison across them rebuilt.",
         }
         print(said.get(answer.get("did"), "Done."))
     else:

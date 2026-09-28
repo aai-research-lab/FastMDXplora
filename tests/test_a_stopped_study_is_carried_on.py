@@ -72,7 +72,7 @@ def ran(monkeypatch):
 
     monkeypatch.setattr(fastmdxplora, "FastMDXplora", Recorder)
     monkeypatch.setattr(resume_module, "extend_study",
-                        lambda study: calls.append(("extend", {"study": study}))
+                        lambda study, **_: calls.append(("extend", {"study": study}))
                         or {"ok": True, "segment": "segment-001"})
     return calls
 
@@ -155,13 +155,6 @@ class TestWhatIsNotRunAgain:
     def test_a_folder_that_is_not_a_study(self, tmp_path, ran) -> None:
         answer = resume_study(tmp_path)
         assert answer["ok"] is False and "no resolved_config.yml" in answer["error"]
-        assert ran == []
-
-    def test_a_study_of_several_runs(self, tmp_path, ran) -> None:
-        study = _study(tmp_path / "s")
-        (study / "batch_manifest.json").write_text("{}")
-        answer = resume_study(study)
-        assert answer["ok"] is False and "several runs" in answer["error"]
         assert ran == []
 
     def test_a_study_still_running(self, tmp_path, ran, monkeypatch) -> None:

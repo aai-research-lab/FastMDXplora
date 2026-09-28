@@ -393,6 +393,35 @@ def _nothing_to_silence():
     yield
 
 
+def _resume_run(spec_dict: dict[str, Any], run_out: str,
+                device_override: str | None, *, quiet: bool,
+                quiet_banner: Any) -> "RunResult":
+    """One run of a study being resumed, carried on from where it stopped."""
+    import os as _os
+
+    from fastmdxplora.orchestrator import RunResult, _phases_recorded_in
+    from fastmdxplora.simulation.resume import resume_study
+
+    try:
+        with quiet_banner(_os.path.join(run_out, "run.log")) if quiet \
+                else _nothing_to_silence():
+            answer = resume_study(run_out, device_index=device_override)
+    except Exception as exc:  # noqa: BLE001 -- isolate per-run failures
+        answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    ok = bool(answer.get("ok"))
+    return RunResult(
+        run_id=spec_dict["run_id"],
+        system=spec_dict["system"],
+        status="ok" if ok else "error",
+        output_dir=Path(run_out),
+        sweep_values=spec_dict["sweep_values"],
+        phases=_phases_recorded_in(Path(run_out)),
+        message=(answer.get("detail") or f"resumed: {answer.get('did')}") if ok
+        else str(answer.get("error") or "it could not be resumed"),
+        error_type=None if ok else "ResumeRefused",
+    )
+
+
 def _execute_run(
     spec_dict: dict[str, Any],
     run_out: str,
@@ -402,8 +431,13 @@ def _execute_run(
     device_override: str | None,
     quiet: bool = True,
     force: bool = False,
+    resume: bool = False,
 ) -> "RunResult":
     """Run one study and return a RunResult. Safe to call in a subprocess.
+
+    With ``resume``, a run that started before is carried on by
+    :func:`~fastmdxplora.simulation.resume.resume_study` rather than run
+    again, and one that never started is run as it would have been.
 
     Takes plain dicts/strings (picklable) rather than RunSpec objects so it
     works cleanly across the process boundary. Returns a RunResult, which
@@ -509,6 +543,14 @@ def _execute_run(
         sim = dict(options.get("simulation", {}))
         sim["device_index"] = device_override
         options["simulation"] = sim
+
+    if resume and (Path(run_out) / "resolved_config.yml").is_file():
+        return _resume_run(spec_dict, run_out, device_override, quiet=quiet,
+                           quiet_banner=_QuietBanner)
+    if resume:
+        # Never started: whatever a killed parent left in its folder (the
+        # folder itself, at most) is not a result to protect.
+        force = True
 
     try:
         # Redirected only where output would collide. The guard exists so
@@ -737,6 +779,7 @@ class BatchExplorer:
         verbose: bool = False,
         continue_on_error: bool | None = None,
         force: bool = False,
+        resume: bool = False,
     ) -> None:
         if config is None and config_data is None:
             raise StudyError("BatchExplorer requires `config` (path) or `config_data` (dict).", code="config.option.missing_companion")
@@ -750,6 +793,9 @@ class BatchExplorer:
         validate_config(raw, require_systems=True)
         self._raw = raw
         self.force = bool(force)
+        # Carrying on a study that stopped: each run that started is resumed
+        # from where it got to, and each that never started is run.
+        self.resume = bool(resume)
         self.verbose = verbose
 
         # Execution settings
@@ -828,7 +874,7 @@ class BatchExplorer:
     def _refuse_to_overwrite_runs(
         self, include: list[str] | None, exclude: list[str] | None
     ) -> None:
-        if self.force:
+        if self.force or self.resume:
             return
         from fastmdxplora.orchestrator import PHASES
 
@@ -856,6 +902,11 @@ class BatchExplorer:
                 "Choose another output directory, delete these, or pass "
                 "--force-overwrite to overwrite them."
             , code="environment.path.exists")
+
+    def _resuming(self) -> dict[str, bool]:
+        """``resume`` for `_execute_run`, passed only when resuming, so a run
+        started afresh calls it as it always has."""
+        return {"resume": True} if self.resume else {}
 
     def _run_output_dir(self, spec: RunSpec) -> Path:
         """Flat output for a single run; runs/<id>/ for many."""
@@ -1151,9 +1202,11 @@ class BatchExplorer:
                     "this study, so it is reused.", shared)
                 record.write_text(json.dumps(wanted, indent=2, sort_keys=True, default=str),
                                   encoding="utf-8")
-        if self.force and shared.exists() and not _a_prepared_system_is_there(prepared):
+        if ((self.force or self.resume) and shared.exists()
+                and not _a_prepared_system_is_there(prepared)):
             # A half-written shared setup from an interrupted study: with
-            # --force the intent is plainly to start again, and leaving the
+            # --force the intent is plainly to start again, and a resume
+            # carries on a study whose setup never finished; leaving the
             # remains there means the preparation refuses its own directory.
             import shutil
 
@@ -1830,7 +1883,7 @@ class BatchExplorer:
             result = _execute_run(
                 spec.to_dict(), str(run_out), include, exclude,
                 self.verbose, device, quiet=not self.is_single,
-                force=self.force,
+                force=self.force, **self._resuming(),
             )
             results.append(result)
             if result.status == "error" and not self.continue_on_error:
@@ -1886,7 +1939,7 @@ class BatchExplorer:
             fut = pool.submit(
                 _execute_run,
                 spec.to_dict(), str(run_out), include, exclude,
-                self.verbose, device, force=self.force,
+                self.verbose, device, force=self.force, **self._resuming(),
             )
             futures[fut] = (next_index, spec)
             held[fut] = device
