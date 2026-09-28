@@ -872,6 +872,22 @@ class BatchExplorer:
         # CPU default: all cores, capped at the number of runs.
         return max(1, min(os.cpu_count() or 1, len(self.run_specs)))
 
+    def _devices_shared(self) -> str | None:
+        """Said where more workers are asked for than devices listed: the
+        extra runs share a card, each running slower, and nothing said so.
+        Listing a device twice is how two runs on one card are asked for."""
+        if not self.devices:
+            return None
+        workers = self._resolve_workers()
+        slots = len(self.devices)
+        if workers <= slots:
+            return None
+        return (f"{workers} workers over {slots} listed device slot(s) "
+                f"({', '.join(str(d) for d in self.devices)}): up to "
+                f"{-(-workers // slots)} runs will share a card at once, each "
+                "slower than alone. List a device twice to mean two runs on "
+                "it, or set `workers` to the number of devices.")
+
     def _least_used_device(self, in_flight) -> str | None:
         """The listed device with the most room, the first listed on a tie.
 
@@ -1770,6 +1786,9 @@ class BatchExplorer:
         if self.mode == "parallel":
             print(f"  mode:    parallel ({self._resolve_workers()} workers"
                   + (f", devices={self.devices}" if self.devices else "") + ")")
+            shared = self._devices_shared()
+            if shared:
+                print(f"           {shared}")
         else:
             print("  mode:    sequential")
         print("-" * 50)
@@ -1838,6 +1857,9 @@ class BatchExplorer:
         n = len(self.run_specs)
         print(f"Parallel execution: {n_workers} worker(s)"
               + (f", devices={self.devices}" if self.devices else ""))
+        shared = self._devices_shared()
+        if shared:
+            logger.warning("%s", shared)
 
         # A worker's output goes to its own log so three of them do not
         # interleave, which means the terminal will show nothing at all unless

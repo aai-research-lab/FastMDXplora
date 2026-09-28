@@ -91,6 +91,13 @@ number's range and says what each section is for, and describes `execution`
 when asked. Stale docstrings (checkpoint sealing, sequence input, the
 metadynamics surface) now describe the code.
 
+### A campaign says when runs will share a GPU
+
+**More parallel workers than listed devices is now said.** With `devices: [0]`
+and `workers: 3`, three runs shared one card, each slower than alone, and
+nothing said so. The dry run and the run say how many runs will share a card,
+and that listing a device twice is how two runs on one card are asked for.
+
 ## [2.5.8] - 2026-09-28
 
 This release closes the GUI to other machines and other sites, and fixes
