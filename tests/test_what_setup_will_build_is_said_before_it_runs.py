@@ -226,6 +226,20 @@ class TestTheSolute:
         assert estimate_system(path, {"ligand_net_charge": 1}).net_charge == 1
         assert estimate_system(path, {"keep_heterogens": True}).ligands == ["LIG"]
 
+    def test_what_setup_discards_by_name_is_left_out(self, tmp_path) -> None:
+        """Glycerol and the salt of the crystallization liquor are discarded
+        under `auto`; a zinc in a site is kept, and `keep` keeps them all."""
+        text = (_residue(1, "GLY", "A", 1, 0.0)
+                + _residue(5, "GOL", "A", 501, 3.0, ("C1", "O1", "C2"), "HETATM")
+                + _residue(8, "NA", "A", 502, 6.0, ("NA",), "HETATM")
+                + _residue(9, "ZN", "A", 503, 9.0, ("ZN",), "HETATM") + "END\n")
+        path = _file(tmp_path, text)
+        auto = estimate_system(path, {"nonbonded_method": "NoCutoff"})
+        kept = estimate_system(path, {"nonbonded_method": "NoCutoff", "heterogens": "keep"})
+        assert auto.ligands == [] and auto.net_charge == 2
+        assert kept.ligands == ["GOL"] and kept.net_charge == 3
+        assert kept.solute_atoms - auto.solute_atoms == 6 + 1
+
     def test_a_metal_goes_with_the_heterogens_dropped(self, tmp_path) -> None:
         text = (_residue(1, "GLY", "A", 1, 0.0)
                 + _residue(5, "ZN", "A", 401, 3.0, ("ZN",), "HETATM") + "END\n")

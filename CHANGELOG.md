@@ -820,6 +820,14 @@ bare, and a series too short to measure stood among the results as though it
 were one. The table now says the means are over the frames after
 equilibration.
 
+### The builder's estimate leaves out what setup discards
+
+**The estimate of what setup will build no longer counts the heterogens setup
+discards by name**: under `heterogens: auto`, the crystallization additives
+(glycerol, sulfate, phosphate, buffers) and the salt of the liquor, keeping of
+the ions only the metals that sit in sites, as setup does by their
+coordination. Haemoglobin's phosphate had been listed among the ligands kept.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

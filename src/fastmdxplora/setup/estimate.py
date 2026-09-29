@@ -225,13 +225,11 @@ def estimate_system(structure: str | Path, setup: dict[str, Any] | None = None,
         if resname in WATER_RESNAMES:
             water_kept += 1
             continue
+        if not _kept_heterogen(resname, heterogens):
+            continue
         if resname in ION_RESNAMES or resname in ION_CHARGE:
-            if heterogens == "drop":
-                continue
             count += len(members)
             charge += ION_CHARGE.get(resname, 0)
-            continue
-        if heterogens == "drop":
             continue
         heavy = sum(1 for a in members if a.element != "H")
         hydrogens = sum(1 for a in members if a.element == "H")
@@ -391,10 +389,9 @@ def _coordinates(kept: list[_Atom], lines: list[str], chains: list[str], copies:
     def kept_here(atom: _Atom) -> bool:
         if atom.resname in WATER_RESNAMES:
             return False
-        if heterogens == "drop" and atom.resname not in RESIDUE_ATOMS \
-                and REPLACED.get(atom.resname) not in RESIDUE_ATOMS:
-            return False
-        return True
+        if atom.resname in RESIDUE_ATOMS or REPLACED.get(atom.resname) in RESIDUE_ATOMS:
+            return True
+        return _kept_heterogen(atom.resname, heterogens)
 
     atoms = [a for a in kept if kept_here(a)] or kept
     if copies > 1 and chains:
@@ -415,6 +412,25 @@ def _coordinates(kept: list[_Atom], lines: list[str], chains: list[str], copies:
             if moved:
                 return moved, elements
     return [a.xyz for a in atoms], [a.element for a in atoms]
+
+
+def _kept_heterogen(resname: str, heterogens: str) -> bool:
+    """Whether setup keeps a heterogen, as far as its name says: none under
+    `drop`, all under `keep`; under `auto`, not the crystallization additives
+    it discards by name, and of the ions only the metals that sit in sites
+    (setup decides those by their coordination, which a name cannot)."""
+    from fastmdxplora.setup.heterogens import CRYSTALLIZATION_ADDITIVES, ION_NAMES
+    from fastmdxplora.setup.prepare import STRUCTURAL_METALS
+
+    if heterogens == "drop":
+        return False
+    if heterogens == "keep":
+        return True
+    if resname in CRYSTALLIZATION_ADDITIVES:
+        return False
+    if resname in ION_NAMES or resname in ION_RESNAMES or resname in ION_CHARGE:
+        return resname in STRUCTURAL_METALS
+    return True
 
 
 def _excluded_volume(points: list[tuple[float, float, float]]) -> float:
