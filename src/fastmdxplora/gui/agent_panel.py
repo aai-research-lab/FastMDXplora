@@ -404,7 +404,9 @@ def _results_summary(root: Any) -> str:
     if not analysis.is_dir():
         return ""
     import json
+    import math
 
+    from fastmdxplora.gui.report_dashboard import unit_of
     from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
 
     rows: list[str] = []
@@ -438,10 +440,19 @@ def _results_summary(root: Any) -> str:
             # The findings key is usually "mean"; naming it twice reads as
             # a stutter. Name the key only when it says something else.
             label = "" if key == "mean" else f"{key} "
+            # With its unit: an RMSD of 0.013 was handed over bare, and a
+            # model answering in Angstrom had nothing to say it was nm.
+            unit = unit_of(name, f) if key == "mean" else (
+                f["unit"] if isinstance(f.get("unit"), str) else "")
             piece = (f"{label}mean {mean:.4g}" if isinstance(mean, (int, float))
                      else f"{label}mean {mean}")
-            if isinstance(se, (int, float)):
-                piece += f" \u00b1 {se:.2g} (s.e.)"
+            has_error = isinstance(se, (int, float)) and math.isfinite(se)
+            if has_error:
+                piece += f" \u00b1 {se:.2g}"
+            if unit:
+                piece += f" {unit}"
+            if has_error:
+                piece += " (s.e.)"
             if isinstance(n_eff, (int, float)):
                 piece += f", {n_eff:.1f} effective samples"
                 if n_eff < MINIMUM_EFFECTIVE_SAMPLES:

@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastmdxplora.gui.report_dashboard import _UNITS, _numbers_in
+from fastmdxplora.gui.report_dashboard import _numbers_in, unit_of
 
 #: What each series is called and whether it runs over time or residues.
 #: A name not listed is drawn over time if its analysis recorded a mean over
@@ -61,7 +61,7 @@ def series_payload(root: Path, analysis: str) -> dict[str, Any]:
     rows = _rows(data)
     if not rows:
         return {"ok": False, "reason": f"{analysis}'s data file holds no numbers"}
-    unit = _UNITS.get(analysis, "")
+    unit = unit_of(analysis, found)
     if kind == "residue":
         return _residues(analysis, label, unit, rows)
     return _over_time(Path(root), analysis, label, unit, rows, found)

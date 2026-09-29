@@ -724,6 +724,16 @@ _UNITS = {"rmsd": "nm", "rmsf": "nm", "rg": "nm", "sasa": "nm\u00b2", "hbonds": 
           "qvalue": ""}
 
 
+def unit_of(name: str, found: dict[str, Any] | None = None) -> str:
+    """What an analysis's mean is measured in: the unit it recorded beside
+    the mean, or, for a study analysed before units were recorded, the one
+    known for its name."""
+    recorded = found.get("unit") if isinstance(found, dict) else None
+    if isinstance(recorded, str):
+        return recorded
+    return _UNITS.get(name, "")
+
+
 def _what_the_analysis_found(data_path: Path) -> str | None:
     """The mean the analysis settled on, as its figure shows it.
 
@@ -742,7 +752,7 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
     if not isinstance(found, dict):
         return None
     mean = found.get("mean")
-    unit = _UNITS.get(data_path.parent.name, "")
+    unit = unit_of(data_path.parent.name, found)
     unit = f" {unit}" if unit else ""
     if not _finite(mean):
         return "no mean: too short to measure" if found.get("not_a_measurement") else None

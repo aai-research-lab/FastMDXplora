@@ -31,6 +31,7 @@ Outputs land in ``<output_dir>/<analysis_name>/``:
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -50,6 +51,19 @@ from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
 
 logger = get_logger("analysis.base")
+
+
+def _unit_in(label: str) -> str:
+    """The unit an axis label states in its closing brackets, or "".
+
+    "RMSD (nm)" gives "nm"; "Q (fraction native contacts)" gives "", since
+    anything longer than a unit is a description.
+    """
+    if label.endswith(")") and "(" in label:
+        inside = label[label.rindex("(") + 1:-1].strip()
+        if inside and len(inside) <= 12:
+            return inside
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +497,9 @@ class Analysis(ABC):
         if reason is not None:
             record["not_a_measurement"] = reason
         record["n_frames"] = int(series.size)
+        unit = self._recorded_unit()
+        if unit is not None:
+            record["unit"] = unit
         self.findings["mean"] = record
 
         # Kept so the figure can show what the mean rests on. The x axis is
@@ -565,11 +582,29 @@ class Analysis(ABC):
             label = self._user_ylabel or self.default_ylabel() or ""
         except Exception:  # noqa: BLE001 - a label depending on run state
             return ""
-        if label.endswith(")") and "(" in label:
-            inside = label[label.rindex("(") + 1:-1].strip()
-            if inside and len(inside) <= 12:
-                return f" {inside}"
-        return ""
+        inside = _unit_in(label)
+        return f" {inside}" if inside else ""
+
+    def _recorded_unit(self) -> str | None:
+        """The unit written beside the mean in the findings.
+
+        Whoever reads the findings (a caption, a table, the Agent) is told
+        the unit rather than left to guess one: the Agent was handed an RMSD
+        of 0.013 with nothing to say whether that was nm or Angstrom. Read
+        from the analysis's own axis, never a label the person set, which
+        may say anything. An empty string is a count or a fraction; ``None``
+        is an analysis with no axis of its own, and records nothing.
+        """
+        try:
+            label = self.default_ylabel()
+        except Exception:  # noqa: BLE001 - a label depending on run state
+            return None
+        if not label:
+            return None
+        # "nm2" on an axis (as two analyses write it) is nm squared.
+        return re.sub(r"\b(nm|m)([23])\b",
+                      lambda m: m.group(1) + "\u00b2\u00b3"[int(m.group(2)) - 2],
+                      _unit_in(label))
 
     def _mean_label(self, record: dict[str, Any], has_error: bool) -> str:
         """What the dashed line is, said in the legend where it is read.

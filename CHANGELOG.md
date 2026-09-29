@@ -901,6 +901,18 @@ that list, drawing it threw, so *Download config*, *Copy the command*, *Run
 here* and the plan's last two lines silently did nothing. A config that
 arrives first now waits for the list.
 
+### A mean is recorded with its unit, and the Agent is told it
+
+**Each analysis now writes its mean's unit beside it** (`unit` in
+`findings.mean`, read from its own axis: nm for an RMSD, nm² for an area per
+lipid, empty for a count or a fraction), and the captions, the table of a
+study's runs and the Agent read it from there. The Agent was handed each mean
+as a bare number, so a model asked for the RMSD had nothing to say whether
+0.013 was nm or Angstrom, and a mean whose error was withheld reached it as
+"± nan". The captions and the run table knew the unit only for five analyses
+named in the GUI; an end-to-end distance or an area per lipid had none.
+Studies analysed before this keep the units known for those five.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

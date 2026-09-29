@@ -69,7 +69,9 @@ Every measure reports through the same four registers, and reading them is most
 of reading a result.
 
 **A number, plainly.** A settled mean arrives with a standard error and the
-number of **independent observations** behind it, not the number of frames.
+number of **independent observations** behind it, not the number of frames,
+and with its unit (`unit` in the analysis's `options.json`, as its figure's
+axis states it; empty for a count or a fraction).
 Saving frames more often makes a file larger without making a measurement
 better, so the effective sample count is the figure to read. The correlation
 behind it is summed over pairs of lags, so frames that alternate, as a stiff

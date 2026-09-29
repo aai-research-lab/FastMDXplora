@@ -148,7 +148,7 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     wrote them), so every mean stood without its error, and a series too
     short to measure stood among them as though it were a result."""
     from fastmdxplora.batch.aggregate import read_member_findings
-    from fastmdxplora.gui.report_dashboard import _UNITS, _format_metric_value
+    from fastmdxplora.gui.report_dashboard import _format_metric_value, unit_of
 
     axes: list[str] = sorted({axis for r in runs for axis in (r.get("values") or {})})
     short = {axis: axis.split(".")[-1] for axis in axes}
@@ -172,8 +172,10 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     if not measures:
         lines += ["No run has reported a settled mean yet.", ""]
         return "\n".join(lines)
+    units = {m: next((unit_of(m, row[m]) for row in means.values() if m in row), "")
+             for m in measures}
     head = [short[a] for a in axes] + [
-        f"{m} mean" + (f" ({_UNITS[m]})" if _UNITS.get(m) else "") for m in measures]
+        f"{m} mean" + (f" ({units[m]})" if units[m] else "") for m in measures]
     lines.append("| run | " + " | ".join(head) + " |")
     lines.append("|---|" + "---|" * len(head))
     qualified = False
