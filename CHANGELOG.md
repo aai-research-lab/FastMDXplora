@@ -848,6 +848,17 @@ a section setting the spread of their means against the error each run
 estimated for itself, with the verdict `members.json` has always held and the
 report never showed.
 
+### A first page load is answered whole
+
+**The GUI no longer answers a first page load with a server error on whichever
+route lost a race.** The routes import what they need when first asked, a page
+asks for many things at once, each in a thread of its own, and the package's
+imports go round in a circle (`fastmdxplora.analysis` imports every analysis,
+each of which imports `analysis.plotting`); two threads importing into it
+together were refused by Python's import locks with "deadlock detected". The
+Agent's plan was found without its size and time that way. The server now
+imports those modules before it serves anything.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -59,6 +59,35 @@ from fastmdxplora.refusals import BackendUnavailable
 
 logger = logging.getLogger("fastmdxplora.gui.server")
 
+#: Modules the routes import when first asked for, imported once instead by
+#: the thread that builds the server, before any request is served. Two
+#: requests arriving together imported them in two threads at once, and the
+#: package's imports go round in a circle (`fastmdxplora.analysis` imports
+#: every analysis, and each of those imports `analysis.plotting`), which
+#: Python's import locks break by raising "deadlock detected": a first page
+#: load answered 500 to whichever route lost, the Agent's plan among them.
+_IMPORTED_BY_THE_ROUTES = (
+    "fastmdxplora.analysis",
+    "fastmdxplora.gui.config_builder",
+    "fastmdxplora.gui.report_dashboard",
+    "fastmdxplora.gui.report_page",
+    "fastmdxplora.gui.series",
+    "fastmdxplora.gui.plan",
+    "fastmdxplora.gui.preview",
+    "fastmdxplora.gui.agent_panel",
+)
+
+
+def _import_what_the_routes_import() -> None:
+    import importlib
+
+    for name in _IMPORTED_BY_THE_ROUTES:
+        try:
+            importlib.import_module(name)
+        except ImportError as exc:  # an optional dependency: the route says so
+            logger.debug("dashboard: %s not imported ahead: %s", name, exc)
+
+
 class _DashboardServer(ThreadingHTTPServer):
     """A server that does not shout when a caller hangs up.
 
@@ -73,6 +102,10 @@ class _DashboardServer(ThreadingHTTPServer):
     reachable from somewhere else now, so the ordinary behaviour of somebody
     else's socket has to be ordinary here too.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _import_what_the_routes_import()
+        super().__init__(*args, **kwargs)
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         raised = sys.exc_info()[0]
