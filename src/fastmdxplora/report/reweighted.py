@@ -16,6 +16,7 @@ should be readable without the seven.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -132,7 +133,8 @@ def _signed(value: Any) -> str:
 
 
 def reweighted_section(project_root: Path,
-                       record: dict[str, Any] | None = None) -> str:
+                       record: dict[str, Any] | None = None, *,
+                       report_dir: Path | None = None) -> str:
     """The corrected averages as a table, with what they rest on."""
     if record is None:
         record = load_reweighted(project_root)
@@ -195,8 +197,9 @@ def reweighted_section(project_root: Path,
     figure = (Path(project_root) / "analysis" / "reweighted"
               / "reweighted_averages.png")
     if figure.is_file():
-        lines.append("![Effect of reweighting]"
-                     "(analysis/reweighted/reweighted_averages.png)")
+        # Relative to the page it is written into, which is report/.
+        where = os.path.relpath(figure, report_dir or Path(project_root) / "report")
+        lines.append(f"![Effect of reweighting]({Path(where).as_posix()})")
         lines.append("")
 
     warnings = record.get("warnings") or []

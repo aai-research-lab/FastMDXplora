@@ -17,6 +17,7 @@ dependencies); the Markdown source is always produced.
 from __future__ import annotations
 
 import json
+import os
 from fastmdxplora.utils.logging import get_logger
 import platform
 import sys
@@ -61,6 +62,25 @@ def _code_text(value: object, *, limit: int = 1000) -> str:
 
 def _link_target(path: str) -> str:
     return quote(path, safe="/._-")
+
+
+def _link_from(report_dir: Path, target: Path) -> str:
+    """A link to `target` that works from the page written in `report_dir`.
+
+    Markdown resolves a relative link against the file's own folder, and so
+    does every reader of it: a viewer, the PDF renderer, the GUI. The report
+    is written in report/ and the analyses in analysis/, so a figure is
+    `../analysis/...` from there, not the `analysis/...` it is from the
+    study's root.
+    """
+    return _link_target(Path(os.path.relpath(target, report_dir)).as_posix())
+
+
+def _caption_of(analysis: str, stem: str) -> str:
+    """`rmsd` for rmsd.png, `cluster: kmeans counts` for cluster_kmeans_counts.png."""
+    rest = stem[len(analysis):] if stem.startswith(analysis) else stem
+    rest = rest.strip("_").replace("_", " ")
+    return f"{analysis}: {rest}" if rest else analysis
 
 
 def _load_json_safely(path: Path) -> dict | None:
@@ -344,7 +364,8 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
     return "\n".join(lines)
 
 
-def _results_section(project_root: Path) -> str:
+def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
+    report_dir = report_dir or project_root / "report"
     analysis_manifest = _load_json_safely(
         project_root / "analysis" / "analysis_manifest.json"
     ) or {}
@@ -382,15 +403,16 @@ def _results_section(project_root: Path) -> str:
     # time they reach a section saying it was not a measurement.
     reweighted_record = load_reweighted(project_root)
     if reweighted_record:
-        lines.append(reweighted_section(project_root, reweighted_record))
+        lines.append(reweighted_section(project_root, reweighted_record,
+                                        report_dir=report_dir))
         lines.append("")
 
-    summary_fig = project_root / "report" / "analysis_summary.png"
-    summary_manifest = project_root / "report" / "analysis_summary_manifest.json"
+    summary_fig = report_dir / "analysis_summary.png"
+    summary_manifest = report_dir / "analysis_summary_manifest.json"
     if summary_fig.is_file():
         lines.append("### Analysis Summary Figure")
         lines.append("")
-        lines.append("![Analysis summary](analysis_summary.png)")
+        lines.append(f"![Analysis summary]({_link_from(report_dir, summary_fig)})")
         lines.append("")
         if summary_manifest.is_file():
             lines.append(
@@ -399,8 +421,8 @@ def _results_section(project_root: Path) -> str:
             )
             lines.append("")
 
-    region_fig = project_root / "report" / "region_highlight_summary.png"
-    region_manifest = project_root / "report" / "region_highlight_manifest.json"
+    region_fig = report_dir / "region_highlight_summary.png"
+    region_manifest = report_dir / "region_highlight_manifest.json"
     if region_fig.is_file():
         lines.append("### Region Highlight Figure")
         lines.append("")
@@ -409,7 +431,7 @@ def _results_section(project_root: Path) -> str:
             "profile. These labels are user-provided annotations."
         )
         lines.append("")
-        lines.append("![Region highlights](region_highlight_summary.png)")
+        lines.append(f"![Region highlights]({_link_from(report_dir, region_fig)})")
         lines.append("")
         if region_manifest.is_file():
             lines.append(
@@ -513,11 +535,8 @@ def _results_section(project_root: Path) -> str:
         figures = sorted(figs_dir.glob("*.png")) if figs_dir.exists() else []
         if figures:
             for fig in figures:
-                # Markdown/HTML image links require forward slashes on every
-                # OS; str(WindowsPath) would emit backslashes and break them.
-                rel = fig.relative_to(project_root).as_posix()
-                caption = _md_text(f"{analysis} — {fig.stem}")
-                lines.append(f"![{caption}]({_link_target(rel)})")
+                lines.append(f"![{_md_text(_caption_of(analysis, fig.stem))}]"
+                             f"({_link_from(report_dir, fig)})")
                 lines.append("")
         else:
             lines.append("_No figure was produced for this analysis._")
@@ -879,7 +898,7 @@ def build_document(
     if include_methods:
         sections.append(_methods_section(project_root, phase_context, orchestrator))
 
-    sections.append(_results_section(project_root))
+    sections.append(_results_section(project_root, output_dir))
     convergence = _convergence_section(project_root)
     if convergence:
         sections.append(convergence)

@@ -56,7 +56,7 @@ def run(
         Paths (relative to ``output_dir``) of artifacts produced.
     """
     params = {**DEFAULTS, **options}
-    title = params["title"] or f"FastMDXplora Study — {_system_label(orchestrator.system)}"
+    title = params["title"] or f"FastMDXplora Study: {_system_label(orchestrator.system)}"
 
     presenter = getattr(orchestrator, "_presenter", None)
     artifacts: list[str] = []

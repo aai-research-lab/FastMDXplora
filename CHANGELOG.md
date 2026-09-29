@@ -529,6 +529,22 @@ covered only by the tests that reach RCSB.
 release tag, instead of `/en/latest/`, which is `main` and can describe
 settings the installed release does not have.
 
+### The report's analysis figures open from the report
+
+**`report.md` now links each analysis figure from its own folder.** The report
+is written in `report/` and linked the figures as `analysis/rmsd/rmsd.png`,
+which is where they are from the study's root. Markdown resolves a link
+against the file's folder, so a viewer showed a broken image for every
+analysis, the PDF (rendered from `report/` as well) left them out without a
+word, and the GUI's Report page asked for `report/analysis/...` and got a 404
+for each. Only the summary figure, written in `report/`, ever appeared. The
+links are now `../analysis/...`, worked out from wherever the report is
+written; the reweighting figure had the same fault.
+
+The captions read `rmsd` and `cluster: kmeans` rather than repeating the
+analysis's name after a dash, and the default title is
+`FastMDXplora Study: <system>`.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
