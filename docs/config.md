@@ -94,7 +94,7 @@ Every setting in each is in the [Config reference](config_reference.md).
 | `verbose` | bool | `false` | Stream debug logging to the terminal |
 | `agent` | str | — | Records that the [Agent](agent.md) wrote this study: `assisted`, `autonomous` or `unvalidated` |
 | `agent_model` | str | — | Which model wrote it, as `provider/model` |
-| `budget_hours` | float | — | A ceiling on GPU hours. Checked after setup, where the solvated particle count and so the cost are first known, and the study refuses rather than overrunning it. Required by `--autonomous` |
+| `budget_hours` | float | — | A ceiling on GPU hours for the whole study, every run of it. Checked after setup, where the solvated particle count and so the cost are first known, and the study refuses rather than overrunning it. Required by `--autonomous` |
 
 `agent` and `agent_model` are provenance, not behaviour. They are described in
 [The FastMDXplora Agent](agent.md).

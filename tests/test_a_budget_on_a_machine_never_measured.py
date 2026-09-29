@@ -177,7 +177,7 @@ def test_another_refusal_from_the_estimate_is_passed_on(tmp_path, monkeypatch) -
         raise StudyError("The particle count is not known yet.",
                          code="setup.structure.undetermined")
 
-    monkeypatch.setattr(cost, "estimate_study", undetermined)
+    monkeypatch.setattr(cost, "estimate_runs", undetermined)
     timer = Timer()
     staged = run_in_stages(study(), tmp_path / "out", budget_hours=10, explore=a_setup,
                            measure=timer)

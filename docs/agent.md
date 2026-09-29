@@ -182,6 +182,12 @@ The gate sits where the information first exists and before the cost is
 incurred. Earlier it would be guessing; later there would be nothing left to
 stop.
 
+**A study of several runs is priced on all of them.** Each replica of a sweep
+and each system of a campaign is prepared and counted on its own; an umbrella
+study prepares the one system its windows share and is priced on every window,
+each with its own equilibration, and on the pull that seeds them where it asks
+for one.
+
 **When it refuses, setup's output is kept.** It cost minutes and it is worth
 having — a shorter study reuses it through `simulation.setup_from`, and the
 particle count is what made the refusal possible. The message names the

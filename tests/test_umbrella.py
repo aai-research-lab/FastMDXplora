@@ -1313,12 +1313,26 @@ class TestOneSystemForEveryWindow:
         assert "setup" in seen["exclude"]
         assert not seen["include"]
 
-    def test_preparing_is_not_shared_when_it_is_the_whole_study(
+    def test_preparing_alone_prepares_the_one_system_and_no_window(
         self, tmp_path
     ) -> None:
-        """Doing it once would leave every window with nothing to run."""
+        """Preparing as the whole study prepared a system per window, which
+        is what sharing exists to prevent, and left a budget, which prepares
+        first, nothing to price the windows on. Seeding the windows is
+        simulation, so it waits for the study that simulates them."""
         study = self._study(tmp_path, include="[setup]")
-        assert study._maybe_prepare_once(["setup"], None) is None
+        shared = tmp_path / "out" / "shared_setup" / "setup"
+        self._pretend_it_is_prepared(shared)
+        seeded: list = []
+        study._give_each_window_its_start = seeded.append
+        assert study._maybe_prepare_once(["setup"], None) == shared
+        assert seeded == []
+
+        ran: list = []
+        study._run_sequential = lambda include, exclude: ran.append(include) or []
+        results = study.run()
+        assert ran == [], "an empty list of phases would be every phase"
+        assert [r.status for r in results] == ["skipped"] * 3
 
     def test_an_ordinary_campaign_prepares_per_system(self, tmp_path) -> None:
         """Different systems *are* different systems. Sharing one preparation

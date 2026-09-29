@@ -1297,6 +1297,23 @@ class BatchExplorer:
                 include = [phase for phase in include if phase != "setup"]
             else:
                 exclude = list(exclude or []) + ["setup"]
+            from fastmdxplora.orchestrator import PHASES
+
+            remaining = [] if include == [] else [
+                phase for phase in PHASES
+                if (not include or phase in include) and phase not in (exclude or [])]
+            if not remaining:
+                # Preparing was the whole study, and it is done. An empty
+                # list of phases means every phase to a run, so the windows
+                # are not handed one.
+                (self.output_dir / "runs").mkdir(exist_ok=True)
+                self.results = [_skipped_run_result(
+                    spec, self._run_output_dir(spec),
+                    f"Prepared once, in {shared}, for every window; the "
+                    "windows simulate from it.") for spec in self.run_specs]
+                self._write_study_config()
+                self._write_batch_manifest()
+                return list(self.results)
 
         if self.is_single:
             logger.info("Exploring 1 molecular system in %s", self.output_dir)
@@ -1391,6 +1408,14 @@ class BatchExplorer:
 
         wanted = set(include) if include else {"setup", "simulation",
                                                "analysis", "report"}
+        # Asked only to prepare, the study prepares the one system its
+        # windows share, and stops there: seeding the windows is simulation,
+        # and a pull is hours of it. Each window prepared a system of its own
+        # instead, a box of water per window, which is what sharing exists to
+        # prevent; and a budget, which prepares first and prices the rest on
+        # what was prepared, found no system to price and refused every
+        # umbrella study.
+        only_preparing = wanted - set(exclude or []) == {"setup"}
         # A study that names a prepared system is not asking to prepare
         # another one. Preparing anyway solvates a second box, and solvation
         # does not place water the same way twice: the named system's frames
@@ -1439,12 +1464,8 @@ class BatchExplorer:
             # that reaches it.
             reused = (self._raw or {}).get("simulation") or {}
             supplied = reused.get("setup_from") or reused.get("prepared_from")
-            if supplied:
+            if supplied and not only_preparing:
                 self._give_each_window_its_start(Path(supplied))
-            return None
-        if wanted == {"setup"}:
-            # Preparing is the whole study. There is nothing to share it
-            # with, and doing it once would leave every window with no work.
             return None
 
         # An umbrella study is one system by the time it gets here -- expansion
@@ -1542,7 +1563,8 @@ class BatchExplorer:
         _check_selections_against(
             prepared, self.run_specs[0].options.get("simulation") or {})
 
-        self._give_each_window_its_start(prepared)
+        if not only_preparing:
+            self._give_each_window_its_start(prepared)
         return prepared
 
     # ------------------------------------------------------------------

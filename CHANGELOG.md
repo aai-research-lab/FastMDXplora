@@ -739,6 +739,27 @@ advice uses the same rule and says whether setup will grow the box or refuse.
 The guardrail corpus's box case now builds its box as OpenMM would, where it had
 made the box a fixed fraction of the padding; its outcome is unchanged.
 
+### A budget prices a study of several runs, all of it
+
+**`budget_hours` no longer refuses every umbrella study, replica sweep and
+campaign.** The staged route prepares a study, reads the particle count setup
+recorded and prices the rest; it read the count from `setup/` beside the study,
+which only a study of one run has. A study of several keeps each run's system
+under `runs/<id>/` and an umbrella study's shared one under `shared_setup/`, so
+setup ran and the study stopped with "Setup finished without recording how many
+particles the solvated system holds", and `--autonomous`, which requires a
+budget, could run none of them. Each run is now counted where the batch layer
+prepares it, and the estimate is the sum over the runs, each window with its own
+equilibration, plus the pull that seeds an umbrella study's windows where it
+asks for one; the refusal says how many runs it priced. Each run then simulates
+the system prepared for it.
+
+**An umbrella study asked only to prepare prepares the one system its windows
+share.** `include_phase: [setup]` prepared a system for every window, a box of
+water per window, which is what sharing exists to prevent; and a study naming
+`setup_from` whose windows are seeded from a pull began the pull, hours of
+simulation, when it had been asked only to prepare.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

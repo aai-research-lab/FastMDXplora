@@ -62,6 +62,7 @@ __all__ = [
     "load_calibration",
     "estimate_seconds",
     "estimate_study",
+    "estimate_runs",
     "describe_machine",
 ]
 
@@ -142,6 +143,12 @@ class Estimate:
     particles: int
     steps: int
     calibration: Calibration
+    #: A study of several runs (umbrella windows, replicas, several
+    #: systems) is priced as the sum of its runs: ``steps`` is then every
+    #: step of every run, ``particles`` the largest system and
+    #: ``fewest_particles`` the smallest.
+    runs: int = 1
+    fewest_particles: int | None = None
 
     @property
     def hours(self) -> float:
@@ -160,6 +167,7 @@ class Estimate:
             "seconds_per_particle_step":
                 self.calibration.seconds_per_particle_step,
             "measured_at": self.calibration.measured_at,
+            "runs": self.runs,
         }
 
     def __str__(self) -> str:
@@ -171,8 +179,14 @@ class Estimate:
             rough = f"{self.hours:.1f} hours"
         else:
             rough = f"{self.days:.1f} days"
-        return (f"about {rough} for {self.steps:,} steps on "
-                f"{self.particles:,} particles")
+        if self.runs == 1:
+            return (f"about {rough} for {self.steps:,} steps on "
+                    f"{self.particles:,} particles")
+        fewest = self.particles if self.fewest_particles is None else self.fewest_particles
+        on = (f"{self.particles:,} particles each" if fewest == self.particles
+              else f"{fewest:,} to {self.particles:,} particles")
+        return (f"about {rough} for {self.runs} runs, {self.steps:,} steps in all, "
+                f"on {on}")
 
 
 def calibration_path() -> Path:
@@ -371,6 +385,41 @@ def estimate_study(
         precision=precision,
         calibration=calibration,
         path=path,
+    )
+
+
+def estimate_runs(
+    runs: list[tuple[int, int]],
+    *,
+    platform_name: str = "",
+    precision: str = "",
+    calibration: Calibration | None = None,
+    path: Path | None = None,
+) -> Estimate:
+    """The whole of a study of several runs: each run's ``(particles,
+    steps)``, priced on the one measurement and summed.
+
+    A study's cost is every run it makes: 35 umbrella windows are 35
+    equilibrations and 35 productions, and three replicas are three.
+    """
+    if not runs:
+        raise StudyError(
+            "There are no runs to price.", code="setup.structure.undetermined")
+    first = estimate_seconds(particles=runs[0][0], steps=runs[0][1],
+                             platform_name=platform_name, precision=precision,
+                             calibration=calibration, path=path)
+    parts = [first] + [
+        estimate_seconds(particles=particles, steps=steps,
+                         platform_name=platform_name, precision=precision,
+                         calibration=first.calibration)
+        for particles, steps in runs[1:]]
+    return Estimate(
+        seconds=sum(part.seconds for part in parts),
+        particles=max(part.particles for part in parts),
+        steps=sum(part.steps for part in parts),
+        calibration=first.calibration,
+        runs=len(parts),
+        fewest_particles=min(part.particles for part in parts),
     )
 
 

@@ -381,11 +381,11 @@ class TestAnUnattendedStudyKeepsTheSystemItNamed:
         _placeholders(tmp_path / "prepared" / "setup", n_atoms=4321)
         priced: list[int] = []
 
-        def estimate(config, *, particles, **_kwargs):
-            priced.append(particles)
+        def estimate(runs, **_kwargs):
+            priced.extend(particles for particles, _ in runs)
             return SimpleNamespace(seconds=1.0, hours=1 / 3600)
 
-        monkeypatch.setattr(cost, "estimate_study", estimate)
+        monkeypatch.setattr(cost, "estimate_runs", estimate)
         given: list[dict] = []
 
         def explore(*, config, output_dir):
