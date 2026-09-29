@@ -48,14 +48,30 @@ def _a_sweep_study(where: Path, temperatures=(300, 310)) -> Path:
         run = study._run_output_dir(spec)
         shutil.copytree(finished, run, dirs_exist_ok=True)
         (run / "simulation" / "live_status.json").write_text(json.dumps(status), encoding="utf-8")
-        # What each run settled on, as an analysis records it.
+        # What each run settled on, as an analysis records it: the record
+        # `summarise` makes of a series, which is what the analyses write.
         for name, mean in (("rmsd", 0.15 + 0.01 * spec.sweep_values["simulation.temperature_K"] / 300),
                            ("rg", 1.2)):
             (run / "analysis" / name / "options.json").write_text(json.dumps({
                 "analysis": name, "options": {},
-                "findings": {"mean": {"mean": mean, "uncertainty": 0.005, "unit": "nm"}}}),
-                encoding="utf-8")
+                "findings": {"mean": _recorded(mean)}}), encoding="utf-8")
     return root
+
+
+def _recorded(mean: float, frames: int = 400) -> dict:
+    """A series about ``mean``, summarised by the analyses' own function."""
+    import numpy as np
+
+    from fastmdxplora.statistics import summarise
+
+    series = mean + 0.002 * np.random.default_rng(0).standard_normal(frames)
+    series = series - series.mean() + mean
+    equilibrated, reason = summarise(series)
+    record = dict(equilibrated.as_record()) if equilibrated is not None else {}
+    if reason is not None:
+        record["not_a_measurement"] = reason
+    record["n_frames"] = frames
+    return record
 
 
 class TestTheBrowserTellsThemApart(unittest.TestCase):
@@ -157,9 +173,27 @@ class TestTheRootReportsTheCollective(unittest.TestCase):
         self.assertEqual((page["runs"], page["pending"]), (2, 1))
         self.assertIn("1 of 2 runs completed", page["html"])
         self.assertIn("1 still to run", page["html"])
-        self.assertIn("rmsd mean", page["html"])
-        self.assertIn("0.16", page["html"])          # the finished run's mean, 300 K
+        self.assertIn("rmsd mean (nm)", page["html"])
+        self.assertIn("0.1600 ±", page["html"])     # the finished run's mean, 300 K, with its error
         self.assertNotIn("0.1603", page["html"])     # the running one's is not there
+        self.assertIn("after equilibration, with its standard error", page["html"])
+        self.assertNotIn("Not a measurement", page["html"])
+
+    def test_a_mean_that_is_not_a_measurement_is_marked(self):
+        import sys
+        import tempfile
+
+        sys.path.insert(0, "src")
+        from fastmdxplora.gui.report_page import report_payload
+
+        root = _a_sweep_study(Path(tempfile.mkdtemp()))
+        finished = next(p for p in (root / "runs").iterdir()
+                        if "completed" in (p / "simulation" / "live_status.json").read_text())
+        (finished / "analysis" / "rg" / "options.json").write_text(json.dumps({
+            "analysis": "rg", "options": {},
+            "findings": {"mean": _recorded(1.2, frames=12)}}), encoding="utf-8")
+        page = report_payload(root)
+        self.assertIn("Not a measurement", page["html"])
 
     def test_once_every_run_has_finished_it_is_the_comparison(self):
         import sys

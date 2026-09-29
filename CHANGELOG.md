@@ -809,6 +809,17 @@ named by its identifier is fetched once and the reply does not wait on it. A
 proposal that prepares nothing, or whose structure cannot be read, ends where
 it did.
 
+### A study of several runs gives each run's mean with its error
+
+**The report page of a study of several runs, before the comparison is
+written, now gives each finished run's mean with its standard error and its
+unit, and marks a mean the analysis said is not a measurement.** It read an
+`uncertainty` and a `unit` that no analysis writes (its test's fixture had
+written them, and the analyses write `standard_error`), so every mean stood
+bare, and a series too short to measure stood among the results as though it
+were one. The table now says the means are over the frames after
+equilibration.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

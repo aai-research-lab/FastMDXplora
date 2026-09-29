@@ -140,8 +140,15 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     """A table of what each completed run settled on, one row per run and
     one column per measure with a mean, read from the runs' own findings.
     The comparison across them, with its figures, comes when the last run
-    finishes."""
+    finishes.
+
+    Each mean is given with its standard error and unit, and a mean the
+    analysis said is not a measurement is marked as one. The table read an
+    `uncertainty` and a `unit` that no analysis writes (its test's fixture
+    wrote them), so every mean stood without its error, and a series too
+    short to measure stood among them as though it were a result."""
     from fastmdxplora.batch.aggregate import read_member_findings
+    from fastmdxplora.gui.report_dashboard import _UNITS, _format_metric_value
 
     axes: list[str] = sorted({axis for r in runs for axis in (r.get("values") or {})})
     short = {axis: axis.split(".")[-1] for axis in axes}
@@ -165,18 +172,29 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     if not measures:
         lines += ["No run has reported a settled mean yet.", ""]
         return "\n".join(lines)
-    head = [short[a] for a in axes] + [f"{m} mean" for m in measures]
+    head = [short[a] for a in axes] + [
+        f"{m} mean" + (f" ({_UNITS[m]})" if _UNITS.get(m) else "") for m in measures]
     lines.append("| run | " + " | ".join(head) + " |")
     lines.append("|---|" + "---|" * len(head))
+    qualified = False
     for run in completed:
         cells = [str((run.get("values") or {}).get(axis, "")) for axis in axes]
         for measure in measures:
             record = means[run["run_id"]].get(measure)
             if record is None:
                 cells.append("")
-            else:
-                sd = record.get("uncertainty") or record.get("sem") or record.get("std")
-                unit = f" {record['unit']}" if record.get("unit") else ""
-                cells.append(f"{record['mean']:.4g}" + (f" ± {sd:.2g}" if isinstance(sd, (int, float)) else "") + unit)
+                continue
+            error = record.get("standard_error")
+            cell = _format_metric_value(record["mean"])
+            if isinstance(error, (int, float)) and not isinstance(error, bool):
+                cell += f" ± {_format_metric_value(error)}"
+            if record.get("not_a_measurement"):
+                cell += " \\*"
+                qualified = True
+            cells.append(cell)
         lines.append(f"| {run['run_id']} | " + " | ".join(cells) + " |")
+    lines += ["", "Each mean is over the frames after equilibration, with its standard error."]
+    if qualified:
+        lines += ["", "\\* Not a measurement: the analysis found the series too short, or "
+                  "with too few independent samples, for its mean to be one."]
     return "\n".join(lines) + "\n"
