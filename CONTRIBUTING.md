@@ -30,16 +30,18 @@ pytest
 
 ### The browser tests
 
-The tests that check the GUI page itself, such as the composer's layout and
-the study frame, drive a real browser through Playwright and skip when it is
-not installed. To run them locally:
+The tests that check the GUI page itself, such as the composer's layout, the
+study frame, the molecule viewer and the charts, drive a real browser through
+Playwright and skip when it is not installed. The viewer's tests also need
+WebGL, which headless Chromium provides in software. To run them locally:
 
 ```bash
 pip install playwright
 python -m playwright install chromium
 ```
 
-CI runs them on one job, Ubuntu with Python 3.11.
+CI runs them on one job, Ubuntu with Python 3.11. Every job checks that each
+script the GUI serves parses, with Node where it is installed.
 
 ### If you install a released version into the same environment
 

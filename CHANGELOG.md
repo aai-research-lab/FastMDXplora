@@ -468,6 +468,24 @@ there to screen it; `binding.reference.charge` in `pmf.json` records them. A
 about 0.9 kJ/mol. Averaged over directions, the estimate agrees with a direct
 Ewald sum to within 5%.
 
+### The molecule viewer and the charts are tested in a browser
+
+**Stepping a frame in the viewer shows the next frame.** With Follow ticked,
+as it is by default, the first press of the viewer's next-frame button loaded
+playback at the newest frame, and "next" from there went nowhere; the
+transport's own buttons stopped following and these did not. Stepping a frame
+now stops following, as choosing a frame anywhere else does.
+
+**`molecule-viewer.js` and `charts.js` run in CI.** Nothing had run them: the
+browser tests covered the frame, the composer and the run builder, and every
+check on the viewer read its source for a string. They are now driven in
+Chromium on a study with a protein, a ligand, water, ions, a trajectory and an
+energy log: the structure drawn without solvent, the water toggle, every style
+and ligand control, playback stepping with the atoms moving, water as an
+overlay during playback, and the charts' values and drawing, with any page
+error failing the test. Every job also checks that each GUI script parses,
+with Node.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

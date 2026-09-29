@@ -948,8 +948,11 @@
       else await startPlayback();
       return;
     }
-    if (action === "prev-frame") { await seekRelative(-1); return; }
-    if (action === "next-frame") { await seekRelative(1); return; }
+    // Stepping a frame is choosing one, as the transport's own buttons are,
+    // so the run stops choosing for the person. Left following, the first
+    // press loaded playback at the newest frame and "next" went nowhere.
+    if (action === "prev-frame") { stopFollowing(); await seekRelative(-1); return; }
+    if (action === "next-frame") { stopFollowing(); await seekRelative(1); return; }
     if (action === "reset-view") {
       safeCall(viewer, "spin", false);
       safeCall(viewer, "zoomTo");
