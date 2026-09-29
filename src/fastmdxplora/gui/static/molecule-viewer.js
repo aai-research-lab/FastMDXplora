@@ -1531,6 +1531,68 @@
   function onClickAtom(atom) {
     if (!atom) return;
     updateSelectionPanel(atom);
+    void showSelectionFor(atom);
+  }
+
+  /* The selection a clicked atom is, as a Config writes it, checked by the
+   * server against the topology the analyses read: resSeq, not resid, and
+   * the chain by MDTraj's index. Only on a click; a hover asks nothing. */
+  let selectionAsked = 0;
+  async function showSelectionFor(atom) {
+    const host = document.getElementById("selection-strings");
+    if (!host) return;
+    const asked = ++selectionAsked;
+    const query = new URLSearchParams({
+      chain: atom.chain || "", resseq: String(atom.resi ?? ""),
+      resname: atom.resn || "", atom: atom.atom || atom.name || "",
+    });
+    let answer = null;
+    try {
+      answer = await (await fetch(`/api/selection?${query}`)).json();
+    } catch (error) {
+      answer = {ok: false, reason: "The server did not answer."};
+    }
+    if (asked !== selectionAsked) return;
+    host.replaceChildren();
+    host.hidden = false;
+    if (!answer || !answer.ok) {
+      const said = document.createElement("p");
+      said.className = "muted small";
+      said.textContent = (answer && answer.reason) || "No selection for this atom.";
+      host.appendChild(said);
+      return;
+    }
+    [["Residue", answer.residue], ["Atom", answer.atom]].forEach(([label, found]) => {
+      if (!found) return;
+      const row = document.createElement("div");
+      row.className = "selection-string";
+      row.setAttribute("data-of", label.toLowerCase());
+      const name = document.createElement("span");
+      name.className = "selection-string-label";
+      name.textContent = label;
+      const code = document.createElement("code");
+      code.textContent = found.selection;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "file-action";
+      copy.textContent = "Copy";
+      copy.title = `Copy the selection: ${found.atoms} atom${found.atoms === 1 ? "" : "s"} in ${answer.against}`;
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(found.selection);
+          copy.textContent = "Copied";
+        } catch (error) {
+          copy.textContent = "Select and copy";
+        }
+        setTimeout(() => { copy.textContent = "Copy"; }, 1800);
+      });
+      row.append(name, code, copy);
+      host.appendChild(row);
+    });
+    const note = document.createElement("p");
+    note.className = "muted small";
+    note.textContent = `Checked against ${answer.against}, the topology the analyses read.`;
+    host.appendChild(note);
   }
 
   function updateSelectionPanel(atom) {

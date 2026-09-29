@@ -48,6 +48,10 @@ fastmdx select "resSeq 189 to 195 and name CA" -s trypsin.pdb
   7 residues: ASP189, SER190, CYS191, GLN192, GLY193, ASP194, SER195
 ```
 
+In the GUI, clicking an atom in the viewer gives the selection for its residue
+and for the atom on the Selection tab, written with `resSeq` and checked
+against the topology the analyses read, with a button to copy each.
+
 `--atoms` lists every matching atom instead of the residues, and `--limit 0`
 lists all of them rather than the first forty. Any structure the software can
 read works: the deposited entry, `prepared.pdb`, or the topology written

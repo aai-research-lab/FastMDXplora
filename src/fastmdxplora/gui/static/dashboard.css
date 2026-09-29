@@ -3626,3 +3626,14 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .runs-overlay-label { fill: var(--text-secondary); font-size: var(--text-xs); }
 .runs-overlay-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: var(--text-xs); color: var(--text-secondary); }
 .page[data-runs-compared] #analysis-empty { display: none !important; }
+
+/* The clicked atom as a selection (selection.py). */
+.selection-strings { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.selection-strings[hidden] { display: none; }
+.selection-string { display: grid; grid-template-columns: 60px 1fr auto; gap: 8px; align-items: center; }
+.selection-string-label { color: var(--text-muted); font-size: var(--text-xs); }
+.selection-string code {
+    font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary);
+    background: var(--background-elevated); border: 1px solid var(--border-subtle);
+    border-radius: 4px; padding: 3px 6px; overflow-wrap: anywhere;
+}

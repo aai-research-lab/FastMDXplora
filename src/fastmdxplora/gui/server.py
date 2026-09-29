@@ -77,6 +77,7 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.gui.agent_panel",
     "fastmdxplora.gui.citations",
     "fastmdxplora.gui.runs_compared",
+    "fastmdxplora.gui.selection",
 )
 
 
@@ -144,7 +145,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
-    "/api/playback-info", "/api/series", "/api/runs-compared",
+    "/api/playback-info", "/api/series", "/api/runs-compared", "/api/selection",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
     "/structure/playback.pdb",
@@ -629,6 +630,17 @@ def make_handler(
                                     else {"ok": False, "reason": "no such run in this study"})
                     return
                 self._send_json(series_payload(root, name))
+                return
+            if path == "/api/selection":
+                from fastmdxplora.gui.selection import selection_for
+
+                query = parse_qs(parsed.query)
+
+                def one(key: str) -> str:
+                    return (query.get(key) or [""])[0]
+
+                self._send_json(selection_for(root, chain=one("chain"), resseq=one("resseq"),
+                                              resname=one("resname"), atom=one("atom")))
                 return
             if path == "/api/runs-compared":
                 from fastmdxplora.gui.runs_compared import runs_compared

@@ -1013,6 +1013,17 @@ greys with a shape for each cluster when greyscale is asked for. They had
 Tableau's ten colours written in, and came out in colour in a greyscale
 report.
 
+### A clicked atom is given as a selection
+
+**Clicking an atom in the viewer now gives, on the Selection tab, the
+selection for its residue and for the atom** (`chainid 0 and resSeq 189`,
+`... and name CA`), each checked against the topology the analyses read and
+with a button to copy it. The tab gave the residue, chain and atom's names and
+left the selection to be written by hand, in a language where `resid 189` and
+`resSeq 189` name different residues in most deposited structures. A residue
+the analyses do not read (water, unless it is saved with the trajectory) is
+said to be missing from it. `GET /api/selection` answers the same.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

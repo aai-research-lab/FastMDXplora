@@ -421,6 +421,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/playback-info`, `/api/live-frame-index`, `/api/live-coordinates` | The viewer's frames |
 | `GET /api/protein-preview` | The cached preview image |
 | `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart drawn from them; `&run=ID` for one run of a study of several |
+| `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read |
 | `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each measure's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |
 | `GET /artifacts/<path>` | Any file under the run root, `?download=1` to attach |
 | `GET /structure/topology.pdb`, `/structure/live-frame.pdb`, `/structure/playback.pdb` | Structures for the viewer |
