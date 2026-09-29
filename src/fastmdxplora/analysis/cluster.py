@@ -44,7 +44,7 @@ from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
-    close_figures_opened_since, figures_open, new_figure, save_figure)
+    category_style, close_figures_opened_since, figures_open, new_figure, save_figure)
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
 
@@ -506,16 +506,18 @@ def _plot_cluster_timeline(ax: plt.Axes, labels: np.ndarray, method: str) -> Non
     """Plot per-frame cluster labels as a scatter / step plot."""
     frames = np.arange(len(labels))
     unique = sorted(set(labels))
-    # Compact colormap; -1 (noise) gets gray
-    palette = plt.cm.tab10.colors
+    # The figures' own palette, so a greyscale copy is grey: Tableau's
+    # colours were written in here and came out in colour in both. Noise
+    # (-1) is a light grey dot either way.
     for k in unique:
         mask = labels == k
-        color = "#BBBBBB" if k == -1 else palette[k % len(palette)]
+        color, marker = ("#BBBBBB", "o") if k == -1 else category_style(int(k))
         ax.scatter(
             frames[mask],
             labels[mask],
             s=8,
             c=[color],
+            marker=marker,
             edgecolor="none",
             label=f"cluster {k}" if k != -1 else "noise",
         )
@@ -526,8 +528,7 @@ def _plot_cluster_timeline(ax: plt.Axes, labels: np.ndarray, method: str) -> Non
 
 def _plot_cluster_counts(ax: plt.Axes, labels: np.ndarray) -> None:
     unique, counts = np.unique(labels, return_counts=True)
-    palette = plt.cm.tab10.colors
-    colors = ["#BBBBBB" if k == -1 else palette[int(k) % len(palette)] for k in unique]
+    colors = ["#BBBBBB" if k == -1 else category_style(int(k))[0] for k in unique]
     ax.bar(unique, counts, color=colors, width=0.75)
     ax.set_xlabel("Cluster")
     ax.set_ylabel("Frames")

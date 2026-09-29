@@ -1005,6 +1005,14 @@ and three buttons' sizes never applied, their `font` shorthands made invalid
 by an `inherit` inside them. The contrast check in every scheme now reads the
 mixed colours it had been skipping.
 
+### Clusters are drawn in the figures' own palette
+
+**The cluster figures now take their colours from the plotting module, as
+every other analysis figure does:** Okabe and Ito's palette in colour, and
+greys with a shape for each cluster when greyscale is asked for. They had
+Tableau's ten colours written in, and came out in colour in a greyscale
+report.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

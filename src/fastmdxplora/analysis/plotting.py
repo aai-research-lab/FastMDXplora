@@ -48,7 +48,6 @@ from fastmdxplora.refusals import CodedKeyError
 NumericSeq = Optional[Union[Sequence[float], np.ndarray]]
 
 
-# Tableau 10 — colorblind-aware, distinct in print and on screen
 # Okabe-Ito: designed to stay distinguishable under the common forms of
 # colour vision deficiency and when printed in greyscale, which the previous
 # Tableau palette did not (its red and green converged in both cases).
@@ -257,6 +256,20 @@ def colour(role: str) -> str:
             f"No colour role named {role!r}. Roles are: "
             f"{', '.join(sorted(_ROLES_IN_COLOUR))}."
         , code="analysis.unknown") from None
+
+
+#: Shapes for categories drawn without hue, where value alone cannot keep
+#: ten of them apart.
+CATEGORY_MARKERS = ("o", "s", "^", "D", "v", "P", "X", "*", "<", ">")
+
+
+def category_style(index: int) -> tuple[str, str]:
+    """The colour and marker of the ``index``-th category (a cluster, a
+    state), in whichever mode is in force: the palette's colours with one
+    shape, or its greys with a shape each."""
+    colours = GREYSCALE_PALETTE if _GREYSCALE else PALETTE
+    marker = CATEGORY_MARKERS[index % len(CATEGORY_MARKERS)] if _GREYSCALE else "o"
+    return colours[index % len(colours)], marker
 
 
 PAPER_TICK_SIZE = 9.0
