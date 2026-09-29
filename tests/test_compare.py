@@ -97,8 +97,9 @@ class TestComparisonReport:
         assert "3 successful runs" in md
         assert "RMSD" in md
         assert "temperature_K" in md
-        # A quantitative takeaway sentence is present
-        assert "increases" in md or "decreases" in md or "is flat" in md
+        # A quantitative takeaway sentence is present, with no error to
+        # judge the change by in this fixture's runs
+        assert "From `temperature_K` 300 to 320" in md
         # Figures are referenced by relative name
         assert "overlay_rmsd.png" in md
         assert "trend_rmsd.png" in md
@@ -469,3 +470,142 @@ def _rebuilt_over(where, earlier: bytes, *, a_window_missing: bool = False):
     figure.write_bytes(earlier)
     explorer._maybe_build_pmf(bootstrap_resamples=8)
     return figure, json.loads((where / "out" / "pmf.json").read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# The means compared are the ones the runs recorded
+# ---------------------------------------------------------------------------
+def _record_findings(root: Path, *, frames_short: str | None = None) -> None:
+    """Each run's findings, as its analyses record them: `summarise` over
+    the series each wrote."""
+    from fastmdxplora.statistics import summarise
+
+    for data in root.glob("runs/*/analysis/*/*.dat"):
+        series = np.loadtxt(data)
+        equilibrated, reason = summarise(series)
+        record = dict(equilibrated.as_record()) if equilibrated is not None else {}
+        if reason is not None:
+            record["not_a_measurement"] = reason
+        record["n_frames"] = int(series.size)
+        (data.parent / "options.json").write_text(json.dumps(
+            {"analysis": data.parent.name, "findings": {"mean": record}}), encoding="utf-8")
+
+
+def _batch_of(tmp_path: Path, means: dict, *, axis="setup.temperature_K", noise=0.001,
+              n_frames=400) -> Path:
+    """Runs whose series settle on the given means after an equilibration."""
+    root = tmp_path / "batch"
+    runs = []
+    rng = np.random.default_rng(3)
+    for value, mean in means.items():
+        rid = f"r-{value}"
+        folder = root / "runs" / rid / "analysis" / "rmsd"
+        folder.mkdir(parents=True, exist_ok=True)
+        approach = np.linspace(0.05, mean, 40)
+        series = np.concatenate([approach, mean + noise * rng.standard_normal(n_frames)])
+        np.savetxt(folder / "rmsd.dat", series, fmt="%.8e")
+        runs.append({"run_id": rid, "system": "p.pdb", "status": "ok",
+                     "output_dir": str(root / "runs" / rid),
+                     "sweep_values": {axis: value}, "phases": [], "message": ""})
+    (root / "batch_manifest.json").write_text(json.dumps(
+        {"sweep": {axis: list(means)}, "runs": runs}), encoding="utf-8")
+    _record_findings(root)
+    return root
+
+
+class TestTheMeansAreTheRecordedOnes:
+
+    def test_the_table_gives_each_mean_after_equilibration_with_its_error(self, tmp_path):
+        root = _batch_of(tmp_path, {300: 0.20, 350: 0.30})
+        md = (build_comparison_report(root) / "comparison_report.md").read_text()
+        assert "0.2 ±" in md and "0.3 ±" in md
+        assert "(all frames)" not in md
+        assert "after equilibration, with its standard" in md
+
+    def test_the_csv_carries_the_error_and_what_was_discarded(self, tmp_path):
+        root = _batch_of(tmp_path, {300: 0.20, 350: 0.30})
+        with (build_comparison_report(root) / "comparison_summary.csv").open() as fh:
+            rows = list(csv.DictReader(fh))
+        assert float(rows[0]["rmsd_mean"]) == pytest.approx(0.20, abs=1e-3)
+        assert float(rows[0]["rmsd_standard_error"]) > 0
+        assert int(rows[0]["rmsd_frames_discarded"]) >= 20
+        assert rows[0]["rmsd_over"] == "after equilibration"
+
+    def test_a_change_larger_than_its_error_is_a_trend(self, tmp_path):
+        root = _batch_of(tmp_path, {300: 0.20, 350: 0.30})
+        md = (build_comparison_report(root) / "comparison_report.md").read_text()
+        assert "increases from" in md and "more than twice its error" in md
+
+    def test_a_change_within_its_error_is_not(self, tmp_path):
+        root = _batch_of(tmp_path, {300: 0.2000, 350: 0.2001}, noise=0.02)
+        md = (build_comparison_report(root) / "comparison_report.md").read_text()
+        assert "do not tell the two ends apart" in md
+        assert "increases" not in md and "decreases" not in md
+
+    def test_without_findings_it_says_what_it_used(self, tmp_path):
+        root = _make_batch(tmp_path)
+        md = (build_comparison_report(root) / "comparison_report.md").read_text()
+        assert "(all frames)" in md and "no standard error was recorded" in md
+
+    def test_a_mean_that_is_not_a_measurement_is_marked(self, tmp_path):
+        root = _batch_of(tmp_path, {300: 0.20, 350: 0.30})
+        record = root / "runs" / "r-300" / "analysis" / "rmsd" / "options.json"
+        data = json.loads(record.read_text())
+        data["findings"]["mean"]["not_a_measurement"] = "too few independent samples"
+        record.write_text(json.dumps(data))
+        md = (build_comparison_report(root) / "comparison_report.md").read_text()
+        assert "\\*" in md and "Not a measurement" in md
+
+
+class TestReplicas:
+
+    def _replicas(self, tmp_path, spread):
+        means = {seed: 0.2 + spread * k for k, seed in enumerate((1, 2, 3, 4))}
+        return _batch_of(tmp_path, means, axis="simulation.random_seed")
+
+    def test_there_is_no_trend_against_a_seed(self, tmp_path):
+        cmp_dir = build_comparison_report(self._replicas(tmp_path, 0.0))
+        assert not list(cmp_dir.glob("trend_*.png"))
+
+    def test_their_spread_is_set_against_the_error_each_estimated(self, tmp_path):
+        md = (build_comparison_report(self._replicas(tmp_path, 0.0))
+              / "comparison_report.md").read_text()
+        assert "## Across the replicas" in md
+        assert "differ only by random seed" in md
+        assert "is supported by repeating it" in md
+
+    def test_a_spread_wider_than_the_errors_says_they_were_too_tight(self, tmp_path):
+        md = (build_comparison_report(self._replicas(tmp_path, 0.05))
+              / "comparison_report.md").read_text()
+        assert "too tight" in md
+
+    def test_variants_get_no_replica_section(self, tmp_path):
+        root = _batch_of(tmp_path, {300: 0.20, 350: 0.30})
+        md = (build_comparison_report(root) / "comparison_report.md").read_text()
+        assert "Across the replicas" not in md
+
+
+class TestTheOverlaysClock:
+
+    def _manifest(self, root, rid, **load):
+        (root / "runs" / rid / "analysis" / "analysis_manifest.json").write_text(
+            json.dumps({"load_kwargs": load}), encoding="utf-8")
+
+    def test_runs_saved_at_different_intervals_line_up_in_time(self, tmp_path):
+        from fastmdxplora.batch.compare import _times
+
+        root = _batch_of(tmp_path, {300: 0.2, 350: 0.3})
+        self._manifest(root, "r-300", saving_interval_ps=10.0)
+        self._manifest(root, "r-350", saving_interval_ps=20.0, stride=2, first=1)
+        assert _times(root / "runs" / "r-300", 3).tolist() == pytest.approx([0.01, 0.02, 0.03])
+        # Strided frames 1, 2, 3 of the file's 0, 2, 4, 6: frames 2, 4, 6.
+        assert _times(root / "runs" / "r-350", 3).tolist() == pytest.approx([0.06, 0.1, 0.14])
+        assert build_comparison_report(root) is not None
+
+    def test_without_a_clock_it_is_the_frame(self, tmp_path):
+        from fastmdxplora.batch.compare import _times
+
+        root = _batch_of(tmp_path, {300: 0.2, 350: 0.3})
+        assert _times(root / "runs" / "r-300", 3) is None
+        self._manifest(root, "r-300", saving_interval_ps=0)
+        assert _times(root / "runs" / "r-300", 3) is None

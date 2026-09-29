@@ -828,6 +828,26 @@ discards by name**: under `heterogens: auto`, the crystallization additives
 the ions only the metals that sit in sites, as setup does by their
 coordination. Haemoglobin's phosphate had been listed among the ligands kept.
 
+### Runs are compared on their equilibrated means, with their errors
+
+**The comparison of a study's runs now uses the mean each run's analysis
+recorded, over the frames after equilibration and with its standard error**,
+where it took the mean of every frame, equilibration included, and gave none.
+The trend plots carry the errors as bars; the report calls a difference
+between the ends of a sweep a trend only where it is more than twice its
+error, and says where the runs do not tell the ends apart, where it had said
+"increases" or "decreases" whenever two numbers differed. A mean a run said is
+not a measurement is marked. `comparison_summary.csv` adds each mean's
+standard error, the frames discarded and what the mean is over. The overlays
+are drawn against each run's own clock where every run recorded one, so runs
+saved at different intervals line up; they were drawn against the frame.
+
+**Replicas are compared as replicas.** A seed is no longer taken as a sweep
+axis to plot a trend against, and a study whose runs differ only by seed gets
+a section setting the spread of their means against the error each run
+estimated for itself, with the verdict `members.json` has always held and the
+report never showed.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

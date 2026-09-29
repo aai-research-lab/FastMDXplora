@@ -159,12 +159,24 @@ runs/campaign/
     ├── comparison_report.md
     ├── comparison_summary.csv
     ├── overlay_rmsd.png     also rg, qvalue, sasa where they ran
-    └── trend_rmsd.png       only where a numeric sweep axis exists
+    └── trend_rmsd.png       only where a numeric sweep axis other than the seed exists
 ```
 
 Four per-frame measures are overlaid — RMSD, radius of gyration, the fraction
 of native contacts Q, and total SASA — and only where at least two runs
 produced them.
+
+Runs are compared on the means their own analyses recorded: over the frames
+after equilibration, each with its standard error, and a mean the run said is
+not a measurement is marked as one. The trend plots carry those errors as
+bars, and the report calls a difference between the ends of a sweep a trend
+only where it is more than twice its error. `comparison_summary.csv` gives
+each mean with its standard error, the frames discarded before it and what it
+is over. A run whose analyses recorded no mean is given the mean of every
+frame, marked so. The overlays are drawn against time where every run
+recorded its saving interval, and against the frame otherwise. Replicas get a section of their own, setting the spread of
+their means against the error each run estimated (below), and no trend plot
+against their seeds.
 
 `members.json` **distinguishes two things that look identical on disk.**
 Members differing only by random seed are repeats of one measurement, so the
