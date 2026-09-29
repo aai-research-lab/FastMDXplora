@@ -870,6 +870,14 @@ vectors OpenMM lays out (the points nearer the origin than any periodic
 image), so how much water surrounds the protein is seen rather than read. It is
 said again as the settings change, with the numbers.
 
+### The Agent is told when a mean is not a measurement
+
+**What the Agent reads of a study's analyses now says when an analysis
+withheld its mean, and why**, and when it gave a mean it said is not a
+measurement. A series too short to measure records no mean, and the Agent was
+told nothing of it: asked whether the RMSD had settled it had neither a number
+nor a reason.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

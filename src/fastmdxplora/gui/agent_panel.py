@@ -419,7 +419,16 @@ def _results_summary(root: Any) -> str:
             continue
         parts: list[str] = []
         for key, f in findings.items():
-            if not isinstance(f, dict) or "mean" not in f:
+            if not isinstance(f, dict):
+                continue
+            # A series too short to measure records why and no mean, and the
+            # model was told nothing: asked whether the RMSD had settled it
+            # had no number and no reason, only silence to read.
+            withheld = f.get("not_a_measurement")
+            if "mean" not in f:
+                if withheld:
+                    label = "" if key == "mean" else f"{key} "
+                    parts.append(f"{label}no mean: {withheld}")
                 continue
             mean = f.get("mean")
             se = f.get("standard_error")
@@ -439,6 +448,8 @@ def _results_summary(root: Any) -> str:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):
                 piece += f", first {discard} of {n} frames discarded as unequilibrated"
+            if withheld:
+                piece += f" -- not a measurement: {withheld}"
             parts.append(piece)
         if parts:
             rows.append(f"{name}: " + "; ".join(parts))

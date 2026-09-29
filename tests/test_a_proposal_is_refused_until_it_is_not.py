@@ -629,6 +629,21 @@ class TestTheAgentReadsTheResults(unittest.TestCase):
                                         "discard": 0, "n_frames": 200}})
         self.assertIn("too few for the mean to describe the system", _results_summary(root))
 
+    def test_a_mean_that_is_not_a_measurement_says_why(self):
+        """As the analyses record it: a series too short gives no mean and
+        the reason; one with a mean the analysis doubts gives both."""
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        root = self.run_dir({
+            "rmsd": {"not_a_measurement": "12 frames: too short to find where it equilibrates",
+                     "n_frames": 12},
+            "rg": {"mean": 1.2, "standard_error": 0.01, "effective_samples": 6.0,
+                   "not_a_measurement": "6 independent samples, fewer than 10"}})
+        text = _results_summary(root)
+        self.assertIn("rmsd: no mean: 12 frames: too short", text)
+        self.assertIn("rg: mean 1.2", text)
+        self.assertIn("not a measurement: 6 independent samples", text)
+
     def test_no_analysis_no_summary(self):
         import tempfile
         from pathlib import Path
