@@ -204,18 +204,7 @@
       return;
     }
 
-    const yValues = points.map((point) => point.y);
-    let minY = Math.min(...yValues);
-    let maxY = Math.max(...yValues);
-    if (minY === maxY) {
-      const padding = Math.max(Math.abs(minY) * 0.02, 1e-6);
-      minY -= padding;
-      maxY += padding;
-    } else {
-      const padding = (maxY - minY) * 0.08;
-      minY -= padding;
-      maxY += padding;
-    }
+    const {minY, maxY} = valueBounds(points.map((point) => point.y));
     const minX = Math.min(...points.map((point) => point.x));
     const maxX = Math.max(...points.map((point) => point.x));
     const bounds = {minY, maxY, minX, maxX};
@@ -225,6 +214,24 @@
     drawSeries(ctx, rect, bounds, points, color(config.color));
     drawLabels(ctx, rect, bounds, points.length, config.unit);
     entry.needsDraw = false;
+  }
+
+  /* The value axis: the series with a margin, and not below zero for a
+   * quantity that cannot be. The speed chart's axis read -0.381 ns/day
+   * under a series that starts at 0. */
+  function valueBounds(values) {
+    let minY = Math.min(...values);
+    let maxY = Math.max(...values);
+    if (minY === maxY) {
+      const padding = Math.max(Math.abs(minY) * 0.02, 1e-6);
+      minY = minY >= 0 ? Math.max(0, minY - padding) : minY - padding;
+      maxY += padding;
+    } else {
+      const padding = (maxY - minY) * 0.08;
+      minY = minY >= 0 ? Math.max(0, minY - padding) : minY - padding;
+      maxY += padding;
+    }
+    return {minY, maxY};
   }
 
   function drawBackground(ctx, rect) {
@@ -334,5 +341,5 @@
     return "JetBrains Mono, SFMono-Regular, IBM Plex Mono, Consolas, Menlo, monospace";
   }
 
-  window.FastMDXCharts = {update, draw: drawAll};
+  window.FastMDXCharts = {update, draw: drawAll, valueBounds};
 }());

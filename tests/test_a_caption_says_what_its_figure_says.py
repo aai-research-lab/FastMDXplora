@@ -134,3 +134,29 @@ def test_the_gui_card_carries_the_same_caption(tmp_path) -> None:
     panels = [p for s in payload["analysis_sections"] for p in s["panels"]]
     rmsd = next(p for p in panels if p["title"] == "RMSD")
     assert rmsd["summary"].startswith("mean 0.0130 ± 0.0021 nm after equilibration")
+
+
+class TestTheCounts:
+    """The atom card gave the trajectory's count, 47 for a peptide simulated in
+    6,560 atoms of water, beside a report saying 6,560."""
+
+    def _cards(self, root: Path, analysis: dict) -> dict:
+        from fastmdxplora.gui.report_dashboard import _summary_cards
+
+        return {c.label: c for c in _summary_cards(project_root=root, manifest={},
+                                                    analysis_manifest=analysis, sim_manifest={})}
+
+    def test_the_system_simulated_and_what_the_trajectory_kept(self, tmp_path) -> None:
+        (tmp_path / "setup").mkdir()
+        (tmp_path / "setup" / "setup_parameters.json").write_text(
+            json.dumps({"n_atoms_solvated": 6560}), encoding="utf-8")
+        card = self._cards(tmp_path, {"n_atoms": 47})["Atom count"]
+        assert (card.value, card.detail) == ("6,560", "simulated; 47 kept in the trajectory")
+
+    def test_a_trajectory_analysed_alone(self, tmp_path) -> None:
+        card = self._cards(tmp_path, {"n_atoms": 47})["Atom count"]
+        assert (card.value, card.detail) == ("47", "in the trajectory")
+
+    def test_the_table_names_whose_count_it_is(self, tmp_path) -> None:
+        rows = {r.metric for r in _metric_rows(tmp_path, {"n_atoms": 47})}
+        assert "Atoms in the trajectory" in rows

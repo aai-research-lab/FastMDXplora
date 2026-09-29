@@ -671,7 +671,7 @@ class TestInapplicableIsNotUnavailable:
         }
         assert rows["Frame count"].average == "200"
         assert rows["Frame count"].stddev == "—"
-        assert rows["Atom count"].stddev == "—"
+        assert rows["Atoms in the trajectory"].stddev == "—"
 
     def test_an_empty_table_says_what_is_missing(self) -> None:
         from fastmdxplora.gui import report_dashboard

@@ -355,11 +355,20 @@ def _summary_cards(
 
     n_frames = analysis_manifest.get("n_frames")
     if n_frames is not None:
-        cards.append(DashboardCard("Frames", _format_number(n_frames), "analysis metadata"))
+        cards.append(DashboardCard("Frames", _format_number(n_frames), "analysed"))
 
+    # The system simulated, and what of it the trajectory kept. The card gave
+    # the trajectory's count alone, "47" for a peptide simulated in 6,560
+    # atoms of water, beside a report saying 6,560.
     n_atoms = analysis_manifest.get("n_atoms")
-    if n_atoms is not None:
-        cards.append(DashboardCard("Atom count", _format_number(n_atoms), "topology metadata"))
+    setup = _load_json_file(project_root / "setup" / "setup_parameters.json")
+    simulated = setup.get("n_atoms_solvated") if isinstance(setup, dict) else None
+    if isinstance(simulated, int) and simulated > 0:
+        kept = (f"simulated; {_format_number(n_atoms)} kept in the trajectory"
+                if isinstance(n_atoms, int) and n_atoms != simulated else "simulated")
+        cards.append(DashboardCard("Atom count", _format_number(simulated), kept))
+    elif n_atoms is not None:
+        cards.append(DashboardCard("Atom count", _format_number(n_atoms), "in the trajectory"))
 
     # Imported here rather than at module scope: `report` imports this
     # module to build the dashboard, so a top-level import would be
@@ -567,8 +576,17 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
         rows.append(MetricRow("Frame count", _format_number(n_frames), "—", "frames"))
     n_atoms = analysis_manifest.get("n_atoms")
     if n_atoms is not None:
-        rows.append(MetricRow("Atom count", _format_number(n_atoms), "—", "atoms"))
+        # The trajectory's, which is not the system's where solvent was not
+        # saved; the summary card gives both.
+        rows.append(MetricRow("Atoms in the trajectory", _format_number(n_atoms), "—", "atoms"))
     return rows
+
+
+def _load_json_file(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def _numeric_series(path: Path) -> list[float]:

@@ -656,6 +656,20 @@ a binding free energy. A suggestion fills the composer rather than sending, so
 it can be changed first. The page says what the chosen mode does, and where no
 model is set, says so beside a button that opens the settings.
 
+### The Overview's numbers say whose they are
+
+**The atom count on the Overview is the system simulated.** It gave the
+trajectory's count alone, 47 for a peptide simulated in 6,560 atoms of water,
+beside a report saying 6,560. The card now gives the simulated system and what
+the trajectory kept of it ("6,560, simulated; 47 kept in the trajectory"), and
+the statistics table's row is called "Atoms in the trajectory".
+
+**The live charts' axes do not go below zero for a quantity that cannot.** The
+axis was the series with a margin either side, so the speed chart of every run,
+whose first sample is 0 ns/day, was labelled -0.381. The phase and statistics
+tables on the Overview, which had no style of their own, are laid out as
+tables: headings over their columns, numbers aligned.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

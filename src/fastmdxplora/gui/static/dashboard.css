@@ -3402,3 +3402,15 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 .series-tip strong { color: var(--text-primary); font-weight: 600; }
 .series-tip-hint { display: block; color: var(--text-muted); font-size: 10px; }
+
+/* The Overview's phase and statistics tables, which had no style of their
+   own: headings centred over columns of browser-default width. */
+.phase-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.phase-table th {
+    text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border-primary);
+    color: var(--text-muted); font-weight: 500; font-family: var(--font-mono);
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+}
+.phase-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+.phase-table tr:last-child td { border-bottom: none; }
+.phase-table td.mono { font-variant-numeric: tabular-nums; }
