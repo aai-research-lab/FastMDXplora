@@ -967,6 +967,19 @@ figures were inside the run, and the comparison was a document written once
 the last run finished. `GET /api/runs-compared` gives the table, and
 `/api/series` takes `run=ID` for one run's series.
 
+### The viewer has one transport and one toolbar of named icons
+
+**The viewer's thirty text buttons in five rows are now a transport and a
+toolbar of icons.** The transport under the canvas steps, plays, goes to
+either end and plays backwards, its play button showing what pressing it does;
+the view's icons reset it, zoom, spin (one button now, where Spin and Stop were
+two), fill the screen and save a picture; how the molecule is drawn and
+coloured are two lists. Every icon is named to a screen reader and in its
+tooltip, with its key where it has one, and shows where the keyboard is. A row
+that repeated three of the transport's buttons is gone. The pocket cutoff,
+the one place the viewer's angstroms meet the analyses' nanometres, is said in
+both.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

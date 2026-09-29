@@ -165,12 +165,19 @@ def test_the_water_toggle_fetches_the_water(page) -> None:
 
 
 def test_every_style_and_ligand_control_runs(page) -> None:
-    for selector in (".chip-btn[data-rep]", ".chip-btn[data-color]", ".chip-btn[data-cam]",
-                     ".chip-btn[data-ligand]"):
+    for listed in ("#viewer-rep", "#viewer-color"):
+        for value in page.eval_on_selector_all(f"{listed} option", "os => os.map(o => o.value)"):
+            page.select_option(listed, value)
+    for selector in (".chip-btn[data-cam]", ".chip-btn[data-ligand]"):
         for button in page.query_selector_all(selector):
             if button.is_visible():
                 button.click()
-    page.click('.chip-btn[data-cam="stop"]')
+    # Spin is one button: pressed once above, so spinning; pressed again, not.
+    spin = page.locator('[data-cam="spin"]')
+    assert spin.get_attribute("aria-pressed") == "true"
+    spin.click()
+    assert spin.get_attribute("aria-pressed") == "false"
+    assert page.evaluate(f"() => {VIEWER}.spinning") is False
     assert _atoms(page) == SOLUTE
     assert page.errors == []
 

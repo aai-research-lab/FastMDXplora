@@ -899,21 +899,15 @@
   /* Controls                                                            */
   /* ------------------------------------------------------------------ */
   function wireControls() {
-    document.querySelectorAll(".chip-btn[data-rep]").forEach((button) => {
-      button.addEventListener("click", () => {
-        document.querySelectorAll(".chip-btn[data-rep]").forEach((item) => item.classList.toggle("active", item === button));
-        STATE.representation = button.getAttribute("data-rep") || "cartoon";
-        STATE.isolateLigand = false;
-        STATE.pocketOnly = false;
-        restyleViewers();
-      });
+    document.getElementById("viewer-rep")?.addEventListener("change", (event) => {
+      STATE.representation = event.target.value || "cartoon";
+      STATE.isolateLigand = false;
+      STATE.pocketOnly = false;
+      restyleViewers();
     });
-    document.querySelectorAll(".chip-btn[data-color]").forEach((button) => {
-      button.addEventListener("click", () => {
-        document.querySelectorAll(".chip-btn[data-color]").forEach((item) => item.classList.toggle("active", item === button));
-        STATE.colorMode = button.getAttribute("data-color") || "spectrum";
-        restyleViewers();
-      });
+    document.getElementById("viewer-color")?.addEventListener("change", (event) => {
+      STATE.colorMode = event.target.value || "spectrum";
+      restyleViewers();
     });
     document.querySelectorAll(".chip-toggle input[data-vis]").forEach((checkbox) => {
       checkbox.addEventListener("change", () => {
@@ -947,6 +941,7 @@
     });
     document.getElementById("pocket-cutoff")?.addEventListener("change", (event) => {
       STATE.pocketCutoff = clamp(Number(event.target.value), 3, 15, 5);
+      sayTheCutoffInNanometres();
       restyleViewers();
     });
   }
@@ -986,7 +981,7 @@
     if (action === "prev-frame") { stopFollowing(); await seekRelative(-1); return; }
     if (action === "next-frame") { stopFollowing(); await seekRelative(1); return; }
     if (action === "reset-view") {
-      safeCall(viewer, "spin", false);
+      setSpinning(viewer, false);
       safeCall(viewer, "zoomTo");
       safeCall(viewer, "render");
       return;
@@ -1037,17 +1032,32 @@
     });
   }
 
+  /* The viewer is in angstroms, 3Dmol's unit, and every analysis in
+   * nanometres; where the two meet the cutoff is said in both. */
+  function sayTheCutoffInNanometres() {
+    const said = document.getElementById("pocket-cutoff-nm");
+    if (said) said.textContent = `(${(STATE.pocketCutoff / 10).toFixed(2)} nm)`;
+  }
+
+  function setSpinning(viewer, on) {
+    safeCall(viewer, "spin", on);
+    STATE.spinning = on;
+    document.querySelectorAll('[data-cam="spin"]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(on));
+      button.classList.toggle("active", on);
+    });
+  }
+
   function handleCameraAction(action) {
     const viewer = ensureMainViewer();
     if (!viewer) return;
+    // One button: it spins, and stops what it started.
     if (action === "spin") {
-      safeCall(viewer, "spin", true);
-      STATE.spinning = true;
+      setSpinning(viewer, !STATE.spinning);
       return;
     }
     if (action === "stop") {
-      safeCall(viewer, "spin", false);
-      STATE.spinning = false;
+      setSpinning(viewer, false);
       return;
     }
     if (action === "center-protein") safeCall(viewer, "zoomTo", {resn: AMINO_ACIDS});
@@ -1444,12 +1454,18 @@
   function updatePlaybackButtons() {
     const toolbar = document.querySelector('[data-action="play-trajectory"]');
     if (toolbar) {
-      toolbar.textContent = STATE.playbackPlaying ? "Pause Trajectory" : "Play Trajectory";
+      // An icon that shows what pressing it does, named the same way.
+      toolbar.toggleAttribute("data-playing", !!STATE.playbackPlaying);
+      toolbar.setAttribute("aria-label", STATE.playbackPlaying ? "Pause" : "Play");
       toolbar.classList.toggle("active", STATE.playbackPlaying);
       toolbar.title = STATE.playbackPayload?.playback_available
-        ? `${STATE.playbackFrames} browser playback frames available`
+        ? `${STATE.playbackPlaying ? "Pause" : "Play"} (Space): ${STATE.playbackFrames} frames`
         : "Playback becomes available after at least two live coordinate snapshots";
     }
+    document.querySelectorAll('[data-traj="reverse"]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(!!STATE.playbackReverse));
+      button.classList.toggle("active", !!STATE.playbackReverse);
+    });
     document.querySelectorAll('[data-action="prev-frame"], [data-action="next-frame"]').forEach((button) => {
       button.setAttribute("aria-disabled", String(!STATE.playbackPayload?.playback_available));
     });
@@ -1461,7 +1477,14 @@
   function onSettingsUpdated(settings) {
     if (settings.ligand) STATE.ligandResname = String(settings.ligand).toUpperCase();
     if (Number.isFinite(settings.pocketCutoff)) STATE.pocketCutoff = settings.pocketCutoff;
-    if (settings.proteinRepresentation) STATE.representation = settings.proteinRepresentation;
+    if (settings.proteinRepresentation) {
+      STATE.representation = settings.proteinRepresentation;
+      // The list says what is drawn, whichever way it was chosen.
+      const listed = document.getElementById("viewer-rep");
+      if (listed && [...listed.options].some((o) => o.value === STATE.representation)) {
+        listed.value = STATE.representation;
+      }
+    }
     STATE.visibility.water = !!settings.showWater;
     STATE.visibility.ions = !!settings.showIons;
     STATE.preservingCamera = settings.preserveCamera !== false;

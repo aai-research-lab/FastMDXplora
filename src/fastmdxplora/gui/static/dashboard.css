@@ -998,6 +998,50 @@ button {
 
 .trajectory-controls { flex-wrap: wrap; }
 .traj-slider { flex: 1; min-width: 160px; accent-color: var(--accent-cyan); }
+
+/* The viewer's toolbar: icons in groups, each named in its tooltip and to a
+   screen reader; the transport under the canvas, its scrubber taking the
+   width. */
+.control-row.transport, .control-row.view-tools, .control-row.display-tools { align-items: center; }
+.icon-group {
+    display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+    border: 1px solid var(--border-subtle); border-radius: 8px;
+}
+.icon-group.text-group { gap: 4px; padding: 2px 4px 2px 8px; }
+.icon-group.text-group .control-label { margin-right: 2px; }
+.icon-group.text-group .chip-btn { padding: 4px 8px; }
+.icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 30px; padding: 0; border-radius: 6px;
+    border: 1px solid transparent; background: transparent;
+    color: var(--text-secondary); cursor: pointer;
+}
+.icon-btn.ctl-btn, .icon-btn.chip-btn { padding: 0; border-color: transparent; background: transparent; }
+.icon-btn:hover { color: var(--text-primary); background: var(--background-elevated); border-color: var(--border-primary); }
+.icon-btn:focus-visible, .ctl-btn:focus-visible, .chip-btn:focus-visible,
+.select-field select:focus-visible, .traj-slider:focus-visible {
+    outline: 2px solid var(--accent-cyan); outline-offset: 1px;
+}
+.icon-btn.active, .icon-btn[aria-pressed="true"] {
+    color: var(--accent-cyan); background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent-cyan) 45%, transparent);
+}
+.icon-btn.is-primary { width: 38px; color: var(--text-primary); border-color: var(--border-primary); }
+.icon-btn[aria-disabled="true"] { opacity: .45; }
+.icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.icon .icon-fill { fill: currentColor; stroke: none; }
+.icon-btn .when-playing, .icon-btn[data-playing] .when-stopped { display: none; }
+.icon-btn[data-playing] .when-playing, .icon-btn .when-stopped { display: inline-flex; }
+.select-field {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-muted);
+}
+.select-field select {
+    font: inherit; font-size: 12px; color: var(--text-primary);
+    background: var(--background-elevated); border: 1px solid var(--border-primary);
+    border-radius: 6px; padding: 4px 6px;
+}
 .traj-time { color: var(--text-secondary); font-size: 12px; }
 
 /* ============================================================ */
