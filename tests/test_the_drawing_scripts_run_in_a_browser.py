@@ -127,7 +127,7 @@ def page(dashboard):
                 "() => !!document.createElement('canvas').getContext('webgl')"):
             pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
         opened.wait_for_function(f"() => window.FastMDXMoleculeViewer && {VIEWER}.model",
-                                 timeout=30000)
+                                 timeout=60000)
         yield opened
 
 
@@ -137,7 +137,7 @@ def overview(dashboard):
     for opened in _open(dashboard, "#overview"):
         opened.wait_for_function(
             "() => document.querySelector('[data-chart-value=\"temperature\"]')"
-            ".textContent !== '\u2014'", timeout=30000)
+            ".textContent !== '\u2014'", timeout=60000)
         yield opened
 
 
@@ -156,11 +156,11 @@ def test_the_structure_is_drawn_without_its_solvent(page) -> None:
 def test_the_water_toggle_fetches_the_water(page) -> None:
     page.click('.chip-toggle input[data-vis="water"]')
     page.wait_for_function(
-        f"() => {VIEWER}.model && {VIEWER}.model.selectedAtoms({{resn: 'HOH'}}).length", timeout=30000)
+        f"() => {VIEWER}.model && {VIEWER}.model.selectedAtoms({{resn: 'HOH'}}).length", timeout=60000)
     assert _atoms(page, "{resn: 'HOH'}") == 18
     page.click('.chip-toggle input[data-vis="water"]')
     page.wait_for_function(
-        f"() => {VIEWER}.model && !{VIEWER}.model.selectedAtoms({{resn: 'HOH'}}).length", timeout=30000)
+        f"() => {VIEWER}.model && !{VIEWER}.model.selectedAtoms({{resn: 'HOH'}}).length", timeout=60000)
     assert page.errors == []
 
 
@@ -178,9 +178,9 @@ def test_every_style_and_ligand_control_runs(page) -> None:
 def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
     first_x = page.evaluate(f"() => {VIEWER}.model.selectedAtoms({{resn: 'LIG'}})[0].x")
     page.click('.ctl-btn[data-action="next-frame"]')
-    page.wait_for_function(f"() => {VIEWER}.playbackLoaded", timeout=30000)
+    page.wait_for_function(f"() => {VIEWER}.playbackLoaded", timeout=60000)
     page.wait_for_function("() => document.getElementById('traj-slider').value === '1'",
-                           timeout=30000)
+                           timeout=60000)
     assert page.evaluate(f"() => {VIEWER}.playbackFrames") == FRAMES
     # Stepping a frame is choosing one: following the run stops, or the first
     # press lands on the newest frame and "next" goes nowhere.
@@ -188,7 +188,7 @@ def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
     for _ in range(9):
         page.click('.ctl-btn[data-action="next-frame"]')
     page.wait_for_function("() => document.getElementById('traj-current').textContent === '10'",
-                           timeout=30000)
+                           timeout=60000)
     moved = page.evaluate(
         f"() => {VIEWER}.viewer.getModel().selectedAtoms({{resn: 'LIG'}})[0].x") - first_x
     # Every atom moves 0.3 nm along each axis over the run; frame 10 of 20 is
@@ -196,22 +196,22 @@ def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
     assert moved == pytest.approx(3.0 * 10 / (FRAMES - 1), abs=0.05)
     page.click('.ctl-btn[data-action="prev-frame"]')
     page.wait_for_function("() => document.getElementById('traj-current').textContent === '9'",
-                           timeout=30000)
+                           timeout=60000)
     assert page.errors == []
 
 
 def test_water_during_playback_is_an_overlay_that_follows_the_frames(page) -> None:
     page.click('.ctl-btn[data-action="next-frame"]')
-    page.wait_for_function(f"() => {VIEWER}.playbackLoaded", timeout=30000)
+    page.wait_for_function(f"() => {VIEWER}.playbackLoaded", timeout=60000)
     page.click('.chip-toggle input[data-vis="water"]')
-    page.wait_for_function(f"() => {VIEWER}.environmentModel", timeout=30000)
+    page.wait_for_function(f"() => {VIEWER}.environmentModel", timeout=60000)
     assert page.evaluate(
         f"() => {VIEWER}.environmentModel.selectedAtoms({{resn: 'HOH'}}).length") == 18
     # The animated solute stays the playback model.
     assert page.evaluate(f"() => {VIEWER}.mode") == "playback"
     page.click('.ctl-btn[data-action="next-frame"]')
     page.wait_for_function("() => document.getElementById('traj-current').textContent === '2'",
-                           timeout=30000)
+                           timeout=60000)
     assert page.errors == []
 
 

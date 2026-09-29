@@ -597,6 +597,31 @@ label named a live frame by its step, as "frame 6000" of a run that had written
 a hundred, and flipped between that and the count of frames written as the two
 updates arrived; it now reads "step 6,000".
 
+### The frame gives the page the room it needs
+
+**The GUI's page gets the width.** Opened on a finished study at 1440 by 900,
+the log took a fixed 560 pixels on every page and left the page 640, and the
+viewer's canvas got the 240 its information pane left over. The log is now
+420 pixels wide until dragged, open while a study runs and closed once it has
+finished, until it is opened or closed by hand, which is remembered. The
+viewer's layout follows the width of its page rather than of the window: the
+canvas takes the page, and the information pane goes beneath it when the page
+is narrower than 900 pixels. The canvas is as tall as the window allows.
+
+**The navigation is grouped and cannot be cut off.** The study's pages come
+first (Overview, Viewer, Analysis, Report, Files), then the two ways to start
+another (Agent, Config), under headings, and the block sits above the study's
+progress: below it, a 900-pixel window hid "Files" under the settings trigger.
+
+**A phone shows the page.** At 390 pixels the sidebar and the log each took
+the screen. The study and its pages are now a bar across the top that scrolls
+sideways, the log is closed, and the page is the screen.
+
+A finished study no longer offers "Pause" (updates of a run that has ended),
+and its last frame is marked "LATEST" rather than "LIVE". The study is named
+by its structure file, "tri-ala" rather than the file's path, which stays on
+hover. Simulated time reads "0.012 ns" rather than "0.012000 ns".
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

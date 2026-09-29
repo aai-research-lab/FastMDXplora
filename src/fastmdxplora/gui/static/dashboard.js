@@ -531,6 +531,15 @@
       return;
     }
     const statusName = String(health.state || status.status || "waiting").toLowerCase();
+    // Pausing the browser's updates means something only while there is
+    // something to update: a finished study offered "Pause" beside its
+    // results. Kept while paused, so there is a way to resume.
+    const pause = byId("pause-toggle");
+    if (pause) {
+      const live = ["running", "starting"].includes(String(status.status || "").toLowerCase())
+        || !!state.appState?.process_running;
+      pause.hidden = !live && !state.paused;
+    }
     const dotClass = stateDotClass(statusName);
     setClassName("topbar-status-dot", `status-dot ${dotClass}`);
     setText("topbar-status-text", statusName);
@@ -558,7 +567,20 @@
     // which says nothing a person did not already choose. A name set in
     // Display preferences still wins.
     const chosen = (byId("setting-run-name")?.value || "").trim();
-    setTextWithTooltip("topbar-run-title", chosen || state.runId || state.runTitle);
+    const name = chosen || studyName(state.runId) || state.runTitle;
+    setTextWithTooltip("topbar-run-title", name);
+    const title = byId("topbar-run-title");
+    if (title && state.runId && name !== state.runId) title.title = state.runId;
+  }
+
+  /* A system given as a file is named by the file: the sidebar read
+   * "/home/lab/studies/struct..." for a study of tri-ala.pdb. The whole path
+   * stays on hover. */
+  function studyName(system) {
+    const text = system == null ? "" : String(system).trim();
+    if (!/[\\/]/.test(text)) return text;
+    const file = text.split(/[\\/]/).filter(Boolean).pop() || text;
+    return file.replace(/\.(pdb|cif|mmcif|pdbx|gro|mol2|sdf|xml|prmtop|psf)(\.gz)?$/i, "");
   }
 
   function setTextWithTooltip(id, value) {
@@ -704,7 +726,7 @@
     setText(
       "live-simtime-cell",
       status.simulation_time_completed_ns != null
-        ? `${formatNumber(status.simulation_time_completed_ns, 6)} ns`
+        ? `${formatNanoseconds(status.simulation_time_completed_ns)} ns`
         : "—"
     );
     setText(
@@ -1366,6 +1388,16 @@
     return Number.isNaN(date.getTime())
       ? String(value)
       : date.toLocaleTimeString([], {hour12: false});
+  }
+
+  /* A simulated time to the femtosecond it can resolve and no further:
+   * "0.012000 ns" carried three zeros that said nothing, and a microsecond
+   * run read "1250.000000 ns". */
+  function formatNanoseconds(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return String(value ?? "—");
+    const text = number.toFixed(6).replace(/\.?0+$/, "");
+    return Math.abs(number) >= 1000 ? Number(text).toLocaleString() : text;
   }
 
   function formatNumber(value, digits) {

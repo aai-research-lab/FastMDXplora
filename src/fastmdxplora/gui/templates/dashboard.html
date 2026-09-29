@@ -182,6 +182,42 @@
         <div class="study-path mono" id="sidebar-output-folder" title="Output folder">—</div>
       </div>
 
+      <!-- The study first, since reading one is most of what is done here,
+           then the two ways to start another. Above the progress block, so
+           the navigation is never the part a short window cuts off. -->
+      <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
+        <div class="nav-heading" id="nav-heading-study">Study</div>
+        <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Overview</span>
+        </a>
+        <a href="#" class="nav-link" data-view-link="viewer" data-requires-run="true">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Viewer</span>
+        </a>
+        <a href="#" class="nav-link" data-view-link="analysis" data-requires-run="true">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Analysis</span>
+        </a>
+        <a href="#" class="nav-link" data-view-link="report" data-requires-run="true">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Report</span>
+        </a>
+        <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Files</span>
+        </a>
+        <div class="nav-heading">New study</div>
+        <a href="#agent" class="nav-link" data-view-link="agent">
+          <span class="nav-icon nav-icon-launch" aria-hidden="true"></span>
+          <span>Agent</span>
+        </a>
+        <a href="#run" class="nav-link" data-view-link="run">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>Config</span>
+        </a>
+      </nav>
+
       <div class="sidebar-progress">
         <div class="study-label mono">Progress</div>
         <ol class="sidebar-stages" aria-label="Stages">
@@ -206,36 +242,6 @@
         <div class="sidebar-refreshed muted" id="refreshed-indicator">refreshed <span id="refreshed-at">just now</span></div>
       </div>
 
-      <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
-        <a href="#agent" class="nav-link" data-view-link="agent">
-          <span class="nav-icon nav-icon-launch" aria-hidden="true"></span>
-          <span>Agent</span>
-        </a>
-        <a href="#run" class="nav-link" data-view-link="run">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Config</span>
-        </a>
-        <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Overview</span>
-        </a>
-        <a href="#" class="nav-link" data-view-link="viewer" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Viewer</span>
-        </a>
-        <a href="#" class="nav-link" data-view-link="analysis" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Analysis</span>
-        </a>
-        <a href="#" class="nav-link" data-view-link="report" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Report</span>
-        </a>
-        <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>Files</span>
-        </a>
-      </nav>
       <div class="sidebar-foot">
         <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false" title="__FASTMDX_ACCOUNT_NAME__">
           <span class="sidebar-account-avatar" aria-hidden="true">__FASTMDX_ACCOUNT_INITIALS__</span>

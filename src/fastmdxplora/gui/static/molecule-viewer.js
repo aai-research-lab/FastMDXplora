@@ -1385,7 +1385,8 @@
   }
 
   function onStatusUpdated(status) {
-    const running = String(status?.status || "").toLowerCase() === "running";
+    STATE.runStatus = String(status?.status || "").toLowerCase();
+    const running = STATE.runStatus === "running";
     setOverlay(running, {
       stage: status?.stage || "—",
       simtime: status?.simulation_time_completed_ns,
@@ -1420,8 +1421,13 @@
   function setOverlay(live, info) {
     const overlay = document.getElementById("viewer-overlay");
     if (!overlay) return;
-    overlay.setAttribute("data-live", live ? "true" : "false");
-    setText("overlay-tag", live ? "LIVE" : (STATE.mode === "playback" ? "PLAYBACK" : "STATIC"));
+    // A frame the engine wrote is live only while the engine is writing
+    // them: a finished study's last frame read "LIVE, age 56m".
+    const running = STATE.runStatus === "running" || STATE.runStatus === "starting";
+    const shown = live && (!STATE.runStatus || running);
+    overlay.setAttribute("data-live", shown ? "true" : "false");
+    setText("overlay-tag", shown ? "LIVE"
+      : (STATE.mode === "playback" ? "PLAYBACK" : (live ? "LATEST" : "STATIC")));
     if (info?.stage != null) setText("overlay-stage", info.stage);
     // A live frame is named by the step it was written at, which is what
     // the engine records; a frame of the trajectory by its place in it. Both

@@ -568,7 +568,8 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
     def test_the_study_keeps_its_name_when_a_run_begins(self):
         script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
         self.assertIn("The study's name is the system, not the folder it went into", script)
-        self.assertIn('setTextWithTooltip("topbar-run-title", chosen || state.runId || state.runTitle);', script)
+        self.assertIn("const name = chosen || studyName(state.runId) || state.runTitle;", script)
+        self.assertIn('setTextWithTooltip("topbar-run-title", name);', script)
 
     def test_one_output_button_that_also_copies_the_path(self):
         page = _page()

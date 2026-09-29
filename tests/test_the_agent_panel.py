@@ -1956,16 +1956,19 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
         self.assertIn(".page-shell { max-width: 900px; margin: 0 auto; width: 100%; }", css)
         self.assertIn('html[data-page="viewer"] .page-shell { max-width: none; }', css)
 
-    def test_the_panel_starts_wide(self):
+    def test_the_panel_starts_at_a_width_that_leaves_the_page_the_most(self):
+        # 560 left the page 640 pixels of a 1440 window, and the viewer's
+        # canvas 240; it can still be dragged to 640.
         import pathlib
 
         import fastmdxplora.gui as gui
 
         css = self.css()
-        self.assertIn("--panel-width: 560px;", css)
+        self.assertIn("--panel-width: 420px;", css)
         frame = (pathlib.Path(gui.__file__).parent / "static"
                  / "frame.js").read_text(encoding="utf-8")
-        self.assertIn('store.get("panelWidth", "560")', frame)
+        self.assertIn("var PANEL_WIDTH = 420;", frame)
+        self.assertIn('store.get("panelWidth", String(PANEL_WIDTH))', frame)
         self.assertIn("panel: [280, 640]", frame)
 
     def test_the_agents_prose_is_a_serif_and_the_persons_is_not(self):
@@ -2234,7 +2237,7 @@ class TestSixFromLaunchingIt(unittest.TestCase):
 
         css = (pathlib.Path(gui.__file__).parent / "static"
                / "dashboard.css").read_text(encoding="utf-8")
-        self.assertIn("--panel-width: 560px;", css)
+        self.assertIn("--panel-width: 420px;", css)
         self.assertIn(".page-shell { max-width: 900px;", css)
         frame = (pathlib.Path(gui.__file__).parent / "static"
                  / "frame.js").read_text(encoding="utf-8")

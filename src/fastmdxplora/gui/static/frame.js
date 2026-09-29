@@ -48,6 +48,9 @@
 
   /* ---- Column widths ------------------------------------------------ */
   var LIMITS = { sidebar: [180, 320], panel: [280, 640] };
+  /* The log's width until someone drags it. It was 560, which left the page
+   * itself 640 pixels of a 1440-pixel window, and the viewer's canvas 240. */
+  var PANEL_WIDTH = 420;
 
   function setWidth(which, px) {
     var lim = LIMITS[which];
@@ -62,7 +65,7 @@
       down.preventDefault();
       var startX = down.clientX;
       var startW = parseFloat(getComputedStyle(document.documentElement)
-        .getPropertyValue("--" + which + "-width")) || (which === "sidebar" ? 232 : 560);
+        .getPropertyValue("--" + which + "-width")) || (which === "sidebar" ? 232 : PANEL_WIDTH);
       handle.classList.add("dragging");
       document.body.classList.add("col-dragging");
       function move(e) {
@@ -81,7 +84,7 @@
     });
     // Double-click puts it back.
     handle.addEventListener("dblclick", function () {
-      setWidth(which, which === "sidebar" ? 232 : 560);
+      setWidth(which, which === "sidebar" ? 232 : PANEL_WIDTH);
     });
   }
 
@@ -97,11 +100,23 @@
     if (name === "files") loadFiles();
   }
 
-  function setCollapsed(yes) {
+  function setCollapsed(yes, chosen) {
     document.body.classList.toggle("panel-collapsed", yes);
     var expand = el("side-expand");
     if (expand) expand.hidden = !yes;
-    store.set("panelCollapsed", yes ? "1" : "0");
+    if (chosen !== false) store.set("panelCollapsed", yes ? "1" : "0");
+  }
+
+  /* Until someone opens or closes the log, it is open while a study runs,
+   * when it is the running commentary, and closed once it has finished,
+   * when it is a record the Files and Report pages hold better and the
+   * page wants the width. A choice made with the buttons is kept. */
+  var panelChosen = false;
+  var studyLive = null;
+  function followTheStudy(live) {
+    if (panelChosen || live === studyLive) return;
+    studyLive = live;
+    setCollapsed(!live, false);
   }
 
   function setSidebarCollapsed(yes) {
@@ -698,14 +713,34 @@
     });
 
     var sw = parseInt(store.get("sidebarWidth", "232"), 10);
-    var pw = parseInt(store.get("panelWidth", "560"), 10);
+    var pw = parseInt(store.get("panelWidth", String(PANEL_WIDTH)), 10);
     if (sw) setWidth("sidebar", sw);
     if (pw) setWidth("panel", pw);
     $$(".col-handle").forEach(wireHandle);
 
-    setCollapsed(store.get("panelCollapsed", "0") === "1");
-    el("side-collapse").addEventListener("click", function () { setCollapsed(true); });
-    el("side-expand").addEventListener("click", function () { setCollapsed(false); });
+    var remembered = store.get("panelCollapsed", null);
+    panelChosen = remembered !== null;
+    setCollapsed(remembered === "1", false);
+    el("side-collapse").addEventListener("click", function () {
+      panelChosen = true;
+      setCollapsed(true);
+    });
+    el("side-expand").addEventListener("click", function () {
+      panelChosen = true;
+      setCollapsed(false);
+    });
+    if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
+      var processRunning = false;
+      window.FastMDXDashboard.on("app-state", function (s) {
+        processRunning = !!(s && s.process_running);
+        if (processRunning) followTheStudy(true);
+      });
+      window.FastMDXDashboard.on("status-updated", function (update) {
+        var status = String(((update || {}).status || {}).status || "").toLowerCase();
+        if (!status) return;
+        followTheStudy(processRunning || status === "running" || status === "starting");
+      });
+    }
     setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1");
     el("sidebar-collapse").addEventListener("click", function () { setSidebarCollapsed(true); });
     el("sidebar-expand").addEventListener("click", function () { setSidebarCollapsed(false); });

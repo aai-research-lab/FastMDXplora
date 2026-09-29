@@ -2458,7 +2458,7 @@ body.state-ready .loading-screen {
    =========================================================================== */
 :root {
     --sidebar-width: 232px;
-    --panel-width: 560px;
+    --panel-width: 420px;
     --handle-width: 6px;
 }
 .app-shell {
@@ -3228,3 +3228,113 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .file-table th.sorted { color: var(--accent-cyan); }
 /* A Markdown file rendered in the preview uses the report's own styles. */
 .side-preview-body .report-document { font-size: 12.5px; }
+
+/* ===========================================================================
+   The frame, fitted to the page it holds.
+
+   The navigation sits under the study, above its progress, in two groups:
+   the study being read, then the two ways to start another. Below the
+   progress block it was the part a short window cut off ("Files" under the
+   settings trigger at 900 pixels).
+   =========================================================================== */
+.sidebar-nav {
+    flex: none;
+    padding: 6px 0 10px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.sidebar-nav .nav-heading {
+    margin: 10px 11px 4px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+}
+.sidebar-nav .nav-link { padding: 7px 11px; }
+.sidebar-progress { border-bottom: none; }
+
+/* The viewer answers the width it is given, not the window's. At 1440
+   pixels with the log open the page had 640 of them, the 1200-pixel
+   breakpoint never fired, and the canvas got what the info pane left:
+   240. Below 900 pixels of page the pane goes under the canvas. The
+   container is the viewer's page alone: a query container holds its
+   fixed-position descendants, and the dialogs on other pages are those. */
+.page[data-page="viewer"] { container-type: inline-size; container-name: viewerpage; }
+@container viewerpage (max-width: 900px) {
+    .viewer-layout { grid-template-columns: minmax(0, 1fr); }
+}
+.viewer-canvas-frame { height: clamp(420px, 68vh, 780px); }
+
+/* ===========================================================================
+   A phone.
+
+   At 390 pixels the sidebar and the log each took the screen, and the page
+   had none of it. Here the page is the screen: the study and its
+   navigation are a bar across the top that scrolls sideways, the log is
+   closed, and the columns and their handles are gone.
+   =========================================================================== */
+@media (max-width: 800px) {
+    body { overflow: auto; }
+    .app-shell,
+    body.panel-collapsed .app-shell,
+    body.sidebar-collapsed .app-shell,
+    body.sidebar-collapsed.panel-collapsed .app-shell {
+        display: flex;
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+    }
+    .col-handle, .side-panel, .side-expand, .sidebar-expand,
+    .sidebar-collapse, .sidebar-progress, .brand-tagline,
+    .sidebar-study .study-switch, .study-running { display: none !important; }
+    .sidebar {
+        height: auto;
+        overflow: visible;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        padding: 10px 16px 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border-subtle);
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--background-secondary);
+    }
+    body.sidebar-collapsed .sidebar { visibility: visible; width: auto; }
+    .sidebar-brand {
+        position: static;
+        padding: 0;
+        border-bottom: none;
+        background: transparent;
+    }
+    .brand-product { font-size: 18px; }
+    .sidebar-study { padding: 0; border-bottom: none; flex: 1; min-width: 0; }
+    .sidebar-study .study-name { font-size: 13px; }
+    .sidebar-foot { position: static; margin: 0; background: transparent; }
+    .sidebar-account-text, .sidebar-account-caret { display: none; }
+    .sidebar .sidebar-nav {
+        display: flex;
+        order: 10;
+        flex: 1 1 100%;
+        flex-direction: row;
+        overflow-x: auto;
+        gap: 2px;
+        padding: 0 0 6px;
+        border-bottom: none;
+        scrollbar-width: none;
+    }
+    .sidebar-nav .nav-heading { display: none; }
+    .sidebar-nav .nav-link {
+        display: inline-flex;
+        flex: none;
+        padding: 8px 12px;
+        border-left: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 6px 6px 0 0;
+    }
+    .sidebar-nav .nav-link.active { border-bottom-color: var(--accent-cyan); }
+    .sidebar-nav .nav-icon { display: none; }
+    .main { height: auto; overflow: visible; }
+    .page-shell { padding: 16px; max-width: none; }
+    .page-header { flex-wrap: wrap; gap: 10px; }
+    .viewer-canvas-frame { height: 62vh; min-height: 320px; }
+}
