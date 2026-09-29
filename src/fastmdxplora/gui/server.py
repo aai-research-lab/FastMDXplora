@@ -78,6 +78,7 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.gui.citations",
     "fastmdxplora.gui.runs_compared",
     "fastmdxplora.gui.selection",
+    "fastmdxplora.gui.stopping_view",
 )
 
 
@@ -146,6 +147,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/playback-info", "/api/series", "/api/runs-compared", "/api/selection",
+    "/api/stopping",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
     "/structure/playback.pdb",
@@ -641,6 +643,11 @@ def make_handler(
 
                 self._send_json(selection_for(root, chain=one("chain"), resseq=one("resseq"),
                                               resname=one("resname"), atom=one("atom")))
+                return
+            if path == "/api/stopping":
+                from fastmdxplora.gui.stopping_view import stopping_payload
+
+                self._send_json(stopping_payload(root))
                 return
             if path == "/api/runs-compared":
                 from fastmdxplora.gui.runs_compared import runs_compared

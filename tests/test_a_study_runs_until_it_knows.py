@@ -414,6 +414,15 @@ class TestTheLoop:
         assert record["outcome"] == "ceiling"
         assert all(v["agree"] is False for r in record["rounds"] for v in r["verdicts"])
 
+    def test_earlier_rounds_and_how_many_ran_at_once_are_kept(self, tmp_path, replicas):
+        made = replicas([0.20, 0.20, 0.20], 0.005)
+        earlier = [{"production_ns": 1.0, "decision": "extend", "more_ns": 1.0}]
+        record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
+                                 extend_all=made.extend_all, say=lambda _: None,
+                                 at_once=3, earlier_rounds=earlier)
+        assert record["rounds"][0] == earlier[0] and len(record["rounds"]) == 2
+        assert record["at_once"] == 3
+
     def test_known_at_once_runs_nothing_more(self, tmp_path, replicas):
         made = replicas([0.20, 0.20, 0.20], 0.005)
         record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
@@ -664,7 +673,41 @@ class TestTheStudyAppliesIt:
         explorer = self._after(tmp_path, ["ok", "error"], error_type=STOPPED_ERROR_TYPE)
         explorer._run_until_known(targets_of(RULE))
         assert "Resuming the study applies it" in capsys.readouterr().out
-        assert not (explorer.output_dir / "stopping.json").exists()
+        record = json.loads((explorer.output_dir / "stopping.json").read_text(encoding="utf-8"))
+        assert record["outcome"] == "stopped" and record["rounds"] == []
+
+    def test_the_rule_is_written_before_the_first_piece(self, tmp_path, monkeypatch):
+        """A study running its first piece already says what it runs until,
+        which is what the GUI shows while it waits."""
+        from fastmdxplora.batch.explorer import BatchExplorer
+
+        seen = {}
+
+        def run(spec_dict, run_out, *args, **kwargs):
+            seen.setdefault("record", json.loads(
+                (tmp_path / "study" / "stopping.json").read_text(encoding="utf-8")))
+            return self._fake_run([0.2, 0.2])[0](spec_dict, run_out)
+        monkeypatch.setattr("fastmdxplora.batch.explorer._execute_run", run)
+        monkeypatch.setattr("fastmdxplora.simulation.stopping.run_until_known",
+                            lambda *a, **k: None)
+        config = {**_study(), "sweep": {"simulation.random_seed": [1, 2]}}
+        BatchExplorer(config_data=config, output_dir=tmp_path / "study").run()
+        planned = seen["record"]
+        assert planned["outcome"] == "running" and planned["rounds"] == []
+        assert planned["runs"] == ["s1__random-seed-1", "s1__random-seed-2"]
+        assert planned["targets"] == [{"analysis": "rmsd", "standard_error": 0.01,
+                                       "relative_error": None}]
+
+    def test_a_resumed_study_keeps_its_rounds(self, tmp_path):
+        explorer = self._after(tmp_path, ["ok", "ok"])
+        (explorer.output_dir / "stopping.json").write_text(json.dumps(
+            {"rounds": [{"production_ns": 2.0, "decision": "extend"}]}), encoding="utf-8")
+        assert explorer._earlier_rounds() == []
+        explorer.resume = True
+        assert explorer._earlier_rounds() == [{"production_ns": 2.0, "decision": "extend"}]
+        explorer._write_planned_stopping(targets_of(RULE))
+        kept = json.loads((explorer.output_dir / "stopping.json").read_text(encoding="utf-8"))
+        assert kept["rounds"] == [{"production_ns": 2.0, "decision": "extend"}]
 
     def test_judged_on_the_runs_that_finished(self, tmp_path, monkeypatch, capsys):
         explorer = self._after(tmp_path, ["ok", "ok", "error"])

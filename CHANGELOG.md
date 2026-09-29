@@ -1105,6 +1105,24 @@ a run stops the rule at once, since more production cannot supply it. One
 system given to `FastMDXplora()` without a config is refused a rule when it
 is constructed, before anything is created.
 
+### A study running until it knows shows whether the answer is settling
+
+**The Overview of a study with `simulation.stop_when` has a card, "Running
+until it is known", that answers the question the rule asks.** For each
+measure: the standard error after each round against the error asked for,
+with the production at which it would reach it if it keeps falling as one
+over the root of the frames (the estimate the next piece is sized by); the
+mean after each round with every replica's own mean and error beside it, so
+replicas that disagree are seen as well as said; the piece now running and
+its time at the speed the study has run; and every round with what was
+decided. It is read from the study's record (`GET /api/stopping`), so the
+page and the report agree, and it asks again only while the study runs.
+
+The record is now written before the first piece runs, so a study says what
+it is running until from its start; a resumed study keeps the rounds it had;
+and the record says how many runs were extended at once, which is what a
+round's time rests on.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

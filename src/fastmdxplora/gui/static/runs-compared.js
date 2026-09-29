@@ -283,5 +283,5 @@
     }
   });
 
-  window.FastMDXRunsCompared = { load: load };
+  window.FastMDXRunsCompared = { load: load, palette: PALETTE.slice() };
 }());

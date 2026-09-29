@@ -488,16 +488,31 @@ def extend_one_after_another(runs: list[Path], more_ns: float) -> list[dict[str,
     return answers
 
 
+def planned_record(targets: list[StopTarget], stop_when: dict[str, Any],
+                   runs: list[str]) -> dict[str, Any]:
+    """The record before the first piece is judged, so a study running
+    its first piece already says what it is running until."""
+    return {"targets": [t.__dict__ for t in targets],
+            "max_duration_ns": float(stop_when["max_duration_ns"]),
+            "independent_starts": str(stop_when.get("independent_starts") or "required"),
+            "runs": list(runs), "rounds": [], "outcome": "running",
+            "said": "Running the first piece; it is judged when its analyses are done."}
+
+
 def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict[str, Any],
                     *, record_in: Path, extend_all: Any = None,
-                    say: Any = print) -> dict[str, Any]:
+                    say: Any = print, at_once: int = 1,
+                    earlier_rounds: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Judge the runs, extend every one of them by what is needed, and judge
     again, until each target is met or the ceiling is reached. The rounds
     are written to ``record_in / stopping.json`` as they happen.
 
     ``extend_all(runs, more_ns)`` extends the runs and returns an answer
     for each it tried, as `extend_study` gives them; a campaign passes one
-    that runs them side by side."""
+    that runs them side by side, and says in ``at_once`` how many run
+    together, which is what the time a round takes rests on.
+    ``earlier_rounds`` are a resumed study's rounds before it stopped,
+    kept so its record reads as one history."""
     from fastmdxplora.simulation.resume import production_done_ns
 
     extend_all = extend_all or extend_one_after_another
@@ -506,7 +521,8 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
     record: dict[str, Any] = {
         "targets": [t.__dict__ for t in targets], "max_duration_ns": ceiling,
         "independent_starts": independent, "runs": [run.name for run in runs],
-        "rounds": [], "outcome": None}
+        "at_once": max(1, int(at_once)), "rounds": list(earlier_rounds or []),
+        "outcome": "running"}
 
     def write() -> None:
         (record_in / RECORD).write_text(json.dumps(record, indent=2), encoding="utf-8")
@@ -558,6 +574,9 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             return record
         entry["decision"] = "extend"
         entry["more_ns"] = more
+        record["said"] = (f"Extending by {more:g} ns, to {production + more:g} ns of the "
+                          f"{ceiling:g} allowed: " + "; ".join(v.said for v in verdicts
+                                                             if not v.met) + ".")
         write()
         say(f"Not yet known: {'; '.join(v.said for v in verdicts if not v.met)}. "
             f"Extending {'every run' if len(runs) > 1 else 'the run'} by {more:g} ns "
@@ -665,4 +684,5 @@ def stopping_section(root: str | Path) -> list[str]:
 
 
 _OUTCOME = {"met": "Known as asked", "ceiling": "Not known as asked",
-            "stopped": "Stopped early", "rounds": "Not known as asked"}
+            "stopped": "Stopped early", "rounds": "Not known as asked",
+            "not_applied": "Not applied", "running": "Still running"}

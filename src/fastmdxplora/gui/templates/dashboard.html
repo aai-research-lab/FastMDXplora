@@ -468,6 +468,27 @@
             </div>
           </div>
 
+          <!-- A study run until it knows (stopping.js): is the answer
+               settling down? Outside the live panels, which need the
+               study's own telemetry and a study of replicas has none at
+               its root. Hidden for a study of a fixed length. -->
+          <div class="card stopping-card" id="stopping-card" hidden>
+            <div class="card-header">
+              <h2 class="card-title">Running until it is known</h2>
+              <span class="stage-pill" id="stopping-outcome">running</span>
+            </div>
+            <p class="stopping-said" id="stopping-said"></p>
+            <dl class="overview-strip stopping-strip" id="stopping-strip"></dl>
+            <div class="stopping-measures" id="stopping-measures"></div>
+            <div class="stopping-key" id="stopping-key" hidden></div>
+            <details class="stopping-rounds" id="stopping-rounds" hidden>
+              <summary>Each round</summary>
+              <div class="runs-compared-scroll">
+                <table class="runs-compared-table stopping-rounds-table" id="stopping-rounds-table"></table>
+              </div>
+            </details>
+          </div>
+
           <div id="live-panels">
             <!-- What the sidebar is too narrow to say. The stage, step,
                  progress and ETA are in the sidebar on every page; this row
@@ -1152,6 +1173,7 @@
   <script src="/static/charts.js"></script>
   <script src="/static/series-chart.js"></script>
   <script src="/static/runs-compared.js"></script>
+  <script src="/static/stopping.js"></script>
   <script src="/static/molecule-viewer.js"></script>
 </body>
 </html>
