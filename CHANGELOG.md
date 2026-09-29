@@ -679,6 +679,20 @@ it is written." under a study that had finished, and now says "The last frame
 the run wrote." once the run has stopped. The BibTeX entry on the Cite page
 wraps inside its card, where it ran out of it.
 
+### An Agent's config is said as a plan
+
+**The Agent's reply says what its config will do.** It showed the refusals the
+Agent worked through and a row of buttons, and what it had written was behind
+"Show the config", as YAML: that it would run for 2 ns because no length was
+given, or build a dodecahedron, was learned by reading the file. The reply now
+says it in lines, before anything runs: the system, force field, solvent,
+conditions, equilibration and production, any umbrella windows, metadynamics
+or pulling, replicas and other swept values, the analyses and any ceiling on
+cost. Each takes the value the run will take, and those the config does not set
+are marked as defaults. The lengths are resolved by the runner's own function
+and the umbrella windows by the umbrella module's, so the plan cannot say
+something the run would not do. A conversation reopened shows its plans again.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

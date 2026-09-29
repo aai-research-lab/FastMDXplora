@@ -596,6 +596,7 @@
       history.push({ role: "agent", text: "Wrote a config:\n" + data.yaml });
       currentConfig = data.yaml;
       transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
+                        plan: data.plan || [],
                         cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
                           return a.refusal ? { refusal: { message: a.refusal.message } } : {};
                         }) });
@@ -728,6 +729,32 @@
       .catch(function () { note(box, "Could not reach the server to stop it."); });
   }
 
+  /* What the config will do, said in lines rather than left in the YAML:
+   * the values the run will take, with the ones it takes by default marked,
+   * so a two-nanosecond run nobody asked for is seen before it is run. */
+  function showPlan(host, plan) {
+    if (!host) return;
+    host.innerHTML = "";
+    var lines = Array.isArray(plan) ? plan : [];
+    lines.forEach(function (line) {
+      var term = document.createElement("dt");
+      term.textContent = line.label;
+      var value = document.createElement("dd");
+      value.textContent = line.value;
+      if (line["default"]) {
+        var tag = document.createElement("span");
+        tag.className = "agent-plan-default";
+        tag.textContent = "default";
+        tag.title = "Not set in the config: the value the run takes when nothing is said.";
+        value.appendChild(document.createTextNode(" "));
+        value.appendChild(tag);
+      }
+      host.appendChild(term);
+      host.appendChild(value);
+    });
+    host.hidden = !lines.length;
+  }
+
   function wireActions(r, data, box) {
     lastReply = r;
     var result = r.part("result");
@@ -740,6 +767,7 @@
     result.textContent = data.yaml;
     result.hidden = true;
     actions.hidden = false;
+    showPlan(r.part("plan"), data.plan);
 
     /* Load the config into the builder's state without going there. The
      * builder's actions read that state, so the file, the command and
@@ -880,7 +908,8 @@
                : "Accepted after " + (e.cycles || "several") + " attempts.", true);
           history.push({ role: "agent", text: "Wrote a config:\n" + e.yaml });
           currentConfig = e.yaml;
-          wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles }, box);
+          wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles,
+                           plan: e.plan || [] }, box);
         } else if (e.kind === "answer") {
           var p = document.createElement("div");
           p.className = "agent-answer";

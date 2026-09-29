@@ -203,11 +203,18 @@ def propose_endpoint(payload: dict[str, Any],
     chosen = load_choice()
     if chosen is not None:
         config["agent_model"] = f"{chosen.provider}/{chosen.model}"
+    from fastmdxplora.gui.plan import plan_of
+
+    try:
+        plan = plan_of(config)
+    except Exception:  # noqa: BLE001 - the config stands without its summary
+        plan = []
     return {
         "ok": True,
         "cycles": proposal.cycles,
         "attempts": attempts,
         "config": config,
+        "plan": plan,
         "yaml": yaml.safe_dump(config, sort_keys=False),
     }
 

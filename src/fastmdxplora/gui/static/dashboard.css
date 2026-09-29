@@ -3417,3 +3417,24 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 
 /* The BibTeX entry wraps inside its card rather than running out of it. */
 #cite-bibtex { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* What an Agent's config will do (plan.py), before its YAML. */
+.agent-plan {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 10px 0 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    background: var(--panel-glass);
+    font-size: 13px;
+}
+.agent-plan[hidden] { display: none; }
+.agent-plan dt { color: var(--text-muted); }
+.agent-plan dd { margin: 0; color: var(--text-primary); }
+.agent-plan-default {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em;
+    color: var(--text-muted); border: 1px solid var(--border-primary);
+    border-radius: 4px; padding: 0 5px; margin-left: 4px;
+}
