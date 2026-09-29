@@ -15,6 +15,8 @@
     "SER", "THR", "TRP", "TYR", "VAL", "MSE", "SEC", "PYL",
   ];
   const WATERS = ["HOH", "WAT", "TIP", "TIP3", "TIP3P", "SOL", "H2O"];
+  /* Below this many residues a cartoon cannot shape a ribbon. */
+  const SHORT_PEPTIDE_RESIDUES = 8;
   const IONS = [
     "NA", "K", "CL", "BR", "I", "F", "MG", "CA", "ZN", "MN", "FE",
     "CU", "NI", "CO", "CD", "HG", "PB", "CS", "RB", "LI", "BA", "SR",
@@ -461,9 +463,9 @@
       document.getElementById("mini-preview-frame")?.setAttribute("data-ready", "true");
     }
 
-    if (previousView) {
+    if (previousView && framesTheModel(previousView, model)) {
       restoreView(viewer, previousView);
-    } else if (opts.center !== false || !hadModel) {
+    } else if (previousView || opts.center !== false || !hadModel) {
       // A viewer created before the first structure has the default camera,
       // which points at empty space.  Always center the first real model even
       // when a live-frame refresh requested camera preservation.
@@ -558,7 +560,7 @@
         setOverlay(true, {
           stage: index.simulation_stage || STATE.mode,
           age: liveFrameAge(index),
-          frame: index.live_frame_index,
+          step: index.live_frame_index,
           simtime: index.simulation_time_ns,
         });
         return;
@@ -585,7 +587,7 @@
       setOverlay(true, {
         stage: index.simulation_stage || "live",
         age: liveFrameAge(index),
-        frame: index.live_frame_index,
+        step: index.live_frame_index,
         simtime: index.simulation_time_ns,
       });
     } catch (error) {
@@ -681,6 +683,15 @@
       if (!mini && STATE.visibility.ions) {
         addStyle(viewer, ionSelection, {sphere: {scale: 0.55, colorscheme: "Jmol"}});
       }
+    }
+
+    // A ribbon needs a few residues to be a ribbon: a peptide of three drew
+    // as a smear, or not at all. Its atoms are drawn as well.
+    if (STATE.visibility.protein && !STATE.isolateLigand
+        && STATE.representation === "cartoon" && isShortPeptide(model, proteinSelection)) {
+      addStyle(viewer, proteinSelection, {
+        stick: {radius: mini ? 0.18 : 0.14, colorscheme: "Jmol"},
+      });
     }
 
     if (STATE.visibility.hydrogens) {
@@ -821,6 +832,16 @@
       stick: {colorscheme: "Jmol", radius: 0.20},
       sphere: {colorscheme: "Jmol", scale: 0.26},
     };
+  }
+
+  /** Fewer residues than a cartoon can shape: under eight alpha carbons. */
+  function isShortPeptide(model, selection) {
+    try {
+      const alphas = model.selectedAtoms(Object.assign({}, selection, {atom: "CA"}));
+      return alphas.length > 0 && alphas.length < SHORT_PEPTIDE_RESIDUES;
+    } catch (error) {
+      return false;
+    }
   }
 
   function addStyle(viewer, selection, style) {
@@ -1368,7 +1389,6 @@
     setOverlay(running, {
       stage: status?.stage || "—",
       simtime: status?.simulation_time_completed_ns,
-      frame: status?.current_frame_count,
     });
   }
 
@@ -1403,6 +1423,11 @@
     overlay.setAttribute("data-live", live ? "true" : "false");
     setText("overlay-tag", live ? "LIVE" : (STATE.mode === "playback" ? "PLAYBACK" : "STATIC"));
     if (info?.stage != null) setText("overlay-stage", info.stage);
+    // A live frame is named by the step it was written at, which is what
+    // the engine records; a frame of the trajectory by its place in it. Both
+    // read "frame" once, and the label flipped between the frames written
+    // and the step number as the two updates arrived.
+    if (info?.step != null) setText("overlay-frame", `step ${Number(info.step).toLocaleString()}`);
     if (info?.frame != null) setText("overlay-frame", `frame ${info.frame}`);
     if (info?.age != null) setText("overlay-age", `age ${info.age}`);
     if (info?.simtime != null) setText("overlay-simtime", `${Number(info.simtime).toFixed(3)} ns`);
@@ -1411,6 +1436,31 @@
   /* ------------------------------------------------------------------ */
   /* Generic helpers                                                     */
   /* ------------------------------------------------------------------ */
+  /* Whether a camera kept from the last structure still looks at this one.
+   * A frame of the same system in the same place keeps the view the person
+   * chose; a structure written somewhere else (the prepared system, then a
+   * frame the engine wrote about its own origin 4 nm away) left the camera
+   * on empty space, and the Overview's preview stayed black. 3Dmol's view
+   * holds the model's translation, which is minus the point it centres. */
+  function framesTheModel(view, model) {
+    if (!Array.isArray(view) || view.length < 3 || !model) return true;
+    let atoms;
+    try { atoms = model.selectedAtoms({}); } catch (error) { return true; }
+    if (!atoms || !atoms.length) return true;
+    const low = [Infinity, Infinity, Infinity];
+    const high = [-Infinity, -Infinity, -Infinity];
+    atoms.forEach((atom) => {
+      [atom.x, atom.y, atom.z].forEach((value, axis) => {
+        if (value < low[axis]) low[axis] = value;
+        if (value > high[axis]) high[axis] = value;
+      });
+    });
+    const centre = low.map((value, axis) => (value + high[axis]) / 2);
+    const radius = Math.max(5, 0.5 * Math.hypot(...high.map((value, axis) => value - low[axis])));
+    const off = Math.hypot(...centre.map((value, axis) => value + view[axis]));
+    return Number.isFinite(off) && off <= radius;
+  }
+
   function captureView(viewer) {
     try {
       const view = viewer.getView();

@@ -581,6 +581,22 @@ gives the reweighted mean, or says there is no unbiased one. A study analysed
 before findings were recorded keeps the plain mean, called "mean over all
 frames"; RMSF's is "mean over residues".
 
+### The Overview's preview shows the molecule
+
+**The structure preview on the Overview is no longer a black box.** It framed
+the prepared system when the page opened and kept that camera for every frame
+after it, which is right for frames of the same system in the same place. The
+engine writes its frames about its own origin, several nanometres from where
+setup centred the system, so a finished study opened with the preview looking
+at empty space. A camera that no longer frames the structure is set again; one
+that does is kept, as before.
+
+A peptide of fewer than eight residues is drawn with its atoms as well as its
+cartoon, which has nothing to shape a ribbon from at that length. The viewer's
+label named a live frame by its step, as "frame 6000" of a run that had written
+a hundred, and flipped between that and the count of frames written as the two
+updates arrived; it now reads "step 6,000".
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
