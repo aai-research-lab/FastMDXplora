@@ -454,6 +454,20 @@ the reporter was collected: one open file for every run of a study run in one
 process. The suite, which was thought to need more than 1,024 open files,
 passes in two halves at a limit of 1,024 with at most 69 open at once.
 
+### A charged ligand's binding free energy says what the box does to it
+
+**An umbrella study along `ligand_distance` now says when the ligand carries a
+net charge.** Nothing corrects the free energy for the periodic box: the
+ligand and the receptor interact with each other's images and with the
+background that neutralises them, and to leading order that shifts the curve
+by `k q_L q_R / eps * 2 pi (r_u^2 - r_b^2) / (3 V)` between the bound state and
+bulk. The warning gives both charges, read from the prepared system, the
+number for the study's box with water's dielectric constant, and the ions
+there to screen it; `binding.reference.charge` in `pmf.json` records them. A
++1 ligand and a +6 receptor in a 190 nm^3 box, 0.9 and 2.9 nm apart, come to
+about 0.9 kJ/mol. Averaged over directions, the estimate agrees with a direct
+Ewald sum to within 5%.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

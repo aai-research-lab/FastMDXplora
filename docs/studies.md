@@ -745,6 +745,16 @@ things from their trajectories and records them under `binding.reference` in
   slowly for it to see ten independent orientations, a **warning** names the
   window.
 
+Beside the four, a **charged ligand** is said. The free energy is taken in a
+periodic box, and nothing corrects it for the ligand's and the receptor's
+interaction with each other's images and with the background that neutralises
+them. To leading order that shifts the curve by
+`k q_L q_R / eps * 2 pi (r_u^2 - r_b^2) / (3 V)` between the bound state and
+bulk; the warning gives both charges (read from the prepared system), the
+number for this box with water's dielectric constant, and how many ions there
+are to screen it. It is an estimate of size and sign, not a correction, and it
+shrinks with the box's volume.
+
 The console says the binding free energy, or why it was withheld, and each
 warning, below the line naming `pmf.json`.
 

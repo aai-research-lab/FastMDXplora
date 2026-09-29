@@ -331,6 +331,111 @@ def _axis_atoms_in_saved(directory: Path, full_indices: "list[int] | None",
     return np.array(mapped, dtype=int)
 
 
+#: Coulomb's constant in kJ nm / (mol e^2).
+COULOMB_KJ_NM = 138.935458
+
+#: The dielectric constant of water at 298 K. Lower than any common water
+#: model's (TIP3P's is about 94), so the finite-size estimate made with it is
+#: the larger one.
+WATER_DIELECTRIC = 78.4
+
+
+def box_artefact_kjmol(q_ligand: float, q_receptor: float, volume_nm3: float,
+                       bound_nm: float, bulk_nm: float, *,
+                       dielectric: float = WATER_DIELECTRIC) -> float:
+    """How much the periodic box shifts the curve between bound and bulk.
+
+    Under Ewald summation two charges interact with each other's images and
+    with the uniform background that neutralises each, and the potential of
+    a unit charge near itself is ``1/r - xi/L + 2 pi r^2 / (3 V)`` to leading
+    order. The constant cancels along the curve; the quadratic term, the
+    background's, does not. Between the bound state and bulk it adds
+
+        k q_L q_R / eps * 2 pi (r_u^2 - r_b^2) / (3 V)
+
+    to the free energy, for point charges in a continuum of dielectric eps
+    with no salt. Salt screens it, so this is an estimate of size and sign,
+    not a correction.
+    """
+    return (COULOMB_KJ_NM * float(q_ligand) * float(q_receptor) / float(dielectric)
+            * 2.0 * math.pi * (float(bulk_nm) ** 2 - float(bound_nm) ** 2)
+            / (3.0 * float(volume_nm3)))
+
+
+def _charges_and_box(prepared: Path, ligand_resname: str) -> dict[str, Any] | None:
+    """The ligand's and the receptor's net charges, the ions, and the box.
+
+    Read from the prepared system, since the saved trajectory has no charges
+    and no water. The receptor is everything that is not the ligand, water or
+    a single-atom ion: protein, cofactors, lipids.
+    """
+    import xml.etree.ElementTree as ET
+
+    import mdtraj as md
+
+    try:
+        topology = md.load_topology(str(prepared / "topology.pdb"))
+        system = ET.parse(str(prepared / "system.xml")).getroot()
+        state = ET.parse(str(prepared / "state.xml")).getroot()
+    except Exception:  # noqa: BLE001 - said by the caller
+        return None
+    nonbonded = next((force for force in system.iter("Force")
+                      if force.get("type") == "NonbondedForce"), None)
+    if nonbonded is None:
+        return None
+    charges = [float(particle.get("q", 0.0))
+               for particle in nonbonded.find("Particles").iter("Particle")]
+    if len(charges) != topology.n_atoms:
+        return None
+    ligand = receptor = 0.0
+    ions = 0
+    for atom in topology.atoms:
+        residue = atom.residue
+        if residue.name == ligand_resname:
+            ligand += charges[atom.index]
+        elif residue.is_water:
+            continue
+        elif _is_ion(residue):
+            ions += 1
+        else:
+            receptor += charges[atom.index]
+    box = state.find("PeriodicBoxVectors")
+    if box is None:
+        return None
+    vectors = np.array([[float(box.find(axis).get(k)) for k in ("x", "y", "z")]
+                        for axis in ("A", "B", "C")])
+    return {"ligand_charge": round(ligand, 3), "receptor_charge": round(receptor, 3),
+            "ions": ions, "box_volume_nm3": float(abs(np.linalg.det(vectors)))}
+
+
+def _what_the_charges_do(window: Path, ligand_resname: str, *,
+                         bound_nm: float, bulk_nm: float) -> dict[str, Any]:
+    """The charges, the box's effect on the curve, and the sentence for it."""
+    from fastmdxplora.simulation.pipeline import setup_records_of
+
+    prepared = setup_records_of(window)
+    found = _charges_and_box(Path(prepared), ligand_resname) if prepared else None
+    if found is None:
+        return {"not_checked": "The prepared system's charges could not be read."}
+    q_ligand = found["ligand_charge"]
+    if abs(q_ligand) < 0.5:
+        return found
+    shift = box_artefact_kjmol(q_ligand, found["receptor_charge"],
+                               found["box_volume_nm3"], bound_nm, bulk_nm)
+    found["box_artefact_kjmol"] = shift
+    screening = (f", before the screening of the {found['ions']} ions in the box, "
+                 "which reduces it" if found["ions"] else ", with no salt to screen it")
+    found["said"] = (
+        f"The ligand carries a net charge of {q_ligand:+.0f} and the receptor "
+        f"{found['receptor_charge']:+.0f}, and nothing corrects the free energy "
+        "for the periodic box they sit in. To leading order the box's "
+        f"neutralising background shifts the curve by {shift:+.2f} kJ/mol "
+        f"between {bound_nm:.2f} and {bulk_nm:.2f} nm in this "
+        f"{found['box_volume_nm3']:.0f} nm^3 box, in water's dielectric"
+        f"{screening}. A larger box shrinks it with the volume.")
+    return found
+
+
 def check_the_reference(
     directories: "dict[int, Any]",
     centres: "dict[int, float]",
@@ -386,6 +491,16 @@ def check_the_reference(
             "Run the windows under a cone pointing into the water, so the "
             "reference is the cap there, and the cap's openness is measured.")
         return record
+
+    # ---- a charged ligand -----------------------------------------------
+    # Not one of the four, and not refused: said, with its size, because the
+    # conversion is taken in a periodic box and nothing corrects for it.
+    record["charge"] = _what_the_charges_do(
+        Path(directories[order[0]]), ligand_resname,
+        bound_nm=float(bound_at_nm), bulk_nm=float(max(centres.values())))
+    said = record["charge"].get("said")
+    if said:
+        record["warnings"].append(said)
 
     # ---- 1. is the outer shell open -------------------------------------
     axis_saved = None
