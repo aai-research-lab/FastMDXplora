@@ -481,9 +481,17 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     # Only the study's own run equilibrated, so only its step can be a
     # whole-run one; a segment's step counts its own production from zero,
     # and the study's plan says nothing about how long a segment ran.
+    # Only a sidecar that does not record its trajectory's interval can be
+    # one of those: the interval was recorded from after the counter was
+    # understood. Read from any later sidecar, the test misfired once a
+    # study had been extended, because the join rewrites the study's own
+    # config with its last piece's length: 300 production steps were read
+    # against a last piece of 50 and 200 steps of equilibration, and
+    # counted as 100, so the study's production went down as it grew.
     step = int(side.get("step") or 0)
     planned_steps = int(round(planned_ns / dt_ns)) if dt_ns else 0
-    if source == root and planned_steps and step > planned_steps + nvt + npt - 1:
+    if (source == root and planned_steps and "trajectory_interval_steps" not in side
+            and step > planned_steps + nvt + npt - 1):
         step = max(0, step - nvt - npt)
     done_steps = max(0, step)
     done_ns = done_steps * dt_ns if source == root else production_done_ns(root)

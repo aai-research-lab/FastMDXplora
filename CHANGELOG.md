@@ -1046,6 +1046,18 @@ histidine is wrong as often as not. A residue the structure does not hold, or
 a state it cannot take, stops setup with a named refusal; what was set is in
 the setup record's notes and in an Agent's plan.
 
+### An extended study counts its first piece whole
+
+**A study extended more than once no longer loses production from its count.**
+A checkpoint from before the step counter was understood could carry a
+whole-run step, and a step past the plan's production was read as one and had
+the equilibration taken off it. Once a study had been extended, the plan it was
+read against was the one the join had written over the study's own, with the
+last piece's length: a first piece of 300 production steps, extended by 50, was
+counted as 100, and the study's production went down as it grew, so an
+extension to a total asked for too much. Only a sidecar that does not record
+its trajectory's interval, which every checkpoint since has, is converted now.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
