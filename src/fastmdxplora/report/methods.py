@@ -414,10 +414,22 @@ def methods_paragraphs(
             solvation.append(_bilayer_sentence(bilayer, padding, positive,
                                                negative, concentration))
         elif padding is not None:
+            # What the padding measures, since the word does not say: OpenMM
+            # sizes a box as the solute's bounding sphere plus the padding,
+            # so it is the least distance to the nearest periodic image. A
+            # reader used to padding measured to the box's wall would read
+            # the box as twice as large as it was.
+            resolved = setup.get("resolved") if isinstance(setup.get("resolved"), dict) else {}
+            grown = resolved.get("solvent_padding_nm")
+            was_grown = isinstance(grown, (int, float)) and grown != padding
+            used = grown if was_grown else padding
             solvation.append(
-                f"The complex was solvated in a {box or 'cubic'} box with "
-                f"{_nm(padding)} of padding"
-                + (f", and {positive}/{negative} ions at {concentration} M"
+                f"The complex was solvated in a {box or 'cubic'} box sized to "
+                f"leave at least {_nm(used)} between the solute and its nearest "
+                f"periodic image"
+                + (f" (grown from the {_nm(padding)} asked for, so that the box "
+                   f"is at least twice the cutoff across)" if was_grown else "")
+                + (f", with {positive}/{negative} ions at {concentration} M"
                    if concentration is not None else "")
                 + "."
             )

@@ -438,7 +438,11 @@ SETUP = PhaseSchema(
               "Unset, the centre is fitted, or taken from an OPM file.",
               example=0.0),
         Field("solvent_padding_nm", float, 1.0,
-              "Minimum distance (nm) between solute and the box wall.",
+              "Least distance (nm) between the solute and its nearest periodic "
+              "image, as OpenMM sizes a padded box: the box is the solute's "
+              "bounding sphere plus this, so the water between the solute "
+              "and the box's wall is about half of it. Grown by setup where "
+              "the box would be too narrow for the cutoff.",
                     minimum=0.0),
         Field("box_shape", str, "dodecahedron",
               "Periodic box geometry: cube, dodecahedron, or octahedron. "

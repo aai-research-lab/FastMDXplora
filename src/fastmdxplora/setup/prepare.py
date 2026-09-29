@@ -162,27 +162,73 @@ def padding_that_reaches(
 
     Separated from the solvation loop so the arithmetic can be checked
     without building a system, because the arithmetic is where this was
-    wrong. The loop asked for `padding + shortfall / 2`, which is the
-    cube's relation between padding and width: a cube's narrowest dimension
-    is `maxSize + 2 * padding`, so a shortfall of 0.30 nm needs 0.15 nm
-    more padding.
+    wrong, twice.
 
-    A dodecahedron's narrowest dimension is that quantity divided by
-    sqrt(2), so the same padding buys sqrt(2) less width and the loop
-    undershot by exactly that factor. Measured on the V3 run it killed:
-    from 1.20 nm padding the box came out 1.70 nm across, the loop grew to
-    1.45 nm aiming at 2.20 nm, and got 2.05 -- against a floor of 2.00.
-    NPT then contracted 1.9% and the run died on the second barostat move.
+    OpenMM (8.0 on; the floor here is 8.2) sizes a padded box from the
+    solute's bounding sphere: its size is ``max(2 r + padding, 2 padding)``,
+    padding counted once, as the least distance between the solute and its
+    nearest periodic image. The box's narrowest width is that size times
+    ``f``, the shape's factor (1 for a cube, sqrt(2)/2 for a dodecahedron).
 
-    The general relation is `d(width)/d(padding) = 2 * f`, with f the
-    shape's narrowest width per unit size.
+    The first version asked for ``padding + shortfall / 2``, a cube's
+    arithmetic, and undershot every dodecahedron by sqrt(2) (AUD40, which
+    killed V3). The second took the width to grow by ``2 f`` per unit of
+    padding, which is right only while the padding sizes the box (a solute
+    smaller than the padding). For a solute that sizes it, anything larger
+    than a short peptide, the width grows by ``f``, and the loop undershot by
+    half: a solute 1.6 nm across at 1.0 nm of padding in a dodecahedron
+    grew to 1.26 nm and reached 2.02 nm, under the 2.20 it aimed at, and
+    three attempts left it at 2.11.
+
+    So the size the box needs is worked out and the padding found from
+    OpenMM's rule directly. The solute's diameter is read off the box built
+    (``size - padding``); where the padding sized the box that reads too
+    large, and then the answer is the other branch, half the size needed.
     """
     factor = NARROWEST_WIDTH_PER_SIZE.get(str(box_shape).lower(), 1.0)
     wanted = 2.0 * float(nonbonded_cutoff_nm) * float(margin)
-    shortfall = wanted - float(smallest_nm)
-    if shortfall <= 0.0:
+    if float(smallest_nm) >= wanted:
         return float(padding_nm)
-    return float(padding_nm) + shortfall / (2.0 * factor)
+    needed_size = wanted / factor
+    across = max(0.0, float(smallest_nm) / factor - float(padding_nm))
+    return max(float(padding_nm), min(needed_size - across, needed_size / 2.0))
+
+
+def sized_by_the_padding(*, grown_nm: float, nonbonded_cutoff_nm: float,
+                         box_shape: str, margin: float = NPT_CONTRACTION_MARGIN) -> bool:
+    """Whether a grown padding is the smallest box the cutoff allows at all:
+    half the size the cutoff needs, so the padding and not the solute sizes
+    it. Growing to it gives the least water any solute that small can have
+    under this cutoff, however little padding was asked for."""
+    factor = NARROWEST_WIDTH_PER_SIZE.get(str(box_shape).lower(), 1.0)
+    half = float(nonbonded_cutoff_nm) * float(margin) / factor
+    return abs(float(grown_nm) - half) <= 1e-9 * max(1.0, half)
+
+
+def _what_would_fit(*, smallest_nm: float, padding_nm: float,
+                    nonbonded_cutoff_nm: float, box_shape: str) -> str:
+    """The refusal of a box too small for its cutoff, with what would run:
+    the padding for this shape and for a cube, from OpenMM's own sizing."""
+    shape = str(box_shape).lower()
+    factor = NARROWEST_WIDTH_PER_SIZE.get(shape, 1.0)
+    across = max(0.0, smallest_nm / factor - padding_nm)
+    here = padding_that_reaches(smallest_nm=smallest_nm, padding_nm=padding_nm,
+                                nonbonded_cutoff_nm=nonbonded_cutoff_nm, box_shape=shape)
+    wanted = 2.0 * nonbonded_cutoff_nm * NPT_CONTRACTION_MARGIN
+    cube = max(padding_nm, min(wanted - across, wanted / 2.0))
+    text = (
+        f"The box is too small for a {nonbonded_cutoff_nm:.2f} nm cutoff. A "
+        f"periodic cutoff can be at most half the box's narrowest width, and "
+        f"the barostat then shrinks the box by a few per cent, so it needs "
+        f"{wanted:.2f} nm; with {padding_nm:.2f} nm of padding this {shape} "
+        f"is {smallest_nm:.2f} nm at its narrowest. Padding is the least "
+        f"distance between the solute and its nearest periodic image, and "
+        f"setup adds a little by itself; this needs more than that. Any of "
+        f"these will run: solvent_padding_nm: {here:.2f}")
+    if shape != "cube":
+        text += f"; or box_shape: cube with solvent_padding_nm: {cube:.2f}"
+    return text + ("; or a shorter nonbonded_cutoff_nm, which changes the "
+                   "interactions rather than the box.")
 
 
 def _solvate_with_room_for_the_cutoff(
@@ -196,7 +242,7 @@ def _solvate_with_room_for_the_cutoff(
     unit: Any,
     attempts: int = 3,
     most_it_may_grow_nm: float = 0.5,
-) -> None:
+) -> float:
     """Solvate, and grow the padding if the box comes out too small.
 
     A periodic cutoff has to be at most half the smallest box dimension --
@@ -212,37 +258,50 @@ def _solvate_with_room_for_the_cutoff(
     than the config states would be reporting the config and doing something
     else.
 
-    Only a little, though. A default box that a change of shape made invalid
-    needs a few tenths of a nanometre. A 1.5 nm cutoff asked for with 0.4 nm
-    of padding needs four times the box, and somebody who asked for both has
-    given settings that contradict each other -- better told than quietly
-    handed a system four times the size. Past ``most_it_may_grow_nm`` this
-    stops adjusting and lets the check further down say so.
+    Only a little, though, where the solute sizes the box: somebody who
+    asked for a 1.5 nm cutoff with 0.4 nm of padding around a protein has
+    given settings that contradict each other, and is better told than
+    quietly handed a much larger system. Past ``most_it_may_grow_nm`` this
+    stops adjusting and lets the check further down say so, with what
+    would run.
+
+    Where the padding sizes the box (a solute smaller than the padding),
+    the box grown to is the smallest the cutoff allows for any solute, and
+    it is grown to whatever the amount. The defaults, 1.0 nm of padding in
+    a dodecahedron with a 1.0 nm cutoff, need 1.56 nm for a peptide of a few
+    residues; refusing that stopped every such study at setup.
     """
     kwargs = dict(add_solvent_kwargs)
     padding = float(padding_nm)
+    # The solute as it was before any water. A retry starts from it: the box
+    # with its water deleted still held the ions the attempt had added, and
+    # they then counted as solute, sizing the next box by where they had
+    # happened to land (the same study came out 2.28, 2.36 and 2.53 nm at
+    # its narrowest) and staying in the system beside the next attempt's
+    # own, which put 3 ion pairs where 0.15 M needs 2.
+    solute = (getattr(modeller, "topology", None), getattr(modeller, "positions", None))
     for attempt in range(attempts):
         modeller.addSolvent(ff, **kwargs)
         # The raw setting, not the resolved key: that is derived further down,
         # after solvation, so reading it here was a use before assignment.
         if str(nonbonded_method) not in ("CutoffPeriodic", "PME", "Ewald"):
-            return
+            return padding
         vectors = modeller.topology.getPeriodicBoxVectors()
         if vectors is None:
-            return
+            return padding
         try:
             smallest = min(
                 float(vectors[i][i].value_in_unit(unit.nanometer)) for i in range(3)
             )
         except (TypeError, ValueError, AttributeError):
-            return
+            return padding
         # A box of no size is not a box to add padding to -- it means the
         # topology could not say, which is not a problem this can solve.
         if smallest <= 0.0:
-            return
+            return padding
         wanted = 2.0 * nonbonded_cutoff_nm * NPT_CONTRACTION_MARGIN
         if smallest >= wanted or attempt == attempts - 1:
-            return
+            return padding
 
         # Enough for the cutoff, and for the contraction the barostat is
         # about to apply. The shape matters: a dodecahedron's narrowest
@@ -255,7 +314,10 @@ def _solvate_with_room_for_the_cutoff(
             nonbonded_cutoff_nm=nonbonded_cutoff_nm,
             box_shape=str(kwargs.get("boxShape", "cube")),
         )
-        if grown - float(padding_nm) > most_it_may_grow_nm:
+        shape = str(kwargs.get("boxShape", "cube"))
+        smallest_box = sized_by_the_padding(
+            grown_nm=grown, nonbonded_cutoff_nm=nonbonded_cutoff_nm, box_shape=shape)
+        if grown - float(padding_nm) > most_it_may_grow_nm and not smallest_box:
             # Said out loud, because the check further down reports the
             # padding the config asked for and knows nothing of what was
             # tried. Silent, this advised raising 0.80 nm without mentioning
@@ -270,16 +332,21 @@ def _solvate_with_room_for_the_cutoff(
                 padding, nonbonded_cutoff_nm, grown,
                 grown - float(padding_nm), most_it_may_grow_nm,
             )
-            return
+            return padding
         padding = grown
         logger.info(
             "Box came out %.2f nm across, which is under twice the %.2f nm "
             "cutoff. Re-solvating with %.2f nm padding so no particle sees "
-            "its own periodic image.",
+            "its own periodic image%s.",
             smallest, nonbonded_cutoff_nm, padding,
+            " (the smallest box this cutoff allows for any solute this small)"
+            if smallest_box else "",
         )
         kwargs["padding"] = padding * unit.nanometer
-        modeller.deleteWater()
+        if solute[1] is not None:
+            modeller.topology, modeller.positions = solute
+        else:
+            modeller.deleteWater()
 
 
 
@@ -702,6 +769,7 @@ def prepare_system(
         add_solvent_kwargs["model"] = water_model
 
     membrane_record: dict[str, Any] | None = None
+    padding_used: float | None = None
     if membrane:
         # A bilayer instead of a box of water. OpenMM packs the lipids and
         # solvates around them, so no external packing tool is needed -- but
@@ -797,7 +865,7 @@ def prepare_system(
     else:
         try:
             try:
-                _solvate_with_room_for_the_cutoff(
+                padding_used = _solvate_with_room_for_the_cutoff(
                     modeller,
                     ff,
                     add_solvent_kwargs,
@@ -904,15 +972,20 @@ def prepare_system(
                 # OpenMM handle validation.
                 min_edge_nm = None
             if min_edge_nm is not None and nonbonded_cutoff_nm > 0.5 * min_edge_nm:
+                # The smallest diagonal entry is the box's narrowest width,
+                # which for a dodecahedron is not an edge: this said "box
+                # edge 1.41 nm" of a box whose edges were 2.0.
                 raise StudyError(
                     f"Nonbonded cutoff ({nonbonded_cutoff_nm:.2f} nm) exceeds "
-                    f"half the smallest periodic box dimension "
-                    f"({0.5 * min_edge_nm:.2f} nm; box edge {min_edge_nm:.2f} "
-                    f"nm). Increase solvent_padding_nm (currently "
-                    f"{solvent_padding_nm:.2f} nm) or decrease "
-                    f"nonbonded_cutoff_nm so that the cutoff is at most half "
-                    f"the box."
-                , code="config.option.wrong_type")
+                    f"half the smallest periodic box width "
+                    f"({0.5 * min_edge_nm:.2f} nm; the box is "
+                    f"{min_edge_nm:.2f} nm at its narrowest). "
+                    + _what_would_fit(smallest_nm=min_edge_nm,
+                                      padding_nm=float(solvent_padding_nm),
+                                      nonbonded_cutoff_nm=nonbonded_cutoff_nm,
+                                      box_shape=str(box_shape)),
+                    code="config.option.conflicting",
+                    options=["setup.solvent_padding_nm", "setup.nonbonded_cutoff_nm"])
 
     try:
         system = ff.createSystem(modeller.topology, **create_system_kwargs)
@@ -975,6 +1048,11 @@ def prepare_system(
         # filtered copy of the parameters, so nothing private leaks in.
         "resolved": {
             "switch_distance_nm": resolved_switch_distance_nm,
+            # The padding the box was built with, where the run grew it to
+            # clear the cutoff. The config's figure stays what was asked.
+            **({"solvent_padding_nm": round(float(padding_used), 4)}
+               if padding_used is not None
+               and abs(float(padding_used) - float(solvent_padding_nm)) > 1e-9 else {}),
             # The cutoff and the switch this run used where nobody stated
             # them. Recorded, because the report said 1.0 nm -- the value the
             # schema handed over -- for a CHARMM36 run cut off at 1.2.

@@ -28,12 +28,6 @@ from typing import Any
 #: warning at config time that the run does not repeat, or the reverse.
 from fastmdxplora.setup.prepare import STRUCTURAL_METALS
 
-#: How much of solute-plus-padding survives as a dodecahedron's smallest
-#: width. Measured rather than derived: 1.2 nm of padding on a 0.9 nm solute
-#: gives 1.70 nm across where the sum says 3.3, and the ratio held near a half
-#: at every padding tried.
-DODECAHEDRON_WIDTH_FRACTION = 0.52
-
 #: Force fields developed with hard truncation, where a switching function
 #: moves a run away from the parameterisation rather than towards it.
 _NO_SWITCH = ("amber",)
@@ -134,30 +128,51 @@ def _a_box_too_small_for_the_cutoff(structure: dict[str, Any],
         # 6 nm across, so the dodecahedron's arithmetic does not apply.
         return None
 
-    # A dodecahedron's smallest width is far narrower than solute plus
-    # padding suggests. Measured on a capped alanine: 1.2 nm of padding on a
-    # 0.9 nm solute gives 3.3 nm by that reckoning and 1.70 nm in fact, and
-    # 1.6 nm of padding was the first that cleared a 1.0 nm cutoff. The ratio
-    # held near a half across every padding tried, so that is the factor
-    # here -- an estimate, and the run computes the box exactly.
+    # The box as OpenMM sizes it: the solute's bounding sphere plus the
+    # padding, or twice the padding for a solute smaller than that, times the
+    # shape's narrowest width per unit size. A capped alanine, 0.9 nm across
+    # at 1.2 nm of padding, is a dodecahedron 1.70 nm at its narrowest, as
+    # measured. The longest extent stands in for the sphere, which is at
+    # least that wide, so this can only be kind to the box; the run computes
+    # it exactly.
+    from fastmdxplora.setup.prepare import (
+        NARROWEST_WIDTH_PER_SIZE,
+        NPT_CONTRACTION_MARGIN,
+        padding_that_reaches,
+        sized_by_the_padding,
+    )
+
+    shape = str(settings.get("box_shape") or "dodecahedron").lower()
+    factor = NARROWEST_WIDTH_PER_SIZE.get(shape, 1.0)
     longest_nm = max(float(x) for x in extents) / 10.0
-    across = (longest_nm + 2.0 * float(padding)) * DODECAHEDRON_WIDTH_FRACTION
-    if across >= 2.0 * float(cutoff):
+    padding = float(padding)
+    across = factor * max(longest_nm + padding, 2.0 * padding)
+    wanted = 2.0 * float(cutoff) * NPT_CONTRACTION_MARGIN
+    if across >= wanted:
         return None
+    grown = padding_that_reaches(smallest_nm=across, padding_nm=padding,
+                                 nonbonded_cutoff_nm=float(cutoff), box_shape=shape)
+    grows = (sized_by_the_padding(grown_nm=grown, nonbonded_cutoff_nm=float(cutoff),
+                                  box_shape=shape)
+             or grown - padding <= 0.5)
     return Advisory(
         setting="solvent_padding_nm",
         summary=(
-            f"{padding} nm of padding on a solute {longest_nm:.1f} nm across "
-            f"leaves a box perhaps {across:.1f} nm at its narrowest."),
+            f"{padding:g} nm of padding on a solute {longest_nm:.1f} nm across "
+            f"makes a {shape} about {across:.2f} nm at its narrowest."),
         detail=(
-            f"A {cutoff} nm cutoff needs more than twice that in the box's "
-            "smallest width, or a particle interacts with its own periodic "
-            "image. The box a dodecahedron makes is narrower than its "
-            "longest dimension, so this is closer than it looks."),
+            f"A {cutoff:g} nm cutoff needs the box's narrowest width to be more "
+            "than twice that, with room for the barostat to shrink it, or a "
+            "particle interacts with its own periodic image. Padding is the "
+            "least distance between the solute and that image, not the "
+            "distance to the box's wall."),
         remedy=(
-            "Raise the padding, or lower the cutoff to something the force "
-            "field still supports. The run will grow the box a little on its "
-            "own and refuse where that is not enough."),
+            f"Setup will grow the padding to about {grown:.2f} nm by itself, "
+            "and say so; set that here to have the config say what runs."
+            if grows else
+            f"Setup will refuse this: raise the padding to about {grown:.2f} nm, "
+            "use a cube, or lower the cutoff to something the force field "
+            "still supports."),
     )
 
 

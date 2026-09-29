@@ -1603,11 +1603,12 @@ class TestTheDefaultBoxIsNotACube:
         assert box.smallest >= 2.0 * 1.0 * NPT_CONTRACTION_MARGIN
 
     def test_but_contradictory_settings_are_reported_not_absorbed(self, caplog) -> None:
-        """0.4 nm of padding with a 1.5 nm cutoff needs four times the box.
-        Somebody who asked for both has made a mistake, and is told, rather
-        than handed a system four times the size: the loop stops short of
-        the growth it would take, and the check further down refuses."""
-        box = _a_box_builder(shape="cube", extent_nm=0.8)
+        """0.4 nm of padding around a protein 2 nm across with a 1.5 nm
+        cutoff. Somebody who asked for both has made a mistake, and is told,
+        rather than handed a much larger system: the loop stops short of the
+        growth it would take, and the check further down refuses, with what
+        would run."""
+        box = _a_box_builder(shape="cube", extent_nm=2.0)
         _solvate(box, cutoff_nm=1.5, padding_nm=0.4, caplog=caplog)
         assert box.solvations == 1                        # not grown
         assert box.smallest < 2.0 * 1.5
@@ -2077,13 +2078,12 @@ class TestEveryStageShowsProgress:
         assert with_numbers[-1]["left"] == pytest.approx(0.0, abs=1e-9)
 
 class _a_box_builder:
-    """A modeller whose addSolvent builds the box the shape would, from the
-    padding it is given. A cube is the solute's extent plus twice the
-    padding. A rhombic dodecahedron follows what OpenMM built on the run
-    the growth loop was fixed for: the smallest perpendicular width came
-    out at root two times the padding, 1.70 nm at 1.20, the solute's own
-    0.76 nm extent contributing almost nothing. Records how many times it
-    was asked."""
+    """A modeller whose addSolvent builds the box OpenMM would, from the
+    padding it is given: the solute's bounding sphere plus the padding, or
+    twice the padding for a solute smaller than that, times the shape's
+    narrowest width per unit size. On the run the growth loop was fixed for
+    that gave 1.70 nm at 1.20 nm of padding in a dodecahedron, as measured.
+    Records how many times it was asked."""
 
     def __init__(self, *, shape: str, extent_nm: float):
         self.shape, self.extent, self.solvations = shape, extent_nm, 0
@@ -2091,15 +2091,13 @@ class _a_box_builder:
         self.topology = self
 
     def addSolvent(self, ff, **kwargs):
-        import math
+        from fastmdxplora.setup.prepare import NARROWEST_WIDTH_PER_SIZE
 
         unit = pytest.importorskip("openmm").unit
 
         padding = kwargs["padding"].value_in_unit(unit.nanometer)
-        if self.shape == "cube":
-            self.smallest = self.extent + 2.0 * padding
-        else:
-            self.smallest = math.sqrt(2.0) * padding
+        size = max(self.extent + padding, 2.0 * padding)
+        self.smallest = NARROWEST_WIDTH_PER_SIZE[self.shape] * size
         self.solvations += 1
 
     def deleteWater(self):

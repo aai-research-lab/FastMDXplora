@@ -702,6 +702,43 @@ frames, R centres the structure and F fills the screen. The keys work only on
 the viewer's page and never while something is being typed, and are listed
 under the page's title.
 
+### A box grown for its cutoff has the ions it should, and a small solute gets one
+
+**A box re-solvated to clear the cutoff no longer keeps the first attempt's
+ions.** Where the box first built was too narrow for the cutoff, setup deleted
+its water and solvated again with more padding, but the ions that attempt had
+added stayed: they counted as solute, so the next box was sized by where they
+had happened to land (the same study came out 2.28, 2.36 and 2.53 nm at its
+narrowest), and they stayed in the system beside the second attempt's own. A
+tripeptide at 0.15 M had 3 ion pairs where 2 were due. A retry now starts from
+the solute as it was before any water. Studies whose setup log says
+"Re-solvating" were prepared with the extra ions.
+
+**The padding added is worked out from OpenMM's own sizing.** OpenMM sizes a
+padded box as the solute's bounding sphere plus the padding, counted once, or
+twice the padding for a solute smaller than that. The growth took the width to
+rise by twice the shape's factor per nanometre of padding, which holds only
+while the padding sizes the box; for any solute that sizes it the width rises
+by half that, so the growth undershot by half and three attempts left the box
+under the margin it aimed for. The rule is now applied directly and checked
+against the OpenMM installed.
+
+**A small solute is prepared with the defaults.** 1.0 nm of padding in a
+dodecahedron with a 1.0 nm cutoff needs 1.56 nm of padding for a peptide of a
+few residues; setup added at most 0.5 nm and failed with a message calling the
+box's narrowest width its edge. Where the padding sizes the box, the box grown
+to is the smallest the cutoff allows for any solute that small, and it is grown
+to whatever the amount. Where the solute sizes it and more than 0.5 nm is
+needed, setup stops adjusting as before, and the refusal that follows names the
+padding that would run, for this shape and for a cube, and calls the box's
+narrowest width what it is. The padding used is recorded under
+`resolved` and the methods give it. They also say what padding measures: the
+least distance between the solute and its nearest periodic image, which the
+setting's description had called the distance to the box's wall. The builder's
+advice uses the same rule and says whether setup will grow the box or refuse.
+The guardrail corpus's box case now builds its box as OpenMM would, where it had
+made the box a fixed fraction of the padding; its outcome is unchanged.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

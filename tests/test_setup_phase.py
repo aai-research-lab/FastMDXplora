@@ -520,29 +520,47 @@ class TestRealSetup:
         # The system has more particles than the input (we added water)
         assert system.getNumParticles() > 5
 
-    def test_cutoff_larger_than_half_box_raises_clear_error(
+    def test_a_small_solute_gets_the_smallest_box_its_cutoff_allows(
         self, mini_pdb, tmp_path
     ):
-        """A cutoff > half the box yields an actionable error, not OpenMM's.
-
-        With small padding and a large cutoff, the periodic-box constraint
-        is violated; the guard in prepare_system should raise a ValueError
-        naming the cutoff, the box, and how to fix it.
-        """
+        """0.4 nm of padding and a 1.5 nm cutoff around a tripeptide: the
+        padding sizes the box, and the box grown to is the smallest any solute
+        that small can have under this cutoff, so it is built and the padding
+        used recorded."""
         from fastmdxplora.setup.prepare import prepare_system
         from fastmdxplora.setup.pdbfix import fix_pdb_with_pdbfixer
 
         prepared = tmp_path / "prepared.pdb"
         fix_pdb_with_pdbfixer(str(mini_pdb), str(prepared), ph=7.0)
 
-        out = tmp_path / "out"
-        with pytest.raises(ValueError, match="cutoff.*exceeds half"):
-            prepare_system(
-                prepared,
-                out,
-                solvent_padding_nm=0.4,   # tiny box
-                nonbonded_cutoff_nm=1.5,  # cutoff > half the box
-            )
+        made = prepare_system(prepared, tmp_path / "out",
+                              solvent_padding_nm=0.4, nonbonded_cutoff_nm=1.5)
+        assert made["box"]["smallest_width_nm"] == pytest.approx(3.3, abs=1e-3)
+        assert made["resolved"]["solvent_padding_nm"] == pytest.approx(1.65)
+
+    def test_cutoff_larger_than_half_box_raises_clear_error(self, tmp_path):
+        """A cutoff > half the box yields an actionable error, not OpenMM's.
+
+        Two tripeptides 1.2 nm apart, a solute about 1.8 nm across that sizes
+        its own box: with 0.4 nm of padding and a 1.5 nm cutoff it needs more
+        than a little padding added, and the refusal names what would run.
+        """
+        from fastmdxplora.setup.prepare import prepare_system
+        from fastmdxplora.setup.pdbfix import fix_pdb_with_pdbfixer
+
+        atoms = [line for line in MINI_PDB.splitlines() if line.startswith("ATOM")]
+        second = [
+            f"{line[:21]}B{line[22:46]}{float(line[46:54]) + 12.0:8.3f}{line[54:]}"
+            for line in atoms]
+        (tmp_path / "two.pdb").write_text(
+            "\n".join(atoms + ["TER"] + second + ["END"]) + "\n")
+        prepared = tmp_path / "prepared.pdb"
+        fix_pdb_with_pdbfixer(str(tmp_path / "two.pdb"), str(prepared), ph=7.0)
+
+        with pytest.raises(ValueError, match="solvent_padding_nm: 1.") as refused:
+            prepare_system(prepared, tmp_path / "out",
+                           solvent_padding_nm=0.4, nonbonded_cutoff_nm=1.5)
+        assert refused.value.refusal.code == "config.option.conflicting"
 
 
 class TestTheSoftwareDoesNotAdvertiseWhatItCannotDo:

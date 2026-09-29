@@ -20,6 +20,14 @@ periodic box size has decreased to less than twice the nonbonded cutoff."
 Two things were wrong and the second is why the first mattered: the
 increment used the wrong factor, and the target was the bare floor rather
 than the floor plus the contraction the next phase was about to apply.
+
+The fix took the width to grow by `2 f` per unit of padding, which is right
+only while the padding sizes the box. OpenMM sizes a padded box as the
+solute's bounding sphere plus the padding (padding counted once), or twice
+the padding for a solute smaller than that; for any solute that sizes its
+box the width grows by `f`, and the loop undershot by half. The growth is
+now worked out from OpenMM's rule, checked here against the rule and
+against OpenMM itself.
 """
 
 from __future__ import annotations
@@ -34,11 +42,19 @@ from fastmdxplora.setup.prepare import (
     padding_that_reaches,
 )
 
+#: The V3 solute's bounding diameter, read off the box OpenMM built for it:
+#: 1.70 nm at its narrowest from 1.20 nm of padding in a dodecahedron.
+V3_ACROSS = 1.70 / NARROWEST_WIDTH_PER_SIZE["dodecahedron"] - 1.20
+
+
+def _narrowest(across: float, padding: float, shape: str) -> float:
+    """The box OpenMM builds: max(2r + padding, 2 padding), times f."""
+    return NARROWEST_WIDTH_PER_SIZE[shape] * max(across + padding, 2.0 * padding)
+
 
 def _width_after_growing(smallest: float, padding: float, grown: float,
-                         shape: str) -> float:
-    """d(width)/d(padding) = 2f, which is the relation under test."""
-    return smallest + 2.0 * NARROWEST_WIDTH_PER_SIZE[shape] * (grown - padding)
+                         shape: str, across: float = V3_ACROSS) -> float:
+    return _narrowest(across, grown, shape)
 
 
 class TestTheFactorsAreTheBoxVectors:
@@ -63,15 +79,22 @@ class TestTheFactorsAreTheBoxVectors:
 
 class TestEveryShapeReachesItsTarget:
 
+    @pytest.mark.parametrize("across", [0.3, 0.9, 1.6, 2.4])
     @pytest.mark.parametrize("shape", sorted(NARROWEST_WIDTH_PER_SIZE))
     def test_the_grown_box_clears_the_floor_with_the_margin(
-            self, shape: str) -> None:
-        cutoff, smallest, padding = 1.0, 1.70, 1.20
+            self, shape: str, across: float) -> None:
+        """For a solute the padding sizes the box around and one that sizes
+        it itself: in one step, and no further than it needs."""
+        cutoff, padding = 1.0, 0.8
+        smallest = _narrowest(across, padding, shape)
+        wanted = 2.0 * cutoff * NPT_CONTRACTION_MARGIN
         grown = padding_that_reaches(
             smallest_nm=smallest, padding_nm=padding,
             nonbonded_cutoff_nm=cutoff, box_shape=shape)
-        width = _width_after_growing(smallest, padding, grown, shape)
-        assert width == pytest.approx(2.0 * cutoff * NPT_CONTRACTION_MARGIN)
+        if smallest >= wanted:
+            assert grown == padding
+        else:
+            assert _narrowest(across, grown, shape) == pytest.approx(wanted)
 
     def test_a_box_that_already_clears_is_not_grown(self) -> None:
         assert padding_that_reaches(
@@ -87,6 +110,70 @@ class TestEveryShapeReachesItsTarget:
             box_shape="something-else") == padding_that_reaches(
             smallest_nm=1.7, padding_nm=1.2, nonbonded_cutoff_nm=1.0,
             box_shape="cube")
+
+
+class TestASoluteThatSizesItsBox:
+    """The second defect: `2 f` per unit of padding where the solute sizes the
+    box. A solute 1.6 nm across at 1.0 nm of padding in a dodecahedron."""
+
+    def test_the_second_arithmetic_undershot_by_half(self) -> None:
+        f = NARROWEST_WIDTH_PER_SIZE["dodecahedron"]
+        smallest = _narrowest(1.6, 1.0, "dodecahedron")
+        second = 1.0 + (2.2 - smallest) / (2.0 * f)
+        assert second == pytest.approx(1.255, abs=1e-3)
+        assert _narrowest(1.6, second, "dodecahedron") == pytest.approx(2.02, abs=0.01)
+
+    def test_it_now_reaches_the_target(self) -> None:
+        smallest = _narrowest(1.6, 1.0, "dodecahedron")
+        grown = padding_that_reaches(smallest_nm=smallest, padding_nm=1.0,
+                                     nonbonded_cutoff_nm=1.0, box_shape="dodecahedron")
+        assert _narrowest(1.6, grown, "dodecahedron") == pytest.approx(2.2)
+
+
+class TestOpenMMSizesItThisWay:
+    """The rule the arithmetic rests on, asked of the OpenMM installed."""
+
+    @pytest.mark.parametrize("shape,spread", [("dodecahedron", 0.2), ("cube", 1.4),
+                                              ("octahedron", 0.9)])
+    def test_the_box_is_the_bounding_sphere_plus_the_padding(self, shape, spread) -> None:
+        app = pytest.importorskip("openmm.app")
+        unit = pytest.importorskip("openmm").unit
+        from openmm import Vec3
+
+        # Three water molecules along a line: a solute of a known size.
+        topology = app.Topology()
+        chain = topology.addChain()
+        positions = []
+        for k in range(3):
+            residue = topology.addResidue("HOH", chain)
+            oxygen = topology.addAtom("O", app.element.oxygen, residue)
+            h1 = topology.addAtom("H1", app.element.hydrogen, residue)
+            h2 = topology.addAtom("H2", app.element.hydrogen, residue)
+            topology.addBond(oxygen, h1)
+            topology.addBond(oxygen, h2)
+            x = spread * k / 2.0
+            positions += [Vec3(x, 0, 0), Vec3(x + 0.09572, 0, 0), Vec3(x - 0.024, 0.0927, 0)]
+        forcefield = app.ForceField("amber14/tip3p.xml")
+        padding = 1.0
+        modeller = app.Modeller(topology, positions * unit.nanometer)
+        modeller.addSolvent(forcefield, padding=padding * unit.nanometer, boxShape=shape)
+        vectors = modeller.topology.getPeriodicBoxVectors()
+        smallest = min(vectors[i][i].value_in_unit(unit.nanometer) for i in range(3))
+
+        xyz = [(p.x, p.y, p.z) for p in positions]
+        low = [min(c[i] for c in xyz) for i in range(3)]
+        high = [max(c[i] for c in xyz) for i in range(3)]
+        centre = [(a + b) / 2 for a, b in zip(low, high)]
+        radius = max(math.dist(c, centre) for c in xyz)
+        assert smallest == pytest.approx(_narrowest(2 * radius, padding, shape), rel=1e-6)
+
+        grown = padding_that_reaches(smallest_nm=smallest, padding_nm=padding,
+                                     nonbonded_cutoff_nm=1.2, box_shape=shape)
+        again = app.Modeller(topology, positions * unit.nanometer)
+        again.addSolvent(forcefield, padding=grown * unit.nanometer, boxShape=shape)
+        vectors = again.topology.getPeriodicBoxVectors()
+        reached = min(vectors[i][i].value_in_unit(unit.nanometer) for i in range(3))
+        assert reached == pytest.approx(2 * 1.2 * NPT_CONTRACTION_MARGIN, rel=1e-6)
 
 
 class TestTheRunThisKilled:

@@ -499,8 +499,12 @@ def _a_box_too_small_for_its_cutoff():
         topology = property(lambda self: self)
         def deleteWater(self): pass
         def addSolvent(self, _ff, **kw):
-            self.attempts.append(float(kw["padding"]))
-            self._box = 0.2 * float(kw["padding"])
+            # The box OpenMM builds for a cube: the solute's bounding sphere
+            # (8 nm across here) plus the padding, or twice the padding. It
+            # was 0.2 times the padding, which no OpenMM builds.
+            padding = float(kw["padding"])
+            self.attempts.append(padding)
+            self._box = max(8.0 + padding, 2.0 * padding)
         def getPeriodicBoxVectors(self):
             b = getattr(self, "_box", 0.0)
             return [[_Q(b if i == j else 0.0) for j in range(3)]
@@ -534,8 +538,10 @@ def _a_box_that_already_fits():
         topology = property(lambda self: self)
         def deleteWater(self): pass
         def addSolvent(self, _ff, **kw):
-            self.attempts.append(float(kw["padding"]))
-            self._box = 4.0 * float(kw["padding"])
+            # As OpenMM sizes a cube, around a solute 4 nm across.
+            padding = float(kw["padding"])
+            self.attempts.append(padding)
+            self._box = max(4.0 + padding, 2.0 * padding)
         def getPeriodicBoxVectors(self):
             b = getattr(self, "_box", 0.0)
             return [[_Q(b if i == j else 0.0) for j in range(3)]

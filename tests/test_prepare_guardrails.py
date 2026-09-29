@@ -171,15 +171,18 @@ class _Quantity:
 class _Modeller:
     """Enough of a Modeller to watch the padding grow.
 
-    Records what padding each attempt used and reports a box that grows
-    with it, so the loop's arithmetic is observable without solvating
-    anything.
+    Records what padding each attempt used and builds the box OpenMM would
+    for a cube: the solute's bounding sphere plus the padding, or twice the
+    padding for a solute smaller than that. The first version grew the box
+    as a fixed multiple of the padding, which no OpenMM builds, and the
+    loop's arithmetic was checked against that (the rule: a fixture from the
+    producing code, not from the consumer's expectations).
     """
 
-    def __init__(self, box_per_padding: float = 2.0, offset: float = 0.0):
+    def __init__(self, across_nm: float = 1.0, *, empty: bool = False):
         self.attempts: list[float] = []
-        self._per = box_per_padding
-        self._offset = offset
+        self._across = across_nm
+        self._empty = empty
         self.topology = self
 
     def deleteWater(self):  # noqa: N802 - OpenMM's spelling
@@ -191,9 +194,9 @@ class _Modeller:
         self.deleted = getattr(self, "deleted", 0) + 1
 
     def addSolvent(self, _ff, **kwargs):  # noqa: N802 - OpenMM's spelling
-        padding = kwargs.get("padding")
-        self.attempts.append(float(padding))
-        self._box = self._per * float(padding) + self._offset
+        padding = float(kwargs.get("padding"))
+        self.attempts.append(padding)
+        self._box = 0.0 if self._empty else max(self._across + padding, 2.0 * padding)
 
     def getPeriodicBoxVectors(self):  # noqa: N802 - OpenMM's spelling
         size = getattr(self, "_box", 0.0)
@@ -211,32 +214,32 @@ class TestABoxBigEnoughForItsCutoff:
     def _solvate(self, modeller, *, cutoff, padding, method="PME", **kw):
         from fastmdxplora.setup.prepare import _solvate_with_room_for_the_cutoff
 
-        _solvate_with_room_for_the_cutoff(
+        return _solvate_with_room_for_the_cutoff(
             modeller, object(), {"padding": padding},
             nonbonded_cutoff_nm=cutoff, padding_nm=padding,
             nonbonded_method=method, unit=_Unit, **kw)
 
     def test_a_box_already_large_enough_is_solvated_once(self):
-        modeller = _Modeller(box_per_padding=4.0)
-        self._solvate(modeller, cutoff=0.9, padding=1.0)
+        modeller = _Modeller(across_nm=4.0)
+        assert self._solvate(modeller, cutoff=0.9, padding=1.0) == 1.0
         assert modeller.attempts == [1.0], "no growing was needed"
 
-    def test_a_box_too_small_grows_and_is_solvated_again(self):
-        modeller = _Modeller(box_per_padding=1.0)
-        self._solvate(modeller, cutoff=0.9, padding=1.0)
+    def test_a_box_too_small_grows_once_to_what_it_needs(self):
+        modeller = _Modeller(across_nm=1.0)
+        used = self._solvate(modeller, cutoff=1.0, padding=1.0)
 
-        assert len(modeller.attempts) > 1
-        assert modeller.attempts[1] > modeller.attempts[0]
+        assert len(modeller.attempts) == 2 and used == modeller.attempts[1] > 1.0
+        assert modeller._box == pytest.approx(2 * 1.0 * 1.10)
         assert getattr(modeller, "deleted", 0) >= 1, (
             "the previous shell must go before a larger box is filled")
 
     def test_a_non_periodic_method_is_left_alone(self):
         """Without periodicity there is no image for a particle to see."""
-        modeller = _Modeller(box_per_padding=0.1)
+        modeller = _Modeller(across_nm=0.1)
         self._solvate(modeller, cutoff=5.0, padding=1.0, method="NoCutoff")
         assert modeller.attempts == [1.0]
 
-    def test_it_stops_rather_than_growing_without_limit(self):
+    def test_a_solute_that_sizes_the_box_is_not_grown_past_a_little(self):
         """And says what it tried.
 
         Silent, it advised raising the padding without mentioning that a
@@ -245,19 +248,36 @@ class TestABoxBigEnoughForItsCutoff:
         """
         import logging
 
-        modeller = _Modeller(box_per_padding=0.2)
+        modeller = _Modeller(across_nm=2.0)
         with _CapturedLog("fastmdx.setup.prepare", logging.INFO) as log:
-            self._solvate(modeller, cutoff=5.0, padding=1.0,
-                          most_it_may_grow_nm=0.5)
+            used = self._solvate(modeller, cutoff=1.5, padding=0.4,
+                                 most_it_may_grow_nm=0.5)
 
-        # It stopped after one attempt rather than using all three.
-        assert len(modeller.attempts) == 1
+        assert len(modeller.attempts) == 1 and used == 0.4
         assert any("Stopping at" in message for message in log.records), (
             f"nothing said why it stopped; recorded: {log.records}")
 
+    def test_a_small_solute_gets_the_smallest_box_its_cutoff_allows(self):
+        """However much padding that takes: it is the least water any solute
+        that small can have under this cutoff. The defaults (1.0 nm padding,
+        1.0 nm cutoff, dodecahedron) needed 0.56 nm more for a dipeptide, and
+        refusing it stopped every such study at setup."""
+        modeller = _Modeller(across_nm=0.3)
+        used = self._solvate(modeller, cutoff=1.5, padding=0.4, most_it_may_grow_nm=0.5)
+        assert used == pytest.approx(1.5 * 1.10)
+        assert modeller._box == pytest.approx(2 * 1.5 * 1.10)
+
     def test_a_box_of_no_size_is_not_a_box_to_pad(self):
-        modeller = _Modeller(box_per_padding=0.0)
+        modeller = _Modeller(empty=True)
         self._solvate(modeller, cutoff=0.9, padding=1.0)
+        assert modeller.attempts == [1.0]
+
+    def test_a_box_it_cannot_measure_is_left_as_built(self):
+        """Vectors that are not lengths say nothing about the box's width;
+        the padding asked for stands and the check further down decides."""
+        modeller = _Modeller(across_nm=0.1)
+        modeller.getPeriodicBoxVectors = lambda: [[None] * 3] * 3
+        assert self._solvate(modeller, cutoff=1.5, padding=1.0) == 1.0
         assert modeller.attempts == [1.0]
 
 
