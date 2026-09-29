@@ -28,7 +28,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from fastmdxplora.gui.browse import is_study
-from fastmdxplora.gui.hosting import SECRET_HEADER, Hosting
+from fastmdxplora.gui.hosting import ACCOUNT_HEADER, SECRET_HEADER, Hosting
 from fastmdxplora.gui.exploration import (
     _NO_CURRENT_RUN,
     DashboardRuntime,
@@ -328,6 +328,7 @@ def make_handler(
         __bibtex__,
         __citation__,
         __doi__,
+        __expansion__,
         __version__,
     )
 
@@ -335,13 +336,41 @@ def make_handler(
     html = html.replace("__FASTMDX_DOI__", _escape(__doi__))
     html = html.replace("__FASTMDX_VERSION__", _escape(__version__))
     html = html.replace("__FASTMDX_BIBTEX__", _escape(__bibtex__))
-    # Hosted behind a service, the sidebar links to the service's own page
-    # for the person; the GUI has no other way back to it.
-    account_link = ""
+    # Hosted behind a service, the service's name and line are shown where
+    # this software's would be; its name without a line of its own has none,
+    # not this software's (the citation and the links to it stay). The
+    # person is named per request, below.
+    product = hosting.product_name if hosting is not None else ""
+    tagline = hosting.product_tagline if hosting is not None else ""
+    if not tagline and not product:
+        tagline = __expansion__
+    # The person's placeholders become random marks first, and the names are
+    # put in with one pass each, so no text put in (a name holding a
+    # placeholder's spelling) is ever read as a placeholder.
+    import re as _re
+    import secrets as _secrets
+
+    mark = _secrets.token_hex(8)
+    person_marks = {f"__FASTMDX_NAME_{mark}__": "name",
+                    f"__FASTMDX_INITIALS_{mark}__": "initials"}
+    for spot, which in person_marks.items():
+        html = html.replace(f"__FASTMDX_ACCOUNT_{which.upper()}__", spot)
+    shown = {"__FASTMDX_TITLE__": product or "FastMDXplora GUI",
+             "__FASTMDX_PRODUCT__": product or "FastMDXplora",
+             "__FASTMDX_TAGLINE__": tagline}
+    html = _re.sub("|".join(shown), lambda m: _escape(shown[m.group(0)]), html)
+    # The settings menu at the foot of the sidebar opens with the way back
+    # to the service's own page for the person; the GUI has no other.
+    account_item = ""
     if hosting is not None and hosting.account_url:
-        account_link = (f'<a class="sidebar-service" href="{_escape(hosting.account_url)}" '
-                        'title="Your account on this service">Your account</a>')
-    html = html.replace("<!--__FASTMDX_ACCOUNT_LINK__-->", account_link)
+        account_item = (
+            '<div class="settings-section">Account</div>'
+            f'<a href="{_escape(hosting.account_url)}" class="settings-item" '
+            'id="settings-account-link">Your account '
+            '<span class="mono settings-hint">runs, files, sign out</span></a>'
+            '<div class="settings-divider"></div>')
+    html = html.replace("<!--__FASTMDX_ACCOUNT_ITEM__-->", account_item)
+
     # And, when the service runs studies on its own compute, a way to send
     # one there: the service's page opens with the config, for the person to
     # confirm. Never started from here.
@@ -358,6 +387,19 @@ def make_handler(
             'a GPU">Run it on a GPU</button>')
     html = html.replace("<!--__FASTMDX_RUN_ELSEWHERE__-->", elsewhere)
     html = html.replace("<!--__FASTMDX_RUN_AS_IS_ELSEWHERE__-->", as_it_is_elsewhere)
+    person_spots = _re.compile("|".join(person_marks))
+
+    def page_for(account_header: str | None) -> str:
+        """The page with the person named at the foot of the sidebar: the
+        name the proxy sent, with its initials, hosted; the product's name
+        (this software's on a person's own machine) and no initials
+        otherwise."""
+        from fastmdxplora.gui.hosting import Hosting as _Hosting
+        from fastmdxplora.gui.hosting import initials
+
+        name = _Hosting.account_name(account_header) if hosting is not None else ""
+        said = {"name": name or product or "FastMDXplora", "initials": initials(name)}
+        return person_spots.sub(lambda m: _escape(said[person_marks[m.group(0)]]), html)
 
     class LiveDashboardHandler(BaseHTTPRequestHandler):
         server_version = "FastMDXLive/1.0"
@@ -410,7 +452,7 @@ def make_handler(
                     # write is served as no run at all.
                     root = app_runtime.workspace_root / _NO_CURRENT_RUN
             if path in {"/", "/index", "/results", "/live"}:
-                self._send_html(html)
+                self._send_html(page_for(self.headers.get(ACCOUNT_HEADER)))
                 return
             if path == "/api/app-state" or path == "/api/explore/state":
                 self._send_json(app_runtime.snapshot())

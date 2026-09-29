@@ -2571,13 +2571,15 @@ class TestBothKindsOfConfigFile:
 class TestItIsCalledTheGUI:
     """A dashboard is the live view inside it, not the thing itself."""
 
-    def test_the_page_is_titled_that_way(self) -> None:
-        import pathlib
-
-        from fastmdxplora.gui import server
-
-        page = (pathlib.Path(server.__file__).parent / "templates"
-                / "dashboard.html").read_text(encoding="utf-8")
+    def test_the_page_is_titled_that_way(self, tmp_path: Path) -> None:
+        # As served on a person's own machine; a hosted service may give
+        # its own name (test_a_hosted_gui_shows_its_service).
+        server, base_url = start_test_server(tmp_path)
+        try:
+            page = urlopen(f"{base_url}/", timeout=HTTP_TIMEOUT).read().decode("utf-8")
+        finally:
+            server.shutdown()
+            server.server_close()
         assert "<title>FastMDXplora GUI</title>" in page
 
     def test_the_config_it_writes_says_so(self) -> None:

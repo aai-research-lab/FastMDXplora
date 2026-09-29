@@ -171,7 +171,7 @@ class TestTheSettingsPopup(unittest.TestCase):
         page = _page()
         trigger = page[page.index('id="settings-open"'):page.index("</button>", page.index('id="settings-open"'))]
         self.assertNotIn("account-detail", trigger)
-        self.assertIn('id="account-name">FastMDXplora', trigger)
+        self.assertIn('id="account-name">__FASTMDX_ACCOUNT_NAME__', trigger)
         self.assertNotIn('el("account-detail")', _script())
 
     def test_the_popup_is_a_dialog_with_a_theme_switch(self):

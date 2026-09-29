@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A hosted GUI shows its service's name and the person signed in
+
+**`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the
+service's name and line at the top of the sidebar, on the loading screen and in
+the window's title, in place of FastMDXplora's; the citation and the links to
+this software stay. The person is named at the foot of the sidebar with their
+initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
+so a name changed at the service shows on the next page load. `--account-url`
+is now the first item of the menu that opens there, not a link of its own.
+
 ### A hosted GUI can send a study to its service's compute
 
 **`fastmdx gui --hosted --runs-url PATH`** adds **Run on a GPU** beside

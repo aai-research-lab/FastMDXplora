@@ -266,7 +266,9 @@ finished, and read there — see
 | `--hosted` | Serve it to someone else, through a proxy that signs them in; see [Serving the GUI to other people](hosting.md) | off |
 | `--workspace DIR` | With `--hosted`: the one folder it reads and writes | current directory |
 | `--allowed-host NAME` | With `--hosted`: a name the proxy serves it under; repeat for more | none; required |
-| `--account-url PATH` | With `--hosted`: the service's page for the person, linked from the sidebar | none; no link |
+| `--account-url PATH` | With `--hosted`: the service's page for the person, first in the menu at the foot of the sidebar | none; no link |
+| `--product-name NAME` | With `--hosted`: the service's name, shown in place of FastMDXplora's at the top of the sidebar and in the title | FastMDXplora |
+| `--product-tagline TEXT` | With `--hosted`: the line under that name | none with `--product-name`; FastMDXplora's without |
 | `--runs-url PATH` | With `--hosted`: the service's page that runs a study on its compute; adds **Run on a GPU** to the builder | none; not offered |
 
 **That is the whole of it.** The dashboard flags — `--dashboard-host`,

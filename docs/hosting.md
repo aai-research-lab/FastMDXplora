@@ -41,6 +41,8 @@ starts do not inherit it.
    `--allowed-host`. A POST must carry an `Origin` that is one of them, over
    `http` or `https`, which a browser tab on the page the GUI served does by
    itself.
+4. **Name the person**, if the service shows one, in `X-FastMDX-Account-Name`
+   (below), and **remove** any copy of that header a caller sent.
 
 Give each person's GUI its own secret. A secret shared between workspaces
 would let one person's GUI be reached with another's.
@@ -49,8 +51,8 @@ would let one person's GUI be reached with another's.
 
 The GUI knows nothing of the service around it: its accounts, its other
 pages, signing out. `--account-url` names the service's own page for the
-person, as a path on the same site, and the sidebar shows it as
-**Your account**:
+person, as a path on the same site, and the menu at the foot of the sidebar
+opens with it as **Your account**:
 
 ```bash
 fastmdx gui --hosted ... --account-url /account/
@@ -58,6 +60,28 @@ fastmdx gui --hosted ... --account-url /account/
 
 Only a path on the same site is accepted: one leading slash, plain
 characters, no scheme and no query.
+
+## The service's name and the person's
+
+`--product-name` shows the service's name at the top of the sidebar, on the
+loading screen and in the window's title, in place of FastMDXplora's, and
+`--product-tagline` the line under it. With a name and no line, none is shown
+(FastMDXplora's is not the service's). The page citing FastMDXplora and the
+links to its documentation stay. A name of at most 40 characters and a line of
+at most 80, each on one line.
+
+```bash
+fastmdx gui --hosted ... --product-name "Example Lab MD" \
+    --product-tagline "Simulations for the Example Lab"
+```
+
+The person is named at the foot of the sidebar, with their initials, from a
+header the proxy adds to each request: `X-FastMDX-Account-Name`, the name as
+UTF-8, percent-encoded (`Ad%C3%A9%20Lovelace`). A name changed at the service
+shows on the next page load, with nothing restarted. Like the secret's, the
+proxy must remove any copy of this header a caller sends; only requests that
+carry the secret are read at all. Without the header the foot shows the
+product name.
 
 ## Sending a study to the service's compute
 

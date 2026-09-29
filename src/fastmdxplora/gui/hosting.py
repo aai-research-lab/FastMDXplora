@@ -27,6 +27,16 @@ What a study's own settings name (a structure file, a trajectory) is read
 by the run, not by the GUI; in a hosted service each workspace runs in a
 container of its own, and that is the boundary for those. The proxy must
 remove any `X-FastMDX-Proxy-Secret` a caller sends before adding its own.
+
+A service shows its own name and its person. `--product-name` replaces the
+name at the top of the sidebar, on the loading screen and in the window's
+title, and `--product-tagline` the line under it (the citation and the links
+to this software stay). The proxy names
+the person on each request in `X-FastMDX-Account-Name` (UTF-8,
+percent-encoded), shown with their initials at the foot of the sidebar; it
+must remove any copy a caller sends, as it does the secret's. Only a
+request that carries the secret is read at all, so the header is the
+proxy's word.
 """
 
 from __future__ import annotations
@@ -54,6 +64,23 @@ SHORTEST_SECRET = 32
 
 #: How a path inside the workspace is shown, and read back.
 HOME_MARK = "~"
+
+#: The header naming the person, set by the proxy on every request.
+ACCOUNT_HEADER = "X-FastMDX-Account-Name"
+
+#: The longest product name, tagline and person's name shown; the sidebar
+#: is narrow.
+LONGEST_PRODUCT_NAME = 40
+LONGEST_PRODUCT_TAGLINE = 80
+LONGEST_ACCOUNT_NAME = 80
+
+#: Control characters, read as a space in a person's name and refused in
+#: a product's.
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f]")
+#: Characters not shown, or that reorder what is shown: invisible marks and
+#: direction overrides, dropped from a name and refused in a product's. The
+#: joiners (U+200C, U+200D) are kept: Persian and some Indic names need them.
+_HIDDEN = re.compile("[\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 
 
 class HostingError(CodedError, ValueError):
@@ -85,6 +112,17 @@ def _same_site(value: str, flag: str, example: str) -> str:
     return value
 
 
+def _one_line(value: str, flag: str, longest: int) -> str:
+    """Text to show, with runs of white space as one space, or HostingError
+    for one too long or holding a control character."""
+    text = " ".join((value or "").split())
+    if _CONTROL.search(text) or _HIDDEN.search(text) or len(text) > longest:
+        raise HostingError(
+            f"{flag} {text[:60]!r} is not text to show: at most {longest} characters, "
+            "on one line.", code="config.option.not_permitted", setting=flag)
+    return text
+
+
 @dataclass(frozen=True)
 class Hosting:
     """What a hosted GUI trusts, and the one folder it may use."""
@@ -101,11 +139,18 @@ class Hosting:
     #: saved in the workspace and that page opens with it filled in, for the
     #: person to confirm there. A path on the same site, or empty.
     runs_url: str = ""
+    #: The service's name for what the person uses, shown in place of this
+    #: software's at the top of the sidebar; empty keeps this software's.
+    product_name: str = ""
+    #: The line under it. Empty with a product name shows none, since this
+    #: software's tagline is not the service's.
+    product_tagline: str = ""
 
     @classmethod
     def from_environment(cls, workspace: str | Path,
                          allowed_hosts: list[str] | tuple[str, ...],
-                         account_url: str = "", runs_url: str = "") -> Hosting:
+                         account_url: str = "", runs_url: str = "",
+                         product_name: str = "", product_tagline: str = "") -> Hosting:
         """Hosted mode as the command line starts it.
 
         Refuses to start rather than start open: without a secret the proxy
@@ -136,8 +181,25 @@ class Hosting:
                 code="config.option.not_permitted", setting="--workspace")
         account_url = _same_site(account_url, "--account-url", "/account/")
         runs_url = _same_site(runs_url, "--runs-url", "/runs")
+        product_name = _one_line(product_name, "--product-name", LONGEST_PRODUCT_NAME)
+        product_tagline = _one_line(product_tagline, "--product-tagline",
+                                    LONGEST_PRODUCT_TAGLINE)
         return cls(workspace=root, allowed_hosts=names, secret=secret,
-                   account_url=account_url, runs_url=runs_url)
+                   account_url=account_url, runs_url=runs_url, product_name=product_name,
+                   product_tagline=product_tagline)
+
+    # ---- who is shown ----
+    @staticmethod
+    def account_name(header_value: str | None) -> str:
+        """The person's name as the proxy sent it: decoded, on one line,
+        shortened to fit; empty when none was sent."""
+        from urllib.parse import unquote
+
+        text = unquote(str(header_value or ""), errors="replace")
+        text = " ".join(_CONTROL.sub(" ", _HIDDEN.sub("", text)).split())
+        if len(text) > LONGEST_ACCOUNT_NAME:
+            text = text[: LONGEST_ACCOUNT_NAME - 1].rstrip() + "\u2026"
+        return text
 
     # ---- who is answered ----
     def admits(self, presented: str | None) -> bool:
@@ -222,3 +284,18 @@ class Hosting:
                      os.path.abspath(self.workspace)}
         # Longest first, so a spelling that contains another is replaced whole.
         return tuple(sorted(spellings, key=len, reverse=True))
+
+
+def initials(name: str) -> str:
+    """One or two letters for an avatar: the first of each of the first two
+    words of a name, or the first of an address's own part."""
+    text = (name or "").strip()
+    address = "@" in text and " " not in text
+    if address:
+        text = text.split("@", 1)[0]
+    words = [w for w in re.split(r"[\s._-]+", text) if w and w[0].isalnum()]
+    if not words:
+        return ""
+    # Cut after upper-casing, which can lengthen a letter (a ligature, a sharp s).
+    letters = (words[0][0] if address else "".join(w[0] for w in words[:2])).upper()
+    return letters[: 1 if address else 2]

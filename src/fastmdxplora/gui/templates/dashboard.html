@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>FastMDXplora GUI</title>
+  <title>__FASTMDX_TITLE__</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/dashboard.css">
   <meta name="fastmdx-expansion" content="Fully Automated SysTem for Molecular Dynamics eXploration">
@@ -13,8 +13,8 @@
   <!-- Loading screen -->
   <div id="loading-screen" class="loading-screen" aria-hidden="false">
     <div class="loading-shell">
-      <div class="loading-product">FastMDXplora</div>
-      <div class="loading-tagline">Fully Automated SysTem for Molecular Dynamics eXploration</div>
+      <div class="loading-product">__FASTMDX_PRODUCT__</div>
+      <div class="loading-tagline">__FASTMDX_TAGLINE__</div>
       <div class="loading-status" id="loading-status">
         <div class="loading-step" data-step="telemetry">
           <span class="loading-bullet"></span>
@@ -101,6 +101,7 @@
     </div>
   </div>
   <div class="settings-popup" id="settings-popup" hidden role="dialog" aria-label="Settings">
+    <!--__FASTMDX_ACCOUNT_ITEM__-->
     <div class="settings-section">Appearance</div>
     <div class="settings-row">
       <span>Theme</span>
@@ -127,8 +128,8 @@
       <div class="sidebar-brand">
         <button type="button" class="ghost-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">&#10094;</button>
         <div class="brand-text">
-          <div class="brand-product">FastMDXplora</div>
-          <div class="brand-tagline">Fully Automated SysTem for Molecular Dynamics eXploration</div>
+          <div class="brand-product">__FASTMDX_PRODUCT__</div>
+          <div class="brand-tagline">__FASTMDX_TAGLINE__</div>
         </div>
       </div>
       <div class="sidebar-study">
@@ -236,11 +237,10 @@
         </a>
       </nav>
       <div class="sidebar-foot">
-        <!--__FASTMDX_ACCOUNT_LINK__-->
-        <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false">
-          <span class="sidebar-account-avatar" aria-hidden="true"></span>
+        <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false" title="__FASTMDX_ACCOUNT_NAME__">
+          <span class="sidebar-account-avatar" aria-hidden="true">__FASTMDX_ACCOUNT_INITIALS__</span>
           <span class="sidebar-account-text">
-            <span class="sidebar-account-name" id="account-name">FastMDXplora</span>
+            <span class="sidebar-account-name" id="account-name">__FASTMDX_ACCOUNT_NAME__</span>
           </span>
           <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
         </button>
