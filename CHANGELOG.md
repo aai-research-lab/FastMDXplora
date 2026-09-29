@@ -892,6 +892,15 @@ viewer's canvas**, above the display options, where they had been the last of
 five rows. A long path in the builder's note on where results are saved now
 wraps instead of pushing a phone's page sideways.
 
+### An Agent's reply restored before the builder is ready still works
+
+**A restored Agent reply's actions and its plan's size and time no longer do
+nothing on a slow page load.** The reply hands its config to the builder, and
+the builder draws from its list of settings; where the config arrived before
+that list, drawing it threw, so *Download config*, *Copy the command*, *Run
+here* and the plan's last two lines silently did nothing. A config that
+arrives first now waits for the list.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

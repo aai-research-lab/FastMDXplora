@@ -1614,8 +1614,15 @@
      it: the agent holds a config as an object and never as a path, and
      the mapping from one to the other is server-side and not trivial.
      Duplicating it in JavaScript would be a second place for it to drift. */
-  function applyLoadedState(from, { from: origin, note } = {}) {
-    if (!from) return;
+  function applyLoadedState(from, options = {}) {
+    if (!from) return undefined;
+    if (!state.schema) {
+      // The form is drawn from the schema. A config that arrives first, an
+      // Agent's reply restored as the page opens on a slow machine, threw
+      // drawing it, and the reply's actions and its plan's cost did nothing.
+      return loadSchema().then(() => applyLoadedState(from, options));
+    }
+    const { from: origin, note } = options;
     state.start = from.start;
     // `include_phase` is what the server sends since the phase lists took one
     // name; reading `include` alone left every phase unticked on load, and the

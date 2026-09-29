@@ -795,8 +795,10 @@
       }
       var run = window.FastMDXRun;
       if (!run || !run.applyLoadedState) return false;
-      run.applyLoadedState(m.state, {});
-      return true;
+      // Waits for the builder's schema where the reply arrived first.
+      return Promise.resolve(run.applyLoadedState(m.state, {})).then(function () {
+        return true;
+      });
     });
 
     /* What the proposal would build and how long it would take here, added
