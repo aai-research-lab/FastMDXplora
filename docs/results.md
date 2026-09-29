@@ -103,7 +103,13 @@ was — `analysis.sampling.correlation_unresolved`,
 `analysis.sampling.too_few_frames`, `analysis.sampling.drifting`.
 
 The companion question is how much further the run would have to go, and it has
-an answer:
+an answer. An analysis that withholds its mean for want of sampling records it
+beside the mean (`shortfall` in its `options.json`: further frames, and
+nanoseconds where the run's clock is known). The report's convergence section
+gives the figure for the study, the largest of them, rounded up, with what it
+would take at the speed the study ran (from `simulation/cost.json`) and the
+config that extends the study in place; the Agent is given the same. For any
+series:
 
 ```python
 from fastmdxplora.statistics import sampling_shortfall
@@ -114,8 +120,10 @@ print(sampling_shortfall(rmsd_series, target_independent=10, frame_interval_ns=0
 ```
 
 One caveat the function states and this repeats: where the frames in hand are
-too few to resolve the correlation time, the shortfall is a **lower bound**. It
-is a planning figure. Run at least that much and measure again.
+too few to resolve the correlation time, the shortfall is a **lower bound**, and
+it is never less than as long again as the part of the run already averaged,
+since the independent samples the run appears to hold are themselves an upper
+bound. It is a planning figure. Run at least that much and measure again.
 
 Averages taken on a biased run are corrected back to equilibrium where the bias
 allows, and labelled as biased where it does not —

@@ -464,8 +464,10 @@ Each request goes to the model with three things beside the schema:
   the config the run used, in its short form, so "the same settings as that
   one" has something to copy from; once analyses have run, what they found,
   per analysis: the mean, its standard error and unit, the effective sample
-  count, and how many frames were discarded as unequilibrated; and whether the
-  study can be continued, with the config that would continue it. "Is the
+  count, and how many frames were discarded as unequilibrated; how much longer
+  the study must run for the means it withheld, and what that takes here; and
+  whether the study can be continued, with the config that would continue it.
+  "Is the
   RMSD converged?" is answered from those numbers, "why did it stop?" from
   the error, and "how far along?" from the step, not from a guess.
 - **A file you attached.** The `+` at the left of the composer opens a

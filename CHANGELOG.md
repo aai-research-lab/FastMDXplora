@@ -924,6 +924,23 @@ read; before, checking one meant finding the figure and reading its caption.
 The analyses are found by what the answer says, and the Agent is asked to name
 the analysis behind each number it quotes.
 
+### A withheld mean says how much longer the run must be, and what that takes
+
+**An analysis that withholds its mean for want of sampling now records how
+much longer the run must be** (`shortfall` beside the mean: further frames,
+and nanoseconds where the run's clock is known), and the report's convergence
+section, under **What would support it**, gives the figure for the study: the
+largest ask, rounded up, what it would take at the speed the study ran (from
+its `cost.json`), and the config that extends the study in place. The Agent is
+given the same, with that config where the study can be continued. Each mean
+ended "the remedy is a longer run" and nothing said how much longer.
+
+`sampling_shortfall` asked for nothing where a run could not resolve its own
+correlation time: the ten samples such a run appears to hold are an upper
+bound, which is why its mean is withheld, and the shortfall counted them as
+met. It now asks for at least as long again and says the figure is a floor
+(`lower_bound`).
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

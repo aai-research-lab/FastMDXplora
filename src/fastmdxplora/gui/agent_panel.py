@@ -361,7 +361,47 @@ def _run_status(runtime: Any) -> str | None:
     if results:
         lines.append("")
         lines.append(results)
+    asked = _sampling_summary(getattr(runtime, "active_root", None))
+    if asked:
+        lines.append("")
+        lines.append(asked)
     return "\n".join(lines)
+
+
+def _sampling_summary(root: Any) -> str:
+    """How much longer the study must run for the means it withheld, what
+    that takes here, and the config that does it.
+
+    "The remedy is a longer run" is where the analyses stopped, and the
+    Agent asked how much longer had only that sentence. The analyses
+    record the figure; this is it for the study, with the cost at the speed
+    the study ran and, where the study can be continued, the config.
+    """
+    if not root:
+        return ""
+    try:
+        from fastmdxplora.simulation.sampling_ask import sampling_asked_for
+
+        ask = sampling_asked_for(root)
+    except Exception:  # noqa: BLE001 - context, not load-bearing
+        return ""
+    if ask is None:
+        return ""
+    text = f"what the withheld means need: {ask.as_text()}"
+    try:
+        import yaml
+
+        from fastmdxplora.simulation.resume import continuation_of, last_segment
+
+        possible = continuation_of(root, from_segment=last_segment(root)).possible
+    except Exception:  # noqa: BLE001
+        possible = False
+    if possible:
+        config = yaml.safe_dump(ask.config(root), sort_keys=False,
+                                default_flow_style=False).strip()
+        text += (" To run it, answer with this config; it extends the study in "
+                 f"place and reruns the analyses:\n```yaml\n{config}\n```")
+    return text
 
 
 def _config_the_run_used(root: Any) -> str:

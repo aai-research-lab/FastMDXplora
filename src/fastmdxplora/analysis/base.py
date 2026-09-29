@@ -66,6 +66,32 @@ def _unit_in(label: str) -> str:
     return ""
 
 
+#: The withholdings a longer run of the same system answers. Three usable
+#: frames is not one of them: that is a run with almost nothing written.
+_WANT_A_LONGER_RUN = frozenset({
+    "analysis.sampling.correlation_unresolved",
+    "analysis.sampling.too_few_independent",
+})
+
+
+def _frame_interval_ns(traj: Any) -> float | None:
+    """How far apart the analysed frames are, from the clock the loader set.
+
+    None where it set none: the loader fills the time with NaN when the run
+    did not say, and a duration is then not invented.
+    """
+    try:
+        time_ps = np.asarray(traj.time, dtype=float)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if time_ps.size < 2 or not np.all(np.isfinite(time_ps)):
+        return None
+    steps = np.diff(time_ps)
+    if not np.all(steps > 0):
+        return None
+    return float(np.median(steps)) / 1000.0
+
+
 # ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
@@ -496,6 +522,18 @@ class Analysis(ABC):
             record.update(equilibrated.as_record())
         if reason is not None:
             record["not_a_measurement"] = reason
+            # And what would make it one. "The remedy is a longer run" left
+            # the length to guess; the correlation this series already
+            # shows says how much longer, which is what a person deciding
+            # whether to extend needs.
+            code = getattr(getattr(reason, "refusal", None), "code", "")
+            if code in _WANT_A_LONGER_RUN:
+                from fastmdxplora.statistics import sampling_shortfall
+
+                shortfall = sampling_shortfall(
+                    series, frame_interval_ns=_frame_interval_ns(traj))
+                if not shortfall.met:
+                    record["shortfall"] = shortfall.as_record()
         record["n_frames"] = int(series.size)
         unit = self._recorded_unit()
         if unit is not None:

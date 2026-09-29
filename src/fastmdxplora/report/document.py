@@ -674,12 +674,17 @@ def _convergence_section(project_root: Path) -> str:
         )
     lines.append("")
 
+    asked = _what_more_sampling_needs(project_root)
     if assessed["findings"]:
         lines.append("### What this run cannot support")
         lines.append("")
         for finding in assessed["findings"]:
             lines.append(f"- {finding}")
         lines.append("")
+        if asked:
+            lines += [asked, ""]
+    elif asked:
+        lines += [asked, ""]
     else:
         lines.append(
             "Every measure equilibrated and carries enough independent observation "
@@ -688,6 +693,28 @@ def _convergence_section(project_root: Path) -> str:
         )
         lines.append("")
     return "\n".join(lines)
+
+
+def _what_more_sampling_needs(project_root: Path) -> str:
+    """The production the withheld means ask for, what it takes at this
+    run's speed, and the config that runs it. The analyses said "the remedy
+    is a longer run" and left the length to guess."""
+    try:
+        import yaml
+
+        from fastmdxplora.simulation.sampling_ask import sampling_asked_for
+
+        ask = sampling_asked_for(project_root)
+    except Exception:  # noqa: BLE001 - a report section must never fail a report
+        return ""
+    if ask is None:
+        return ""
+    text = ask.as_text()
+    config = yaml.safe_dump(ask.config(project_root), sort_keys=False,
+                            default_flow_style=False).strip()
+    return (f"**What would support it.** {text[0].upper()}{text[1:]} This extends "
+            f"the study in place, joins the segments and reruns the analyses:\n\n"
+            f"```yaml\n{config}\n```")
 
 
 def _findings_notes(findings: dict[str, Any]) -> list[str]:

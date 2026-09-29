@@ -412,6 +412,11 @@ class Shortfall:
     more_frames: int
     #: The same, in nanoseconds, where a frame interval was given.
     more_ns: float | None = None
+    #: Whether the frames in hand resolve their own correlation time. Where
+    #: they do not, ``inefficiency`` is read low, the figure is a lower
+    #: bound, and it is at least as many frames again as there are: the
+    #: least that could show whether the correlation time holds.
+    resolved: bool = True
 
     @property
     def met(self) -> bool:
@@ -426,6 +431,8 @@ class Shortfall:
         }
         if self.more_ns is not None:
             record["more_ns"] = self.more_ns
+        if not self.resolved:
+            record["lower_bound"] = True
         return record
 
     def __str__(self) -> str:
@@ -434,6 +441,15 @@ class Shortfall:
                     f"{self.target:g} asked for.")
         duration = ("" if self.more_ns is None
                     else f", about {self.more_ns:.3g} ns more")
+        if not self.resolved:
+            return (
+                f"The run is too short to measure its own correlation time, so "
+                f"its {self.have:.1f} independent samples are an upper bound. "
+                f"At least {self.more_frames} further frames{duration} (as "
+                f"long again, or to {self.target:g} samples at one every "
+                f"{self.inefficiency:.0f} frames if that is longer), then "
+                "measure again."
+            )
         return (
             f"{self.have:.1f} independent samples of the {self.target:g} "
             f"needed. At one every {self.inefficiency:.0f} frames, that is "
@@ -482,6 +498,14 @@ def sampling_shortfall(
     kept = int(values.size - discard)
     wanted_frames = int(np.ceil(float(target_independent) * g))
     more = max(0, wanted_frames - kept)
+    # A run that cannot resolve its correlation time reads it low, so ten
+    # samples at that rate can already be "in hand" while the mean is
+    # withheld for exactly this reason: a shortfall of nothing, for a run
+    # the analysis said must be longer. The least that could settle it is as
+    # long again, which is what the halving test compares.
+    resolved = correlation_is_resolved(values[discard:])
+    if not resolved:
+        more = max(more, kept)
     return Shortfall(
         target=float(target_independent),
         have=float(effective),
@@ -489,6 +513,7 @@ def sampling_shortfall(
         more_frames=more,
         more_ns=(None if frame_interval_ns is None
                  else float(more * frame_interval_ns)),
+        resolved=resolved,
     )
 
 
