@@ -220,9 +220,13 @@ def fetch_chemistry(
     # ModelServer returns heavy atoms only. A force field needs every atom:
     # benzene delivered as a bare six-carbon ring with aromatic bonds is a
     # radical, not benzene, and would be parameterized as one.
-    text = _add_hydrogens(text, resname)
-    if not from_cache:
-        cached.write_text(text, encoding="utf-8")
+    completed = _add_hydrogens(text, resname)
+    # Written whenever hydrogens were added, a cached copy included: the file
+    # returned below is what the ligand path reads, and a cached copy without
+    # hydrogens was handed on as it was while the counts said twelve atoms.
+    if not from_cache or completed != text:
+        cached.write_text(completed, encoding="utf-8")
+    text = completed
 
     n_atoms = _sdf_atom_count(text)
     charge, groups = _inspect(text, resname)

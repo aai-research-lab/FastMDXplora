@@ -499,6 +499,20 @@ ligand is away from the site (no heavy atom within 0.6 nm), the findings say
 from when and for what share of the frames, the figure shades those frames,
 and no mean RMSD is given.
 
+### A cached ligand is handed on with its hydrogens
+
+**A component read from the chemistry cache without hydrogens is now
+completed on disk.** Hydrogens were added to the text and the atoms counted
+in it, but the file handed to the ligand path was the cached one as it was,
+so a copy cached without them reached the force field as a bare heavy-atom
+ring: benzene as a radical. The completed text is written back to the cache
+whenever hydrogens were added.
+
+The preparation of a ligand found in the structure (fetched, completed,
+written per copy, and cached for the next study) and what setup says about
+its source and parameters are now tested without the network. They were
+covered only by the tests that reach RCSB.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
