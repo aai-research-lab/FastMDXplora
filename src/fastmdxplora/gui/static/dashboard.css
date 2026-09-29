@@ -3524,3 +3524,51 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 /* A path is one long word: broken anywhere rather than pushing a phone's
    page sideways. */
 #run-output-note, .builder-card-note code, .study-running-name { overflow-wrap: anywhere; }
+
+/* A study of several runs, side by side (runs-compared.js). */
+.runs-compared {
+    margin: 0 0 24px; padding: 16px 18px;
+    border: 1px solid var(--border-primary); border-radius: 12px;
+    background: var(--panel-glass);
+}
+.runs-compared[hidden], .runs-overlay[hidden] { display: none; }
+.runs-compared-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.runs-compared-scroll { overflow-x: auto; }
+.runs-compared-table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.runs-compared-table th, .runs-compared-table td {
+    padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border-primary);
+    white-space: nowrap; vertical-align: baseline;
+}
+.runs-compared-table thead th { color: var(--text-muted); font-weight: 500; }
+.runs-compared-table td { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.runs-compared-table .is-varied { background: color-mix(in srgb, var(--accent-cyan) 9%, transparent); }
+.runs-compared-table thead .is-varied { color: var(--text-primary); }
+.runs-compared-run { font-weight: 500; color: var(--text-primary); }
+.runs-compared-swatch {
+    display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+    margin-right: 8px; vertical-align: baseline;
+}
+.runs-compared-state { margin-left: 8px; font-size: 11px; color: var(--text-muted); }
+.runs-compared-table .is-withheld, .runs-compared-table .is-missing { color: var(--text-muted); }
+.runs-compared-table .is-resolved { font-weight: 600; }
+.runs-compared-mark {
+    margin-left: 8px; padding: 0 6px; border-radius: 4px; font-size: 10.5px;
+    font-family: inherit; letter-spacing: .02em; font-weight: 500;
+    border: 1px solid var(--accent-cyan); color: var(--text-primary);
+}
+.runs-compared-mark.is-reference { border-color: var(--border-primary); color: var(--text-muted); }
+.runs-compared-said { margin: 12px 0 0; font-size: 13px; color: var(--text-secondary); max-width: 820px; }
+.runs-compared-said p { margin: 4px 0; }
+.runs-compared-said strong { color: var(--text-primary); font-weight: 600; }
+.runs-overlay { margin-top: 16px; }
+.runs-overlay-pick { font-size: 12px; color: var(--text-muted); display: inline-flex; gap: 8px; align-items: center; }
+.runs-overlay-pick select { font: inherit; color: var(--text-primary); background: var(--background-elevated); border: 1px solid var(--border-primary); border-radius: 6px; padding: 3px 6px; }
+.runs-overlay-chart { margin-top: 8px; }
+.runs-overlay-svg { width: 100%; height: auto; max-height: 340px; display: block; }
+.runs-overlay-line { fill: none; stroke-width: 1.4; stroke-linejoin: round; }
+.runs-overlay-grid { stroke: var(--border-primary); stroke-width: 1; }
+.runs-overlay-axis { stroke: var(--text-muted); stroke-width: 1; }
+.runs-overlay-tick { fill: var(--text-muted); font-size: 11px; }
+.runs-overlay-label { fill: var(--text-secondary); font-size: 12px; }
+.runs-overlay-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+.page[data-runs-compared] #analysis-empty { display: none !important; }

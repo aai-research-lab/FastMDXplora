@@ -800,6 +800,25 @@
             </div>
           </div>
           <div class="quick-actions" id="analysis-quick-actions" hidden></div>
+          <!-- A study of several runs: the runs side by side
+               (runs-compared.js). Hidden for a study of one run. -->
+          <section class="runs-compared" id="runs-compared" hidden>
+            <div class="runs-compared-head">
+              <h2 class="analysis-section-title">Runs compared</h2>
+              <span class="muted small mono" id="runs-compared-meta"></span>
+            </div>
+            <div class="runs-compared-scroll">
+              <table class="runs-compared-table" id="runs-compared-table"></table>
+            </div>
+            <div class="runs-compared-said" id="runs-compared-said"></div>
+            <div class="runs-overlay" id="runs-overlay" hidden>
+              <label class="runs-overlay-pick">Overlaid
+                <select id="runs-overlay-measure" aria-label="The measure to overlay"></select>
+              </label>
+              <div class="runs-overlay-chart" id="runs-overlay-chart"></div>
+              <div class="runs-overlay-legend" id="runs-overlay-legend"></div>
+            </div>
+          </section>
           <div id="analysis-sections" hidden></div>
           <div class="analysis-grid" id="analysis-grid"></div>
           <div class="empty-state" id="analysis-empty">
@@ -1129,6 +1148,7 @@
     <script src="/static/run-builder.js"></script>
   <script src="/static/charts.js"></script>
   <script src="/static/series-chart.js"></script>
+  <script src="/static/runs-compared.js"></script>
   <script src="/static/molecule-viewer.js"></script>
 </body>
 </html>

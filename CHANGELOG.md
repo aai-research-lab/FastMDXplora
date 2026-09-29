@@ -952,6 +952,21 @@ Agent is given the same ticks, so "did it pass?" is answered against what was
 promised. The checks are one list, with the thresholds the report's findings
 already used, so a check and a finding cannot disagree.
 
+### The runs of a study are compared on one page
+
+**The Analysis page of a study of several runs now shows the runs side by
+side:** one table with the settings that differ between them and the mean
+each run recorded, with its error (or marked where the analysis said it is not
+a measurement); a difference from the first run is marked only where it is
+more than twice the two runs' combined standard error, the rule the written
+comparison uses for a trend, and replicas, which differ only by seed, are set
+against the errors they estimated for themselves instead. Under it, one
+measure's series from every finished run, overlaid, in a palette told apart
+by the colour-blind. The page had been empty for such a study: each run's
+figures were inside the run, and the comparison was a document written once
+the last run finished. `GET /api/runs-compared` gives the table, and
+`/api/series` takes `run=ID` for one run's series.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

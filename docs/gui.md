@@ -45,7 +45,7 @@ you. Nothing is uploaded anywhere.
 | **Config** | The [Config](config.md) builder: four questions, the phases as tiles |
 | **Overview** | Study Overview. A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
 | **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default |
-| **Analysis** | The figures and tables, grouped |
+| **Analysis** | The figures and tables, grouped. For a study of several runs, the runs side by side: the settings that differ, the mean each run recorded with its error, a difference marked only where it exceeds twice the two runs' combined error (replicas are set against their own errors instead), and one measure from every finished run overlaid |
 | **Report** | The report itself, rendered as a document, with downloads for what was produced and a notice for what could not be |
 | **Files** | Everything the run wrote, grouped by phase |
 
@@ -420,7 +420,8 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/structure-info`, `/api/ligands` | Atom, residue, chain and ligand counts |
 | `GET /api/playback-info`, `/api/live-frame-index`, `/api/live-coordinates` | The viewer's frames |
 | `GET /api/protein-preview` | The cached preview image |
-| `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart drawn from them |
+| `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart drawn from them; `&run=ID` for one run of a study of several |
+| `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each measure's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |
 | `GET /artifacts/<path>` | Any file under the run root, `?download=1` to attach |
 | `GET /structure/topology.pdb`, `/structure/live-frame.pdb`, `/structure/playback.pdb` | Structures for the viewer |
 | `GET /analysis-figures-svg.zip` | Every analysis figure, zipped |

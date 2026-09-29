@@ -76,6 +76,7 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.gui.preview",
     "fastmdxplora.gui.agent_panel",
     "fastmdxplora.gui.citations",
+    "fastmdxplora.gui.runs_compared",
 )
 
 
@@ -143,7 +144,8 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
-    "/api/playback-info", "/api/series", "/analysis-figures-svg.zip",
+    "/api/playback-info", "/api/series", "/api/runs-compared",
+    "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
     "/structure/playback.pdb",
 })
@@ -614,8 +616,24 @@ def make_handler(
             if path == "/api/series":
                 from fastmdxplora.gui.series import series_payload
 
-                name = (parse_qs(parsed.query).get("analysis") or [""])[0]
+                query = parse_qs(parsed.query)
+                name = (query.get("analysis") or [""])[0]
+                run = (query.get("run") or [""])[0]
+                if run:
+                    # One run of a study of several, named by its id: only
+                    # a run the study records, never a path.
+                    from fastmdxplora.gui.runs_compared import run_folder
+
+                    folder = run_folder(root, run)
+                    self._send_json(series_payload(folder, name) if folder is not None
+                                    else {"ok": False, "reason": "no such run in this study"})
+                    return
                 self._send_json(series_payload(root, name))
+                return
+            if path == "/api/runs-compared":
+                from fastmdxplora.gui.runs_compared import runs_compared
+
+                self._send_json(runs_compared(root))
                 return
             if path == "/api/protein-preview":
                 # Beyond loopback a viewer reads what the run has; it does
