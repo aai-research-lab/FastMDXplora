@@ -25,7 +25,7 @@
   var MODE_NOTES = {
     assisted: "Drafted and shown to you. Nothing runs until you say so.",
     autonomous: "Runs without being shown to you first, so a ceiling is " +
-                "required \u2014 it is the only thing left that can stop it.",
+                "required: it is the only thing left that can stop it.",
     unvalidated: "Works outside the schema, so nothing checks the method. " +
                  "Every figure it produces is stamped."
   };
@@ -162,6 +162,30 @@
 
   function engineIsSet(current) {
     el("agent-model-current").textContent = describeEngine(current);
+    engineChosen = !!current;
+    syncStart();
+  }
+
+  /* What can be asked, shown while the thread is empty: the study's own
+   * questions when one is open, and studies to start. A suggestion fills
+   * the composer; it does not send. */
+  var engineChosen = true;
+  var studyOpen = false;
+  function syncStart() {
+    var start = el("agent-start");
+    var thread = el("agent-thread");
+    if (!start || !thread) return;
+    start.hidden = thread.childElementCount > 0;
+    var engine = el("agent-start-engine");
+    if (engine) engine.hidden = engineChosen;
+    var study = el("agent-start-study");
+    if (study) study.hidden = !studyOpen;
+    var note = el("agent-start-note");
+    var mode = el("agent-mode");
+    if (note && mode) {
+      note.textContent = "It drafts a config and the software checks it. "
+        + (MODE_NOTES[mode.value] || "");
+    }
   }
 
   function openSettings() { el("agent-settings").hidden = false; }
@@ -1044,7 +1068,46 @@
         : "Optional. Stops a study that would cost more than you meant.";
     }
     el("agent-mode").addEventListener("change", modeChanged);
+    el("agent-mode").addEventListener("change", syncStart);
     modeChanged();
+
+    Array.prototype.forEach.call(document.querySelectorAll(".agent-starter"), function (b) {
+      b.addEventListener("click", function () {
+        area.value = b.getAttribute("data-prompt") || b.textContent;
+        autosize(area);
+        area.focus();
+        area.setSelectionRange(area.value.length, area.value.length);
+      });
+    });
+    var chooseEngine = el("agent-start-settings");
+    if (chooseEngine) chooseEngine.addEventListener("click", openSettings);
+    if (window.MutationObserver) {
+      new MutationObserver(syncStart).observe(el("agent-thread"), { childList: true });
+    }
+    /* A study to ask about is one that has run: a folder is served as the
+     * active run before anything is in it. */
+    if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
+      var ran = { status: false, results: false };
+      var served = false;
+      var decide = function () {
+        studyOpen = served && (ran.status || ran.results);
+        syncStart();
+      };
+      window.FastMDXDashboard.on("app-state", function (s) {
+        served = !!(s && s.active_run);
+        decide();
+      });
+      window.FastMDXDashboard.on("status-updated", function (u) {
+        var status = (u && u.status) || {};
+        ran.status = !!(status.stage || status.current_step != null);
+        decide();
+      });
+      window.FastMDXDashboard.on("results-updated", function (r) {
+        ran.results = !!(r && (r.has_analysis || r.has_report));
+        decide();
+      });
+    }
+    syncStart();
   });
 
   /* For the settings popup: "Agent settings…" should open this dialog,

@@ -644,6 +644,18 @@ thinned evenly for drawing.
 The Analysis page is drawn again only when its content changes; every poll
 had replaced the cards and reloaded each figure.
 
+### The Agent says what it can be asked
+
+**The Agent's page opens on what can be asked of it.** It opened on an empty
+thread reading "Nothing yet. Say what you want to run.", with no word of what
+the Agent does, whether a model was set, or that it could be asked about the
+study already open. It now offers questions about the open study (what it
+found, whether the run is long enough, what would strengthen it) once the study
+has run, and three studies to start: a protein in water, replicas compared, and
+a binding free energy. A suggestion fills the composer rather than sending, so
+it can be changed first. The page says what the chosen mode does, and where no
+model is set, says so beside a button that opens the settings.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

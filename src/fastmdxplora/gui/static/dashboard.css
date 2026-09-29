@@ -2948,9 +2948,41 @@ html[data-page="viewer"] .page-shell { max-width: none; }
     scrollbar-gutter: stable;
     scrollbar-width: thin; scrollbar-color: var(--border-primary) transparent;
 }
-.agent-thread:empty::before {
-    content: "Nothing yet. Say what you want to run.";
-    color: var(--text-muted); font-size: 13px; padding: 40px 0; text-align: center;
+/* The empty thread is replaced by what can be asked (#agent-start). */
+.agent-start {
+    flex: none;
+    max-width: 760px;
+    margin: 32px auto 12px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+.agent-start-title { margin: 0; font-size: 22px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
+.agent-start-note, .agent-start-engine { margin: -8px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.agent-start-engine { display: flex; align-items: center; gap: 10px; color: var(--accent-orange); }
+.agent-start-engine[hidden] { display: none; }
+.agent-start-label {
+    color: var(--text-muted); font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; font-weight: 600; margin-bottom: 8px;
+}
+.agent-starters { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.agent-starter {
+    text-align: left;
+    padding: 12px 14px;
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    background: var(--panel-glass);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease), background var(--duration-fast) var(--ease);
+}
+.agent-starter:hover, .agent-starter:focus-visible {
+    border-color: var(--accent-cyan);
+    background: var(--panel-hover);
+    outline: none;
 }
 .agent-msg { max-width: 860px; }
 .agent-msg-user { align-self: flex-end; max-width: 70%; }

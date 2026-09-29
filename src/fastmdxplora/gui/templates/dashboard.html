@@ -882,6 +882,33 @@
                came back: the refusals as it corrected itself, the config,
                the actions on it. Newest at the bottom, where the composer
                is. -->
+          <!-- What the Agent can be asked, until something has been. A
+               suggestion fills the composer rather than sending, so it can
+               be changed first. -->
+          <div class="agent-start" id="agent-start" hidden>
+            <h2 class="agent-start-title">What would you like to study?</h2>
+            <p class="agent-start-note" id="agent-start-note">Each config it writes is checked by the software, and nothing runs until you say so.</p>
+            <p class="agent-start-engine" id="agent-start-engine" hidden>
+              No model is set yet.
+              <button type="button" class="ghost-btn" id="agent-start-settings">Choose one</button>
+            </p>
+            <div class="agent-start-group" id="agent-start-study" hidden>
+              <div class="agent-start-label">About this study</div>
+              <div class="agent-starters">
+                <button type="button" class="agent-starter" data-prompt="Summarise what this study found, with the uncertainty of each number.">Summarise what this study found</button>
+                <button type="button" class="agent-starter" data-prompt="Is this run long enough for its averages to be trusted? If not, what should I run?">Is this run long enough?</button>
+                <button type="button" class="agent-starter" data-prompt="What would strengthen this result most: a longer run, or more replicas? Say how much of either.">What would strengthen it most?</button>
+              </div>
+            </div>
+            <div class="agent-start-group">
+              <div class="agent-start-label">Start a study</div>
+              <div class="agent-starters">
+                <button type="button" class="agent-starter" data-prompt="Simulate ubiquitin (PDB 1UBQ) in water at 300 K for 10 ns, and tell me whether it stays folded.">Ubiquitin in water, 10 ns</button>
+                <button type="button" class="agent-starter" data-prompt="Run three replicas of ubiquitin (PDB 1UBQ) at 300 K for 5 ns each, and compare their RMSD and radius of gyration.">Three replicas, compared</button>
+                <button type="button" class="agent-starter" data-prompt="Estimate the binding free energy of benzene to T4 lysozyme L99A (PDB 181L) by umbrella sampling along the ligand's distance from its site.">A binding free energy</button>
+              </div>
+            </div>
+          </div>
           <div class="agent-thread" id="agent-thread" aria-live="polite"></div>
 
           <!-- The composer, pinned. Grows with what is typed; Enter sends,
