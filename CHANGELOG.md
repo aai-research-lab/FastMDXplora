@@ -670,6 +670,15 @@ whose first sample is 0 ns/day, was labelled -0.381. The phase and statistics
 tables on the Overview, which had no style of their own, are laid out as
 tables: headings over their columns, numbers aligned.
 
+### The viewer's label and the preview's caption say only what is known
+
+The viewer's label left a field with nothing in it as a dash, so a structure
+with no run behind it showed a frame, an age and a simulated time with no value
+in any of them; such fields are no longer shown. The Overview's preview said "The newest frame, as
+it is written." under a study that had finished, and now says "The last frame
+the run wrote." once the run has stopped. The BibTeX entry on the Cite page
+wraps inside its card, where it ran out of it.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -94,6 +94,7 @@
     wireControls();
     wireTrajectoryControls();
     wireResidueFocus();
+    tidyOverlay();
     window.FastMDXDashboard?.on("structure-updated", onStructureUpdated);
     window.FastMDXDashboard?.on("status-updated", ({status}) => onStatusUpdated(status));
     window.FastMDXDashboard?.on("playback-ready", onPlaybackReady);
@@ -1441,6 +1442,14 @@
   function onStatusUpdated(status) {
     STATE.runStatus = String(status?.status || "").toLowerCase();
     const running = STATE.runStatus === "running";
+    // The preview's caption says which frame it is: the newest while the
+    // run writes them, and the last once it has stopped.
+    const note = document.getElementById("mini-preview-note");
+    if (note && STATE.runStatus) {
+      note.textContent = running || STATE.runStatus === "starting"
+        ? "The newest frame, as it is written."
+        : "The last frame the run wrote.";
+    }
     setOverlay(running, {
       stage: status?.stage || "—",
       simtime: status?.simulation_time_completed_ns,
@@ -1472,6 +1481,16 @@
       <tr><th>Coordinates</th><td>${coordinate(atom.x)}, ${coordinate(atom.y)}, ${coordinate(atom.z)}</td></tr>`;
   }
 
+  /* A field of the overlay with nothing to say is not shown: a structure
+   * with no run behind it showed a frame, an age and a simulated time, each
+   * with a dash for its value. */
+  function tidyOverlay() {
+    document.querySelectorAll("#viewer-overlay .overlay-detail").forEach((field) => {
+      const text = (field.textContent || "").trim();
+      field.hidden = !text || text === "\u2014" || /\s\u2014$/.test(text);
+    });
+  }
+
   function setOverlay(live, info) {
     const overlay = document.getElementById("viewer-overlay");
     if (!overlay) return;
@@ -1491,6 +1510,7 @@
     if (info?.frame != null) setText("overlay-frame", `frame ${info.frame}`);
     if (info?.age != null) setText("overlay-age", `age ${info.age}`);
     if (info?.simtime != null) setText("overlay-simtime", `${Number(info.simtime).toFixed(3)} ns`);
+    tidyOverlay();
   }
 
   /* ------------------------------------------------------------------ */

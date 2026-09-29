@@ -3414,3 +3414,6 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .phase-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
 .phase-table tr:last-child td { border-bottom: none; }
 .phase-table td.mono { font-variant-numeric: tabular-nums; }
+
+/* The BibTeX entry wraps inside its card rather than running out of it. */
+#cite-bibtex { white-space: pre-wrap; overflow-wrap: anywhere; }

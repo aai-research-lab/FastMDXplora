@@ -224,3 +224,24 @@ class TestAPhone:
         shown = page.evaluate("() => document.documentElement.dataset.page")
         page.context.close()
         assert shown == "analysis"
+
+
+class TestWhatIsNotSaid:
+
+    def test_an_overlay_field_with_nothing_in_it(self, browser, studies) -> None:
+        """A structure with no live frame showed each field with a dash for
+        its value."""
+        page = _open(browser, studies["finished"], where="#viewer")
+        shown = page.evaluate("""() => [...document.querySelectorAll('#viewer-overlay .overlay-detail')]
+            .filter(f => !f.hidden).map(f => f.textContent.trim())""")
+        page.context.close()
+        assert all("—" not in text for text in shown), shown
+
+    def test_the_citation_stays_in_its_card(self, browser, studies) -> None:
+        page = _open(browser, studies["finished"], where="#cite")
+        page.evaluate("() => window.FastMDXDashboard.navigate('cite')")
+        page.wait_for_timeout(300)
+        widths = page.evaluate("() => { const b = document.getElementById('cite-bibtex');"
+                               " return [b.scrollWidth, b.clientWidth]; }")
+        page.context.close()
+        assert widths[0] <= widths[1]

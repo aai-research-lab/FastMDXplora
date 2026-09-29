@@ -155,3 +155,14 @@ def test_a_live_frame_is_named_by_its_step(browser, tmp_path) -> None:
     finally:
         page.close()
         session.server.shutdown()
+
+
+def test_the_caption_says_which_frame_it_is(browser, tmp_path) -> None:
+    """ "The newest frame, as it is written." under a study that finished."""
+    session, page = _overview(browser, _study(tmp_path / "study", residues=12))
+    try:
+        page.wait_for_function("() => document.getElementById('mini-preview-note')"
+                               ".textContent.startsWith('The last')", timeout=60000)
+    finally:
+        page.close()
+        session.server.shutdown()
