@@ -82,6 +82,47 @@
     return s;
   }
 
+  /* What an answer drew on: each analysis it names, with the mean the
+   * study recorded for it, opening its figure on the Analysis page. The
+   * value is the record's, so a number in the prose can be read against
+   * it. Built as elements, never as markup: a label is data. */
+  function cite(box, cites) {
+    if (!cites || !cites.length) return null;
+    var row = document.createElement("div");
+    row.className = "agent-cites";
+    var lead = document.createElement("span");
+    lead.className = "agent-cites-lead";
+    lead.textContent = "From the study";
+    row.appendChild(lead);
+    cites.forEach(function (c) {
+      if (!c || !c.analysis) return;
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "agent-cite" + (c.withheld ? " is-withheld" : "");
+      chip.setAttribute("data-analysis", c.analysis);
+      var name = document.createElement("span");
+      name.className = "agent-cite-name";
+      name.textContent = c.label || c.analysis;
+      chip.appendChild(name);
+      var value = document.createElement("span");
+      value.className = "agent-cite-value";
+      value.textContent = c.value
+        ? c.value + (c.withheld ? ", not a measurement" : "")
+        : "figure";
+      chip.appendChild(value);
+      chip.title = (c.withheld ? c.withheld + " " : "") +
+        "Open the " + (c.label || c.analysis) + " figure on the Analysis page.";
+      chip.addEventListener("click", function () {
+        var board = window.FastMDXDashboard;
+        if (board && board.showAnalysis) board.showAnalysis(c.analysis);
+        else window.location.hash = "#analysis";
+      });
+      row.appendChild(chip);
+    });
+    box.appendChild(row);
+    return row;
+  }
+
   function note(box, text, ok) {
     var line = document.createElement("div");
     line.className = "agent-attempt" + (ok ? " ok" : "");
@@ -565,8 +606,10 @@
         p.className = "agent-answer";
         p.innerHTML = prose(data.answer);
         box.appendChild(p);
+        cite(box, data.cites);
         history.push({ role: "agent", text: data.answer });
-        transcript.push({ role: "agent", kind: "answer", text: data.answer });
+        transcript.push({ role: "agent", kind: "answer", text: data.answer,
+                          cites: data.cites || [] });
         persist();
         area.focus();
         scrollToEnd();
@@ -950,6 +993,7 @@
           p.className = "agent-answer";
           p.innerHTML = prose(e.text);
           box.appendChild(p);
+          cite(box, e.cites);
           history.push({ role: "agent", text: e.text });
         } else if (e.kind === "question") {
           note(box, e.text);

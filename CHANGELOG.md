@@ -913,6 +913,17 @@ as a bare number, so a model asked for the RMSD had nothing to say whether
 named in the GUI; an end-to-end distance or an area per lipid had none.
 Studies analysed before this keep the units known for those five.
 
+### An Agent's answer shows what the study recorded, and opens its figures
+
+**Under an Agent's answer about a study, each analysis the answer names is
+listed with the mean the study recorded for it**, with its error and unit, or
+marked where the analysis said its mean is not a measurement; choosing one
+opens the Analysis page on that analysis's figure. The value is the record's,
+whatever the answer said, so a number in the prose can be checked where it is
+read; before, checking one meant finding the figure and reading its caption.
+The analyses are found by what the answer says, and the Agent is asked to name
+the analysis behind each number it quotes.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

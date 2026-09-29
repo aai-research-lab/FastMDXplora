@@ -837,6 +837,7 @@
     state.analysisSectionsKey = key;
     window.FastMDXSeries?.forget();
     const charted = new Set();
+    const named = new Set();
 
     host.innerHTML = sections.map((section) => {
       const panels = Array.isArray(section.panels) ? section.panels : [];
@@ -854,6 +855,12 @@
           panel.original_source || panel.source || "");
         const series = own && !charted.has(own[1]) ? own[1] : "";
         if (series) charted.add(series);
+        // The first card of each analysis answers to its name, so an
+        // Agent's answer that cites it can open it here.
+        const folder = /(?:^|\/)analysis\/([a-z][a-z0-9_]*)\//.exec(
+          panel.original_source || panel.source || "");
+        const analysisName = folder && !named.has(folder[1]) ? folder[1] : "";
+        if (analysisName) named.add(analysisName);
         const links = [
           `<a class="file-action" href="${escapeAttr(figure)}" target="_blank" rel="noopener">Open full size</a>`,
         ];
@@ -861,7 +868,7 @@
           links.push('<a class="file-action" href="#" data-series-toggle hidden>Show the figure</a>');
         }
         return `
-        <article class="analysis-card" data-state="complete">
+        <article class="analysis-card" data-state="complete"${analysisName ? ` data-analysis="${escapeAttr(analysisName)}"` : ""}>
           <div class="ac-header">
             <div class="ac-title">${escapeHTML(panel.title || "")}</div>
             <div class="ac-status">${escapeHTML(section.title || "")}</div>
@@ -1012,7 +1019,7 @@
       links.push(`<a class="file-action" href="${escapeAttr(primary.href)}" target="_blank" rel="noopener">Open data</a>`);
     }
     return `
-      <article class="analysis-card" data-state="${escapeAttr(status)}">
+      <article class="analysis-card" data-state="${escapeAttr(status)}"${analysis.name ? ` data-analysis="${escapeAttr(analysis.name)}"` : ""}>
         <div class="ac-header">
           <div class="ac-title">${escapeHTML(title)}</div>
           <div class="ac-status">${escapeHTML(status)}</div>
@@ -1535,6 +1542,30 @@
     return Math.max(low, Math.min(high, number));
   }
 
+  /* Open the Analysis page on one analysis's figure: the one an Agent's
+   * answer cited. Its cards may still be arriving (the page fetches its
+   * results when opened), so it is looked for until it is there, for a
+   * few seconds, and then the page is left open at its top. */
+  function showAnalysis(name) {
+    navigate("analysis");
+    const wanted = String(name || "");
+    let tries = 0;
+    const look = () => {
+      const card = $$(`.page[data-page="analysis"] .analysis-card[data-analysis]`)
+        .find((element) => element.getAttribute("data-analysis") === wanted
+          && element.offsetParent !== null);
+      if (card) {
+        card.scrollIntoView({block: "center", behavior: "smooth"});
+        card.classList.add("is-cited");
+        setTimeout(() => card.classList.remove("is-cited"), 2400);
+        return;
+      }
+      tries += 1;
+      if (tries < 40 && state.activePage === "analysis") setTimeout(look, 150);
+    };
+    look();
+  }
+
   function emit(name, detail) {
     window.dispatchEvent(new CustomEvent(`dashboard:${name}`, {detail}));
   }
@@ -1542,6 +1573,7 @@
   window.FastMDXDashboard = {
     get state() { return JSON.parse(JSON.stringify(state)); },
     navigate,
+    showAnalysis,
     applyStatus,
     applyAppState,
     applyMetrics,

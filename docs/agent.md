@@ -463,8 +463,8 @@ Each request goes to the model with three things beside the schema:
   complete, elapsed and remaining time, the last error, the health verdict;
   the config the run used, in its short form, so "the same settings as that
   one" has something to copy from; once analyses have run, what they found,
-  per analysis: the mean, its standard error, the effective sample count,
-  and how many frames were discarded as unequilibrated; and whether the
+  per analysis: the mean, its standard error and unit, the effective sample
+  count, and how many frames were discarded as unequilibrated; and whether the
   study can be continued, with the config that would continue it. "Is the
   RMSD converged?" is answered from those numbers, "why did it stop?" from
   the error, and "how far along?" from the step, not from a guess.
@@ -485,7 +485,7 @@ A reply is one of four things:
 |---|---|
 | **A Config** | YAML. Validated, repaired if refused, shown with its actions. |
 | **A question** | When the request is short of something only you can supply, a structure most often. The Agent never invents one. Your next message answers it, and goes back with the request it answers. |
-| **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. |
+| **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. Under it, each analysis the paragraph names, with the mean the study recorded for it (its error and unit, or that it is not a measurement); choosing one opens its figure on the Analysis page. The value is the record's, whatever the paragraph says, so a number can be checked where it is read. |
 | **An action** | One of: run, stop, open viewer, open overview, open report, open builder, show config, download config. |
 
 ### Acting

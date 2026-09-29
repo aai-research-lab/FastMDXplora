@@ -75,6 +75,7 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.gui.plan",
     "fastmdxplora.gui.preview",
     "fastmdxplora.gui.agent_panel",
+    "fastmdxplora.gui.citations",
 )
 
 

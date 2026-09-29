@@ -177,8 +177,17 @@ def propose_endpoint(payload: dict[str, Any],
             answer["confirm"] = not told_to_run(request)
         return answer
     if proposal.answer:
-        # A question was asked, not a study. A paragraph back.
-        return {"ok": False, "answer": proposal.answer, "attempts": attempts}
+        # A question was asked, not a study. A paragraph back, and under it
+        # what the study recorded for each analysis the paragraph names, so
+        # a number in the prose can be read against its record and figure.
+        from fastmdxplora.gui.citations import cited_findings
+
+        try:
+            cites = cited_findings(proposal.answer, getattr(runtime, "active_root", None))
+        except Exception:  # noqa: BLE001 - the answer stands without them
+            cites = []
+        return {"ok": False, "answer": proposal.answer, "cites": cites,
+                "attempts": attempts}
     if proposal.question:
         # Not a failure. The request is short of something only the person
         # can supply, and the honest answer is to say what.

@@ -3431,6 +3431,25 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     font-size: 13px;
 }
 .agent-plan[hidden] { display: none; }
+
+/* What an answer drew on (citations.py): each analysis it names, the mean
+   the study recorded, and a way to its figure. */
+.agent-cites {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+    margin: 10px 0 4px; max-width: 720px;
+}
+.agent-cites-lead { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
+.agent-cite {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border-primary); background: var(--panel-glass);
+    color: var(--text-primary); font: inherit; font-size: 12.5px; line-height: 1.4;
+}
+.agent-cite:hover { border-color: var(--accent-cyan); }
+.agent-cite:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+.agent-cite-value { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.agent-cite.is-withheld .agent-cite-value { color: var(--text-muted); }
+.analysis-card.is-cited { outline: 2px solid var(--accent-cyan); outline-offset: 3px; }
 .agent-plan dt { color: var(--text-muted); }
 .agent-plan dd { margin: 0; color: var(--text-primary); }
 .agent-plan-default {
