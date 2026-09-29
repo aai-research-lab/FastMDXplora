@@ -707,6 +707,16 @@ def _convergence_section(project_root: Path) -> str:
     return "\n".join(lines)
 
 
+def _stopping_section(project_root: Path) -> str:
+    """How long a study run until it knew ran, and why it stopped there."""
+    try:
+        from fastmdxplora.simulation.stopping import stopping_section
+
+        return "\n".join(stopping_section(project_root)).rstrip()
+    except Exception:  # noqa: BLE001 - a report section must never fail a report
+        return ""
+
+
 def _what_more_sampling_needs(project_root: Path) -> str:
     """The production the withheld means ask for, what it takes at this
     run's speed, and the config that runs it. The analyses said "the remedy
@@ -941,6 +951,9 @@ def build_document(
     convergence = _convergence_section(project_root)
     if convergence:
         sections.append(convergence)
+    stopping = _stopping_section(project_root)
+    if stopping:
+        sections.append(stopping)
 
     sections.append(
         "## Discussion\n\n"

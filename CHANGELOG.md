@@ -1058,6 +1058,34 @@ counted as 100, and the study's production went down as it grew, so an
 extension to a total asked for too much. Only a sidecar that does not record
 its trajectory's interval, which every checkpoint since has, is converted now.
 
+### A study can run until what it is for is known
+
+**`simulation.stop_when` runs a study until the measures it names are known as
+well as asked, or a ceiling is reached, rather than for a length fixed before
+anything was known:** `{measures: [{analysis: rmsd, standard_error: 0.01},
+{analysis: sasa, relative_error: 0.05}], max_duration_ns: 50}`. `duration_ns`
+is the first piece; after each, the analyses are read, and every run is
+extended by what the numbers ask for (a withheld mean its own shortfall; a mean
+with an error enough frames for the error to fall to what was asked, bounded
+per round), joined and analysed again.
+
+**By default the runs must be replicas, and must agree.** A run trapped in one
+state settles and shrinks its error bar all the same; only runs started
+independently can show it. So the rule asks for one system swept over
+`random_seed`, is met only when the replicas' means agree within their own
+errors, and judges the larger of the error they claim together and the error
+their spread shows. `independent_starts: not_required` accepts one run's own
+precision, and the record says what that leaves unchecked. A study that cannot
+keep the rule (no replicas, a ceiling below the first piece, a method that
+cannot be run in pieces, an umbrella study, a measure no analysis in it
+computes) is refused before anything runs, in the plan as in the run.
+
+Each round is recorded in `stopping.json`; the report, or for replicas the
+comparison report, says how long the study ran and why, round by round; the
+Agent is given the record; the plan says when the study stops; and a budget
+prices it at its ceiling. In a parallel study the runs are extended side by
+side.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

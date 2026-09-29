@@ -316,6 +316,11 @@ CODES: tuple[Code, ...] = (
          "was given.",
          Kind.ENVIRONMENTAL, Disclosure.FIELD_ONLY,
          detail_keys=("estimate_hours", "remaining_hours")),
+    Code("simulation.stopping.no_replicas",
+         "A stopping rule that requires runs started independently, in a "
+         "study of one run.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("option", "runs")),
     Code("simulation.run.abandoned",
          "A segment that never ran, because an earlier one settled the "
          "question it was part of.",

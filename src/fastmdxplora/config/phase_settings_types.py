@@ -74,6 +74,7 @@ class SimulateSettings(TypedDict, total=False):
     setup_from: str
     prepared_from: str
     extra_ns: float
+    stop_when: dict[str, Any]
     resume_unsealed: bool
     resume_from: str
     minimize: bool

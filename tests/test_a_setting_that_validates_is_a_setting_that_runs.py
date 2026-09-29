@@ -35,6 +35,10 @@ CONSUMED_ELSEWHERE = {
                 "how much more production to run on top of what a study "
                 "already has, which resume_from naming a study settles "
                 "before a runner is built at all",
+    "stop_when": "read by the study around its runs "
+                 "(`simulation.stopping`, from `BatchExplorer.run`), which "
+                 "judges the finished runs and extends them; a run is one "
+                 "piece of a length, and its runner is never given the rule",
     # Not a setting about the science. It says how the phase was written,
     # and `config.agent_modes` reads it to decide which artifacts carry the
     # unchecked mark. The runner does not need it and should not: a phase

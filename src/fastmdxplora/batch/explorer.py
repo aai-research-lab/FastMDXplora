@@ -253,6 +253,25 @@ def _stop_this_run(number: int, _frame: Any) -> None:
     raise RunStopped(signal.Signals(number).name)
 
 
+def _without_the_study_rule(options: dict[str, Any]) -> dict[str, Any]:
+    """A run's settings without `simulation.stop_when`. The study applies
+    its stopping rule across its runs once they finish; a run is one piece
+    of it, and a length."""
+    options = dict(options)
+    simulation = options.get("simulation")
+    if isinstance(simulation, dict) and "stop_when" in simulation:
+        options["simulation"] = {key: value for key, value in simulation.items()
+                                 if key != "stop_when"}
+    return options
+
+
+def _extend_one(run: str, more_ns: float, device: str | None) -> dict[str, Any]:
+    """One run extended, in a worker of its own."""
+    from fastmdxplora.simulation.resume import extend_study
+
+    return extend_study(run, more_ns=more_ns, device_index=device)
+
+
 def _was_stopped(result: Any) -> bool:
     """Whether a run ended because it was asked to stop."""
     from fastmdxplora.simulation.runner import STOPPED_CODE
@@ -738,7 +757,7 @@ def _execute_run(
     from fastmdxplora import FastMDXplora
     from fastmdxplora.orchestrator import RunResult
 
-    options = dict(spec_dict["options"])
+    options = _without_the_study_rule(spec_dict["options"])
     # Round-robin GPU pinning: stamp this worker's device onto the run.
     if device_override is not None:
         sim = dict(options.get("simulation", {}))
@@ -1285,6 +1304,9 @@ class BatchExplorer:
         # systems should also not run seven of them before saying the eighth
         # cannot start.
         self._refuse_to_overwrite_runs(include, exclude)
+        # A stopping rule the study cannot keep is refused now, not after
+        # the first piece has run.
+        stopping = self._stopping_rule()
 
         shared = self._maybe_prepare_once(include, exclude)
         if shared is not None:
@@ -1335,6 +1357,9 @@ class BatchExplorer:
         else:
             self.results = self._run_sequential(include, exclude)
 
+        if stopping is not None:
+            self._run_until_known(stopping)
+
         # Only write a batch manifest when there's actually a batch.
         if not self.is_single:
             self._write_batch_manifest()
@@ -1351,6 +1376,124 @@ class BatchExplorer:
             self._maybe_build_comparison()
             self._print_summary()
         return list(self.results)
+
+    # ------------------------------------------------------------------
+    def _phases_planned(self) -> list[str]:
+        from fastmdxplora.orchestrator import PHASES
+
+        include = self._raw.get("include_phase")
+        exclude = self._raw.get("exclude_phase") or []
+        if include:
+            return [p for p in PHASES if p in include]
+        return [p for p in PHASES if p not in exclude]
+
+    def _stopping_rule(self) -> "list | None":
+        """The study's `simulation.stop_when`, checked; None where it has none.
+
+        Its runs are replicas where they are one system swept over the seed
+        alone, the reading the members' aggregate takes.
+        """
+        from fastmdxplora.batch.aggregate import SEED_AXES
+        from fastmdxplora.simulation.stopping import check_stopping
+
+        sweep = self._raw.get("sweep") or {}
+        systems = normalize_systems(self._raw["systems"])
+        replicas = (not self.is_single and len(systems) == 1
+                    and bool(sweep) and set(sweep) <= SEED_AXES)
+        return check_stopping(self._raw, replicas=replicas, runs=len(self.run_specs),
+                              phases=self._phases_planned())
+
+    def _run_until_known(self, targets: list) -> None:
+        """Extend the runs until what the study asked for is known, then
+        write the study's report again with the record of how long it ran."""
+        from fastmdxplora.simulation.stopping import RECORD, run_until_known
+
+        stop_when = (self._raw.get("simulation") or {}).get("stop_when") or {}
+        if any(_was_stopped(result) for result in self.results):
+            print("Stopped when asked: the stopping rule was not applied. Resuming the "
+                  "study applies it.")
+            return
+        finished = [result for result in self.results
+                    if result.status == "ok" and result.output_dir is not None]
+        independent = str(stop_when.get("independent_starts") or "required")
+        if not finished or (independent == "required" and len(finished) < 2):
+            said = (f"Not applied: {len(finished)} of {len(self.results)} runs finished, and "
+                    "the rule judges replicas against each other.")
+            (self.output_dir / RECORD).write_text(json.dumps(
+                {"outcome": "not_applied", "said": said, "rounds": []}, indent=2),
+                encoding="utf-8")
+            print(said)
+            return
+        if len(finished) < len(self.results):
+            print(f"The stopping rule judges the {len(finished)} runs that finished.")
+        runs = [Path(result.output_dir) for result in finished]
+        print(f"\nRunning until known\n{'=' * 40}")
+        run_until_known(runs, targets, stop_when, record_in=self.output_dir,
+                        extend_all=self._extend_runs)
+        if self.is_single:
+            self._report_again(runs[0])
+
+    def _extend_runs(self, runs: list[Path], more_ns: float) -> list[dict[str, Any]]:
+        """Every run extended by ``more_ns``: side by side in a parallel
+        study, as its runs were, and one after another otherwise."""
+        if self.mode != "parallel" or len(runs) < 2:
+            from fastmdxplora.simulation.resume import extend_study
+
+            device = str(self.devices[0]) if self.devices else None
+            answers = []
+            for run in runs:
+                answers.append(extend_study(run, more_ns=more_ns, device_index=device))
+                if not answers[-1].get("ok"):
+                    break
+            return answers
+        workers = min(self._resolve_workers(), len(runs))
+        pool = ProcessPoolExecutor(
+            max_workers=workers, mp_context=get_context("spawn"),
+            initializer=_give_this_worker_its_share,
+            initargs=(_threads_for_each(workers),))
+        stop = _StudyStop(pool)
+        try:
+            stop.__enter__()
+            futures = [pool.submit(_extend_one, str(run), more_ns,
+                                   self._device_for_worker(index))
+                       for index, run in enumerate(runs)]
+            answers = []
+            for future in futures:
+                try:
+                    answers.append(future.result())
+                except Exception as exc:  # noqa: BLE001 - said in the record
+                    answers.append({"ok": False, "stage": "simulation",
+                                    "error": f"{type(exc).__name__}: {exc}"})
+            return answers
+        finally:
+            stop.__exit__(None, None, None)
+            pool.shutdown(wait=True, cancel_futures=True)
+
+    def _report_again(self, run: Path) -> None:
+        """The study's report once more, now that the record of how long it
+        ran and why is complete. Each extension rewrote it, but before the
+        round that decided to stop."""
+        import yaml
+
+        from fastmdxplora import FastMDXplora
+
+        resolved = run / "resolved_config.yml"
+        try:
+            kept = resolved.read_bytes()
+            config = yaml.safe_load(kept) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            logger.warning("The report was not written again: %s", exc)
+            return
+        config = {key: value for key, value in config.items() if key != "exclude_phase"}
+        config["output"] = str(run)
+        config["include_phase"] = ["report"]
+        try:
+            FastMDXplora(config_data=config, output_dir=str(run)).explore(force=True)
+        except Exception as exc:  # noqa: BLE001 - the runs and the record stand
+            logger.warning("The report was not written again: %s", exc)
+        finally:
+            # The record of what the study ran, not of this one step.
+            resolved.write_bytes(kept)
 
     # ------------------------------------------------------------------
     def _maybe_aggregate_members(self) -> None:
@@ -2224,6 +2367,8 @@ class BatchExplorer:
         """
         from fastmdxplora.orchestrator import RunResult, PHASES
 
+        # Refused in the plan as it would be refused in the run.
+        self._stopping_rule()
         include = self._raw.get("include_phase")
         exclude = self._raw.get("exclude_phase")
         # Compute the phase plan the same way the orchestrator would.

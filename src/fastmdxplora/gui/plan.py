@@ -89,12 +89,20 @@ def plan_of(config: dict[str, Any]) -> list[dict[str, Any]]:
             line("Equilibration", f"NVT {_time(nvt)}, then NPT {_time(npt)}", default=not given)
             given = any(simulation.get(k) is not None for k in ("duration_ns", "production_steps"))
             each = " per window" if isinstance(simulation.get("umbrella"), dict) else ""
+            then = ""
+            if isinstance(simulation.get("stop_when"), dict) and simulation["stop_when"]:
+                each, then = " first", "; then more, as the numbers ask"
             line("Production",
-                 f"{_time(production)}{each}, {_number(timestep)} fs steps" if production
+                 f"{_time(production)}{each}, {_number(timestep)} fs steps{then}" if production
                  else "none: the study equilibrates and stops", default=not given)
         sampling = _sampling(simulation)
         if sampling:
             line("Sampling", sampling)
+        stop_when = simulation.get("stop_when")
+        if isinstance(stop_when, dict) and stop_when:
+            from fastmdxplora.simulation.stopping import rule_said
+
+            line("Stops when", rule_said(stop_when))
 
     if "analysis" in phases:
         chosen = analysis.get("include")

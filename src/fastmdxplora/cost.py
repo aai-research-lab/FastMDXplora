@@ -343,10 +343,17 @@ def total_steps(simulation: dict[str, Any] | None) -> int:
 
     Counting production alone understates a short study badly: the
     default equilibration is 750,000 steps, which is most of the work in
-    anything under a couple of nanoseconds.
+    anything under a couple of nanoseconds. A study with
+    `simulation.stop_when` is priced at its ceiling.
     """
     block = simulation or {}
     timestep = float(block.get("timestep_fs") or _DEFAULT_TIMESTEP_FS)
+    stop_when = block.get("stop_when")
+    ceiling = stop_when.get("max_duration_ns") if isinstance(stop_when, dict) else None
+    if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool) and ceiling > 0:
+        # A study run until it knows may run to its ceiling, and a budget
+        # has to allow for what it may spend, not for the first piece.
+        block = {**block, "duration_ns": ceiling, "production_steps": None}
 
     def steps_for(explicit: str, duration: str, fallback: int) -> int:
         if block.get(explicit) is not None:

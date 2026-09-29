@@ -545,6 +545,9 @@ def _write_markdown(
     lines.append("")
     if root is not None:
         lines.extend(_across_the_replicas(root))
+        from fastmdxplora.simulation.stopping import stopping_section
+
+        lines.extend(stopping_section(root))
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

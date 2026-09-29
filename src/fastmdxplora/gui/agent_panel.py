@@ -369,6 +369,42 @@ def _run_status(runtime: Any) -> str | None:
     if asked:
         lines.append("")
         lines.append(asked)
+    stopped = _stopping_summary(getattr(runtime, "active_root", None))
+    if stopped:
+        lines.append("")
+        lines.append(stopped)
+    return "\n".join(lines)
+
+
+def _stopping_summary(root: Any) -> str:
+    """For a study run until it knew: each round and what was decided on it,
+    so "why did it stop at 12 ns?" is answered from the record."""
+    if not root:
+        return ""
+    import json
+
+    from fastmdxplora.simulation.stopping import RECORD
+
+    here = Path(root)
+    # A replica's own folder is runs/<id>; the record is the study's.
+    for where in (here, here.parent.parent):
+        try:
+            record = json.loads((where / RECORD).read_text(encoding="utf-8"))
+            break
+        except (OSError, ValueError):
+            continue
+    else:
+        return ""
+    if not isinstance(record, dict):
+        return ""
+    lines = ["how long the study ran, and why (simulation.stop_when, as recorded):"]
+    for number, entry in enumerate(record.get("rounds") or [], start=1):
+        said = "; ".join(str(v.get("said")) for v in entry.get("verdicts") or [])
+        lines.append(f"  round {number}, at {entry.get('production_ns')} ns: {said}"
+                     f" -> {entry.get('decision')}"
+                     + (f" by {entry['more_ns']} ns" if entry.get("more_ns") else ""))
+    if record.get("said"):
+        lines.append(f"  outcome: {record['said']}")
     return "\n".join(lines)
 
 

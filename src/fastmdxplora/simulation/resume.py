@@ -552,7 +552,10 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
         new.pop("analysis", None)
     new_sim = {k: v for k, v in sim.items()
                if k not in ("nvt_steps", "npt_steps", "nvt_duration_ns", "npt_duration_ns",
-                            "production_steps", "resume_from", "prepared_from", "setup_from")}
+                            "production_steps", "resume_from", "prepared_from", "setup_from",
+                            # A piece is one length; the rule that chose it
+                            # is the study's, and applied there.
+                            "stop_when")}
     new_sim.update({
         "duration_ns": round(remaining, 6),
         "resume_from": str(checkpoint),

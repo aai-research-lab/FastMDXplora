@@ -37,7 +37,7 @@ For the flag spelling of any setting below, see
 
 ---
 
-## `setup` — 43 settings
+## `setup` — 45 settings
 
 ### How this phase was written
 
@@ -156,7 +156,7 @@ them, and what you set is kept, even where it equals the force field's own. See
 
 ---
 
-## `simulation` — 42 settings
+## `simulation` — 45 settings
 
 ### How this phase was written
 
@@ -178,6 +178,27 @@ independent of production length** — a 500 ns production run gets the same
 | `production_steps` | int | 1,000,000 | Overrides `duration_ns` |
 | `nvt_steps` | int | 250,000 | Overrides `nvt_duration_ns` |
 | `npt_steps` | int | 500,000 | Overrides `npt_duration_ns` |
+| `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume |
+| `stop_when` | map | — | Run until what the study is for is known, rather than for a fixed length. See below |
+
+`stop_when` states the measures the study is for, how well each must be known,
+and a ceiling; `duration_ns` is then the first piece:
+
+```yaml
+sweep:
+  simulation.random_seed: [1, 2, 3]
+simulation:
+  duration_ns: 5
+  stop_when:
+    measures:
+      - {analysis: rmsd, standard_error: 0.01}   # in the analysis's own unit
+      - {analysis: sasa, relative_error: 0.05}   # a fraction of its mean
+    max_duration_ns: 50                          # the most any run may reach
+    independent_starts: required                 # the default
+```
+
+By default the runs must be replicas and must agree with each other. See
+[Running until it is known](production.md#running-until-it-is-known).
 
 ### Where it starts
 
@@ -185,7 +206,9 @@ independent of production length** — a 500 ns production run gets the same
 |---|---|---|---|
 | `setup_from` | str | — | A finished study or setup directory to simulate from instead of running setup again |
 | `prepared_from` | str | — | The earlier name for `setup_from`, still accepted |
-| `resume_from` | str | — | A checkpoint this run continues from |
+| `resume_from` | str | — | A checkpoint this run continues from, or a study directory to extend in place |
+| `extra_ns` | float | — | With `resume_from` naming a study: production to add to what it has |
+| `resume_unsealed` | bool | `false` | Accept a checkpoint with no seal beside it |
 | `minimize` | bool | `true` | Run energy minimisation before equilibration |
 | `minimize_tolerance_kjmol_per_nm` | int or float | `10.0` | Minimisation force tolerance |
 | `minimize_max_iterations` | int | `0` | `0` means until convergence |

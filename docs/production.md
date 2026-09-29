@@ -202,6 +202,75 @@ than choosing a number in advance.
 `sampling_shortfall` turns that into a figure — see
 [Reading the results](results.md#not-enough-data-is-a-refusal-too).
 
+### Running until it is known
+
+The pattern above can be the study's own. `simulation.stop_when` says what the
+study is for and how well it must be known, and a ceiling; the study then runs
+in pieces, reads its analyses after each, and extends every run by what the
+numbers say is still needed:
+
+```yaml
+systems:
+  - {system: 1UAO}
+sweep:
+  simulation.random_seed: [1, 2, 3]
+simulation:
+  duration_ns: 5                 # the first piece
+  stop_when:
+    measures:
+      - {analysis: rmsd, standard_error: 0.01}
+      - {analysis: sasa, relative_error: 0.05}
+    max_duration_ns: 50
+```
+
+After each piece:
+
+- **A mean the analysis withheld** (too few independent samples, or not
+  equilibrated) asks for its own shortfall, where the analysis worked one out,
+  and otherwise for as long again.
+- **A mean with an error** asks for enough production that its error falls to
+  what was asked: the error of a mean goes as one over the root of the frames
+  after equilibration, so twice the error allowed asks for four times those
+  frames.
+- **Every run is extended by the most any measure asks** (side by side in a
+  parallel study, as its runs were), at least a quarter and at most three
+  times what has run so far, in whole frames, and never past
+  `max_duration_ns`. The bounds are there because an error estimated from a
+  short run is itself uncertain.
+
+**Why replicas are required.** A run can settle while trapped: if the molecule
+never visits a second state, its average stops moving and its error bar
+shrinks, and it is still wrong. Block averaging and the count of independent
+samples say how precise one run is; only runs started independently can show
+that it is trapped. So by default the study must be one system swept over
+`random_seed`, and the rule is met only when the replicas' means agree within
+their own errors (their scatter no more than twice what those errors predict).
+The error judged is then the larger of what the runs claim together and what
+their spread shows. Replicas that each look precise and disagree are extended,
+not accepted.
+
+`independent_starts: not_required` accepts one run's own precision, and the
+record says that it was not checked against independent starts. Replicas that
+differ only by seed start from one structure (each solvated on its own), so
+they test trapping only as far as their dynamics carry them apart; runs from
+different starting structures, or replica exchange, test it further.
+
+**What comes out.** `stopping.json` beside the study records every round: the
+production, each measure with its error and what was asked, whether the
+replicas agreed, and what was decided. The report (for one run) or the
+comparison report (for replicas) has a section, *How long it ran, and why*,
+built from it, and the Agent is given it. A budget prices the study at its
+ceiling, since that is what it may spend.
+
+Stopping as soon as an error falls below a target favours a round whose error
+came out small by chance, so an error judged this way is biased a little low;
+the rounds' minimum size and, between replicas, the spread of their means
+limit that.
+
+The rule needs a study that can be run in pieces (not metadynamics, steered
+or PLUMED runs), is not applied to umbrella windows, and is refused before
+anything runs where the study cannot keep it.
+
 ---
 
 ## Several runs at once

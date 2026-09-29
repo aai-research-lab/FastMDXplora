@@ -609,6 +609,23 @@ SIMULATION = PhaseSchema(
               "means. Absent here never means the default length -- a "
               "continuation with no length asked for finishes the plan.",
               example=0.1),
+        Field("stop_when", dict, None,
+              "Run until what the study is for is known, rather than for a "
+              "length fixed in advance. A block with `measures` (each an "
+              "`analysis` and either its `standard_error`, in the "
+              "analysis's own unit, or its `relative_error`, a fraction of "
+              "its mean) and `max_duration_ns`, the most production any run "
+              "may reach. `duration_ns` is then the first piece: after it "
+              "the analyses are read, and every run is extended by what the "
+              "numbers say is needed until each measure is known as asked "
+              "or the ceiling is reached. By default replicas are required "
+              "(a sweep over `random_seed`) and must agree within their own "
+              "errors, because one run can settle while trapped in one "
+              "state and its error bar cannot show it; "
+              "`independent_starts: not_required` accepts one run's own "
+              "precision, and the record says what that leaves unchecked.",
+              example={"measures": [{"analysis": "rmsd", "standard_error": 0.01}],
+                       "max_duration_ns": 50}),
         Field("resume_unsealed", bool, False,
               "Accept a checkpoint with no seal beside it. A seal says "
               "the file was written whole, and every checkpoint this "
@@ -1086,7 +1103,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("agent",)),
         ("How long it runs",
          "Production length, and the equilibration before it.",
-         ("duration_ns", "extra_ns", "nvt_duration_ns", "npt_duration_ns",
+         ("duration_ns", "extra_ns", "stop_when", "nvt_duration_ns", "npt_duration_ns",
           "production_steps", "nvt_steps", "npt_steps", "ensemble")),
         ("Where it starts",
          "A system prepared here or elsewhere, where the run picks up from "
