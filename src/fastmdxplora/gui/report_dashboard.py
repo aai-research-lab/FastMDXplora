@@ -720,8 +720,11 @@ def _dashboard_summaries(project_root: Path) -> dict[str, DashboardAsset]:
 
 
 #: What each time series is measured in, for its caption.
+#: As each analysis's own axis states it (`Analysis._recorded_unit`).
 _UNITS = {"rmsd": "nm", "rmsf": "nm", "rg": "nm", "sasa": "nm\u00b2", "hbonds": "",
-          "qvalue": ""}
+          "qvalue": "", "end_to_end": "nm", "pair_distance": "nm", "ligand_rmsd": "nm",
+          "area_per_lipid": "nm\u00b2", "bilayer_thickness": "nm",
+          "moments_of_inertia": "amu nm\u00b2", "coordination_number": ""}
 
 
 def unit_of(name: str, found: dict[str, Any] | None = None) -> str:

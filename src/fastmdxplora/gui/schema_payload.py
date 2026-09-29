@@ -40,6 +40,10 @@ _CONTROL_FOR_TYPE = {
 
 
 def _control(field: Any) -> str:
+    if field.name == "stop_when":
+        # Measures, each with the error it must reach, a ceiling and
+        # whether replicas must agree: a form, not YAML in a box.
+        return "stopping"
     if field.name == "plumed":
         # One script with an on-switch, not a mapping of settings. Drawn as
         # a mapping it asked for `script: |` with block-scalar indentation
@@ -74,8 +78,30 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
+def _measures() -> list[dict[str, str]]:
+    """The measures a stopping rule may name, each with its name on the
+    page and its unit, from the analyses that record a mean."""
+    from fastmdxplora.gui.report_dashboard import unit_of
+    from fastmdxplora.gui.series import SERIES
+
+    try:
+        from fastmdxplora.simulation.stopping import judgeable_analyses
+
+        names = judgeable_analyses()
+    except Exception:  # noqa: BLE001 - the analysis stack is optional here
+        return []
+    return [{"analysis": name, "label": SERIES.get(name, (name.replace("_", " "), ""))[0],
+             "unit": unit_of(name)} for name in names]
+
+
 def field_payload(field: Any) -> dict[str, Any]:
     """One setting, as much as a browser needs to offer it."""
+    if field.name == "stop_when":
+        return {**_field_payload(field), "measures": _measures()}
+    return _field_payload(field)
+
+
+def _field_payload(field: Any) -> dict[str, Any]:
     return {
         "name": field.name,
         "type": getattr(field.type, "__name__", str(field.type)),

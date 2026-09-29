@@ -134,6 +134,14 @@ A setting that is a **block** rather than a value — `umbrella`, `steered`,
 exactly as it appears in a Config. An example of the right shape sits in the
 box until you type.
 
+**How long it runs** can be a question rather than a number. Under
+`stop when`, choose a measure (only the analyses that record one mean are
+offered), the error it must reach in its own unit or as a percentage of its
+mean, and the most production any run may reach; the study then runs until
+each is known as asked. Replicas must agree unless you untick it, and where the
+study has none, one button sweeps the seed over three values. See
+[Running until it is known](production.md#running-until-it-is-known).
+
 `plumed` is the exception, because it is one script with an on-switch rather
 than a mapping of settings, and writing a working `.dat` file inside YAML
 block-scalar indentation is where a stray tab changes a PLUMED input. It gets a

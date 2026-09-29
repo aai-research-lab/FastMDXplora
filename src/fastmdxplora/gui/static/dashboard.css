@@ -3699,3 +3699,14 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .stopping-key-mark.is-target { border-top: 1.5px dashed var(--status-completed); }
 .stopping-key-mark.is-projection { border-top: 1.5px dashed var(--text-muted); }
 .stopping-key-mark.is-ceiling { border-top: 1.5px dotted var(--text-muted); }
+
+/* The stopping rule in the builder (run-builder.js). */
+.builder-stopping { display: flex; flex-direction: column; gap: 8px; }
+.builder-stopping-rows { display: flex; flex-direction: column; gap: 6px; }
+.builder-stopping-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, .8fr) auto; gap: 6px; align-items: center; }
+@media (max-width: 700px) { .builder-stopping-row { grid-template-columns: 1fr 1fr; } }
+.builder-stopping-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--text-secondary); }
+.builder-stopping .builder-stopping-ceiling { width: 96px; flex: 0 0 96px; }
+.builder-stopping-add { align-self: flex-start; }
+.builder-stopping-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.run-section-body > .builder-field[data-setting="stop_when"] { grid-column: 1 / -1; }

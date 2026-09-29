@@ -1139,6 +1139,24 @@ never what, so every answer still comes through its own route and checks; a
 stream ends when the server shuts down, so stopping the GUI is not held by an
 open tab.
 
+### The builder asks what a study is for
+
+**`simulation.stop_when` is a form in the builder, not YAML in a box.** It was
+drawn as a mapping box whose placeholder read "measures: [object Object]".
+Now each measure is chosen from the analyses that record one mean, with the
+error it must reach in its own unit (named: "to ± nm") or as a percentage of
+its mean; then the most production any run may reach, and whether replicas
+must agree. Where they must and the study has none, one button sweeps the
+seed over three values; unticked, the form says what one run's precision
+leaves unchecked. A row being written is kept until it is whole, and only
+whole rows reach the config.
+
+The unit each analysis records is now known by name for all of those that
+record a mean (end-to-end and pair distances, ligand RMSD, area per lipid,
+bilayer thickness, moments of inertia, coordination number), as their own
+axes state it, for the form and for studies analysed before units were
+recorded.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

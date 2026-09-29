@@ -524,8 +524,10 @@
   }
 
   function control(phase, field) {
-    const wrap = document.createElement("label");
-    wrap.className = "builder-field";
+    // A form of several controls is not one labelled control: inside a
+    // <label>, a click on its name pressed the first button in it.
+    const wrap = document.createElement(field.control === "stopping" ? "div" : "label");
+    wrap.className = "builder-field" + (field.control === "stopping" ? " builder-field-wide" : "");
     // Named, so what is said about a setting elsewhere on the page can
     // open the section it is in and point at it.
     wrap.dataset.setting = field.name;
@@ -686,6 +688,8 @@
         hadContent = Boolean(carried.trim());
         tell();
       };
+    } else if (field.control === "stopping") {
+      input = stoppingControl(field);
     } else if (field.control === "mapping") {
       // Umbrella, steered and metadynamics are blocks of several settings,
       // not one value. A single-line box could not hold one, and what was
@@ -739,6 +743,231 @@
       wrap.appendChild(help);
     }
     return wrap;
+  }
+
+  // ------------------------------------------------ running until it knows
+
+  /* `simulation.stop_when` as a form: the measures, each with the error it
+   * must reach, a ceiling, and whether replicas must agree. Drawn again
+   * after every change, as every control is, so rows being written (an
+   * analysis chosen, its error not yet) are kept here until they are whole
+   * and only whole ones reach the config. */
+  const SEED_AXIS = "simulation.random_seed";
+  let stoppingDraft = null;
+
+  function seedSwept() {
+    return state.sweep.some((row) => row.axis === SEED_AXIS && sweepRunsOf(row) >= 2);
+  }
+
+  function sweepRunsOf(row) {
+    const kept = state.sweep;
+    state.sweep = [row];
+    const runs = sweepRuns();
+    state.sweep = kept;
+    return runs;
+  }
+
+  function stoppingControl(field) {
+    const measures = field.measures || [];
+    const box = document.createElement("div");
+    box.className = "builder-stopping";
+
+    const draftFrom = (value) => {
+      const rule = value && typeof value === "object" ? value : {};
+      return {
+        rows: (Array.isArray(rule.measures) ? rule.measures : []).map((m) => ({
+          analysis: m.analysis || "",
+          kind: m.relative_error !== undefined && m.relative_error !== null ? "relative" : "absolute",
+          amount: m.relative_error !== undefined && m.relative_error !== null
+            ? String(+(m.relative_error * 100).toPrecision(6))
+            : (m.standard_error === undefined || m.standard_error === null ? "" : String(m.standard_error)),
+        })),
+        ceiling: rule.max_duration_ns === undefined || rule.max_duration_ns === null
+          ? "" : String(rule.max_duration_ns),
+        replicas: rule.independent_starts !== "not_required",
+      };
+    };
+    const current = (state.values.simulation || {}).stop_when;
+    const draft = stoppingDraft || draftFrom(current);
+    stoppingDraft = draft;
+
+    const complete = (row) => row.analysis && Number(row.amount) > 0;
+    const commit = () => {
+      stoppingDraft = draft;
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const unitOf = (name) => {
+      const found = measures.filter((m) => m.analysis === name)[0];
+      return found ? found.unit : "";
+    };
+
+    const rows = document.createElement("div");
+    rows.className = "builder-stopping-rows";
+    draft.rows.forEach((row, index) => {
+      const line = document.createElement("div");
+      line.className = "builder-stopping-row";
+      line.dataset.index = String(index);
+      const pick = document.createElement("select");
+      pick.className = "builder-stopping-analysis";
+      pick.setAttribute("aria-label", "Measure");
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Choose a measure";
+      pick.appendChild(blank);
+      measures.forEach((m) => {
+        const option = document.createElement("option");
+        option.value = m.analysis;
+        option.textContent = m.label;
+        pick.appendChild(option);
+      });
+      pick.value = row.analysis;
+      pick.addEventListener("change", (event) => {
+        event.stopPropagation();
+        row.analysis = pick.value;
+        commit();
+      });
+      const kind = document.createElement("select");
+      kind.className = "builder-stopping-kind";
+      kind.setAttribute("aria-label", "How the error is given");
+      const unit = unitOf(row.analysis);
+      [["absolute", "to \u00b1 " + (unit || "its own unit")], ["relative", "to \u00b1 % of the mean"]]
+        .forEach(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          kind.appendChild(option);
+        });
+      kind.value = row.kind;
+      kind.addEventListener("change", (event) => {
+        event.stopPropagation();
+        row.kind = kind.value;
+        commit();
+      });
+      const amount = document.createElement("input");
+      amount.type = "number";
+      amount.step = "any";
+      amount.min = "0";
+      amount.className = "builder-stopping-amount";
+      amount.setAttribute("aria-label", row.kind === "relative" ? "Percent of the mean" : "Standard error");
+      amount.placeholder = row.kind === "relative" ? "5" : "0.01";
+      amount.value = row.amount;
+      amount.addEventListener("change", (event) => {
+        event.stopPropagation();
+        row.amount = amount.value.trim();
+        commit();
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "run-sweep-remove";
+      remove.setAttribute("aria-label", "Remove this measure");
+      remove.textContent = "\u00d7";
+      remove.addEventListener("click", (event) => {
+        event.preventDefault();
+        draft.rows.splice(index, 1);
+        commit();
+      });
+      line.appendChild(pick);
+      line.appendChild(kind);
+      line.appendChild(amount);
+      line.appendChild(remove);
+      rows.appendChild(line);
+    });
+    box.appendChild(rows);
+
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "run-sweep-add builder-stopping-add";
+    add.textContent = draft.rows.length ? "Add a measure" : "Run until a measure is known";
+    add.addEventListener("click", (event) => {
+      event.preventDefault();
+      draft.rows.push({ analysis: "", kind: "absolute", amount: "" });
+      commit();
+    });
+    box.appendChild(add);
+
+    if (draft.rows.length) {
+      const ceilingRow = document.createElement("div");
+      ceilingRow.className = "builder-stopping-line";
+      const ceilingLabel = document.createElement("span");
+      ceilingLabel.textContent = "At most";
+      const ceiling = document.createElement("input");
+      ceiling.type = "number";
+      ceiling.step = "any";
+      ceiling.min = "0";
+      ceiling.className = "builder-stopping-ceiling";
+      ceiling.setAttribute("aria-label", "The most production any run may reach, in ns");
+      ceiling.placeholder = "50";
+      ceiling.value = draft.ceiling;
+      ceiling.addEventListener("change", (event) => {
+        event.stopPropagation();
+        draft.ceiling = ceiling.value.trim();
+        commit();
+      });
+      const after = document.createElement("span");
+      after.textContent = "ns of production per run; duration_ns is then the first piece.";
+      ceilingRow.appendChild(ceilingLabel);
+      ceilingRow.appendChild(ceiling);
+      ceilingRow.appendChild(after);
+      box.appendChild(ceilingRow);
+
+      const replicasRow = document.createElement("label");
+      replicasRow.className = "chip-toggle builder-stopping-replicas";
+      const replicas = document.createElement("input");
+      replicas.type = "checkbox";
+      replicas.checked = draft.replicas;
+      replicas.addEventListener("change", (event) => {
+        event.stopPropagation();
+        draft.replicas = replicas.checked;
+        commit();
+      });
+      replicasRow.appendChild(replicas);
+      replicasRow.appendChild(document.createTextNode(
+        "Replicas must agree (recommended: one run can settle while trapped in one state)"));
+      box.appendChild(replicasRow);
+
+      const note = document.createElement("div");
+      note.className = "builder-card-note builder-stopping-note";
+      if (draft.replicas && !seedSwept()) {
+        note.appendChild(document.createTextNode(
+          "Replicas are runs swept over the seed, and this study has none. "));
+        const sweep = document.createElement("button");
+        sweep.type = "button";
+        sweep.className = "ghost-btn builder-stopping-seeds";
+        sweep.textContent = "Sweep the seed over three values";
+        sweep.addEventListener("click", (event) => {
+          event.preventDefault();
+          state.sweep = state.sweep.filter((row) => row.axis !== SEED_AXIS);
+          state.sweep.push({ axis: SEED_AXIS, values: "1, 2, 3" });
+          state.open.add(SWEEP_KEY);
+          updateSummary();
+          renderSettings();
+        });
+        note.appendChild(sweep);
+      } else if (!draft.replicas) {
+        note.textContent = "One run's own precision is accepted, and the record says it was " +
+          "not checked against independent starts.";
+      }
+      box.appendChild(note);
+    }
+
+    box.readValue = () => {
+      const whole = draft.rows.filter(complete);
+      if (!whole.length) return null;
+      const rule = {
+        measures: whole.map((row) => row.kind === "relative"
+          ? { analysis: row.analysis, relative_error: Number(row.amount) / 100 }
+          : { analysis: row.analysis, standard_error: Number(row.amount) }),
+      };
+      if (Number(draft.ceiling) > 0) rule.max_duration_ns = Number(draft.ceiling);
+      if (!draft.replicas) rule.independent_starts = "not_required";
+      return rule;
+    };
+    // Drawn from the draft, which a loaded config or a reset clears; the
+    // value in the form is only the draft's whole rows, so writing it back
+    // would drop a row being written.
+    box.writeValue = () => {};
+    return box;
   }
 
   // --------------------------------------------------- which measurements
@@ -1630,6 +1859,7 @@
     // Agent's configs arrive through here too. The old name is still read.
     state.phases = new Set(from.include_phase || from.include || []);
     state.values = from.phases || {};
+    stoppingDraft = null;
     state.analyses = new Set(from.analyses || []);
     state.analysisOptions = from.analysis_options || {};
     state.sweep = (from.sweep || []).map((row) => ({
@@ -1843,6 +2073,7 @@
       ? new Set(STARTING_POINTS[state.start].phases)
       : new Set();
     state.values = {};
+    stoppingDraft = null;
     state.analyses.clear();
     state.analysisOptions = {};
     state.sweep = [];

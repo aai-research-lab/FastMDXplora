@@ -107,7 +107,8 @@ class TestTheGUIReadsIt:
         assert unit_of("rmsd", {"mean": 1.0, "unit": ""}) == ""
         # A study analysed before units were recorded keeps the known ones.
         assert unit_of("rmsd", {"mean": 1.0}) == "nm"
-        assert unit_of("end_to_end", None) == ""
+        assert unit_of("end_to_end", None) == "nm"
+        assert unit_of("rdf", None) == ""
 
     def test_a_caption_gives_the_recorded_unit(self, tmp_path):
         """An end-to-end distance was captioned without its unit."""
