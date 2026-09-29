@@ -772,6 +772,32 @@ person's calibration, chosen model, remote machines and fetched chemistry are
 left alone. Delete `~/.config/fastmdxplora/calibration.json` on a machine that
 has run the suite before and has not been measured since, or measure it again.
 
+### The builder says what setup will build, and how long it will take
+
+**Under the structure, while the settings are open,** the builder now says what
+setup will build from it: about how many particles, in a box of what shape and
+width, the padding setup will grow it to where the cutoff needs more (or that
+setup will refuse it), the solute's residues, atoms and net charge, the ligands
+kept, the water and the ions; how long the study will take on this machine,
+every run of it, where the machine has been timed; and what is worth knowing
+about the structure under these settings, each with a button that opens the
+setting it is about. It is said again half a second after a setting changes.
+The box, the count and the time had been learned from setup's log, minutes into
+a run.
+
+It is worked out, not built (`fastmdxplora.setup.estimate`). The solute is
+counted from its residues' templates, hydrogens, missing atoms and the gaps
+setup builds included, in the biological assembly setup will build, copies
+from symmetry operators included; the box is OpenMM's rule and setup's growth
+for the cutoff; the water is OpenMM's pre-equilibrated box less the volume
+within 0.40 nm of the solute's atoms and what the cell's faces lose, both
+measured on OpenMM's own builds; the ions are OpenMM's count for that water.
+Against the setup phase it came within 1.8% on adenylate kinase (20,223
+particles) and 3.0% on haemoglobin built from its symmetry operators (35,630),
+and the tests hold it to the setup phase's own record of a decapeptide and a
+tripeptide. `POST /api/preview-system` answers on this machine only, and a
+PDB identifier is fetched once and kept.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

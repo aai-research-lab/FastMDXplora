@@ -3447,3 +3447,39 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     background: var(--background-soft); color: var(--text-secondary);
 }
 @media (max-width: 800px) { .viewer-keys { display: none; } }
+
+/* What setup will build, under the structure while it is being chosen. */
+.system-preview {
+    grid-column: 1 / -1;
+    padding: 14px 16px;
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    background: var(--panel-glass);
+    transition: opacity .2s ease;
+}
+.system-preview[hidden] { display: none; }
+.system-preview.is-loading { opacity: .6; }
+.system-preview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.system-preview-state { color: var(--text-muted); font-size: 12px; }
+.system-preview-headline { margin: 8px 0 10px; color: var(--text-secondary); line-height: 1.5; }
+.system-preview-count { color: var(--text-primary); font-size: 20px; font-weight: 600; }
+.system-preview-rows {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 0;
+}
+.system-preview-rows dt { color: var(--text-muted); }
+.system-preview-rows dd { margin: 0; color: var(--text-primary); }
+.system-preview-rows dd.is-note { color: var(--accent-orange); }
+.system-preview-rows dd.is-warning { color: var(--status-error, var(--accent-orange)); font-weight: 600; }
+.system-preview-rows dd.is-muted { color: var(--text-muted); }
+.system-preview-advice { margin: 12px 0 0; padding-left: 18px; color: var(--text-secondary); }
+.system-preview-advice li { margin: 0 0 8px; line-height: 1.5; }
+.system-preview-advice strong { color: var(--text-primary); }
+.system-preview-go { margin-left: 8px; }
+.builder-field.is-pointed { outline: 2px solid var(--accent-orange); outline-offset: 4px; border-radius: 6px; }
+@media (max-width: 800px) {
+    .system-preview-rows { grid-template-columns: 1fr; }
+    .system-preview-rows dd { margin-bottom: 6px; }
+}

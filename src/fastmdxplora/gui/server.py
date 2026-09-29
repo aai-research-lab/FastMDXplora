@@ -763,6 +763,16 @@ def make_handler(
                     return
                 self._send_json(check_config_file(named))
                 return
+            if path == "/api/preview-system":
+                # What the form's study will build and cost, while the form
+                # is still open: the box, the particle count, the time on
+                # this machine and what is worth knowing about the structure.
+                from fastmdxplora.gui.preview import system_preview
+
+                self._send_json(system_preview(
+                    payload or {},
+                    path_for=hosting.inside if hosting is not None else None))
+                return
             if path == "/api/save-config":
                 # Hosted, for the service's page that runs a study on its
                 # own compute (--runs-url): the builder's config saved in

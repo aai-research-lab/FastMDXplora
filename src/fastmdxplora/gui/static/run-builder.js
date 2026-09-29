@@ -526,6 +526,9 @@
   function control(phase, field) {
     const wrap = document.createElement("label");
     wrap.className = "builder-field";
+    // Named, so what is said about a setting elsewhere on the page can
+    // open the section it is in and point at it.
+    wrap.dataset.setting = field.name;
 
     const label = document.createElement("span");
     label.className = "builder-label";
@@ -1145,6 +1148,188 @@
       const button = el(id);
       if (button) button.disabled = !can;
     });
+    schedulePreview();
+  }
+
+  // ------------------------------------------------ what setup will build
+
+  /* The box, the particle count and the time were learned from setup's log,
+   * minutes into a run and after the settings could be changed. The
+   * structure and the settings decide most of it, so it is said here, under
+   * the structure, as the settings change: asked for half a second after
+   * the last change, and an answer to an older form is dropped. */
+  const PREVIEW_DELAY_MS = 600;
+  let previewTimer = null;
+  let previewKey = "";
+  let previewSeq = 0;
+
+  function schedulePreview() {
+    const box = el("run-system-preview");
+    const system = el("run-system");
+    if (!box || !system) return;
+    const wanted = state.start === "structure" && state.phases.has("setup")
+      && system.value.trim();
+    if (!wanted) {
+      box.hidden = true;
+      previewKey = "";
+      previewSeq += 1;
+      clearTimeout(previewTimer);
+      return;
+    }
+    const body = currentState();
+    const key = JSON.stringify(body);
+    if (key === previewKey) return;
+    previewKey = key;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => loadPreview(body), PREVIEW_DELAY_MS);
+  }
+
+  async function loadPreview(body) {
+    const seq = ++previewSeq;
+    const box = el("run-system-preview");
+    box.hidden = false;
+    box.classList.add("is-loading");
+    text(el("run-system-preview-state"), "Working it out\u2026");
+    let answer;
+    try {
+      const response = await fetch("/api/preview-system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      answer = await response.json();
+    } catch (error) {
+      answer = { ok: false, reason: "The preview could not be reached." };
+    }
+    if (seq !== previewSeq) return;
+    box.classList.remove("is-loading");
+    renderPreview(answer || {});
+  }
+
+  function node(tag, className, content) {
+    const made = document.createElement(tag);
+    if (className) made.className = className;
+    if (content !== undefined && content !== null) made.textContent = String(content);
+    return made;
+  }
+
+  const count = (value) => Number(value).toLocaleString("en-US");
+
+  function signed(value) {
+    const n = Number(value) || 0;
+    return n > 0 ? `+${n}` : n < 0 ? `\u2212${-n}` : "0";
+  }
+
+  function duration(seconds) {
+    const s = Number(seconds) || 0;
+    if (s < 90) return `${Math.round(s)} seconds`;
+    if (s < 5400) return `${Math.round(s / 60)} minutes`;
+    if (s < 129600) return `${(s / 3600).toFixed(1)} hours`;
+    return `${(s / 86400).toFixed(1)} days`;
+  }
+
+  function renderPreview(answer) {
+    const body = el("run-system-preview-body");
+    if (!body) return;
+    body.textContent = "";
+    if (!answer.ok) {
+      text(el("run-system-preview-state"), "");
+      body.appendChild(node("p", "builder-card-note", answer.reason || "Nothing to say yet."));
+      return;
+    }
+    const e = answer.estimate;
+    text(el("run-system-preview-state"), "an estimate");
+
+    const headline = node("p", "system-preview-headline");
+    headline.appendChild(node("strong", "system-preview-count", `about ${count(e.particles)}`));
+    headline.appendChild(document.createTextNode(
+      ` particles in a ${e.box_shape} ${Number(e.width_nm).toFixed(2)} nm from face to face ` +
+      `(${Math.round(e.volume_nm3).toLocaleString("en-US")} nm\u00b3)`));
+    body.appendChild(headline);
+
+    const rows = node("dl", "system-preview-rows");
+    const row = (label, value, tone) => {
+      const term = node("dt", null, label);
+      const said = node("dd", tone ? `is-${tone}` : null, value);
+      rows.appendChild(term);
+      rows.appendChild(said);
+    };
+    const named = e.chains.length === 1 ? `chain ${e.chains[0]}` : `chains ${e.chains.join(", ")}`;
+    const copies = Number(e.copies) || 1;
+    const chains = copies > 1
+      ? `${e.chains.length * copies} chains (${named} and ` +
+        `${copies - 1 === 1 ? "a copy" : `${copies - 1} copies`} of ` +
+        `${e.chains.length === 1 ? "it" : "each"} by symmetry)`
+      : named;
+    row("Solute",
+        `${count(e.residues)} residues in ${chains}` +
+        (e.gaps_built ? ` (${count(e.gaps_built)} missing ones built)` : "") +
+        `, ${count(e.solute_atoms)} atoms with hydrogens, net charge ${signed(e.net_charge)}`);
+    row("Ligands", e.ligands.length ? e.ligands.join(", ") : "none kept");
+    row("Water", `${count(e.waters)} ${String(e.water_model).toUpperCase()}`);
+    row("Ions", `${count(e.ions_positive)} ${e.positive_ion} and ` +
+                `${count(e.ions_negative)} ${e.negative_ion}`);
+    if (e.refuses) {
+      row("Padding", `${e.padding_nm} nm leaves the box narrower than twice the cutoff, ` +
+          "and setup will refuse it: raise the padding, choose a cube, or lower the cutoff.",
+          "warning");
+    } else if (e.grows) {
+      row("Padding", `grown from ${e.padding_nm} to ${Number(e.padding_used_nm).toFixed(2)} nm, ` +
+          "so the box clears twice the cutoff with room for the barostat to shrink it",
+          "note");
+    } else {
+      row("Padding", `${e.padding_nm} nm between the solute and its nearest periodic image`);
+    }
+    const time = answer.time || {};
+    row("Time here", time.ok
+      ? `about ${duration(time.seconds)}` + (time.runs > 1 ? ` for ${time.runs} runs` : "") +
+        ` on ${time.platform || "this machine"}, ${count(time.steps)} steps in all`
+      : (time.reason || "not known"), time.ok ? null : "muted");
+    body.appendChild(rows);
+
+    (e.notes || []).forEach((said) => body.appendChild(node("p", "builder-card-note", said)));
+
+    const advice = answer.advisories || [];
+    if (advice.length) {
+      const list = node("ul", "system-preview-advice");
+      advice.forEach((item) => {
+        const entry = node("li");
+        entry.appendChild(node("strong", null, item.summary));
+        entry.appendChild(document.createTextNode(` ${item.detail} ${item.remedy}`));
+        if (item.setting && phaseOf(item.setting)) {
+          const go = node("button", "ghost-btn system-preview-go", `Show ${item.setting.replace(/_/g, " ")}`);
+          go.type = "button";
+          go.addEventListener("click", () => showSetting(item.setting));
+          entry.appendChild(go);
+        }
+        list.appendChild(entry);
+      });
+      body.appendChild(list);
+    }
+    body.appendChild(node("p", "builder-card-note",
+      "Worked out from the structure and these settings. Setup's own numbers " +
+      "replace it once it has run."));
+  }
+
+  function phaseOf(setting) {
+    if (!state.schema) return null;
+    const found = PHASES.find((phase) => state.phases.has(phase.name)
+      && settingsFor(phase.name).some((field) => field.name === setting));
+    return found ? found.name : null;
+  }
+
+  function showSetting(setting) {
+    const phase = phaseOf(setting);
+    if (!phase) return;
+    state.open.add(phase);
+    renderSettings();
+    const wrap = document.querySelector(`#run-settings [data-setting="${setting}"]`);
+    if (!wrap) return;
+    wrap.scrollIntoView({ block: "center", behavior: "smooth" });
+    const input = wrap.querySelector("input, select, textarea");
+    if (input) input.focus({ preventScroll: true });
+    wrap.classList.add("is-pointed");
+    setTimeout(() => wrap.classList.remove("is-pointed"), 1600);
   }
 
   async function fetchConfig() {
@@ -1636,5 +1821,6 @@
      * first, so the file, the command and the script are the same ones
      * the builder would produce -- one derivation, two doors. */
     fetchConfig, download, copyCommand, downloadScript,
+    renderPreview,
   };
 })();

@@ -142,6 +142,21 @@ place to write the PLUMED input directly. Text written there wins over a path â€
 the rule is stated on the control the moment both are filled â€” and the first
 content to arrive turns the switch on.
 
+**What setup will build** is said under the structure while the settings are
+still open, and said again as they change: the particles, the box (its shape,
+how wide it is from face to face, and the padding setup will grow it to where
+the cutoff needs more), the solute's residues, atoms and charge, the ligands
+kept, the water and the ions. It is worked out from the structure and the
+settings by OpenMM's own rules, the chains and copies of the biological
+assembly setup will build included, and on the structures it was checked
+against it comes within a few per cent of what setup builds; setup's own
+numbers replace it once it has run. Where this machine has been timed (the
+first study given a budget times it), it says how long the study will take
+here, every run of it. What is worth knowing about the structure under these
+settings, a metal in a site the force field will not hold, say, is said
+beside it, with a button that opens the setting it is about. A membrane
+system is not estimated: its box is the bilayer's.
+
 ### Taking the Config with you
 
 Four buttons at the bottom of the page:
@@ -402,6 +417,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/structure-info`, `/api/ligands` | Atom, residue, chain and ligand counts |
 | `GET /api/playback-info`, `/api/live-frame-index`, `/api/live-coordinates` | The viewer's frames |
 | `GET /api/protein-preview` | The cached preview image |
+| `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart drawn from them |
 | `GET /artifacts/<path>` | Any file under the run root, `?download=1` to attach |
 | `GET /structure/topology.pdb`, `/structure/live-frame.pdb`, `/structure/playback.pdb` | Structures for the viewer |
 | `GET /analysis-figures-svg.zip` | Every analysis figure, zipped |
@@ -412,6 +428,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 |---|---|
 | `POST /api/config` | Build, validate and return the YAML for what is on screen, plus the equivalent CLI command and Python script. `"full": true` in the body restates every default |
 | `POST /api/check-config` | Validate a Config file without running it |
+| `POST /api/preview-system` | What setup will build from the form's structure and settings, how long the study will take here, and what is worth knowing about it. Writes nothing |
 | `POST /api/load-config` | Read a Config into form state. Never writes the file |
 | `POST /api/run` | Start a run from form state |
 | `POST /api/run-config` | Start a run from a Config file, unmodified |
