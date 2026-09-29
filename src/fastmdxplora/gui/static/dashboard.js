@@ -18,6 +18,9 @@
     outputDir: "",
     paused: false,
     pollIntervalMs: 3000,
+    /* Whether `/api/stream` is open; the poll slows while it is. */
+    streaming: false,
+    changeStream: null,
     lastUpdateMs: 0,
     refreshTimer: null,
     /* The pages are the pages the document has. Naming them here as well
@@ -65,6 +68,7 @@
     navigate(location.hash.replace(/^#/, "") || "overview", {updateHash: false});
     startLoadingChecklist();
     schedulePoll(0);
+    openChangeStream();
   }
 
   /* ------------------------------------------------------------------ */
@@ -306,6 +310,63 @@
     return response.json();
   }
 
+  /* The server says when the study changes (`GET /api/stream`), and the
+   * page asks for what it draws then, rather than every few seconds
+   * whether or not anything did. The poll stays as a slow fall-back while
+   * the stream is open, and as it was when the stream is not: an older
+   * browser, or a network that cuts long connections. */
+  const STREAMING_POLL_MS = 30000;
+  let changeTimer = null;
+  let polling = false;
+  let changedWhilePolling = false;
+
+  function openChangeStream() {
+    if (typeof window.EventSource !== "function") return;
+    let source;
+    try {
+      source = new EventSource("/api/stream");
+    } catch (error) {
+      return;
+    }
+    // Each connection's first event is sent at once, for a page that
+    // reconnected having missed a change. A page that has asked since the
+    // connection opened, or is asking now, has missed nothing.
+    let first = true;
+    let openedAt = Date.now();
+    // Counted as streaming only once an event has arrived: a proxy that
+    // holds a response until it ends would open the connection and deliver
+    // nothing, and the page would then wait on its slow poll.
+    source.addEventListener("open", () => {
+      first = true;
+      openedAt = Date.now();
+    });
+    source.addEventListener("error", () => { state.streaming = false; });
+    source.addEventListener("change", () => {
+      state.streaming = true;
+      const wasFirst = first;
+      first = false;
+      if (state.paused) return;
+      if (wasFirst && (polling || state.lastUpdateMs >= openedAt)) return;
+      if (polling) {
+        // Asked again once this answer is in, so a change made while it
+        // was being read is not left to the slow poll.
+        changedWhilePolling = true;
+        return;
+      }
+      // Several files change together as a run writes; one request set.
+      if (changeTimer) window.clearTimeout(changeTimer);
+      changeTimer = window.setTimeout(() => {
+        changeTimer = null;
+        pollNow().catch((error) => console.warn("dashboard poll error", error));
+      }, 150);
+    });
+    state.changeStream = source;
+  }
+
+  function nextPollMs() {
+    return state.streaming ? Math.max(state.pollIntervalMs, STREAMING_POLL_MS) : state.pollIntervalMs;
+  }
+
   function schedulePoll(delayMs) {
     if (state.refreshTimer) window.clearTimeout(state.refreshTimer);
     state.refreshTimer = window.setTimeout(async () => {
@@ -316,11 +377,26 @@
           console.warn("dashboard poll error", error);
         }
       }
-      schedulePoll(state.pollIntervalMs);
+      schedulePoll(nextPollMs());
     }, Math.max(0, delayMs));
   }
 
   async function pollNow() {
+    polling = true;
+    try {
+      await pollOnce();
+    } finally {
+      polling = false;
+      if (changedWhilePolling) {
+        changedWhilePolling = false;
+        window.setTimeout(() => {
+          pollNow().catch((error) => console.warn("dashboard poll error", error));
+        }, 0);
+      }
+    }
+  }
+
+  async function pollOnce() {
     const names = ["app", "status", "metrics", "events", "results", "structure", "playback"];
     const urls = [
       "/api/app-state", "/api/status", "/api/metrics", "/api/events", "/api/results",

@@ -111,6 +111,14 @@ class _DashboardServer(ThreadingHTTPServer):
         _import_what_the_routes_import()
         super().__init__(*args, **kwargs)
 
+    #: Set when the server is shutting down, so an open event stream ends
+    #: rather than holding `server_close` on its thread.
+    closing = False
+
+    def shutdown(self) -> None:
+        self.closing = True
+        super().shutdown()
+
     def handle_error(self, request: Any, client_address: Any) -> None:
         raised = sys.exc_info()[0]
         if raised is not None and issubclass(raised, ConnectionError):
@@ -147,7 +155,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/playback-info", "/api/series", "/api/runs-compared", "/api/selection",
-    "/api/stopping",
+    "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
     "/structure/playback.pdb",
@@ -492,6 +500,9 @@ def make_handler(
                     root = app_runtime.workspace_root / _NO_CURRENT_RUN
             if path in {"/", "/index", "/results", "/live"}:
                 self._send_html(page_for(self.headers.get(ACCOUNT_HEADER)))
+                return
+            if path == "/api/stream":
+                self._stream_changes()
                 return
             if path == "/api/app-state" or path == "/api/explore/state":
                 self._send_json(app_runtime.snapshot())
@@ -1121,6 +1132,35 @@ def make_handler(
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _stream_changes(self) -> None:
+            """`GET /api/stream`: one event each time the study the page
+            shows changes (`fastmdxplora.gui.stream`)."""
+            from fastmdxplora.gui.stream import changes, signature
+
+            def look() -> tuple:
+                state = app_runtime.snapshot()
+                # With no study open the data root is the workspace, often
+                # a home folder: nothing there for the page, and not a
+                # place to walk twice a second.
+                shown = app_runtime.data_root() if state.get("active_run") else None
+                if shown is not None and not allow_control and not is_study(shown):
+                    shown = None
+                return signature(shown, state)
+
+            def write(chunk: bytes) -> None:
+                self.wfile.write(chunk)
+                self.wfile.flush()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            # A proxy that buffers would hold every event until the stream
+            # ended, which is what the stream exists to avoid.
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            changes(write, look, closing=lambda: bool(getattr(self.server, "closing", False)))
+            self.close_connection = True
 
         def _send_html(self, html_text: str) -> None:
             body = html_text.encode("utf-8")

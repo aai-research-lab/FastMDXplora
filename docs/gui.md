@@ -224,7 +224,13 @@ what the piece now running adds and how long that takes at the speed the study
 has run, and lists every round and what was decided on it. The card reads the
 study's record and nothing else, so it says what the report says.
 
-The page polls the run directory every three seconds by default. The data comes
+The page is told when the study changes. The server looks at the study's files
+twice a second and sends one event over `GET /api/stream` when any of them, or
+the state of the run, is different, and the page then asks for what it draws;
+so what the run writes appears within about a second, and an idle page asks
+for nothing. The page still asks every thirty seconds while the stream is open,
+and every three (the dashboard's refresh setting) where it cannot be opened, as
+behind a network that cuts long connections. The data comes
 from files the running simulation writes (`simulation/live_status.json`,
 `live_metrics.csv`, `live_events.log` and a capped history of live frames) —
 `simulation.live_telemetry` turns those on and off, and nothing leaves the
@@ -434,6 +440,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/protein-preview` | The cached preview image |
 | `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart drawn from them; `&run=ID` for one run of a study of several |
 | `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read |
+| `GET /api/stream` | Server-sent events: one `change` event each time the study's files or the run's state change, and nothing about what changed; the page then asks the routes here |
 | `GET /api/stopping` | For a study run until it knows: the rule, each measure's error and mean after each round with the replicas' own means, where the error would reach the target at the rate it has fallen, and the piece now running with its time here |
 | `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each measure's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |
 | `GET /artifacts/<path>` | Any file under the run root, `?download=1` to attach |

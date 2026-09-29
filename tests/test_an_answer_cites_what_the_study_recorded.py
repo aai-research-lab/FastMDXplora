@@ -173,11 +173,16 @@ def test_the_page_shows_them_and_one_opens_its_figure(tmp_path) -> None:
                 "'.page[data-page=\"analysis\"] .analysis-card.is-cited');"
                 " return c && c.getAttribute('data-analysis') === 'rmsd'; }")
             on = page.evaluate("document.documentElement.getAttribute('data-page')")
-            page.wait_for_timeout(800)  # the scroll is smooth
-            seen = page.evaluate(
-                "() => { const r = document.querySelector("
-                "'.analysis-card.is-cited').getBoundingClientRect();"
-                " return r.top < innerHeight && r.bottom > 0; }")
+            # The scroll is smooth, and on a loaded machine slow: waited for
+            # rather than given a fixed time.
+            # The highlight fades after a moment; the card it marked is the
+            # one that has to be in view.
+            page.wait_for_function(
+                "() => { const c = document.querySelector("
+                "'.page[data-page=\"analysis\"] .analysis-card[data-analysis=\"rmsd\"]');"
+                " if (!c) return false; const r = c.getBoundingClientRect();"
+                " return r.top < innerHeight && r.bottom > 0; }", timeout=15000)
+            seen = True
             browser.close()
     finally:
         session.server.shutdown()

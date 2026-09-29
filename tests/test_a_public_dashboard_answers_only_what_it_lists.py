@@ -259,6 +259,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # What a study run until it knows has judged: the same means
             # the Analysis page shows, round by round.
             "/api/stopping",
+            # That the study changed, never what: the page then asks the
+            # routes above.
+            "/api/stream",
             "/analysis-figures-svg.zip",
             "/structure/topology.pdb", "/structure/live-frame.pdb",
             "/structure/playback.pdb",

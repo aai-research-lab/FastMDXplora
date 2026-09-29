@@ -1123,6 +1123,22 @@ it is running until from its start; a resumed study keeps the rounds it had;
 and the record says how many runs were extended at once, which is what a
 round's time rests on.
 
+### The page is told when the study changes
+
+**The GUI now hears of a change as it happens, instead of asking for
+everything every three seconds.** It asked for seven answers a poll from each
+open tab whether or not anything had changed, and was still up to three
+seconds behind the run. `GET /api/stream` is a server-sent event stream: the
+server looks at the study's files (their times and sizes, three folders deep,
+twice a second) and the run's state, and sends one event when any of them is
+different; the page then asks for what it draws, once. What the run writes
+appears within about a second, and an idle page asks for nothing. The poll
+stays as a fall-back, every thirty seconds while the stream is open and at
+the refresh setting where it cannot be. Only that something changed is sent,
+never what, so every answer still comes through its own route and checks; a
+stream ends when the server shuts down, so stopping the GUI is not held by an
+open tab.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
