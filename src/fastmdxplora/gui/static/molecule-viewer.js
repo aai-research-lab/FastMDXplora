@@ -94,6 +94,7 @@
     wireControls();
     wireTrajectoryControls();
     wireResidueFocus();
+    wireKeys();
     tidyOverlay();
     window.FastMDXDashboard?.on("structure-updated", onStructureUpdated);
     window.FastMDXDashboard?.on("status-updated", ({status}) => onStatusUpdated(status));
@@ -995,6 +996,45 @@
       return;
     }
     if (action === "screenshot") takeScreenshot();
+  }
+
+  /* The keys a player has: Space plays and pauses, the arrows step a frame
+   * (Shift for ten), Home and End go to the ends, R centres the structure,
+   * F fills the screen. Only on the viewer's page, and never while typing. */
+  const KEYS = {
+    " ": () => handleToolbarAction("play-trajectory"),
+    ArrowLeft: (event) => stepBy(event.shiftKey ? -10 : -1),
+    ArrowRight: (event) => stepBy(event.shiftKey ? 10 : 1),
+    Home: () => goToEnd(false),
+    End: () => goToEnd(true),
+    r: () => handleToolbarAction("reset-view"),
+    f: () => handleToolbarAction("fullscreen"),
+  };
+
+  async function goToEnd(last) {
+    stopFollowing();
+    if (await loadPlayback(STATE.playbackPayload)) {
+      await setPlaybackFrame(last ? Math.max(0, STATE.playbackFrames - 1) : 0);
+    }
+  }
+
+  async function stepBy(delta) {
+    stopFollowing();
+    await seekRelative(delta);
+  }
+
+  function wireKeys() {
+    document.addEventListener("keydown", (event) => {
+      if (document.documentElement.dataset.page !== "viewer") return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+      const target = event.target;
+      if (target && (target.isContentEditable
+          || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName))) return;
+      const handler = KEYS[event.key.length === 1 ? event.key.toLowerCase() : event.key];
+      if (!handler) return;
+      event.preventDefault();
+      handler(event);
+    });
   }
 
   function handleCameraAction(action) {

@@ -693,6 +693,15 @@ are marked as defaults. The lengths are resolved by the runner's own function
 and the umbrella windows by the umbrella module's, so the plan cannot say
 something the run would not do. A conversation reopened shows its plans again.
 
+### The viewer answers the keyboard
+
+Every control in the viewer was a button to find and click, so stepping
+through a trajectory was a click per frame. Space now plays and pauses, the
+arrow keys step a frame (ten with Shift), Home and End go to the first and last
+frames, R centres the structure and F fills the screen. The keys work only on
+the viewer's page and never while something is being typed, and are listed
+under the page's title.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
