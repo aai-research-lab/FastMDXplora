@@ -1024,6 +1024,16 @@ left the selection to be written by hand, in a language where `resid 189` and
 the analyses do not read (water, unless it is saved with the trajectory) is
 said to be missing from it. `GET /api/selection` answers the same.
 
+### `fastmdx diff`: what two studies were asked to do differently
+
+**`fastmdx diff FIRST SECOND` lists the settings two studies, or two Configs,
+differ in** (`--json` for a program). A study is read from its
+`resolved_config.yml`; a phase setting either side leaves out is taken at its
+default, so a short Config and the full one it resolves to compare as the same
+study; and a path inside a study's own folder is said from it, so two studies'
+trajectories do not differ for being in two folders. It exits 1 where they
+differ, so it can gate a script.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

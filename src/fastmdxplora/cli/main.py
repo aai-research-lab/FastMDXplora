@@ -1007,6 +1007,21 @@ def _build_parser() -> argparse.ArgumentParser:
     sel.add_argument("--atoms", action="store_true",
                      help="List every matching atom rather than the residues.")
 
+    dif = sub.add_parser(
+        "diff",
+        help="Show the settings two studies or Configs differ in.",
+        description=(
+            "Compare two Configs, or the folders two studies were written to, "
+            "setting by setting. A phase setting either leaves out is taken at "
+            "its default, so a short Config and the full one it resolves to "
+            "compare as the same study. Exits 1 where they differ in what they "
+            "asked for, 0 where they do not."
+        ),
+    )
+    dif.add_argument("first", metavar="FIRST", help="A Config file or a study folder.")
+    dif.add_argument("second", metavar="SECOND", help="A Config file or a study folder.")
+    dif.add_argument("--json", action="store_true", help="Print the differences as JSON.")
+
     gui = sub.add_parser(
         "gui",
         help="Open the FastMDXplora graphical interface in a browser.",
@@ -2050,6 +2065,45 @@ def _phase_status(phase: str, probed: dict[str, tuple[str, str]]) -> str:
     return "ready" + (f" ({', '.join(limits)})" if limits else "")
 
 
+def _cmd_diff(args: argparse.Namespace) -> int:
+    """The settings two studies or Configs differ in."""
+    import json as _json
+
+    from fastmdxplora.config.diff import config_of, differences
+
+    first, first_file = config_of(args.first)
+    second, second_file = config_of(args.second)
+    found = differences(first, second)
+    asked = [d for d in found if not d.where_only]
+    if args.json:
+        print(_json.dumps({"first": str(first_file), "second": str(second_file),
+                           "differences": [d.as_record() | {"where_only": d.where_only}
+                                           for d in found]},
+                          indent=2, default=str))
+        return 1 if asked else 0
+
+    def said(value: object) -> str:
+        from fastmdxplora.config.diff import ABSENT
+
+        return "(not set)" if value is ABSENT else _json.dumps(value, default=str)
+
+    print(f"{args.first} ({first_file.name}) against {args.second} ({second_file.name})")
+    if (first_file.name == "resolved_config.yml") != (second_file.name == "resolved_config.yml"):
+        print("  One is a study and one a Config: what the software resolved when the study "
+              "ran (force field files, the water model) shows as a difference too.")
+    if not asked:
+        print("  They ask for the same study.")
+    else:
+        width = min(44, max(len(d.setting) for d in asked))
+        print(f"  {len(asked)} setting{'s' if len(asked) != 1 else ''} differ:")
+        for d in asked:
+            print(f"    {d.setting:<{width}}  {said(d.first)}  ->  {said(d.second)}")
+    where = [d.setting for d in found if d.where_only]
+    if where:
+        print(f"  Written differently only in: {', '.join(where)}")
+    return 1 if asked else 0
+
+
 def _cmd_select(args: argparse.Namespace) -> int:
     """Show what a selection matches, before a run depends on it.
 
@@ -2843,6 +2897,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_info(args)
         if args.command == "select":
             return _cmd_select(args)
+        if args.command == "diff":
+            return _cmd_diff(args)
         if args.command == "remote":
             return _cmd_remote(args)
     except ConfigError as exc:

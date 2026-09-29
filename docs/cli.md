@@ -29,6 +29,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx gui` | Serve [the GUI](gui.md) |
 | `fastmdx init-config` | Write a commented Config template |
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
+| `fastmdx diff` | The settings two studies or Configs differ in |
 | `fastmdx info` | What is installed, and how to get what is not |
 | `fastmdx remote` | Inspect other machines over SSH: [Other machines](remote.md) |
 | `fastmdx resume` | Carry a study that stopped part-way on to its end: [When it stops early](production.md#when-it-stops-early) |
@@ -431,6 +432,30 @@ Note `-s` means **structure** on this command, not system.
 Exits **0** on a match, **1** on an empty match (with a `resSeq` vs `resid`
 hint), **2** on a missing file or an invalid expression — so it can gate a
 script. See [Selections in a Config](selections.md).
+
+---
+
+## `diff`
+
+The settings two studies, or two Configs, differ in: where two runs came out
+differently, what they were asked to do differently.
+
+```bash
+fastmdx diff runs/at_300K runs/at_310K
+fastmdx diff study.yml runs/at_300K --json
+```
+
+A study is read from the `resolved_config.yml` it wrote. A phase setting either
+side leaves out is taken at its default, so a short Config and the full one it
+resolves to compare as the same study; a path inside a study's own folder is
+said from it (`<output>/joined/production.dcd`), so two studies' trajectories
+do not differ for being in two folders. A study against a Config also shows
+what the software resolved when the study ran (the force field's files, the
+water model), and says so.
+
+Exits **0** where they ask for the same study (they may still be written to
+different folders), **1** where they differ, **2** where either is not a study
+or a Config.
 
 ---
 
