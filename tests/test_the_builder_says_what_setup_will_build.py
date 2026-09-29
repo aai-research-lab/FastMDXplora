@@ -297,3 +297,20 @@ class TestInTheBrowser:
         assert "4 chains (chains A, B and a copy of each by symmetry)" in rows
         assert "setup will refuse it" in rows
         assert "about 2.0 hours for 3 runs on CUDA" in rows
+
+    def test_the_agent_s_plan_is_told_the_cost_in_two_sentences(self, page) -> None:
+        said = page.evaluate("""() => {
+            const e = {particles: 34808, box_shape: 'cube', narrowest_nm: 5.79, width_nm: 8.19,
+                       grows: false, refuses: true, padding_used_nm: 1};
+            const d = window.FastMDXRun.describeCost;
+            return [d({ok: true, estimate: e, time: {ok: true, seconds: 5400, runs: 1,
+                                                     platform: 'CUDA'}}),
+                    d({ok: true, estimate: e, time: {ok: false,
+                                                     code: 'environment.calibration.stale'}}),
+                    d({ok: false})];
+        }""")
+        assert said[0] == {"size": "about 34,808 particles in a cube 8.2 nm from face to "
+                                   "face; setup will refuse this padding for the cutoff",
+                           "time": "about 1.5 hours on CUDA"}
+        assert said[1]["time"] == "not known: this machine was timed under other settings"
+        assert said[2] is None

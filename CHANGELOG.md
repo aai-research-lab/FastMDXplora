@@ -798,6 +798,17 @@ and the tests hold it to the setup phase's own record of a decapeptide and a
 tripeptide. `POST /api/preview-system` answers on this machine only, and a
 PDB identifier is fetched once and kept.
 
+### The Agent's plan ends with what the study would build and cost
+
+**A proposed Config's plan now ends with the system setup would build and the
+time here:** about how many particles in what box, the padding grown for the
+cutoff where it would be, and how long the study would take on this machine,
+every run of it, where the machine has been timed. The page asks for them once
+the builder holds the proposal, as the builder's preview does, so a structure
+named by its identifier is fetched once and the reply does not wait on it. A
+proposal that prepares nothing, or whose structure cannot be read, ends where
+it did.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

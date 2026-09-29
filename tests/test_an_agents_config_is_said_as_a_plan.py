@@ -202,3 +202,53 @@ def test_the_page_shows_it_under_the_reply(tmp_path) -> None:
     assert terms == ["Production", "Conditions"]
     assert values[0] == "10 ns, 2 fs steps"
     assert values[1] == "300 K, 1 bar default"
+
+
+def test_the_plan_ends_with_what_it_would_build_and_take(tmp_path) -> None:
+    """Added by the page once the builder holds the proposal: the size of the
+    system and the time here, as the builder's preview says them."""
+    pytest.importorskip("playwright.sync_api")
+    import urllib.request
+
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    structure = tmp_path / "peptide.pdb"
+    structure.write_text("".join(
+        f"ATOM  {4 * i + k + 1:5d}  {name:<3s} GLY A{i + 1:4d}    {3.6 * i + 0.4 * k:8.3f}"
+        f"{0.0:8.3f}{0.0:8.3f}  1.00  0.00           {name[0]}\n"
+        for i in range(3) for k, name in enumerate(("N", "CA", "C", "O"))) + "END\n",
+        encoding="utf-8")
+    config = {"systems": [{"id": "p", "system": str(structure)}],
+              "simulation": {"duration_ns": 1}}
+    session = start_dashboard_session(output=str(tmp_path / "study"), host="127.0.0.1", port=0)
+    entries = [
+        {"role": "user", "text": "this peptide for a nanosecond"},
+        {"role": "agent", "kind": "config", "yaml": "systems: []\n", "config": config,
+         "cycles": 1, "attempts": [],
+         "plan": [{"label": "Production", "value": "1 ns, 2 fs steps", "default": False}]},
+    ]
+    request = urllib.request.Request(
+        session.url + "/api/agent/conversation", data=json.dumps({"entries": entries}).encode(),
+        headers={"Content-Type": "application/json", "Origin": session.url}, method="POST")
+    urllib.request.urlopen(request, timeout=10).read()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page()
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            page.wait_for_selector("#agent-thread .agent-plan dt.agent-plan-cost",
+                                   state="attached")
+            shown = page.is_visible("#agent-thread .agent-plan dt.agent-plan-cost")
+            terms = page.locator("#agent-thread .agent-plan dt").all_text_contents()
+            values = page.locator("#agent-thread .agent-plan dd").all_text_contents()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert terms == ["Production", "System", "Time here"]
+    assert shown
+    assert values[1].startswith("about ") and "dodecahedron" in values[1]
+    assert "padding grown to" in values[1]
+    assert values[2] == "not known: this machine has not been timed"

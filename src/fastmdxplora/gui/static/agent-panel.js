@@ -732,6 +732,21 @@
   /* What the config will do, said in lines rather than left in the YAML:
    * the values the run will take, with the ones it takes by default marked,
    * so a two-nanosecond run nobody asked for is seen before it is run. */
+  function addPlanLines(host, lines) {
+    if (!host) return;
+    lines.forEach(function (line) {
+      var term = document.createElement("dt");
+      term.textContent = line.label;
+      term.className = "agent-plan-cost";
+      var value = document.createElement("dd");
+      value.textContent = line.value;
+      value.className = "agent-plan-cost";
+      host.appendChild(term);
+      host.appendChild(value);
+    });
+    host.hidden = false;
+  }
+
   function showPlan(host, plan) {
     if (!host) return;
     host.innerHTML = "";
@@ -782,6 +797,24 @@
       if (!run || !run.applyLoadedState) return false;
       run.applyLoadedState(m.state, {});
       return true;
+    });
+
+    /* What the proposal would build and how long it would take here, added
+     * to its plan once the builder holds it: the cost read before the run,
+     * not learned from setup's log. A moment after the reply, because a
+     * structure named by its identifier is fetched to be measured. */
+    loaded.then(function (ok) {
+      var run = window.FastMDXRun;
+      if (!ok || !run || !run.previewCost) return;
+      var wants = (data.config && data.config.include_phase) || null;
+      if (wants && wants.indexOf("setup") < 0) return;
+      run.previewCost().then(function (cost) {
+        if (!cost) return;
+        addPlanLines(r.part("plan"), [
+          { label: "System", value: cost.size },
+          { label: "Time here", value: cost.time },
+        ]);
+      });
     });
 
     function viaBuilder(action) {

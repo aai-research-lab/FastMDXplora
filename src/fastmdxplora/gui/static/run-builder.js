@@ -1311,6 +1311,40 @@
       "replace it once it has run."));
   }
 
+  /* The size and the time of an answer from /api/preview-system, in two
+   * sentences: the lines the Agent's plan ends with. */
+  function describeCost(answer) {
+    if (!answer || !answer.ok) return null;
+    const e = answer.estimate;
+    let size = `about ${count(e.particles)} particles in a ${e.box_shape} ` +
+      `${Number(e.width_nm).toFixed(1)} nm from face to face`;
+    if (e.grows) {
+      size += `, the padding grown to ${Number(e.padding_used_nm).toFixed(2)} nm for the cutoff`;
+    }
+    if (e.refuses) size += "; setup will refuse this padding for the cutoff";
+    const time = answer.time || {};
+    const taken = time.ok
+      ? `about ${duration(time.seconds)}` + (time.runs > 1 ? ` for ${time.runs} runs` : "") +
+        ` on ${time.platform || "this machine"}`
+      : time.code === "environment.calibration.absent"
+        ? "not known: this machine has not been timed"
+        : "not known: this machine was timed under other settings";
+    return { size, time: taken };
+  }
+
+  async function previewCost() {
+    try {
+      const response = await fetch("/api/preview-system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentState()),
+      });
+      return describeCost(await response.json());
+    } catch (error) {
+      return null;
+    }
+  }
+
   function phaseOf(setting) {
     if (!state.schema) return null;
     const found = PHASES.find((phase) => state.phases.has(phase.name)
@@ -1821,6 +1855,6 @@
      * first, so the file, the command and the script are the same ones
      * the builder would produce -- one derivation, two doors. */
     fetchConfig, download, copyCommand, downloadScript,
-    renderPreview,
+    renderPreview, describeCost, previewCost,
   };
 })();
