@@ -486,6 +486,19 @@ overlay during playback, and the charts' values and drawing, with any page
 error failing the test. Every job also checks that each GUI script parses,
 with Node.
 
+### A ligand that leaves its site is said to, and its RMSD has no mean
+
+**`ligand_rmsd` now measures the ligand's distance to the site it started in.**
+Followed across the periodic boundary, as it has to be, a ligand that has left
+has an RMSD that is the length of a path through solvent, growing without
+bound however long the run, and its mean was reported as though it were a
+pose. The closest heavy-atom distance to the site (the protein heavy atoms
+within 0.5 nm of the ligand in the reference frame), by minimum image and so
+bounded by the box, is now written to `ligand_site_distance.dat`. Where the
+ligand is away from the site (no heavy atom within 0.6 nm), the findings say
+from when and for what share of the frames, the figure shades those frames,
+and no mean RMSD is given.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

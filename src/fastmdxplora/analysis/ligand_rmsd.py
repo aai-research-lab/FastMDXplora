@@ -14,10 +14,21 @@ measurement (ligand) use different selections, which is the correct way to ask
 
 Output is a single-column ``ligand_rmsd.dat`` of RMSD values in nanometers,
 and a time-series figure.
+
+**A ligand that leaves the site has no pose.** Followed across the periodic
+boundary, as it must be, its RMSD from where it started is then the length of
+a path through solvent, which grows without bound however long the run is.
+So the distance from the ligand to the site it started in is measured too,
+from the closest pair of heavy atoms by minimum image, which is bounded by
+the box. Where the ligand is away from the site, that is said, the frames
+are shaded, the distance is written beside the RMSD
+(``ligand_site_distance.dat``), and no mean RMSD is given: a mean of a
+quantity that grows without bound is a statement about the run's length.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -115,6 +126,37 @@ def _carried_by(source, destination, points):
     rotation = np.einsum("fij,fjk,fkl->fil", u, correction, vt)
     return np.einsum("fpi,fij->fpj",
                      points - source_centre, rotation) + destination_centre
+
+
+#: Protein heavy atoms this close to the ligand in the reference frame are
+#: the site it started in.
+SITE_NM = 0.5
+
+#: With no heavy atom this close to any atom of its site, the ligand is away
+#: from it: past the reach of a hydrogen bond or a hydrophobic contact, with
+#: room for a layer of water between.
+AWAY_NM = 0.6
+
+
+def distance_to_the_site(traj, ligand_heavy, reference: int):
+    """The closest approach of the ligand to its starting site, per frame.
+
+    Returns the distances in nm and the site's atoms, or None where the
+    ligand touched no protein atom in the reference frame: then it had no
+    site to leave. By minimum image, from ``md.compute_distances``, which
+    handles a triclinic cell.
+    """
+    protein_heavy = traj.topology.select("protein and not element H")
+    if protein_heavy.size == 0 or len(ligand_heavy) == 0:
+        return None
+    site = md.compute_neighbors(traj[reference], SITE_NM, np.asarray(ligand_heavy),
+                                haystack_indices=protein_heavy)[0]
+    if site.size == 0:
+        return None
+    pairs = np.array([[i, j] for i in ligand_heavy for j in site])
+    distances = md.compute_distances(traj, pairs,
+                                     periodic=traj.unitcell_vectors is not None)
+    return distances.min(axis=1).astype(np.float64), site
 
 
 class LigandRMSD(Analysis):
@@ -232,11 +274,76 @@ class LigandRMSD(Analysis):
         rmsd_nm = np.sqrt(np.mean(np.sum(disps * disps, axis=2), axis=1))
 
         self._resolved_ref = ref
+        heavy = [int(i) for i in ligand_idx
+                 if traj.topology.atom(int(i)).element is None
+                 or traj.topology.atom(int(i)).element.symbol != "H"]
+        measured = distance_to_the_site(traj, heavy or list(ligand_idx), ref)
+        self._site_distance = None if measured is None else measured[0]
+        self._record_where_the_ligand_was(traj, measured)
         return rmsd_nm.astype(np.float64)
+
+    def _record_where_the_ligand_was(self, traj: md.Trajectory, measured) -> None:
+        """Whether the ligand stayed at its site, in the findings."""
+        if measured is None:
+            self.findings["site"] = {"not_measured": (
+                "The ligand touched no protein atom in the reference frame, so "
+                "it had no site to stay at or leave.")}
+            return
+        distance, site = measured
+        away = distance > AWAY_NM
+        record: dict[str, Any] = {
+            "site_atoms": int(site.size), "away_nm": AWAY_NM,
+            "frames_away": int(away.sum()), "share_away": float(away.mean()),
+            "furthest_nm": float(distance.max()),
+        }
+        if away.any():
+            first = int(np.argmax(away))
+            record["first_frame_away"] = first
+            try:
+                x, label = self.frame_axis(traj)
+                record["first_away_at"] = f"{float(x[first]):g} ({label})"
+            except Exception:  # noqa: BLE001 - the frame number stands alone
+                pass
+        self.findings["site"] = record
+
+    def _record_what_the_mean_is_worth(self, traj: md.Trajectory) -> None:
+        """No mean where the ligand left its site; the base class's otherwise."""
+        super()._record_what_the_mean_is_worth(traj)
+        site = self.findings.get("site") or {}
+        if not site.get("frames_away"):
+            return
+        where = site.get("first_away_at") or f"frame {site['first_frame_away']}"
+        self.findings["mean"] = {
+            "n_frames": int(traj.n_frames),
+            "not_a_measurement": (
+                f"The ligand left the site it started in at {where} and was away "
+                f"from it in {site['share_away']:.0%} of the frames (no heavy "
+                f"atom within {AWAY_NM} nm of the site). Its RMSD from there "
+                "measures a path through solvent, which grows without bound, "
+                "not a pose, so no mean is given. Its distance to the site, "
+                "which the box bounds, is in ligand_site_distance.dat."),
+        }
+
+    def save_data(self, result: Any, path: Path) -> Path:
+        written = super().save_data(result, path)
+        distance = getattr(self, "_site_distance", None)
+        if distance is not None:
+            np.savetxt(
+                path.parent / "ligand_site_distance.dat", distance, fmt="%.8e",
+                header=("ligand_site_distance: closest heavy-atom distance from the "
+                        "ligand to the site it started in, nm, one value per frame"))
+        return written
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         x, _ = self.frame_axis_for_plot(result, self._traj_for_plot)
         ax.plot(x, result, linewidth=1.2, color=colour("SERIES"))
+        distance = getattr(self, "_site_distance", None)
+        if distance is not None and len(distance) == len(x) and (distance > AWAY_NM).any():
+            # Where the curve stops being a pose, said on the curve.
+            ax.fill_between(x, 0, 1, where=distance > AWAY_NM, step="mid",
+                            transform=ax.get_xaxis_transform(), color=colour("BAND"), alpha=0.5,
+                            linewidth=0, label="away from its site", zorder=0)
+            ax.legend(loc="upper left", frameon=False)
         # No marker for the reference frame. It was a vertical line at the
         # left edge labelled "reference (frame 0)", which took a legend entry
         # to say that a curve of displacement from a frame starts at zero at
