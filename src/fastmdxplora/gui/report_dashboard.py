@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -95,7 +96,7 @@ DASHBOARD_ASSET_TITLE_ALIASES: dict[str, tuple[str, ...]] = {
 # each of these; now it only reads them for a caption.
 DASHBOARD_SUMMARY_SPECS: tuple[tuple[str, str, str], ...] = (
     ("RMSD", "analysis/rmsd/rmsd.dat", "line"),
-    ("RMSF", "analysis/rmsf/rmsf.dat", "line"),
+    ("RMSF", "analysis/rmsf/rmsf.dat", "profile"),
     ("Radius of gyration", "analysis/rg/rg.dat", "line"),
     ("Hydrogen bonds", "analysis/hbonds/hbonds.dat", "line"),
     ("Total SASA", "analysis/sasa/sasa.dat", "line"),
@@ -522,6 +523,23 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
                 )
             )
             continue
+        # The frames the analysis kept, as its figure and caption give them;
+        # the whole series only where the analysis recorded no mean.
+        kept = None if reweighted else _recorded_mean(project_root, name)
+        if kept is not None and kept.get("not_a_measurement"):
+            label = f"{label} (all frames, too short to measure)"
+        elif (kept is not None and _finite(kept.get("mean"))
+              and _finite(kept.get("standard_deviation"))):
+            rows.append(
+                MetricRow(
+                    metric=(f"{label} (after equilibration)"
+                            if int(kept.get("discard") or 0) > 0 else label),
+                    average=_format_metric_value(kept["mean"]),
+                    stddev=_format_metric_value(kept["standard_deviation"]),
+                    unit=unit,
+                )
+            )
+            continue
         rows.append(
             MetricRow(
                 metric=f"{label} (biased ensemble)" if reweighted else label,
@@ -661,19 +679,111 @@ def _dashboard_summaries(project_root: Path) -> dict[str, DashboardAsset]:
     returned the captions it computed along the way. The copies are no longer
     shown anywhere, so only the captions remain.
     """
+    from fastmdxplora.report.reweighted import load_reweighted
+
+    biased = load_reweighted(project_root)
+    corrected = {item.get("analysis"): item
+                 for item in ((biased or {}).get("quantities") or [])}
     summaries: dict[str, DashboardAsset] = {}
     for title, rel_data, kind in DASHBOARD_SUMMARY_SPECS:
         data_path = project_root / rel_data
         if not data_path.is_file():
             continue
         try:
-            summary = _summarise_data_file(data_path, kind)
+            summary = (_biased_caption(data_path, corrected) if biased else None) \
+                or (_what_the_analysis_found(data_path) if kind == "line" else None) \
+                or _summarise_data_file(data_path, kind)
         except Exception as exc:  # noqa: BLE001 - a caption must never fail a report
             logger.debug("dashboard: no summary for %s: %s", title, exc)
             continue
         summaries[title] = DashboardAsset(rel_path=rel_data, summary=summary)
     return summaries
 
+
+
+#: What each time series is measured in, for its caption.
+_UNITS = {"rmsd": "nm", "rmsf": "nm", "rg": "nm", "sasa": "nm\u00b2", "hbonds": "",
+          "qvalue": ""}
+
+
+def _what_the_analysis_found(data_path: Path) -> str | None:
+    """The mean the analysis settled on, as its figure shows it.
+
+    The caption was the mean of every row of the data file, equilibration
+    included, beneath a figure giving the mean after equilibration with its
+    error: an RMSD card read "avg 0.0157" under "mean after equilibration
+    0.01297 \u00b1 0.0021 nm". The analysis records which frames it kept and
+    what the mean is worth (`findings.mean` in its options.json); that is
+    what is said here, and a series too short to measure says so.
+    """
+    try:
+        record = json.loads((data_path.parent / "options.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    found = (record.get("findings") or {}).get("mean") if isinstance(record, dict) else None
+    if not isinstance(found, dict):
+        return None
+    mean = found.get("mean")
+    unit = _UNITS.get(data_path.parent.name, "")
+    unit = f" {unit}" if unit else ""
+    if not _finite(mean):
+        return "no mean: too short to measure" if found.get("not_a_measurement") else None
+    if found.get("not_a_measurement"):
+        return f"mean {_format_metric_value(mean)}{unit}, too short to be a measurement"
+    error = found.get("standard_error")
+    text = (f"mean {_with_its_error(mean, error)}{unit}" if _finite(error) and error > 0
+            else f"mean {_format_metric_value(mean)}{unit}")
+    discard = found.get("discard")
+    if isinstance(discard, int) and discard > 0:
+        text += " after equilibration"
+    samples = found.get("effective_samples")
+    if _finite(samples):
+        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+
+        count = int(round(samples))
+        text += f", {count} independent sample{'s' if count != 1 else ''}"
+        if samples < MINIMUM_EFFECTIVE_SAMPLES:
+            text += ", too few to measure"
+    return text
+
+
+def _biased_caption(data_path: Path, corrected: dict[Any, Any]) -> str:
+    """On a biased run the mean of a series is an average over the
+    distribution the bias flattened. Where the analysis phase recovered the
+    equilibrium value that is the one given; where it could not, no mean is."""
+    name = data_path.parent.name
+    item = corrected.get(name)
+    unit = _UNITS.get(name, "")
+    unit = f" {unit}" if unit else ""
+    if item is not None and _finite(item.get("reweighted_mean")):
+        return f"reweighted mean {_format_metric_value(item['reweighted_mean'])}{unit}"
+    if name in _UNITS:
+        return "biased ensemble: no unbiased mean"
+    return ""
+
+
+def _recorded_mean(project_root: Path, name: str) -> dict[str, Any] | None:
+    """What an analysis recorded about its mean: the value after
+    equilibration, or why the series cannot give one."""
+    try:
+        record = json.loads((project_root / "analysis" / name / "options.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    found = (record.get("findings") or {}).get("mean") if isinstance(record, dict) else None
+    return found if isinstance(found, dict) else None
+
+
+def _finite(value: object) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
+def _with_its_error(mean: float, error: float) -> str:
+    """A mean to the precision its error allows: the error to two figures,
+    the mean to the same decimal place."""
+    places = max(0, 1 - math.floor(math.log10(error)))
+    return f"{mean:,.{places}f} \u00b1 {error:,.{places}f}"
 
 
 def _summarise_data_file(data_path: Path, kind: str) -> str:
@@ -719,7 +829,11 @@ def _summarise_data_file(data_path: Path, kind: str) -> str:
 
     values = [row[0] for row in rows] if all(len(row) == 1 for row in rows) \
         else [row[-1] for row in rows]
-    return f"avg {_format_metric_value(_mean(values))}"
+    # Said for what it is: a plain mean, of every frame or every residue.
+    # A time series whose analysis recorded its mean is captioned from that.
+    over = "residues" if kind == "profile" else "all frames"
+    unit = _UNITS.get(data_path.parent.name, "")
+    return f"mean over {over} {_format_metric_value(_mean(values))}{' ' + unit if unit else ''}"
 
 
 

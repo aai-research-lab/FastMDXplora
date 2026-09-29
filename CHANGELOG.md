@@ -566,6 +566,21 @@ defined, and fell back to fixed dark-scheme values; they use the scheme's.
 Each page is now opened in each scheme in a browser, and every piece of
 visible text is measured against what is behind it: anything under 3:1 fails.
 
+### A figure's caption gives the figure's number
+
+**The captions under the analysis figures, and the dashboard's table, now give
+the mean each analysis settled on.** They gave the mean of every row of the
+data file, equilibration included, under a figure giving the mean after
+equilibration with its error: an RMSD card read "avg 0.0157" beneath "mean
+after equilibration 0.01297 ± 0.0021 nm". A caption now reads "mean 0.0130 ±
+0.0021 nm after equilibration, 21 independent samples", to the precision the
+error allows, and adds "too few to measure" under ten independent samples. A
+series too short against its own correlation time says so in its caption and
+its table row, where both had read as measurements. On a biased run a caption
+gives the reweighted mean, or says there is no unbiased one. A study analysed
+before findings were recorded keeps the plain mean, called "mean over all
+frames"; RMSF's is "mean over residues".
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

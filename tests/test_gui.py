@@ -1490,7 +1490,7 @@ def test_data_files_are_summarised_without_plotting(tmp_path: Path) -> None:
     series = tmp_path / "rmsd.dat"
     series.write_text("\n".join(f"{i} {0.2 + i * 0.01:.4f}" for i in range(10)),
                       encoding="utf-8")
-    assert _summarise_data_file(series, "line").startswith("avg ")
+    assert _summarise_data_file(series, "line").startswith("mean over all frames ")
 
     clusters = tmp_path / "clusters.dat"
     clusters.write_text("\n".join(f"{i} {i % 3}" for i in range(30)), encoding="utf-8")
