@@ -27,11 +27,23 @@
 
   /* ---- Theme -------------------------------------------------------- */
   function applyTheme(name) {
+    document.documentElement.dataset.theme = name;
     document.body.dataset.theme = name;
     $$(".seg-btn[data-theme]").forEach(function (b) {
       b.classList.toggle("active", b.dataset.theme === name);
     });
     store.set("theme", name);
+    document.dispatchEvent(new CustomEvent("fmx:theme", { detail: name }));
+  }
+
+  /* Until one is chosen, the one the system asks for. */
+  function firstTheme() {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+        return "paper";
+      }
+    } catch (e) { /* no media queries */ }
+    return "graphite";
   }
 
   /* ---- Column widths ------------------------------------------------ */
@@ -680,7 +692,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     if (!el("side-panel")) return;
 
-    applyTheme(store.get("theme", "graphite"));
+    applyTheme(store.get("theme", firstTheme()));
     $$(".seg-btn[data-theme]").forEach(function (b) {
       b.addEventListener("click", function () { applyTheme(b.dataset.theme); });
     });

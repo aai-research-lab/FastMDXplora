@@ -37,6 +37,8 @@
     --accent-green: #67e8a3;
     --accent-orange: #ffb86b;
     --accent-red: #ff7272;
+    /* Text on a filled accent button. */
+    --on-accent: #030506;
 
     /* Status */
     --status-live: var(--accent-cyan);
@@ -78,8 +80,16 @@
    leave the status colours alone -- green done, amber qualified, red
    refused mean the same in all three, which is the rule a scheme must not
    break. Chosen from the settings popup and remembered in localStorage;
-   the body carries data-theme so a page can style for one if it needs to.
+   until one is chosen, Paper if the system asks for light and Graphite
+   otherwise.
+
+   A scheme is set on the root element as well as the body. The status
+   tokens are declared on :root as var(--accent-green) and the rest, and a
+   custom property is resolved where it is declared: overriding
+   --accent-green on the body alone left --status-completed at the dark
+   scheme's green. The body keeps data-theme so a page can style for one.
    --------------------------------------------------------------------------- */
+:root[data-theme="ink"],
 body[data-theme="ink"] {
     --background-primary: #0a0a0a;
     --background-secondary: #0f0f0f;
@@ -91,7 +101,9 @@ body[data-theme="ink"] {
     --text-muted: #6b6b6b;
     --accent-cyan: #e8e8e8;
 }
+:root[data-theme="paper"],
 body[data-theme="paper"] {
+    color-scheme: light;
     --background-primary: #faf9f5;
     --background-secondary: #f3f2ed;
     --background-elevated: #ffffff;
@@ -110,4 +122,19 @@ body[data-theme="paper"] {
     --border-strong: rgba(0, 0, 0, 0.22);
     --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.08);
     --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.16);
+    /* The cards. Left at their dark values, every card on a Paper page was
+       a near-black slab with near-black text on it. */
+    --panel-glass: rgba(255, 255, 255, 0.86);
+    --panel-hover: rgba(255, 255, 255, 0.98);
+    /* The same hues, dark enough to read on white: the pastels that read
+       on black measured 1.5:1 here. Each is at least 4.5:1 on the ground.
+       The status tokens are these, so green is still done and red still
+       refused; only the shade is the scheme's. */
+    --accent-silver: #3a3a38;
+    --accent-blue: #1f5fa8;
+    --accent-violet: #6541c8;
+    --accent-green: #1b7a45;
+    --accent-orange: #a65300;
+    --accent-red: #c0262d;
+    --on-accent: #ffffff;
 }

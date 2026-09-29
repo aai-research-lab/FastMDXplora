@@ -3,26 +3,40 @@
 (function () {
   "use strict";
 
-  const COLORS = {
+  /* Colours are the theme's, read when a chart is drawn: fixed to the dark
+     scheme's, the axis labels and the pale series vanished on Paper. */
+  const FALLBACK = {
     cyan: "#63e6ff",
     orange: "#ffb86b",
     violet: "#a78bfa",
     silver: "#d8d8dd",
     green: "#67e8a3",
+    grid: "rgba(255, 255, 255, 0.06)",
+    axis: "#777780",
   };
-  const GRID = "rgba(255, 255, 255, 0.06)";
-  const AXIS = "#777780";
+  const TOKENS = {
+    cyan: "--accent-cyan", orange: "--accent-orange", violet: "--accent-violet",
+    silver: "--accent-silver", green: "--accent-green",
+    grid: "--border-subtle", axis: "--text-muted",
+  };
+  function color(name) {
+    const token = TOKENS[name];
+    const value = token
+      ? getComputedStyle(document.documentElement).getPropertyValue(token).trim()
+      : "";
+    return value || FALLBACK[name] || name;
+  }
 
   const CONFIG = [
-    {key: "potential_energy", label: "Potential energy", unit: "kJ/mol", color: COLORS.cyan},
+    {key: "potential_energy", label: "Potential energy", unit: "kJ/mol", color: "cyan"},
     // Recorded since the beginning -- METRIC_FIELDS carries it and OpenMM's
     // energy.csv is mapped to it -- but never drawn. Potential energy alone
     // does not show whether the integration is holding; drift in the total
     // is the thing that does.
-    {key: "total_energy", label: "Total energy", unit: "kJ/mol", color: COLORS.green},
-    {key: "temperature", label: "Temperature", unit: "K", color: COLORS.orange},
-    {key: "density", label: "Density", unit: "g/mL", color: COLORS.violet},
-    {key: "speed", label: "Simulation speed", unit: "ns/day", color: COLORS.silver},
+    {key: "total_energy", label: "Total energy", unit: "kJ/mol", color: "green"},
+    {key: "temperature", label: "Temperature", unit: "K", color: "orange"},
+    {key: "density", label: "Density", unit: "g/mL", color: "violet"},
+    {key: "speed", label: "Simulation speed", unit: "ns/day", color: "silver"},
   ];
 
   const states = new Map();
@@ -77,6 +91,7 @@
       states.forEach((entry) => resizeObserver.observe(entry.canvas));
     }
     window.addEventListener("resize", drawAll);
+    document.addEventListener("fmx:theme", drawAll);
     window.addEventListener("dashboard:live-page-opened", () => {
       requestAnimationFrame(() => requestAnimationFrame(drawAll));
     });
@@ -181,7 +196,7 @@
     const points = entry.points;
     if (!points.length) {
       drawGrid(ctx, rect);
-      ctx.fillStyle = AXIS;
+      ctx.fillStyle = color("axis");
       ctx.font = `12px ${monoFont()}`;
       ctx.textAlign = "center";
       ctx.fillText("no data yet", rect.width / 2, rect.height / 2);
@@ -207,22 +222,22 @@
 
     drawThresholds(ctx, config, rect, bounds);
     drawGrid(ctx, rect);
-    drawSeries(ctx, rect, bounds, points, config.color);
+    drawSeries(ctx, rect, bounds, points, color(config.color));
     drawLabels(ctx, rect, bounds, points.length, config.unit);
     entry.needsDraw = false;
   }
 
   function drawBackground(ctx, rect) {
     const gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
-    gradient.addColorStop(0, "rgba(99,230,255,0.035)");
-    gradient.addColorStop(1, "rgba(99,230,255,0)");
+    gradient.addColorStop(0, hexToRgba(color("cyan"), 0.035));
+    gradient.addColorStop(1, hexToRgba(color("cyan"), 0));
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, rect.width, rect.height);
   }
 
   function drawGrid(ctx, rect) {
     const area = plotArea(rect);
-    ctx.strokeStyle = GRID;
+    ctx.strokeStyle = color("grid");
     ctx.lineWidth = 1;
     for (let row = 0; row <= 4; row += 1) {
       const y = area.top + (area.height * row / 4);
@@ -270,7 +285,7 @@
 
   function drawLabels(ctx, rect, bounds, samples, unit) {
     const area = plotArea(rect);
-    ctx.fillStyle = AXIS;
+    ctx.fillStyle = color("axis");
     ctx.font = `10px ${monoFont()}`;
     ctx.textAlign = "left";
     ctx.fillText(formatAxis(bounds.maxY), 6, area.top + 4);
@@ -281,8 +296,8 @@
   }
 
   function drawThresholds(ctx, config, rect, bounds) {
-    if (config.key === "temperature") drawBand(ctx, rect, bounds, 270, 330, COLORS.green);
-    if (config.key === "density") drawBand(ctx, rect, bounds, 0.98, 1.04, COLORS.green);
+    if (config.key === "temperature") drawBand(ctx, rect, bounds, 270, 330, color("green"));
+    if (config.key === "density") drawBand(ctx, rect, bounds, 0.98, 1.04, color("green"));
   }
 
   function drawBand(ctx, rect, bounds, low, high, color) {

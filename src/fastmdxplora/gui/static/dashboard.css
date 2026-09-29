@@ -598,8 +598,11 @@ button {
     animation: pulse-current 1.6s var(--ease) infinite;
 }
 .stage-step[data-state="skipped"] {
+    /* Struck through rather than faded: at half opacity the name of a
+       stage the run did not do could not be read. */
     color: var(--text-muted);
-    opacity: 0.5;
+    text-decoration: line-through;
+    text-decoration-color: var(--border-strong);
 }
 .stage-step[data-state="failed"] {
     color: var(--accent-red);
@@ -780,7 +783,7 @@ button {
     font-size: 11px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    background: rgba(5,5,5,0.6);
+    background: var(--background-soft);
     padding: 4px 8px;
     border-radius: 4px;
 }
@@ -884,13 +887,23 @@ button {
 .empty-detail { font-size: 12px; max-width: 480px; }
 
 .viewer-overlay {
+    /* On the molecule's canvas, which is dark in every scheme unless the
+       viewer's own background is changed: the dark scheme's text, whatever
+       the page's. */
+    --text-primary: #f5f5f7;
+    --text-secondary: #c4c4ca;
+    --text-muted: #9a9aa2;
+    --status-stale: #9a9aa2;
+    --border-primary: rgba(255, 255, 255, 0.16);
+    --accent-cyan: #63e6ff;
     position: absolute;
     top: 14px;
     right: 14px;
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(5, 5, 5, 0.66);
+    /* Dark enough to read over a white viewer background as well. */
+    background: rgba(5, 5, 5, 0.82);
     border: 1px solid var(--border-primary);
     border-radius: 999px;
     padding: 6px 12px;
@@ -1395,7 +1408,7 @@ body.state-ready .loading-screen {
     border-radius: 8px;
     color: var(--text-primary);
     background: rgba(12, 12, 14, 0.96);
-    box-shadow: var(--shadow-deep);
+    box-shadow: var(--shadow-modal);
     opacity: 0;
     transform: translateY(8px);
     pointer-events: none;
@@ -1702,7 +1715,7 @@ body.state-ready .loading-screen {
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     color: var(--text-secondary);
-    background: #080809;
+    background: var(--background-soft);
     font-family: var(--font-mono);
     font-size: 10px;
 }
@@ -1724,7 +1737,7 @@ body.state-ready .loading-screen {
     transition: transform var(--duration-fast) var(--ease), opacity var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
 }
 .primary-btn {
-    color: #030506;
+    color: var(--on-accent);
     background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
     box-shadow: 0 10px 28px rgba(99,230,255,.12);
 }
@@ -2143,7 +2156,7 @@ body.state-ready .loading-screen {
 .run-phase[data-available="false"] .run-phase-label { color: var(--text-muted); }
 
 #run-config-verdict[data-ok="true"] { color: var(--accent-green, var(--accent-cyan)); }
-#run-config-verdict[data-ok="false"] { color: var(--accent-amber, var(--text-secondary)); }
+#run-config-verdict[data-ok="false"] { color: var(--accent-orange); }
 
 /* The picker's button sits with its field rather than in a row of its own,
    so a path and the way to find one read as a single control. */
@@ -2361,20 +2374,20 @@ body.state-ready .loading-screen {
     margin: 12px 0 0;
 }
 .agent-attempt {
-    border-left: 2px solid var(--border);
+    border-left: 2px solid var(--border-primary);
     padding: 6px 0 6px 10px;
     color: var(--text-muted);
     font-size: 12px;
     line-height: 1.45;
 }
 .agent-attempt.ok {
-    border-left-color: var(--accent, #4a8);
-    color: var(--text);
+    border-left-color: var(--accent-cyan);
+    color: var(--text-primary);
 }
 .agent-result {
     margin: 12px 0 0;
     padding: 12px 14px;
-    background: var(--surface-2, rgba(127, 127, 127, .08));
+    background: var(--background-soft);
     border-radius: 6px;
     font-family: var(--font-mono);
     font-size: 12px;
@@ -2556,7 +2569,7 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 .seg { display: flex; gap: 2px; padding: 2px; border-radius: 6px; border: 1px solid var(--border-primary); background: var(--background-primary); }
 .seg-btn {
     padding: 4px 9px; border-radius: 4px; border: none; background: transparent;
-    color: var(--text-muted); font: 500 11px var(--font-sans, inherit); cursor: pointer;
+    color: var(--text-muted); font: 500 11px var(--font-stack); cursor: pointer;
 }
 .seg-btn.active { background: var(--border-primary); color: var(--text-primary); }
 
@@ -2600,9 +2613,9 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
     font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5;
 }
 .side-log-line { display: flex; gap: 10px; color: var(--text-secondary); }
-.side-log-line[data-level="error"] .side-log-text { color: var(--status-error, #e06c6c); }
-.side-log-line[data-level="warning"] .side-log-text { color: var(--status-warning, #d4a24c); }
-.side-log-line[data-level="success"] .side-log-text { color: var(--status-success, #5fc08a); }
+.side-log-line[data-level="error"] .side-log-text { color: var(--status-error); }
+.side-log-line[data-level="warning"] .side-log-text { color: var(--status-waiting); }
+.side-log-line[data-level="success"] .side-log-text { color: var(--status-completed); }
 .side-log-ts { color: var(--text-muted); flex: none; }
 .side-log-text { min-width: 0; overflow-wrap: anywhere; }
 .side-log-block {
@@ -2611,8 +2624,8 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
     border-left: 2px solid var(--border-primary);
     font-family: inherit; font-size: 12px; line-height: 1.5; color: var(--text-secondary);
 }
-.side-log-block[data-kind="refused"] { border-left-color: var(--status-error, #e06c6c); }
-.side-log-block[data-kind="qualified"] { border-left-color: var(--status-warning, #d4a24c); }
+.side-log-block[data-kind="refused"] { border-left-color: var(--status-error); }
+.side-log-block[data-kind="qualified"] { border-left-color: var(--status-waiting); }
 .side-log-kind { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 2px; }
 .side-log-empty { color: var(--text-muted); font-family: inherit; font-size: 12px; padding: 8px 0; }
 .side-log-foot {
@@ -2723,7 +2736,7 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 .sidebar-stages .stage-step[data-state="current"] .stage-marker { background: var(--accent-cyan); box-shadow: 0 0 8px rgba(99, 230, 255, 0.5); }
 .sidebar-stages .stage-step[data-state="failed"] { color: var(--accent-red, #e06c6c); background: transparent; }
 .sidebar-stages .stage-step[data-state="failed"] .stage-marker { background: var(--accent-red, #e06c6c); box-shadow: none; }
-.sidebar-stages .stage-step[data-state="skipped"] { color: var(--text-muted); opacity: .55; background: transparent; }
+.sidebar-stages .stage-step[data-state="skipped"] { color: var(--text-muted); background: transparent; }
 
 .sidebar-metrics {
     display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
@@ -2747,12 +2760,12 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 .report-notice {
     padding: 10px 14px; border-radius: 8px;
     background: var(--background-elevated);
-    border-left: 2px solid var(--accent-amber, #d4a24c);
+    border-left: 2px solid var(--accent-orange);
     font-size: 12px; line-height: 1.5; color: var(--text-secondary);
 }
 .report-notice-kind {
     display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--accent-amber, #d4a24c); margin-bottom: 3px;
+    color: var(--accent-orange); margin-bottom: 3px;
 }
 .report-document {
     padding: 32px 40px;
@@ -3146,8 +3159,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
    trajectories at a glance. A study is a FastMDXplora output folder: it
    has a manifest or a resolved config. */
 .fastmdx-picker-row .badge-study { color: var(--accent-cyan); border-color: var(--accent-cyan); }
-.fastmdx-picker-row .badge-structure { color: var(--status-success, #5fc08a); border-color: var(--status-success, #5fc08a); }
-.fastmdx-picker-row .badge-trajectory { color: var(--status-warning, #e0a45a); border-color: var(--status-warning, #e0a45a); }
+.fastmdx-picker-row .badge-structure { color: var(--status-completed); border-color: var(--status-completed); }
+.fastmdx-picker-row .badge-trajectory { color: var(--status-waiting); border-color: var(--status-waiting); }
 .fastmdx-picker-row.is-study .name { color: var(--accent-cyan); }
 
 /* The Agent's footer: small links under the composer, at the right. */
@@ -3186,8 +3199,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .file-view .kv dt { color: var(--text-muted); }
 .file-view .kv dd { margin: 0; overflow-wrap: anywhere; }
 .file-view .log-line.error { color: var(--status-error, #e5484d); }
-.file-view .log-line.warn { color: var(--status-warning, #e0a45a); }
-.file-view .log-line.ok { color: var(--status-success, #5fc08a); }
+.file-view .log-line.warn { color: var(--status-waiting); }
+.file-view .log-line.ok { color: var(--status-completed); }
 .file-view .summary { margin: 0 0 8px; padding: 6px 8px; border-radius: 6px; background: var(--background-elevated); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 .file-view .cut { margin: 8px 0; padding: 4px 8px; border-left: 2px solid var(--border-primary); color: var(--text-muted); font-size: 11px; }
 
@@ -3207,8 +3220,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .tree-key { color: var(--accent-cyan); }
 .tree-meta { color: var(--text-muted); font-size: 10.5px; }
 .tree-val { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
-.tree-val.number { color: var(--status-warning, #e0a45a); }
-.tree-val.boolean { color: var(--status-success, #5fc08a); }
+.tree-val.number { color: var(--status-waiting); }
+.tree-val.boolean { color: var(--status-completed); }
 .tree-val.null { color: var(--text-muted); font-style: italic; }
 /* The table, for CSV and friends: sortable, header stays. */
 .file-table th { cursor: pointer; user-select: none; }

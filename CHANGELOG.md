@@ -545,6 +545,27 @@ The captions read `rmsd` and `cluster: kmeans` rather than repeating the
 analysis's name after a dash, and the default title is
 `FastMDXplora Study: <system>`.
 
+### Every scheme can be read
+
+**Paper's cards are light.** The scheme redefined the ground and the text and
+left the cards at the dark scheme's colour, so every card on a Paper page was a
+near-black slab with near-black text on it: the health headline, the figure
+captions and the chart titles measured 1.1 to 1.6 to 1. The status colours are
+now shades of the same hues that read on white, and they reach the status
+tokens, which were resolved on the root element with the dark scheme's
+values; the scheme is now set there. The live charts draw in the scheme's
+colours and redraw when it changes, where they had drawn the dark scheme's
+grey axes on white.
+
+A first visit takes the system's light or dark setting; a scheme chosen in the
+settings is kept as before. Stages a run did not do are struck through rather
+than faded to half opacity, and the viewer's frame label stays dark over a
+white viewer background. Ten stylesheet rules named colours that were never
+defined, and fell back to fixed dark-scheme values; they use the scheme's.
+
+Each page is now opened in each scheme in a browser, and every piece of
+visible text is measured against what is behind it: anything under 3:1 fails.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

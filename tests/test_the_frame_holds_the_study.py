@@ -230,8 +230,18 @@ class TestTheThemes(unittest.TestCase):
             block = theme[theme.index(f'body[data-theme="{name}"]'):]
             block = block[:block.index("}")]
             with self.subTest(theme=name):
-                for token in ("--status-error", "--status-warning", "--status-success"):
+                for token in ("--status-error", "--status-waiting", "--status-completed",
+                              "--status-live", "--status-stale"):
                     self.assertNotIn(token, block)
+                # A scheme may darken a status colour to read on its ground,
+                # and keeps its hue: green stays green, red red.
+                for token, channel in (("--accent-green", 1), ("--accent-red", 0),
+                                       ("--accent-orange", 0)):
+                    if f"{token}:" not in block:
+                        continue
+                    value = block[block.index(f"{token}:") + len(token) + 1:].split(";")[0]
+                    rgb = bytes.fromhex(value.strip().lstrip("#"))
+                    self.assertEqual(max(range(3), key=lambda c: rgb[c]), channel, token)
 
     def test_the_choice_is_remembered(self):
         self.assertIn('store.set("theme", name)', _script())
