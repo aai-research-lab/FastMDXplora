@@ -122,3 +122,30 @@ def _no_run_outlives_the_test_that_started_it(monkeypatch):
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+
+def pytest_configure(config):
+    """The person's own settings and caches are not the suite's.
+
+    A test that recorded a calibration wrote it to the real settings
+    directory: running the suite on a workstation left it measured as a CUDA
+    machine doing a step of 30,000 particles in 8.4 ms, and every budget and
+    time estimate there was then priced on it. The agent's chosen model and
+    the machines a study can be sent to live in the same directory, and
+    fetched chemistry in the cache beside it. For the whole session both
+    point somewhere of the suite's own, set before any fixture reads them.
+    """
+    import os
+    import tempfile
+
+    root = tempfile.mkdtemp(prefix="fastmdx-suite-")
+    os.environ["FASTMDXPLORA_CONFIG_DIR"] = os.path.join(root, "settings")
+    os.environ["FASTMDXPLORA_CACHE_DIR"] = os.path.join(root, "cache")
+
+
+@pytest.fixture(autouse=True)
+def _a_test_has_settings_of_its_own(monkeypatch, tmp_path_factory):
+    """And each test starts from none: a calibration or a chosen model one
+    test records is not there for the next, which found "measured on
+    another platform" where it was testing a machine never measured."""
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path_factory.mktemp("settings")))

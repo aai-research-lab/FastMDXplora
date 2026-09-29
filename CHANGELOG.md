@@ -760,6 +760,18 @@ water per window, which is what sharing exists to prevent; and a study naming
 `setup_from` whose windows are seeded from a pull began the pull, hours of
 simulation, when it had been asked only to prepare.
 
+### The test suite keeps to settings of its own
+
+**Running the tests no longer leaves the machine measured as something it is
+not.** A test recorded a calibration in the real settings directory, so a
+workstation that had run the suite was measured as a CUDA machine doing a step
+of 30,000 particles in 8.4 ms, and every budget and time estimate there was
+priced on that. The suite now gives itself a settings directory and a cache
+for the session, and each test a settings directory of its own, so the
+person's calibration, chosen model, remote machines and fetched chemistry are
+left alone. Delete `~/.config/fastmdxplora/calibration.json` on a machine that
+has run the suite before and has not been measured since, or measure it again.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

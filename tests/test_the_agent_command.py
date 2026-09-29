@@ -74,9 +74,14 @@ class TestWhereTheKeyLives(unittest.TestCase):
         elsewhere in this file; here, that the file itself lives outside
         any study directory, so sharing a run never shares a key.
         """
+        from unittest import mock
+
         from fastmdxplora.agent.models import model_path
 
-        where = model_path()
+        # The default place, not the one the suite gives each test.
+        with mock.patch.dict(os.environ):
+            os.environ.pop("FASTMDXPLORA_CONFIG_DIR", None)
+            where = model_path()
         self.assertNotIn("output", where.parts)
         self.assertIn("fastmdxplora", where.parts)
 
