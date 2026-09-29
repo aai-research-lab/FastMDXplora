@@ -109,7 +109,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
-    "/api/playback-info", "/analysis-figures-svg.zip",
+    "/api/playback-info", "/api/series", "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
     "/structure/playback.pdb",
 })
@@ -576,6 +576,12 @@ def make_handler(
                 return
             if path == "/api/results" or path == "/api/analyses":
                 self._send_json(_results_payload(root))
+                return
+            if path == "/api/series":
+                from fastmdxplora.gui.series import series_payload
+
+                name = (parse_qs(parsed.query).get("analysis") or [""])[0]
+                self._send_json(series_payload(root, name))
                 return
             if path == "/api/protein-preview":
                 # Beyond loopback a viewer reads what the run has; it does

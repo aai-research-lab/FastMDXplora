@@ -28,6 +28,7 @@
     violet: "#a78bfa",
     black: "#050505",
     green: "#67e8a3",
+    orange: "#ffb86b",
   };
 
   const STATE = {
@@ -92,6 +93,7 @@
   function init() {
     wireControls();
     wireTrajectoryControls();
+    wireResidueFocus();
     window.FastMDXDashboard?.on("structure-updated", onStructureUpdated);
     window.FastMDXDashboard?.on("status-updated", ({status}) => onStatusUpdated(status));
     window.FastMDXDashboard?.on("playback-ready", onPlaybackReady);
@@ -685,6 +687,13 @@
       }
     }
 
+    // A residue chosen elsewhere (a point of the RMSF on the Analysis
+    // page), drawn in full over whatever else is shown.
+    const focused = mini ? null : focusSelection();
+    if (focused) {
+      addStyle(viewer, focused, {stick: {radius: 0.24, color: COLORS.orange}});
+    }
+
     // A ribbon needs a few residues to be a ribbon: a peptide of three drew
     // as a smear, or not at all. Its atoms are drawn as well.
     if (STATE.visibility.protein && !STATE.isolateLigand
@@ -1230,6 +1239,51 @@
     })();
     STATE.playbackLoadPromise = loadPromise;
     return loadPromise;
+  }
+
+  function focusSelection() {
+    const residue = STATE.focusResidue;
+    if (!residue) return null;
+    const selection = {resi: residue.resi};
+    if (residue.chain) selection.chain = residue.chain;
+    return selection;
+  }
+
+  /* Once the viewer has a structure: a residue asked for as the page opens
+   * is shown when there is something to show it in. */
+  function whenDrawn(then, tries) {
+    const left = tries == null ? 60 : tries;
+    if (STATE.viewer && (STATE.model || STATE.playbackLoaded)) {
+      then();
+    } else if (left > 0) {
+      window.setTimeout(() => whenDrawn(then, left - 1), 150);
+    }
+  }
+
+  function wireResidueFocus() {
+    window.addEventListener("dashboard:residue-focus", (event) => {
+      const detail = event.detail || {};
+      const resi = Number(detail.resi);
+      STATE.focusResidue = Number.isFinite(resi)
+        ? {resi, chain: detail.chain || null} : null;
+      whenDrawn(() => {
+        restyleViewers();
+        const selection = focusSelection();
+        if (!selection) return;
+        safeCall(STATE.viewer, "removeAllLabels");
+        const atoms = safeCall(STATE.viewer, "selectedAtoms", selection) || [];
+        const name = `${atoms[0]?.resn || "residue"} ${detail.chain ? detail.chain + ":" : ""}${resi}`;
+        if (atoms.length) {
+          safeCall(STATE.viewer, "addLabel", name, {
+            fontSize: 12, fontColor: "#050505", backgroundColor: COLORS.orange,
+            backgroundOpacity: 0.9, borderThickness: 0, inFront: true,
+          }, selection);
+          safeCall(STATE.viewer, "zoomTo", selection, 400);
+        }
+        safeCall(STATE.viewer, "render");
+        announce(atoms.length ? `${name} shown` : `Residue ${resi} is not in the structure shown`);
+      });
+    });
   }
 
   function wireTrajectoryControls() {

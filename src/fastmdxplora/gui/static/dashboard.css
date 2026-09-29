@@ -3338,3 +3338,35 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .page-header { flex-wrap: wrap; gap: 10px; }
     .viewer-canvas-frame { height: 62vh; min-height: 320px; }
 }
+
+/* ===========================================================================
+   An analysis drawn from its numbers (series-chart.js): the value, time and
+   frame under the pointer, and a click to open the frame.
+   =========================================================================== */
+.series-chart {
+    position: relative;
+    padding: 8px 8px 4px;
+    border-bottom: 1px solid var(--border-subtle);
+    min-height: 260px;
+}
+.series-svg { display: block; width: 100%; height: 260px; cursor: crosshair; outline: none; }
+.series-svg:focus-visible { box-shadow: 0 0 0 2px var(--accent-cyan); border-radius: 6px; }
+.series-svg text { font-family: var(--font-mono); }
+.series-tip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    max-width: 260px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border-primary);
+    background: var(--background-elevated);
+    box-shadow: var(--shadow-card);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.45;
+    white-space: nowrap;
+}
+.series-tip strong { color: var(--text-primary); font-weight: 600; }
+.series-tip-hint { display: block; color: var(--text-muted); font-size: 10px; }

@@ -622,6 +622,28 @@ and its last frame is marked "LATEST" rather than "LIVE". The study is named
 by its structure file, "tri-ala" rather than the file's path, which stays on
 hover. Simulated time reads "0.012 ns" rather than "0.012000 ns".
 
+### An analysis is drawn from its numbers, and a point opens its frame
+
+**The Analysis page draws each series from its data.** It showed each analysis
+as the figure it wrote, a picture from which neither a value nor the frame
+behind it could be taken. RMSD, radius of gyration, hydrogen bonds, SASA,
+native contacts, ligand RMSD and RMSF are now drawn from the file the figure
+was drawn from, with the frames the analysis left out as equilibration
+shaded, and the mean of the rest with its error, or with no band where the
+run is too short for one. Pointing at the line gives the value, the time and
+the frame; the arrow keys move along it. The figure, drawn at publication
+settings, is one click away on each card.
+
+**Choosing a point opens that frame in the viewer**, when the trajectory
+analysed is the one the viewer plays, and choosing a residue of the RMSF shows
+that residue in the structure, drawn and labelled. A point's frame is worked
+out as the analysis loaded the trajectory, with its stride and first frame,
+and its time as the loader set it. A series longer than 4,000 points is
+thinned evenly for drawing.
+
+The Analysis page is drawn again only when its content changes; every poll
+had replaced the cards and reloaded each figure.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

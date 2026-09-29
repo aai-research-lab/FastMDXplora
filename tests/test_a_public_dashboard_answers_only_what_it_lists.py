@@ -255,7 +255,7 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
             "/api/file-text", "/api/protein-preview", "/api/structure-info",
             "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
-            "/api/playback-info", "/analysis-figures-svg.zip",
+            "/api/playback-info", "/api/series", "/analysis-figures-svg.zip",
             "/structure/topology.pdb", "/structure/live-frame.pdb",
             "/structure/playback.pdb",
         })

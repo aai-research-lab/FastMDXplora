@@ -398,6 +398,8 @@
 
   function resetRunDependentState() {
     state.outputDir = "";
+    // Another study's cards can have the same paths as this one's.
+    state.analysisSectionsKey = "";
     state.status = {};
     state.health = {};
     state.results = {};
@@ -827,6 +829,14 @@
     const host = byId("analysis-sections");
     const flatGrid = byId("analysis-grid");
     if (!host) return;
+    // Drawn again only when something in it changed. Every poll replaced
+    // the cards, which reloaded each figure and would take a chart from
+    // under the pointer reading it.
+    const key = JSON.stringify(sections);
+    if (key === state.analysisSectionsKey && host.childElementCount) return;
+    state.analysisSectionsKey = key;
+    window.FastMDXSeries?.forget();
+    const charted = new Set();
 
     host.innerHTML = sections.map((section) => {
       const panels = Array.isArray(section.panels) ? section.panels : [];
@@ -838,16 +848,25 @@
         // compact restyled variant is smaller and would look different from
         // what opening the figure gives you.
         const figure = panel.original_href || panel.href;
+        // An analysis's own figure (analysis/rmsd/rmsd.png) can also be
+        // drawn from its numbers, once per analysis.
+        const own = /(?:^|\/)analysis\/([a-z][a-z0-9_]*)\/\1\.png$/.exec(
+          panel.original_source || panel.source || "");
+        const series = own && !charted.has(own[1]) ? own[1] : "";
+        if (series) charted.add(series);
         const links = [
           `<a class="file-action" href="${escapeAttr(figure)}" target="_blank" rel="noopener">Open full size</a>`,
         ];
+        if (series) {
+          links.push('<a class="file-action" href="#" data-series-toggle hidden>Show the figure</a>');
+        }
         return `
         <article class="analysis-card" data-state="complete">
           <div class="ac-header">
             <div class="ac-title">${escapeHTML(panel.title || "")}</div>
             <div class="ac-status">${escapeHTML(section.title || "")}</div>
           </div>
-          <div class="ac-frame"><img src="${escapeAttr(figure)}" alt="${escapeAttr(panel.title || "")}" loading="lazy"></div>
+          <div class="ac-frame"${series ? ` data-series="${escapeAttr(series)}"` : ""}><img src="${escapeAttr(figure)}" alt="${escapeAttr(panel.title || "")}" loading="lazy"></div>
           <div class="ac-body">${escapeHTML(panel.summary || "")}</div>
           <div class="ac-footer">${links.join("")}</div>
         </article>`;
@@ -861,6 +880,8 @@
           <div class="analysis-grid">${cards}</div>
         </section>`;
     }).join("");
+
+    window.FastMDXSeries?.hydrate(host);
 
     const haveSections = sections.length > 0;
     host.hidden = !haveSections;
