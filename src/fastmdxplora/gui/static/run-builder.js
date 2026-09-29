@@ -768,9 +768,10 @@
     const body = document.createElement("div");
     body.className = "run-analyses";
     if (!options || !options.available) {
-      body.innerHTML = `<div class="empty-detail muted">${
-        (options && options.reason) || "No analyses available."
-      }</div>`;
+      const said = document.createElement("div");
+      said.className = "empty-detail muted";
+      said.textContent = (options && options.reason) || "No analyses available.";
+      body.appendChild(said);
       section.appendChild(body);
       return section;
     }

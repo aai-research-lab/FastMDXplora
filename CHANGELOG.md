@@ -980,6 +980,17 @@ that repeated three of the transport's buttons is gone. The pocket cutoff,
 the one place the viewer's angstroms meet the analyses' nanometres, is said in
 both.
 
+### The file picker says a path it cannot open as text
+
+**The file picker put the server's refusal into the page as markup**, and the
+refusal names the path it was asked for, which can come from a config written
+by somebody else: a field holding `nowhere<img src=x onerror=...>` ran the
+script when its picker opened. It is shown as text now, as is the builder's
+reason for offering no analyses. Found by driving the picker and the Agent's
+send path in a browser, which no test had done: a question typed and sent, a
+file attached through the picker, the answer with what the study recorded,
+and the thread kept with the study.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

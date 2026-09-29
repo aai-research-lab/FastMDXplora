@@ -112,7 +112,13 @@
 
     const list = el("fastmdx-picker-list");
     if (!listing.ok) {
-      list.innerHTML = `<div class="empty-detail muted">${listing.error}</div>`;
+      /* As text: the refusal names the path asked for, and a path can come
+       * from a config somebody else wrote ("No such folder: <img ...>" was
+       * markup, and ran). */
+      const said = document.createElement("div");
+      said.className = "empty-detail muted";
+      said.textContent = listing.error || "Could not read that folder.";
+      list.replaceChildren(said);
       return;
     }
 
