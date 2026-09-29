@@ -885,6 +885,13 @@ as it changes.** The scheme the system asked for on a first visit was stored
 as though chosen, so a system that went dark at sunset left the page light for
 good. Only a scheme chosen on the page is kept now.
 
+### The viewer's transport sits under its canvas
+
+**The trajectory's play, step and scrub controls now sit directly under the
+viewer's canvas**, above the display options, where they had been the last of
+five rows. A long path in the builder's note on where results are saved now
+wraps instead of pushing a phone's page sideways.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

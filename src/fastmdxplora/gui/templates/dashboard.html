@@ -617,6 +617,33 @@
 
               <!-- Toolbar / representation / camera / ligand controls -->
               <div class="viewer-controls">
+                <!-- The transport first, under the canvas: it is what a trajectory is
+                     played with, and it sat below four rows of display options. -->
+                <div class="control-row" id="trajectory-row" hidden>
+                  <div class="control-group trajectory-controls">
+                    <span class="control-label">Trajectory playback</span>
+                    <button class="ctl-btn" type="button" data-traj="play">Play</button>
+                    <button class="ctl-btn" type="button" data-traj="pause">Pause</button>
+                    <button class="ctl-btn" type="button" data-traj="reverse">Reverse</button>
+                    <button class="ctl-btn" type="button" data-traj="prev">Prev</button>
+                    <button class="ctl-btn" type="button" data-traj="next">Next</button>
+                    <button class="ctl-btn" type="button" data-traj="first">⏮</button>
+                    <button class="ctl-btn" type="button" data-traj="last">⏭</button>
+                    <input type="range" class="traj-slider" id="traj-slider" min="0" max="0" value="0">
+                    <span class="traj-time mono"><span id="traj-current">0</span> / <span id="traj-total">0</span> · <span id="traj-simtime">—</span> ns</span>
+                    <label class="chip-toggle micro">Speed
+                      <select id="traj-speed">
+                        <option value="0.25">0.25×</option>
+                        <option value="0.5">0.5×</option>
+                        <option value="1" selected>1×</option>
+                        <option value="2">2×</option>
+                        <option value="4">4×</option>
+                      </select>
+                    </label>
+                    <label class="chip-toggle micro"><input type="checkbox" id="traj-loop">Loop</label>
+                    <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it"><input type="checkbox" id="traj-follow" checked>Follow</label>
+                  </div>
+                </div>
                 <div class="control-row">
                   <div class="control-group">
                     <button class="ctl-btn" type="button" data-action="live-toggle">Live Updates</button>
@@ -684,31 +711,6 @@
                     <button class="chip-btn" type="button" data-ligand="show-labels">Show atom labels</button>
                     <button class="chip-btn" type="button" data-ligand="show-contacts">Geometric contacts</button>
                     <button class="chip-btn" type="button" data-ligand="show-hbonds">H-bonds only</button>
-                  </div>
-                </div>
-                <div class="control-row" id="trajectory-row" hidden>
-                  <div class="control-group trajectory-controls">
-                    <span class="control-label">Trajectory playback</span>
-                    <button class="ctl-btn" type="button" data-traj="play">Play</button>
-                    <button class="ctl-btn" type="button" data-traj="pause">Pause</button>
-                    <button class="ctl-btn" type="button" data-traj="reverse">Reverse</button>
-                    <button class="ctl-btn" type="button" data-traj="prev">Prev</button>
-                    <button class="ctl-btn" type="button" data-traj="next">Next</button>
-                    <button class="ctl-btn" type="button" data-traj="first">⏮</button>
-                    <button class="ctl-btn" type="button" data-traj="last">⏭</button>
-                    <input type="range" class="traj-slider" id="traj-slider" min="0" max="0" value="0">
-                    <span class="traj-time mono"><span id="traj-current">0</span> / <span id="traj-total">0</span> · <span id="traj-simtime">—</span> ns</span>
-                    <label class="chip-toggle micro">Speed
-                      <select id="traj-speed">
-                        <option value="0.25">0.25×</option>
-                        <option value="0.5">0.5×</option>
-                        <option value="1" selected>1×</option>
-                        <option value="2">2×</option>
-                        <option value="4">4×</option>
-                      </select>
-                    </label>
-                    <label class="chip-toggle micro"><input type="checkbox" id="traj-loop">Loop</label>
-                    <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it"><input type="checkbox" id="traj-follow" checked>Follow</label>
                   </div>
                 </div>
               </div>

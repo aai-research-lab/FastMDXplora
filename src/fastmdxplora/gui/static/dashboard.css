@@ -3501,3 +3501,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 @media (max-width: 800px) {
     .system-preview-layout:has(.system-preview-view:not([hidden])) { grid-template-columns: 1fr; }
 }
+
+/* A path is one long word: broken anywhere rather than pushing a phone's
+   page sideways. */
+#run-output-note, .builder-card-note code, .study-running-name { overflow-wrap: anywhere; }
