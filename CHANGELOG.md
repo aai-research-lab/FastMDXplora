@@ -991,6 +991,20 @@ send path in a browser, which no test had done: a question typed and sent, a
 file attached through the picker, the answer with what the study recorded,
 and the thread kept with the study.
 
+### The GUI is drawn from one set of tokens
+
+**Every size on the page is now one of eight on a scale, every tint is mixed
+from the scheme's own accent, and one rule rings whatever the keyboard is
+on.** There were eighteen font sizes, the smallest (10px) on the uppercase
+labels and file actions, where reading was hardest; those actions are now
+sentence case at the size of every other control. Ninety-seven hover,
+selection and active tints were written as the dark scheme's colours, so on
+Paper, whose accent is blue, they were all still cyan. A notice appeared on a
+fixed near-black carrying the scheme's text, which on Paper is near-black too;
+and three buttons' sizes never applied, their `font` shorthands made invalid
+by an `inherit` inside them. The contrast check in every scheme now reads the
+mixed colours it had been skipping.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

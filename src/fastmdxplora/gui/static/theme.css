@@ -61,6 +61,22 @@
     --font-mono: "JetBrains Mono", "SFMono-Regular", "IBM Plex Mono",
                  "Consolas", "Menlo", monospace;
 
+    /* Type: every size on the page is one of these. There were eighteen,
+       from 10px to 28px, and the smallest were the uppercase labels on the
+       controls, which is where reading was hardest. */
+    --text-2xs: 11px;
+    --text-xs: 12px;
+    --text-sm: 13px;
+    --text-md: 14.5px;
+    --text-lg: 16px;
+    --text-xl: 20px;
+    --text-2xl: 24px;
+    --text-3xl: 27px;
+
+    /* Controls: one corner, and one ring where the keyboard is. */
+    --radius-control: 6px;
+    --focus-ring: 2px solid var(--accent-cyan);
+
     /* Motion */
     --duration-fast: 120ms;
     --duration-medium: 220ms;

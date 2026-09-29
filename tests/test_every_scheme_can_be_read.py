@@ -32,9 +32,16 @@ SCHEMES = ("graphite", "ink", "paper")
 UNREADABLE = r"""
 () => {
   function parse(c) {
-    const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null;
-    const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
-    return {r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1};
+    const m = c.match(/rgba?\(([^)]+)\)/);
+    if (m) {
+      const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
+      return {r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1};
+    }
+    // A tint mixed from a scheme's token computes as color(srgb r g b / a),
+    // channels from 0 to 1; read as nothing, it was left out of the sum.
+    const s = c.match(/color\(srgb ([^)]+)\)/); if (!s) return null;
+    const q = s[1].split(/[ \/]+/).filter(Boolean).map(Number);
+    return {r: 255 * q[0], g: 255 * q[1], b: 255 * q[2], a: q.length > 3 ? q[3] : 1};
   }
   function lum(c) {
     const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
@@ -126,6 +133,9 @@ def _settled(page) -> None:
 
 def _in(browser, dashboard, scheme: str | None = None, **context):
     page = browser.new_context(viewport={"width": 1440, "height": 900}, **context).new_page()
+    # Sixty seconds, as the other browser tests allow: the first page of a
+    # session beside a full suite took longer than thirty to be ready.
+    page.set_default_timeout(60000)
     page.goto(dashboard.url + "#overview", wait_until="domcontentloaded")
     page.wait_for_function("() => window.FastMDXDashboard && document.body.dataset.theme")
     if scheme:
