@@ -191,7 +191,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/aai-research-lab/FastMDXplora"
-Documentation = "https://fastmdxplora.readthedocs.io/en/latest/"
+Documentation = "https://fastmdxplora.readthedocs.io/en/stable/"
 Repository = "https://github.com/aai-research-lab/FastMDXplora"
 Issues = "https://github.com/aai-research-lab/FastMDXplora/issues"
 Changelog = "https://github.com/aai-research-lab/FastMDXplora/blob/main/CHANGELOG.md"

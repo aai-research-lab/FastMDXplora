@@ -513,6 +513,12 @@ written per copy, and cached for the next study) and what setup says about
 its source and parameters are now tested without the network. They were
 covered only by the tests that reach RCSB.
 
+### The package links the release's documentation
+
+**PyPI's Documentation link now opens `/en/stable/`**, built from the newest
+release tag, instead of `/en/latest/`, which is `main` and can describe
+settings the installed release does not have.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
