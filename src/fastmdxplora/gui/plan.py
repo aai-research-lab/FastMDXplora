@@ -62,6 +62,9 @@ def plan_of(config: dict[str, Any]) -> list[dict[str, Any]]:
         negative, _ = _value(setup, "setup", "ion_negative")
         line("Solvent", f"{shape} box, {_number(padding)} nm padding, "
                         f"{_number(salt)} M {positive}/{negative}", default=not (a or b or c))
+        states = setup.get("residue_states")
+        if isinstance(states, dict) and states:
+            line("Residue states", ", ".join(f"{key} {value}" for key, value in states.items()))
         if setup.get("membrane"):
             membrane = setup["membrane"]
             lipid = membrane.get("lipid") if isinstance(membrane, dict) else membrane

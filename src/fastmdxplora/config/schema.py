@@ -303,6 +303,19 @@ SETUP = PhaseSchema(
               "where the answer is unresolved rather than merely close. "
               "Narrow it only for a ligand whose protonation you know.",
               example=0.5),
+        Field("residue_states", dict, None,
+              "Protonation states to use in place of the ones setup would "
+              "choose, for residues named by chain and number as the "
+              "structure numbers them: {A:57: HIP}. Histidine takes HID "
+              "(hydrogen on ND1), HIE (on NE2) or HIP (both, charged); "
+              "aspartate ASH (neutral) or ASP; glutamate GLH or GLU; lysine "
+              "LYN (neutral) or LYS. Setup otherwise chooses from each "
+              "residue's usual pKa at the pH, and a histidine's tautomer "
+              "from its hydrogen bonds, which is wrong for a catalytic or a "
+              "metal-binding histidine as often as not. A residue named here "
+              "that the structure does not hold stops setup, as does a "
+              "state the residue cannot take.",
+              example={"A:57": "HIP", "A:102": "ASH"}),
         Field("replace_nonstandard_residues", bool, True,
               "Substitute modified residues (selenomethionine, oxidised "
               "cysteine) with their standard equivalents. They are part of "
@@ -1037,7 +1050,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("agent",)),
         ("The structure",
          "What is kept, what is repaired, and how it is protonated.",
-         ("ph", "protonation_margin", "heterogens", "keep_heterogens",
+         ("ph", "residue_states", "protonation_margin", "heterogens", "keep_heterogens",
           "keep_water", "replace_nonstandard_residues",
           "chains", "build_missing_termini", "fixed_pdb",
           "mutations", "mutation_chain")),

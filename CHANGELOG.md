@@ -1034,6 +1034,18 @@ study; and a path inside a study's own folder is said from it, so two studies'
 trajectories do not differ for being in two folders. It exits 1 where they
 differ, so it can gate a script.
 
+### A residue can be given the protonation state asked for
+
+**`setup.residue_states` gives named residues the protonation state asked
+for, in place of setup's own choice:** `{A:57: HIP}` charges trypsin's
+catalytic histidine; histidine takes HID, HIE or HIP, aspartate ASH or ASP,
+glutamate GLH or GLU, lysine LYN or LYS. Setup chose every state from the
+residue's usual pKa at the pH, and a histidine's tautomer from its hydrogen
+bonds, with no way to say otherwise, which for a catalytic or metal-binding
+histidine is wrong as often as not. A residue the structure does not hold, or
+a state it cannot take, stops setup with a named refusal; what was set is in
+the setup record's notes and in an Agent's plan.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

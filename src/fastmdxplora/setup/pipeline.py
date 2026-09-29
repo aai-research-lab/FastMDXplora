@@ -1217,7 +1217,7 @@ def run(
                     filtered_out,
                     reinstated=tuple(params.get("_reinstated_heterogens", ())),
                 )
-            fix_pdb_with_pdbfixer(
+            set_by_hand = fix_pdb_with_pdbfixer(
                 retained or str(input_pdb),
                 str(prepared_pdb),
                 ph=float(params["ph"]),
@@ -1230,11 +1230,20 @@ def run(
                 build_missing_termini=bool(params.get("build_missing_termini", False)),
                 mutations=tuple(params.get("mutations") or ()),
                 mutation_chain=params.get("mutation_chain"),
+                residue_states=params.get("residue_states"),
             )
             artifacts.append("prepared.pdb")
+            if set_by_hand:
+                # In the record's notes and on screen: a state chosen by hand
+                # is a decision a reader of the methods needs to see.
+                notes.append("Protonation states set by hand (setup.residue_states): "
+                             + "; ".join(set_by_hand) + ".")
             if presenter:
                 presenter.step(f"Fixed PDB with PDBFixer (pH={params['ph']})",
                                   explain="protonation")
+                if set_by_hand:
+                    presenter.step("Protonation states set by hand: "
+                                   + "; ".join(set_by_hand))
         except ImportError as exc:
             missing = missing_dependencies()
             notes.append(

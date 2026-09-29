@@ -204,6 +204,33 @@ than ignored.
 
 ---
 
+## A residue's protonation, set by hand
+
+Setup chooses each residue's protonation from its usual pKa at `setup.ph`, and a
+histidine's tautomer from its hydrogen bonds. For a residue where that is
+known to be wrong (a catalytic histidine, a metal ligand, an aspartate buried
+in a pocket), name it by chain and number, as the structure numbers it:
+
+```yaml
+setup:
+  residue_states:
+    A:57: HIP     # both nitrogens protonated, charged
+    A:102: ASH    # neutral
+```
+
+| residue | states |
+|---|---|
+| HIS | `HID` (hydrogen on ND1), `HIE` (on NE2), `HIP` (both) |
+| ASP | `ASH` (neutral), `ASP` |
+| GLU | `GLH` (neutral), `GLU` |
+| LYS | `LYN` (neutral), `LYS` |
+
+A residue the structure does not hold, or a state it cannot take, stops setup
+before anything is built. What was set is in `setup/setup_parameters.json`'s
+notes, and said by the Agent's plan.
+
+---
+
 ## Validation
 
 Every Config is validated before anything reaches a GPU — whether it was

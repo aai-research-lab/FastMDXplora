@@ -34,7 +34,9 @@ in the optional ``[setup]`` extras group.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import Any
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
@@ -380,6 +382,95 @@ def _check_mutation_matches(topology, chain_id: str,
     , code="setup.structure.chain_unknown", given=chain_id)
 
 
+#: The protonation states a residue may be given in place of setup's own
+#: choice, by the residue it is; the names are OpenMM's variants, which the
+#: force fields it ships have templates for.
+RESIDUE_STATES: dict[str, tuple[str, ...]] = {
+    "HIS": ("HID", "HIE", "HIP"),
+    "ASP": ("ASH", "ASP"),
+    "GLU": ("GLH", "GLU"),
+    "LYS": ("LYN", "LYS"),
+}
+
+_RESIDUE_KEY = re.compile(r"^\s*([A-Za-z0-9]{1,4})\s*:\s*(-?\d+)([A-Za-z]?)\s*$")
+
+
+def parse_residue_states(states: Any) -> dict[tuple[str, str, str], str]:
+    """``{"A:57": "HIP"}`` as ``{("A", "57", ""): "HIP"}``, each key read as
+    chain, number and insertion code; refused where a key is not one."""
+    parsed: dict[tuple[str, str, str], str] = {}
+    for key, state in dict(states or {}).items():
+        found = _RESIDUE_KEY.match(str(key))
+        if not found:
+            raise StudyError(
+                f"setup.residue_states names residue {key!r}, which is not a chain "
+                "and a number: write it as A:57, or A:184A for an inserted residue.",
+                code="setup.structure.residue_state_unparseable",
+                given=str(key), accepted_forms=["A:57", "A:184A"])
+        chain, number, insertion = found.groups()
+        parsed[(chain, str(int(number)), insertion.upper())] = str(state).strip().upper()
+    return parsed
+
+
+def _apply_residue_states(fixer: Any, states: dict[tuple[str, str, str], str]) -> list[str]:
+    """Have PDBFixer place each named residue's hydrogens for the state asked.
+
+    PDBFixer chooses a variant for every residue as it adds hydrogens, and
+    asks one method which to use; that method is wrapped here, for the
+    residues named, and asked as before for the rest. Checked first: every
+    residue named is in the structure and can take the state asked for.
+    """
+    if not states:
+        return []
+    by_key = {}
+    for residue in fixer.topology.residues():
+        key = (str(residue.chain.id), str(residue.id).strip(),
+               str(getattr(residue, "insertionCode", "") or "").strip().upper())
+        by_key[key] = residue
+    chosen: dict[Any, str] = {}
+    applied: list[str] = []
+    for key, state in states.items():
+        said = f"{key[0]}:{key[1]}{key[2]}"
+        residue = by_key.get(key)
+        if residue is None:
+            chains = sorted({str(c.id) for c in fixer.topology.chains()})
+            raise StudyError(
+                f"setup.residue_states names {said}, and the structure has no residue "
+                f"numbered {key[1]}{key[2]} in a chain {key[0]} (its chains: "
+                f"{', '.join(chains)}). Residues are named as the structure numbers "
+                "them, after any chains were left out.",
+                code="setup.structure.residue_state_unmatched",
+                given=said, chains=chains)
+        permitted = RESIDUE_STATES.get(residue.name.upper())
+        if not permitted or state not in permitted:
+            allowed = permitted or ()
+            raise StudyError(
+                f"setup.residue_states asks for {said} ({residue.name}) as {state}, "
+                + (f"which it cannot take: {residue.name} takes {', '.join(allowed)}."
+                   if allowed else
+                   f"and a {residue.name} has no protonation state to choose; "
+                   "only HIS, ASP, GLU and LYS do."),
+                code="setup.structure.residue_state_not_permitted",
+                given=state, permitted=list(allowed))
+        chosen[residue] = state
+        applied.append(f"{said} {residue.name} as {state}")
+
+    describe = getattr(fixer, "_describeVariant", None)
+    if describe is None:
+        raise BackendUnavailable(
+            "setup.residue_states needs PDBFixer to say which hydrogens each residue "
+            "gets, and this PDBFixer does not: update it (conda install -c "
+            "conda-forge pdbfixer).", code="environment.backend.missing")
+
+    def variant(residue, definitions):
+        if residue in chosen:
+            return chosen[residue]
+        return describe(residue, definitions)
+
+    fixer._describeVariant = variant
+    return applied
+
+
 def fix_pdb_with_pdbfixer(
     input_pdb: str,
     output_pdb: str,
@@ -393,8 +484,12 @@ def fix_pdb_with_pdbfixer(
     reinstated: tuple[str, ...] = (),
     explained: tuple[str, ...] = (),
     replace_nonstandard: bool = True,
-) -> None:
+    residue_states: dict[str, str] | None = None,
+) -> list[str]:
     """Strict PDBFixer wrapper: raises on failure.
+
+    Returns what ``residue_states`` set, one line per residue, so the
+    record can say it.
 
     Parameters
     ----------
@@ -537,9 +632,13 @@ def fix_pdb_with_pdbfixer(
 
     fixer.findMissingAtoms()
     fixer.addMissingAtoms()
+    applied = _apply_residue_states(fixer, parse_residue_states(residue_states))
+    if applied:
+        logger.info("Protonation states set by hand: %s.", "; ".join(applied))
     fixer.addMissingHydrogens(pH=float(ph))
 
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         PDBFile.writeFile(fixer.topology, fixer.positions, f, keepIds=True)
     logger.info(" - wrote fixed PDB to %s", out)
+    return applied

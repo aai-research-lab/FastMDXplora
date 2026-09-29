@@ -402,6 +402,18 @@ CODES: tuple[Code, ...] = (
          "The original residue named by a mutation is not at that position.",
          Kind.SEMANTIC, Disclosure.NOTHING,
          detail_keys=("mutation", "found", "position")),
+    Code("setup.structure.residue_state_unparseable",
+         "A residue given a protonation state was not named as chain and number.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("given", "accepted_forms")),
+    Code("setup.structure.residue_state_not_permitted",
+         "A protonation state was asked for that the residue cannot take.",
+         Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,
+         detail_keys=("given", "permitted")),
+    Code("setup.structure.residue_state_unmatched",
+         "A residue given a protonation state is not in the structure.",
+         Kind.SEMANTIC, Disclosure.NOTHING,
+         detail_keys=("given", "chains")),
 
     # -- setup: chemistry ---------------------------------------------------
     Code("setup.chemistry.unavailable",

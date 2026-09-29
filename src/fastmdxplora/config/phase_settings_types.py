@@ -19,6 +19,7 @@ class SetupSettings(TypedDict, total=False):
     mutations: list[Any]
     mutation_chain: str
     protonation_margin: float
+    residue_states: dict[str, Any]
     replace_nonstandard_residues: bool
     chains: list[Any]
     build_missing_termini: bool
