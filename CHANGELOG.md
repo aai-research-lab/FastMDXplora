@@ -878,6 +878,13 @@ measurement. A series too short to measure records no mean, and the Agent was
 told nothing of it: asked whether the RMSD had settled it had neither a number
 nor a reason.
 
+### The GUI follows the system's light or dark until a scheme is chosen
+
+**Until a colour scheme is chosen in Settings, the GUI follows the system's,
+as it changes.** The scheme the system asked for on a first visit was stored
+as though chosen, so a system that went dark at sunset left the page light for
+good. Only a scheme chosen on the page is kept now.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

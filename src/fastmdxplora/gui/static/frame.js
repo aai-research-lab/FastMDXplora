@@ -26,14 +26,29 @@
   };
 
   /* ---- Theme -------------------------------------------------------- */
-  function applyTheme(name) {
+  /* Kept only when chosen. Stored every time, the scheme the system asked
+   * for on a first visit was remembered as though chosen, and a system
+   * that went dark at sunset left the page light for good. */
+  function applyTheme(name, chosen) {
     document.documentElement.dataset.theme = name;
     document.body.dataset.theme = name;
     $$(".seg-btn[data-theme]").forEach(function (b) {
       b.classList.toggle("active", b.dataset.theme === name);
     });
-    store.set("theme", name);
+    if (chosen) store.set("theme", name);
     document.dispatchEvent(new CustomEvent("fmx:theme", { detail: name }));
+  }
+
+  /* Until one is chosen, the page follows the system as it changes. */
+  function followTheSystem() {
+    try {
+      var query = window.matchMedia("(prefers-color-scheme: light)");
+      var follow = function () {
+        if (store.get("theme", null) === null) applyTheme(firstTheme(), false);
+      };
+      if (query.addEventListener) query.addEventListener("change", follow);
+      else if (query.addListener) query.addListener(follow);
+    } catch (e) { /* no media queries */ }
   }
 
   /* Until one is chosen, the one the system asks for. */
@@ -707,9 +722,10 @@
   document.addEventListener("DOMContentLoaded", function () {
     if (!el("side-panel")) return;
 
-    applyTheme(store.get("theme", firstTheme()));
+    applyTheme(store.get("theme", null) || firstTheme(), false);
+    followTheSystem();
     $$(".seg-btn[data-theme]").forEach(function (b) {
-      b.addEventListener("click", function () { applyTheme(b.dataset.theme); });
+      b.addEventListener("click", function () { applyTheme(b.dataset.theme, true); });
     });
 
     var sw = parseInt(store.get("sidebarWidth", "232"), 10);
