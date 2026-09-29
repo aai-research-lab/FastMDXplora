@@ -941,6 +941,17 @@ bound, which is why its mean is withheld, and the shortfall counted them as
 met. It now asks for at least as long again and says the figure is a floor
 (`lower_bound`).
 
+### A run is held to checks its plan states, and ticked against them after
+
+**An Agent's plan now states the checks the run will be held to** (each
+measure equilibrated, its correlation time measurable, at least ten
+independent samples per mean, the temperature within 5 K of its target, the
+potential energy's range per ns per atom), **and the report's convergence
+section ticks each after the run**: passed, failed, or not judged and why. The
+Agent is given the same ticks, so "did it pass?" is answered against what was
+promised. The checks are one list, with the thresholds the report's findings
+already used, so a check and a finding cannot disagree.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

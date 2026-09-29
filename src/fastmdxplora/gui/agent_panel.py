@@ -361,11 +361,38 @@ def _run_status(runtime: Any) -> str | None:
     if results:
         lines.append("")
         lines.append(results)
+    checks = _checks_summary(getattr(runtime, "active_root", None))
+    if checks:
+        lines.append("")
+        lines.append(checks)
     asked = _sampling_summary(getattr(runtime, "active_root", None))
     if asked:
         lines.append("")
         lines.append(asked)
     return "\n".join(lines)
+
+
+def _checks_summary(root: Any) -> str:
+    """The checks the run was held to, each ticked, as the report ticks them.
+
+    The same list an Agent's plan states before a run, so "did it pass?" is
+    answered against what was promised rather than whatever the model
+    thinks a good run looks like.
+    """
+    if not root:
+        return ""
+    try:
+        from fastmdxplora.report.document import _assess_this_run
+
+        assessed = _assess_this_run(Path(root))
+    except Exception:  # noqa: BLE001 - context, not load-bearing
+        return ""
+    checks = (assessed or {}).get("checks") or []
+    if not checks:
+        return ""
+    word = {True: "passed", False: "FAILED", None: "not judged"}
+    return "the checks this run was held to (as the report ticks them):\n" + "\n".join(
+        f"  {word[c['passed']]}: {c['said']} ({c['detail']})" for c in checks)
 
 
 def _sampling_summary(root: Any) -> str:

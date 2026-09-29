@@ -100,6 +100,13 @@ def plan_of(config: dict[str, Any]) -> list[dict[str, Any]]:
         line("Analyses", ", ".join(chosen) if chosen else "the default set",
              default=not chosen)
 
+    if "simulation" in phases:
+        # What the run will be held to, from the list the report ticks, so
+        # what is promised here is what is checked there.
+        from fastmdxplora.report.convergence import CHECKS
+
+        line("Checked after", "; ".join(short for _, _, short in CHECKS))
+
     if "report" in phases:
         line("Report", "a written report and a dashboard", default=True)
 

@@ -3008,9 +3008,16 @@ def _reproducibility_of(root, *, prepared):
 
 
 def _rows(section: str) -> list[str]:
-    """The data rows of a markdown table, header and rule left out."""
-    rows = [line.strip() for line in section.splitlines() if line.strip().startswith("|")]
-    return [row for row in rows[2:]]
+    """The data rows of the section's first markdown table, header and rule
+    left out. The convergence section has a second, the checks the run was
+    held to, whose rows end in a verdict rather than a yes."""
+    rows: list[str] = []
+    for line in section.splitlines():
+        if line.strip().startswith("|"):
+            rows.append(line.strip())
+        elif rows:
+            break
+    return rows[2:]
 
 
 def _blocks(section: str) -> dict[str, str]:

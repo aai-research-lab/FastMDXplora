@@ -674,6 +674,18 @@ def _convergence_section(project_root: Path) -> str:
         )
     lines.append("")
 
+    checks = assessed.get("checks") or []
+    if checks:
+        lines.append("### The checks this run was held to")
+        lines.append("")
+        lines.append("| check | result | on what |")
+        lines.append("|---|---|---|")
+        for check in checks:
+            result = {True: "passed", False: "**failed**", None: "not judged"}[check["passed"]]
+            lines.append(f"| {check['said'][0].upper()}{check['said'][1:]} | {result} "
+                         f"| {check['detail']} |")
+        lines.append("")
+
     asked = _what_more_sampling_needs(project_root)
     if assessed["findings"]:
         lines.append("### What this run cannot support")

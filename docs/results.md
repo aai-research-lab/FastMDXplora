@@ -42,7 +42,8 @@ says so rather than reporting an empty result.
 
 **`report/report.pdf`** — the study written up: a methods paragraph you can
 paste into a manuscript, the figures, and a section saying what the run does
-and does not support.
+and does not support, with the checks it was held to each marked passed,
+failed or not judged (and why).
 
 **`analysis/rmsd/rmsd.png`** — the first question about any trajectory: has the
 structure settled, or is it still moving?

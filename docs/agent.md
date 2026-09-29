@@ -381,7 +381,11 @@ teaches the Config language while you wait.
 and water, the solvent and box, the conditions, the equilibration and
 production lengths, any enhanced sampling, the analyses and the report, each
 at the value the run will take, with the ones the Config leaves to their
-defaults marked. It ends with what setup would build, about how many
+defaults marked; and the checks the run will be held to (each measure
+equilibrated, its correlation time measurable, at least ten independent
+samples per mean, the temperature within 5 K of its target, the potential
+energy's range per ns per atom), which the report ticks after the run and the
+Agent is given ticked. It ends with what setup would build, about how many
 particles in what box, and how long the study would take on this machine
 where the machine has been timed, worked out as the builder works them out,
 so the cost is read before the run rather than learned from setup's log.

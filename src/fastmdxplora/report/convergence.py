@@ -31,7 +31,7 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["Assessment", "assess_series", "assess_run", "autocorrelation_time"]
+__all__ = ["CHECKS", "Assessment", "assess_series", "assess_run", "autocorrelation_time"]
 
 
 #: Below this many independent samples, a mean is a number without a useful
@@ -49,6 +49,28 @@ from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES as _ENOUGH_SAMPLES
 #: conventional sign that the integration is not conserving what it should.
 #: In units of kJ/mol per ns per atom.
 _ENERGY_DRIFT_LIMIT = 1.0
+
+#: How far the mean temperature may sit from the thermostat's target before
+#: the ensemble is not the one the settings describe.
+_TEMPERATURE_LIMIT_K = 5.0
+
+#: What a run is held to, in the order it is judged: said before a run (an
+#: Agent's plan) and ticked after it (the report, the Agent), from this one
+#: list, so what was promised and what was checked cannot differ. Each is
+#: ``(key, what is checked, the same in a few words)``.
+CHECKS: tuple[tuple[str, str, str], ...] = (
+    ("equilibrated", "each measure stops drifting before it is averaged",
+     "each measure equilibrated"),
+    ("correlation", "each measure's correlation time can be measured from the run",
+     "each correlation time measurable"),
+    ("sampled", f"each mean rests on at least {_ENOUGH_SAMPLES:g} independent samples",
+     f"at least {_ENOUGH_SAMPLES:g} independent samples per mean"),
+    ("temperature", f"the mean temperature is within {_TEMPERATURE_LIMIT_K:g} K of the target",
+     f"temperature within {_TEMPERATURE_LIMIT_K:g} K of the target"),
+    ("energy", f"the potential energy's range stays under {_ENERGY_DRIFT_LIMIT:g} kJ/mol "
+               "per ns per atom",
+     f"potential energy range under {_ENERGY_DRIFT_LIMIT:g} kJ/mol per ns per atom"),
+)
 
 
 @dataclass(frozen=True)
@@ -315,6 +337,9 @@ def assess_run(
                    for name, values in series.items() if values is not None}
 
     findings: list[str] = []
+    # Each check's verdict: True passed, False failed, None could not be
+    # judged from what the run recorded; and what decided it.
+    verdicts: dict[str, tuple[bool | None, str]] = {}
     energy = assessments.get("potential_energy")
     # The range of a two-point series is the difference between two numbers,
     # which says nothing about drift: it was reported as 94 kJ/mol per ns per
@@ -326,6 +351,8 @@ def assess_run(
         span = float(np.ptp(np.asarray(list(series["potential_energy"]),
                                        dtype=np.float64)))
         drift = abs(energy.mean and (span / duration_ns / max(n_atoms, 1)))
+        verdicts["energy"] = (drift <= _ENERGY_DRIFT_LIMIT,
+                              f"{drift:.2g} kJ/mol per ns per atom")
         if drift > _ENERGY_DRIFT_LIMIT:
             findings.append(
                 f"The potential energy moved by {span:,.0f} kJ/mol over "
@@ -338,7 +365,9 @@ def assess_run(
     temperature = assessments.get("temperature")
     if temperature is not None and target_temperature_K:
         away = abs(temperature.mean - target_temperature_K)
-        if away > 5.0:
+        verdicts["temperature"] = (away <= _TEMPERATURE_LIMIT_K,
+                                   f"{temperature.mean:.1f} K against {target_temperature_K:.1f} K")
+        if away > _TEMPERATURE_LIMIT_K:
             findings.append(
                 f"The mean temperature was {temperature.mean:.1f} K against a "
                 f"target of {target_temperature_K:.1f} K. A thermostat that "
@@ -390,9 +419,48 @@ def assess_run(
             "observable forgets, not by how often it was written out."
         )
 
+    if still_drifting:
+        verdicts["equilibrated"] = (False, "still moving: " + ", ".join(sorted(still_drifting)))
+    elif undecidable:
+        verdicts["equilibrated"] = (None, "too short to say: " + ", ".join(sorted(undecidable)))
+    elif assessments:
+        verdicts["equilibrated"] = (True, "on " + ", ".join(sorted(assessments)))
+    if unmeasurable:
+        verdicts["correlation"] = (False, "not measurable: " + ", ".join(sorted(unmeasurable)))
+    elif assessments:
+        verdicts["correlation"] = (True, "on " + ", ".join(sorted(assessments)))
+    measurable = [a for a in assessments.values() if a.correlation_is_measurable]
+    if thin:
+        verdicts["sampled"] = (False, "too few: " + ", ".join(sorted(thin)))
+    elif measurable:
+        verdicts["sampled"] = (
+            None if unmeasurable else True,
+            "fewest: " + min(measurable, key=lambda a: a.effective_samples).name
+            + f", {min(a.effective_samples for a in measurable):.0f}"
+            + ("; the rest cannot be counted" if unmeasurable else ""))
+    elif assessments:
+        verdicts["sampled"] = (None, "no measure's correlation time could be measured")
+
+    # Why a check could not be judged, where it could not.
+    if "energy" not in verdicts:
+        verdicts["energy"] = (None, (
+            "no potential energy was recorded" if energy is None
+            else f"{energy.n_frames} energy records, too few to judge" if energy.n_frames < 6
+            else "the run's length or size was not recorded"))
+    if "temperature" not in verdicts:
+        verdicts["temperature"] = (None, (
+            "no temperature was recorded" if temperature is None
+            else "no target temperature was recorded"))
+
+    checks = []
+    for key, said, _short in CHECKS:
+        passed, detail = verdicts.get(key, (None, "not recorded by this run"))
+        checks.append({"check": key, "said": said, "passed": passed, "detail": detail})
+
     return {
         "observables": {name: a.as_record() for name, a in assessments.items()},
         "findings": findings,
+        "checks": checks,
         # The single question somebody wants answered, and the honest answer
         # for most short runs is no.
         "interpretable": not (thin or still_drifting or unmeasurable
