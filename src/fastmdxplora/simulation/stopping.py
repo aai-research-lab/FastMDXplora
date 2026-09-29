@@ -116,6 +116,53 @@ def targets_of(stop_when: dict[str, Any]) -> list[StopTarget]:
     return targets
 
 
+def judgeable_analyses() -> list[str]:
+    """The analyses that record a mean a rule can judge: those that give
+    one number per frame."""
+    import fastmdxplora.analysis.analyze  # noqa: F401 - registers them
+    from fastmdxplora.analysis.orchestrator import _REGISTRY
+
+    return sorted(name for name, cls in _REGISTRY.items()
+                  if getattr(cls, "time_series", False))
+
+
+def replicas_of(config: dict[str, Any]) -> tuple[bool, int]:
+    """Whether a study's runs are replicas, and how many runs it makes.
+
+    Replicas are one system swept over the seed alone, the reading the
+    members' aggregate takes (`batch.aggregate.SEED_AXES`).
+    """
+    from fastmdxplora.batch.aggregate import SEED_AXES
+    from fastmdxplora.batch.sweep import normalize_sweep, normalize_systems
+
+    systems = normalize_systems(config["systems"]) if config.get("systems") else []
+    sweep = normalize_sweep(config["sweep"]) if config.get("sweep") else {}
+    runs = len(systems)
+    for values in sweep.values():
+        runs *= len(values)
+    replicas = len(systems) == 1 and bool(sweep) and set(sweep) <= SEED_AXES
+    return replicas, runs
+
+
+def phases_of(config: dict[str, Any]) -> list[str]:
+    """The phases a config runs, as the orchestrator reads its lists."""
+    from fastmdxplora.orchestrator import PHASES
+
+    include = config.get("include_phase")
+    exclude = config.get("exclude_phase") or []
+    if include:
+        return [p for p in PHASES if p in include]
+    return [p for p in PHASES if p not in exclude]
+
+
+def check_study(config: dict[str, Any]) -> list[StopTarget] | None:
+    """`check_stopping` for a whole config, read as the batch layer will
+    expand it. What validation runs, so `fastmdx check-config`, the GUI
+    and the Agent's repair loop refuse what the run would."""
+    replicas, runs = replicas_of(config)
+    return check_stopping(config, replicas=replicas, runs=runs, phases=phases_of(config))
+
+
 def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
                    phases: list[str]) -> list[StopTarget] | None:
     """Refuse, before anything runs, a stopping rule this study cannot keep.
@@ -135,6 +182,18 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
                          code="config.option.wrong_type", option="simulation.stop_when",
                          expected_type="mapping", found_type=type(stop_when).__name__)
     targets = targets_of(stop_when)
+    judgeable = judgeable_analyses()
+    for target in targets:
+        if target.analysis not in judgeable:
+            # A rule over an analysis with no mean per frame would run to
+            # its ceiling, judging nothing, and call that not knowing.
+            raise StudyError(
+                f"simulation.stop_when judges {target.analysis!r}, which records no "
+                "single mean to judge. A measure is one of the analyses that give "
+                f"one number per frame: {', '.join(judgeable)}.",
+                code="config.option.not_permitted",
+                option="simulation.stop_when.measures.analysis",
+                given=target.analysis, permitted=judgeable)
     ceiling = stop_when.get("max_duration_ns")
     if not isinstance(ceiling, (int, float)) or isinstance(ceiling, bool) or ceiling <= 0:
         raise StudyError(
@@ -253,9 +312,13 @@ class Verdict:
     more_ns: float | None = None
     agree: bool | None = None
     replicas: list[dict[str, Any]] = field(default_factory=list)
+    #: No mean was recorded at all, which more production does not change:
+    #: the analysis did not run, failed, or gives no single number here.
+    unrecorded: bool = False
 
     def as_record(self) -> dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if v not in (None, [], "")}
+        return {k: v for k, v in self.__dict__.items()
+                if v not in (None, [], "") and not (k == "unrecorded" and v is False)}
 
 
 def _recorded(run: Path, analysis: str) -> dict[str, Any] | None:
@@ -302,7 +365,8 @@ def judge(runs: list[Path], targets: list[StopTarget], production_ns: float) -> 
         if missing:
             verdicts.append(Verdict(target.analysis, False,
                                     f"{target.analysis} recorded no mean"
-                                    + (f" in {', '.join(missing)}" if len(runs) > 1 else "")))
+                                    + (f" in {', '.join(missing)}" if len(runs) > 1 else ""),
+                                    unrecorded=True))
             continue
         unit = unit_of(target.analysis, records[0][1])
         withheld = [(run, found) for run, found in records
@@ -453,6 +517,17 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         entry: dict[str, Any] = {"production_ns": round(production, 9),
                                  "verdicts": [v.as_record() for v in verdicts]}
         record["rounds"].append(entry)
+        unrecorded = [v for v in verdicts if v.unrecorded]
+        if unrecorded:
+            entry["decision"] = "stopped"
+            record["outcome"] = "stopped"
+            record["said"] = (
+                "Stopped: " + "; ".join(v.said for v in unrecorded)
+                + ". More production does not give an analysis a mean it does not "
+                "record; its own log says why.")
+            write()
+            say(record["said"])
+            return record
         if all(v.met for v in verdicts):
             entry["decision"] = "met"
             record["outcome"] = "met"

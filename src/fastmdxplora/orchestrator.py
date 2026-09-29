@@ -382,6 +382,17 @@ class FastMDXplora:
         # `duraton_ns` ran the default million production steps without a
         # word, and a temperature of -50 K was planned as given. Before
         # anything is created, so a refused study leaves nothing behind.
+        if (not _expanded_from_a_validated_study
+                and ((options or {}).get("simulation") or {}).get("stop_when") is not None):
+            # Applied by a study around its runs, which one system given
+            # without a config does not have: ignored, it would run the
+            # first piece and stop as if that were the answer.
+            raise StudyError(
+                "simulation.stop_when runs a study until it knows, and is applied to a "
+                "study given as a config: FastMDXplora(config_data={'systems': [...], "
+                "'simulation': {'stop_when': ...}}), a config file, the command line or "
+                "the GUI.", code="config.option.inapplicable",
+                option="simulation.stop_when", context="a run given without a config")
         if (options or study_options) and not _expanded_from_a_validated_study:
             from fastmdxplora.config.loader import validate_config
 
@@ -593,17 +604,6 @@ class FastMDXplora:
             self._refuse_to_overwrite(plan, force=force)
 
         merged_options = self._merge_options(options)
-        if ((merged_options.get("simulation") or {}).get("stop_when") is not None
-                and "simulation" in plan and "analysis" in plan):
-            # Applied by the study around its runs, which a run of one
-            # system given without a config does not have: ignored here, it
-            # would run the first piece and stop, as if it were the answer.
-            raise StudyError(
-                "simulation.stop_when runs a study until it knows, and is applied to a "
-                "study given as a config: FastMDXplora(config_data={'systems': [...], "
-                "'simulation': {'stop_when': ...}}), a config file, the command line or "
-                "the GUI.", code="config.option.inapplicable",
-                option="simulation.stop_when", context="a run given without a config")
         dashboard_writer = self._dashboard_writer(merged_options, plan)
         if dashboard_writer is not None:
             self._initialize_dashboard_timeline(dashboard_writer, plan)

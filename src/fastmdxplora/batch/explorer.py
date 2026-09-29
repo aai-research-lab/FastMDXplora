@@ -1378,30 +1378,15 @@ class BatchExplorer:
         return list(self.results)
 
     # ------------------------------------------------------------------
-    def _phases_planned(self) -> list[str]:
-        from fastmdxplora.orchestrator import PHASES
-
-        include = self._raw.get("include_phase")
-        exclude = self._raw.get("exclude_phase") or []
-        if include:
-            return [p for p in PHASES if p in include]
-        return [p for p in PHASES if p not in exclude]
-
     def _stopping_rule(self) -> "list | None":
-        """The study's `simulation.stop_when`, checked; None where it has none.
+        """The study's `simulation.stop_when`, checked; None where it has
+        none. Its phases are read after `explore()`'s own lists are applied,
+        which validation of the config alone does not see."""
+        from fastmdxplora.simulation.stopping import check_stopping, phases_of, replicas_of
 
-        Its runs are replicas where they are one system swept over the seed
-        alone, the reading the members' aggregate takes.
-        """
-        from fastmdxplora.batch.aggregate import SEED_AXES
-        from fastmdxplora.simulation.stopping import check_stopping
-
-        sweep = self._raw.get("sweep") or {}
-        systems = normalize_systems(self._raw["systems"])
-        replicas = (not self.is_single and len(systems) == 1
-                    and bool(sweep) and set(sweep) <= SEED_AXES)
-        return check_stopping(self._raw, replicas=replicas, runs=len(self.run_specs),
-                              phases=self._phases_planned())
+        replicas, _ = replicas_of(self._raw)
+        return check_stopping(self._raw, replicas=replicas and not self.is_single,
+                              runs=len(self.run_specs), phases=phases_of(self._raw))
 
     def _run_until_known(self, targets: list) -> None:
         """Extend the runs until what the study asked for is known, then

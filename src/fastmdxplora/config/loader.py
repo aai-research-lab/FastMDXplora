@@ -697,6 +697,23 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
     if isinstance(analysis, dict):
         _check_analysis_names(analysis)
 
+    # A stopping rule the study cannot keep is refused with the rest of the
+    # config, so `fastmdx check-config`, the GUI and the Agent's repair loop
+    # see it; the batch layer checks it again with the phases a call asks for.
+    if isinstance(simulation, dict) and simulation.get("stop_when") is not None:
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.simulation.stopping import check_study, targets_of
+
+        try:
+            if require_systems:
+                check_study(data)
+            elif isinstance(simulation["stop_when"], dict):
+                targets_of(simulation["stop_when"])
+        except ConfigError:
+            raise
+        except StudyError as exc:
+            raise ConfigError(str(exc), **_rewrapped(exc)) from exc
+
 
 def _check_analysis_names(analysis: dict[str, Any]) -> None:
     """Refuse a name no analysis has.

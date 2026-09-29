@@ -1086,6 +1086,25 @@ Agent is given the record; the plan says when the study stops; and a budget
 prices it at its ceiling. In a parallel study the runs are extended side by
 side.
 
+### The Agent says what "done" means before the run
+
+**Asked for a quantity to a precision, or to run until something is known,
+the Agent writes the study's stopping rule** (`simulation.stop_when`): the
+measures, the error each must reach, replicas over the seed and a ceiling,
+shown on the plan's "Stops when" line before anything runs and judged by the
+code after it. It is told which analyses record a mean a rule can judge,
+and to present a precision it chose as its own choice, not the person's.
+
+**A stopping rule the study cannot keep is now refused when the config is
+validated**, not only when the study starts: `fastmdx check-config`, the
+GUI's check and the Agent's repair loop see it, and the Agent repairs a rule
+without replicas by adding them. A measure whose analysis records no single
+mean (`rmsf`, `cluster`) is refused with the list of those that do; before,
+it ran to its ceiling judging nothing. A mean that is never recorded during
+a run stops the rule at once, since more production cannot supply it. One
+system given to `FastMDXplora()` without a config is refused a rule when it
+is constructed, before anything is created.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

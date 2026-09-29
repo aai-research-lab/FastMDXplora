@@ -176,7 +176,41 @@ class TestTheRuleIsCheckedBeforeAnythingRuns:
     def test_it_is_a_setting_of_the_simulation(self):
         from fastmdxplora.config.loader import validate_config
 
-        validate_config(_study(), require_systems=True)
+        validate_config({**_study(), "sweep": {"simulation.random_seed": [1, 2, 3]}},
+                        require_systems=True)
+
+    def test_validation_refuses_what_the_run_would(self):
+        """So `fastmdx check-config`, the GUI's check and the Agent's repair
+        loop see the refusal, not only a run that has started."""
+        from fastmdxplora.config.loader import ConfigError, validate_config
+
+        with pytest.raises(ConfigError) as raised:
+            validate_config(_study(), require_systems=True)
+        assert refusal_of(raised.value).code == "simulation.stopping.no_replicas"
+        # A fragment (a form mid-edit) is checked for its own shape only.
+        validate_config({"simulation": _study()["simulation"]})
+        with pytest.raises(ConfigError) as raised:
+            validate_config({"simulation": {"stop_when": {"measures": [{"analysis": "rmsd"}]}}})
+        assert refusal_of(raised.value).code == "config.option.conflicting"
+
+    def test_a_measure_must_record_a_mean(self):
+        with pytest.raises(StudyError) as raised:
+            check_stopping(_study(measures=[{"analysis": "rmsf", "standard_error": 0.01}]),
+                           replicas=True, runs=3, phases=PHASES)
+        found = refusal_of(raised.value)
+        assert found.code == "config.option.not_permitted"
+        assert "rmsd" in found.details["permitted"] and "rmsf" not in found.details["permitted"]
+
+    def test_replicas_are_read_as_the_batch_layer_expands_them(self):
+        from fastmdxplora.simulation.stopping import replicas_of
+
+        seeds = {"sweep": {"simulation.random_seed": [1, 2, 3]}}
+        assert replicas_of({**_study(), **seeds}) == (True, 3)
+        assert replicas_of({**_study(), "sweep": {"simulation.temperature_K": [300, 310]}}) == (
+            False, 2)
+        two = {"systems": [{"system": "1UAO"}, {"system": "1L2Y"}], **seeds}
+        assert replicas_of(two) == (False, 6)
+        assert replicas_of(_study()) == (False, 1)
 
 
 class TestJudging:
@@ -394,6 +428,17 @@ class TestTheLoop:
                                  extend_all=made.extend_all, say=lambda _: None)
         assert record["outcome"] == "met"
         assert "not checked against independent starts" in record["said"]
+
+    def test_a_mean_never_recorded_stops_at_once(self, tmp_path, replicas):
+        """More production does not give an analysis a mean it does not
+        record: extending would spend the whole ceiling to learn nothing."""
+        made = replicas([0.20, 0.201], 0.04)
+        (made.runs[1] / "analysis" / "rmsd" / "options.json").unlink()
+        record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
+                                 extend_all=made.extend_all, say=lambda _: None)
+        assert record["outcome"] == "stopped" and made.calls == []
+        assert "rmsd recorded no mean in seed1" in record["said"]
+        assert record["rounds"][0]["verdicts"][0]["unrecorded"] is True
 
     def test_no_whole_frame_left_below_the_ceiling(self, tmp_path, replicas, monkeypatch):
         made = replicas([0.20, 0.201], 0.5)
@@ -637,10 +682,11 @@ class TestTheStudyAppliesIt:
 
     def test_refused_before_a_run_starts(self, tmp_path, monkeypatch):
         from fastmdxplora.batch.explorer import BatchExplorer
+        from fastmdxplora.config.loader import ConfigError
 
         fake, given = self._fake_run([0.2])
         monkeypatch.setattr("fastmdxplora.batch.explorer._execute_run", fake)
-        with pytest.raises(StudyError) as raised:
+        with pytest.raises(ConfigError) as raised:
             BatchExplorer(config_data=_study(), output_dir=tmp_path / "study").run()
         assert refusal_of(raised.value).code == "simulation.stopping.no_replicas"
         assert given == []
@@ -648,16 +694,28 @@ class TestTheStudyAppliesIt:
     def test_the_plan_refuses_it_too(self, tmp_path):
         from fastmdxplora.batch.explorer import BatchExplorer
 
-        with pytest.raises(StudyError):
+        from fastmdxplora.config.loader import ConfigError
+
+        with pytest.raises(ConfigError):
             BatchExplorer(config_data=_study(), output_dir=tmp_path / "study").dry_run()
+
+    def test_a_call_that_drops_analysis_does_not_apply_it(self, tmp_path):
+        """Validation reads the config's own phases; `explore()` can narrow
+        them after, and the batch layer reads them again then."""
+        from fastmdxplora.batch.explorer import BatchExplorer
+
+        config = {**_study(), "sweep": {"simulation.random_seed": [1, 2]}}
+        explorer = BatchExplorer(config_data=config, output_dir=tmp_path / "study")
+        assert explorer._stopping_rule()
+        explorer._raw["include_phase"] = ["setup", "simulation"]
+        assert explorer._stopping_rule() is None
 
     def test_one_run_given_without_a_config_is_refused(self, tmp_path):
         from fastmdxplora import FastMDXplora
 
         with pytest.raises(StudyError) as raised:
             FastMDXplora(system="1UAO", output_dir=str(tmp_path / "x"),
-                         options={"simulation": {"stop_when": RULE}}).explore(
-                include_phase=["simulation", "analysis"])
+                         options={"simulation": {"stop_when": RULE}})
         found = refusal_of(raised.value)
         assert found.code == "config.option.inapplicable"
         assert found.details["context"] == "a run given without a config"

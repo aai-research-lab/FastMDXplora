@@ -548,6 +548,23 @@ cannot be continued, because it has no production checkpoint or its method
 deposits bias a checkpoint does not carry, it says why and offers a fresh
 run.
 
+### Saying what "done" means before the run
+
+Ask for a quantity to a precision (*simulate chignolin until its RMSD is
+known to 0.01 nm*), or to run until something is known, and the Agent
+writes the study's stopping rule, `simulation.stop_when`: the measures, the
+error each must reach, three replicas over the seed, and the most production
+any run may reach. The plan shows it on its **Stops when** line before
+anything runs, so the criterion is committed to before any data is seen,
+and the code, not the model, judges it afterwards. Where you state no
+precision, the Agent chooses one to answer your question; it is in the plan
+for you to change. A rule the study cannot keep (no replicas, a measure
+that records no mean, a ceiling below the first piece) is refused by the
+same validator that gates every proposal, so the Agent repairs it before you
+see it. Asked afterwards why the study ran as long as it did, the Agent
+answers from the record of each round. See
+[Running until it is known](production.md#running-until-it-is-known).
+
 ## What the Agent will not do
 
 - **It does not invent a structure.** A request that names none gets a
