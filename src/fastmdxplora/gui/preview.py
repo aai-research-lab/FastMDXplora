@@ -74,6 +74,8 @@ def system_preview(state: dict[str, Any], *,
         "ok": True,
         "system": given,
         "estimate": estimate.as_record(),
+        # What is kept, copies included, for the picture beside the numbers.
+        "drawing": estimate.drawing(),
         "time": _time(config, estimate.particles),
         "advisories": advisories,
     }

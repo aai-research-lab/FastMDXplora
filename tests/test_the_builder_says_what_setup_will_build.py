@@ -59,6 +59,7 @@ class TestWhatItSays:
         assert answer["ok"], answer
         estimate = answer["estimate"]
         assert estimate["residues"] == 3 and estimate["particles"] > estimate["solute_atoms"]
+        assert answer["drawing"].count("ATOM  ") == 12 and "atoms" not in estimate
         assert estimate["grows"], "three residues get the smallest box the cutoff allows"
         assert (estimate["positive_ion"], estimate["negative_ion"]) == ("Na+", "Cl-")
 
@@ -260,6 +261,9 @@ class TestInTheBrowser:
         rows = page.text_content(".system-preview-rows")
         assert "3 residues in chain A" in rows and "Na+" in rows
         assert "grown from 1 to" in rows
+        # Drawn beside the numbers: a rhombic dodecahedron has 24 edges.
+        assert page.get_attribute("#run-system-preview-view", "data-edges") == "24"
+        assert page.is_visible("#run-system-preview-view canvas")
         assert "Time here" in rows
 
     def test_an_advisory_opens_its_setting(self, page) -> None:
@@ -276,6 +280,31 @@ class TestInTheBrowser:
             "(was) => document.querySelector('.system-preview-headline')?.textContent !== was"
             " && /cube/.test(document.querySelector('.system-preview-headline').textContent)",
             arg=before, timeout=60000)
+        assert page.get_attribute("#run-system-preview-view", "data-edges") == "12"
+
+    def test_each_shape_is_its_own_cell(self, page) -> None:
+        """The cell OpenMM's box vectors tile space with: corners, edges, and
+        the narrowest width, which is the width asked for."""
+        cells = page.evaluate("""() => ['cube', 'dodecahedron', 'octahedron'].map(shape => {
+            const run = window.FastMDXRun;
+            const vectors = run.boxVectors(shape, 3);
+            const cell = run.periodicCell(vectors);
+            let narrowest = Infinity;
+            for (const [i, j, k] of [[1,0,0],[0,1,0],[0,0,1],[1,-1,0],[1,0,-1],[0,1,-1],
+                                     [1,1,-1],[1,-1,1],[-1,1,1],[1,1,0],[1,0,1],[0,1,1],
+                                     [1,-1,-1],[1,1,1]]) {
+                const n = [0, 1, 2].map(d => i * vectors[0][d] + j * vectors[1][d] + k * vectors[2][d]);
+                const length = Math.hypot(...n);
+                const reach = Math.max(...cell.vertices.map(v =>
+                    (v[0] * n[0] + v[1] * n[1] + v[2] * n[2]) / length));
+                narrowest = Math.min(narrowest, 2 * reach);
+            }
+            return [shape, cell.vertices.length, cell.edges.length, narrowest];
+        })""")
+        assert [(s, v, e) for s, v, e, _ in cells] == [
+            ("cube", 8, 12), ("dodecahedron", 14, 24), ("octahedron", 24, 36)]
+        for shape, _, _, narrowest in cells:
+            assert narrowest == pytest.approx(3.0), shape
 
     def test_an_assembly_s_copies_are_said(self, page) -> None:
         """Last: it draws an answer of its own over the page's."""

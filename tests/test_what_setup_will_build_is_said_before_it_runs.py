@@ -280,6 +280,20 @@ class TestTheAssembly:
         assert both.narrowest_nm > alone.narrowest_nm + 2.0, "the copy sits 4 nm away"
         assert any("2 copies" in note for note in both.notes)
 
+    def test_the_drawing_holds_each_copy_under_a_chain_of_its_own(self, tmp_path) -> None:
+        names = ("N", "CA", "C", "O", "CB")
+        text = (self.OPERATORS + _residue(1, "ALA", "A", 1, 0.0, names)
+                + _residue(6, "BEN", "A", 301, 3.0, ("C1", "N1"), "HETATM") + "END\n")
+        guess = estimate_system(_file(tmp_path, text), {"nonbonded_method": "NoCutoff"})
+        records = [line for line in guess.drawing().splitlines()
+                   if line.startswith(("ATOM", "HETATM"))]
+        assert sorted({line[21] for line in records}) == ["A", "B"]
+        assert not any(line[12:16].strip() == "CB" for line in records), "the backbone only"
+        assert sum(line.startswith("HETATM") for line in records) == 4, "the ligand, twice"
+        moved = [line for line in records if line[21] == "B" and line[12:16].strip() == "CA"]
+        assert float(moved[0][30:38]) == pytest.approx(40.3, abs=1e-3)
+        assert guess.centre_angstrom[0] == pytest.approx((0.0 + 43.0) / 2 + 0.0, abs=0.5)
+
     def test_named_chains_are_what_is_kept(self, tmp_path) -> None:
         text = self.OPERATORS + _residue(1, "GLY", "A", 1, 0.0) + _residue(5, "GLY", "B", 1, 20.0) \
             + "END\n"

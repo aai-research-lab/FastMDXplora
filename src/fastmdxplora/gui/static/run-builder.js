@@ -1232,6 +1232,13 @@
     const body = el("run-system-preview-body");
     if (!body) return;
     body.textContent = "";
+    try {
+      drawSystem(answer);
+    } catch (error) {
+      // The numbers stand without the picture.
+      const view = el("run-system-preview-view");
+      if (view) view.hidden = true;
+    }
     if (!answer.ok) {
       text(el("run-system-preview-state"), "");
       body.appendChild(node("p", "builder-card-note", answer.reason || "Nothing to say yet."));
@@ -1309,6 +1316,112 @@
     body.appendChild(node("p", "builder-card-note",
       "Worked out from the structure and these settings. Setup's own numbers " +
       "replace it once it has run."));
+  }
+
+  /* The periodic cell setup builds, as OpenMM lays out its box vectors for a
+   * box of width w (nm or Angstrom, as given). */
+  function boxVectors(shape, w) {
+    const r2 = Math.SQRT2;
+    if (shape === "dodecahedron") return [[w, 0, 0], [0, w, 0], [w / 2, w / 2, w * r2 / 2]];
+    if (shape === "octahedron") {
+      return [[w, 0, 0], [w / 3, 2 * r2 * w / 3, 0], [-w / 3, r2 * w / 3, Math.sqrt(6) * w / 3]];
+    }
+    return [[w, 0, 0], [0, w, 0], [0, 0, w]];
+  }
+
+  /* The cell as its shape: the points nearer the origin than any of its
+   * periodic images (the Wigner-Seitz cell), which is the cube, the rhombic
+   * dodecahedron or the truncated octahedron the names mean. Its corners
+   * are where three of the planes halfway to a neighbouring image meet,
+   * inside all the others; an edge joins two corners on two planes. */
+  function periodicCell(vectors) {
+    const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    const planes = [];
+    for (let i = -1; i <= 1; i += 1) {
+      for (let j = -1; j <= 1; j += 1) {
+        for (let k = -1; k <= 1; k += 1) {
+          if (!i && !j && !k) continue;
+          const n = [0, 1, 2].map(
+            (d) => i * vectors[0][d] + j * vectors[1][d] + k * vectors[2][d]);
+          planes.push({ n, d: dot(n, n) / 2 });
+        }
+      }
+    }
+    const tol = 1e-6 * Math.max(...planes.map((p) => p.d));
+    const det = (m) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+      - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+      + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    const meet = (a, b, c) => {
+      const m = [a.n, b.n, c.n];
+      const whole = det(m);
+      if (Math.abs(whole) < 1e-12) return null;
+      const rhs = [a.d, b.d, c.d];
+      return [0, 1, 2].map((col) =>
+        det(m.map((row, r) => row.map((v, cc) => (cc === col ? rhs[r] : v)))) / whole);
+    };
+    const vertices = [];
+    for (let a = 0; a < planes.length; a += 1) {
+      for (let b = a + 1; b < planes.length; b += 1) {
+        for (let c = b + 1; c < planes.length; c += 1) {
+          const x = meet(planes[a], planes[b], planes[c]);
+          if (!x || !planes.every((p) => dot(p.n, x) <= p.d + tol)) continue;
+          if (vertices.some((v) => Math.hypot(v[0] - x[0], v[1] - x[1], v[2] - x[2]) < 1e-6)) continue;
+          vertices.push(x);
+        }
+      }
+    }
+    const on = vertices.map((v) => planes
+      .map((p, index) => (Math.abs(dot(p.n, v) - p.d) <= tol ? index : -1))
+      .filter((index) => index >= 0));
+    const edges = [];
+    for (let i = 0; i < vertices.length; i += 1) {
+      for (let j = i + 1; j < vertices.length; j += 1) {
+        if (on[i].filter((p) => on[j].includes(p)).length >= 2) edges.push([i, j]);
+      }
+    }
+    return { vertices, edges };
+  }
+
+  let previewViewer = null;
+
+  /* The structure setup keeps, copies included, inside the cell it builds,
+   * to scale: how much water there is around the protein is seen, not read. */
+  function drawSystem(answer) {
+    const host = el("run-system-preview-view");
+    if (!host) return;
+    const e = answer && answer.ok ? answer.estimate : null;
+    if (!e || !answer.drawing || typeof window.$3Dmol === "undefined") {
+      host.hidden = true;
+      return;
+    }
+    host.hidden = false;
+    if (!previewViewer) {
+      previewViewer = window.$3Dmol.createViewer(host, { backgroundAlpha: 0 });
+    }
+    const viewer = previewViewer;
+    const tone = (name, fallback) => (getComputedStyle(document.documentElement)
+      .getPropertyValue(name) || "").trim() || fallback;
+    viewer.clear();
+    viewer.addModel(answer.drawing, "pdb");
+    viewer.setStyle({ hetflag: false }, { cartoon: { colorscheme: "chain", thickness: 0.6 } });
+    viewer.setStyle({ hetflag: true }, { stick: { radius: 0.25 } });
+    const cell = periodicCell(boxVectors(e.box_shape, Number(e.width_nm) * 10));
+    const centre = e.centre_angstrom || [0, 0, 0];
+    const at = (v) => ({ x: v[0] + centre[0], y: v[1] + centre[1], z: v[2] + centre[2] });
+    const colour = tone("--accent-cyan", "#63e6ff");
+    cell.edges.forEach(([i, j]) => {
+      viewer.addCylinder({ start: at(cell.vertices[i]), end: at(cell.vertices[j]),
+        radius: 0.35, color: colour, fromCap: 1, toCap: 1 });
+    });
+    host.dataset.edges = String(cell.edges.length);
+    // Sized to the panel as it is now: it was hidden, or the window changed.
+    viewer.resize();
+    viewer.zoomTo();
+    // Turned a little off the box's axes, so the cell reads as a solid.
+    viewer.rotate(-25, "x");
+    viewer.rotate(30, "y");
+    viewer.zoom(0.85);
+    viewer.render();
   }
 
   /* The size and the time of an answer from /api/preview-system, in two
@@ -1855,6 +1968,6 @@
      * first, so the file, the command and the script are the same ones
      * the builder would produce -- one derivation, two doors. */
     fetchConfig, download, copyCommand, downloadScript,
-    renderPreview, describeCost, previewCost,
+    renderPreview, describeCost, previewCost, boxVectors, periodicCell,
   };
 })();

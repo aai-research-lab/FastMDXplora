@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -149,9 +149,32 @@ class SystemEstimate:
     #: as its shape is drawn. For a dodecahedron, the narrowest width over
     #: the square root of a half.
     width_nm: float = 0.0
+    #: Where the box's centre sits in the structure's own frame (Angstrom):
+    #: OpenMM centres the solute's bounding box in it.
+    centre_angstrom: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    #: The atoms setup keeps, copies included, for drawing them. Not part of
+    #: the record.
+    atoms: list = field(default_factory=list, repr=False, compare=False)
 
     def as_record(self) -> dict[str, Any]:
-        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+        return {key: getattr(self, key) for key in self.__dataclass_fields__ if key != "atoms"}
+
+    def drawing(self) -> str:
+        """The kept structure as PDB records, for a picture: the backbone of
+        each chain and every heavy atom of the rest."""
+        backbone = {"N", "CA", "C", "O", "P", "O5'", "C5'", "C4'", "C3'", "O3'"}
+        records = []
+        for serial, atom in enumerate(
+                (a for a in self.atoms if a.element != "H"
+                 and (a.resname not in RESIDUE_ATOMS or a.name in backbone)), start=1):
+            x, y, z = atom.xyz
+            record = "ATOM  " if atom.resname in RESIDUE_ATOMS else "HETATM"
+            name = (atom.name if len(atom.name) > 3 else " " + atom.name)[:4]
+            records.append(
+                f"{record}{serial % 100000:5d} {name:<4s} {atom.resname[:3]:>3s} "
+                f"{atom.chain[:1]}{atom.resseq % 10000:4d}{atom.icode[:1] or ' '}   "
+                f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {atom.element[:2]:>2s}")
+        return "\n".join(records) + "\nEND\n"
 
 
 def estimate_system(structure: str | Path, setup: dict[str, Any] | None = None,
@@ -243,7 +266,9 @@ def estimate_system(structure: str | Path, setup: dict[str, Any] | None = None,
     count *= copies
     charge *= copies
 
-    coordinates, elements = _coordinates(kept, lines, chains, copies, heterogens)
+    drawn = _coordinates(kept, lines, chains, copies, heterogens)
+    coordinates = [a.xyz for a in drawn]
+    elements = [a.element for a in drawn]
     centre = [(min(c[i] for c in coordinates) + max(c[i] for c in coordinates)) / 2
               for i in range(3)]
     radius = max(math.dist(c, centre) for c in coordinates) / 10.0
@@ -283,7 +308,7 @@ def estimate_system(structure: str | Path, setup: dict[str, Any] | None = None,
         positive_ion=str(setup.get("ion_positive") or "Na+"),
         negative_ion=str(setup.get("ion_negative") or "Cl-"), water_model=model,
         particles=count + sites * waters + positive + negative, notes=notes,
-        width_nm=width)
+        width_nm=width, centre_angstrom=tuple(round(c, 3) for c in centre), atoms=drawn)
 
 
 def _atoms(lines: list[str]) -> list[_Atom]:
@@ -382,10 +407,10 @@ def _disulfides(atoms: list[_Atom], polymer: dict[tuple[str, int, str], str]) ->
 
 
 def _coordinates(kept: list[_Atom], lines: list[str], chains: list[str], copies: int,
-                 heterogens: str = "auto") -> tuple[list[tuple[float, float, float]], list[str]]:
-    """What setup keeps, in the place it keeps it: each chain and ligand
-    (crystal water where kept), and the copies the assembly's operators make
-    of them. With each atom's element."""
+                 heterogens: str = "auto") -> list[_Atom]:
+    """What setup keeps, in the place it keeps it: each chain and ligand,
+    and the copies the assembly's operators make of them, each copy under
+    chain IDs of its own as setup gives them."""
     def kept_here(atom: _Atom) -> bool:
         if atom.resname in WATER_RESNAMES:
             return False
@@ -395,23 +420,25 @@ def _coordinates(kept: list[_Atom], lines: list[str], chains: list[str], copies:
 
     atoms = [a for a in kept if kept_here(a)] or kept
     if copies > 1 and chains:
-        from fastmdxplora.setup.assembly import read_assemblies
+        from fastmdxplora.setup.assembly import _CHAIN_IDS, _is_identity, read_assemblies
 
         chosen = next((a for a in read_assemblies(lines) if a.chains == chains), None)
         if chosen is not None:
-            moved: list[tuple[float, float, float]] = []
-            elements: list[str] = []
+            free = iter(c for c in _CHAIN_IDS if c not in {a.chain for a in atoms})
+            moved: list[_Atom] = []
             for part_chains, operators in chosen.parts:
                 mine = [a for a in atoms if a.chain in part_chains]
                 for op in operators:
+                    renamed = ({c: c for c in part_chains} if _is_identity(op)
+                               else {c: next(free, c) for c in part_chains})
                     for atom in mine:
                         x, y, z = atom.xyz
-                        moved.append(tuple(op[r][0] * x + op[r][1] * y + op[r][2] * z + op[r][3]
-                                           for r in range(3)))
-                        elements.append(atom.element)
+                        moved.append(replace(atom, chain=renamed[atom.chain], xyz=tuple(
+                            op[r][0] * x + op[r][1] * y + op[r][2] * z + op[r][3]
+                            for r in range(3))))
             if moved:
-                return moved, elements
-    return [a.xyz for a in atoms], [a.element for a in atoms]
+                return moved
+    return atoms
 
 
 def _kept_heterogen(resname: str, heterogens: str) -> bool:

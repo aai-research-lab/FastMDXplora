@@ -859,6 +859,17 @@ together were refused by Python's import locks with "deadlock detected". The
 Agent's plan was found without its size and time that way. The server now
 imports those modules before it serves anything.
 
+### The builder draws the system in its box
+
+**Beside the numbers, the builder now draws what setup will build**: the chains
+it keeps, copies from the assembly's symmetry included and coloured as chains,
+and the ligands, inside the periodic cell it will build, to scale and turned
+off its axes so it reads as a solid. The cell is the shape the name means, a
+cube, a rhombic dodecahedron or a truncated octahedron, worked out from the box
+vectors OpenMM lays out (the points nearer the origin than any periodic
+image), so how much water surrounds the protein is seen rather than read. It is
+said again as the settings change, with the numbers.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

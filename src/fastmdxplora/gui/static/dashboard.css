@@ -3483,3 +3483,21 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .system-preview-rows { grid-template-columns: 1fr; }
     .system-preview-rows dd { margin-bottom: 6px; }
 }
+
+/* The picture beside the numbers: the structure in the cell setup builds. */
+.system-preview-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.system-preview-layout:has(.system-preview-view:not([hidden])) {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+}
+.system-preview-view {
+    position: relative;
+    width: 100%;
+    height: 280px;
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.system-preview-view[hidden] { display: none; }
+@media (max-width: 800px) {
+    .system-preview-layout:has(.system-preview-view:not([hidden])) { grid-template-columns: 1fr; }
+}

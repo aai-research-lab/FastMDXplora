@@ -146,7 +146,10 @@ content to arrive turns the switch on.
 still open, and said again as they change: the particles, the box (its shape,
 how wide it is from face to face, and the padding setup will grow it to where
 the cutoff needs more), the solute's residues, atoms and charge, the ligands
-kept, the water and the ions. It is worked out from the structure and the
+kept, the water and the ions; and it is drawn beside them, the chains setup
+keeps (copies from the assembly's symmetry included) inside the periodic cell
+it builds, to scale: a cube, a rhombic dodecahedron or a truncated
+octahedron. It is worked out from the structure and the
 settings by OpenMM's own rules, the chains and copies of the biological
 assembly setup will build included, and on the structures it was checked
 against it comes within a few per cent of what setup builds; setup's own
