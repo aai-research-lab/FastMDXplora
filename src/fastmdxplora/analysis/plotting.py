@@ -183,6 +183,84 @@ def greyscale_is_on() -> bool:
     return _GREYSCALE
 
 
+#: How wide a figure is drawn, by where it is going. `page` is the default
+#: this package has always drawn (6.5 in, the text width of a manuscript page
+#: with its margins). The column widths are the ones journals set figures at:
+#: 89 mm for one column and 183 mm for two (Nature's; Cell's 85 and 174 mm,
+#: ACS's 3.25 and 7 in, and Science's 2- and 3-column widths fall within a few
+#: millimetres of one or the other). A figure drawn at the width it will be
+#: printed keeps its type at the size it was set in; one scaled down from the
+#: page width takes 9 pt ticks to about 5 pt at one column, which is below
+#: what most journals accept.
+FIGURE_WIDTHS_MM: dict[str, float] = {
+    "page": 165.1,
+    "single_column": 89.0,
+    "double_column": 183.0,
+}
+
+#: The type, lines and ticks for each width, in points. The page's are the
+#: package's own; one column's are 7-8 pt type, the size journals ask for at
+#: that width, with lines and ticks thinned to match; two columns keep the
+#: page's, being about as wide.
+_SIZED: dict[str, dict[str, float]] = {
+    "page": {"tick": 9.0, "label": 10.0, "title": 11.0, "line": 1.6, "axes": 0.8,
+             "major": 4.5, "minor": 2.5, "marker": 3.0, "pad": 5.0},
+    "single_column": {"tick": 7.0, "label": 7.5, "title": 8.0, "line": 1.0, "axes": 0.6,
+                      "major": 3.0, "minor": 1.8, "marker": 2.2, "pad": 3.0},
+    "double_column": {"tick": 9.0, "label": 10.0, "title": 11.0, "line": 1.6, "axes": 0.8,
+                      "major": 4.5, "minor": 2.5, "marker": 3.0, "pad": 5.0},
+}
+
+_WIDTH_SPELLINGS = {
+    "page": "page", "full": "page", "fullpage": "page", "default": "page",
+    "singlecolumn": "single_column", "single": "single_column", "onecolumn": "single_column",
+    "1column": "single_column", "column": "single_column",
+    "doublecolumn": "double_column", "double": "double_column", "twocolumn": "double_column",
+    "2column": "double_column",
+}
+
+#: The width figures are drawn at now; see :func:`sized_for`.
+_WIDTH = "page"
+
+
+def settle_figure_width(value: Any) -> str:
+    """One name for how wide a figure is drawn, from any of the usual."""
+    if value is None:
+        return "page"
+    key = str(value).strip().lower().replace("-", "").replace("_", "").replace(" ", "")
+    settled = _WIDTH_SPELLINGS.get(key)
+    if settled is None:
+        raise StudyError(
+            f"figure_width does not accept {value!r}. It accepts "
+            f"{', '.join(FIGURE_WIDTHS_MM)}: the page (6.5 in), one journal "
+            "column (89 mm) or two (183 mm).",
+            code="analysis.option.not_permitted")
+    return settled
+
+
+def figure_width_inches(width: str | None = None) -> float:
+    return FIGURE_WIDTHS_MM[width or _WIDTH] / 25.4
+
+
+@contextmanager
+def sized_for(width: str):
+    """Draw inside this block at a width (and its type), then restore.
+
+    Process-wide for the reason :func:`drawn_in` gives, and restored the
+    same way, so an exception while drawing cannot leave later figures at a
+    column's width.
+    """
+    global _WIDTH
+    previous = _WIDTH
+    _WIDTH = settle_figure_width(width)
+    apply_style()
+    try:
+        yield
+    finally:
+        _WIDTH = previous
+        apply_style()
+
+
 #: The mark every figure drawn right now carries, or "".
 #:
 #: Ambient for the same reason the greyscale mode is: `save_figure` is the
@@ -290,11 +368,12 @@ def apply_style() -> None:
     Called automatically by :func:`new_figure`; safe to call again to
     reset after user customizations.
     """
+    size = _SIZED[_WIDTH]
     plt.rcParams.update(
         {
             "font.family": "sans-serif",
             "font.sans-serif": ["DejaVu Sans", "Arial", "Helvetica", "sans-serif"],
-            "font.size": PAPER_TICK_SIZE,
+            "font.size": size["tick"],
             "figure.facecolor": "white",
             "figure.edgecolor": "white",
             "axes.facecolor": "white",
@@ -307,17 +386,17 @@ def apply_style() -> None:
             "text.color": "black",
             "xtick.color": "black",
             "ytick.color": "black",
-            "axes.labelsize": PAPER_LABEL_SIZE,
-            "axes.titlesize": PAPER_TITLE_SIZE,
+            "axes.labelsize": size["label"],
+            "axes.titlesize": size["title"],
             "axes.titleweight": "normal",
-            "axes.linewidth": 0.8,
+            "axes.linewidth": size["axes"],
             # A closed frame with inward ticks is the convention in most
             # physics and chemistry journals, and it reads as more finished
             # than open axes at figure size.
             "axes.spines.top": True,
             "axes.spines.right": True,
             "axes.edgecolor": "#333333",
-            "axes.labelpad": 5.0,
+            "axes.labelpad": size["pad"],
             "axes.grid": True,
             "axes.axisbelow": True,
             "axes.prop_cycle": plt.cycler(
@@ -325,36 +404,48 @@ def apply_style() -> None:
             "grid.color": "#E6E6E6",
             "grid.linewidth": 0.5,
             "grid.linestyle": "--",
-            "xtick.labelsize": PAPER_TICK_SIZE,
-            "ytick.labelsize": PAPER_TICK_SIZE,
+            "xtick.labelsize": size["tick"],
+            "ytick.labelsize": size["tick"],
             "xtick.direction": "in",
             "ytick.direction": "in",
             "xtick.top": True,
             "ytick.right": True,
             "xtick.minor.visible": True,
             "ytick.minor.visible": True,
-            "xtick.major.size": 4.5,
-            "ytick.major.size": 4.5,
-            "xtick.minor.size": 2.5,
-            "ytick.minor.size": 2.5,
-            "xtick.major.width": 0.8,
-            "ytick.major.width": 0.8,
+            "xtick.major.size": size["major"],
+            "ytick.major.size": size["major"],
+            "xtick.minor.size": size["minor"],
+            "ytick.minor.size": size["minor"],
+            "xtick.major.width": size["axes"],
+            "ytick.major.width": size["axes"],
             "xtick.minor.width": 0.6,
             "ytick.minor.width": 0.6,
-            "legend.fontsize": PAPER_TICK_SIZE,
+            "legend.fontsize": size["tick"],
             "legend.frameon": False,
             "figure.dpi": 100,
-            "figure.figsize": PAPER_FIGSIZE,
+            "figure.figsize": _default_figsize(),
             "savefig.dpi": 300,
             "savefig.bbox": "tight",
             "savefig.facecolor": "white",
             "savefig.edgecolor": "white",
             "savefig.transparent": False,
             "savefig.pad_inches": 0.08,
-            "lines.linewidth": 1.6,
-            "lines.markersize": 3.0,
+            "lines.linewidth": size["line"],
+            "lines.markersize": size["marker"],
         }
     )
+
+
+def _default_figsize() -> tuple[float, float]:
+    """The page's figure, at the width figures are drawn at now."""
+    return scaled_figsize(PAPER_FIGSIZE)
+
+
+def scaled_figsize(figsize: tuple[float, float]) -> tuple[float, float]:
+    """A figure sized for the page, at the width figures are drawn at now:
+    both sides in proportion, so an analysis's own shape is kept."""
+    scale = figure_width_inches() / PAPER_FIGSIZE[0]
+    return (float(figsize[0]) * scale, float(figsize[1]) * scale)
 
 
 def _clean_array(values: NumericSeq) -> np.ndarray | None:
@@ -725,7 +816,8 @@ def new_figure(
         normal conventions (array of axes).
     """
     apply_style()
-    fig, ax = plt.subplots(figsize=figsize or PAPER_FIGSIZE, **subplot_kwargs)
+    fig, ax = plt.subplots(figsize=scaled_figsize(figsize or PAPER_FIGSIZE),
+                           **subplot_kwargs)
     fig.patch.set_facecolor("white")
     for axis in np.atleast_1d(ax).ravel():
         if hasattr(axis, "set_facecolor"):

@@ -8,7 +8,7 @@ Each writes its data, its figure, and the settings it actually used:
 ```
 analysis/<name>/
 ├── <name>.dat            the numbers
-├── <name>.png            the figure
+├── <name>.png            the figure, at figure_width (the page unless set)
 ├── <name>_greyscale.png  only with figure_colours: both
 └── options.json          selection, every option, findings, and the .dat format
 ```

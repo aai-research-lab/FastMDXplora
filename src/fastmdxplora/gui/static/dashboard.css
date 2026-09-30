@@ -1331,6 +1331,8 @@ button {
 .figure-provenance-rows dt { color: var(--text-muted); }
 .figure-provenance-rows dd { margin: 0; overflow-wrap: anywhere; }
 .figure-provenance-how, .figure-provenance-note { margin: 6px 0; }
+.figure-provenance-widths { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 6px; }
+.figure-provenance-widths .file-action.is-chosen { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
 .figure-provenance-command {
     margin: 0 0 6px;
     padding: 8px 10px;

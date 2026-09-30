@@ -1022,6 +1022,9 @@
     if (options.length) {
       row("Options", options.map(([key, value]) => code(`${key}: ${JSON.stringify(value)}`)).join(" "));
     }
+    const WIDTH_SAID = { page: "the page (6.5 in)", single_column: "one column (89 mm)",
+                         double_column: "two columns (183 mm)" };
+    if (made.width) row("Drawn for", escapeHTML(WIDTH_SAID[made.width] || made.width));
     const again = made.command || made.config || "";
     const older = made.version && made.this_version && made.version !== made.this_version
       ? `<p class="figure-provenance-note">This is FastMDXplora ${code(made.this_version)}; ` +
@@ -1030,9 +1033,17 @@
     const how = made.command
       ? "Draws it again, from the same frames and options, into a folder of its own:"
       : "A setting here has no flag, so this config draws it again (fastmdx explore --config):";
+    // The same command at another width: a journal's column, or the page.
+    const widths = Object.entries(made.at_widths || {});
+    const choose = widths.length
+      ? '<div class="figure-provenance-widths" role="group" aria-label="Draw it at">' +
+        `<button type="button" class="file-action is-chosen" data-width="">as it is</button>` +
+        widths.map(([width]) => `<button type="button" class="file-action" data-width="${escapeAttr(width)}">` +
+          `${escapeHTML(WIDTH_SAID[width] || width)}</button>`).join("") + "</div>"
+      : "";
     return `<dl class="figure-provenance-rows">${rows.join("")}</dl>` +
       (again
-        ? `<p class="figure-provenance-how">${escapeHTML(how)}</p>` +
+        ? `<p class="figure-provenance-how">${escapeHTML(how)}</p>` + choose +
           `<pre class="figure-provenance-command">${escapeHTML(again)}</pre>` +
           '<button type="button" class="file-action figure-provenance-copy">Copy</button>' + older
         : "");
@@ -1044,6 +1055,21 @@
     host.addEventListener("click", (event) => {
       const chip = event.target.closest(".figure-chip");
       const copy = event.target.closest(".figure-provenance-copy");
+      const width = event.target.closest(".figure-provenance-widths [data-width]");
+      if (width) {
+        const panel = width.closest(".figure-provenance");
+        const card = width.closest(".analysis-card");
+        const name = card?.querySelector(".figure-chip")?.dataset.provenance;
+        const made = (state.figureProvenance || {})[name];
+        const said = panel?.querySelector(".figure-provenance-command");
+        if (!made || !said) return;
+        said.textContent = width.dataset.width
+          ? (made.at_widths || {})[width.dataset.width] || ""
+          : (made.command || made.config || "");
+        panel.querySelectorAll(".figure-provenance-widths [data-width]").forEach(
+          (button) => button.classList.toggle("is-chosen", button === width));
+        return;
+      }
       if (chip) {
         const card = chip.closest(".analysis-card");
         const panel = card && card.querySelector(".figure-provenance");

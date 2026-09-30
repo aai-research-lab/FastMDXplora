@@ -93,6 +93,28 @@ class TestWhatItSays:
         assert after["options"] == before["options"]
         assert after["findings"]["mean"]["mean"] == before["findings"]["mean"]["mean"]
 
+    def test_and_at_a_journals_column_width(self, study):
+        from PIL import Image
+
+        from fastmdxplora.cli.main import main
+        from fastmdxplora.gui.figure_provenance import figure_provenance
+
+        made = figure_provenance(study)["rmsd"]
+        assert made["width"] == "page"
+        assert sorted(made["at_widths"]) == ["double_column", "single_column"]
+        command = made["at_widths"]["single_column"]
+        assert "--analyze-figure-width single_column" in command
+        assert main(shlex.split(command)[1:]) == 0
+        narrow = study.parent / "study_rmsd_again_single_column" / "analysis" / "rmsd"
+        # 89 mm at 300 dpi is 1051 pixels; the tight crop takes a little off.
+        width, _ = Image.open(narrow / "rmsd.png").size
+        assert 950 <= width <= 1051
+        page, _ = Image.open(study / "analysis" / "rmsd" / "rmsd.png").size
+        assert page > 1800
+        # The same numbers, only drawn narrower.
+        assert (narrow / "rmsd.dat").read_bytes() == \
+            (study / "analysis" / "rmsd" / "rmsd.dat").read_bytes()
+
     def test_a_setting_with_no_flag_is_given_as_a_config(self, study, monkeypatch):
         from fastmdxplora.config import languages
         from fastmdxplora.gui.figure_provenance import figure_provenance
@@ -137,6 +159,12 @@ def test_each_figure_carries_its_chip(study) -> None:
             assert "30 frames, every 2nd frame" in said and "name CA" in said
             command = page.text_content(f"{panel} .figure-provenance-command")
             assert command.startswith("fastmdx explore ") and "--analyze-analyses rmsd" in command
+            assert "Drawn for" in said and "the page (6.5 in)" in said
+            page.click(f'{panel} .figure-provenance-widths [data-width="single_column"]')
+            assert "--analyze-figure-width single_column" in page.text_content(
+                f"{panel} .figure-provenance-command")
+            page.click(f'{panel} .figure-provenance-widths [data-width=""]')
+            assert page.text_content(f"{panel} .figure-provenance-command") == command
             assert page.get_attribute(chip, "aria-expanded") == "true"
             page.click(chip)
             page.wait_for_selector(f"{panel}[hidden]", state="attached")
@@ -144,3 +172,45 @@ def test_each_figure_carries_its_chip(study) -> None:
     finally:
         session.server.shutdown()
     assert errors == []
+
+
+class TestTheWidthsAFigureIsDrawnAt:
+    def test_each_width_and_its_type(self):
+        import matplotlib.pyplot as plt
+
+        from fastmdxplora.analysis.plotting import new_figure, sized_for
+
+        fig, _ = new_figure()
+        assert tuple(round(v, 2) for v in fig.get_size_inches()) == (6.5, 4.2)
+        plt.close(fig)
+        with sized_for("single_column"):
+            fig, _ = new_figure()
+            assert round(fig.get_size_inches()[0] * 25.4, 1) == 89.0
+            assert plt.rcParams["xtick.labelsize"] == 7.0
+            plt.close(fig)
+            # An analysis's own shape is kept, at the column's width.
+            fig, _ = new_figure(figsize=(6.5, 3.8))
+            assert round(fig.get_size_inches()[1] / fig.get_size_inches()[0], 4) == \
+                round(3.8 / 6.5, 4)
+            plt.close(fig)
+        # And put back afterwards.
+        assert plt.rcParams["xtick.labelsize"] == 9.0
+
+    def test_the_usual_names_and_nothing_else(self):
+        from fastmdxplora.analysis.plotting import settle_figure_width
+        from fastmdxplora.refusals import StudyError
+
+        assert settle_figure_width(None) == "page"
+        assert settle_figure_width("single-column") == "single_column"
+        assert settle_figure_width("Two column") == "double_column"
+        with pytest.raises(StudyError, match="page, single_column, double_column"):
+            settle_figure_width("poster")
+
+    def test_it_is_a_setting_the_config_validates(self):
+        from fastmdxplora.config.loader import ConfigError, validate_config
+
+        validate_config({"systems": [{"system": "1L2Y"}],
+                         "analysis": {"figure_width": "single_column"}})
+        with pytest.raises(ConfigError):
+            validate_config({"systems": [{"system": "1L2Y"}],
+                             "analysis": {"figure_width": "poster"}})

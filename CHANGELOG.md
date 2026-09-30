@@ -1286,6 +1286,20 @@ and a test runs it and gets the same numbers byte for byte. Where a setting
 has no flag, the config is given instead; a figure made by another release
 says so.
 
+### A figure is drawn at the width a journal prints it
+
+**`analysis.figure_width` draws every figure at a journal's column width,
+with its type sized for it:** `single_column` (89 mm, 7 to 8 pt type, lines
+and ticks thinned to match) or `double_column` (183 mm), beside `page`, the
+6.5 in the figures have always been drawn at. A page-width figure scaled into
+one column took its 9 pt ticks to about 5 pt, below what most journals accept.
+The figure is drawn by the analysis itself at that size, so nothing is
+rescaled after the fact, and an analysis's own proportions are kept. The
+width is recorded in the analysis manifest, and the chip on each figure (1135)
+gives the command that draws it again at one column or two; a test draws the
+RMSD at one column from that command and gets a figure 88 mm wide over the
+same numbers.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

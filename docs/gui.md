@@ -8,8 +8,8 @@ A browser tab opens, and everything FastMDXplora does is in it: designing a
 study, starting it, watching it happen, and reading the results.
 
 The GUI is not a cut-down version of the command line. It offers **every
-setting the software has** — all 328 analysis options across 30 analyses, and
-all 123 phase and top-level settings — because the form is generated from the
+setting the software has** — all 358 analysis options across 30 analyses, and
+all 124 phase and top-level settings — because the form is generated from the
 same declaration the CLI and the [Config](config.md) are built from rather than
 written by hand. Adding a setting to the schema puts a control in the GUI;
 nothing has to be kept in step.
@@ -320,8 +320,11 @@ and the options, and the command that draws it again: the one analysis,
 over the same frames with the same selection and options, into a folder of
 its own beside the study, so nothing of the study is overwritten. The
 command is the command line's own rendering, and run, it writes the same
-numbers; where a setting has no flag, a config is given instead. A figure
-made by another release says so, since a rerun here is drawn by this one.
+numbers; where a setting has no flag, a config is given instead. Two buttons
+give the same command drawing it at a journal's column width instead, one
+column (89 mm) or two (183 mm), with its type sized for that width
+(`analysis.figure_width`). A figure made by another release says so, since a
+rerun here is drawn by this one.
 
 **There is no comparison view.** A campaign's cross-run comparison is written
 to `comparison/` at the campaign root, by the batch layer once every run has

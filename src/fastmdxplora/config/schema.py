@@ -936,6 +936,15 @@ ANALYSIS = PhaseSchema(
               "accepted.",
               choices=("colour", "greyscale", "both"),
               example="both"),
+        Field("figure_width", str, "page",
+              "How wide every figure is drawn, with its type sized for that "
+              "width: 'page' (6.5 in, a manuscript page's text width), "
+              "'single_column' (89 mm, one journal column, 7-8 pt type) or "
+              "'double_column' (183 mm, two). A figure drawn at the width it "
+              "is printed at keeps its type legible; one drawn for the page "
+              "and scaled into a column takes its 9 pt ticks to about 5 pt.",
+              choices=("page", "single_column", "double_column"),
+              example="single_column"),
         Field("options", dict, None,
               "Per-analysis option overrides, keyed by analysis name. "
               "E.g. {cluster: {methods: [kmeans], n_clusters: 5}}.",
@@ -1166,7 +1175,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("first", "last", "stride")),
         ("What the figures look like",
          "How every figure is drawn, for the screen or for print.",
-         ("figure_colours",)),
+         ("figure_colours", "figure_width")),
     ),
     "report": (
         ("How this phase was written",

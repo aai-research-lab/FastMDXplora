@@ -34,7 +34,7 @@ from typing import Any
 import mdtraj as md
 
 from fastmdxplora.analysis.base import Analysis, AnalysisResult
-from fastmdxplora.analysis.plotting import settle_figure_colours
+from fastmdxplora.analysis.plotting import settle_figure_colours, settle_figure_width
 from fastmdxplora.config.schema import ANALYSIS
 from fastmdxplora.analysis.loading import (
     PathLike,
@@ -203,6 +203,7 @@ class AnalysisOrchestrator:
         last: int | None = None,
         saving_interval_ps: float | None = None,
         figure_colours: str | None = None,
+        figure_width: str | None = None,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.output_dir: Path = (
@@ -223,6 +224,7 @@ class AnalysisOrchestrator:
         # refused before any trajectory is loaded rather than twenty-three
         # times over while figures are being drawn.
         self.figure_colours: str = settle_figure_colours(figure_colours)
+        self.figure_width: str = settle_figure_width(figure_width)
         self.scope_selection: str | None = _resolve_scope(scope, ligand_resname)
 
         # Cache the trajectory and the load-time parameters so the manifest
@@ -295,6 +297,7 @@ class AnalysisOrchestrator:
             # Every analysis draws in the same mode unless one was told
             # otherwise, the same way the ligand name is supplied above.
             raw_opts.setdefault("figure_colours", self.figure_colours)
+            raw_opts.setdefault("figure_width", self.figure_width)
             opts = self._filter_kwargs(cls, raw_opts)
             # Selection precedence: an explicit per-analysis selection wins;
             # then an orchestrator-wide `selection`; otherwise, if the
@@ -853,6 +856,7 @@ class AnalysisOrchestrator:
             ),
             "load_kwargs": self._load_kwargs,
             "figure_colours": self.figure_colours,
+            "figure_width": self.figure_width,
             "default_selection": self.default_selection,
             "n_frames": int(self.traj.n_frames),
             "n_atoms": int(self.traj.n_atoms),
@@ -877,6 +881,7 @@ class AnalysisOrchestrator:
                 "last": self._load_kwargs.get("last"),
                 "selection": self.default_selection,
                 "figure_colours": self.figure_colours,
+                "figure_width": self.figure_width,
             },
             "results": {name: r.to_dict() for name, r in self.results.items()},
         }

@@ -46,6 +46,8 @@ import pandas as pd
 from fastmdxplora.analysis.plotting import (
     closes_what_it_opens, colour, drawn_in, fit_legend, new_figure, save_figure,
     settle_figure_colours,
+    settle_figure_width,
+    sized_for,
 )
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
@@ -241,6 +243,7 @@ class Analysis(ABC):
         figsize: tuple[float, float] | None = None,
         xunit: str | None = None,
         figure_colours: str | None = None,
+        figure_width: str | None = None,
         **options: Any,
     ) -> None:
         """Initialize the analysis with user-supplied options.
@@ -268,6 +271,10 @@ class Analysis(ABC):
             ``<name>_greyscale.png``, which is what a paper usually wants:
             colour for the online version, greyscale for print. American
             spellings are accepted. Default ``"colour"``.
+        figure_width : {"page", "single_column", "double_column"}, optional
+            How wide the figure is drawn, with type sized for that width:
+            the page (6.5 in, the default), one journal column (89 mm) or
+            two (183 mm).
         **options
             Analysis-specific keyword arguments. Subclasses access these
             via ``self.options``.
@@ -300,6 +307,7 @@ class Analysis(ABC):
         #: Settled here rather than at each use, so a misspelling is refused
         #: once at construction and not discovered when the figure is drawn.
         self.figure_colours: str = settle_figure_colours(figure_colours)
+        self.figure_width: str = settle_figure_width(figure_width)
 
         self.result: Any = None
 
@@ -867,9 +875,10 @@ class Analysis(ABC):
             wanted = [(self.figure_colours, primary)]
 
         written: list[Path] = []
-        for mode, path in wanted:
-            with drawn_in(mode):
-                written.append(self._draw_one(path))
+        with sized_for(self.figure_width):
+            for mode, path in wanted:
+                with drawn_in(mode):
+                    written.append(self._draw_one(path))
         return written
 
     def _write_options_manifest(self) -> Path:

@@ -141,6 +141,7 @@ class AnalyzeSettings(TypedDict, total=False):
     first: int
     last: int
     figure_colours: Literal['colour', 'greyscale', 'both']
+    figure_width: Literal['page', 'single_column', 'double_column']
     options: dict[str, Any]
 
 

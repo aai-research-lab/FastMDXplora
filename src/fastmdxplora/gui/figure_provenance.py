@@ -25,6 +25,9 @@ from typing import Any
 
 __all__ = ["figure_provenance"]
 
+#: The widths a figure can be drawn at (`analysis.figure_width`).
+WIDTHS = ("page", "single_column", "double_column")
+
 #: The packages whose version decides what an analysis reports, in the
 #: order the chip names them.
 _NAMED_PACKAGES = ("mdtraj", "numpy", "scipy", "matplotlib")
@@ -57,6 +60,17 @@ def figure_provenance(root: str | Path) -> dict[str, dict[str, Any]]:
         selection = record.get("selection")
         config = _the_config_that_makes_it_again(base, str(name), resolved, options, selection)
         command, config_text = _said(config)
+        width = str(manifest.get("figure_width") or resolved.get("figure_width") or "page")
+        # The same, drawn at each other width a journal sets figures at.
+        at_widths = {}
+        for other in WIDTHS:
+            if other == width:
+                continue
+            sized = json.loads(json.dumps(config))
+            sized["analysis"]["figure_width"] = other
+            sized["output"] = f"{config['output']}_{other}"
+            said, text = _said(sized)
+            at_widths[other] = said or text
         found[str(name)] = {
             "analysis": str(name),
             "version": made_with or None,
@@ -74,6 +88,8 @@ def figure_provenance(root: str | Path) -> dict[str, dict[str, Any]]:
             "options": options,
             "command": command,
             "config": config_text,
+            "width": width,
+            "at_widths": at_widths,
         }
     return found
 
@@ -85,8 +101,8 @@ def _the_config_that_makes_it_again(base: Path, name: str, resolved: dict[str, A
         "topology": resolved.get("topology"),
         "include": [name],
     }
-    for key in ("stride", "first", "last"):
-        if resolved.get(key) is not None:
+    for key in ("stride", "first", "last", "figure_colours", "figure_width"):
+        if resolved.get(key) is not None and resolved.get(key) not in ("colour", "page"):
             analysis[key] = resolved[key]
     if selection and selection != resolved.get("selection"):
         analysis.setdefault("options", {}).setdefault(name, {})["selection"] = selection

@@ -74,7 +74,7 @@ nearest match.
 |---|---|
 | `setup` | 46 settings — structure, ligand, membrane, solvent, force field, forces |
 | `simulation` | 45 settings — length, conditions, integrator, platform, enhanced sampling |
-| `analysis` | 13 settings — which measures, over which atoms, over which frames |
+| `analysis` | 14 settings — which measures, over which atoms, over which frames |
 | `report` | 11 settings — title, formats, highlighted regions |
 
 Every setting in each is in the [Config reference](config_reference.md).
@@ -374,7 +374,7 @@ leaves a `resolved_config.yml` saying `ph: 6.0`, not the `7.0` the file said.
 **It carries every setting the run used, defaults included.** That is what the
 file is for: a study you can repeat from what the run left behind rather than
 from what somebody remembers typing. Every phase gets a block whether or not
-you touched it, and every option in that block is named — 115 settings for a
+you touched it, and every option in that block is named — 116 settings for a
 study that set two. The block is exactly the dictionary the phase was handed,
 not a reconstruction of it.
 
