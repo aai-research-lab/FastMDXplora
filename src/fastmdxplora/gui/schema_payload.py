@@ -269,10 +269,14 @@ def schema_payload() -> dict[str, Any]:
     # that takes one value. A block of settings is not one value.
     sweep_axes = [f"{phase}.{field.name}" for phase, group in PHASE_SCHEMAS.items()
                   for field in group.fields if field.type is not dict]
+    from fastmdxplora.gui.starters import starters_payload
+
     return {
         "phases": phases,
         "run_options": run_options,
         "execution_options": execution_options,
         "sweep_axes": sweep_axes,
         "analysis_options": _analysis_options(),
+        # Complete studies to start from, each with its plan (starters.py).
+        "starters": starters_payload(),
     }

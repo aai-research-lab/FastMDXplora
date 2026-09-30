@@ -2208,6 +2208,79 @@
     if (note) text(el("run-note"), note);
   }
 
+  /* Complete studies to start from (starters.py): a tile each, with what it
+   * is for and what it will run. Chosen, it is loaded as any Config is, and
+   * the note says what to change first. Built as elements. */
+  const STARTER_FACTS = ["System", "Production", "Sampling", "Stops when", "Membrane"];
+  const STARTERS_FOLDED = "fastmdx-starters-folded";
+
+  function drawStarters() {
+    const host = el("run-starters");
+    const card = el("run-starters-card");
+    const starters = (state.schema && state.schema.starters) || [];
+    if (!host || !card) return;
+    host.replaceChildren();
+    card.hidden = !starters.length;
+    // Folded, it stays folded for this person: someone who writes their
+    // own studies need not scroll past it each time.
+    try {
+      if (window.localStorage.getItem(STARTERS_FOLDED) === "1") card.open = false;
+    } catch (error) { /* storage unavailable: shown open */ }
+    if (!card.dataset.remembers) {
+      card.dataset.remembers = "1";
+      card.addEventListener("toggle", () => {
+        try {
+          window.localStorage.setItem(STARTERS_FOLDED, card.open ? "0" : "1");
+        } catch (error) { /* nothing to remember it in */ }
+      });
+    }
+    starters.forEach((starter) => {
+      const tile = document.createElement("button");
+      tile.type = "button";
+      tile.className = "starter";
+      tile.setAttribute("role", "listitem");
+      tile.dataset.starter = starter.id;
+      const title = document.createElement("span");
+      title.className = "starter-title";
+      title.textContent = starter.title;
+      const what = document.createElement("span");
+      what.className = "starter-what";
+      what.textContent = starter.what;
+      const facts = document.createElement("span");
+      facts.className = "starter-facts mono";
+      facts.textContent = (starter.plan || [])
+        .filter((line) => STARTER_FACTS.includes(line.label))
+        .map((line) => line.value).join(" \u00b7 ");
+      tile.append(title, what, facts);
+      tile.addEventListener("click", () => startFrom(starter, tile));
+      host.appendChild(tile);
+    });
+  }
+
+  async function startFrom(starter, tile) {
+    const note = el("run-starters-note");
+    let loaded = null;
+    try {
+      const response = await fetch("/api/load-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: starter.config }),
+      });
+      loaded = await response.json();
+    } catch (error) {
+      loaded = { ok: false, error: "The server did not answer." };
+    }
+    if (!loaded || !loaded.ok) {
+      text(note, (loaded && loaded.error) || "Could not load it.");
+      return;
+    }
+    await applyLoadedState(loaded.state, {});
+    el("run-starters")?.querySelectorAll(".starter").forEach(
+      (other) => other.classList.toggle("is-chosen", other === tile));
+    text(note, `Started from "${starter.title}". Change first: ${String(starter.change || "")
+      .replace(/`/g, "")}`);
+  }
+
   async function runAsItStands() {
     const path = el("run-config-path").value.trim();
     if (!path) return;
@@ -2505,6 +2578,7 @@
     loadSchema().then(() => {
       describeOutput();
       renderAll();
+      drawStarters();
     }).catch(() => {
       text(el("run-summary"), "Could not read the settings.");
     });

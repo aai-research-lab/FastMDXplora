@@ -42,7 +42,7 @@ you. Nothing is uploaded anywhere.
 | | |
 |---|---|
 | **Agent** | [The FastMDXplora Agent](agent.md): a conversation that writes, edits, runs and reads a study |
-| **Config** | The [Config](config.md) builder: four questions, the phases as tiles |
+| **Config** | The [Config](config.md) builder: four questions, the phases as tiles. Above them, **Start from an example**: a protein in water, a protein and its ligand, a membrane protein, a study run until a quantity is determined, and a free energy along a distance, each a complete Config (the [worked examples](examples.md)) loaded into the form to change |
 | **Overview** | Study Overview. A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
 | **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default. **Measure** (the ruler, or M): two atoms clicked give their distance, three the angle, four the dihedral, drawn in the structure and listed in the Selection tab, following the frames; two atoms can be measured over every frame with the command it gives |
 | **Analysis** | The figures and tables, grouped. For a study of several runs, the runs side by side: the settings that differ, the mean each run recorded with its error, a difference marked only where it exceeds twice the two runs' combined error (replicas are set against their own errors instead), and one measure from every finished run overlaid |

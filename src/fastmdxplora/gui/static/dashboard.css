@@ -3825,3 +3825,23 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .measure-values dd { margin: 0; color: var(--text-primary); }
 .measure-over { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; }
 .measure-command { margin: 0; width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--text-primary) 5%, transparent); font-family: var(--font-mono); font-size: var(--text-2xs); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Studies to start from, on the Config page (run-builder.js, starters.py). */
+.starters-card > summary { list-style: none; cursor: pointer; }
+.starters-card > summary::-webkit-details-marker { display: none; }
+.starters-card > summary .card-title::after { content: " \25BE"; color: var(--text-muted); font-weight: 400; }
+.starters-card:not([open]) > summary .card-title::after { content: " \25B8"; }
+.starters-card:not([open]) > summary .builder-card-note { display: none; }
+.starters { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.starter {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+    padding: 12px 14px; text-align: left; cursor: pointer;
+    border: 1px solid var(--border-primary); border-radius: 10px;
+    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+    color: var(--text-primary); font: inherit;
+}
+.starter:hover, .starter.is-chosen { border-color: color-mix(in srgb, var(--accent-cyan) 50%, transparent); background: color-mix(in srgb, var(--accent-cyan) 8%, transparent); }
+.starter-title { font-weight: 600; font-size: var(--text-sm); }
+.starter-what { font-size: var(--text-xs); color: var(--text-secondary); }
+.starter-facts { font-size: var(--text-2xs); color: var(--text-muted); }
+.starters-note:empty { display: none; }

@@ -1470,6 +1470,18 @@ was, and what the builder writes runs every window with its centre and force
 constant. The Agent's own Run here was not affected: it runs the Config it
 wrote. Found writing the builder's starting points.
 
+### The builder offers studies to start from
+
+**A first study began at an empty form.** The Config page now opens with
+**Start from an example**: a protein in water, a protein and its ligand, a
+membrane protein, a study run until a quantity is determined, and a free
+energy along a distance. Each is a complete Config the validator accepts,
+following a recipe on the examples page and naming a real structure so it
+runs as it stands; each tile says what it is for and, from its plan, what it
+will run. Chosen, it is loaded into the form as any Config is, and the note
+says what to change first. Folded, the gallery stays folded
+(`gui/starters.py`, in the schema payload).
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
