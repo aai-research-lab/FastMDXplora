@@ -34,7 +34,7 @@ fastmdx explore --system 181L \
 ```
 
 `amber-openff` is what parameterises the ligand. The setup phase finds it,
-looks its chemistry up, settles its protonation in the binding site, and
+looks its chemistry up, determines its protonation in the binding site, and
 discards crystallisation additives. The analysis phase adds the protein–ligand
 measures automatically.
 
@@ -126,7 +126,7 @@ See [Membrane proteins](membranes.md).
 
 ---
 
-## Holding a structure still while it settles
+## Holding a structure still while it equilibrates
 
 ```bash
 fastmdx explore --system 4LYT --output runs/lysozyme \

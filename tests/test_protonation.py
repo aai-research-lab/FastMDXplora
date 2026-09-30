@@ -350,7 +350,7 @@ class TestSettledStateReachesTheForceField:
         # No decision recorded for the acid: two of them disagreed.
         state = ProtonationState("DIA", True, (), "test",
                                  per_group=(("tertiary amine", True),))
-        with pytest.raises(ProtonationError, match="not settled for that group"):
+        with pytest.raises(ProtonationError, match="not determined for that group"):
             apply_settled_state(
                 self._sdf("CC(C)=CC(=O)O"),
                 self._chemistry("DIA", ["carboxylic acid"]),

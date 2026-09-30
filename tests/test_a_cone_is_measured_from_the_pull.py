@@ -451,7 +451,7 @@ class TestAStudyCanNameTheGroupItself:
         with pytest.raises(ValueError, match="behind the site"):
             measure_the_cone(trajectory, "BEN", SITE, axis_selection=named)
 
-    def test_a_path_with_no_settled_direction_is_refused(self):
+    def test_a_path_with_no_consistent_direction_is_refused(self):
         """A ligand that leaves by several routes needs a coordinate that
         follows one of them, not a wall around all of them."""
         trajectory, _, _, _ = a_pull(tumbling=False, seed=17)
@@ -465,7 +465,7 @@ class TestAStudyCanNameTheGroupItself:
         middle = scattered.xyz[:, site, :].mean(axis=1)
         scattered.xyz[:, ligand, :] = (
             middle + every_way * radius)[:, None, :].astype(np.float32)
-        with pytest.raises(ValueError, match="no settled direction"):
+        with pytest.raises(ValueError, match="no consistent direction"):
             measure_the_cone(scattered, "BEN", SITE)
 
 

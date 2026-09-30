@@ -953,7 +953,7 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
             chemistry.path.read_text(encoding="utf-8"), chemistry, state
         )
 
-        # Files are per copy, because two copies can settle into different
+        # Files are per copy, because two copies can be determined in different
         # protonation states and each needs its own chemistry on disk.
         suffix = "" if len(copies) == 1 else f"_{instance.chain}{instance.resseq}"
         target = ligand_dir / f"{decision.resname}{suffix}.sdf"

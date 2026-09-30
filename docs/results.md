@@ -46,7 +46,7 @@ and does not support, with the checks it was held to each marked passed,
 failed or not judged (and why).
 
 **`analysis/rmsd/rmsd.png`** — the first question about any trajectory: has the
-structure settled, or is it still moving?
+structure equilibrated, or is it still moving?
 
 **`setup/setup_parameters.json`** — what was decided about your structure
 before any dynamics ran. Every non-standard residue, every protonation call. If
@@ -69,7 +69,7 @@ opens in a browser with no server, and travels inside
 Every measure reports through the same four registers, and reading them is most
 of reading a result.
 
-**A number, plainly.** A settled mean arrives with a standard error and the
+**A number, plainly.** A mean after equilibration arrives with a standard error and the
 number of **independent observations** behind it, not the number of frames,
 and with its unit (`unit` in the analysis's `options.json`, as its figure's
 axis states it; empty for a count or a fraction).
@@ -89,7 +89,7 @@ so the effective-sample count is an upper bound and the true figure is smaller.
 quantity but not to pin it.
 
 **No number at all**, with the reason. A free energy from a bias that never
-settled, a potential of mean force across windows that do not overlap, a
+converged, a potential of mean force across windows that do not overlap, a
 binding free energy from a run that never reached bulk: each is refused by name
 rather than drawn. A refusal is the most informative thing this software
 produces, and it always says what would settle the question.
@@ -236,14 +236,14 @@ piece, so nothing has to branch on whether a run was segmented.
 **Drift and scatter are not the same thing.** Segment means that disagree *in
 no order* say the per-segment errors are too small; the mean stands and its
 error should be read as a lower bound. Segment means that *climb or fall* say
-the system had not settled at the scale of the whole run — that is a refusal,
+the system had not equilibrated at the scale of the whole run — that is a refusal,
 `analysis.sampling.drifting`, and the remedy is a longer run rather than more
 pooling.
 
 ```
-settled    mean=10.005 het=0.7   drift_p=0.30   qualified=False
-scattered  mean=10.012 het=376   drift_p=0.69   qualified=True
-drifting   REFUSED -> analysis.sampling.drifting  (+1.75 first to last)
+equilibrated  mean=10.005 het=0.7   drift_p=0.30   qualified=False
+scattered     mean=10.012 het=376   drift_p=0.69   qualified=True
+drifting      REFUSED -> analysis.sampling.drifting  (+1.75 first to last)
 ```
 
 One consequence worth knowing: any join offset large enough to fool the

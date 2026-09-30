@@ -7,7 +7,7 @@ It is chemistry, and a trajectory carries coordinates.
 Other tools perceive it from the coordinates every time, because they accept
 arbitrary PDB files and have nothing else to go on. This software often has
 something else: setup resolves the ligand's chemistry from the Chemical
-Component Dictionary and settles its protonation against the pocket, then
+Component Dictionary and determines its protonation against the pocket, then
 writes it to ``setup/ligands/<resname>.sdf``. Where that file exists the
 chemistry is not a guess.
 
@@ -341,7 +341,7 @@ def resolve_ligand_chemistry(
         elif len(balanced) > 1:
             others = ", ".join(f"{q:+d}" for q in balanced if q != charge)
             how = (f"at net charge {charge:+d}, but {others} would also "
-                   f"balance -- state the charge to settle it")
+                   f"balance -- state the charge to decide it")
         else:
             how = f"at net charge {charge:+d}, the only one that balances"
         return ResolvedChemistry(

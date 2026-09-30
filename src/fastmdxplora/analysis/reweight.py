@@ -293,7 +293,7 @@ def weights_for_run(
         hills.time_ps, hills.centre, hills.sigma, hills.height,
         frames, at_frames)
 
-    # Settled where the last hills are a small fraction of the first, the
+    # Converged where the last hills are a small fraction of the first, the
     # same test the surface uses to decide whether to report one.
     from fastmdxplora.simulation.metad_surface import SETTLED_HEIGHT_FRACTION
 

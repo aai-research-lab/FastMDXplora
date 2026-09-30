@@ -86,7 +86,7 @@ class TestWhatThePageIsGiven:
         root, _ = finished
         page = stopping_payload(root)
         assert page["ok"] and page["outcome"] == "met"
-        assert page["outcome_label"] == "Known as asked"
+        assert page["outcome_label"] == "Determined as asked"
         assert page["runs"] == ["seed0", "seed1", "seed2"] and page["ceiling_ns"] == 20
         rmsd, rg = page["measures"]
         assert (rmsd["label"], rmsd["unit"], rmsd["asked"]) == ("RMSD", "nm", "±0.01 nm")
@@ -222,7 +222,7 @@ def test_the_overview_draws_it(finished, tmp_path) -> None:
             session.server.shutdown()
     done, now = seen["finished"], seen["running"]
     rounds = len(json.loads((root / "stopping.json").read_text())["rounds"])
-    assert done["outcome"] == "Known as asked" and done["states"] == ["met", "met"]
+    assert done["outcome"] == "Determined as asked" and done["states"] == ["met", "met"]
     assert done["points"] == rounds and done["met"] == 1 and done["replicas"] == 3 * rounds
     assert done["projection"] == 0 and done["target"] == "asked ±0.01 nm"
     assert done["strip"][0] == f"{json.loads((root / 'stopping.json').read_text())['rounds'][-1]['production_ns']:g} ns of 20 ns"

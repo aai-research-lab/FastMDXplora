@@ -563,7 +563,7 @@ that records no mean, a ceiling below the first piece) is refused by the
 same validator that gates every proposal, so the Agent repairs it before you
 see it. Asked afterwards why the study ran as long as it did, the Agent
 answers from the record of each round. See
-[Running until it is known](production.md#running-until-it-is-known).
+[Running until it is determined](production.md#running-until-it-is-determined).
 
 ## What the Agent will not do
 

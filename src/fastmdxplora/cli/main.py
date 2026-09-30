@@ -2743,7 +2743,7 @@ def _run_staged(args: Any, config: dict) -> int:
     from fastmdxplora.naming import default_output_name
 
     output = _Path(args.agent_output or default_output_name())
-    print(f"\nRunning setup, which settles the particle count "
+    print(f"\nRunning setup, which determines the particle count "
           f"({output})...")
     staged = run_in_stages(config, output,
                            budget_hours=float(args.budget_hours))

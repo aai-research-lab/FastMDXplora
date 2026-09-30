@@ -9,7 +9,7 @@ of giving that up. \\cite{gilson1997}
     K = 4 pi * integral over the bound range of exp(-beta [A(r) - c]) dr
     dG = -kT ln(K / V0),   V0 = 1661 A^3
 
-with c the constant that A(r) + 2kT ln r settles to in bulk.
+with c the constant that A(r) + 2kT ln r tends to in bulk.
 
 **Which free energy A(r) is matters, and getting it wrong doubles an
 entropy.** Umbrella sampling recombined by histogram gives the free energy

@@ -745,7 +745,7 @@
     return wrap;
   }
 
-  // ------------------------------------------------ running until it knows
+  // -------------------------------------------- running until it is determined
 
   /* `simulation.stop_when` as a form: the measures, each with the error it
    * must reach, a ceiling, and whether replicas must agree. Drawn again
@@ -878,7 +878,7 @@
     const add = document.createElement("button");
     add.type = "button";
     add.className = "run-sweep-add builder-stopping-add";
-    add.textContent = draft.rows.length ? "Add a measure" : "Run until a measure is known";
+    add.textContent = draft.rows.length ? "Add a measure" : "Run until a measure is determined";
     add.addEventListener("click", (event) => {
       event.preventDefault();
       draft.rows.push({ analysis: "", kind: "absolute", amount: "" });
@@ -923,7 +923,7 @@
       });
       replicasRow.appendChild(replicas);
       replicasRow.appendChild(document.createTextNode(
-        "Replicas must agree (recommended: one run can settle while trapped in one state)"));
+        "Replicas must agree (recommended: one run can look equilibrated while trapped in one state)"));
       box.appendChild(replicasRow);
 
       const note = document.createElement("div");

@@ -160,7 +160,7 @@ def diagnose_failure(topology: Any, positions: Any, *, stage: str,
         cause = (
             "Lipids are among the affected atoms, which points at the bilayer "
             "packing rather than at the protein. A membrane needs the solvent "
-            "and lipids to settle around the solute before anything moves "
+            "and lipids to relax around the solute before anything moves "
             "freely."
         )
         advice = [

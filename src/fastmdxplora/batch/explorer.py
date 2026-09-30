@@ -1417,7 +1417,7 @@ class BatchExplorer:
         return list(rounds) if isinstance(rounds, list) else []
 
     def _run_until_known(self, targets: list) -> None:
-        """Extend the runs until what the study asked for is known, then
+        """Extend the runs until what the study asked for is determined, then
         write the study's report again with the record of how long it ran."""
         from fastmdxplora.simulation.stopping import RECORD, run_until_known
 
@@ -1451,7 +1451,7 @@ class BatchExplorer:
         if len(finished) < len(self.results):
             print(f"The stopping rule judges the {len(finished)} runs that finished.")
         runs = [Path(result.output_dir) for result in finished]
-        print(f"\nRunning until known\n{'=' * 40}")
+        print(f"\nRunning until determined\n{'=' * 40}")
         side_by_side = self.mode == "parallel" and len(runs) > 1
         run_until_known(runs, targets, stop_when, record_in=self.output_dir,
                         extend_all=self._extend_runs, earlier_rounds=self._earlier_rounds(),
@@ -1526,7 +1526,7 @@ class BatchExplorer:
         """One table across the members, written beside the manifest.
 
         Separate from the comparison report, which overlays series. This
-        collects what each member concluded -- its settled means and the
+        collects what each member concluded -- its recorded means and the
         error it claimed for them -- and, for a seed sweep, sets those
         errors against the spread the replicas actually show. That
         comparison is the only check a reported uncertainty gets.

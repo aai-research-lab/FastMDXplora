@@ -60,7 +60,7 @@ fastmdx info
 | | |
 |---|---|
 | **A protein on its own** | Fold, flexibility, secondary structure, native contacts, conformational clustering — from a PDB code. Fluctuations can be set against the crystal's own B-factors, and backbone order parameters against what NMR relaxation measures. |
-| **A protein with a ligand** | The ligand is found, its chemistry resolved, its protonation settled in the binding site. Eight interaction types against published criteria tell you what *holds* it, not just what it touches. |
+| **A protein with a ligand** | The ligand is found, its chemistry resolved, its protonation determined in the binding site. Eight interaction types against published criteria tell you what *holds* it, not just what it touches. |
 | **A membrane protein** | Embedded in one of seven bilayers, oriented by a fit checked against OPM, with pressure coupling that suits a lipid system and the bilayer's area, thickness and chain order measured. |
 | **Free energy along a coordinate** | Umbrella sampling, metadynamics and steered MD from a named collective variable — nine of them, one or two at a time — without writing PLUMED input. Each says what its output is and is not: a surface if the bias converged, a pathway and the work along it, a potential of mean force if the windows overlap. |
 | **A trajectory from another engine** | Skip the simulation and analyse what you already have — GROMACS `.xtc` and `.trr`, Amber `.nc`, NAMD and CHARMM `.dcd`, LAMMPS `.lammpstrj`, or `.pdb`, `.cif` and `.h5` that carry their own topology. |

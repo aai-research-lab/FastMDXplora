@@ -1157,6 +1157,23 @@ bilayer thickness, moments of inertia, coordination number), as their own
 axes state it, for the form and for studies analysed before units were
 recorded.
 
+### Equilibrated, converged or determined, never "settled"
+
+**What the software says now uses the physics' own words.** "Settled" is not
+a physics term, and it was standing for three that are: an observable
+*equilibrates* (the structure, the solvent, a bilayer's area, a window at
+its restraint), a bias or a surface *converges*, and a mean or a protonation
+state is *determined*. The statistics had dropped the word already; it
+lingered in the Agent's instructions, two refusals (a run whose segment means
+drift "had not equilibrated at the scale of the whole run"), the log, the
+builder, the Overview, the documentation, and two cases of the guardrail
+corpus, now "a run that never equilibrated" and "a run that equilibrated,
+transient included". A study with a stopping rule runs until each measure is
+*determined* to the precision asked ("Determined as asked", "Running until
+it is determined"), and a run trapped in one state is said to look
+equilibrated there, which is the trap. The `Settled` alias and the `settled`
+key in older records are still read.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

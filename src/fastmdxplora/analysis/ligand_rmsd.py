@@ -348,7 +348,7 @@ class LigandRMSD(Analysis):
         # left edge labelled "reference (frame 0)", which took a legend entry
         # to say that a curve of displacement from a frame starts at zero at
         # that frame. What a reader needs from this plot is where the pose
-        # settled and what it settled at, and the base class draws that.
+        # equilibrated and at what value, and the base class draws that.
         ax.set_ylim(bottom=0.0)
 
     # Plot plumbing mirrors RMSD.

@@ -388,7 +388,7 @@ class FastMDXplora:
             # without a config does not have: ignored, it would run the
             # first piece and stop as if that were the answer.
             raise StudyError(
-                "simulation.stop_when runs a study until it knows, and is applied to a "
+                "simulation.stop_when runs a study until it is determined, and is applied to a "
                 "study given as a config: FastMDXplora(config_data={'systems': [...], "
                 "'simulation': {'stop_when': ...}}), a config file, the command line or "
                 "the GUI.", code="config.option.inapplicable",

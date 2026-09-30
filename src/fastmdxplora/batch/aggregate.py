@@ -13,7 +13,7 @@ series' biology as noise; quoting the first kind as a finding reports noise
 as biology. This tells them apart from the campaign's own sweep record
 rather than from the shape of the numbers, and says which it decided.
 
-**Replicas are what makes a reported uncertainty checkable.** Every settled
+**Replicas are what makes a reported uncertainty checkable.** Every recorded
 mean carries a standard error estimated from one trajectory's
 autocorrelation. Ten trajectories give the same quantity a second way, as
 the spread of ten means, and the two should agree. Where the single-run
@@ -121,7 +121,7 @@ def aggregate_members(batch_dir: str | Path) -> dict[str, Any]:
     """Collect a campaign's members into one comparison.
 
     Returns the per-member values for every analysis that reported a
-    settled mean, and, where the members are replicas, the comparison
+    recorded mean, and, where the members are replicas, the comparison
     between the error each run estimated for itself and the spread the
     replicas actually show.
     """
@@ -218,7 +218,7 @@ def aggregate_members(batch_dir: str | Path) -> dict[str, Any]:
         "why": why,
         "analyses": table,
         "refused": None if table else (
-            "No analysis reported a settled mean in two or more members, so "
+            "No analysis recorded a mean in two or more members, so "
             "there is nothing to compare across them."
         ),
     }

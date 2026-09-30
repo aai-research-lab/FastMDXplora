@@ -1,8 +1,8 @@
-/* A study run until it knows (stopping_view.py), on the Overview.
+/* A study run until it is determined (stopping_view.py), on the Overview.
  *
  * `simulation.stop_when` runs a study in pieces and judges it after each.
  * The question a person watching it has is the rule's own: is the answer
- * settling down? For each measure this draws the error after each round
+ * determined yet? For each measure this draws the error after each round
  * against the error asked for, with the production at which the error
  * would reach it if it keeps falling as one over the root of the frames,
  * and the mean after each round with every replica's own mean beside it,
@@ -17,7 +17,7 @@
   var pending = false;   // a request in flight
 
   var STATE_WORDS = {
-    met: "known as asked",
+    met: "determined as asked",
     "short": "not yet as asked",
     disagree: "replicas disagree",
     "not yet a measurement": "not yet a measurement",
@@ -26,7 +26,7 @@
   };
   var PILL = { met: "completed", running: "live", ceiling: "waiting", rounds: "waiting",
                stopped: "error", not_applied: "stale" };
-  var DECIDED = { extend: "extended", met: "stopped, known", ceiling: "stopped at the ceiling",
+  var DECIDED = { extend: "extended", met: "stopped, determined", ceiling: "stopped at the ceiling",
                   stopped: "stopped" };
 
   function palette() {

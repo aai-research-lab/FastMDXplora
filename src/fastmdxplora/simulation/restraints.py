@@ -1,4 +1,4 @@
-"""Holding parts of a system still while the rest settles.
+"""Holding parts of a system still while the rest equilibrates.
 
 A structure that has just been minimised is not at equilibrium. Heating it
 lets the solvent find its arrangement, and it also lets the solute move --

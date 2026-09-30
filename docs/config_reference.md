@@ -198,7 +198,7 @@ simulation:
 ```
 
 By default the runs must be replicas and must agree with each other. See
-[Running until it is known](production.md#running-until-it-is-known).
+[Running until it is determined](production.md#running-until-it-is-determined).
 
 ### Where it starts
 

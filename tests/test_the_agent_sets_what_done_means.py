@@ -73,6 +73,6 @@ def test_the_plan_shows_the_rule_it_wrote():
     from fastmdxplora.gui.plan import plan_of
 
     lines = {line["label"]: line["value"] for line in plan_of(WITH_REPLICAS)}
-    assert lines["Stops when"] == ("rmsd to ±0.01 nm is known and the replicas agree; "
+    assert lines["Stops when"] == ("rmsd to ±0.01 nm is determined and the replicas agree; "
                                    "or at 50 ns of production")
     assert lines["Replicas"].startswith("3,")

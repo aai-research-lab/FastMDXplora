@@ -85,7 +85,7 @@ EXPLANATIONS: dict[str, Explanation] = {
             "nothing else, so a bound ligand has no parameters until "
             "somebody makes them. A small-molecule force field (OpenFF's, "
             "by default) generates them from the ligand's chemistry, which "
-            "is why the chemistry had to be settled first."
+            "is why the chemistry had to be determined first."
         ),
         reference="Qiu et al., OpenFF 2.0.0 Sage, J Chem Theory Comput 2021",
     ),
@@ -151,7 +151,7 @@ EXPLANATIONS: dict[str, Explanation] = {
     ),
     "npt": Explanation(
         why=(
-            "P replaces V: the box is now free to change size, and settles "
+            "P replaces V: the box is now free to change size, and equilibrates "
             "to the density real water has at this temperature and pressure. "
             "This is not a formality. Solvation leaves a gap around the "
             "solute, and in a small box that gap is a large share of the "

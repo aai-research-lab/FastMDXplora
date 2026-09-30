@@ -317,7 +317,7 @@ def _a_bilayer_near_or_below_its_transition(
     )
 
 
-#: NPT equilibration under which a bilayer's area has not settled: its area
+#: NPT equilibration under which a bilayer's area has not equilibrated: its area
 #: per lipid relaxes over nanoseconds, where water's density takes
 #: picoseconds.
 BILAYER_NPT_NS = 1.0
@@ -343,7 +343,7 @@ def _a_bilayer_barely_equilibrated(
         detail=(
             "A bilayer's area per lipid relaxes over nanoseconds at constant "
             "pressure, where water's density takes picoseconds, so production "
-            "will begin while the membrane is still settling."),
+            "will begin while the membrane is still equilibrating."),
         remedy=(
             "Give NPT equilibration a few nanoseconds (npt_duration_ns), or "
             "read the area per lipid the membrane analysis reports and "

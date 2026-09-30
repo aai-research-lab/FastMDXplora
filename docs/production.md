@@ -196,13 +196,13 @@ will tell you whether you got there. Its convergence section reports how many
 count, because consecutive frames are nearly the same structure.
 
 A useful pattern: run something, read the convergence section, and extend if it
-says the measures have not settled or rest on too little. That is more reliable
+says the measures have not equilibrated or rest on too little. That is more reliable
 than choosing a number in advance.
 
 `sampling_shortfall` turns that into a figure — see
 [Reading the results](results.md#not-enough-data-is-a-refusal-too).
 
-### Running until it is known
+### Running until it is determined
 
 The pattern above can be the study's own. `simulation.stop_when` says what the
 study is for and how well it must be known, and a ceiling; the study then runs
@@ -238,7 +238,7 @@ After each piece:
   `max_duration_ns`. The bounds are there because an error estimated from a
   short run is itself uncertain.
 
-**Why replicas are required.** A run can settle while trapped: if the molecule
+**Why replicas are required.** A run can look equilibrated while trapped: if the molecule
 never visits a second state, its average stops moving and its error bar
 shrinks, and it is still wrong. Block averaging and the count of independent
 samples say how precise one run is; only runs started independently can show

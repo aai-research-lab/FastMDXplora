@@ -4,7 +4,7 @@ A window is a restraint and a starting point, and only the restraint is
 usually written down. Start every window from the same bound structure and
 the ones near a barrier will not cross it: the restraint pulls one way, the
 free energy pulls the other, and where both minima are reachable the window
-settles in whichever one it began in. The histograms then sit somewhere
+stays in whichever one it began in. The histograms then sit somewhere
 other than where the restraint says they are, and two neighbours that were
 planned 0.07 nm apart end up 0.25 nm apart with nothing shared between them.
 The recombination refuses, correctly, and a day of sampling says only that
@@ -522,7 +522,7 @@ def measure_the_cone(trajectory: Any, ligand_resname: str,
                "side from the way out. Leave it out and the axis is measured "
                "too."
                if axis_selection else
-               "The pull leaves in no settled direction, so there is no cone "
+               "The pull leaves in no consistent direction, so there is no cone "
                "to put round it. A ligand that leaves by several routes needs "
                "a coordinate that follows one of them rather than a wall "
                "around all of them.")
@@ -928,7 +928,7 @@ def _refuse_seeds_outside_the_cone(trajectory: Any, ligand_resname: str,
     angle that frame happened to have. Nothing before this connected the two,
     so a window could begin where the cone excludes it and spend its
     equilibration being pushed back by 5000 kJ/mol/rad^2 -- which does not
-    crash, does not appear in any gate, and leaves the window settled
+    crash, does not appear in any gate, and leaves the window equilibrated
     somewhere the seeding did not intend.
 
     Measured off the pull, a cone contains the path it was measured from and

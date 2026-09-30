@@ -287,12 +287,12 @@ structure from an example.
 
 
 def _stopping_instructions() -> str:
-    """How to write a study that runs until it knows. Its list of measures
+    """How to write a study that runs until it is determined. Its list of measures
     is read from the analyses, so it names none the validator refuses."""
     from fastmdxplora.simulation.stopping import judgeable_analyses
 
     return f"""\
-A study can run until what it is for is known, rather than for a length
+A study can run until what it is for is determined, rather than for a length
 picked in advance. Write `simulation.stop_when` when the person asks for a
 quantity to a precision ("to within 0.1 nm", "to 5%"), asks to run until
 it converges or is long enough to trust, or asks a question whose answer
@@ -306,7 +306,7 @@ line, where they read it and can change it before anything runs, so never
 present it as theirs. Always give `max_duration_ns`, the most production
 any run may reach; `duration_ns` is then only the first piece, a few
 nanoseconds. The rule requires replicas that agree, because one run can
-settle while trapped in one state and its error bar cannot show it, so
+look equilibrated while trapped in one state and its error bar cannot show it, so
 sweep `simulation.random_seed` over three values:
 
     sweep:
@@ -322,7 +322,7 @@ Write `independent_starts: not_required` only when the person asks for a
 single run. Do not add a rule to a study that asked for a length. Asked
 why a study ran as long as it did, or whether it knew what it was asked,
 answer from the stopping record in the run status, round by round, and
-say plainly when it stopped at its ceiling without knowing.
+say plainly when it stopped at its ceiling with a measure not determined.
 
 """
 

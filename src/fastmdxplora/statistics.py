@@ -640,7 +640,7 @@ def summarise_segments(
     withheld: list[tuple[int, str]] = []
     for index, (start, stop) in enumerate(zip(edges, edges[1:])):
         # Each segment is equilibrated on its own. A segment that begins
-        # after a join has its own approach to settle -- under a barostat
+        # after a join has its own approach to equilibrium -- under a barostat
         # the move size is re-adapting -- and detecting that per segment is
         # the point, not an inconvenience.
         piece, why = summarise(
@@ -702,7 +702,7 @@ def summarise_segments(
             f"The segment means move in order across the run, by {span:+.4g} "
             f"from first to last, and an ordering this clean arises by "
             f"chance about {drifting:.1%} of the time. The system had not "
-            "settled at the scale of the whole run, so a pooled mean would "
+            "equilibrated at the scale of the whole run, so a pooled mean would "
             "be the mean of a moving target with a confident error bar on "
             "it. The remedy is a longer run, not more pooling.",
             code="analysis.sampling.drifting",

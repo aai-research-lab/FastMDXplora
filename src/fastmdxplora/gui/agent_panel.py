@@ -536,7 +536,7 @@ def _results_summary(root: Any) -> str:
             if not isinstance(f, dict):
                 continue
             # A series too short to measure records why and no mean, and the
-            # model was told nothing: asked whether the RMSD had settled it
+            # model was told nothing: asked whether the RMSD had equilibrated it
             # had no number and no reason, only silence to read.
             withheld = f.get("not_a_measurement")
             if "mean" not in f:

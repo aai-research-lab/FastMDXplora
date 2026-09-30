@@ -845,7 +845,7 @@ def _mean_of_an_independent_run() -> Any:
 
 
 def _mean_after_a_transient() -> Any:
-    """A run that settles, with the transient still in the series.
+    """A run that equilibrates, with the transient still in the series.
 
     The ordinary case, and the one a false-refusal rate is really about.
     Equilibration detection should discard the approach and report the
@@ -1116,7 +1116,7 @@ _JOIN_OFFSETS = (0.0, 0.09, -0.06, 0.11, -0.10, 0.04, -0.08, 0.07, -0.03,
                  0.06)
 
 
-def _a_mean_from_a_run_that_never_settled() -> Any:
+def _a_mean_from_a_run_that_never_equilibrated() -> Any:
     """Pooling segments of a system that was still moving.
 
     The hazard pooling itself introduces. Combining estimates assumes they
@@ -1215,8 +1215,8 @@ DEFECTS: list[Case] = [
          "allows, which says the relationship does not hold on this "
          "hardware rather than that the measurements were noisy",
          mentioning="disagree"),
-    Case("a mean pooled over segments of a run that never settled",
-         _a_mean_from_a_run_that_never_settled, "refused",
+    Case("a mean pooled over segments of a run that never equilibrated",
+         _a_mean_from_a_run_that_never_equilibrated, "refused",
          "the segment means move in order, so pooling would give a "
          "confident number for a quantity that does not exist",
          mentioning="moving target"),
@@ -1391,7 +1391,7 @@ CLEAN: list[Case] = [
          "two thousand uncorrelated frames support a mean and an error, "
          "and a guardrail that refused this one would be refusing most "
          "of the trajectories anybody runs"),
-    Case("a mean from a run that settled, transient included",
+    Case("a mean from a run that equilibrated, transient included",
          _mean_after_a_transient, "proceeded",
          "equilibration detection should discard the approach and report "
          "the rest, not refuse a study for having started somewhere"),

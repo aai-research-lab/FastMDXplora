@@ -27,7 +27,7 @@ parameterised, a crystallisation additive discarded, a coordinated metal kept.
 Then it solvates, adds ions, and writes a serialised system.
 
 **Where the structure does not say enough, it stops.** An unknown residue, a
-ligand whose charge cannot be settled, a clash that means the pose is wrong —
+ligand whose charge cannot be determined, a clash that means the pose is wrong —
 each produces a refusal naming what could not be decided and what would settle
 it, rather than a guess that runs.
 
@@ -97,7 +97,7 @@ The equilibration stages are independent of `simulation.duration_ns`, which
 sets the production length only. Defaults are 500 ps NVT, 1 ns NPT and 2 ns
 production, at a 2 fs timestep and 300 K.
 
-Beyond that it can hold parts of the system still while the solvent settles,
+Beyond that it can hold parts of the system still while the solvent equilibrates,
 embed a protein in a lipid bilayer, and bias the run along a coordinate you
 name. Those are in [Studies beyond a box of water](studies.md), along with what
 the phase says when a run fails.

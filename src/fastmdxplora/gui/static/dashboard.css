@@ -3638,7 +3638,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     border-radius: 4px; padding: 3px 6px; overflow-wrap: anywhere;
 }
 
-/* A study run until it knows (stopping.js), on the Overview. */
+/* A study run until it is determined (stopping.js), on the Overview. */
 .stopping-card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
 .stopping-card[hidden], .stopping-rounds[hidden] { display: none; }
 .stopping-card .card-header { padding: 0; }

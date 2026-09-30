@@ -1,14 +1,15 @@
-"""Run until what was asked is known, and no longer.
+"""Run until what was asked is determined, and no longer.
 
 A fixed length is chosen before anything is known about the system: too
 short and the numbers are not measurements, too long and the compute went
 on precision nobody needed. `simulation.stop_when` states what the study is
-for (a measure and how well it must be known) and a ceiling, and the study
+for (a measure and how well it must be determined) and a ceiling, and the study
 then runs in pieces: after each, the analyses are read, and the study is
 extended, by what the numbers say is needed, only until each measure is
-known to the precision asked, or the ceiling is reached.
+determined to the precision asked, or the ceiling is reached.
 
-One trap is designed around from the start. A run can settle while trapped:
+One trap is designed around from the start. A run can look equilibrated
+while trapped:
 if the molecule never visits a second state, its average stops moving and
 its error bar shrinks, and it is still wrong. Precision within one run
 cannot see that; only runs started independently can. So by default the
@@ -79,7 +80,7 @@ def targets_of(stop_when: dict[str, Any]) -> list[StopTarget]:
     measures = stop_when.get("measures")
     if not isinstance(measures, list) or not measures:
         raise StudyError(
-            "simulation.stop_when needs `measures`: a list of what must be known and "
+            "simulation.stop_when needs `measures`: a list of what must be determined and "
             "how well, e.g. [{analysis: rmsd, standard_error: 0.01}] or "
             "[{analysis: sasa, relative_error: 0.05}].",
             code="config.option.missing_companion", option="simulation.stop_when",
@@ -186,7 +187,7 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
     for target in targets:
         if target.analysis not in judgeable:
             # A rule over an analysis with no mean per frame would run to
-            # its ceiling, judging nothing, and call that not knowing.
+            # its ceiling, judging nothing, and call that undetermined.
             raise StudyError(
                 f"simulation.stop_when judges {target.analysis!r}, which records no "
                 "single mean to judge. A measure is one of the analyses that give "
@@ -198,8 +199,8 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
     if not isinstance(ceiling, (int, float)) or isinstance(ceiling, bool) or ceiling <= 0:
         raise StudyError(
             "simulation.stop_when needs `max_duration_ns`, the most production any run "
-            "may reach: a study that runs until it knows needs a point at which it "
-            "stops not knowing.",
+            "may reach: a study that runs until a measure is determined needs a "
+            "point at which it stops trying.",
             code="config.option.missing_companion", option="simulation.stop_when",
             requires=["max_duration_ns"])
     first = first_piece_ns(simulation)
@@ -237,7 +238,7 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
     if independent == "required" and (not replicas or runs < 2):
         raise StudyError(
             "simulation.stop_when stops when replicas agree, and this study has none. "
-            "A single run can settle while trapped in one state, and its error bar "
+            "A single run can look equilibrated while trapped in one state, and its error bar "
             "cannot show it; runs started independently can. Sweep "
             "simulation.random_seed over three or more values, or say "
             "`independent_starts: not_required` to accept precision within one run, "
@@ -290,7 +291,7 @@ def rule_said(stop_when: dict[str, Any]) -> str:
     replicas = (" and the replicas agree"
                 if str(stop_when.get("independent_starts") or "required") == "required"
                 else " (one run's own precision, not checked against independent starts)")
-    known = f"{measures} {verb} known{replicas}"
+    known = f"{measures} {verb} determined{replicas}"
     return (f"{known}; or at {ceiling:g} ns of production"
             if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool) else known)
 
@@ -555,8 +556,8 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             entry["decision"] = "ceiling"
             record["outcome"] = "ceiling"
             record["said"] = (
-                f"Stopped at the {ceiling:g} ns ceiling, without knowing what was asked "
-                "to the precision asked: "
+                f"Stopped at the {ceiling:g} ns ceiling, with what was asked not "
+                "determined to the precision asked: "
                 + "; ".join(v.said for v in verdicts if not v.met) + ".")
             write()
             say(record["said"])
@@ -566,8 +567,8 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             entry["decision"] = "ceiling"
             record["outcome"] = "ceiling"
             record["said"] = (f"Stopped: the {ceiling:g} ns ceiling leaves no whole frame "
-                              "to add, without knowing what was asked to the precision "
-                              "asked: " + "; ".join(v.said for v in verdicts if not v.met)
+                              "to add, with what was asked not determined to the "
+                              "precision asked: " + "; ".join(v.said for v in verdicts if not v.met)
                               + ".")
             write()
             say(record["said"])
@@ -578,7 +579,7 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
                           f"{ceiling:g} allowed: " + "; ".join(v.said for v in verdicts
                                                              if not v.met) + ".")
         write()
-        say(f"Not yet known: {'; '.join(v.said for v in verdicts if not v.met)}. "
+        say(f"Not yet determined: {'; '.join(v.said for v in verdicts if not v.met)}. "
             f"Extending {'every run' if len(runs) > 1 else 'the run'} by {more:g} ns "
             f"(to {production + more:g} ns of the {ceiling:g} allowed).")
         answers = list(extend_all(runs, more))
@@ -599,8 +600,8 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             say(record["said"])
             return record
     record["outcome"] = "rounds"
-    record["said"] = (f"Stopped after {MOST_ROUNDS} rounds without knowing what was asked "
-                      "to the precision asked.")
+    record["said"] = (f"Stopped after {MOST_ROUNDS} rounds with what was asked not "
+                      "determined to the precision asked.")
     write()
     say(record["said"])
     return record
@@ -624,7 +625,7 @@ def _said_met(verdicts: list[Verdict], production: float, runs: int, independent
 # The record, written up
 # ---------------------------------------------------------------------------
 
-_DECIDED = {"met": "stopped: known as asked", "extend": "extended by {more:g} ns",
+_DECIDED = {"met": "stopped: determined as asked", "extend": "extended by {more:g} ns",
             "ceiling": "stopped at the ceiling", "stopped": "stopped: an extension failed"}
 
 
@@ -683,6 +684,6 @@ def stopping_section(root: str | Path) -> list[str]:
     return lines
 
 
-_OUTCOME = {"met": "Known as asked", "ceiling": "Not known as asked",
-            "stopped": "Stopped early", "rounds": "Not known as asked",
+_OUTCOME = {"met": "Determined as asked", "ceiling": "Not determined as asked",
+            "stopped": "Stopped early", "rounds": "Not determined as asked",
             "not_applied": "Not applied", "running": "Still running"}

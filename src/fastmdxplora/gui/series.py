@@ -4,7 +4,7 @@ The Analysis page showed each analysis as the figure it wrote: a picture of a
 line, from which a reader could take neither a value nor the frame it came
 from. This reads the same data file the figure was drawn from and says, for
 each point, where it sits in time and which frame of the trajectory it is,
-together with the mean the analysis settled on and what that mean rests on,
+together with the mean the analysis determined and what that mean rests on,
 so the page can draw the series, give its values, and open the frame.
 
 Only what the analysis wrote is used. The frame of each point is worked out

@@ -103,7 +103,7 @@ Three things are worth opening first.
 you can paste into a manuscript and a convergence section saying what the run
 does and does not support.
 
-**`analysis/rmsd/rmsd.png`** — has the structure settled, or is it still
+**`analysis/rmsd/rmsd.png`** — has the structure equilibrated, or is it still
 moving?
 
 **`setup/setup_parameters.json`** — what the setup phase decided about your
@@ -149,14 +149,14 @@ fastmdx explore --system 181L --setup-forcefield amber-openff --output runs/lyso
 ```
 
 181L is T4 lysozyme with benzene bound. The setup phase finds the benzene,
-looks its chemistry up, settles its protonation in the binding site,
+looks its chemistry up, determines its protonation in the binding site,
 parameterises it with OpenFF, and discards the crystallisation additives that
 are not part of the question. The analysis phase then adds the protein–ligand
 measures, including what is holding the ligand there rather than just how much
 of the protein it touches.
 
 Where a structure is genuinely ambiguous — an unknown residue, a charge that
-cannot be settled — setup stops and says what it could not decide, rather than
+cannot be determined — setup stops and says what it could not decide, rather than
 guessing.
 
 See [Protein-ligand interactions](interactions.md) for what the measures mean.

@@ -1,7 +1,7 @@
 # Studies beyond a box of water
 
 A soluble protein in water is the default. This page covers the rest: holding
-parts of a system still while the solvent settles, putting a protein in a lipid
+parts of a system still while the solvent equilibrates, putting a protein in a lipid
 bilayer, three ways of biasing a run along a coordinate you name, and what the
 software says when a run fails.
 
@@ -181,7 +181,7 @@ written by hand and passed as `plumed` — this is a shorter path to the common
 case, not a replacement for the general one.
 
 Runs are **well-tempered by default.** Plain metadynamics deposits at full
-height forever, so the bias never settles and no free energy is recoverable.
+height forever, so the bias never converges and no free energy is recoverable.
 
 `sigma` — the hill width — has **no default and is refused if missing.** It
 should be about the size of the fluctuations within a single state: around
@@ -433,7 +433,7 @@ The refusal states the threshold it applied, so a genuine gap can be told from
 a strict setting.
 
 The curve's interval comes from resampling each window's sampling, two hundred
-times by default, and a binding free energy's with it. That settles an
+times by default, and a binding free energy's with it. That determines an
 interval to a few per cent and is the part of recombination that takes time:
 on seventeen windows the curve took a twentieth of a second and its interval
 fourteen seconds. `bootstrap_resamples` sets the count, fewer for a quick look,
@@ -652,7 +652,7 @@ rather than pointing at a fixed corner of the box.
 Two refusals rather than a number that looks like one. A named group sitting
 where the ligand goes, instead of behind the site, asks for a cone of most of a
 sphere — that is refused, naming the group, rather than clipped to something
-shaped like a restraint. So is a pull that leaves in no settled direction: a
+shaped like a restraint. So is a pull that leaves in no consistent direction: a
 ligand taking several routes out needs a coordinate that follows one of them,
 not a wall around all of them.
 
@@ -674,7 +674,7 @@ fifth is what covers the difference.
 for its *distance* from the site and inherits whatever angle that frame
 happened to have, so the two have to be reconciled before a window starts. A
 window beginning outside its own cone is pushed by the wall from its first
-step: it does not crash, no later gate sees it, the window settles somewhere
+step: it does not crash, no later gate sees it, the window equilibrates somewhere
 the seeding did not intend — and a cone excluding where the ligand was is a
 cone cutting the state the binding free energy is measured over.
 
@@ -846,7 +846,7 @@ is read through it, so it is found after the study has moved, and a different
 preparation in its place is refused.
 
 The first fifth of each window is discarded before recombination, because a
-window begins away from where it settles and counting the approach biases the
+window begins away from where it equilibrates and counting the approach biases the
 histogram towards where the run started.
 
 A recombination is only attempted once the histograms have something in them.
@@ -863,7 +863,7 @@ study stitch at the three per cent default while believing otherwise.
 **If the windows never reach their centres, the recombination says so** rather
 than reporting the gap that leaves. A study seeded from one bound structure came
 back with four windows held at 0.3, 0.5, 0.7 and 0.9 nm all sampling below 0.5,
-and two more held at 1.1 and 1.3 both settled at 1.19 — the restraints had
+and two more held at 1.1 and 1.3 both equilibrated at 1.19 — the restraints had
 lost, and the hole between 1.24 and 1.41 was the symptom. The remedy there is
 to seed from a steered run or hold harder; a softer force constant, which is
 what a genuine gap wants, would make it worse.

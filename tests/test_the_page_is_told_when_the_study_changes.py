@@ -179,7 +179,7 @@ def test_the_page_follows_a_change_without_waiting_for_its_poll(tmp_path) -> Non
             # The poll is thirty seconds while the stream is open; well
             # inside that, only the stream can have said so.
             page.wait_for_function("() => document.getElementById('stopping-outcome')"
-                                   ".textContent === 'Known as asked'", timeout=10000)
+                                   ".textContent === 'Determined as asked'", timeout=10000)
             took = time.monotonic() - began
             browser.close()
     finally:

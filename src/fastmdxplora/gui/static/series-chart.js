@@ -3,7 +3,7 @@
  * The Analysis page showed each analysis as the figure it wrote: a picture
  * of a line, from which neither a value nor the frame it came from could be
  * taken. Here the same numbers (from /api/series) are drawn with what the
- * analysis settled on: the frames it left out as equilibration, the mean of
+ * analysis determined: the frames it left out as equilibration, the mean of
  * the rest, and its error where the run supports one, or a note where it
  * does not. Pointing at the line gives the value, the time and the frame;
  * choosing a point opens that frame in the viewer, and a residue of a

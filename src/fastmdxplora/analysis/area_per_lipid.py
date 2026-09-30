@@ -10,7 +10,7 @@ barostat, and a bilayer not yet equilibrated.
 Read it as a series before as a mean. A bilayer packed around a protein
 relaxes over nanoseconds, and the early frames show it; below the lipid's
 main transition it is too small and falls further as the bilayer orders.
-Compare the settled value with experiment at the same temperature (Kucerka,
+Compare the equilibrated value with experiment at the same temperature (Kucerka,
 Nieh and Katsaras, Biochim Biophys Acta 1808, 2761 (2011) for the
 phosphatidylcholines).
 """

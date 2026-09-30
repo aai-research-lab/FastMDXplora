@@ -121,7 +121,7 @@ COLLECTIVE_VARIABLES: dict[str, str] = {
 }
 
 #: Well-tempered metadynamics by default. Plain metadynamics keeps depositing
-#: at full height forever, so the bias never settles and the surface never
+#: at full height forever, so the bias never converges and the surface never
 #: converges; well-tempered shrinks the hills as a region fills, which is what
 #: makes the free energy recoverable at all.
 DEFAULT_BIAS_FACTOR = 10.0

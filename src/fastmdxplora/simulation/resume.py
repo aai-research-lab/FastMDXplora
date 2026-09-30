@@ -297,7 +297,7 @@ def plan_segments(
     equilibrates. The rest set ``simulation.minimize: false`` and zero the
     NVT and NPT counts, because a segment that re-equilibrated would throw away
     the production it was supposed to continue, and the joined trajectory
-    would hold a settling transient in the middle of what is meant to be
+    would hold an equilibration transient in the middle of what is meant to be
     a production run.
 
     **The production steps add up.** Integer division leaves a remainder,

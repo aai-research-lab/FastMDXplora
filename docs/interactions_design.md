@@ -34,7 +34,7 @@ one analysis and another elsewhere.
 
 **PLIP re-protonates every frame with OpenBabel.** That is not deterministic
 between runs, and it discards the protonation FastMDXplora's setup phase
-settled at the simulated pH — which is the protonation the trajectory was
+determined at the simulated pH — which is the protonation the trajectory was
 actually generated under. A tool that re-decides it per frame is answering a
 different question from the one the simulation asked.
 

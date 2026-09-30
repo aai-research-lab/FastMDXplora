@@ -2171,7 +2171,7 @@ def run_simulation(
         # backwards in the middle -- because production resets the counter.
         # Every reader of that file, FastMDXplora's and the user's, had to know all
         # three things. COLVAR is production and nothing else, as it has
-        # always been; the settling has its own name.
+        # always been; the equilibration has its own name.
         settling_path = Path(output_dir) / "umbrella_equilibration.plumed"
         settling_path.write_text(
             window.plumed_lines(lines, colvar="COLVAR.equilibration",
@@ -2198,7 +2198,7 @@ def run_simulation(
         #
         # Metadynamics is the opposite case and keeps the old behaviour:
         # there is no position to hold, and hills deposited during
-        # equilibration would bias a surface with a system still settling.
+        # equilibration would bias a surface with a system still equilibrating.
         plumed = {"enabled": True, "script": str(settling_path),
                   "hold_from_the_start": True,
                   "production_script": str(script_path)}
@@ -2274,7 +2274,7 @@ def run_simulation(
 
     # The metadynamics input again, with the cell known: a distance is
     # bounded by the periodic cell, so it can be gridded once equilibration
-    # has settled the cell, which is when the bias goes on.
+    # has equilibrated the cell, which is when the bias goes on.
     metad_script_in: Callable[[Any], str] | None = None
     if metadynamics:
         # A named collective variable becomes PLUMED input, which the existing
@@ -2334,7 +2334,7 @@ def run_simulation(
             "production only; minimisation and equilibration run unbiased.",
             described,
             "Well-tempered." if bias_factor > 1 else
-            "Not well-tempered: the bias will not settle and the surface "
+            "Not well-tempered: the bias will not converge and the surface "
             "will not converge.",
         )
         plumed = {"enabled": True, "script": str(script_path)}
@@ -2527,8 +2527,8 @@ def run_simulation(
 
         The window is held throughout, but the trace belongs in two files.
         `COLVAR` is production and nothing else -- what it has always been,
-        what `collect_samples` reads, and what a person plots. The settling
-        goes to `COLVAR.equilibration`.
+        what `collect_samples` reads, and what a person plots. The
+        equilibration goes to `COLVAR.equilibration`.
 
         The script is fixed when the force is built, so pointing it at a
         different file means a different force: the equilibration one comes
@@ -2605,7 +2605,7 @@ def run_simulation(
         _hold_at(0.0)
         if restraint_parameters and plan["nvt_steps"] + plan["npt_steps"] > 0:
             _log_step("The solute is held by its restraints while the "
-                      "water settles")
+                      "water equilibrates")
             if on_explain:
                 on_explain("restraints")
 
@@ -2829,7 +2829,7 @@ def run_simulation(
             simulation.context.reinitialize(preserveState=True)
             logger.info(
                 "Barostat removed before production: NVT at the density "
-                "NPT equilibration settled on, rather than the one "
+                "NPT equilibration arrived at, rather than the one "
                 "solvation produced."
             )
             if on_explain:
@@ -2880,7 +2880,7 @@ def run_simulation(
         # The energy log follows the same rule. It held equilibration and
         # production in one file with one step column, so every statistic
         # computed from it -- correlation time, effective sample size,
-        # anything with a settling region -- was measured over a series
+        # anything with an equilibration region -- was measured over a series
         # that begins with a system deliberately being driven somewhere.
         # Equilibration is still recorded, beside the run, under its own
         # name; `energy.csv` is production.

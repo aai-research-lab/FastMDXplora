@@ -328,7 +328,7 @@ def _solvate_with_room_for_the_cutoff(
                 "cutoff would need about %.2f nm, which is %.2f nm more than "
                 "the %.2f nm this will add on its own. The cutoff and the "
                 "padding asked for are further apart than a small adjustment "
-                "can settle.",
+                "can close.",
                 padding, nonbonded_cutoff_nm, grown,
                 grown - float(padding_nm), most_it_may_grow_nm,
             )

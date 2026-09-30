@@ -153,7 +153,7 @@ contact, π-stacking, π-cation, metal coordination and the water bridge are
 PLIP's published definitions, cited in the table above and in each rule's
 docstring. PLIP itself is not run — not as a dependency and not as a check.
 It re-protonates every frame with OpenBabel, which is not deterministic
-between runs and discards the protonation that setup settled at the simulated
+between runs and discards the protonation that setup determined at the simulated
 pH. A tool that re-decides the protonation per frame is answering a different
 question from the one the simulation asked, and that disqualifies it as a
 reference measurement for the same reason it disqualifies it as a dependency.

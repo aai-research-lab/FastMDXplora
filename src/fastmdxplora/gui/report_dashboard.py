@@ -738,7 +738,7 @@ def unit_of(name: str, found: dict[str, Any] | None = None) -> str:
 
 
 def _what_the_analysis_found(data_path: Path) -> str | None:
-    """The mean the analysis settled on, as its figure shows it.
+    """The mean the analysis determined, as its figure shows it.
 
     The caption was the mean of every row of the data file, equilibration
     included, beneath a figure giving the mean after equilibration with its

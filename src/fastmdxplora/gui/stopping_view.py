@@ -1,9 +1,9 @@
-"""A study run until it knows, as the Overview draws it.
+"""A study run until it is determined, as the Overview draws it.
 
 `simulation.stop_when` runs a study in pieces and judges it after each
 (`fastmdxplora.simulation.stopping`); `stopping.json` records every round.
 The question a person watching it has is the one the rule asks: is the
-answer settling down? This reads the record into what the page draws for
+answer determined yet? This reads the record into what the page draws for
 each measure: the error after each round against the error asked for,
 the mean with the replicas' own means beside it, and, while the error is
 still above the target, the production at which it would reach it if it
@@ -158,7 +158,7 @@ def _next_piece(record: dict[str, Any], where: Path) -> dict[str, Any] | None:
 
 
 def stopping_payload(root: Path | str) -> dict[str, Any]:
-    """What the Overview's "Running until it is known" card draws."""
+    """What the Overview's "Running until it is determined" card draws."""
     from fastmdxplora.simulation.stopping import _OUTCOME
 
     found = _record_of(Path(root))

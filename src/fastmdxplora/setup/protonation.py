@@ -71,7 +71,7 @@ class _CapturingHandler(logging.Handler):
 
 
 class ProtonationError(CodedError, RuntimeError):
-    """The ligand's protonation at the requested pH could not be settled."""
+    """The ligand's protonation at the requested pH could not be determined."""
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ class GroupPka:
 
 @dataclass(frozen=True)
 class ProtonationState:
-    """A settled protonation, with the evidence that settled it."""
+    """A determined protonation, with the evidence that determined it."""
 
     resname: str
     protonated: bool
@@ -158,7 +158,7 @@ PROPKA_GROUP_TO_LABEL: dict[str, tuple[str, ...]] = {
 #: an undefined stereocentre the small-molecule toolkits refuse.
 #:
 #: Groups absent here have no unambiguous site. The phosphate and sulfonate
-#: patterns match either form and name no particular oxygen, so a settled state
+#: patterns match either form and name no particular oxygen, so a determined state
 #: cannot be placed and the ligand is refused instead.
 PROTONATION_SITE: dict[str, tuple[str, int]] = {
     "amidine": ("[NX3][CX3]=[NX2]", 2),
@@ -205,7 +205,7 @@ def _rdkit():
         return Chem
     except ImportError as exc:  # pragma: no cover - exercised by absence
         raise ProtonationError(
-            "RDKit is needed to put a ligand into the protonation state settled "
+            "RDKit is needed to put a ligand into the protonation state determined "
             "in the complex, and is not installed. Install it (conda install -c "
             "conda-forge rdkit), or supply the ligand with --setup-ligand "
             "already in the state you intend."
@@ -242,7 +242,7 @@ def _remove_proton(Chem, mol, index):
 
 
 def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
-    """Put the reference chemistry into the state settled in the complex.
+    """Put the reference chemistry into the state determined in the complex.
 
     Returns the rewritten SDF and its net formal charge.
 
@@ -294,7 +294,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
     if undecided:
         raise ProtonationError(
             f"{chemistry.resname} carries {', '.join(undecided)} whose "
-            "protonation was not settled for that group specifically: two "
+            "protonation was not determined for that group specifically: two "
             "groups of one chemical class fall on opposite sides of the pH, "
             "and the calculation names the class rather than the atom, so "
             "which site holds its proton is not determined.\nSupply the ligand "
@@ -343,7 +343,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
         if sites != allowed:
             raise ProtonationError(
                 f"{chemistry.resname} has {sites} site(s) matching its {label} "
-                f"but {allowed} were accounted for, so the settled protonation "
+                f"but {allowed} were accounted for, so the determined protonation "
                 "cannot be placed. Supply the ligand with --setup-ligand "
                 "already in the state you intend."
             , code="setup.chemistry.uninterpretable", resname=chemistry.resname)
@@ -361,7 +361,7 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
             mol = change(Chem, mol, found[0][offset])
             expected += 1 if protonating else -1
         logger.info(
-            "%s: %s %d %s site(s) to match the state settled in the complex.",
+            "%s: %s %d %s site(s) to match the state determined in the complex.",
             chemistry.resname,
             "protonated" if protonating else "deprotonated", sites, label,
         )
@@ -518,7 +518,7 @@ def decide(
     margin: float = POISED_MARGIN,
     known_groups: tuple[str, ...] = (),
 ) -> ProtonationState:
-    """Settle a ligand's protonation, or refuse.
+    """Determine a ligand's protonation, or refuse.
 
     ``expected_ionizable`` comes from inspecting the ligand's chemistry: if it
     carries an ionizable group but PROPKA reported none, the two disagree and
@@ -584,7 +584,7 @@ def decide(
         per_group=_decide_per_group(groups, ph),
     )
     logger.info(
-        "%s protonation settled from the complex: %d group(s), %s",
+        "%s protonation determined from the complex: %d group(s), %s",
         resname, len(groups),
         "protonated" if state.protonated else "deprotonated",
     )

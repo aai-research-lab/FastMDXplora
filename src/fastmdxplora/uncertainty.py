@@ -62,7 +62,7 @@ __all__ = [
     "DEFAULT_RESAMPLES",
 ]
 
-#: Resamples taken unless the caller says otherwise. Two hundred settles a
+#: Resamples taken unless the caller says otherwise. Two hundred determines a
 #: standard error to a few percent, which is finer than the quantity it
 #: describes; the count is exposed so a converged-enough answer can be had
 #: cheaply and a publication figure can afford more.

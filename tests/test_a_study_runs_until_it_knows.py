@@ -1,11 +1,11 @@
-"""A study runs until what it is for is known, and no longer.
+"""A study runs until what it is for is determined, and no longer.
 
 `simulation.stop_when` states the measures a study is for and how well each
 must be known, and a ceiling. The study runs its first piece, reads the
 analyses, and extends every run by what the numbers ask for until each
-measure is known as asked or the ceiling is reached. By default the runs
+measure is determined as asked or the ceiling is reached. By default the runs
 must be replicas, and must agree with each other within their own errors,
-because one run trapped in one state settles and shrinks its error bar all
+because one run trapped in one state equilibrates there and shrinks its error bar all
 the same.
 
 The judging and the loop are exercised here on recorded means, with the
@@ -402,7 +402,7 @@ class TestTheLoop:
                                  extend_all=made.extend_all, say=lambda _: None)
         assert record["outcome"] == "ceiling"
         assert record["rounds"][-1]["production_ns"] == 20
-        assert "without knowing what was asked to the precision asked" in record["said"]
+        assert "with what was asked not determined to the precision asked" in record["said"]
         assert sum(made.calls) == pytest.approx(18.0)
 
     def test_disagreeing_replicas_are_extended_not_accepted(self, tmp_path, replicas):
@@ -491,8 +491,8 @@ class TestTheReport:
         assert "## How long it ran, and why" in text
         assert "rmsd to ±0.01 nm" in text
         assert "| 1 | 2 | " in text and "extended by 6 ns" in text
-        assert "stopped: known as asked" in text
-        assert "**Known as asked.**" in text
+        assert "stopped: determined as asked" in text
+        assert "**Determined as asked.**" in text
         assert "biased a little low" in text
 
     def test_nothing_where_the_length_was_fixed(self, tmp_path):
@@ -505,7 +505,7 @@ class TestTheReport:
         run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
                         extend_all=made.extend_all, say=lambda _: None)
         text = "\n".join(stopping_section(tmp_path))
-        assert ", replicas disagree |" in text and "**Not known as asked.**" in text
+        assert ", replicas disagree |" in text and "**Not determined as asked.**" in text
         assert "biased a little low" not in text
 
     def test_the_study_report_carries_it(self, tmp_path, replicas):
@@ -540,7 +540,7 @@ class TestThePlanAndThePrice:
                              {"analysis": "sasa", "relative_error": 0.05}],
                 "max_duration_ns": 50}}})}
         assert lines["Production"] == "5 ns first, 2 fs steps; then more, as the numbers ask"
-        assert lines["Stops when"] == ("rmsd to ±0.01 nm and sasa to ±5% are known and the "
+        assert lines["Stops when"] == ("rmsd to ±0.01 nm and sasa to ±5% are determined and the "
                                        "replicas agree; or at 50 ns of production")
 
     def test_a_budget_prices_the_ceiling(self):

@@ -137,7 +137,7 @@ def _study_of_runs_payload(base: Path) -> dict[str, Any]:
 
 
 def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, Any]]) -> str:
-    """A table of what each completed run settled on, one row per run and
+    """A table of the means each completed run determined, one row per run and
     one column per measure with a mean, read from the runs' own findings.
     The comparison across them, with its figures, comes when the last run
     finishes.
@@ -170,7 +170,7 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
         lines += [f"_{pending} still to run. The comparison across all of them, with its "
                   "figures, is written when the last one finishes._", ""]
     if not measures:
-        lines += ["No run has reported a settled mean yet.", ""]
+        lines += ["No run has recorded a mean yet.", ""]
         return "\n".join(lines)
     units = {m: next((unit_of(m, row[m]) for row in means.values() if m in row), "")
              for m in measures}

@@ -485,7 +485,7 @@ def methods_paragraphs(
         if _get(sim, "minimize", default=True):
             protocol.append("The system was energy-minimized before dynamics.")
 
-        # What was held while the solvent settled. A restrained equilibration
+        # What was held while the solvent equilibrated. A restrained equilibration
         # is part of a protocol, and a reader cannot repeat one that held the
         # protein at a thousand kilojoules and released it in four steps
         # unless the paragraph says so.

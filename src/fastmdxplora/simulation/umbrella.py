@@ -409,7 +409,7 @@ class Window:
         restraint through equilibration as well, and the two belong in
         different files. `COLVAR` is production and nothing else, which is
         what it has always been and what everything downstream reads; the
-        settling goes to `COLVAR.equilibration`.
+        equilibration goes to `COLVAR.equilibration`.
 
         `restart` makes PLUMED append rather than truncate. Equilibration
         needs it: adding the barostat reinitialises the context, PLUMED is
@@ -621,7 +621,7 @@ def _checked_fraction(value: Any) -> float:
     if not 0.0 < fraction < 1.0:
         raise StudyError(
             f"equilibration_fraction is {fraction:g}; it must be above 0 and "
-            "below 1. A window begins away from where it settles, so some of "
+            "below 1. A window begins away from where it equilibrates, so some of "
             "it has to be discarded, and discarding all of it leaves no "
             "histogram to place.", code="config.option.wrong_type")
     return fraction
@@ -634,7 +634,7 @@ def _checked_resamples(value: Any) -> int:
         raise StudyError(
             f"bootstrap_resamples is {value!r}; it is a whole number of "
             "resamples, 0 or more. 0 recombines without an interval; two "
-            "hundred, the default, settles one to a few per cent.",
+            "hundred, the default, determines one to a few per cent.",
             code="config.option.wrong_type")
     return int(value)
 
@@ -1049,7 +1049,7 @@ def collect_samples(
     sampling. They are dropped before the fraction is applied, so
     `equilibration_fraction` keeps meaning a fraction of the production run.
 
-    A held window writes its settling to `COLVAR.equilibration` and its
+    A held window writes its equilibration to `COLVAR.equilibration` and its
     production to `COLVAR`, so this reads `COLVAR` and gets production, which
     is what it has always got.
 
@@ -1307,7 +1307,7 @@ def design_from_a_pilot(
     """The windows a study needs, from a short run of the ones it has.
 
     Every window is a measurement of the free energy's slope wherever it came
-    to rest: it settles where the restraint's pull matches the surface's, so
+    to rest: it equilibrates where the restraint's pull matches the surface's, so
     ``k`` times its displacement is the gradient there. That is true of a
     window that held its centre as much as one that did not -- the drift gate
     decides whether to complain, not whether the number exists.
@@ -1354,7 +1354,7 @@ def design_from_a_pilot(
     Two things the caller must get right, both learned the hard way. The
     pilot has to hold each window from its first step, or it measures where
     the seeds relaxed to rather than the surface. And the arrival has to be
-    discarded before the median is taken, or a window still settling reports
+    discarded before the median is taken, or a window still equilibrating reports
     its starting position as a gradient.
 
     `coarsest` and `softest` bound the answer to what was already tried, so

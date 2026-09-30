@@ -1,6 +1,6 @@
 """What setup will build from a structure, worked out before it runs.
 
-Setup settles the box and the particle count, and it settles them after
+Setup determines the box and the particle count, and it determines them after
 minutes of fixing, protonating and solvating: only then does anyone learn
 that 1.0 nm of padding around this protein is 94,000 particles, or that the
 file holds two copies where one was meant. Most of it follows from the
@@ -355,7 +355,7 @@ def _chains_setup_keeps(lines: list[str], atoms: list[_Atom], setup: dict[str, A
             f"The file declares {len(candidates)} biological assemblies; this assumes "
             f"the first ({chosen.describe()}). Setup chooses between assemblies that "
             "hold the same molecules and asks which to simulate where they differ; "
-            "`chains` settles it.")
+            "`chains` decides it.")
     elif chosen.generated:
         notes.append(f"Setup builds {chosen.describe()}.")
     return list(chosen.chains), max(1, chosen.copies)

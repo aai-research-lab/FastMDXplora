@@ -610,18 +610,18 @@ SIMULATION = PhaseSchema(
               "continuation with no length asked for finishes the plan.",
               example=0.1),
         Field("stop_when", dict, None,
-              "Run until what the study is for is known, rather than for a "
+              "Run until what the study is for is determined, rather than for a "
               "length fixed in advance. A block with `measures` (each an "
               "`analysis` and either its `standard_error`, in the "
               "analysis's own unit, or its `relative_error`, a fraction of "
               "its mean) and `max_duration_ns`, the most production any run "
               "may reach. `duration_ns` is then the first piece: after it "
               "the analyses are read, and every run is extended by what the "
-              "numbers say is needed until each measure is known as asked "
+              "numbers say is needed until each measure is determined as asked "
               "or the ceiling is reached. By default replicas are required "
               "(a sweep over `random_seed`) and must agree within their own "
-              "errors, because one run can settle while trapped in one "
-              "state and its error bar cannot show it; "
+              "errors, because one run can look equilibrated while trapped in "
+              "one state and its error bar cannot show it; "
               "`independent_starts: not_required` accepts one run's own "
               "precision, and the record says what that leaves unchecked.",
               example={"measures": [{"analysis": "rmsd", "standard_error": 0.01}],
@@ -1125,7 +1125,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "a block of settings, and each says what its output is and is not.",
          ("umbrella", "steered", "metadynamics", "plumed")),
         ("Restraints",
-         "Hold part of the system still while the rest settles.",
+         "Hold part of the system still while the rest equilibrates.",
          ("restrain", "restraint_release", "restrain_production")),
         ("Where it runs",
          "The compute platform, and which device.",

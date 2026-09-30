@@ -296,7 +296,7 @@ def estimate_seconds(
     if particles <= 0:
         raise StudyError(
             "The particle count is not known yet, so there is nothing to "
-            "estimate from. Particle count is settled when the system is "
+            "estimate from. The particle count is fixed when the system is "
             "solvated, so estimate after setup rather than before it.",
             code="setup.structure.undetermined",
         )
@@ -351,7 +351,7 @@ def total_steps(simulation: dict[str, Any] | None) -> int:
     stop_when = block.get("stop_when")
     ceiling = stop_when.get("max_duration_ns") if isinstance(stop_when, dict) else None
     if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool) and ceiling > 0:
-        # A study run until it knows may run to its ceiling, and a budget
+        # A study run until it is determined may run to its ceiling, and a budget
         # has to allow for what it may spend, not for the first piece.
         block = {**block, "duration_ns": ceiling, "production_steps": None}
 

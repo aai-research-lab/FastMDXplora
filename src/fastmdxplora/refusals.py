@@ -717,7 +717,7 @@ CODES: tuple[Code, ...] = (
          detail_keys=("frames", "independent", "statistical_inefficiency")),
     Code("analysis.sampling.drifting",
          "The segment means move in order across the run, so it had not "
-         "settled at the scale of the whole run.",
+         "equilibrated at the scale of the whole run.",
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
          detail_keys=("drift_p", "heterogeneity", "span", "segments")),
     Code("analysis.sampling.not_equilibrated",
