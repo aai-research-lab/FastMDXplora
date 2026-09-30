@@ -1225,6 +1225,21 @@ same, and it answers "why did it stop, and what now?" from it;
 `fastmdx resume --json` carries it as `remedies`; `fastmdxplora.remedies`
 gives it to a program.
 
+### A residue's protonation state is chosen from the structure in the builder
+
+**`setup.residue_states` has a control of its own in the builder,** in place
+of a box for YAML that needed the chain, the number and the state's name
+known beforehand. The preview of what setup will build now lists every
+residue of the structure that can take another state (histidine, aspartate,
+glutamate, lysine) with the states each takes, and the builder offers them by
+kind, each state with what it is ("HIE, neutral, hydrogen on NE2"). Where a
+structural metal is within 3 Å of a residue's side chain, the atom and the
+distance are said beside it ("NE2 is 2.1 Å from ZN A:301"), a fact about the
+structure; the state is left to the person. Each histidine is marked in the
+picture of the system and a click on one adds it and asks for its state;
+residues given one are marked with it. A row reaches the config once its
+state is chosen.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -526,8 +526,9 @@
   function control(phase, field) {
     // A form of several controls is not one labelled control: inside a
     // <label>, a click on its name pressed the first button in it.
-    const wrap = document.createElement(field.control === "stopping" ? "div" : "label");
-    wrap.className = "builder-field" + (field.control === "stopping" ? " builder-field-wide" : "");
+    const wide = field.control === "stopping" || field.control === "residues";
+    const wrap = document.createElement(wide ? "div" : "label");
+    wrap.className = "builder-field" + (wide ? " builder-field-wide" : "");
     // Named, so what is said about a setting elsewhere on the page can
     // open the section it is in and point at it.
     wrap.dataset.setting = field.name;
@@ -690,6 +691,8 @@
       };
     } else if (field.control === "stopping") {
       input = stoppingControl(field);
+    } else if (field.control === "residues") {
+      input = residueStatesControl(field);
     } else if (field.control === "mapping") {
       // Umbrella, steered and metadynamics are blocks of several settings,
       // not one value. A single-line box could not hold one, and what was
@@ -968,6 +971,176 @@
     // would drop a row being written.
     box.writeValue = () => {};
     return box;
+  }
+
+  // ------------------------------------------ a residue's protonation state
+
+  /* `setup.residue_states` as rows: a residue named by chain and number, and
+   * the state it takes in place of the one setup would choose. The residues
+   * are offered from the structure (the preview lists each one that can take
+   * another state), and a histidine clicked in the picture is added here. A
+   * row whose state is not chosen yet stays in the form and reaches the
+   * config once it has one. */
+  let residuesPending = [];
+  let titratable = [];
+
+  function residueStatesChosen() {
+    const value = (state.values.setup || {}).residue_states;
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  function residueStatesControl(field) {
+    const table = field.states || {};
+    const meaning = field.meaning || {};
+    const box = document.createElement("div");
+    box.className = "builder-residues";
+    const chosen = Object.assign({}, residueStatesChosen());
+    const known = new Map(titratable.map((residue) => [residue.key, residue]));
+    const commit = () => box.dispatchEvent(new Event("change", { bubbles: true }));
+    const stateLabel = (name) => (meaning[name] ? `${name}, ${meaning[name]}` : name);
+
+    const keys = Object.keys(chosen).concat(residuesPending.filter((key) => !(key in chosen)));
+    const rows = document.createElement("div");
+    rows.className = "builder-residues-rows";
+    keys.forEach((key) => {
+      const residue = known.get(key);
+      const line = document.createElement("div");
+      line.className = "builder-residue-row";
+      line.dataset.residue = key;
+      line.appendChild(node("span", "builder-residue-name",
+        residue ? `${key} ${residue.resname}` : key));
+      const pick = document.createElement("select");
+      pick.className = "builder-residue-state";
+      pick.setAttribute("aria-label", `State for ${key}`);
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Choose a state";
+      pick.appendChild(blank);
+      const states = residue ? residue.states
+        : [].concat(...Object.values(table));
+      states.forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = stateLabel(name);
+        pick.appendChild(option);
+      });
+      pick.value = chosen[key] || "";
+      pick.addEventListener("change", (event) => {
+        event.stopPropagation();
+        if (pick.value) {
+          chosen[key] = pick.value;
+          residuesPending = residuesPending.filter((k) => k !== key);
+        } else {
+          delete chosen[key];
+          if (!residuesPending.includes(key)) residuesPending.push(key);
+        }
+        commit();
+      });
+      line.appendChild(pick);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "run-sweep-remove";
+      remove.setAttribute("aria-label", `Leave ${key} to setup`);
+      remove.textContent = "\u00d7";
+      remove.addEventListener("click", (event) => {
+        event.preventDefault();
+        delete chosen[key];
+        residuesPending = residuesPending.filter((k) => k !== key);
+        commit();
+      });
+      line.appendChild(remove);
+      if (residue && residue.near) {
+        line.appendChild(node("span", "builder-card-note builder-residue-near", residue.near));
+      }
+      rows.appendChild(line);
+    });
+    box.appendChild(rows);
+
+    const add = document.createElement("div");
+    add.className = "builder-residues-add";
+    const free = titratable.filter((residue) => !keys.includes(residue.key));
+    if (titratable.length) {
+      const pick = document.createElement("select");
+      pick.className = "builder-residue-pick";
+      pick.setAttribute("aria-label", "A residue to set");
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = free.length ? "Add a residue" : "Every residue is listed";
+      pick.appendChild(blank);
+      Object.keys(table).forEach((resname) => {
+        const these = free.filter((residue) => residue.resname === resname);
+        if (!these.length) return;
+        const group = document.createElement("optgroup");
+        group.label = resname;
+        these.forEach((residue) => {
+          const option = document.createElement("option");
+          option.value = residue.key;
+          option.textContent = `${residue.key} ${resname}` + (residue.near ? ` (${residue.near})` : "");
+          group.appendChild(option);
+        });
+        pick.appendChild(group);
+      });
+      pick.disabled = !free.length;
+      pick.addEventListener("change", (event) => {
+        event.stopPropagation();
+        if (!pick.value) return;
+        residuesPending.push(pick.value);
+        commit();
+      });
+      add.appendChild(pick);
+    } else {
+      // No structure read yet: a residue named as the structure numbers it.
+      const typed = document.createElement("input");
+      typed.type = "text";
+      typed.className = "builder-residue-typed";
+      typed.placeholder = "A:57";
+      typed.setAttribute("aria-label", "A residue, as chain and number");
+      const go = document.createElement("button");
+      go.type = "button";
+      go.className = "ghost-btn builder-residue-add";
+      go.textContent = "Add";
+      const take = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = typed.value.trim().toUpperCase().replace(/\s+/g, "");
+        if (!/^[A-Z0-9]{1,4}:-?\d+[A-Z]?$/.test(key) || keys.includes(key)) return;
+        residuesPending.push(key);
+        commit();
+      };
+      go.addEventListener("click", take);
+      typed.addEventListener("change", (event) => event.stopPropagation());
+      typed.addEventListener("keydown", (event) => { if (event.key === "Enter") take(event); });
+      add.appendChild(typed);
+      add.appendChild(go);
+    }
+    box.appendChild(add);
+    if (titratable.some((residue) => residue.resname === "HIS")) {
+      box.appendChild(node("span", "builder-card-note",
+        "A histidine in the picture of the system can be clicked to add it here."));
+    }
+
+    box.readValue = () => (Object.keys(chosen).length ? Object.assign({}, chosen) : null);
+    box.writeValue = () => {};
+    return box;
+  }
+
+  /* A residue picked in the picture: added to the rows, the setup settings
+   * opened on it, and its state asked for. */
+  function pickResidue(key) {
+    if (!key) return;
+    if (!(key in residueStatesChosen()) && !residuesPending.includes(key)) {
+      residuesPending.push(key);
+    }
+    state.open.add("setup");
+    renderSettings();
+    const row = document.querySelector(
+      `#run-settings .builder-residue-row[data-residue="${CSS.escape(key)}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    const pick = row.querySelector("select");
+    if (pick) pick.focus({ preventScroll: true });
+    row.classList.add("is-pointed");
+    setTimeout(() => row.classList.remove("is-pointed"), 1600);
   }
 
   // --------------------------------------------------- which measurements
@@ -1476,6 +1649,11 @@
     }
     const e = answer.estimate;
     text(el("run-system-preview-state"), "an estimate");
+    const listed = Array.isArray(answer.titratable) ? answer.titratable : [];
+    if (JSON.stringify(listed) !== JSON.stringify(titratable)) {
+      titratable = listed;
+      if (state.open.has("setup")) renderSettings();
+    }
 
     const headline = node("p", "system-preview-headline");
     headline.appendChild(node("strong", "system-preview-count", `about ${count(e.particles)}`));
@@ -1635,6 +1813,7 @@
     viewer.addModel(answer.drawing, "pdb");
     viewer.setStyle({ hetflag: false }, { cartoon: { colorscheme: "chain", thickness: 0.6 } });
     viewer.setStyle({ hetflag: true }, { stick: { radius: 0.25 } });
+    markResidues(viewer, answer, tone);
     const cell = periodicCell(boxVectors(e.box_shape, Number(e.width_nm) * 10));
     const centre = e.centre_angstrom || [0, 0, 0];
     const at = (v) => ({ x: v[0] + centre[0], y: v[1] + centre[1], z: v[2] + centre[2] });
@@ -1652,6 +1831,40 @@
     viewer.rotate(30, "y");
     viewer.zoom(0.85);
     viewer.render();
+  }
+
+  /* Each histidine as a small sphere on its alpha carbon, and every residue
+   * given a state as a larger one labelled with it; a click on either picks
+   * the residue for `setup.residue_states`. Histidines, because theirs is the
+   * choice setup makes least reliably (a tautomer from hydrogen bonds). */
+  function markResidues(viewer, answer, tone) {
+    const listed = Array.isArray(answer.titratable) ? answer.titratable : [];
+    const chosen = residueStatesChosen();
+    const selectionOf = (residue) => ({
+      chain: residue.chain, resi: residue.number, atom: "CA" });
+    const histidine = tone("--accent-orange", "#ffb86b");
+    const set = tone("--accent-violet", "#a78bfa");
+    viewer.removeAllLabels();
+    let marked = 0;
+    listed.forEach((residue) => {
+      const given = chosen[residue.key];
+      if (residue.resname !== "HIS" && !given) return;
+      viewer.addStyle(selectionOf(residue),
+        { sphere: { radius: given ? 1.6 : 1.1, color: given ? set : histidine } });
+      if (given) {
+        viewer.addLabel(`${residue.key} ${given}`, {
+          fontSize: 11, showBackground: true, backgroundOpacity: 0.7,
+          inFront: true }, selectionOf(residue));
+      }
+      marked += 1;
+    });
+    const byAtom = new Map(listed.map((residue) => [`${residue.chain}:${residue.number}`, residue]));
+    viewer.setClickable({ atom: "CA" }, true, (atom) => {
+      const residue = byAtom.get(`${atom.chain}:${atom.resi}`);
+      if (residue) pickResidue(residue.key);
+    });
+    const host = el("run-system-preview-view");
+    if (host) host.dataset.residuesMarked = String(marked);
   }
 
   /* The size and the time of an answer from /api/preview-system, in two
@@ -1860,6 +2073,7 @@
     state.phases = new Set(from.include_phase || from.include || []);
     state.values = from.phases || {};
     stoppingDraft = null;
+    residuesPending = [];
     state.analyses = new Set(from.analyses || []);
     state.analysisOptions = from.analysis_options || {};
     state.sweep = (from.sweep || []).map((row) => ({
@@ -2074,6 +2288,7 @@
       : new Set();
     state.values = {};
     stoppingDraft = null;
+    residuesPending = [];
     state.analyses.clear();
     state.analysisOptions = {};
     state.sweep = [];
@@ -2207,6 +2422,6 @@
      * first, so the file, the command and the script are the same ones
      * the builder would produce -- one derivation, two doors. */
     fetchConfig, download, copyCommand, downloadScript,
-    renderPreview, describeCost, previewCost, boxVectors, periodicCell,
+    renderPreview, describeCost, previewCost, boxVectors, periodicCell, pickResidue,
   };
 })();

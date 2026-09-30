@@ -168,6 +168,18 @@ settings, a metal in a site the force field will not hold, say, is said
 beside it, with a button that opens the setting it is about. A membrane
 system is not estimated: its box is the bilayer's.
 
+**A residue's protonation state** is chosen under `residue states` in Setup,
+from the structure itself: once the structure is read, every histidine,
+aspartate, glutamate and lysine it holds is offered by kind, each with the
+states it takes and what each is (HID, neutral with its hydrogen on ND1;
+HIP, charged). Where a structural metal is within 3 Å of a residue's side
+chain, which atom and how far is said beside it, since a histidine holds a
+metal by a nitrogen with no hydrogen on it; which state follows is yours to
+decide, and nothing is chosen for you. Each histidine is marked in the
+picture of the system, and a click on one adds it to the rows and asks its
+state; a residue given a state is marked there with it. A row reaches the
+config, as `setup.residue_states`, once its state is chosen.
+
 ### Taking the Config with you
 
 Four buttons at the bottom of the page:

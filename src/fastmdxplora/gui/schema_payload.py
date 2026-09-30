@@ -40,6 +40,10 @@ _CONTROL_FOR_TYPE = {
 
 
 def _control(field: Any) -> str:
+    if field.name == "residue_states":
+        # Residues of this structure, each with a state it can take: rows
+        # to choose from, and a histidine clicked in the picture.
+        return "residues"
     if field.name == "stop_when":
         # Measures, each with the error it must reach, a ceiling and
         # whether replicas must agree: a form, not YAML in a box.
@@ -98,6 +102,12 @@ def field_payload(field: Any) -> dict[str, Any]:
     """One setting, as much as a browser needs to offer it."""
     if field.name == "stop_when":
         return {**_field_payload(field), "measures": _measures()}
+    if field.name == "residue_states":
+        from fastmdxplora.setup.pdbfix import RESIDUE_STATE_MEANING, RESIDUE_STATES
+
+        return {**_field_payload(field),
+                "states": {name: list(states) for name, states in RESIDUE_STATES.items()},
+                "meaning": dict(RESIDUE_STATE_MEANING)}
     return _field_payload(field)
 
 

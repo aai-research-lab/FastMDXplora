@@ -392,6 +392,19 @@ RESIDUE_STATES: dict[str, tuple[str, ...]] = {
     "LYS": ("LYN", "LYS"),
 }
 
+#: What each of those states is, in words a form can show beside it.
+RESIDUE_STATE_MEANING: dict[str, str] = {
+    "HID": "neutral, hydrogen on ND1",
+    "HIE": "neutral, hydrogen on NE2",
+    "HIP": "charged, hydrogens on both",
+    "ASH": "neutral",
+    "ASP": "charged",
+    "GLH": "neutral",
+    "GLU": "charged",
+    "LYN": "neutral",
+    "LYS": "charged",
+}
+
 _RESIDUE_KEY = re.compile(r"^\s*([A-Za-z0-9]{1,4})\s*:\s*(-?\d+)([A-Za-z]?)\s*$")
 
 

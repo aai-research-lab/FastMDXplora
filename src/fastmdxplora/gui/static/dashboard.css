@@ -3710,3 +3710,15 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .builder-stopping-add { align-self: flex-start; }
 .builder-stopping-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .run-section-body > .builder-field[data-setting="stop_when"] { grid-column: 1 / -1; }
+
+/* A residue's protonation state in the builder (run-builder.js). */
+.run-section-body > .builder-field[data-setting="residue_states"] { grid-column: 1 / -1; }
+.builder-residues { display: flex; flex-direction: column; gap: 8px; }
+.builder-residues-rows { display: flex; flex-direction: column; gap: 6px; }
+.builder-residue-row { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr) auto; gap: 6px; align-items: center; border-radius: 6px; }
+.builder-residue-row.is-pointed { outline: 2px solid var(--accent-orange); outline-offset: 3px; }
+.builder-residue-name { font-family: var(--font-mono, monospace); font-size: var(--text-sm); color: var(--text-primary); }
+.builder-residue-near { grid-column: 1 / -1; margin-top: -2px; }
+.builder-residues-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.builder-residues-add .builder-residue-typed { width: 110px; flex: 0 0 110px; }
+@media (max-width: 700px) { .builder-residue-row { grid-template-columns: 1fr auto; } .builder-residue-row .builder-residue-state { grid-column: 1 / -1; grid-row: 2; } }

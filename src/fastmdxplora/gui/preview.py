@@ -76,9 +76,67 @@ def system_preview(state: dict[str, Any], *,
         "estimate": estimate.as_record(),
         # What is kept, copies included, for the picture beside the numbers.
         "drawing": estimate.drawing(),
+        # The residues whose protonation state the study may set, for the
+        # form's rows and for a click on one in the picture.
+        "titratable": titratable_residues(estimate.atoms),
         "time": _time(config, estimate.particles),
         "advisories": advisories,
     }
+
+
+#: How close a metal must be to a side chain's nitrogen or oxygen to be said
+#: beside the residue: a coordinating Zn-N is near 2.1 Angstrom and a Ca-O
+#: near 2.4, and 3 is past both without reaching a second shell.
+METAL_REACH_ANGSTROM = 3.0
+
+#: Most residues listed, so a very large assembly does not send thousands.
+MOST_TITRATABLE = 2000
+
+_BACKBONE = frozenset({"N", "CA", "C", "O", "OXT"})
+
+
+def titratable_residues(atoms: list[Any]) -> list[dict[str, Any]]:
+    """Every residue of the kept structure that `setup.residue_states` can
+    set, as it names them (chain and number), with the states each takes.
+
+    Where a structural metal sits within reach of one's side chain, which
+    atom and how far, since a histidine that holds a metal holds it by a
+    nitrogen with no hydrogen on it. That is a distance in the structure,
+    said as one; which state follows is the person's to decide.
+    """
+    import math
+
+    from fastmdxplora.setup.pdbfix import RESIDUE_STATES
+    from fastmdxplora.setup.prepare import STRUCTURAL_METALS
+
+    metals = [atom for atom in atoms
+              if atom.record == "HETATM" and atom.resname.upper() in STRUCTURAL_METALS]
+    found: dict[str, dict[str, Any]] = {}
+    for atom in atoms:
+        name = atom.resname.upper()
+        if atom.record != "ATOM" or name not in RESIDUE_STATES:
+            continue
+        key = f"{atom.chain}:{atom.resseq}{atom.icode.strip()}"
+        entry = found.get(key)
+        if entry is None:
+            if len(found) >= MOST_TITRATABLE:
+                continue
+            entry = found[key] = {"key": key, "resname": name, "chain": atom.chain,
+                                  "number": atom.resseq, "states": list(RESIDUE_STATES[name]),
+                                  "near": None, "_reach": METAL_REACH_ANGSTROM}
+        if atom.name in _BACKBONE or atom.element.upper() not in ("N", "O"):
+            continue
+        for metal in metals:
+            distance = math.dist(atom.xyz, metal.xyz)
+            if distance <= entry["_reach"]:
+                entry["_reach"] = distance
+                entry["near"] = (f"{atom.name} is {distance:.1f} \u00c5 from "
+                                 f"{metal.resname} {metal.chain}:{metal.resseq}")
+    listed = []
+    for entry in found.values():
+        entry.pop("_reach")
+        listed.append(entry)
+    return listed
 
 
 def structure_file(given: str, path_for: Callable[[Any], str | None] | None = None) -> Path:
