@@ -181,7 +181,7 @@ def test_the_page_shows_them_and_one_opens_its_figure(tmp_path) -> None:
                 "() => { const c = document.querySelector("
                 "'.page[data-page=\"analysis\"] .analysis-card[data-analysis=\"rmsd\"]');"
                 " if (!c) return false; const r = c.getBoundingClientRect();"
-                " return r.top < innerHeight && r.bottom > 0; }", timeout=15000)
+                " return r.top < innerHeight && r.bottom > 0; }", timeout=60000)
             seen = True
             browser.close()
     finally:

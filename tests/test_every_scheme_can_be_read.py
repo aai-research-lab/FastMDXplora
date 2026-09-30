@@ -138,6 +138,11 @@ def _in(browser, dashboard, scheme: str | None = None, **context):
     page.set_default_timeout(60000)
     page.goto(dashboard.url + "#overview", wait_until="domcontentloaded")
     page.wait_for_function("() => window.FastMDXDashboard && document.body.dataset.theme")
+    # The loading screen gone, not fading: read half way through its fade,
+    # its text was half transparent over the page, and CI read it so.
+    page.wait_for_function("() => document.body.classList.contains('state-ready') && "
+                           "getComputedStyle(document.querySelector('.loading-screen'))"
+                           ".opacity === '0'")
     if scheme:
         _choose(page, scheme)
     return page

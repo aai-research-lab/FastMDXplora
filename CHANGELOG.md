@@ -1547,6 +1547,14 @@ far as their dynamics carry them apart), and the comparison, the Analysis
 page and the Studies page treat them as replicas. The builder's estimate reads
 the model named (`fastmdxplora.setup.ensemble`).
 
+### Two browser tests wait for what they read, as CI showed they must
+
+CI on `1bd10e9` failed two browser tests on timing alone. The contrast test
+read the Overview while the loading screen was fading out, so its text was
+half transparent over the page and read as unreadable; it now waits until the
+loading screen is gone. The citation test gave a smooth scroll 15 s where the
+other browser tests allow 60; it allows 60.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
