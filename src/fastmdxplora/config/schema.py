@@ -574,7 +574,8 @@ SIMULATION = PhaseSchema(
               example=2.0,
                     minimum=0.0),
         Field("nvt_steps", int, None,
-              "NVT step count (overrides nvt_duration_ns). Default: 250000.",
+              "NVT step count (overrides nvt_duration_ns). Default: the steps "
+              "500 ps takes at the timestep, 250,000 at 2 fs.",
               example=250000),
         Field("ensemble", str, None,
               "Which ensemble production runs in -- 'npt' at constant "
@@ -597,10 +598,12 @@ SIMULATION = PhaseSchema(
               choices=("npt", "nvt"),
               example="nvt"),
         Field("npt_steps", int, None,
-              "NPT step count (overrides npt_duration_ns). Default: 500000.",
+              "NPT step count (overrides npt_duration_ns). Default: the steps "
+              "1 ns takes at the timestep, 500,000 at 2 fs.",
               example=500000),
         Field("production_steps", int, None,
-              "Production step count (overrides duration_ns). Default: 1000000.",
+              "Production step count (overrides duration_ns). Default: the "
+              "steps 2 ns takes at the timestep, 1,000,000 at 2 fs.",
               example=1000000),
         Field("setup_from", str, None,
               "A finished study or setup directory to simulate from instead "

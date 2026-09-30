@@ -17,17 +17,18 @@ Stage step counts and timestep follow standard
 behavior:
 
   - Minimize: until convergence (10 kJ/mol/nm tolerance)
-  - NVT: 250,000 steps (500 ps at 2 fs)
-  - NPT: 500,000 steps (1 ns at 2 fs)
-  - Production: 1,000,000 steps (2 ns at 2 fs)
+  - NVT: 500 ps (250,000 steps at 2 fs)
+  - NPT: 1 ns (500,000 steps at 2 fs)
+  - Production: 2 ns (1,000,000 steps at 2 fs)
   - Timestep: 2 fs; Temperature: 300 K; HBonds constraints (set in setup)
 
 Pass ``duration_ns=`` to set the production length (standard MD
 convention — "I ran a 10 ns simulation" means 10 ns of production).
 Equilibration is independent: it uses fixed standard defaults
 (500 ps NVT + 1 ns NPT) regardless of production length, because
-reaching a stable ensemble takes the same wall-time whether the
-production is 10 ns or 1000 ns.
+reaching a stable ensemble takes the same simulated time whether the
+production is 10 ns or 1000 ns. Each is a time, and the steps follow from
+the timestep (``simulation/lengths.py``).
 
 To customize equilibration, pass ``nvt_duration_ns=`` /
 ``npt_duration_ns=`` (or the lower-level ``nvt_steps=`` /

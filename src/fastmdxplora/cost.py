@@ -332,22 +332,22 @@ def estimate_seconds(
 #: Defaults the simulation phase applies when a config leaves them out.
 #: Read here so an estimate describes the run that would actually happen
 #: rather than the subset of it the config happened to mention.
-_DEFAULT_TIMESTEP_FS = 2.0
-_DEFAULT_PRODUCTION_STEPS = 1_000_000
-_DEFAULT_NVT_STEPS = 250_000
-_DEFAULT_NPT_STEPS = 500_000
 
 
 def total_steps(simulation: dict[str, Any] | None) -> int:
     """Every step a study would integrate, equilibration included.
 
     Counting production alone understates a short study badly: the
-    default equilibration is 750,000 steps, which is most of the work in
-    anything under a couple of nanoseconds. A study with
+    default equilibration is 1.5 ns, which is most of the work in anything
+    under a couple of nanoseconds. A study with
     `simulation.stop_when` is priced at its ceiling.
     """
+    from fastmdxplora.simulation.lengths import (
+        DEFAULT_NPT_NS, DEFAULT_NVT_NS, DEFAULT_PRODUCTION_NS, DEFAULT_TIMESTEP_FS, steps_in,
+    )
+
     block = simulation or {}
-    timestep = float(block.get("timestep_fs") or _DEFAULT_TIMESTEP_FS)
+    timestep = float(block.get("timestep_fs") or DEFAULT_TIMESTEP_FS)
     stop_when = block.get("stop_when")
     ceiling = stop_when.get("max_duration_ns") if isinstance(stop_when, dict) else None
     if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool) and ceiling > 0:
@@ -355,17 +355,17 @@ def total_steps(simulation: dict[str, Any] | None) -> int:
         # has to allow for what it may spend, not for the first piece.
         block = {**block, "duration_ns": ceiling, "production_steps": None}
 
-    def steps_for(explicit: str, duration: str, fallback: int) -> int:
+    def steps_for(explicit: str, duration: str, fallback_ns: float) -> int:
         if block.get(explicit) is not None:
             return int(block[explicit])
         if block.get(duration) is not None:
-            return int(float(block[duration]) * 1e6 / timestep)
-        return fallback
+            return steps_in(block[duration], timestep)
+        return steps_in(fallback_ns, timestep)
 
     return (
-        steps_for("production_steps", "duration_ns", _DEFAULT_PRODUCTION_STEPS)
-        + steps_for("nvt_steps", "nvt_duration_ns", _DEFAULT_NVT_STEPS)
-        + steps_for("npt_steps", "npt_duration_ns", _DEFAULT_NPT_STEPS)
+        steps_for("production_steps", "duration_ns", DEFAULT_PRODUCTION_NS)
+        + steps_for("nvt_steps", "nvt_duration_ns", DEFAULT_NVT_NS)
+        + steps_for("npt_steps", "npt_duration_ns", DEFAULT_NPT_NS)
     )
 
 

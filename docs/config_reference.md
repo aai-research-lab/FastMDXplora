@@ -170,16 +170,18 @@ them, and what you set is kept, even where it equals the force field's own. See
 
 Production length, and the equilibration before it. **Equilibration is
 independent of production length** — a 500 ns production run gets the same
-1.5 ns of equilibration as a 2 ns one unless you say otherwise.
+1.5 ns of equilibration as a 2 ns one unless you say otherwise. Each default
+is a time, so the number of steps follows the timestep: at 4 fs, 1.5 ns is
+375,000 steps, where it is 750,000 at 2 fs.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
 | `duration_ns` | int or float | 2 ns | Production length; 0 equilibrates and stops |
 | `nvt_duration_ns` | int or float | 500 ps | NVT equilibration |
 | `npt_duration_ns` | int or float | 1 ns | NPT equilibration |
-| `production_steps` | int | 1,000,000 | Overrides `duration_ns` |
-| `nvt_steps` | int | 250,000 | Overrides `nvt_duration_ns` |
-| `npt_steps` | int | 500,000 | Overrides `npt_duration_ns` |
+| `production_steps` | int | what 2 ns is at the timestep | Overrides `duration_ns` |
+| `nvt_steps` | int | what 500 ps is at the timestep | Overrides `nvt_duration_ns` |
+| `npt_steps` | int | what 1 ns is at the timestep | Overrides `npt_duration_ns` |
 | `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume |
 | `stop_when` | map | — | Run until what the study is for is known, rather than for a fixed length. See below |
 

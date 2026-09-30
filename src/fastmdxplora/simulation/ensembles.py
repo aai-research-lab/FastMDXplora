@@ -41,11 +41,6 @@ NPT = "npt"
 NVT = "nvt"
 ENSEMBLES = (NPT, NVT)
 
-#: The runner's default NPT stage, used when a config says nothing. Kept
-#: here as well because the inference has to match what the runner would
-#: have done, and a second copy that drifts would silently change the
-#: ensemble of every study that leaves the stage lengths alone.
-DEFAULT_NPT_STEPS = 500_000
 
 
 def resolve_ensemble(simulation: dict[str, Any] | None) -> str:
@@ -90,11 +85,14 @@ def _npt_stage_steps(simulation: dict[str, Any]) -> int:
     steps = simulation.get("npt_steps")
     if steps is not None:
         return int(steps)
+    # The runner's own lengths (simulation/lengths.py): the inference has to
+    # match what the runner would do, and a copy that drifted would change
+    # the ensemble of every study that leaves the stage lengths alone.
+    from fastmdxplora.simulation.lengths import DEFAULT_NPT_NS, DEFAULT_TIMESTEP_FS, steps_in
+
+    timestep = float(simulation.get("timestep_fs") or DEFAULT_TIMESTEP_FS)
     duration = simulation.get("npt_duration_ns")
-    if duration is not None:
-        timestep = float(simulation.get("timestep_fs") or 2.0)
-        return int(float(duration) * 1e6 / timestep)
-    return DEFAULT_NPT_STEPS
+    return steps_in(DEFAULT_NPT_NS if duration is None else duration, timestep)
 
 
 def describe_choice(simulation: dict[str, Any] | None) -> str:

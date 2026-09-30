@@ -52,9 +52,9 @@ class TestThePlan:
         assert plan["Solvent"]["value"].startswith("cube box, 1.2 nm padding")
         assert plan["Production"] == {"label": "Production", "value": "50 ns, 4 fs steps",
                                       "default": False}
-        # The default NPT stage is a number of steps, so at 4 fs it is 2 ns:
-        # what the runner will do, which is what the plan is for.
-        assert plan["Equilibration"]["value"] == "NVT 100 ps, then NPT 2 ns"
+        # The default NPT stage is a time, so at 4 fs it is still 1 ns: what
+        # the runner will do, which is what the plan is for.
+        assert plan["Equilibration"]["value"] == "NVT 100 ps, then NPT 1 ns"
         assert plan["Conditions"]["value"] == "310 K, 1 atm"
         assert plan["Analyses"]["value"] == "rmsd, rg"
 

@@ -18,7 +18,7 @@ import unittest
 import pytest
 
 from fastmdxplora.cost import total_steps
-from fastmdxplora.simulation.runner import DEFAULT_PRODUCTION_STEPS, plan_stages
+from fastmdxplora.simulation.runner import plan_stages
 
 
 def _plan(**stated):
@@ -31,7 +31,7 @@ def test_zero_production_is_zero() -> None:
 
 
 def test_unset_production_is_still_the_default() -> None:
-    assert _plan(duration_ns=None)["production_steps"] == DEFAULT_PRODUCTION_STEPS
+    assert _plan(duration_ns=None)["production_steps"] == 1_000_000  # 2 ns at 2 fs
 
 
 def test_the_cost_estimate_counts_what_the_runner_runs() -> None:

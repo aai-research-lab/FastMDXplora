@@ -34,6 +34,9 @@ from typing import Any, Callable
 
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.simulation.ensembles import resolve_ensemble
+from fastmdxplora.simulation.lengths import (
+    DEFAULT_NPT_NS, DEFAULT_NVT_NS, DEFAULT_PRODUCTION_NS, DEFAULT_TIMESTEP_FS, steps_in,
+)
 from fastmdxplora.refusals import (
     BackendUnavailable,
     MissingResultError,
@@ -46,9 +49,8 @@ logger = get_logger("simulation.runner")
 
 # ---------------------------------------------------------------------------
 # Defaults — production-cadence reporters and standard
-# stage step counts.
+# stage lengths.
 # ---------------------------------------------------------------------------
-DEFAULT_TIMESTEP_FS = 2.0
 DEFAULT_TEMPERATURE_K = 300.0
 DEFAULT_FRICTION_PER_PS = 1.0          # Langevin collision frequency
 DEFAULT_PRESSURE_BAR = 1.0
@@ -70,10 +72,8 @@ SUPPORTED_INTEGRATORS = (
     "variable_verlet",
 )
 
-# Standard stage step counts for general-purpose MD
-DEFAULT_NVT_STEPS = 250_000            # 500 ps @ 2 fs
-DEFAULT_NPT_STEPS = 500_000            # 1 ns  @ 2 fs
-DEFAULT_PRODUCTION_STEPS = 1_000_000   # 2 ns  @ 2 fs
+# The default stage lengths are times (simulation/lengths.py), and a run
+# takes its steps from them at its own timestep (plan_stages).
 DEFAULT_MINIMIZE_TOLERANCE_KJMOL_PER_NM = 10.0
 DEFAULT_MINIMIZE_MAX_ITERATIONS = 0     # 0 == until convergence
 
@@ -1572,7 +1572,9 @@ def plan_stages(
     when they say "I ran a 10 ns simulation." Equilibration uses the
     the standard default lengths (500 ps NVT + 1 ns NPT) regardless
     of production length, because reaching a stable ensemble takes the
-    same wall-time whether the production run is 10 ns or 1000 ns.
+    same simulated time whether the production run is 10 ns or 1000 ns.
+    Every default is a time and becomes steps at this run's timestep: they
+    were step counts, which at 4 fs ran twice the time they were said to.
 
     Three ways to override the defaults:
 
@@ -1593,28 +1595,25 @@ def plan_stages(
     if production_steps is not None:
         auto_prod = int(production_steps)
     elif duration_ns is not None and duration_ns >= 0:
-        steps_per_ns = int(round(1_000_000.0 / float(timestep_fs)))
-        auto_prod = int(round(duration_ns * steps_per_ns))
+        auto_prod = steps_in(duration_ns, timestep_fs)
     else:
-        auto_prod = DEFAULT_PRODUCTION_STEPS
+        auto_prod = steps_in(DEFAULT_PRODUCTION_NS, timestep_fs)
 
     # NVT: fixed default, optionally overridden by ns-flavored kwarg
     if nvt_steps is not None:
         auto_nvt = int(nvt_steps)
     elif nvt_duration_ns is not None and nvt_duration_ns >= 0:
-        steps_per_ns = int(round(1_000_000.0 / float(timestep_fs)))
-        auto_nvt = int(round(nvt_duration_ns * steps_per_ns))
+        auto_nvt = steps_in(nvt_duration_ns, timestep_fs)
     else:
-        auto_nvt = DEFAULT_NVT_STEPS
+        auto_nvt = steps_in(DEFAULT_NVT_NS, timestep_fs)
 
     # NPT: same pattern
     if npt_steps is not None:
         auto_npt = int(npt_steps)
     elif npt_duration_ns is not None and npt_duration_ns >= 0:
-        steps_per_ns = int(round(1_000_000.0 / float(timestep_fs)))
-        auto_npt = int(round(npt_duration_ns * steps_per_ns))
+        auto_npt = steps_in(npt_duration_ns, timestep_fs)
     else:
-        auto_npt = DEFAULT_NPT_STEPS
+        auto_npt = steps_in(DEFAULT_NPT_NS, timestep_fs)
 
     return {
         "nvt_steps": auto_nvt,

@@ -1602,6 +1602,21 @@ Python's import, which does not ignore case, refused the name. Module files
 are now matched by exact name, folder by folder. A test makes the file system
 ignore case as macOS's does, on any platform.
 
+### The default stage lengths are times: 500 ps, 1 ns and 2 ns
+
+The defaults were step counts, 250,000 steps of NVT, 500,000 of NPT and
+1,000,000 of production. At the default 2 fs timestep those are the 500 ps,
+1 ns and 2 ns every text said; at 4 fs, which hydrogen mass repartitioning
+allows, they ran 1 ns, 2 ns and 4 ns, while the plan, the methods paragraph
+and the Agent said 500 ps and 1 ns. They are times now (decided 2026-09-30),
+kept once in `simulation/lengths.py`, and the steps follow the run's
+timestep. The runner, the cost estimate and the ensemble a config implies
+each kept their own copy of the step counts, and the continuation of a
+stopped study already counted times, so at 4 fs it and the runner disagreed;
+all four read the one set now. A study at 4 fs that states no lengths
+equilibrates for half the steps it did, and produces for half; a study that
+states its lengths, in steps or in time, runs as it did.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

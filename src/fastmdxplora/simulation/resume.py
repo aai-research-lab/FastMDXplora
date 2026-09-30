@@ -464,10 +464,12 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     # A stated zero is zero, as the runner reads it.
     nvt_ns = sim.get("nvt_duration_ns")
     npt_ns = sim.get("npt_duration_ns")
+    from fastmdxplora.simulation.lengths import DEFAULT_NPT_NS, DEFAULT_NVT_NS, steps_in
+
     nvt = int(sim.get("nvt_steps") if sim.get("nvt_steps") is not None
-              else round(float(0.5 if nvt_ns is None else nvt_ns) / dt_ns))
+              else steps_in(DEFAULT_NVT_NS if nvt_ns is None else nvt_ns, dt_fs))
     npt = int(sim.get("npt_steps") if sim.get("npt_steps") is not None
-              else round(float(1.0 if npt_ns is None else npt_ns) / dt_ns))
+              else steps_in(DEFAULT_NPT_NS if npt_ns is None else npt_ns, dt_fs))
     planned_ns = float(sim.get("duration_ns") or
                        (int(sim.get("production_steps") or 0) * dt_ns))
     # The checkpoint's step is a production step. The runner resets the

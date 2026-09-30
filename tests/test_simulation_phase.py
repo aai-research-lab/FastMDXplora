@@ -109,8 +109,8 @@ class TestPlanStages:
         # 10 ns @ 2 fs = 5,000,000 steps of production
         assert plan["production_steps"] == 5_000_000
         # Equilibration: fixed defaults regardless of production length
-        assert plan["nvt_steps"] == _runner.DEFAULT_NVT_STEPS    # 250k = 500 ps
-        assert plan["npt_steps"] == _runner.DEFAULT_NPT_STEPS    # 500k = 1 ns
+        assert plan["nvt_steps"] == 250_000    # 500 ps
+        assert plan["npt_steps"] == 500_000    # 1 ns
 
     def test_long_production_does_not_balloon_equilibration(self):
         """For a 1000 ns production, equilibration stays at the fixed defaults.
@@ -123,8 +123,8 @@ class TestPlanStages:
             nvt_steps=None, npt_steps=None, production_steps=None,
         )
         assert plan["production_steps"] == 500_000_000     # 1000 ns
-        assert plan["nvt_steps"] == _runner.DEFAULT_NVT_STEPS   # still 500 ps
-        assert plan["npt_steps"] == _runner.DEFAULT_NPT_STEPS   # still 1 ns
+        assert plan["nvt_steps"] == 250_000   # still 500 ps
+        assert plan["npt_steps"] == 500_000   # still 1 ns
 
     def test_ns_flavored_equilibration_kwargs(self):
         """nvt_duration_ns / npt_duration_ns let users specify equilibration in ns."""
@@ -148,7 +148,7 @@ class TestPlanStages:
         )
         assert plan["nvt_steps"] == 42
         # Other stages still come from their respective sources
-        assert plan["npt_steps"] == _runner.DEFAULT_NPT_STEPS
+        assert plan["npt_steps"] == 500_000
         assert plan["production_steps"] == 5_000_000
 
     def test_zero_duration_runs_no_production(self):
@@ -498,10 +498,11 @@ class TestDefaults:
         assert d["npt_steps"] is None
 
     def test_runner_step_defaults(self):
-        # These are the default simulation-length values
-        assert _runner.DEFAULT_NVT_STEPS == 250_000
-        assert _runner.DEFAULT_NPT_STEPS == 500_000
-        assert _runner.DEFAULT_PRODUCTION_STEPS == 1_000_000
+        # The default stage lengths, as times (simulation/lengths.py)
+        from fastmdxplora.simulation import lengths
+
+        assert (lengths.DEFAULT_NVT_NS, lengths.DEFAULT_NPT_NS,
+                lengths.DEFAULT_PRODUCTION_NS) == (0.5, 1.0, 2.0)
         assert _runner.DEFAULT_TIMESTEP_FS == 2.0
         assert _runner.DEFAULT_TEMPERATURE_K == 300.0
 

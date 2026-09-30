@@ -112,13 +112,13 @@ class TestWhatRuns:
 
     @pytest.mark.parametrize("simulation,planned", [
         ({}, (2.0, 1.5)),
-        ({"duration_ns": 5, "timestep_fs": 4}, (5.0, 3.0)),
+        ({"duration_ns": 5, "timestep_fs": 4}, (5.0, 1.5)),
         ({"production_steps": 1000, "nvt_duration_ns": 0.1, "npt_steps": 0}, (0.002, 0.1)),
     ])
     def test_a_windows_length_is_the_runners(self, tmp_path, simulation, planned):
         """Priced as the runner runs it: a run naming no length runs the
-        default 2 ns (it was priced as none), and equilibration is a number
-        of steps, so 4 fs steps take twice as long."""
+        default 2 ns (it was priced as none), and equilibration is 1.5 ns
+        at any timestep."""
         import yaml
 
         from fastmdxplora.remedies import _planned

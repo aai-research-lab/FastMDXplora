@@ -13,7 +13,7 @@ import pytest
 
 from fastmdxplora.cost import total_steps
 from fastmdxplora.simulation.ensembles import resolve_ensemble
-from fastmdxplora.simulation.runner import DEFAULT_NPT_STEPS, DEFAULT_NVT_STEPS, plan_stages
+from fastmdxplora.simulation.runner import plan_stages
 
 
 def _plan(**stated):
@@ -31,8 +31,8 @@ def test_a_zero_nvt_duration_runs_no_nvt() -> None:
 
 def test_unset_is_still_the_default() -> None:
     plan = _plan()
-    assert plan["npt_steps"] == DEFAULT_NPT_STEPS
-    assert plan["nvt_steps"] == DEFAULT_NVT_STEPS
+    assert plan["npt_steps"] == 500_000  # 1 ns at 2 fs
+    assert plan["nvt_steps"] == 250_000  # 500 ps
 
 
 @pytest.mark.parametrize("npt_ns", [None, 0, 0.2])
