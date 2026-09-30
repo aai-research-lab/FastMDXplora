@@ -1414,6 +1414,17 @@ that setup builds the biological assembly, names its chains, and says the
 residues listed are the assembly's. Found writing the questions that measure
 the Agent's looking.
 
+### Whether the Agent's looking helps is measured, not assumed
+
+**`python -m fastmdxplora.validation.agent_looks`** asks the configured model
+six questions the software answers itself (a solvated system's size, a box's
+width, a structure's residues and ligands, the atoms a selection matches, the
+histidines of the assembly setup builds), with the tools and without, and
+counts the replies that agree with the software and how many looked with the
+tool each question calls for. The questions, the tolerances and how a reply is
+judged are fixed in `preregistration/agent-looks.md` before any reply was
+seen. Every reply is kept in the output file.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

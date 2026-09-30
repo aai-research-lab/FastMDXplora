@@ -274,6 +274,10 @@ def test_every_fastmdx_flag_the_docs_name_exists() -> None:
                     collect(child)
 
     collect(_build_parser())
+    # The measuring harnesses run as modules, and their pages name their flags.
+    from fastmdxplora.validation.agent_looks import build_parser as looks_parser
+
+    collect(looks_parser())
 
     repo = Path(__file__).resolve().parents[1]
     pages = [repo / "README.md"] + sorted((repo / "docs").glob("*.md"))

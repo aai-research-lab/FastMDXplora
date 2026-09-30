@@ -367,6 +367,29 @@ still got every study right — the validator is carrying the weight, which is
 the architecture's claim and now a measurement rather than an argument.
 `--attempts` defaults to 3 on that evidence.
 
+## Measuring whether the Agent's looking helps
+
+The Agent may look with the software's own tools before it answers
+([Looking before it answers](agent.md#looking-before-it-answers)). Whether a
+real model does, and whether its answers then agree with the software, is
+measured with a model chosen and a connection to the PDB:
+
+```bash
+python -m fastmdxplora.validation.agent_looks --repeats 3 --out agent_looks.json
+```
+
+Six questions the software answers itself with no model: the size of a
+solvated 1L2Y and the width of 1AKE's box (setup's estimate), 1UBQ's
+protein residues and 1AKE's ligands, the atoms a selection matches in 1L2Y,
+and the histidines of the 1HHO assembly setup builds. Each goes to the model
+with the tools and without, `--repeats` times, and each reply is judged
+against the software's answer by the rule
+[pre-registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/agent-looks.md)
+before any reply was seen. The table gives, per question, the replies that
+agreed in each arm and how many looked with the tool the question calls for;
+the file keeps every reply whole. It measures agreement with the software,
+not with experiment. No result is recorded here yet.
+
 ---
 
 ## See also
