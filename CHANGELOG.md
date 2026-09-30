@@ -1519,6 +1519,20 @@ one JSON event a line). While a reply is written the send button stops it:
 the request to the model is closed with it and nothing it had written is
 kept. A browser without streams asks for the reply whole.
 
+### A residue clicked in the viewer offers its states for a new study
+
+**The builder's preview offered each residue's protonation states before a
+run (1132); after one, the viewer did not.** A histidine, aspartate,
+glutamate or lysine clicked in the viewer now offers its states in the
+Selection tab, each with what it is, and says what this study set it to or
+that setup chose. Choosing one opens the Config page with this study's
+Config and that residue in `setup.residue_states`: the residue is named as
+setup builds the structure (its chain and number there, whatever the force
+field renamed it in the trajectory), and what tied the Config to this study
+(its output, the prepared system it reused, the segment it carried on, who
+wrote it) is left out. Nothing runs until the person runs it
+(`GET /api/residue-states`).
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

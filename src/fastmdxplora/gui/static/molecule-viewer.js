@@ -1866,6 +1866,78 @@
     note.className = "muted small";
     note.textContent = `Checked against ${answer.against}, the topology the analyses read.`;
     host.appendChild(note);
+    if (TITRATABLE.has(String(atom.resn || "").toUpperCase())) void offerStates(atom, host, asked);
+  }
+
+  /* A residue whose protonation state a study can set, offered for a new
+   * study of the same structure: its states, what each is, and a button
+   * each that opens the Config page with this study's Config and that
+   * state set (gui/selection.states_for). Nothing is run. */
+  const TITRATABLE = new Set(["HIS", "HID", "HIE", "HIP", "HSD", "HSE", "HSP", "ASP", "ASH",
+                              "GLU", "GLH", "LYS", "LYN"]);
+
+  async function offerStates(atom, host, asked) {
+    const query = new URLSearchParams({chain: atom.chain || "", resseq: String(atom.resi ?? ""),
+                                       resname: atom.resn || ""});
+    let answer = null;
+    try {
+      answer = await (await fetch(`/api/residue-states?${query}`)).json();
+    } catch (error) {
+      answer = null;
+    }
+    if (asked !== selectionAsked || !answer) return;
+    const block = document.createElement("div");
+    block.className = "residue-states";
+    const said = document.createElement("p");
+    said.className = "muted small";
+    if (!answer.ok) {
+      said.textContent = answer.reason || "";
+      block.appendChild(said);
+      host.appendChild(block);
+      return;
+    }
+    said.textContent = `A new study of ${answer.system} with ${answer.resname} ${answer.key} as:`
+      + (answer.current ? ` (this one set it ${answer.current})` : " (this one left it to setup)");
+    block.appendChild(said);
+    const row = document.createElement("div");
+    row.className = "residue-state-choices";
+    answer.states.forEach(({state, meaning}) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "file-action";
+      button.dataset.state = state;
+      button.textContent = state;
+      button.title = meaning;
+      button.addEventListener("click", () => startWithState(answer, state, button));
+      row.appendChild(button);
+    });
+    block.appendChild(row);
+    host.appendChild(block);
+  }
+
+  async function startWithState(answer, state, button) {
+    const config = JSON.parse(JSON.stringify(answer.config));
+    const setup = config.setup || (config.setup = {});
+    setup.residue_states = Object.assign({}, setup.residue_states || {}, {[answer.key]: state});
+    let loaded = null;
+    try {
+      loaded = await (await fetch("/api/load-config", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({config}),
+      })).json();
+    } catch (error) {
+      loaded = {ok: false, error: "The server did not answer."};
+    }
+    const run = window.FastMDXRun;
+    if (!loaded || !loaded.ok || !run || !run.applyLoadedState) {
+      button.textContent = (loaded && loaded.error) || "Could not open the builder.";
+      return;
+    }
+    await run.applyLoadedState(loaded.state, {
+      note: `A new study of ${answer.system}, as this one, with ${answer.resname} ${answer.key} `
+        + `as ${state}. Nothing has run.`,
+    });
+    window.FastMDXDashboard?.navigate?.("run");
   }
 
   function updateSelectionPanel(atom) {

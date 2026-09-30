@@ -3891,3 +3891,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .agent-writing:empty::after { content: "\2026"; color: var(--text-muted); }
 .agent-writing-look { font-size: var(--text-xs); color: var(--text-muted); margin: 0 0 4px; }
 .agent-send.is-writing { font-size: var(--text-xs); }
+
+/* A clicked residue's states, for a new study (molecule-viewer.js). */
+.residue-states { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.residue-state-choices { display: flex; gap: 6px; flex-wrap: wrap; }

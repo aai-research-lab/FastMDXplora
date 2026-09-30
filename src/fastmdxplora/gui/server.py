@@ -712,6 +712,16 @@ def make_handler(
                 self._send_json(selection_for(root, chain=one("chain"), resseq=one("resseq"),
                                               resname=one("resname"), atom=one("atom")))
                 return
+            if path == "/api/residue-states":
+                # A clicked residue's states, for a new study of the same
+                # structure with that residue set.
+                from fastmdxplora.gui.selection import states_for
+
+                query = parse_qs(parsed.query)
+                self._send_json(states_for(root, chain=(query.get("chain") or [""])[0],
+                                           resseq=(query.get("resseq") or [""])[0],
+                                           resname=(query.get("resname") or [""])[0]))
+                return
             if path == "/api/measure-over-frames":
                 from fastmdxplora.gui.measure import over_frames
 

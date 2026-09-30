@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-__all__ = ["selection_for", "topology_the_analyses_read"]
+__all__ = ["selection_for", "states_for", "topology_the_analyses_read"]
 
 _NAME = re.compile(r"^[A-Za-z0-9'*+-]{1,8}$")
 
@@ -109,3 +109,87 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
         if count:
             answer["atom"] = {"selection": one, "atoms": count}
     return answer
+
+
+#: The residue a name is, whatever state a force field named it by.
+_FAMILY = {"HIS": "HIS", "HID": "HIS", "HIE": "HIS", "HIP": "HIS", "HSD": "HIS",
+           "HSE": "HIS", "HSP": "HIS", "ASP": "ASP", "ASH": "ASP", "GLU": "GLU",
+           "GLH": "GLU", "LYS": "LYS", "LYN": "LYS"}
+
+#: Settings of a study that tie it to what that study made, left out of a
+#: new study made from it: the prepared system, the segment carried on, who
+#: wrote it.
+_NOT_CARRIED = {"output", "agent", "agent_model"}
+_NOT_CARRIED_SIMULATION = {"setup_from", "prepared_from", "resume_from", "extra_ns"}
+
+
+def states_for(root: Path | str, *, chain: str, resseq: Any, resname: str) -> dict[str, Any]:
+    """A clicked residue's protonation states, for a new study of the same
+    structure with that residue set: the key `setup.residue_states` names it
+    by, found in the structure setup builds (not in the viewer's copy, whose
+    chains a force field may have renamed), the states it takes with what
+    each is, and the study's own Config to start from."""
+    import copy
+
+    import yaml
+
+    from fastmdxplora.setup.pdbfix import RESIDUE_STATE_MEANING, RESIDUE_STATES
+
+    family = _FAMILY.get(str(resname or "").strip().upper())
+    if family is None:
+        return {"ok": False, "reason": f"{resname} has no protonation state to choose; "
+                                       "HIS, ASP, GLU and LYS do."}
+    try:
+        number = int(str(resseq).strip())
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "no residue number"}
+    base = Path(root)
+    try:
+        config = yaml.safe_load((base / "resolved_config.yml").read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        config = None
+    if not isinstance(config, dict):
+        return {"ok": False, "reason": "This study has no Config to start a new one from."}
+    if isinstance(config.get("options"), dict):
+        config = {**{k: v for k, v in config.items() if k != "options"}, **config["options"]}
+    phases = config.get("include_phase")
+    if isinstance(phases, list) and phases and "setup" not in phases:
+        return {"ok": False, "reason": "This study did not prepare a structure, so a "
+                                       "residue's state is not its to set."}
+    systems = config.get("systems") or []
+    system = systems[0].get("system") if systems and isinstance(systems[0], dict) else None
+    if not system:
+        return {"ok": False, "reason": "This study names no structure."}
+    try:
+        from fastmdxplora.gui.preview import structure_file, titratable_residues
+        from fastmdxplora.setup.estimate import estimate_system
+
+        built = titratable_residues(estimate_system(structure_file(str(system), None), {}).atoms)
+    except Exception as exc:  # noqa: BLE001 - said, not raised
+        from fastmdxplora.refusals import refusal_of
+
+        return {"ok": False, "reason": f"{system} could not be read: {refusal_of(exc).message}"}
+    matches = [r for r in built if r["resname"] == family and r["number"] == number]
+    lettered = [r for r in matches if str(r["chain"]) == str(chain or "")]
+    chosen = lettered or matches
+    if len(chosen) != 1:
+        return {"ok": False, "reason": (
+            f"{family} {number} is not in {system} as setup builds it."
+            if not chosen else
+            f"{family} {number} is in more than one chain of {system}, and chain "
+            f"{chain!r} does not say which.")}
+    key = chosen[0]["key"]
+    new = {k: copy.deepcopy(v) for k, v in config.items() if k not in _NOT_CARRIED}
+    simulation = new.get("simulation")
+    if isinstance(simulation, dict):
+        new["simulation"] = {k: v for k, v in simulation.items()
+                             if k not in _NOT_CARRIED_SIMULATION}
+    setup = dict(new.get("setup") or {})
+    current = (setup.get("residue_states") or {}).get(key) \
+        if isinstance(setup.get("residue_states"), dict) else None
+    new["setup"] = setup
+    return {"ok": True, "key": key, "resname": family, "system": str(system),
+            "current": current,
+            "states": [{"state": s, "meaning": RESIDUE_STATE_MEANING.get(s, "")}
+                       for s in RESIDUE_STATES[family]],
+            "config": new}
