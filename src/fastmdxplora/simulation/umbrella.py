@@ -949,11 +949,18 @@ def windows_run_otherwise(directories: "dict[int, Any]",
     nothing on the curve to show it. A window that recorded nothing is not
     judged.
     """
+    return [said for _, said in windows_off_the_plan(directories, plan)]
+
+
+def windows_off_the_plan(directories: "dict[int, Any]",
+                         plan: "UmbrellaPlan") -> list[tuple[int, str]]:
+    """:func:`windows_run_otherwise` with each window's index, so what would
+    fix it can name the windows to run again."""
     import json
     from pathlib import Path
 
     planned = {w.index: w for w in plan.windows}
-    differ: list[str] = []
+    differ: list[tuple[int, str]] = []
     for index, directory in sorted(directories.items()):
         window = planned.get(int(index))
         written = Path(directory) / "simulation" / "umbrella_window.json"
@@ -967,10 +974,10 @@ def windows_run_otherwise(directories: "dict[int, Any]",
             continue
         if not (math.isclose(centre, window.centre, rel_tol=1e-9, abs_tol=1e-9)
                 and math.isclose(force, window.force_constant, rel_tol=1e-9)):
-            differ.append(
+            differ.append((int(index),
                 f"window {index} ran at {centre:g} nm with {force:g} "
                 f"kJ/mol/nm^2, and the config gives it {window.centre:g} nm "
-                f"with {window.force_constant:g}")
+                f"with {window.force_constant:g}"))
     return differ
 
 

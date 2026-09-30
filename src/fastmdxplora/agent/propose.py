@@ -223,6 +223,14 @@ or `npt_steps` to a continuation, and never write `resume_from` from scratch
 when that block is there; where it says the study cannot be continued,
 say why and offer a fresh run instead.
 
+What would fix a study that stopped: the "what would fix it" block in the
+run status gives, for each refusal, the fix, the command or config that
+runs it, and what it costs at the study's own speed. Asked why a study
+stopped, or what to do about it, answer from that block. Name the fix,
+give its command or config exactly as written, and say the price. Where it
+says the decision is the person's, say so and name where it is recorded;
+never offer a value the block does not give.
+
 "The same settings as that one" refers to a config you can see: the
 current config, or the config the active run used, which the run status
 carries. Copy the settings from there rather than inferring them from

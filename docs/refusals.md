@@ -193,6 +193,54 @@ See [Reading the results](results.md#how-a-number-tells-you-what-it-is-worth).
 
 ---
 
+## What would fix it, and what it costs
+
+A study that stops says why. It also says what would fix it, the command
+that runs the fix, and how long that takes at the speed the study itself
+ran. The console prints this under **What would fix it** when a study or
+`fastmdx resume` stops, the Agent answers from it, and a program reads it:
+
+```python
+from fastmdxplora.remedies import remedies_of
+
+for remedy in remedies_of("runs/umbrella"):
+    print(remedy.as_text())
+# (paths shortened)
+# windows 1 and 3: 2 of 4 windows recorded fewer than 200 values after
+# equilibration was discarded. Fix: Run them again with 4 ns of production
+# each, which should record the 200 values a histogram needs, keeping every
+# other window. Run: `fastmdx explore -c study.yml --output runs/umbrella
+# --simulate-duration-ns 4 --rerun-window 1 3`. Costs 8 ns of production and
+# 0.4 ns of equilibration across 2 runs; at this study's own speed on CUDA,
+# about 7 h one after another.
+```
+
+| What stopped it | The fix | The price |
+|---|---|---|
+| A run stopped by a signal, or runs never started | `fastmdx resume STUDY`, one command for the whole study | What remains of each run's production; a run that never reached production is counted from the top |
+| Umbrella windows that recorded too few values | Those windows again, longer, with `--rerun-window` and the length that gives the thinnest the values it needs | That production for each window named |
+| Windows that ran with settings the config no longer gives | Those windows again with `--rerun-window`, or the settings restored | The windows named, or nothing |
+| Gaps between windows | A new study with the windows these measured, as a config | Every window of it |
+| A window that failed | Its own fix, then it and every window it kept from starting, with `--rerun-window` | Those windows |
+| A withheld mean | The study extended in place by what the analyses asked for | That production |
+| Any other refusal | What its disclosure allows, below | The study again from the top |
+
+What the fix may say is bounded by the registry, exactly as the refusal is.
+A `permitted_values` refusal gives the setting and its values. A
+`field_only` one names the setting and leaves the value to you. An `action`
+one gives the step, such as the install command. A `nothing` one says the
+choice is yours and names where a choice of that kind is recorded
+(`setup.ligand`, `setup.ph` or `setup.heterogens` for a ligand's
+protonation), and never what it should be.
+
+The price is production and equilibration in nanoseconds, and the wall time
+at the speed recorded in the study's own `cost.json`, or in another run of
+the same study where the one that stopped measured nothing. That speed
+includes minimisation and equilibration, so the time errs long. Where no
+speed was ever measured, no time is given.
+
+---
+
 ## Stability
 
 The identifiers are a **public interface**, versioned with the package.

@@ -1200,6 +1200,31 @@ unseeded hydrogens and ions. A test of setup's size estimate that measured
 this spread as much as the estimate (it failed once, 4,406 against 4,619)
 now prepares from a fixed seed.
 
+### A study that stops says what would fix it, and what the fix costs
+
+**When a study or `fastmdx resume` stops, the console prints what would fix
+each thing that stopped it, the command that runs the fix, and how long that
+takes at the speed the study itself ran.** A stopped run, and runs a stop
+kept from starting, are one `fastmdx resume` priced at what remains of each.
+Umbrella windows that recorded too few values are run again with
+`--rerun-window` at the length that gives the thinnest the values it needs;
+windows that ran with settings the config no longer gives are named to run
+again; a window that failed is run again with every window it kept from
+starting, which `--rerun-window` otherwise refuses; gaps between windows get
+the design the windows measured, as a config. Any other refusal is answered
+within what the registry lets it say: a setting's values where the schema
+holds them all, the setting alone where the value is a judgement, the install
+command where there is one, and, where only the person can decide (a
+ligand's protonation), where that choice is recorded and never what it
+should be.
+
+The price is production and equilibration in nanoseconds and the wall time
+at the study's own recorded speed, or another run's of the same study; with
+no speed measured, no time is given. The Agent's run status carries the
+same, and it answers "why did it stop, and what now?" from it;
+`fastmdx resume --json` carries it as `remedies`; `fastmdxplora.remedies`
+gives it to a program.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

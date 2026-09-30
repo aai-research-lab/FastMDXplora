@@ -548,6 +548,18 @@ cannot be continued, because it has no production checkpoint or its method
 deposits bias a checkpoint does not carry, it says why and offers a fresh
 run.
 
+### Why it stopped, and what fixes it
+
+Ask why a study stopped, or what to do now, and the Agent answers from the
+study's own record of what would fix it: the fix, the command or config
+that runs it, and what it costs at the speed the study ran. A stopped run
+is `fastmdx resume`; umbrella windows that sampled too little are run again
+longer with `--rerun-window`, by the length the thinnest needs; gaps between
+windows get the design the windows measured. Where the answer is a choice
+only you can make, such as a ligand's protonation, the Agent says so and
+names where it is recorded, and offers no value. See
+[What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
+
 ### Saying what "done" means before the run
 
 Ask for a quantity to a precision (*simulate chignolin until its RMSD is

@@ -300,7 +300,11 @@ def test_a_stopped_run_ends_the_study_and_starts_nothing_more(tmp_path, monkeypa
     assert skipped.message.startswith("Not started: the study was asked to stop.")
     said = capsys.readouterr().out
     assert "Batch stopped:" in said
-    assert f"`fastmdx resume {batch.output_dir}` carries on" in said
+    # One command for the whole study, with what it carries on and costs.
+    assert "What would fix it:" in said
+    assert f"Run: fastmdx resume {batch.output_dir.resolve()}" in said
+    assert (f"{started} run{'s' if started > 1 else ''} stopped where "
+            f"{'it' if started == 1 else 'they'} can be carried on") in said
 
 
 def test_a_run_carried_on_is_followed_in_its_segment(tmp_path) -> None:

@@ -1774,11 +1774,19 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         return 0
 
     # Single run -> flat layout; point at the project manifest.
+    rc = 0 if all(r.status == "ok" for r in results) else 1
     if len(results) == 1:
+        if rc:
+            # A study of several says this in its own summary.
+            from fastmdxplora.batch.explorer import _what_would_fix_it
+
+            fixes = _what_would_fix_it(fmdx.output_dir)
+            if fixes:
+                print()
+                print("\n".join(fixes))
         print()
         print(f"Project output: {fmdx.output_dir}")
         print(f"Manifest:       {fmdx.output_dir / 'manifest.json'}")
-    rc = 0 if all(r.status == "ok" for r in results) else 1
     _finish_dashboard_for_command(session, args)
     return rc
 
@@ -2546,6 +2554,14 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
     answer = resume_study(args.study)
     if getattr(args, "json", False):
+        if not answer.get("ok"):
+            from fastmdxplora.remedies import remedies_of
+
+            try:
+                answer["remedies"] = [remedy.as_record() for remedy in
+                                      remedies_of(answer.get("study") or args.study)]
+            except Exception:  # noqa: BLE001 - advice, never the outcome
+                answer["remedies"] = []
         print(json.dumps(answer, default=str))
     elif answer.get("ok"):
         said = {
@@ -2560,6 +2576,11 @@ def _cmd_resume(args: argparse.Namespace) -> int:
         print(said.get(answer.get("did"), "Done."))
     else:
         print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
+        from fastmdxplora.batch.explorer import _what_would_fix_it
+
+        fixes = _what_would_fix_it(answer.get("study") or args.study)
+        if fixes:
+            print("\n".join(fixes), file=sys.stderr)
     return 0 if answer.get("ok") else 1
 
 

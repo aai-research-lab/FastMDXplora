@@ -373,7 +373,35 @@ def _run_status(runtime: Any) -> str | None:
     if stopped:
         lines.append("")
         lines.append(stopped)
+    fixes = _remedies_summary(getattr(runtime, "active_root", None))
+    if fixes:
+        lines.append("")
+        lines.append(fixes)
     return "\n".join(lines)
+
+
+def _remedies_summary(root: Any) -> str:
+    """What would fix each thing that stopped the study, with its command
+    or config and its price here, so "why did it stop and what now?" is
+    answered with a step and a cost rather than the refusal read back."""
+    if not root:
+        return ""
+    here = Path(root)
+    # A run of a campaign is carried on with its campaign: resuming it alone
+    # would leave the comparison across the runs unbuilt.
+    if here.parent.name == "runs" and (here.parent.parent / "batch_manifest.json").is_file():
+        here = here.parent.parent
+    try:
+        from fastmdxplora.remedies import remedies_of
+
+        found = remedies_of(here)
+    except Exception:  # noqa: BLE001 - context, not load-bearing
+        return ""
+    if not found:
+        return ""
+    return ("what would fix it (within what each refusal lets be said; a value "
+            "not given here is not the software's to suggest):\n"
+            + "\n".join(f"  {remedy.as_text()}" for remedy in found[:8]))
 
 
 def _stopping_summary(root: Any) -> str:

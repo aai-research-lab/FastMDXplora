@@ -567,6 +567,24 @@ def _check_selections_against(prepared: Path, spec: dict[str, Any]) -> None:
         return
 
 
+def _what_would_fix_it(study: Any) -> list[str]:
+    """What would fix each thing that stopped the study, and its price, as
+    the console says it. Nothing where nothing stopped it."""
+    try:
+        from fastmdxplora.remedies import remedies_of
+
+        found = remedies_of(study)
+    except Exception:  # noqa: BLE001 - advice, never the study's outcome
+        logger.debug("What would fix the study could not be read", exc_info=True)
+        return []
+    if not found:
+        return []
+    lines = ["What would fix it:"]
+    for remedy in found:
+        lines.extend("  " + line for line in remedy.as_lines())
+    return lines
+
+
 def _why_it_failed(result: Any) -> str:
     """The reason a run stopped, ready to print.
 
@@ -2784,7 +2802,10 @@ class BatchExplorer:
             f"{'Batch stopped' if stopped else 'Batch complete'}: {ok} ok, "
             f"{err} error(s), {skipped} skipped, {len(self.results)} total"
         )
-        if stopped:
+        fixes = _what_would_fix_it(self.output_dir)
+        if fixes:
+            print("\n".join(fixes))
+        elif stopped:
             # One command for all of it: resuming each run by name carries
             # the runs on and leaves the comparison across them unbuilt.
             print(f"`fastmdx resume {self.output_dir}` carries on the "
