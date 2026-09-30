@@ -3711,6 +3711,12 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .builder-stopping-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .run-section-body > .builder-field[data-setting="stop_when"] { grid-column: 1 / -1; }
 
+/* A refusal said on the setting it is about (run-builder.js). */
+.builder-field.is-refused { outline: 2px solid var(--accent-red); outline-offset: 4px; border-radius: 6px; }
+.builder-refusal { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; font-size: var(--text-sm); line-height: 1.45; }
+.builder-refusal-why { color: var(--accent-red); }
+.builder-refusal-fix { color: var(--text-secondary); }
+
 /* A residue's protonation state in the builder (run-builder.js). */
 .run-section-body > .builder-field[data-setting="residue_states"] { grid-column: 1 / -1; }
 .builder-residues { display: flex; flex-direction: column; gap: 8px; }

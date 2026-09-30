@@ -1240,6 +1240,20 @@ picture of the system and a click on one adds it and asks for its state;
 residues given one are marked with it. A row reaches the config once its
 state is chosen.
 
+### A refused setting is said on its own field in the builder
+
+**When the builder's config is refused, the refusal is said on the field of
+the setting it is about, with what would fix it.** It was one line under the
+buttons, with the setting folded away in a closed section further up the
+page. The refusal now reaches the page with the setting it names and its fix
+(`fastmdxplora.remedies`), from showing, downloading or copying the config
+and from **Run**; the section is opened, the field outlined and focused, and
+the fix is said within what the refusal may say. Where the schema holds a
+spelling near what was given ("did you mean 'dodecahedron'?"), a button
+offers it and nothing changes until it is pressed; changing the field takes
+the refusal away. A number outside what a quantity can be now records the
+block it was in, so its field can be found.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

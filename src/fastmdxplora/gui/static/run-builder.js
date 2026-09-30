@@ -86,6 +86,7 @@
     configVerdict: null,
     loadedFrom: null,
     sweep: [],             // [{ axis, values }] -- values as typed
+    refused: null,         // a refusal said on its fields: { targets, why, fix, ... }
   };
 
   const el = (id) => document.getElementById(id);
@@ -532,6 +533,8 @@
     // Named, so what is said about a setting elsewhere on the page can
     // open the section it is in and point at it.
     wrap.dataset.setting = field.name;
+    const refusedHere = isRefused(phase, field.name);
+    if (refusedHere) wrap.classList.add("is-refused");
 
     const label = document.createElement("span");
     label.className = "builder-label";
@@ -729,6 +732,8 @@
       const value = input.readValue
         ? input.readValue()
         : input.type === "checkbox" ? input.checked : input.value;
+      // Changed, so what was refused is no longer what is there.
+      if (isRefused(phase, field.name)) state.refused = null;
       state.values[phase] = state.values[phase] || {};
       const empty = value === "" || value === null
         || (Array.isArray(value) && value.length === 0);
@@ -738,6 +743,7 @@
       updateSummary();
     });
     wrap.appendChild(input);
+    if (refusedHere) wrap.appendChild(refusalNote(phase, field));
 
     if (field.help) {
       const help = document.createElement("span");
@@ -971,6 +977,97 @@
     // would drop a row being written.
     box.writeValue = () => {};
     return box;
+  }
+
+  // ------------------------------------------ a refusal, on its own field
+
+  /* A config the validator refused was said in one line under the buttons,
+   * however far down the form the setting it was about sat. The refusal now
+   * carries what would fix it and the setting it is about (fastmdxplora.
+   * remedies), so it is said on that setting's field, with the section
+   * opened and the field pointed at. Where the schema holds a spelling near
+   * what was given, it is offered as a button; nothing is changed until it
+   * is pressed. */
+  function targetOf(setting) {
+    const parts = String(setting || "").split(".");
+    if (!parts[0]) return null;
+    if (parts.length > 1 && PHASES.some((phase) => phase.name === parts[0])) {
+      return { phase: parts[0], name: parts[1] };
+    }
+    if (parts[0] === "execution" && parts.length > 1) {
+      return { phase: EXECUTION_KEY, name: parts[1] };
+    }
+    const runs = (state.schema && state.schema.run_options) || [];
+    if (runs.some((field) => field.name === parts[0])) {
+      return { phase: RUN_OPTIONS_KEY, name: parts[0] };
+    }
+    return null;
+  }
+
+  function isRefused(phase, name) {
+    return Boolean(state.refused && state.refused.targets.some(
+      (target) => target.phase === phase && target.name === name));
+  }
+
+  function refusalNote(phase, field) {
+    const said = state.refused;
+    const note = node("div", "builder-refusal");
+    note.setAttribute("role", "alert");
+    note.appendChild(withCode(node("span", "builder-refusal-why"), said.why));
+    note.appendChild(withCode(node("span", "builder-refusal-fix"), said.fix));
+    if (said.suggestion !== null && said.suggestion !== undefined) {
+      const use = node("button", "ghost-btn builder-refusal-use", `Use ${said.suggestion}`);
+      use.type = "button";
+      use.addEventListener("click", (event) => {
+        event.preventDefault();
+        state.values[phase] = state.values[phase] || {};
+        state.values[phase][field.name] = said.suggestion;
+        state.refused = null;
+        renderSettings();
+        updateSummary();
+      });
+      note.appendChild(use);
+    }
+    return note;
+  }
+
+  /* Text whose `setting` names are set as code, as the refusals write them. */
+  function withCode(host, said) {
+    String(said || "").split(/(`[^`]+`)/).forEach((part) => {
+      if (/^`[^`]+`$/.test(part)) host.appendChild(node("code", "", part.slice(1, -1)));
+      else if (part) host.appendChild(document.createTextNode(part));
+    });
+    return host;
+  }
+
+  /* Said on its fields when the answer names one; cleared by an answer that
+   * went through. Returns whether it was said on a field. */
+  function sayRefusal(answer) {
+    if (!answer || answer.ok) {
+      if (state.refused) {
+        state.refused = null;
+        renderSettings();
+      }
+      return false;
+    }
+    const remedy = answer.remedy || null;
+    const targets = remedy ? (remedy.settings || []).map(targetOf).filter(Boolean) : [];
+    if (!targets.length) return false;
+    state.refused = {
+      targets, why: remedy.why || answer.error || "", fix: remedy.fix || "",
+      suggestion: remedy.suggestion === undefined ? null : remedy.suggestion,
+    };
+    targets.forEach((target) => state.open.add(target.phase));
+    renderSettings();
+    const first = targets[0];
+    const wrap = Array.from(document.querySelectorAll("#run-settings .builder-field.is-refused"))
+      .find((found) => found.dataset.setting === first.name);
+    if (wrap) {
+      wrap.scrollIntoView({ block: "center", behavior: "smooth" });
+      const input = wrap.querySelector("input, select, textarea");
+      if (input) input.focus({ preventScroll: true });
+    }
+    return true;
   }
 
   // ------------------------------------------ a residue's protonation state
@@ -1928,7 +2025,9 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(currentState()),
     });
-    return response.json();
+    const built = await response.json();
+    sayRefusal(built);
+    return built;
   }
 
   async function showConfig() {
@@ -2230,9 +2329,11 @@
     }
     if (!started.ok) {
       text(el("run-note"), started.error || "Could not start.");
+      sayRefusal(started);
       button.disabled = false;
       return;
     }
+    sayRefusal(started);
     text(el("run-note"), `Running. Config written to ${started.config_path}`);
     if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
       window.FastMDXDashboard.navigate("overview");
@@ -2423,5 +2524,6 @@
      * the builder would produce -- one derivation, two doors. */
     fetchConfig, download, copyCommand, downloadScript,
     renderPreview, describeCost, previewCost, boxVectors, periodicCell, pickResidue,
+    sayRefusal,
   };
 })();

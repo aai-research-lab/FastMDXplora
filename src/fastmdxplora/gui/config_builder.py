@@ -336,8 +336,22 @@ def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
         config = build_config(state, full=full)
         short = build_config(state, full=False) if full else None
     except SweepError as exc:
-        return {"ok": False, "error": str(exc), "yaml": ""}
+        return {"ok": False, "error": str(exc), "yaml": "", **refused(exc)}
     return render_config(config, full=full, short=short)
+
+
+def refused(exc: BaseException) -> dict[str, Any]:
+    """A refusal as the form reads it: its record, and what would fix it,
+    naming the setting so the form can say it on that setting's field."""
+    from fastmdxplora.refusals import refusal_of
+    from fastmdxplora.remedies import remedy_for
+
+    found = refusal_of(exc)
+    try:
+        remedy = remedy_for(found, where="the config").as_record()
+    except Exception:  # noqa: BLE001 - the refusal stands without its fix
+        remedy = None
+    return {"refusal": found.as_dict(), "remedy": remedy}
 
 
 def render_config(config: dict[str, Any], *, full: bool = False,
@@ -364,6 +378,7 @@ def render_config(config: dict[str, Any], *, full: bool = False,
         return {
             "ok": False,
             "error": str(exc),
+            **refused(exc),
             "yaml": None,
             "settings_changed": sum(
                 len(v) for k, v in config.items() if isinstance(v, dict)

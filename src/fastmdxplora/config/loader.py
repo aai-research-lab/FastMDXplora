@@ -228,14 +228,14 @@ def _check_bounds(value: Any, fld: Any, *, key: str, context: str) -> None:
             f"{context} option '{key}' is {value}, below the smallest value "
             f"it can have ({low}).",
             code="config.option.out_of_range",
-            option=key, given=value, minimum=low, maximum=high,
+            option=key, context=context, given=value, minimum=low, maximum=high,
         )
     if high is not None and value > high:
         raise ConfigError(
             f"{context} option '{key}' is {value}, above the largest value "
             f"it can have ({high}).",
             code="config.option.out_of_range",
-            option=key, given=value, minimum=low, maximum=high,
+            option=key, context=context, given=value, minimum=low, maximum=high,
         )
 
 

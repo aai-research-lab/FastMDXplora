@@ -144,6 +144,9 @@ class Remedy:
     settings: tuple[str, ...] = ()
     #: The complete set a setting takes, where the registry allows it.
     permitted: tuple[Any, ...] | None = None
+    #: The one of `permitted` nearest what was given, where there is one:
+    #: a spelling, offered, never applied.
+    suggestion: Any = None
     #: A command that does it, ready to run.
     command: str = ""
     #: A config that does it, where one does.
@@ -181,6 +184,7 @@ class Remedy:
         return {"code": self.code, "where": self.where, "why": self.why,
                 "fix": self.fix, "settings": list(self.settings),
                 "permitted": list(self.permitted) if self.permitted is not None else None,
+                "suggestion": self.suggestion,
                 "command": self.command, "config": self.config,
                 "decision": self.decision, "covers": list(self.covers),
                 "price": self.price.as_record() if self.price else None}
@@ -210,11 +214,14 @@ def remedy_for(refusal: Refusal | dict[str, Any] | None, *,
 
     settings: tuple[str, ...] = ()
     permitted = None
+    suggestion = None
     command = ""
     decision = False
     if spec.disclosure == Disclosure.PERMITTED_VALUES:
         settings = _named(found) or SETTINGS.get(found.code, ())
         permitted = found.permitted
+        near = found.details.get("suggestion")
+        suggestion = near if permitted and near in permitted else None
         if permitted and settings:
             fix = f"Set `{settings[0]}` to one of: {', '.join(map(str, permitted))}."
         elif permitted:
@@ -244,8 +251,8 @@ def remedy_for(refusal: Refusal | dict[str, Any] | None, *,
             fix += f" A choice of this kind is recorded in {_either(settings)}."
     price = _from_the_top(root, spec) if root is not None else None
     return Remedy(code=found.code, where=where, why=why, fix=fix,
-                  settings=tuple(settings), permitted=permitted, command=command,
-                  decision=decision, price=price)
+                  settings=tuple(settings), permitted=permitted, suggestion=suggestion,
+                  command=command, decision=decision, price=price)
 
 
 def _as_refusal(refusal: Refusal | dict[str, Any] | None) -> Refusal:

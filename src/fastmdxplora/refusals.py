@@ -245,7 +245,7 @@ CODES: tuple[Code, ...] = (
     Code("config.option.out_of_range",
          "A numeric setting outside what the quantity can be.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
-         detail_keys=("option", "given", "minimum", "maximum")),
+         detail_keys=("option", "context", "given", "minimum", "maximum")),
     Code("config.option.not_permitted",
          "A declared key carrying a value outside its declared choices.",
          Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,

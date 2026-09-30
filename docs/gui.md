@@ -199,6 +199,16 @@ Four buttons at the bottom of the page:
 One study, three languages, all from the same declaration — and round-trip
 tests hold the command to reparsing into the same Config it came from.
 
+Each of the four puts the Config through the command line's validator first.
+A setting it refuses is said **on that setting's own field**: its section is
+opened, the field is outlined and focused, and under it are the refusal and
+what would fix it, within what the refusal may say (the values a setting
+takes where the schema holds them all, the setting alone where the value is
+a judgement). Where the schema holds a spelling near what was given, a
+button offers it, and nothing is changed until it is pressed. Changing the
+field takes the refusal away. See
+[What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
+
 And in the other direction: choose **A config I already have** and the GUI will
 **check it** (syntax and every setting, without running anything), **run it
 as-is**, or **open it for editing**. It never rewrites the file you gave it.

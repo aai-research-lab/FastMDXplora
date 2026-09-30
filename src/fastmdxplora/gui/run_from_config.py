@@ -49,6 +49,10 @@ def prepare_run(state: dict[str, Any] | None, output_dir: str | Path, *,
         return {
             "ok": False,
             "error": built["error"],
+            # The setting refused and what would fix it, so the form can
+            # say it on that setting's own field.
+            "refusal": built.get("refusal"),
+            "remedy": built.get("remedy"),
             "config_path": None,
             "command": None,
         }
