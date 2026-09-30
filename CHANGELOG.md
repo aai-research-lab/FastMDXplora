@@ -1371,6 +1371,19 @@ and not handed to the model. An `autonomous` Config that carries its own
 `budget_hours` was refused for the Settings field being empty; it now runs
 with the Config's ceiling, the field taking precedence where both are given.
 
+### A window runs again at a force constant the person names
+
+**Holding one umbrella window harder meant writing `force_constant` as a list
+by hand**, every other window at the constant it ran with, before
+`--rerun-window` would run it again. `--rerun-force-constant K` does it: the
+windows `--rerun-window` names are held at K and every other window keeps its
+own, and the study's `resolved_config.yml` records the list, so the next
+recombination and the next window run again from it read the springs the
+windows ran with. The first Config, which still gives the window its old
+spring, is refused by name rather than recombined with the wrong one.
+`windows_held_at` in `fastmdxplora.simulation.umbrella` gives the same Config
+from Python.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

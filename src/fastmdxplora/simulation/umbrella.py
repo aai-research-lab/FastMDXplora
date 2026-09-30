@@ -749,6 +749,69 @@ def _a_force_for_every_window(force: Any, count: int) -> list[float]:
     return values
 
 
+def windows_held_at(config: dict[str, Any], indices: "list[int]",
+                    force_constant: float) -> dict[str, Any]:
+    """The config with the windows named held at ``force_constant``.
+
+    Every other window keeps the constant the config gives it, so a study
+    whose windows ran is changed in the windows run again and nowhere else:
+    the kept windows are still unbiased with the springs they ran with,
+    which `windows_run_otherwise` checks before anything moves. A window
+    that did not stay near its centre is held harder; the constant is in
+    kJ/mol per unit of the collective variable squared (nm^2 for a
+    distance, rad^2 for an angle). Only the config is changed; the windows
+    run again with ``--rerun-window``.
+
+    Takes a config as written (an ``umbrella`` block) or as loaded, where
+    the block is already a run per window.
+    """
+    held = float(force_constant)
+    if not math.isfinite(held):
+        raise StudyError(
+            f"A window's force constant has to be a finite number; {force_constant!r} "
+            "was given.", code="config.option.wrong_type")
+    simulation = config.get("simulation") if isinstance(config, dict) else None
+    spec = simulation.get("umbrella") if isinstance(simulation, dict) else None
+    expanded = plan_from_expanded(config) if isinstance(config, dict) else None
+    if expanded is not None:
+        count = len(expanded.windows)
+        forces = [w.force_constant for w in expanded.windows]
+    elif isinstance(spec, dict) and spec:
+        planned = plan_windows(spec)
+        count = len(planned.windows)
+        forces = [w.force_constant for w in planned.windows]
+    else:
+        raise StudyError(
+            "A force constant for windows run again needs an umbrella study, "
+            "and this config has no `simulation.umbrella`.",
+            code="config.option.inapplicable")
+    known = {w.index for w in expanded.windows} if expanded is not None else set(range(count))
+    unknown = sorted({int(i) for i in indices if int(i) not in known})
+    if unknown:
+        raise StudyError(
+            f"This study has no window {', '.join(str(i) for i in unknown)}. "
+            f"Its windows are numbered {min(known)} to {max(known)}.",
+            code="config.option.not_permitted")
+    named = {int(i) for i in indices}
+    order = [w.index for w in expanded.windows] if expanded is not None else list(range(count))
+    forces = [held if index in named else k for index, k in zip(order, forces)]
+    # The same checks as a list written by hand: each pulls towards its centre.
+    _a_force_for_every_window(forces, count)
+    if expanded is None:
+        return {**config, "simulation": {**simulation,
+                                         "umbrella": {**spec, "force_constant": forces}}}
+    systems = []
+    for entry in config.get("systems") or []:
+        block = ((entry.get("simulation") or {}).get("umbrella")
+                 if isinstance(entry, dict) else None)
+        if isinstance(block, dict) and block.get("centre") is not None \
+                and int(block.get("index", -1)) in named:
+            entry = {**entry, "simulation": {**entry["simulation"],
+                                             "umbrella": {**block, "force_constant": held}}}
+        systems.append(entry)
+    return {**config, "systems": systems}
+
+
 def expand_umbrella(config: dict[str, Any]) -> dict[str, Any]:
     """Turn a config with an umbrella block into one with a run per window.
 

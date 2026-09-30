@@ -907,6 +907,18 @@ def _build_parser() -> argparse.ArgumentParser:
                 "are moved to superseded/."
             ),
         )
+        ep.add_argument(
+            "--rerun-force-constant",
+            dest="rerun_force_constant",
+            type=float,
+            metavar="K",
+            help=(
+                "With --rerun-window: hold the windows named at this force "
+                "constant, in kJ/mol per unit of the collective variable "
+                "squared (nm^2 for a distance, rad^2 for an angle). Every "
+                "other window keeps the one it ran with."
+            ),
+        )
         # The setting is `include_phase`, so the flag is too. `--include`
         # and `--exclude` still work: they are what every script and every
         # set of notes already says, and breaking them to rename a flag
@@ -1559,6 +1571,22 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
         config["include_phase"] = args.include
     if args.exclude:
         config["exclude_phase"] = args.exclude
+
+    # Windows run again at a force constant of their own: the config's list
+    # of constants with those windows changed, so the study records what
+    # each window ran with and the next recombination reads the same.
+    held = getattr(args, "rerun_force_constant", None)
+    if held is not None:
+        if not getattr(args, "rerun_windows", None):
+            from fastmdxplora.refusals import StudyError
+
+            raise StudyError(
+                "--rerun-force-constant holds the windows --rerun-window names; "
+                "name them with --rerun-window.",
+                code="config.option.missing_companion")
+        from fastmdxplora.simulation.umbrella import windows_held_at
+
+        config = windows_held_at(config, args.rerun_windows, held)
 
     return config
 

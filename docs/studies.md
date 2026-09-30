@@ -774,6 +774,20 @@ same starting structure; every other window is kept as it is, and the free energ
 recombined from the whole set. The earlier run of window 9 is moved to
 `superseded/`, not deleted. From Python, `explore(rerun_windows=[9])`.
 
+A stiffer spring for the windows named, without writing the list by hand:
+
+```bash
+fastmdx explore --config study.yml --rerun-window 9 --rerun-force-constant 6000
+```
+
+Window 9 is held at 6,000 kJ/mol per unit of the variable squared (nm² for a
+distance, rad² for an angle) and every other window keeps its own. The study's
+`resolved_config.yml` records the list, so run later windows again from it
+(`--config <study>/resolved_config.yml`): the first Config still gives window
+9 its old spring and is refused for it. From Python,
+`fastmdxplora.simulation.umbrella.windows_held_at(config, [9], 6000)` gives
+the Config.
+
 Before anything moves, the study checks that each kept window has finished
 and ran with the centre and spring the Config now gives it, since a window is
 unbiased with the spring it is given. The same check stands before every
