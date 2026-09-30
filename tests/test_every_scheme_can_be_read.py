@@ -184,8 +184,10 @@ def test_a_chosen_scheme_is_kept(browser, dashboard) -> None:
 
 def test_the_charts_redraw_in_the_new_scheme(browser, dashboard) -> None:
     page = _in(browser, dashboard, "graphite")
+    # As long as the other browser tests wait: beside a full suite on two
+    # cores the chart's first value took over thirty seconds.
     page.wait_for_function("() => document.querySelector('[data-chart-value=\"temperature\"]')"
-                           ".textContent !== '\u2014'", timeout=30000)
+                           ".textContent !== '\u2014'", timeout=60000)
 
     def brightness():
         """The mean brightness of what the temperature chart has drawn."""

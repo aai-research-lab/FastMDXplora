@@ -1501,6 +1501,12 @@ only, as browsing folders is, and inside the workspace when hosted. The page
 scripts are now told when a page opens (`navigate`), which the Report page
 already listened for and was never sent.
 
+### A browser test waits for a chart as long as the others
+
+`test_the_charts_redraw_in_the_new_scheme` waited 30 s for the temperature
+chart's first value, the only browser test left at that; beside a full suite
+on two cores it took longer once. It waits 60 s, as the rest do.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
