@@ -1321,6 +1321,21 @@ else. What it looked at
 is folded under its reply as **Checked with the software** and kept with the
 thread, and `fastmdx agent` prints a line for each (`fastmdxplora.agent.tools`).
 
+### A fix the software runs is run from the Overview or by the Agent, when asked
+
+**A study that stopped has a "What would fix it" card on the Overview**: each
+thing that stopped it, its fix, the command and what it costs at the study's
+own speed (1131). A fix that is this software's own command, `fastmdx resume`
+or windows run again with `--rerun-window`, has a **Run it** button, which
+asks once more with the price in view before anything starts, and the run is
+followed on the Overview. Told to carry the fix out (*resume it*, *rerun those
+windows*), the Agent replies `DO: run the fix`: the first such fix is shown
+with its command and price, and runs when the person says yes. The command's
+arguments are the ones the remedy built from the study's record, never text
+from a request or a reply; a fix waiting on a choice only the person can
+make, a setting to change and an install command are said and never run.
+`GET /api/fixes` and `POST /api/fix` are answered on loopback only.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

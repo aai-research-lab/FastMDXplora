@@ -660,6 +660,14 @@ def make_handler(
 
                 self._send_json(stopping_payload(root))
                 return
+            if path == "/api/fixes":
+                # What would fix the study on screen, its command and its
+                # price. Not answered beyond loopback: it names the
+                # commands the POST below runs.
+                from fastmdxplora.gui.fixes_view import fixes_payload
+
+                self._send_json(fixes_payload(root))
+                return
             if path == "/api/runs-compared":
                 from fastmdxplora.gui.runs_compared import runs_compared
 
@@ -884,6 +892,14 @@ def make_handler(
                 return
             if path == "/api/explore/stop":
                 self._send_json(app_runtime.stop())
+                return
+            if path == "/api/fix":
+                # Running a fix starts work on this machine, so it needs the
+                # machine's trust, which it has only on loopback, like every
+                # route not listed open. The page asks the person first.
+                self._send_json(app_runtime.run_a_fix(
+                    (payload or {}).get("index"),
+                    dashboard_url=self.headers.get("Origin")))
                 return
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import write_conversation

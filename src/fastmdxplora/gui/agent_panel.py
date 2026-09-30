@@ -194,6 +194,12 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
             from fastmdxplora.agent.propose import told_to_run
 
             answer["confirm"] = not told_to_run(request)
+        if proposal.action == "run the fix":
+            # The fix itself, from the study's record rather than from the
+            # reply: the command and its price, for the person to confirm.
+            # Always asked: it starts work on this machine.
+            answer["fix"] = _first_fix(runtime)
+            answer["confirm"] = True
         return answer
     if proposal.answer:
         # A question was asked, not a study. A paragraph back, and under it
@@ -403,13 +409,11 @@ def _remedies_summary(root: Any) -> str:
     """What would fix each thing that stopped the study, with its command
     or config and its price here, so "why did it stop and what now?" is
     answered with a step and a cost rather than the refusal read back."""
-    if not root:
+    from fastmdxplora.gui.fixes_view import runnable, study_of
+
+    here = study_of(root)
+    if here is None:
         return ""
-    here = Path(root)
-    # A run of a campaign is carried on with its campaign: resuming it alone
-    # would leave the comparison across the runs unbuilt.
-    if here.parent.name == "runs" and (here.parent.parent / "batch_manifest.json").is_file():
-        here = here.parent.parent
     try:
         from fastmdxplora.remedies import remedies_of
 
@@ -419,8 +423,25 @@ def _remedies_summary(root: Any) -> str:
     if not found:
         return ""
     return ("what would fix it (within what each refusal lets be said; a value "
-            "not given here is not the software's to suggest):\n"
-            + "\n".join(f"  {remedy.as_text()}" for remedy in found[:8]))
+            "not given here is not the software's to suggest; one marked "
+            "[runs here] is what `DO: run the fix` runs, the first of them):\n"
+            + "\n".join(f"  {'[runs here] ' if runnable(remedy) else ''}{remedy.as_text()}"
+                         for remedy in found[:8]))
+
+
+def _first_fix(runtime: Any) -> dict[str, Any] | None:
+    """The fix `DO: run the fix` would run: the first one this software runs
+    for the study on screen, with its place in the list, or None."""
+    from fastmdxplora.gui.fixes_view import fixes_payload
+
+    try:
+        found = fixes_payload(getattr(runtime, "active_root", None))
+    except Exception:  # noqa: BLE001
+        return None
+    for fix in found.get("fixes") or []:
+        if fix.get("runnable"):
+            return fix
+    return None
 
 
 def _stopping_summary(root: Any) -> str:

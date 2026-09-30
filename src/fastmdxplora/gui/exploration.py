@@ -1296,6 +1296,45 @@ class DashboardRuntime:
                 self.command = []
             return {"ok": True, "active_run": str(path), "state": self.snapshot()}
 
+    def run_a_fix(self, index: Any, dashboard_url: str | None = None) -> dict[str, Any]:
+        """Run what would fix the study on screen, by its place in the list
+        `fixes_payload` gives (`fastmdxplora.remedies`).
+
+        Only a fix that is this software's own command, and not one waiting
+        on a choice only the person can make; the arguments are the ones
+        the remedy built, never text from the request. The run is watched
+        in the study it fixes, as a continuation is.
+        """
+        import sys
+
+        from fastmdxplora.gui.fixes_view import runnable, study_of
+        from fastmdxplora.remedies import remedies_of
+
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Say which fix to run."}
+        with self.lock:
+            self._refresh_process()
+            if self.process is not None and self.process.poll() is None:
+                return {"ok": False,
+                        "error": "A FastMDXplora workflow is already running."}
+            study = study_of(self.active_root)
+            if study is None or not study.is_dir():
+                return {"ok": False, "error": "No study is open."}
+            found = remedies_of(study)
+            if not 0 <= index < len(found):
+                return {"ok": False, "error": "Nothing stopped this study that a "
+                                              "command would fix."}
+            remedy = found[index]
+            if not runnable(remedy):
+                return {"ok": False, "error": (
+                    "This fix is not a command run from here: " + remedy.fix)}
+            self.data_stale = False
+            started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
+                                  study, dashboard_url)
+            return {"ok": True, "error": None, "fix": remedy.as_record(), **started}
+
     def stop(self) -> dict[str, Any]:
         with self.lock:
             self._refresh_process()

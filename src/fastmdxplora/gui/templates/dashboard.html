@@ -489,6 +489,16 @@
             </details>
           </div>
 
+          <!-- What would fix the study (fixes.js, fixes_view.py): each thing
+               that stopped it, its fix, the command and what it costs here.
+               Hidden while nothing did. -->
+          <div class="card fixes-card" id="fixes-card" hidden>
+            <div class="card-header">
+              <h2 class="card-title">What would fix it</h2>
+            </div>
+            <ul class="fixes-list" id="fixes-list"></ul>
+          </div>
+
           <div id="live-panels">
             <!-- What the sidebar is too narrow to say. The stage, step,
                  progress and ETA are in the sidebar on every page; this row
@@ -1174,6 +1184,7 @@
   <script src="/static/series-chart.js"></script>
   <script src="/static/runs-compared.js"></script>
   <script src="/static/stopping.js"></script>
+  <script src="/static/fixes.js"></script>
   <script src="/static/molecule-viewer.js"></script>
 </body>
 </html>

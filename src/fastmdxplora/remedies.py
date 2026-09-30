@@ -149,6 +149,11 @@ class Remedy:
     suggestion: Any = None
     #: A command that does it, ready to run.
     command: str = ""
+    #: The same command as the arguments after `fastmdx`, where it is one
+    #: this software runs: what the GUI runs when the person says to.
+    #: Empty for anything else, an install command included, which is never
+    #: run for the person.
+    argv: tuple[str, ...] = ()
     #: A config that does it, where one does.
     config: dict[str, Any] | None = None
     #: Whether only the person can decide it.
@@ -185,7 +190,7 @@ class Remedy:
                 "fix": self.fix, "settings": list(self.settings),
                 "permitted": list(self.permitted) if self.permitted is not None else None,
                 "suggestion": self.suggestion,
-                "command": self.command, "config": self.config,
+                "command": self.command, "argv": list(self.argv), "config": self.config,
                 "decision": self.decision, "covers": list(self.covers),
                 "price": self.price.as_record() if self.price else None}
 
@@ -400,11 +405,11 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
     price = (Price(production_ns=_round(production), equilibration_ns=_round(equilibration),
                    runs=len(folders), seconds=seconds, platform=platform)
              if folders else None)
-    command = f"{RESUME} {shlex.quote(str(study))}" if study else RESUME
+    said = _command(["resume", str(study)]) if study else {"command": RESUME, "argv": ()}
     return Remedy(code=code, where=where, why=why,
                   fix=f"{family} Production already written is kept, and the "
                       "analyses run over the whole.",
-                  command=command, price=price)
+                  **said, price=price)
 
 
 def _longer(code: str, why: str, where: str, root: Path) -> Remedy | None:
@@ -446,7 +451,7 @@ def _failed_windows(root: Path, batch: dict[str, Any],
     return Remedy(code=first.code, where=_windows_named(failed), why=first.why,
                   fix=fix, settings=first.settings, permitted=first.permitted,
                   decision=first.decision,
-                  command=_rerun(root, batch, indices),
+                  **_rerun(root, batch, indices),
                   price=_windows_again(root, [windows[i][1] for i in indices]),
                   covers=tuple(windows[i][0] for i in indices))
 
@@ -472,7 +477,7 @@ def _umbrella(root: Path, batch: dict[str, Any], planned: dict[str, Any], *,
             fix="Run those windows again with the settings the config now gives them, "
                 "keeping the rest; or restore the settings they ran with, which costs "
                 "nothing.",
-            command=_rerun(root, batch, indices),
+            **_rerun(root, batch, indices),
             price=_windows_again(root, [folders[i] for i in indices]),
             covers=tuple(by_id[i] for i in indices))]
 
@@ -529,7 +534,7 @@ def _thin_windows(root: Path, batch: dict[str, Any], payload: dict[str, Any],
                "cannot be read from a window that recorded nothing.")
         return Remedy(code="simulation.windows.no_sampling", where=_windows_named(indices),
                       why=why, fix=fix, settings=("simulation.duration_ns",),
-                      command=_rerun(root, batch, indices),
+                      **_rerun(root, batch, indices),
                       covers=tuple(by_id.get(i, str(i)) for i in indices))
     fix = (f"Run {'them' if several else 'it'} again with {_ns(length)} of production"
            f"{' each' if several else ''}, which should record the {needed} values a "
@@ -542,7 +547,7 @@ def _thin_windows(root: Path, batch: dict[str, Any], payload: dict[str, Any],
     return Remedy(
         code="simulation.windows.no_sampling", where=_windows_named(indices), why=why,
         fix=fix, settings=("simulation.duration_ns",),
-        command=_rerun(root, batch, indices, duration_ns=length),
+        **_rerun(root, batch, indices, duration_ns=length),
         price=Price(production_ns=_round(length * len(indices)),
                     equilibration_ns=_round(equilibration * len(indices)), runs=len(indices),
                     seconds=seconds, platform=platform, lower_bound=unscalable),
@@ -585,17 +590,22 @@ def _windows_off_plan(planned: dict[str, Any], folders: dict[int, Path]) -> list
 
 
 def _rerun(root: Path, batch: dict[str, Any], indices: list[int], *,
-           duration_ns: float | None = None) -> str:
+           duration_ns: float | None = None) -> dict[str, Any]:
+    """`fastmdx explore --rerun-window` for these windows, as the command a
+    person types and as the arguments the GUI runs it with."""
     config = batch.get("config")
     source = Path(str(config)) if config else None
     if source is None or not source.is_file():
         source = root / "resolved_config.yml"
-    parts = [f"fastmdx explore -c {shlex.quote(str(source))}",
-             f"--output {shlex.quote(str(root))}"]
+    argv = ["explore", "-c", str(source), "--output", str(root)]
     if duration_ns is not None:
-        parts.append(f"--simulate-duration-ns {duration_ns:g}")
-    parts.append("--rerun-window " + " ".join(str(i) for i in indices))
-    return " ".join(parts)
+        argv += ["--simulate-duration-ns", f"{duration_ns:g}"]
+    argv += ["--rerun-window", *(str(i) for i in indices)]
+    return _command(argv)
+
+
+def _command(argv: list[str]) -> dict[str, Any]:
+    return {"command": "fastmdx " + shlex.join(argv), "argv": tuple(argv)}
 
 
 def _windows_again(root: Path, folders: list[Path]) -> Price:

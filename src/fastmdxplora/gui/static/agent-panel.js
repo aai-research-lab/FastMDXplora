@@ -440,6 +440,7 @@
     pending = null;
     stopPending = null;
     runPending = null;
+    fixPending = null;
     lastReply = null;
     currentConfig = null;
     for (var j = history.length - 1; j >= 0; j--) {
@@ -600,6 +601,11 @@
       scrollToEnd();
       return;
     }
+    if (fixPending) {
+      confirmFix(typed, box);
+      scrollToEnd();
+      return;
+    }
     note(box, "Thinking\u2026");
     scrollToEnd();
     el("agent-propose").disabled = true;
@@ -626,7 +632,12 @@
          * asked about first. The server says which from what they typed;
          * without its word, ask. */
         var confirmRunFirst = data.action === "run" && data.confirm !== false;
-        if (confirmRunFirst) {
+        if (data.action === "run the fix") {
+          /* Asked, not done, and not kept as waiting: a reloaded thread
+           * asks the Agent again rather than run a fix it no longer shows. */
+          transcript.push({ role: "agent", kind: "question",
+                            text: data.fix ? fixQuestion(data.fix) : "Nothing here to run." });
+        } else if (confirmRunFirst) {
           transcript.push({ role: "agent", kind: "question", text: RUN_QUESTION });
         } else if (data.action === "stop") {
           /* Asked, not done. A stop is recorded when it is confirmed, so
@@ -639,7 +650,7 @@
           transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
         }
         persist();
-        act(data.action, data.where || "", box, r, confirmRunFirst);
+        act(data.action, data.where || "", box, r, confirmRunFirst, data.fix || null);
         scrollToEnd();
         return;
       }
@@ -704,6 +715,7 @@
   var lastReply = null;
   var stopPending = null;
   var runPending = null;
+  var fixPending = null;
   var RUN_QUESTION = "Run the study above? Say yes.";
 
   /* Yes, or the verb being confirmed: "stop it" confirms a stop and not
@@ -713,7 +725,19 @@
       .test(typed);
   }
 
-  function act(action, where, box, r, confirmFirst) {
+  function act(action, where, box, r, confirmFirst, fix) {
+    if (action === "run the fix") {
+      /* The fix is the study's record's, not the reply's: its command and
+       * its price, shown before anything runs. Always asked. */
+      if (!fix) {
+        note(box, "Nothing here is a fix this software runs for you; the Overview " +
+                  "says what would fix it.");
+        return;
+      }
+      fixPending = fix;
+      note(box, fixQuestion(fix));
+      return;
+    }
     if (action === "run") {
       if (!lastReply) {
         note(box, "Nothing to run yet. Describe a study first.");
@@ -771,6 +795,38 @@
       return;
     }
     note(box, "I do not know how to " + action + ".");
+  }
+
+  function fixQuestion(fix) {
+    return "Run " + fix.command + "?" +
+      (fix.price_said ? " It costs " + fix.price_said + "." : "") + " Say yes.";
+  }
+
+  function confirmFix(typed, box) {
+    var fix = fixPending;
+    fixPending = null;
+    if (!saidYes(typed, "run")) {
+      note(box, "Not run.");
+      transcript.push({ role: "agent", kind: "answer", text: "Not run." });
+      persist();
+      return;
+    }
+    fetch("/api/fix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index: fix.index })
+    }).then(function (res) { return res.json(); }).then(function (d) {
+      var started = d && d.ok;
+      var said = started ? "Started: " + fix.command + "." : (d && d.error) || "Could not start it.";
+      note(box, said, started);
+      history.push({ role: "agent", text: said });
+      transcript.push(started ? { role: "agent", kind: "action", action: "run the fix", where: "" }
+                              : { role: "agent", kind: "error", text: said });
+      persist();
+      if (started && window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+        window.FastMDXDashboard.navigate("overview");
+      }
+    }).catch(function () { note(box, "Could not reach the server to run it."); });
   }
 
   function confirmRun(typed, box) {
@@ -1074,7 +1130,7 @@
     function resetThread() {
       el("agent-thread").innerHTML = "";
       history = []; transcript = []; currentConfig = null; pending = null;
-      stopPending = null; runPending = null; lastReply = null;
+      stopPending = null; runPending = null; fixPending = null; lastReply = null;
     }
     var fresh = el("agent-new");
     if (fresh) {

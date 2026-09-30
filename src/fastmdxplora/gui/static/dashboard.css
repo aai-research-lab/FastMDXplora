@@ -3783,3 +3783,25 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .builder-residues-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .builder-residues-add .builder-residue-typed { width: 110px; flex: 0 0 110px; }
 @media (max-width: 700px) { .builder-residue-row { grid-template-columns: 1fr auto; } .builder-residue-row .builder-residue-state { grid-column: 1 / -1; grid-row: 2; } }
+
+/* What would fix the study, on the Overview (fixes.js). */
+.fixes-card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.fixes-card[hidden] { display: none; }
+.fixes-card .card-header { padding: 0; }
+.fixes-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.fix { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-sm); }
+.fix-why { color: var(--text-primary); }
+.fix-where { font-weight: 600; }
+.fix-fix, .fix-price { color: var(--text-secondary); }
+.fix-command {
+    margin: 2px 0 0;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.fix-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.fix-said { font-size: var(--text-xs); color: var(--text-secondary); }

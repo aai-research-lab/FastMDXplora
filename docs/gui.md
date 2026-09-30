@@ -312,6 +312,15 @@ fastmdx gui --output ~/runs/my_run
 
 Re-run the `rsync` as often as you like; the GUI picks up whatever is there.
 
+**What would fix a study that stopped** is a card on the Overview: each
+thing that stopped it, what would fix it, the command and what it costs at the
+study's own speed. A fix that is this software's own command (`fastmdx
+resume`, windows run again with `--rerun-window`) has a **Run it** button;
+pressing it asks once more with the price in view, and the run is followed on
+the Overview as it goes. A fix waiting on a choice only you can make, a
+setting to change and an install command are said, never run. See
+[What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
+
 **Each figure says what made it.** The chip at the foot of a figure on the
 Analysis page names the release that drew it; opened, it says the packages
 whose versions decide its numbers (MDTraj, NumPy, SciPy, Matplotlib), when

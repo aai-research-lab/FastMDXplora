@@ -493,7 +493,7 @@ A reply is one of four things:
 | **A Config** | YAML. Validated, repaired if refused, shown with its actions. |
 | **A question** | When the request is short of something only you can supply, a structure most often. The Agent never invents one. Your next message answers it, and goes back with the request it answers. |
 | **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. Under it, each analysis the paragraph names, with the mean the study recorded for it (its error and unit, or that it is not a measurement); choosing one opens its figure on the Analysis page. The value is the record's, whatever the paragraph says, so a number can be checked where it is read. |
-| **An action** | One of: run, stop, open viewer, open overview, open report, open builder, show config, download config. |
+| **An action** | One of: run, stop, run the fix, open viewer, open overview, open report, open builder, show config, download config. |
 
 ### Looking before it answers
 
@@ -585,6 +585,12 @@ windows get the design the windows measured. Where the answer is a choice
 only you can make, such as a ligand's protonation, the Agent says so and
 names where it is recorded, and offers no value. See
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
+
+Tell it to carry the fix out (*resume it*, *rerun those windows*) and it
+replies `run the fix`: the first fix that is this software's own command, a
+resume or windows run again, is shown to you with its command and price, and
+runs when you say yes. A fix waiting on a choice only you can make, a setting
+to change or an install command is never run for you.
 
 ### Saying what "done" means before the run
 

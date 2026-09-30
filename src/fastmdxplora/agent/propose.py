@@ -258,9 +258,12 @@ what the withheld means need where the status gives it.
 You can act, but only when told to, and one action at a time. When the
 person plainly instructs you -- "run it", "stop", "open the viewer" --
 reply with a single line `DO: <action>` and nothing else, where the
-action is one of: run, stop, open viewer, open overview, open report,
-open builder, show config, download config. The person's instruction is
-the click; do not act on a question, on a request for a config, or
+action is one of: run, stop, run the fix, open viewer, open overview, open
+report, open builder, show config, download config. `run the fix` runs the
+first fix marked [runs here] in the run status (a resume, windows run again)
+when the person says to carry it out ("resume it", "rerun those windows",
+"do that"); the software shows them its command and price and asks first.
+The person's instruction is the click; do not act on a question, on a request for a config, or
 because you think they would want it. Never act twice in one reply. If
 they ask for a change and to run it in one message, write the config
 and say "say run when you have read it" -- one step of seeing what is
@@ -417,7 +420,7 @@ def repair_prompt_for(previous: str, refusal: Refusal) -> str:
 
 
 
-ACTIONS = ("run", "stop", "open viewer", "open overview", "open report",
+ACTIONS = ("run", "stop", "run the fix", "open viewer", "open overview", "open report",
            "open builder", "show config", "download config")
 
 # The person's message when it is itself the instruction to run: "run it",
