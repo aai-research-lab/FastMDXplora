@@ -400,6 +400,27 @@ def _select_chains(
     return target
 
 
+def _the_model(input_pdb: Path, params: dict[str, Any], notes: list[str]) -> None:
+    """Keep only the model `setup.model` names (`setup.ensemble`), in place."""
+    from fastmdxplora.setup.ensemble import models_in, one_model
+
+    lines = input_pdb.read_text(encoding="utf-8", errors="replace").splitlines()
+    available = models_in(lines)
+    wanted = params.get("model")
+    if wanted is None:
+        if len(available) > 1:
+            said = (f"The structure holds {len(available)} models; model {available[0]} "
+                    "is prepared. `setup.model` chooses another, and sweeping it gives "
+                    "replicas that start from different structures.")
+            logger.info(said)
+            notes.append(said)
+        return
+    input_pdb.write_text("\n".join(one_model(lines, wanted)) + "\n", encoding="utf-8")
+    said = f"Model {wanted} of the {len(available)} the structure holds is prepared."
+    logger.info(said)
+    notes.append(said)
+
+
 def _resolve_input(
     system: str, input_form: str, setup_dir: Path
 ) -> Path:
@@ -1162,6 +1183,10 @@ def _run(
                 opm["markers"],
                 (f", hydrophobic thickness {opm['half_thickness_nm'] * 2:.1f} nm"
                  if opm.get("half_thickness_nm") else ""))
+
+        # One model of an ensemble, where the study names one; where it does
+        # not and the file holds several, which one is prepared is said.
+        _the_model(input_pdb, params, notes)
 
         input_pdb = _the_chains_to_simulate(
             orchestrator, input_pdb, input_form, params, presenter=presenter)

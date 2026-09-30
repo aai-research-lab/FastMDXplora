@@ -47,7 +47,9 @@ def runs_compared(root: Path | str) -> dict[str, Any]:
         return {"ok": False, "reason": "not a study of several runs"}
 
     axes = _axes_that_differ(runs)
-    replicas = bool(axes) and all(axis.endswith("random_seed") for axis in axes)
+    from fastmdxplora.batch.aggregate import SEED_AXES
+
+    replicas = bool(axes) and set(axes) <= SEED_AXES
     completed = [run for run in runs if run["state"] == "completed"]
     found = {run["run_id"]: read_member_findings(Path(run["path"])) for run in completed}
 

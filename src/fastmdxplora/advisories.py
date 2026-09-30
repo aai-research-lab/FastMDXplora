@@ -64,7 +64,7 @@ def advise(structure: dict[str, Any] | None,
     settings = settings or {}
     found: list[Advisory] = []
 
-    for check in (_a_metal_in_a_site, _a_box_too_small_for_the_cutoff,
+    for check in (_an_ensemble, _a_metal_in_a_site, _a_box_too_small_for_the_cutoff,
                   _a_switch_the_force_field_does_not_want,
                   _a_ligand_with_no_chemistry, _a_density_never_equilibrated,
                   _a_bilayer_near_or_below_its_transition,
@@ -73,6 +73,24 @@ def advise(structure: dict[str, Any] | None,
         if said is not None:
             found.append(said)
     return found
+
+
+def _an_ensemble(structure: dict[str, Any], settings: dict[str, Any]) -> Advisory | None:
+    """An NMR ensemble: one model is prepared, and the rest are starts."""
+    try:
+        models = int(structure.get("models") or 1)
+    except (TypeError, ValueError):
+        return None
+    if models < 2 or settings.get("model") is not None:
+        return None
+    return Advisory(
+        setting="model",
+        summary=f"This structure holds {models} models.",
+        detail=("Setup prepares the first. The others are the same molecule in "
+                "other conformations the data allow."),
+        remedy=("Name one with `setup.model`, or sweep it for replicas that start "
+                "from different structures of the ensemble: the independent starts "
+                "a stopping rule asks for."))
 
 
 def _a_metal_in_a_site(structure: dict[str, Any],

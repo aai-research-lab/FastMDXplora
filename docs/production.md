@@ -249,6 +249,17 @@ The error judged is then the larger of what the runs claim together and what
 their spread shows. Replicas that each look precise and disagree are extended,
 not accepted.
 
+Replicas over a seed share one structure, so they test trapping only as far
+as their dynamics carry them apart. Where the structure is an ensemble (an NMR
+entry's models), sweep `setup.model` instead, and each replica starts from a
+different structure the data allow; the rule counts them as independent starts
+the same way:
+
+```yaml
+sweep:
+  setup.model: [1, 8, 15]
+```
+
 `independent_starts: not_required` accepts one run's own precision, and the
 record says that it was not checked against independent starts. Replicas that
 differ only by seed start from one structure (each prepared with a setup seed

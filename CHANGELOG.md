@@ -1533,6 +1533,20 @@ field renamed it in the trajectory), and what tied the Config to this study
 wrote it) is left out. Nothing runs until the person runs it
 (`GET /api/residue-states`).
 
+### A model of an ensemble is prepared by name, and the models are starts
+
+**An NMR entry deposits its molecule as an ensemble; setup prepared the first
+model and said nothing of the rest.** `setup.model` names the model to
+prepare, as the file numbers them, and a model the file does not hold is
+refused with the numbers it does. Unset on a file of several, setup's record
+and the builder say how many there are. Swept, the models are replicas that
+start from different structures: the plan says so ("3, from models 1, 8, 15
+of the ensemble"), a stopping rule counts them as the independent starts it
+asks for (replicas over a seed share one structure and test trapping only as
+far as their dynamics carry them apart), and the comparison, the Analysis
+page and the Studies page treat them as replicas. The builder's estimate reads
+the model named (`fastmdxplora.setup.ensemble`).
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

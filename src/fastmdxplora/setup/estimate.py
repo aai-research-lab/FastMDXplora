@@ -192,6 +192,10 @@ def estimate_system(structure: str | Path, setup: dict[str, Any] | None = None,
         raise StudyError("A membrane system's box is sized by its bilayer, which this "
                          "does not build.", code="setup.estimate.unavailable")
     lines = Path(structure).read_text(encoding="utf-8", errors="replace").splitlines()
+    if setup.get("model") is not None:
+        from fastmdxplora.setup.ensemble import one_model
+
+        lines = one_model(lines, setup["model"])
     atoms = _atoms(lines)
     if not atoms:
         raise StudyError("The file holds no coordinates.", code="setup.estimate.unavailable")

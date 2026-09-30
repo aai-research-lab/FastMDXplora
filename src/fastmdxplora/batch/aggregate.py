@@ -47,6 +47,10 @@ SEED_AXES = frozenset({
     # Prepared from different random placements of hydrogens and ions,
     # and otherwise the same study: repeats of one measurement.
     "setup.random_seed",
+    # Prepared from different models of one ensemble: the same molecule
+    # started from different structures, which is what independent starts
+    # are.
+    "setup.model",
 })
 
 #: How far the single-run error estimate may sit from the spread of the

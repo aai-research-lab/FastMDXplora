@@ -42,6 +42,9 @@ def plan_of(config: dict[str, Any]) -> list[dict[str, Any]]:
         values = values if isinstance(values, list) else [values]
         if str(axis).endswith("random_seed"):
             line("Replicas", f"{len(values)}, differing only by random seed")
+        elif str(axis) == "setup.model":
+            line("Replicas", f"{len(values)}, from models "
+                             + ", ".join(str(v) for v in values) + " of the ensemble")
         else:
             line("Varied", f"{axis}: " + ", ".join(str(v) for v in values))
 

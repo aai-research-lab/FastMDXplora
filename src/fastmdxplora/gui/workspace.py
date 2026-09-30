@@ -240,7 +240,9 @@ def _kind_of(config: Any, batch: Any) -> str:
             return f"umbrella sampling, {runs} windows"
         sweep = batch.get("sweep") if isinstance(batch.get("sweep"), dict) else {}
         axes = sorted(sweep)
-        if axes and all(axis.endswith("random_seed") for axis in axes):
+        from fastmdxplora.batch.aggregate import SEED_AXES
+
+        if axes and set(axes) <= SEED_AXES:
             return f"{runs} replicas"
         if axes:
             return f"{runs} runs across {', '.join(a.split('.')[-1] for a in axes)}"

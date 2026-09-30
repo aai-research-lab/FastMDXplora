@@ -37,7 +37,7 @@ For the flag spelling of any setting below, see
 
 ---
 
-## `setup` — 46 settings
+## `setup` — 47 settings
 
 ### How this phase was written
 
@@ -53,6 +53,7 @@ What is kept, what is repaired, and how it is protonated.
 |---|---|---|---|
 | `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14 |
 | `residue_states` | map | none | Protonation states in place of setup's own, by chain and number: `{A:57: HIP}`. HIS takes HID, HIE or HIP; ASP ASH or ASP; GLU GLH or GLU; LYS LYN or LYS |
+| `model` | int | none | Which model of a file holding several (an NMR ensemble) to prepare, as the file numbers them; unset, the first. Swept, replicas that start from different structures, which a stopping rule counts as independent starts |
 | `protonation_margin` | float | `1.0` | How close a ligand's pKa may come to the pH before setup stops rather than pick a charge state |
 | `heterogens` | str | `auto` | `auto` decides per component; `drop` removes them all; `keep` retains them |
 | `keep_heterogens` | bool | `false` | Equivalent to `heterogens: keep` |

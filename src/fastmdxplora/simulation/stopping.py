@@ -240,7 +240,8 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
             "simulation.stop_when stops when replicas agree, and this study has none. "
             "A single run can look equilibrated while trapped in one state, and its error bar "
             "cannot show it; runs started independently can. Sweep "
-            "simulation.random_seed over three or more values, or say "
+            "simulation.random_seed over three or more values (or setup.model over "
+            "the models of an ensemble), or say "
             "`independent_starts: not_required` to accept precision within one run, "
             "which the record will say was not checked against independent starts.",
             code="simulation.stopping.no_replicas",

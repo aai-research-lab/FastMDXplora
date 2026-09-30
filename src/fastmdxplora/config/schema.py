@@ -316,6 +316,14 @@ SETUP = PhaseSchema(
               "that the structure does not hold stops setup, as does a "
               "state the residue cannot take.",
               example={"A:57": "HIP", "A:102": "ASH"}),
+        Field("model", int, None,
+              "Which model of a structure file holding several to prepare, "
+              "as the file numbers them: the conformers of an NMR ensemble, "
+              "most often. Unset, setup prepares the first and says how many "
+              "there are. Swept, it gives replicas that start from different "
+              "structures of the ensemble, which a stopping rule counts as "
+              "independent starts.",
+              example=5, minimum=1),
         Field("replace_nonstandard_residues", bool, True,
               "Substitute modified residues (selenomethionine, oxidised "
               "cysteine) with their standard equivalents. They are part of "
@@ -1087,7 +1095,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "What is kept, what is repaired, and how it is protonated.",
          ("ph", "residue_states", "protonation_margin", "heterogens", "keep_heterogens",
           "keep_water", "replace_nonstandard_residues",
-          "chains", "build_missing_termini", "fixed_pdb",
+          "model", "chains", "build_missing_termini", "fixed_pdb",
           "mutations", "mutation_chain")),
         ("The ligand",
          "Found and parameterised, or named if the structure is ambiguous.",
