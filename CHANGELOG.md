@@ -1643,6 +1643,17 @@ which is not a file RCSB has. A full stop, comma, colon, semicolon or mark
 at the end of an address is now left after the link, except the semicolon
 of an escaped character, which is the address's.
 
+### The first run of the Agent's looking, recorded
+
+Run on 2026-09-30 with three repeats: 18 of 18 replies agreed with the
+software with tools, all 18 having looked with the tool each question
+calls for, and 18 of 18 without. By the pre-registered rule no question
+separates the arms. The replies show why: these are well-known entries,
+and their counts are within what the model knows; without tools it gave
+the two sizes as ranges and said each count was from memory. The result
+is added to `preregistration/agent-looks.md` below what was registered,
+which is unchanged, with what a set that could separate the arms needs.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

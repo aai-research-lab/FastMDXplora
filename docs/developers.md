@@ -388,7 +388,12 @@ against the software's answer by the rule
 before any reply was seen. The table gives, per question, the replies that
 agreed in each arm and how many looked with the tool the question calls for;
 the file keeps every reply whole. It tests agreement with the software,
-not with experiment. No result is recorded here yet.
+not with experiment. The first run (2026-09-30, three repeats) agreed in
+all 18 replies with tools, all 18 of which looked, and in all 18 without:
+the six questions are within what a model knows of these well-known
+entries, so they cannot separate the arms. The replies without tools
+answered the two sizes as ranges and said every count was from memory; the
+result and what a stricter set would need are in the pre-registration.
 
 ---
 

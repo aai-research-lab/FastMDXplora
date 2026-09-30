@@ -50,3 +50,42 @@ the prompt, not of the tools.
 What is not measured: whether the software's answers are right (that is
 setup's own validation), or anything about configs the Agent writes (that is
 `scripts/measure_nli.py`).
+
+## Result (added 2026-09-30, after the run; nothing above was changed)
+
+Run on 2026-09-30 on the Mac, three repeats, with the model the Agent there
+was set to (named in the run's `agent_looks.json`, which is kept with it).
+
+| Question | Agreed, with tools | Looked | Agreed, without |
+|---|---|---|---|
+| `particles_1l2y` | 3/3 | 3/3 | 3/3 |
+| `box_1ake` | 3/3 | 3/3 | 3/3 |
+| `residues_1ubq` | 3/3 | 3/3 | 3/3 |
+| `ligands_1ake` | 3/3 | 3/3 | 3/3 |
+| `selection_1l2y` | 3/3 | 3/3 | 3/3 |
+| `histidines_1hho` | 3/3 | 3/3 | 3/3 |
+| **all** | **18/18** | **18/18** | **18/18** |
+
+By the rule above, no question separates the arms: every reply agreed in
+both. The model looked with the tool each question calls for in every reply
+with tools.
+
+Read whole, as the rule above allows for, the replies differ in kind where
+the counts do not. With tools, each number is the software's own (3,305
+particles; 6.86 nm), said as an estimate that setup replaces once it runs.
+Without, the two sizes are estimates with ranges: the particle count was
+headed 4,000, 3,500 and 3,000 (21%, 6% and 9% from 3,305), and counted as
+agreeing by the number nearest the software's, which in the first was the
+3,500 at the foot of its range; the box was "about 7 nm" (2% off) each
+time. The counts (76, 10, 38) and the ligand (AP5) were right from memory
+in every reply without tools, and every one of those replies said it was
+from memory and to check it against setup's record. No reply in either arm
+stated a wrong number as a fact.
+
+What this shows is the limit of the question set, not of the tools: these
+are well-known entries, and their counts are within what the model knows.
+Separating the arms needs questions a model cannot answer from memory (a
+structure given as a local file, a non-default setting, a selection on a
+prepared system) and a judge of the number a reply commits to rather than
+the nearest it mentions. That is a new pre-registration, written before any
+reply to its questions is seen, and not a revision of this one.
