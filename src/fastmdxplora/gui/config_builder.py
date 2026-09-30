@@ -579,7 +579,14 @@ def state_from_config(
 
     data = _lists_as_lists(canonical_phase_keys(dict(data)))
     if checked is None:
-        checked = check_config(data)
+        # Checked on a copy, as a file's is: the validator expands an
+        # umbrella block into a run per window in place, and the form was
+        # then filled from the first window, so an umbrella study opened
+        # here (an Agent's, through its Download config or Open in the
+        # builder) came back as one plain run with the umbrella gone.
+        import copy
+
+        checked = check_config(copy.deepcopy(data))
         if not checked["ok"]:
             return checked
 

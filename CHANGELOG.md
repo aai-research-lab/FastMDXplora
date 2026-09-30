@@ -1458,6 +1458,18 @@ file) was not in the plan at all; it is now said, and a file and a residue
 name together are said together. Found writing the builder's starting
 points.
 
+### An umbrella study opened in the builder keeps its umbrella
+
+**A Config handed to the builder as a mapping** (the Agent's reply, through
+its Download config, Copy the command and Open in the builder) **was checked
+in place**, and the validator expands an umbrella block into a run per window
+in place, so the form was filled from the first window. The umbrella was gone:
+what was downloaded, copied or run from the builder was one plain run of the
+structure. It is checked on a copy now, as a Config read from a file always
+was, and what the builder writes runs every window with its centre and force
+constant. The Agent's own Run here was not affected: it runs the Config it
+wrote. Found writing the builder's starting points.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
