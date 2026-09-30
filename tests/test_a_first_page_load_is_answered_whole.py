@@ -125,3 +125,36 @@ def test_requests_arriving_together_are_all_answered(tmp_path) -> None:
     failed = [(path, said) for code, path, said in statuses if code == 500]
     said = [line for line in done.stderr.splitlines() if "fastmdxplora" in line or "Error" in line]
     assert len(statuses) == 7 and not failed, (failed, said[-40:])
+
+
+def test_a_name_is_a_module_only_as_python_spells_it(monkeypatch) -> None:
+    """`from fastmdxplora.agent import Queue` names a class. On macOS, whose
+    file system ignores case, `agent/Queue.py` found `agent/queue.py`, the
+    server tried to import `fastmdxplora.agent.Queue`, and CI failed there
+    alone. Here the file system is made to ignore case as macOS's does."""
+    import os as _os
+    from pathlib import Path as _Path
+
+    from fastmdxplora.gui import route_imports
+
+    real_is_file, real_exists = _Path.is_file, _Path.exists
+
+    def folded(path, real):
+        parent = path.parent
+        if not real_exists(parent):
+            return real(path)
+        names = {entry.lower(): entry for entry in _os.listdir(parent)}
+        return path.name.lower() in names and real(parent / names[path.name.lower()])
+
+    monkeypatch.setattr(_Path, "is_file", lambda self: folded(self, real_is_file))
+    monkeypatch.setattr(_Path, "exists", lambda self: folded(self, real_exists))
+    assert _Path(route_imports.ROOT / "agent" / "Queue.py").is_file()  # as on macOS
+    assert route_imports._source_of("fastmdxplora.agent.Queue") is None
+    assert route_imports._source_of("fastmdxplora.agent.queue").name == "queue.py"
+    assert route_imports._source_of("fastmdxplora.Agent.queue") is None
+    route_imports.modules_reached_from.cache_clear()
+    try:
+        reached = route_imports.modules_reached_from("fastmdxplora.gui.server")
+    finally:
+        route_imports.modules_reached_from.cache_clear()
+    assert "fastmdxplora.agent.Queue" not in reached and "fastmdxplora.agent.queue" in reached

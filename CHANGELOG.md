@@ -1592,6 +1592,16 @@ The builder keeps the starters card's fold when the card's toggle event
 fires, a moment after the click. The test clicked and reloaded at once, and
 under load the reload came first. It now reloads once the fold is kept.
 
+### A module is found by its name as Python spells it
+
+CI on macOS failed on `e0e5829`, every Python: the GUI's list of modules to
+import before serving (1158) held `fastmdxplora.agent.Queue`, which is a
+class that `from fastmdxplora.agent import Queue` names. macOS's file system
+ignores case, so looking for `agent/Queue.py` found `agent/queue.py`, while
+Python's import, which does not ignore case, refused the name. Module files
+are now matched by exact name, folder by folder. A test makes the file system
+ignore case as macOS's does, on any platform.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -17,6 +17,7 @@ every module those import, followed to the end.
 
 from __future__ import annotations
 
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -27,14 +28,34 @@ PACKAGE = "fastmdxplora"
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _entries(folder: Path) -> frozenset[str]:
+    try:
+        return frozenset(entry.name for entry in os.scandir(folder))
+    except OSError:
+        return frozenset()
+
+
 def _source_of(name: str) -> Path | None:
+    """The file `name` imports from, matched as Python matches it: by exact
+    name. On macOS the file system ignores case, so `agent/Queue.py` finds
+    `agent/queue.py`, while Python refuses `fastmdxplora.agent.Queue` (a
+    class that `from fastmdxplora.agent import Queue` names)."""
     parts = name.split(".")
     if parts[0] != PACKAGE:
         return None
-    where = ROOT.joinpath(*parts[1:])
-    for candidate in (where / "__init__.py", where.with_suffix(".py")):
-        if candidate.is_file():
-            return candidate
+    folder = ROOT
+    for part in parts[1:-1]:
+        if part not in _entries(folder):
+            return None
+        folder = folder / part
+    last = parts[-1] if len(parts) > 1 else None
+    if last is None:
+        return folder / "__init__.py"
+    here = _entries(folder)
+    if last in here and "__init__.py" in _entries(folder / last):
+        return folder / last / "__init__.py"
+    if f"{last}.py" in here:
+        return folder / f"{last}.py"
     return None
 
 
