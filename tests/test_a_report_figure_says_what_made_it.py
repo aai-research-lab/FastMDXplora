@@ -86,3 +86,45 @@ def test_each_figure_in_the_report_carries_its_chip(study) -> None:
     assert "fastmdx explore " in said and "--analyze-analyses rmsd" in said
     assert "--analyze-figure-width single_column" in narrow
     assert errors == []
+
+
+def test_a_failed_fetch_leaves_the_report_standing(study) -> None:
+    """A report fetched, then a fetch that fails, then one that succeeds:
+    the failure hid the document, and the success found the same text
+    already rendered and returned, so the report and its figures stayed
+    hidden. CI failed once waiting for a chip to be visible. A fetch that
+    fails before any has succeeded is tried again."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    failing = {"next": 2}
+
+    def report(route):
+        if failing["next"] > 0:
+            failing["next"] -= 1
+            route.abort()
+        else:
+            route.continue_()
+
+    chip = '#report-document .report-figure-made .figure-chip[data-provenance="rmsd"]'
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.route("**/api/report", report)
+            page.goto(session.url + "#report", wait_until="domcontentloaded")
+            # The first two fetches fail; the page asks again by itself.
+            page.wait_for_selector(chip)
+            failing["next"] = 1
+            page.evaluate("() => window.FastMDXReport.load()")
+            page.evaluate("() => window.FastMDXReport.load()")
+            shown = page.evaluate("() => !document.getElementById('report-document').hidden")
+            visible = page.locator(chip).first.is_visible()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert shown and visible

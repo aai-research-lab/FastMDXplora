@@ -200,7 +200,9 @@ class TestThePage(unittest.TestCase):
     def test_a_missing_report_shows_the_empty_state_not_an_error(self):
         script = self.script()
         self.assertIn("empty.hidden = false", script)
-        self.assertIn(".catch(function () { render(null); })", script)
+        self.assertIn("render(null);", script)
+        # And is asked for again: nothing else would ask for a finished study.
+        self.assertIn("setTimeout(load, 1000 * retrying);", script)
 
     def test_it_does_not_rerender_on_every_poll_while_hidden(self):
         # A 20 KB document rendered on each app-state tick is a cost with

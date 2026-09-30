@@ -1654,6 +1654,19 @@ the two sizes as ranges and said each count was from memory. The result
 is added to `preregistration/agent-looks.md` below what was registered,
 which is unchanged, with what a set that could separate the arms needs.
 
+### A report stays shown through a failed fetch
+
+CI on `e0e5829` (Ubuntu, Python 3.11) failed waiting for a figure's chip to
+be visible on the Report page. The page asks for the report several times
+as it opens (on loading, on being shown, when the study's state changes). A
+fetch that failed after one had succeeded hid the document, and the next
+success found the same text already rendered and returned, so the report,
+its figures and their chips stayed hidden until the report changed. A
+failed fetch now leaves a report already shown, and one that fails before
+any has succeeded is tried again, up to five times, further apart each
+time: a finished study's state does not change, so nothing else would ask.
+A test fails the fetches in a browser, and fails on the old page.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

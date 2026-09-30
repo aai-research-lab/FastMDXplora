@@ -21,7 +21,15 @@
     var downloads = el("report-downloads");
     if (!doc) return;
 
+    /* A fetch that failed says nothing about the report: one written
+     * stays, and the next load tries again. It was hidden, and the next
+     * load that succeeded found the same text already rendered and
+     * returned, so the document stayed hidden, its figures and chips
+     * with it, until the report changed. */
+    if (!data && doc.dataset.rendered) return;
+
     if (!data || !data.ok) {
+      delete doc.dataset.rendered;
       doc.hidden = true;
       empty.hidden = false;
       notices.hidden = true;
@@ -115,10 +123,20 @@
     dashboard.listenForFigureChips(doc, function (name) { return provenance[name]; });
   }
 
+  /* A failed fetch is tried again, a few times and further apart each
+   * time: a finished study's state does not change, so nothing else would
+   * ask again, and the page would say there is no report. */
+  var retrying = 0;
   function load() {
     return fetch("/api/report").then(function (r) { return r.json(); })
-      .then(render)
-      .catch(function () { render(null); });
+      .then(function (data) { retrying = 0; render(data); })
+      .catch(function () {
+        render(null);
+        if (retrying < 5) {
+          retrying += 1;
+          setTimeout(load, 1000 * retrying);
+        }
+      });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
