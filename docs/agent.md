@@ -528,6 +528,15 @@ What it looked at is folded under its reply, **Checked with the software**,
 each tool with what was asked and what the software said, and kept with the
 thread. From the command line, `fastmdx agent` prints a line for each.
 
+### Written as it goes
+
+The reply is shown as the model writes it, and each look as it is taken; a
+config appears line by line. While it is written the send button is a stop:
+pressing it ends the reply, the request to the model is closed with it, and
+nothing it had written is kept. The next message goes on from yours. Both
+stream shapes the providers use are read, content-block events and the OpenAI
+chat shape, so a local or compatible server streams too.
+
 ### Acting
 
 **Your instruction is the click.** "Run it" typed into the thread does what

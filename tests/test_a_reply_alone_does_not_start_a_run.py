@@ -94,7 +94,7 @@ class TestInTheBrowser:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch()
                 page = browser.new_page()
-                page.route("**/api/agent/propose", propose)
+                page.route("**/api/agent/propose*", propose)
                 page.route("**/api/agent/run", launch)
                 page.route("**/api/load-config", load)
                 page.goto(session.url + "#agent", wait_until="domcontentloaded")

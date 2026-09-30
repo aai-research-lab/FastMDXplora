@@ -1507,6 +1507,18 @@ already listened for and was never sent.
 chart's first value, the only browser test left at that; beside a full suite
 on two cores it took longer once. It waits 60 s, as the rest do.
 
+### The Agent's reply is shown as it is written, and can be stopped
+
+**A reply came back whole**: the thread said "Thinking" for as long as the
+model took, a config or a long answer included, and nothing stopped it but
+closing the page. The model is now asked for a stream (content-block events or
+the OpenAI chat shape, so a local or compatible server streams too), and the page
+is sent each piece as it arrives, each look the Agent takes as it takes it,
+and at the end the same answer as before (`POST /api/agent/propose-stream`,
+one JSON event a line). While a reply is written the send button stops it:
+the request to the model is closed with it and nothing it had written is
+kept. A browser without streams asks for the reply whole.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

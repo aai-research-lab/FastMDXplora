@@ -866,6 +866,11 @@ def make_handler(
                     payload or {}, app_runtime,
                     path_for=hosting.inside if hosting is not None else None))
                 return
+            if path == "/api/agent/propose-stream":
+                # The same, sent on as the model writes it, and stopped when
+                # the page stops reading.
+                self._stream_proposal(payload or {})
+                return
             if path == "/api/load-config":
                 # Bringing a config into the form so it can be changed. The
                 # file is read and never written: anything altered is saved as
@@ -1250,6 +1255,41 @@ def make_handler(
             self.end_headers()
             changes(write, look, closing=lambda: bool(getattr(self.server, "closing", False)))
             self.close_connection = True
+
+        def _stream_proposal(self, payload: dict[str, Any]) -> None:
+            """`POST /api/agent/propose-stream`: the Agent's reply as it is
+            written, one JSON event a line, ending with the answer
+            `/api/agent/propose` gives. The page stopping the request is
+            the reply stopping: the next write fails, and the model's
+            request is closed with it."""
+            from fastmdxplora.gui.agent_panel import propose_endpoint
+
+            def emit(event: dict[str, Any]) -> None:
+                self.wfile.write((json.dumps(event, default=str) + "\n").encode("utf-8"))
+                self.wfile.flush()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.close_connection = True
+            try:
+                answer = propose_endpoint(
+                    payload, app_runtime,
+                    path_for=hosting.inside if hosting is not None else None, emit=emit)
+                emit({"type": "done", "answer": answer})
+            except (BrokenPipeError, ConnectionResetError):
+                logger.debug("the page stopped reading the Agent's reply")
+            except Exception as exc:  # noqa: BLE001 - said in the stream, which has begun
+                from fastmdxplora.refusals import refusal_of
+
+                found = refusal_of(exc)
+                try:
+                    emit({"type": "done", "answer": {"ok": False, "error": found.message,
+                                                     "code": found.code}})
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
         def _send_html(self, html_text: str) -> None:
             body = html_text.encode("utf-8")

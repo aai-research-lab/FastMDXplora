@@ -3885,3 +3885,9 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .studies-settings td:first-child, .studies-settings th:first-child { width: 34%; }
 .studies-more { align-self: flex-start; }
 .studies-means tr.is-resolved td { color: var(--accent-orange); }
+
+/* The Agent's reply as it is written (agent-panel.js). */
+.agent-writing { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); font-size: var(--text-sm); }
+.agent-writing:empty::after { content: "\2026"; color: var(--text-muted); }
+.agent-writing-look { font-size: var(--text-xs); color: var(--text-muted); margin: 0 0 4px; }
+.agent-send.is-writing { font-size: var(--text-xs); }

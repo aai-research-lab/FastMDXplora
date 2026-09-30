@@ -217,7 +217,7 @@ class TestThePageCarriesIt(unittest.TestCase):
                   / "agent-panel.js").read_text(encoding="utf-8")
         server = (Path(gui.__file__).parent
                   / "server.py").read_text(encoding="utf-8")
-        for path in ("/api/agent/model", "/api/agent/propose"):
+        for path in ("/api/agent/model", "/api/agent/propose", "/api/agent/propose-stream"):
             with self.subTest(path=path):
                 self.assertIn(path, script)
                 self.assertIn(f'"{path}"', server)
@@ -368,13 +368,13 @@ class TestTheEndpointsNeedTheMachinesTrust(unittest.TestCase):
         # the routes left open, so these must be absent from it.
         from fastmdxplora.gui.server import POSTS_ANSWERED_BEYOND_LOOPBACK
 
-        for path in ("/api/agent/model", "/api/agent/propose"):
+        for path in ("/api/agent/model", "/api/agent/propose", "/api/agent/propose-stream"):
             with self.subTest(path=path):
                 self.assertNotIn(path, POSTS_ANSWERED_BEYOND_LOOPBACK)
 
     def test_bound_beyond_loopback_they_refuse(self):
         port = self.serve("0.0.0.0")
-        for path in ("/api/agent/model", "/api/agent/propose"):
+        for path in ("/api/agent/model", "/api/agent/propose", "/api/agent/propose-stream"):
             with self.subTest(path=path):
                 self.assertEqual(self.post(port, path), 403)
 
@@ -1587,7 +1587,7 @@ class TestTheAgentIsAConversation(unittest.TestCase):
     def test_enter_sends_and_shift_enter_breaks(self):
         script = self.script()
         self.assertIn('e.key === "Enter" && !e.shiftKey', script)
-        self.assertIn("e.preventDefault();\n        draft();", script)
+        self.assertIn("e.preventDefault();\n        // A reply being written is stopped by the button, not by Enter.\n        if (!writing) draft();", script)
 
     def test_the_composer_grows(self):
         script = self.script()

@@ -573,7 +573,7 @@
   function draft() {
     var area = el("agent-request");
     var typed = area.value.trim();
-    if (!typed) return;
+    if (!typed || writing) return;
     var request = pending ? pending + "\n" + typed : typed;
     pending = null;
 
@@ -608,16 +608,14 @@
     }
     note(box, "Thinking\u2026");
     scrollToEnd();
-    el("agent-propose").disabled = true;
 
-    post("/api/agent/propose", {
+    propose({
       request: request,
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
       current_config: currentConfig,
       attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })
-    }).then(function (data) {
-      el("agent-propose").disabled = false;
+    }, box).then(function (data) {
       box.innerHTML = "";
       (data.attempts || []).forEach(function (attempt) {
         if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
@@ -703,10 +701,111 @@
       persist();
       wireActions(r, data, box);
       scrollToEnd();
-    }).catch(function () {
-      el("agent-propose").disabled = false;
+    }).catch(function (error) {
       box.innerHTML = "";
+      if (error && error.name === "AbortError") {
+        /* Stopped by the person: what it had written is not kept, and the
+         * next message goes on from their last. */
+        note(box, "Stopped before it finished.");
+        history.push({ role: "agent", text: "(stopped before answering)" });
+        transcript.push({ role: "agent", kind: "answer", text: "Stopped before it finished." });
+        persist();
+        return;
+      }
       note(box, "The Agent did not answer. Check Settings, then try again.");
+    });
+  }
+
+  /* ---- The reply as it is written ------------------------------------ */
+
+  /* The server sends the reply as the model writes it, one event a line
+   * (`/api/agent/propose-stream`): a `begin` each time the model is asked,
+   * its text in pieces, each look as it is taken, and the answer at the
+   * end, the same as `/api/agent/propose` gives. The send button stops it
+   * while it is written. A browser without streams asks for it whole. */
+  var writing = null;
+
+  function writingState(on) {
+    var button = el("agent-propose");
+    button.classList.toggle("is-writing", on);
+    button.setAttribute("aria-label", on ? "Stop" : "Send");
+    button.title = on ? "Stop the reply being written"
+      : "Send (Enter). Shift+Enter for a new line.";
+    button.textContent = on ? "\u25a0" : "\u2191";
+  }
+
+  /* What the model is writing, as a person reads it: a look is said as
+   * one, the reply's own marker is left off. */
+  function writtenSoFar(raw) {
+    if (/^\s*USE:/.test(raw)) return "Looking with the software\u2026";
+    return raw.replace(/^\s*(SAY|ASK):\s*/, "");
+  }
+
+  function propose(body, box) {
+    if (!window.ReadableStream || !window.AbortController || !window.TextDecoder) {
+      writingState(true);
+      return post("/api/agent/propose", body).finally(function () { writingState(false); });
+    }
+    writing = new AbortController();
+    writingState(true);
+    var shown = null;
+    var raw = "";
+    var answer = null;
+    function handle(line) {
+      if (!line.trim()) return;
+      var event;
+      try { event = JSON.parse(line); } catch (e) { return; }
+      if (event.type === "begin") {
+        raw = "";
+        if (!shown) {
+          box.innerHTML = "";
+          shown = document.createElement("div");
+          shown.className = "agent-writing";
+          box.appendChild(shown);
+        }
+        shown.textContent = "";
+      } else if (event.type === "text" && shown) {
+        raw += event.text || "";
+        shown.textContent = writtenSoFar(raw);
+        scrollToEnd();
+      } else if (event.type === "look" && event.look) {
+        var said = document.createElement("div");
+        said.className = "agent-writing-look";
+        said.textContent = "Looked: " + (LOOKED[event.look.tool] || event.look.tool);
+        box.insertBefore(said, shown);
+      } else if (event.type === "done") {
+        answer = event.answer;
+      }
+    }
+    return fetch("/api/agent/propose-stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body || {}),
+      signal: writing.signal
+    }).then(function (response) {
+      // A refusal before the reply began (a request from beyond this
+      // machine, a malformed body) is one JSON answer, not a stream.
+      if (!/ndjson/.test(response.headers.get("content-type") || "")) return response.json();
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+      function pump() {
+        return reader.read().then(function (part) {
+          if (part.done) {
+            if (buffer) handle(buffer);
+            return answer || { ok: false, error: "The Agent did not answer." };
+          }
+          buffer += decoder.decode(part.value, { stream: true });
+          var lines = buffer.split("\n");
+          buffer = lines.pop();
+          lines.forEach(handle);
+          return pump();
+        });
+      }
+      return pump();
+    }).finally(function () {
+      writing = null;
+      writingState(false);
     });
   }
 
@@ -1295,7 +1394,10 @@
     el("agent-save-model").addEventListener("click", saveEngine);
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
-    el("agent-propose").addEventListener("click", draft);
+    el("agent-propose").addEventListener("click", function () {
+      if (writing) writing.abort();
+      else draft();
+    });
     var plus = el("agent-attach");
     var attachPath = el("agent-attach-path");
     /* The workspace, from the app state, so the picker can open there
@@ -1324,7 +1426,8 @@
     area.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        draft();
+        // A reply being written is stopped by the button, not by Enter.
+        if (!writing) draft();
       }
     });
     autosize(area);

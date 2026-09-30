@@ -111,7 +111,7 @@ def test_the_agent_is_offered_the_fix(tmp_path, monkeypatch) -> None:
             answers = [refusal, budget]
             page.route("**/api/agent/run", lambda route: route.fulfill(json=answers.pop(0)))
             page.on("request", lambda r: asked.append(json.loads(r.post_data or "{}"))
-                    if r.url.endswith("/api/agent/propose") else None)
+                    if r.url.endswith(("/api/agent/propose", "/api/agent/propose-stream")) else None)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.fill("#agent-request", "ubiquitin")
             page.keyboard.press("Enter")

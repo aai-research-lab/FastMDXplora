@@ -39,6 +39,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from fastmdxplora.refusals import StudyError
@@ -294,7 +295,11 @@ def completion_for(choice: ModelChoice | None = None, *,
             code="environment.model.unset",
         )
 
-    def complete(prompt: str) -> str:
+    def complete(prompt: str, on_text: Callable[[str], None] | None = None) -> str:
+        """The model's reply to ``prompt``. With ``on_text``, asked for as a
+        stream and handed to ``on_text`` piece by piece as it is written;
+        the whole reply is returned either way. An exception from
+        ``on_text`` (the page that asked has gone) ends the request."""
         key = _key_for(settled, path)
         if settled.auth_style == "x-api-key":
             headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
@@ -306,12 +311,16 @@ def completion_for(choice: ModelChoice | None = None, *,
             body = {"model": settled.model,
                     "messages": [{"role": "user", "content": prompt}]}
         headers["content-type"] = "application/json"
+        if on_text is not None:
+            body["stream"] = True
 
         request = urllib.request.Request(
             settled.url, method="POST",
             data=json.dumps(body).encode(), headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
+                if on_text is not None:
+                    return _streamed(response, on_text, settled.url)
                 answer = json.loads(response.read())
         except urllib.error.HTTPError as exc:
             # The provider's own reason, and never the request that carried
@@ -343,7 +352,46 @@ def completion_for(choice: ModelChoice | None = None, *,
             code="environment.service.unusable_response", url=settled.url,
         )
 
+    # Said on the function, so a caller can tell a completion that streams
+    # from one that answers whole (a test's, or another's).
+    complete.streams = True  # type: ignore[attr-defined]
     return complete
+
+
+def _streamed(response: Any, on_text: Callable[[str], None], url: str) -> str:
+    """A reply read as server-sent events, in content blocks or the OpenAI chat shape,
+    each piece of text handed on as it arrives, the whole returned."""
+    parts: list[str] = []
+    for raw in response:
+        line = raw.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            event = json.loads(data)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "error":
+            error = event.get("error") if isinstance(event.get("error"), dict) else {}
+            raise StudyError(
+                f"The model stopped with an error: {str(error.get('message') or error)[:400]}",
+                code="environment.service.unusable_response", url=url)
+        piece = ""
+        delta = event.get("delta")
+        if event.get("type") == "content_block_delta" and isinstance(delta, dict):
+            piece = str(delta.get("text") or "")  # content blocks
+        else:
+            choices = event.get("choices") or []  # OpenAI shape
+            if choices and isinstance(choices[0], dict):
+                piece = str((choices[0].get("delta") or {}).get("content") or "")
+        if piece:
+            parts.append(piece)
+            on_text(piece)
+    return "".join(parts)
 
 
 def describe_choice(path: Path | None = None) -> str:

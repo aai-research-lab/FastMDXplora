@@ -103,7 +103,8 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 
 def propose_endpoint(payload: dict[str, Any],
                      runtime: Any = None, *,
-                     path_for: Any = None) -> dict[str, Any]:
+                     path_for: Any = None,
+                     emit: Any = None) -> dict[str, Any]:
     """A sentence in, a config out, or the refusal that stopped it.
 
     The attempts come back whole rather than as a count. They are the only
@@ -115,6 +116,10 @@ def propose_endpoint(payload: dict[str, Any],
     ``looks`` with every kind of answer, and is shown under it. ``path_for``
     is the server's rule for a path (inside the workspace, when hosted),
     which a tool reading a structure is held to as the builder is.
+
+    With ``emit``, the reply is sent on as it is written: a ``begin`` each
+    time the model is asked, its text in pieces, each look as it is taken.
+    What comes back at the end is the same.
     """
     from fastmdxplora.agent import completion_for, propose_config
     from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
@@ -152,6 +157,9 @@ def propose_endpoint(payload: dict[str, Any],
     from fastmdxplora.agent.tools import Toolbox
 
     tools = Toolbox(path_for=path_for)
+    if emit is not None:
+        complete = _written_as_it_goes(complete, emit)
+        _say_each_look(tools, emit)
     try:
         proposal = propose_config(
             request, complete, phases=list(phases),
@@ -166,6 +174,30 @@ def propose_endpoint(payload: dict[str, Any],
     answer = _proposal_answer(proposal, payload, runtime, request, mode)
     answer["looks"] = [look.as_record() for look in proposal.looks]
     return answer
+
+
+def _written_as_it_goes(complete: Any, emit: Any) -> Any:
+    """The completion, each reply sent on as the model writes it. One that
+    cannot stream (a test's, another's) is sent on whole when it answers."""
+    def written(prompt: str) -> str:
+        emit({"type": "begin"})
+        if getattr(complete, "streams", False):
+            return complete(prompt, on_text=lambda piece: emit({"type": "text", "text": piece}))
+        text = complete(prompt)
+        emit({"type": "text", "text": text})
+        return text
+    return written
+
+
+def _say_each_look(tools: Any, emit: Any) -> None:
+    """Each look sent on as it is taken, as it will be shown under the reply."""
+    used = tools.use
+
+    def use(name: str, asked: dict[str, Any]) -> Any:
+        look = used(name, asked)
+        emit({"type": "look", "look": look.as_record()})
+        return look
+    tools.use = use
 
 
 def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
