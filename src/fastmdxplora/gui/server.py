@@ -1886,6 +1886,10 @@ def _structure_info_payload(
         }
     info = count_structure(structure_path, max_bytes=_MAX_PDB_BYTES_FOR_SYSTEM_SCAN)
     info = dict(info)
+    # A system setup wrote: any ligand in it had its chemistry found or given.
+    from fastmdxplora.gui.protein_preview import SYSTEM_CANDIDATES
+
+    info["prepared"] = any(structure_path == root / rel for rel in SYSTEM_CANDIDATES)
     info["interactions"] = _ligand_interactions(root)
     info["crystal_positions"] = _crystal_positions(root)
     if not info.get("valid"):

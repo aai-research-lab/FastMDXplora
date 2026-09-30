@@ -273,7 +273,11 @@ SETUP = PhaseSchema(
         Field("heterogens", str, "auto",
               "How to treat non-standard residues: 'auto' (the default) "
               "decides per component, prepares any ligand it can, and stops "
-              "where the structure does not determine what to simulate; "
+              "where the structure does not determine what to simulate. For "
+              "a structure given by PDB identifier, setup fetches each "
+              "ligand's chemistry from the entry itself, so no ligand file "
+              "is needed; crystallisation additives and ions from the liquor "
+              "are discarded, and said. "
               "'drop' removes them all, reporting what went; 'keep' retains "
               "them all. 'drop' was the default before 2.0. It never stops, "
               "but a discarded ligand changes what the run answers without "
@@ -379,7 +383,9 @@ SETUP = PhaseSchema(
         Field("ligand", (str, list), None,
               "Ligand/cofactor SDF or MOL2 file(s) for protein-ligand "
               "systems. Requires a ligand-capable force field "
-              "(forcefield: amber-openff).",
+              "(forcefield: amber-openff). Needed for a structure given as "
+              "a file; for one given by PDB identifier, setup fetches the "
+              "chemistry of the ligands the entry holds.",
               example="ligand.sdf"),
         Field("ligand_forcefield", str, None,
               "OpenFF small-molecule force field for the ligand "

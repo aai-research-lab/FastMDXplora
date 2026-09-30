@@ -72,7 +72,7 @@ def preview_of_config(config: dict[str, Any], *,
     settings.update(config.get("simulation") or {})
     advisories = [
         {"setting": a.setting, "summary": a.summary, "detail": a.detail, "remedy": a.remedy}
-        for a in advise(count_structure(structure), settings)
+        for a in advise(_as_given(count_structure(structure), given), settings)
         # The box is said by the estimate, from the solute's bounding sphere
         # as OpenMM sizes it; the advisory's reckoning from the longest
         # extent could say otherwise beside it.
@@ -163,6 +163,20 @@ def structure_file(given: str, path_for: Callable[[Any], str | None] | None = No
     if path.suffix.lower() in (".cif", ".mmcif", ".pdbx"):
         return _as_pdb(path)
     return path
+
+
+def given_by_identifier(given: Any) -> str | None:
+    """The PDB identifier a structure was named by, or None for a file."""
+    text = str(given or "").strip()
+    return text.upper() if PDB_ID.match(text) and not Path(text).exists() else None
+
+
+def _as_given(counted: dict[str, Any], given: Any) -> dict[str, Any]:
+    """What the structure holds, and the entry it was fetched from: the
+    advisories read the file the identifier was fetched into, which says
+    nothing of where it came from."""
+    entry = given_by_identifier(given)
+    return {**counted, "entry": entry} if entry else dict(counted)
 
 
 def _cache() -> Path:

@@ -1617,6 +1617,24 @@ all four read the one set now. A study at 4 fs that states no lengths
 equilibrates for half the steps it did, and produces for half; a study that
 states its lengths, in steps or in time, runs as it did.
 
+### A ligand in a structure given by identifier needs no file
+
+Asked for benzene in T4 lysozyme L99A (181L), the Agent looked at the
+structure, was told "BNZ, HED looks like a ligand and has no chemistry",
+asked for a benzene file and whether to leave out HED. Setup needed
+neither: for a structure given by PDB identifier, `heterogens: auto`
+fetches each ligand's chemistry from the entry and discards
+crystallisation additives (HED) and ions from the liquor by itself. The
+advisory checked for an identifier in the path it was given, and every
+caller gave it the file the identifier had been fetched into, so it said
+the same in the builder. It is not said now of a structure given by
+identifier, nor of a study's prepared system. The Agent's look at a
+structure says what setup does with each heterogen, and for a ligand to be
+simulated, that setup fetches its chemistry from the entry, or, for a
+structure given as a file, that its chemistry must be given. The help for
+`heterogens` and `ligand`, which the Agent reads, says where the chemistry
+comes from, and the advisory is plural where the ligands are.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

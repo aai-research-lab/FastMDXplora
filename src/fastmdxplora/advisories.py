@@ -219,9 +219,18 @@ def _a_switch_the_force_field_does_not_want(
 
 def _a_ligand_with_no_chemistry(structure: dict[str, Any],
                                 settings: dict[str, Any]) -> Advisory | None:
-    """A local structure carries no bond orders, and a ligand needs them."""
+    """A local structure carries no bond orders, and a ligand needs them.
+
+    Not said of a structure given by PDB identifier, whose ligands' chemistry
+    setup fetches from the entry, nor of one setup prepared. It was said of
+    both: every caller hands over the file the identifier was fetched into,
+    and the check for an identifier read the path, so 181L's benzene was
+    said to have no chemistry and the Agent asked for a file it did not need.
+    """
     ligands = structure.get("ligand_resnames") or []
     if not ligands or settings.get("ligand"):
+        return None
+    if structure.get("entry") or structure.get("prepared"):
         return None
     path = str(structure.get("path") or "")
     if not path or len(path.strip()) == 4:
@@ -229,7 +238,8 @@ def _a_ligand_with_no_chemistry(structure: dict[str, Any],
         return None
     return Advisory(
         setting="ligand",
-        summary=f"{', '.join(ligands)} looks like a ligand and has no chemistry.",
+        summary=(f"{ligands[0]} looks like a ligand and has no chemistry." if len(ligands) == 1
+                 else f"{', '.join(ligands)} look like ligands and have no chemistry."),
         detail=(
             "A PDB carries coordinates and element names. Bond orders, "
             "formal charges and aromaticity -- which a force field needs -- "

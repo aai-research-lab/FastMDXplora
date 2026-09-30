@@ -189,7 +189,7 @@ def _inspect_structure(box: Toolbox, asked: dict[str, Any]) -> str:
     """Chains, residues, ligands, ions, water and metals, and the residues
     whose protonation state a study may set."""
     from fastmdxplora.advisories import advise
-    from fastmdxplora.gui.preview import titratable_residues
+    from fastmdxplora.gui.preview import _as_given, titratable_residues
     from fastmdxplora.setup.estimate import estimate_system
     from fastmdxplora.structure_info import count_structure
 
@@ -236,9 +236,42 @@ def _inspect_structure(box: Toolbox, asked: dict[str, Any]) -> str:
         near = [f"{r['key']} {r['resname']}: {r['near']}" for r in titratable if r.get("near")]
         if near:
             lines.append("side chains by a structural metal: " + "; ".join(near))
-    for advisory in advise(counted, {}):
+    lines += _what_setup_does_with_the_heterogens(path, asked.get("system"))
+    for advisory in advise(_as_given(counted, asked.get("system")), {}):
         lines.append(f"worth knowing ({advisory.setting}): {advisory.summary}")
     return "\n".join(lines)
+
+
+def _what_setup_does_with_the_heterogens(path: Path, given: Any) -> list[str]:
+    """Each non-standard residue and what `heterogens: auto` does with it,
+    as setup decides it. The Agent was told 181L's benzene had no chemistry,
+    asked for a file setup would have fetched itself, and asked whether to
+    leave out an additive setup discards by itself."""
+    from fastmdxplora.gui.preview import given_by_identifier
+    from fastmdxplora.setup.heterogens import Action, resolve
+
+    try:
+        decisions = resolve(str(path), keep_water=False)
+    except Exception as exc:  # noqa: BLE001 - setup says the same, and why
+        return [f"what setup does with the heterogens (heterogens: auto): it stops here: {exc}"]
+    entry = given_by_identifier(given)
+    said = []
+    for decision in decisions:
+        if decision.resname in ("HOH", "WAT") or not decision.instances:
+            continue
+        count = f" x{len(decision.instances)}" if len(decision.instances) > 1 else ""
+        line = f"{decision.action.value} {decision.resname}{count}: {decision.reason}"
+        if decision.action is Action.SIMULATE and not all(
+                len(h.atoms) == 1 for h in decision.instances):
+            line += (f"; setup fetches its chemistry from the {entry} entry, so no ligand "
+                     "file is needed, with a force field that takes small molecules "
+                     "(the default, amber-openff, does)" if entry else
+                     "; a file has no entry to fetch its chemistry from, so give it as "
+                     "an SDF or MOL2 in `ligand`")
+        said.append(line)
+    if not said:
+        return []
+    return ["what setup does with each heterogen (heterogens: auto): " + "; ".join(said)]
 
 
 def _preview_setup(box: Toolbox, asked: dict[str, Any]) -> str:
