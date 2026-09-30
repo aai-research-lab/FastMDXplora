@@ -881,22 +881,78 @@ def _reproducibility_section(
 
     if phase_context.setup_present:
         lines.append("")
-        lines.append(
-            "**What rerunning the configuration does and does not reproduce.** "
-            "Running `resolved_config.yml` again gives an equivalent study and "
-            "not an identical one: solvation places water by a procedure that "
-            "cannot be seeded, so the same configuration produces a system "
-            "with a slightly different atom count each time, and a fixed "
-            "`random_seed` fixes the dynamics rather than the solvent. To "
-            "repeat this study exactly, simulate from the system it prepared "
-            "by pointing `simulation.setup_from` at its `setup/` "
-            "directory."
-        )
+        lines.append(_what_a_rerun_repeats(Path(orchestrator.output_dir)))
     else:
         lines.append(
             "The complete session manifest is at `manifest.json` at the project root."
         )
     return "\n".join(lines)
+
+
+def _what_a_rerun_repeats(root: Path) -> str:
+    """What running the study's configuration again gives, from its records.
+
+    Setup places hydrogens and ions at random and records the seed it used
+    (`setup.random_seed`, drawn where none was given), and minimises on one
+    CPU thread, so the same structure and settings prepare the same atoms
+    again; a bilayer is packed by OpenMM with a random stream of its own.
+    This said once that solvation could not be seeded at all, which was the
+    unseeded hydrogens and ions, and stayed wrong after they were seeded.
+    The dynamics repeat their start only where `simulation.random_seed` was
+    given, and step for step only as far as the platform's arithmetic does.
+    """
+    import yaml
+
+    try:
+        record = json.loads((root / "setup" / "setup_parameters.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {}
+    try:
+        config = yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        config = {}
+    seeded = (record.get("random_seed") or {}) if isinstance(record, dict) else {}
+    setup = config.get("setup") if isinstance(config.get("setup"), dict) else {}
+    simulation = (config.get("simulation")
+                  if isinstance(config.get("simulation"), dict) else {})
+    bilayer = bool(setup.get("membrane")) or bool(
+        isinstance(record, dict) and record.get("membrane"))
+
+    if isinstance(seeded, dict) and seeded.get("seed") is not None:
+        text = (
+            "**What rerunning the configuration repeats.** Running "
+            "`resolved_config.yml` again prepares the same system: it records "
+            f"the random seed setup placed hydrogens and ions with "
+            f"({int(seeded['seed'])}{', drawn for this study' if seeded.get('drawn') else ''}), "
+            "and setup minimises on one CPU thread, so the same structure and "
+            "settings give the same atoms in the same places"
+            + (", except the bilayer, which OpenMM packs with a random stream of "
+               "its own" if bilayer else "")
+            + ".")
+    else:
+        text = (
+            "**What rerunning the configuration does and does not repeat.** This "
+            "study was prepared without a recorded random seed, so running "
+            "`resolved_config.yml` again places hydrogens, ions and water afresh "
+            "and can give a slightly different atom count.")
+    seed = simulation.get("random_seed")
+    if seed is not None and not isinstance(seed, list):
+        text += (
+            f" Its dynamics start from `simulation.random_seed` {seed}, so a rerun "
+            "starts from the same velocities. Whether the trajectory then repeats "
+            "step for step depends on the platform: OpenMM's GPU platforms can "
+            "differ in the last bit of a force from one run to the next unless "
+            "asked for deterministic forces, and dynamics this chaotic grow such a "
+            "difference, so it is the statistics rather than the frames that a "
+            "rerun is expected to reproduce.")
+    else:
+        text += (
+            " No `simulation.random_seed` was given, so a rerun starts its "
+            "dynamics from velocities drawn afresh: a new trajectory of the same "
+            "system.")
+    return text + (" To simulate this very system without preparing it again, "
+                   "point `simulation.setup_from` at its `setup/` directory.")
 
 
 def _by_phase(label: str, recorded: dict[str, str], here: str) -> str:

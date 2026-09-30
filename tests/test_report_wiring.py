@@ -2712,19 +2712,40 @@ class TestEquilibratedIsNotTheSameAsSampled:
         assert "too few" not in said
         assert "enough independent samples" in said
 class TestReproducibilitySaysWhatItReproduces:
-    """Rerunning a configuration gives an equivalent study, not an identical
-    one. Solvation places water by a procedure with no seed -- OpenMM's
-    `addSolvent` takes none -- so the same file run twice gave 37,251 atoms
-    and then 37,763, with `random_seed` fixed both times. The seed fixes the
-    dynamics; it cannot fix the solvent.
+    """What running the configuration again gives, read from the study's
+    records. Setup records the random seed it placed hydrogens and ions with
+    (1130) and minimises on one thread, so a rerun prepares the same system;
+    this section said, before and after that, that solvation could not be
+    seeded and a rerun gave a different atom count. A study prepared before
+    the seed was recorded is still said to be one that does.
 
     Worth stating where somebody reads the run's provenance, because the
     section otherwise implies the file is enough.
     """
 
-    def test_the_section_says_what_a_rerun_gives(self, tmp_path) -> None:
+    def test_a_recorded_seed_prepares_the_same_system(self, tmp_path) -> None:
+        text = _reproducibility_of(tmp_path, prepared=True, seed={"seed": 42, "drawn": True})
+        assert "prepares the same system" in text
+        assert "(42, drawn for this study)" in text
+        assert "cannot be seeded" not in text and "bilayer" not in text
+
+    def test_a_bilayer_is_the_exception(self, tmp_path) -> None:
+        text = _reproducibility_of(tmp_path, prepared=True, seed={"seed": 7, "drawn": False},
+                                   config={"setup": {"membrane": "POPC"}})
+        assert "(7)" in text and "except the bilayer" in text
+
+    def test_a_study_prepared_before_the_seed_was_recorded(self, tmp_path) -> None:
         text = _reproducibility_of(tmp_path, prepared=True)
-        assert "equivalent study and" in text and "cannot be seeded" in text
+        assert "without a recorded random seed" in text
+        assert "slightly different atom count" in text
+
+    def test_the_dynamics_repeat_their_start_only_with_a_seed(self, tmp_path) -> None:
+        unseeded = _reproducibility_of(tmp_path / "a", prepared=True)
+        assert "No `simulation.random_seed` was given" in unseeded
+        seeded = _reproducibility_of(tmp_path / "b", prepared=True,
+                                     config={"simulation": {"random_seed": 3}})
+        assert "`simulation.random_seed` 3" in seeded
+        assert "statistics rather than the frames" in seeded
 
     def test_and_names_the_way_to_repeat_it_exactly(self, tmp_path) -> None:
         """Which the software supports: simulate from the prepared system
@@ -2993,16 +3014,24 @@ def _methods_of_a_study(root):
     return _methods_section(root, load_phase_context(root))
 
 
-def _reproducibility_of(root, *, prepared):
+def _reproducibility_of(root, *, prepared, seed=None, config=None):
     """The reproducibility section of a study that prepared its own system,
-    or of an analysis of a trajectory it was given."""
+    or of an analysis of a trajectory it was given; ``seed`` is what setup
+    recorded, and ``config`` the study's resolved config."""
     from types import SimpleNamespace
+
+    import yaml
 
     from fastmdxplora.report.context import load_phase_context
     from fastmdxplora.report.document import _reproducibility_section
 
     for phase in (("setup", "simulation", "analysis") if prepared else ("analysis",)):
         (root / phase).mkdir(parents=True)
+    if seed is not None:
+        (root / "setup" / "setup_parameters.json").write_text(
+            json.dumps({"random_seed": seed}), encoding="utf-8")
+    if config is not None:
+        (root / "resolved_config.yml").write_text(yaml.safe_dump(config), encoding="utf-8")
     return _reproducibility_section(SimpleNamespace(system="181L", output_dir=root),
                                     load_phase_context(root))
 

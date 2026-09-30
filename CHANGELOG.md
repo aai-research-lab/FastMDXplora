@@ -1254,6 +1254,22 @@ offers it and nothing changes until it is pressed; changing the field takes
 the refusal away. A number outside what a quantity can be now records the
 block it was in, so its field can be found.
 
+### The report says a seeded preparation repeats
+
+**The report's Reproducibility section still said that solvation could not be
+seeded and that running the configuration again gave a different atom count,
+after 1130 made the preparation repeat.** It now reads the study's records:
+where setup recorded its random seed, a rerun of `resolved_config.yml` is said
+to prepare the same system, with the seed and whether it was drawn, and a
+bilayer, which OpenMM packs with a random stream of its own, is named as the
+exception; a study prepared before the seed was recorded is still said to give
+a slightly different atom count. The dynamics are said separately: where
+`simulation.random_seed` was given a rerun starts from the same velocities,
+and whether it repeats step for step depends on the platform, since OpenMM's
+GPU platforms can differ in the last bit of a force unless asked for
+deterministic forces; where none was given, a rerun is a new trajectory of
+the same system.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
