@@ -1570,6 +1570,22 @@ right word: a machine's speed, an experimental order parameter or structure,
 the viewer's ruler, and record keys such as `not_a_measurement` and
 `stop_when.measures`, which keep their names so existing studies still read.
 
+### The GUI imports everything its routes reach before it serves
+
+CI on macOS with Python 3.13 answered 500 to `/api/schema` in a first page
+load of seven requests at once. The schema route imports the builder's
+schema, and through it `setup.pdbfix`, `simulation.stopping` and the
+analysis descriptions, only when first asked, while the builder's preview
+imports into the same `setup` package: two threads importing into the
+package's circular imports together is refused by Python as a deadlock. The
+server imported a hand-kept list of modules ahead to prevent exactly this
+(1104), and the list lacked the schema route's. The list is now read from
+the source (`gui/route_imports.py`): every module of the package the server
+imports, at the top of a file or inside a function, followed to the end, 178
+of them, found as files and read as text so that finding them imports
+nothing. The GUI starts in the same time as before. A failing route now logs
+its traceback at debug level, and the concurrent first-load test shows it.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

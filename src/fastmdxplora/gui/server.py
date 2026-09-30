@@ -59,50 +59,24 @@ from fastmdxplora.refusals import BackendUnavailable
 
 logger = logging.getLogger("fastmdxplora.gui.server")
 
-#: Modules the routes import when first asked for, imported once instead by
-#: the thread that builds the server, before any request is served. Two
-#: requests arriving together imported them in two threads at once, and the
-#: package's imports go round in a circle (`fastmdxplora.analysis` imports
-#: every analysis, and each of those imports `analysis.plotting`), which
-#: Python's import locks break by raising "deadlock detected": a first page
-#: load answered 500 to whichever route lost, the Agent's plan among them.
-_IMPORTED_BY_THE_ROUTES = (
-    "fastmdxplora.analysis",
-    "fastmdxplora.gui.config_builder",
-    "fastmdxplora.gui.report_dashboard",
-    "fastmdxplora.gui.report_page",
-    "fastmdxplora.gui.series",
-    "fastmdxplora.gui.plan",
-    "fastmdxplora.gui.preview",
-    "fastmdxplora.gui.agent_panel",
-    "fastmdxplora.gui.citations",
-    "fastmdxplora.gui.runs_compared",
-    "fastmdxplora.gui.selection",
-    "fastmdxplora.gui.stopping_view",
-    # What the routes added since reach on first use: the command line's
-    # parser, which the config's command form and each figure's
-    # reproduction command consult, what would fix a study, and the
-    # Agent's tools.
-    "fastmdxplora.config.languages",
-    "fastmdxplora.cli.main",
-    "fastmdxplora.remedies",
-    "fastmdxplora.gui.figure_provenance",
-    "fastmdxplora.gui.fixes_view",
-    "fastmdxplora.agent.tools",
-    "fastmdxplora.simulation.umbrella",
-    "fastmdxplora.gui.measure",
-    "fastmdxplora.gui.workspace",
-    "fastmdxplora.config.diff",
-)
+
+def _imported_by_the_routes() -> tuple[str, ...]:
+    """Every module of the package the routes can reach (route_imports.py),
+    imported once by the thread that builds the server, before any request
+    is served: two requests importing into the package's circular imports
+    at once is refused by Python as a deadlock, and the loser answered 500."""
+    from fastmdxplora.gui.route_imports import modules_reached_from
+
+    return modules_reached_from(__name__)
 
 
 def _import_what_the_routes_import() -> None:
     import importlib
 
-    for name in _IMPORTED_BY_THE_ROUTES:
+    for name in _imported_by_the_routes():
         try:
             importlib.import_module(name)
-        except ImportError as exc:  # an optional dependency: the route says so
+        except Exception as exc:  # noqa: BLE001 -- an optional dependency: the route says so
             logger.debug("dashboard: %s not imported ahead: %s", name, exc)
 
 
@@ -478,6 +452,7 @@ def make_handler(
                 logger.debug("dashboard caller %s hung up mid-request", self.client_address)
             except Exception as exc:  # noqa: BLE001 — dashboard must never crash the sim
                 logger.warning("dashboard route %s failed: %s", self.path, exc)
+                logger.debug("dashboard route %s failed", self.path, exc_info=True)
                 self.send_error(500, "Dashboard internal error")
 
         def do_POST(self) -> None:  # noqa: N802 - stdlib API
@@ -487,6 +462,7 @@ def make_handler(
                 logger.debug("dashboard caller %s hung up mid-request", self.client_address)
             except Exception as exc:  # noqa: BLE001 - exploration errors stay local
                 logger.warning("dashboard POST route %s failed: %s", self.path, exc)
+                logger.debug("dashboard route %s failed", self.path, exc_info=True)
                 # Whatever went wrong, the body may not have been read -- and
                 # an unread body costs the caller this message.
                 self._drain_request_body()
