@@ -1311,6 +1311,9 @@ button {
 .agent-looks > summary { cursor: pointer; color: var(--text-muted); }
 .agent-looks > summary:hover { color: var(--accent-cyan); }
 .agent-look { margin: 8px 0 0 12px; }
+/* A refused run's fix under the Agent's Run here (agent-panel.js). */
+.agent-run-fix { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 8px; font-size: var(--text-sm); }
+.agent-run-fix[hidden] { display: none; }
 .agent-look-name { color: var(--text-secondary); font-weight: 600; }
 .agent-look.is-refused .agent-look-name { color: var(--accent-orange); }
 .agent-look-said {

@@ -443,6 +443,22 @@ def exploration_environment_error(config: Mapping[str, Any]) -> str | None:
     return dependency_error_message(missing)
 
 
+def _backend_refusal(config: Mapping[str, Any]) -> dict[str, Any]:
+    """The refusal for a missing backend with its code and the install
+    command as its fix, for a caller that shows a refusal's fix; nothing
+    where no backend is missing."""
+    from fastmdxplora.dependencies import MissingBackendError, missing_dependencies
+    from fastmdxplora.gui.config_builder import refused
+
+    phases = config.get("include_phase")
+    runs_analysis = not isinstance(phases, list) or "analysis" in phases
+    missing = missing_dependencies(include_analysis=runs_analysis)
+    if not missing:
+        return {}
+    said = refused(MissingBackendError(missing))
+    return {"code": said["refusal"]["code"], **said}
+
+
 def _json_mapping_or_yaml(path: Path) -> dict[str, Any]:
     """A config as written, for the preflight: the file the launch wrote."""
     import yaml
@@ -976,11 +992,12 @@ class DashboardRuntime:
             # Refused here, before a process is spawned, when the chemistry
             # stack it needs is not installed: the phase would fail inside
             # the run with the same message, minutes later and off screen.
-            environment_error = exploration_environment_error(
-                _json_mapping_or_yaml(Path(prepared["config_path"])))
+            written = _json_mapping_or_yaml(Path(prepared["config_path"]))
+            environment_error = exploration_environment_error(written)
             if environment_error:
                 return {"ok": False, "error": environment_error,
-                        "config_path": prepared["config_path"], "command": None}
+                        "config_path": prepared["config_path"], "command": None,
+                        **_backend_refusal(written)}
 
             # A previous rejected launch may have hidden its old telemetry.
             # This is a new process and must become the current run even when

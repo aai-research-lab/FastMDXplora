@@ -277,23 +277,30 @@ def run_endpoint(payload: dict[str, Any], runtime: Any,
                 "error": "No config to run. Write one first."}
 
     mode = str(config.get("agent") or "assisted")
-    try:
-        hours = float(payload.get("budget_hours"))
-    except (TypeError, ValueError):
-        hours = 0.0
+    # The panel's field first; else a ceiling the config itself carries, as
+    # the command line reads it, so an Agent that wrote `budget_hours` is
+    # not refused for the field being empty.
+    hours = 0.0
+    for given in (payload.get("budget_hours"), config.get("budget_hours")):
+        try:
+            hours = float(given)
+        except (TypeError, ValueError):
+            continue
+        if hours > 0:
+            break
 
     # Required for `autonomous`, honoured in every mode. A budget stands in
     # for a human, which is why the mode with nobody watching must have
     # one -- and a ceiling is never the wrong thing to have on a study that
     # will run for days, so it is offered whether or not it is demanded.
     if mode == "autonomous" and hours <= 0:
-        return {
+        return _with_its_fix({
             "ok": False,
             "code": "environment.budget.absent",
             "error": ("An autonomous run is not shown to you before it "
                       "starts, so a GPU-hour budget is the only thing left "
                       "that can stop it. Give one above."),
-        }
+        })
     if hours > 0:
         # Carried on the config so it reaches resolved_config.yml and the
         # manifest, rather than living only in this request.
@@ -310,13 +317,35 @@ def run_endpoint(payload: dict[str, Any], runtime: Any,
         config = dict(config)
         config["output"] = str(payload["output_dir"])
     try:
-        return runtime.launch_from_config(None, config=config,
-                                          dashboard_url=dashboard_url)
+        return _with_its_fix(runtime.launch_from_config(None, config=config,
+                                                        dashboard_url=dashboard_url))
     except Exception as exc:  # noqa: BLE001 - reported, not swallowed
-        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.gui.config_builder import refused
 
-        found = refusal_of(exc)
-        return {"ok": False, "error": found.message, "code": found.code}
+        said = refused(exc)
+        return {"ok": False, "error": said["refusal"]["message"],
+                "code": said["refusal"]["code"], **said}
+
+
+def _with_its_fix(answer: dict[str, Any]) -> dict[str, Any]:
+    """A refused run with what would fix it, as the builder's refusals come.
+
+    The builder's refusals carried their remedy (1133); the same config
+    refused through the Agent's Run here came back as the refusal alone.
+    A refusal without a registered code (a folder already in use) is said
+    as it is: its own message names the next step.
+    """
+    if answer.get("ok") or answer.get("remedy") or not answer.get("code"):
+        return answer
+    from fastmdxplora.remedies import remedy_for
+
+    record = answer.get("refusal") or {"code": answer["code"],
+                                       "message": answer.get("error") or ""}
+    try:
+        answer["remedy"] = remedy_for(record, where="the config").as_record()
+    except Exception:  # noqa: BLE001 - the refusal stands without its fix
+        pass
+    return answer
 
 
 def _run_status(runtime: Any) -> str | None:

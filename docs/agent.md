@@ -397,6 +397,14 @@ builder's functions, reading the same Config, so the file, the command and the
 script are exactly what the builder would produce. *Open in the builder* is a
 link for changing the Config, not the way out.
 
+A refused *Run here* says what would fix it under the button, as the
+builder's refusals do: the setting to change, or the install command where a
+package is missing. Where the fix is a setting of the study, **Ask the Agent
+to fix it** sends the refusal into the thread as your next message and the
+Agent rewrites its Config. A budget, an install and a choice only you can
+make are said and not handed to the model. An `autonomous` Config that
+carries its own `budget_hours` runs with it when the Settings field is empty.
+
 The engine, the mode and the GPU-hour ceiling are in Settings, at the foot of
 the sidebar. They are set once.
 

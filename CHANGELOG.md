@@ -1357,6 +1357,20 @@ first requests importing them together can meet in the package's circular
 imports. The test now names the route that answered 500 and what it said,
 so a recurrence says where to look.
 
+### A refused Run here in the Agent says what would fix it
+
+**A Config the Agent's *Run here* refused came back as the refusal alone**,
+while the same refusal in the builder carried its fix (1133). Every coded
+refusal of *Run here* now carries its remedy, shown under the button: the
+setting to change, or the install command where OpenMM or another package is
+missing (that refusal is now coded `environment.backend.missing`). Where the
+fix is a setting of the study, **Ask the Agent to fix it** sends the refusal
+into the thread as the person's next message and the Agent rewrites the
+Config; a budget, an install and a choice only the person can make are said
+and not handed to the model. An `autonomous` Config that carries its own
+`budget_hours` was refused for the Settings field being empty; it now runs
+with the Config's ceiling, the field taking precedence where both are given.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

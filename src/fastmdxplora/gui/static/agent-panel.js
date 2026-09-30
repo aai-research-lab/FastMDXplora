@@ -1050,9 +1050,55 @@
         } else {
           runBtn.disabled = false;
           noteEl.textContent = started.error;
+          runFix(r.part("fix"), started, data);
         }
       });
     };
+  }
+
+  /* A refused run with what would fix it (remedies.py): the fix, and the
+   * command that does it where there is one. Nothing has run, so there is
+   * no price. Where the fix is a setting of the
+   * study, the Agent is offered it: pressing the button sends the refusal
+   * into the thread as the person's next message, and the Agent rewrites
+   * the config it wrote. A choice only the person can make, a budget, an
+   * install and a machine's state are said and not handed on: the
+   * software does not choose them, so neither does the model. Built as
+   * elements; a refusal's text is data. */
+  function runFix(host, started, data) {
+    if (!host) return;
+    host.innerHTML = "";
+    var remedy = started && started.remedy;
+    host.hidden = !remedy;
+    if (!remedy) return;
+    var fix = document.createElement("div");
+    fix.className = "fix-fix";
+    fix.innerHTML = prose("Fix: " + (remedy.fix || ""));
+    host.appendChild(fix);
+    if (remedy.command) {
+      var cmd = document.createElement("pre");
+      cmd.className = "fix-command";
+      cmd.textContent = remedy.command;
+      host.appendChild(cmd);
+    }
+    var theStudys = (remedy.settings || []).length && !remedy.decision &&
+      String(remedy.code || "").indexOf("environment.") !== 0;
+    if (!theStudys) return;
+    var ask = document.createElement("button");
+    ask.type = "button";
+    ask.className = "ctl-btn agent-fix-ask";
+    ask.textContent = "Ask the Agent to fix it";
+    ask.addEventListener("click", function () {
+      ask.disabled = true;
+      /* A new instruction, so nothing still waiting for a yes takes it. */
+      pending = null; stopPending = null; runPending = null; fixPending = null;
+      currentConfig = data.yaml;
+      var area = el("agent-request");
+      area.value = "Running it was refused: " + (started.error || remedy.why || "") +
+        "\nWhat would fix it: " + (remedy.fix || "") + "\nChange the config so it runs.";
+      draft();
+    });
+    host.appendChild(ask);
   }
 
   /* Draw a saved thread again. Each entry renders the way it rendered
