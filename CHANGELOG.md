@@ -1404,6 +1404,16 @@ no length was priced at no production (the runner runs 2 ns), and
 equilibration at 1.5 ns whatever the timestep (the runner's is a number of
 steps: 3 ns at 4 fs). It now reads them through the runner's `plan_stages`.
 
+### Looking at a structure says when setup builds more chains than the file
+
+**The Agent's `inspect_structure` gave the file's chains and residue count
+beside the assembly's titratable residues without saying which was which**:
+for 1HHO, chains A and B and 287 protein residues beside 38 histidines, twice
+the file's, since setup builds the tetramer the file declares. It now says
+that setup builds the biological assembly, names its chains, and says the
+residues listed are the assembly's. Found writing the questions that measure
+the Agent's looking.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

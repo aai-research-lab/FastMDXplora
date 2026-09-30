@@ -214,7 +214,16 @@ def _inspect_structure(box: Toolbox, asked: dict[str, Any]) -> str:
         atoms = estimate_system(path, {}).atoms
         titratable = titratable_residues(atoms)
     except Exception:  # noqa: BLE001 - the counts stand without it
-        titratable = []
+        atoms, titratable = [], []
+    # Setup builds the biological assembly the file declares, which may be
+    # more chains than the file holds (1HHO: A and B in the file, four in
+    # the assembly). The counts above are the file's; what follows is what
+    # setup builds, and said so, or a model reads 287 residues beside 38
+    # histidines and one of them as wrong.
+    built = list(dict.fromkeys(str(a.chain) for a in atoms))
+    if len(built) > len(chains):
+        lines.append(f"setup builds the biological assembly the file declares: chains "
+                     f"{', '.join(built)}; the residues below are the assembly's")
     if titratable:
         by_kind: dict[str, list[str]] = {}
         for residue in titratable:
