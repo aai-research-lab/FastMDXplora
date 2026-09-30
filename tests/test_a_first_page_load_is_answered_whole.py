@@ -54,9 +54,9 @@ def test_requests_arriving_together_are_all_answered(tmp_path) -> None:
                                                       "Origin": base}})
             try:
                 with urllib.request.urlopen(request, timeout=120) as reply:
-                    statuses.append(reply.status)
+                    statuses.append((reply.status, path, ""))
             except urllib.error.HTTPError as error:
-                statuses.append(error.code)
+                statuses.append((error.code, path, error.read()[:400].decode("utf-8", "replace")))
         threads = [threading.Thread(target=ask, args=(p, b)) for p, b in posts.items()]
         threads += [threading.Thread(target=ask, args=(p,)) for p in gets]
         for t in threads: t.start()
@@ -65,4 +65,7 @@ def test_requests_arriving_together_are_all_answered(tmp_path) -> None:
         print(sorted(statuses))
     """)
     statuses = eval(out.strip().splitlines()[-1])  # noqa: S307 - our own print
-    assert len(statuses) == 7 and 500 not in statuses
+    # Which route, and what it said: one answered 500 once in a full run
+    # under load, and a bare list of codes could not say which.
+    failed = [(path, said) for code, path, said in statuses if code == 500]
+    assert len(statuses) == 7 and not failed, failed

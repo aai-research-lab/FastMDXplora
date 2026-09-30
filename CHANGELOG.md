@@ -1345,6 +1345,18 @@ its baseline after module fixtures are set up, and took the command line's.
 The fixture now puts the logger back itself, and a test says so. Found by the
 full suite, where a test of the command line's logging failed after it.
 
+### The GUI imports the modules this round's routes use before it serves
+
+**A test of a first page load, seven requests at once, answered 500 to one
+of them once in a full run under load** and passed in 24 bursts of eight
+fresh servers since. The modules 1131-1138 added to what the routes import
+on first use (`fastmdxplora.remedies`, the figure chip's, the fixes' and the
+Agent's tools, and the command line's parser the chip consults) are now
+imported ahead with the others, as 1104 did for the analyses, since two
+first requests importing them together can meet in the package's circular
+imports. The test now names the route that answered 500 and what it said,
+so a recurrence says where to look.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

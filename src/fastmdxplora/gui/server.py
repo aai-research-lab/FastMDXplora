@@ -79,6 +79,16 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.gui.runs_compared",
     "fastmdxplora.gui.selection",
     "fastmdxplora.gui.stopping_view",
+    # What the routes added since reach on first use: the command line's
+    # parser, which the config's command form and each figure's
+    # reproduction command consult, what would fix a study, and the
+    # Agent's tools.
+    "fastmdxplora.config.languages",
+    "fastmdxplora.cli.main",
+    "fastmdxplora.remedies",
+    "fastmdxplora.gui.figure_provenance",
+    "fastmdxplora.gui.fixes_view",
+    "fastmdxplora.agent.tools",
 )
 
 
