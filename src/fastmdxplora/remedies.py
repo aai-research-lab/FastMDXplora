@@ -36,7 +36,7 @@ from typing import Any
 
 from fastmdxplora.refusals import Disclosure, Refusal, code_for, known
 
-__all__ = ["Price", "Remedy", "remedies_of", "remedy_for"]
+__all__ = ["Price", "Remedy", "remedies_of", "remedy_for", "windows_again"]
 
 #: The command that carries a study on from where it stopped.
 RESUME = "fastmdx resume"
@@ -374,6 +374,108 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
     return remedies
 
 
+def windows_again(study: str | Path, windows: Any, *,
+                  force_constant: Any = None, duration_ns: Any = None) -> Remedy:
+    """Umbrella windows the person names, run again at settings they name.
+
+    Not an answer to a refusal: the person has looked at the windows and
+    wants some of them again, held harder or run longer. The values are
+    theirs; the software checks them, builds the command from the study's
+    own record (`resolved_config.yml`, which says what every window ran
+    with) and prices it at the study's own speed. Every other window is
+    kept. Refused where the study has no windows, a window is not one of
+    its own, or a value is not a positive number.
+    """
+    import math
+
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.umbrella import spring_unit
+
+    root = Path(study).expanduser().resolve()
+    batch = _read(root / "batch_manifest.json")
+    planned = {str(p.get("run_id")): p for p in (batch or {}).get("planned") or []
+               if isinstance(p, dict)} if isinstance(batch, dict) else {}
+    folders = {index: _folder_of(root, {"output_dir": None, "run_id": run_id})
+               for run_id, spec in planned.items()
+               if (index := _window_index(spec)) is not None}
+    if not folders:
+        raise StudyError("Windows are run again in an umbrella study, and this study "
+                         "has none.", code="config.option.inapplicable")
+    try:
+        indices = sorted({int(i) for i in (windows if isinstance(windows, (list, tuple))
+                                           else [windows])})
+    except (TypeError, ValueError):
+        raise StudyError("Name the windows to run again by their numbers.",
+                         code="config.option.wrong_type") from None
+    if not indices:
+        raise StudyError("Name the windows to run again.",
+                         code="config.option.missing_companion")
+    unknown = [i for i in indices if i not in folders]
+    if unknown:
+        raise StudyError(
+            f"This study has no window {', '.join(str(i) for i in unknown)}. "
+            f"Its windows are numbered {min(folders)} to {max(folders)}.",
+            code="config.option.not_permitted")
+    values: dict[str, float | None] = {}
+    for name, given in (("force constant", force_constant), ("length", duration_ns)):
+        if given is None or given == "":
+            values[name] = None
+            continue
+        try:
+            number = float(given)
+        except (TypeError, ValueError):
+            number = float("nan")
+        if not (math.isfinite(number) and number > 0):
+            raise StudyError(f"A window's {name} has to be a positive number; "
+                             f"{given!r} was given.", code="config.option.wrong_type")
+        values[name] = number
+    held, length = values["force constant"], values["length"]
+
+    source = root / "resolved_config.yml"
+    if not source.is_file():
+        config = batch.get("config")
+        source = Path(str(config)) if config else source
+    argv = ["explore", "-c", str(source), "--output", str(root)]
+    if length is not None:
+        argv += ["--simulate-duration-ns", f"{length:g}"]
+    argv += ["--rerun-window", *(str(i) for i in indices)]
+    if held is not None:
+        argv += ["--rerun-force-constant", f"{held:g}"]
+
+    first = next(iter(planned.values()), {})
+    variable = (((first.get("options") or {}).get("simulation") or {}).get("umbrella")
+                or {}).get("collective_variable")
+    named = _windows_named(indices)
+    fix = f"Run {named} again"
+    if held is not None:
+        fix += f", held at {held:g} {spring_unit(variable)}"
+    if length is not None:
+        fix += f"{',' if held is None else ''} with {_ns(length)} of production" + (
+            " each" if len(indices) > 1 else "")
+    fix += ", keeping every other window, and recombine the free energy."
+
+    production = equilibration = 0.0
+    seconds: float | None = 0.0
+    platform = ""
+    for index in indices:
+        planned_ns, again = _planned(folders[index])
+        ns = length if length is not None else planned_ns
+        production += ns
+        equilibration += again
+        rate, measured = _speed(folders[index], root)
+        platform = platform or measured
+        seconds = None if rate is None or seconds is None else seconds + rate * (ns + again)
+    return Remedy(
+        code="", where=named, why="Asked for.", fix=fix,
+        settings=tuple(s for s, v in (("simulation.umbrella.force_constant", held),
+                                      ("simulation.duration_ns", length)) if v is not None),
+        **_command(argv),
+        price=Price(production_ns=_round(production), equilibration_ns=_round(equilibration),
+                    runs=len(indices), seconds=seconds, platform=platform),
+        covers=tuple(sorted(run_id for run_id, spec in planned.items()
+                            if _window_index(spec) in indices)))
+
+
 def _counted(n: int, noun: str) -> str:
     return f"{n} {noun}{'' if n == 1 else 's'}"
 
@@ -691,10 +793,14 @@ def _covering(remedy: Remedy, names: list[str]) -> Remedy:
 
 
 def _planned(folder: Path | None) -> tuple[float, float]:
-    """(production, equilibration) in ns, as the run's own config plans them."""
+    """(production, equilibration) in ns, as the run's own config plans them,
+    resolved by the runner's own function: a run that names no length runs
+    the runner's default, not none, and its equilibration is a number of
+    steps, longer at a longer timestep."""
     import yaml
 
     from fastmdxplora.config.schema import SIMULATION
+    from fastmdxplora.simulation.runner import plan_stages
 
     sim: dict[str, Any] = {}
     if folder is not None:
@@ -704,21 +810,24 @@ def _planned(folder: Path | None) -> tuple[float, float]:
             sim = dict(config.get("simulation") or {})
         except (OSError, yaml.YAMLError, AttributeError):
             sim = {}
-    defaults = SIMULATION.defaults()
-    dt_ns = float(sim.get("timestep_fs") or defaults.get("timestep_fs") or 2.0) * 1e-6
-    if sim.get("production_steps"):
-        production = int(sim["production_steps"]) * dt_ns
-    else:
-        production = float(sim.get("duration_ns") or defaults.get("duration_ns") or 0.0)
 
-    def stage(steps: str, ns: str, default: float) -> float:
-        if sim.get(steps) is not None:
-            return int(sim[steps]) * dt_ns
-        given = sim.get(ns)
-        return float(default if given is None else given)
-    equilibration = (stage("nvt_steps", "nvt_duration_ns", 0.5)
-                     + stage("npt_steps", "npt_duration_ns", 1.0))
-    return production, equilibration
+    def number(key: str, kind: type) -> Any:
+        try:
+            return None if sim.get(key) is None else kind(sim[key])
+        except (TypeError, ValueError):
+            return None
+
+    timestep = number("timestep_fs", float) or float(
+        SIMULATION.defaults().get("timestep_fs") or 2.0)
+    steps = plan_stages(
+        duration_ns=number("duration_ns", float), timestep_fs=timestep,
+        nvt_steps=number("nvt_steps", int), npt_steps=number("npt_steps", int),
+        production_steps=number("production_steps", int),
+        nvt_duration_ns=number("nvt_duration_ns", float),
+        npt_duration_ns=number("npt_duration_ns", float))
+    per_ns = 1_000_000.0 / timestep
+    return (steps["production_steps"] / per_ns,
+            (steps["nvt_steps"] + steps["npt_steps"]) / per_ns)
 
 
 def _what_remains(folder: Path) -> tuple[float, float]:

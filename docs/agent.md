@@ -501,7 +501,7 @@ A reply is one of four things:
 | **A Config** | YAML. Validated, repaired if refused, shown with its actions. |
 | **A question** | When the request is short of something only you can supply, a structure most often. The Agent never invents one. Your next message answers it, and goes back with the request it answers. |
 | **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. Under it, each analysis the paragraph names, with the mean the study recorded for it (its error and unit, or that it is not a measurement); choosing one opens its figure on the Analysis page. The value is the record's, whatever the paragraph says, so a number can be checked where it is read. |
-| **An action** | One of: run, stop, run the fix, open viewer, open overview, open report, open builder, show config, download config. |
+| **An action** | One of: run, stop, run the fix, open viewer, open overview, open report, open builder, show config, download config; or `rerun windows` with the windows and the values you named. |
 
 ### Looking before it answers
 
@@ -599,6 +599,15 @@ replies `run the fix`: the first fix that is this software's own command, a
 resume or windows run again, is shown to you with its command and price, and
 runs when you say yes. A fix waiting on a choice only you can make, a setting
 to change or an install command is never run for you.
+
+In an umbrella study, name the windows and what they should run with
+(*rerun window 3 at 6000*, *windows 2 and 5 again for 4 ns*) and the Agent
+replies `rerun windows 3 at 6000`. The software reads the windows and the
+numbers from that line, checks them against the study, builds the command
+from the study's own record (`--rerun-window` with `--rerun-force-constant`
+or a length) and asks you, with the spring in its unit and the price at the
+study's speed. Every other window is kept. The Agent uses the values you gave;
+asked for a stiffer spring or a longer run without a number, it asks for one.
 
 ### Saying what "done" means before the run
 

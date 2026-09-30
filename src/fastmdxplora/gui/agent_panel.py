@@ -200,6 +200,16 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
             # Always asked: it starts work on this machine.
             answer["fix"] = _first_fix(runtime)
             answer["confirm"] = True
+        if proposal.action == "rerun windows":
+            # The windows and values the person named, read by a strict
+            # pattern and checked here against the study; the command is
+            # built from its record. Asked, with the price, or said why not.
+            from fastmdxplora.gui.fixes_view import windows_payload
+
+            said = windows_payload(getattr(runtime, "active_root", None), proposal.arguments)
+            answer["fix"] = said.get("fix")
+            answer["refused"] = said.get("reason")
+            answer["confirm"] = True
         return answer
     if proposal.answer:
         # A question was asked, not a study. A paragraph back, and under it

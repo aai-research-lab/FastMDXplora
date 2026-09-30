@@ -1384,6 +1384,26 @@ spring, is refused by name rather than recombined with the wrong one.
 `windows_held_at` in `fastmdxplora.simulation.umbrella` gives the same Config
 from Python.
 
+### Windows run again from the GUI at the values the person names
+
+**Told "rerun window 3 at 6000" or "windows 2 and 5 again for 4 ns", the
+Agent replies `DO: rerun windows 3 at 6000`**, and the software does the rest:
+it reads the windows and the numbers from that one line by a strict pattern,
+checks them against the study (its own windows, positive numbers), builds the
+command from the study's record (`--rerun-window` with `--rerun-force-constant`
+or `--simulate-duration-ns`), and asks the person with the spring in its unit
+and the price at the study's own speed. `POST /api/fix` takes the windows and
+values as well as a fix's number, on loopback only; the Agent uses only the
+values the person gave, and asks for one it was not given. A window run with
+settings the config no longer gives is now said in its variable's units
+(rad and kJ/mol/rad^2 for a torsion, where it said nm).
+
+**A fix was priced with equilibration and production the runner does not
+run.** The price read a run's lengths with defaults of its own: a run naming
+no length was priced at no production (the runner runs 2 ns), and
+equilibration at 1.5 ns whatever the timestep (the runner's is a number of
+steps: 3 ns at 4 fs). It now reads them through the runner's `plan_stages`.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

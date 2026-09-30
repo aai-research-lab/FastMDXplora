@@ -131,6 +131,11 @@ class Proposal:
     #: the answer, so a size or a time in it can be read against the
     #: software's own finding.
     looks: tuple[Any, ...] = ()
+    #: What the action is to be done with, where it takes anything: the
+    #: windows and the values for `rerun windows`. Numbers read from the
+    #: reply's one line by a strict pattern, checked again by the software
+    #: and confirmed by the person before anything runs.
+    arguments: dict[str, Any] | None = None
 
     @property
     def accepted(self) -> bool:
@@ -263,6 +268,12 @@ report, open builder, show config, download config. `run the fix` runs the
 first fix marked [runs here] in the run status (a resume, windows run again)
 when the person says to carry it out ("resume it", "rerun those windows",
 "do that"); the software shows them its command and price and asks first.
+In an umbrella study, told to run windows again at settings they name
+("rerun window 3 at 6000", "windows 2 and 5 again for 4 ns"), reply
+`DO: rerun windows 3 at 6000` or `DO: rerun windows 2 5 for 4 ns`: the
+windows by number, then `at <force constant>` and `for <length> ns` as they
+gave them. Use only the values they gave; if they asked for a stiffer spring
+or a longer run without a number, ask for it rather than choose one.
 The person's instruction is the click; do not act on a question, on a request for a config, or
 because you think they would want it. Never act twice in one reply. If
 they ask for a change and to run it in one message, write the config
@@ -455,14 +466,47 @@ def _action_in(raw: str) -> str | None:
     either -- a model that says "DO: run" and then keeps talking is not
     acting, it is narrating, and the person should see the narration.
     """
+    said = _do_line(raw)
+    return said if said in ACTIONS else None
+
+
+def _do_line(raw: str) -> str | None:
     lines = [line for line in (raw or "").splitlines() if line.strip()]
     if len(lines) != 1:
         return None
     line = lines[0].strip()
     if not line.upper().startswith("DO:"):
         return None
-    action = line[3:].strip().lower().rstrip(".")
-    return action if action in ACTIONS else None
+    return " ".join(line[3:].split()).lower().rstrip(".")
+
+
+_NUMBER = r"\d+(?:\.\d+)?(?:e[+-]?\d+)?"
+_WINDOWS = re.compile(r"rerun windows?\s+(?P<windows>\d+(?:\s*(?:,\s*and|,|and)?\s*\d+)*)"
+                      r"(?P<rest>.*)")
+_HELD_AT = rf"at\s+(?P<k>{_NUMBER})(?:\s*kj/mol(?:/(?:nm|rad)(?:\^2|\u00b2|2))?)?"
+_FOR = rf"for\s+(?P<ns>{_NUMBER})\s*ns"
+_SETTINGS = [re.compile(rf"(?:\s+{_HELD_AT})?(?:\s+{_FOR})?"),
+             re.compile(rf"(?:\s+{_FOR})?(?:\s+{_HELD_AT})?")]
+
+
+def _windows_in(raw: str) -> dict[str, Any] | None:
+    """`DO: rerun windows 3 5 at 6000 for 4 ns`, read as the windows and the
+    values, or None. The whole line has to be that and nothing else: a
+    number is read only where the pattern puts one."""
+    said = _do_line(raw)
+    found = _WINDOWS.fullmatch(said or "")
+    if found is None:
+        return None
+    for pattern in _SETTINGS:
+        rest = pattern.fullmatch(found["rest"])
+        if rest is not None:
+            break
+    else:
+        return None
+    windows = [int(n) for n in re.findall(r"\d+", found["windows"])]
+    return {"windows": sorted(set(windows)),
+            "force_constant": float(rest["k"]) if rest["k"] else None,
+            "duration_ns": float(rest["ns"]) if rest["ns"] else None}
 
 def _answer_in(raw: str) -> str | None:
     """A plain answer, if the reply is one: a first line starting SAY:."""
@@ -608,6 +652,10 @@ def propose_config(
         if act:
             return Proposal(config=None, attempts=tuple(attempts), action=act,
                             looks=looked())
+        again = _windows_in(raw)
+        if again is not None:
+            return Proposal(config=None, attempts=tuple(attempts), action="rerun windows",
+                            arguments=again, looks=looked())
         said = _answer_in(raw)
         if said:
             return Proposal(config=None, attempts=tuple(attempts), answer=said,

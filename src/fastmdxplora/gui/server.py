@@ -89,6 +89,7 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.gui.figure_provenance",
     "fastmdxplora.gui.fixes_view",
     "fastmdxplora.agent.tools",
+    "fastmdxplora.simulation.umbrella",
 )
 
 
@@ -907,9 +908,16 @@ def make_handler(
                 # Running a fix starts work on this machine, so it needs the
                 # machine's trust, which it has only on loopback, like every
                 # route not listed open. The page asks the person first.
+                asked = payload or {}
+                if "windows" in asked:
+                    # Windows the person named, at the values they named.
+                    self._send_json(app_runtime.run_windows_again(
+                        asked.get("windows"), force_constant=asked.get("force_constant"),
+                        duration_ns=asked.get("duration_ns"),
+                        dashboard_url=self.headers.get("Origin")))
+                    return
                 self._send_json(app_runtime.run_a_fix(
-                    (payload or {}).get("index"),
-                    dashboard_url=self.headers.get("Origin")))
+                    asked.get("index"), dashboard_url=self.headers.get("Origin")))
                 return
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import write_conversation

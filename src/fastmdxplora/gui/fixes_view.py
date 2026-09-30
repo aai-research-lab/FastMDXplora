@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-__all__ = ["study_of", "fixes_payload", "runnable"]
+__all__ = ["study_of", "fixes_payload", "runnable", "windows_payload"]
 
 
 def study_of(root: Any) -> Path | None:
@@ -54,3 +54,26 @@ def fixes_payload(root: Any) -> dict[str, Any]:
         record["price_said"] = remedy.price.as_text() if remedy.price else ""
         fixes.append(record)
     return {"ok": True, "study": str(study), "fixes": fixes}
+
+
+def windows_payload(root: Any, arguments: dict[str, Any] | None) -> dict[str, Any]:
+    """Umbrella windows the person named, as the page asks about them: what
+    runs, its command and price, and the request that runs it; or why not."""
+    from fastmdxplora.refusals import StudyError, refusal_of
+    from fastmdxplora.remedies import windows_again
+
+    asked = dict(arguments or {})
+    study = study_of(root)
+    if study is None or not study.is_dir():
+        return {"ok": False, "reason": "No study is open."}
+    try:
+        remedy = windows_again(study, asked.get("windows"),
+                               force_constant=asked.get("force_constant"),
+                               duration_ns=asked.get("duration_ns"))
+    except StudyError as exc:
+        return {"ok": False, "reason": refusal_of(exc).message}
+    record = remedy.as_record()
+    record["price_said"] = remedy.price.as_text() if remedy.price else ""
+    record["request"] = {key: asked.get(key)
+                         for key in ("windows", "force_constant", "duration_ns")}
+    return {"ok": True, "fix": record}

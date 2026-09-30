@@ -1037,11 +1037,35 @@ def windows_off_the_plan(directories: "dict[int, Any]",
             continue
         if not (math.isclose(centre, window.centre, rel_tol=1e-9, abs_tol=1e-9)
                 and math.isclose(force, window.force_constant, rel_tol=1e-9)):
+            at = variable_unit(plan.collective_variable)
+            at = f" {at}" if at else ""
             differ.append((int(index),
-                f"window {index} ran at {centre:g} nm with {force:g} "
-                f"kJ/mol/nm^2, and the config gives it {window.centre:g} nm "
-                f"with {window.force_constant:g}"))
+                f"window {index} ran at {centre:g}{at} with {force:g} "
+                f"{spring_unit(plan.collective_variable)}, and the config gives "
+                f"it {window.centre:g}{at} with {window.force_constant:g}"))
     return differ
+
+
+#: The unit each variable is measured in: lengths in nm, angles in rad, and
+#: a count or a fraction in none.
+_VARIABLE_UNITS = {"ligand_distance": "nm", "ligand_rmsd": "nm", "radius_of_gyration": "nm",
+                   "membrane_depth": "nm", "torsion": "rad", "angle": "rad",
+                   "coordination": "", "q": ""}
+
+
+def variable_unit(variable: Any) -> str | None:
+    """The unit a collective variable is measured in, "" for one without,
+    or None for a variable not known here."""
+    return _VARIABLE_UNITS.get(str(variable or "").lower())
+
+
+def spring_unit(variable: Any) -> str:
+    """The unit of an umbrella window's force constant on this variable:
+    kJ/mol per unit of the variable squared."""
+    unit = variable_unit(variable)
+    if unit is None:
+        return "kJ/mol per unit of the variable squared"
+    return f"kJ/mol/{unit}^2" if unit else "kJ/mol"
 
 
 def wall_bias_where_the_bound_state_is(

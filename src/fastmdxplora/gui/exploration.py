@@ -1352,6 +1352,41 @@ class DashboardRuntime:
                                   study, dashboard_url)
             return {"ok": True, "error": None, "fix": remedy.as_record(), **started}
 
+    def run_windows_again(self, windows: Any, *, force_constant: Any = None,
+                          duration_ns: Any = None,
+                          dashboard_url: str | None = None) -> dict[str, Any]:
+        """Run umbrella windows the person names again, at the values they
+        name, in the study on screen (`remedies.windows_again`).
+
+        The command is built from the study's record and the values checked
+        as numbers, never taken as text; the page asks the person first,
+        with the price.
+        """
+        import sys
+
+        from fastmdxplora.gui.fixes_view import study_of
+        from fastmdxplora.refusals import StudyError, refusal_of
+        from fastmdxplora.remedies import windows_again
+
+        with self.lock:
+            self._refresh_process()
+            if self.process is not None and self.process.poll() is None:
+                return {"ok": False,
+                        "error": "A FastMDXplora workflow is already running."}
+            study = study_of(self.active_root)
+            if study is None or not study.is_dir():
+                return {"ok": False, "error": "No study is open."}
+            try:
+                remedy = windows_again(study, windows, force_constant=force_constant,
+                                       duration_ns=duration_ns)
+            except StudyError as exc:
+                found = refusal_of(exc)
+                return {"ok": False, "error": found.message, "code": found.code}
+            self.data_stale = False
+            started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
+                                  study, dashboard_url)
+            return {"ok": True, "error": None, "fix": remedy.as_record(), **started}
+
     def stop(self) -> dict[str, Any]:
         with self.lock:
             self._refresh_process()

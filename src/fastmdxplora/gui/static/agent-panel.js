@@ -632,11 +632,12 @@
          * asked about first. The server says which from what they typed;
          * without its word, ask. */
         var confirmRunFirst = data.action === "run" && data.confirm !== false;
-        if (data.action === "run the fix") {
+        if (data.action === "run the fix" || data.action === "rerun windows") {
           /* Asked, not done, and not kept as waiting: a reloaded thread
            * asks the Agent again rather than run a fix it no longer shows. */
           transcript.push({ role: "agent", kind: "question",
-                            text: data.fix ? fixQuestion(data.fix) : "Nothing here to run." });
+                            text: data.fix ? fixQuestion(data.fix)
+                                           : data.refused || "Nothing here to run." });
         } else if (confirmRunFirst) {
           transcript.push({ role: "agent", kind: "question", text: RUN_QUESTION });
         } else if (data.action === "stop") {
@@ -650,7 +651,8 @@
           transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
         }
         persist();
-        act(data.action, data.where || "", box, r, confirmRunFirst, data.fix || null);
+        act(data.action, data.where || "", box, r, confirmRunFirst, data.fix || null,
+            data.refused || "");
         scrollToEnd();
         return;
       }
@@ -725,7 +727,18 @@
       .test(typed);
   }
 
-  function act(action, where, box, r, confirmFirst, fix) {
+  function act(action, where, box, r, confirmFirst, fix, refused) {
+    if (action === "rerun windows") {
+      /* The windows and values the person named, checked by the server
+       * against the study; asked with the price, or said why not. */
+      if (!fix) {
+        note(box, refused || "Those windows cannot be run again here.");
+        return;
+      }
+      fixPending = fix;
+      note(box, fixQuestion(fix));
+      return;
+    }
     if (action === "run the fix") {
       /* The fix is the study's record's, not the reply's: its command and
        * its price, shown before anything runs. Always asked. */
@@ -798,7 +811,10 @@
   }
 
   function fixQuestion(fix) {
-    return "Run " + fix.command + "?" +
+    /* Windows named by the person are said as what will run, with the
+     * values; a fix from the record as its command. */
+    var what = fix.request ? String(fix.fix || "").replace(/\.$/, "") : "Run " + fix.command;
+    return what + "?" +
       (fix.price_said ? " It costs " + fix.price_said + "." : "") + " Say yes.";
   }
 
@@ -814,13 +830,14 @@
     fetch("/api/fix", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ index: fix.index })
+      body: JSON.stringify(fix.request || { index: fix.index })
     }).then(function (res) { return res.json(); }).then(function (d) {
       var started = d && d.ok;
       var said = started ? "Started: " + fix.command + "." : (d && d.error) || "Could not start it.";
       note(box, said, started);
       history.push({ role: "agent", text: said });
-      transcript.push(started ? { role: "agent", kind: "action", action: "run the fix", where: "" }
+      transcript.push(started ? { role: "agent", kind: "action",
+                                  action: fix.request ? "rerun windows" : "run the fix", where: "" }
                               : { role: "agent", kind: "error", text: said });
       persist();
       if (started && window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
