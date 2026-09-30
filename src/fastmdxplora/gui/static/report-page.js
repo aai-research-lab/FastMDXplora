@@ -90,6 +90,29 @@
         a.rel = "noopener";
       }
     });
+    chipFigures(doc, data.figure_provenance || {});
+  }
+
+  /* Under each figure an analysis drew, the chip the Analysis page gives
+   * it: what made it and the command that draws it again. The records are
+   * the study's (figure_provenance.py); the chip and its panel are the
+   * Analysis page's own, from dashboard.js. */
+  var provenance = {};
+  function chipFigures(doc, found) {
+    provenance = found;
+    var dashboard = window.FastMDXDashboard;
+    if (!dashboard || !dashboard.figureChip) return;
+    Array.prototype.forEach.call(doc.querySelectorAll("img"), function (img) {
+      var named = /\/analysis\/([a-z][a-z0-9_]*)\/[^\/?#]+\.png(?:[?#]|$)/.exec(img.src || "");
+      var chip = named ? dashboard.figureChip(named[1], provenance[named[1]]) : "";
+      if (!chip) return;
+      var block = img.closest("p, figure") || img;
+      var made = document.createElement("div");
+      made.className = "report-figure-made";
+      made.innerHTML = chip + '<div class="figure-provenance" hidden></div>';
+      block.parentNode.insertBefore(made, block.nextSibling);
+    });
+    dashboard.listenForFigureChips(doc, function (name) { return provenance[name]; });
   }
 
   function load() {

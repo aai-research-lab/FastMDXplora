@@ -986,8 +986,7 @@
     return String(version || "").split("+")[0].replace(/\.dev\d+$/, "");
   }
 
-  function provenanceChip(name) {
-    const made = (state.figureProvenance || {})[name];
+  function provenanceChip(name, made = (state.figureProvenance || {})[name]) {
     if (!made) return "";
     const label = made.version ? `v${shortVersion(made.version)}` : "how it was made";
     return `<button type="button" class="figure-chip" data-provenance="${escapeAttr(name)}" aria-expanded="false" title="What made this figure, and how to make it again">${escapeHTML(label)}</button>`;
@@ -1049,7 +1048,11 @@
         : "");
   }
 
-  function listenForProvenance(host) {
+  /* A figure's chip and its panel sit together in an Analysis card, or,
+   * on the Report page, in the block under the figure (report-page.js). */
+  const FIGURE_HOLDER = ".analysis-card, .report-figure-made";
+
+  function listenForProvenance(host, lookup = (name) => (state.figureProvenance || {})[name]) {
     if (!host || host.dataset.provenanceListens) return;
     host.dataset.provenanceListens = "1";
     host.addEventListener("click", (event) => {
@@ -1058,9 +1061,9 @@
       const width = event.target.closest(".figure-provenance-widths [data-width]");
       if (width) {
         const panel = width.closest(".figure-provenance");
-        const card = width.closest(".analysis-card");
+        const card = width.closest(FIGURE_HOLDER);
         const name = card?.querySelector(".figure-chip")?.dataset.provenance;
-        const made = (state.figureProvenance || {})[name];
+        const made = lookup(name);
         const said = panel?.querySelector(".figure-provenance-command");
         if (!made || !said) return;
         said.textContent = width.dataset.width
@@ -1071,9 +1074,9 @@
         return;
       }
       if (chip) {
-        const card = chip.closest(".analysis-card");
+        const card = chip.closest(FIGURE_HOLDER);
         const panel = card && card.querySelector(".figure-provenance");
-        const made = (state.figureProvenance || {})[chip.dataset.provenance];
+        const made = lookup(chip.dataset.provenance);
         if (!panel || !made) return;
         const open = panel.hidden;
         if (open) panel.innerHTML = provenanceHtml(made);
@@ -1774,5 +1777,10 @@
     on(eventName, handler) {
       window.addEventListener(`dashboard:${eventName}`, (event) => handler(event.detail));
     },
+    /* A figure's chip, for the Report page's figures: the chip for a
+     * record, and the listener that opens it, given how to find a record
+     * by its analysis's name. */
+    figureChip: (name, made) => provenanceChip(name, made),
+    listenForFigureChips: (host, lookup) => listenForProvenance(host, lookup),
   };
 }());

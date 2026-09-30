@@ -1425,6 +1425,14 @@ tool each question calls for. The questions, the tolerances and how a reply is
 judged are fixed in `preregistration/agent-looks.md` before any reply was
 seen. Every reply is kept in the output file.
 
+### The Report page's figures say what made them
+
+**The chip 1135 put on each Analysis figure is now under each of the same
+figures on the Report page**: the release, the packages, the frames, the
+selection and options, and the command that draws it again, with the two
+column widths. One chip and one panel, from the same record
+(`figure_provenance`, now also in the report's payload).
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -1329,7 +1329,8 @@ button {
 
 /* What made a figure (dashboard.js, figure_provenance.py): a chip at the
    end of the footer, and what it opens under it. */
-.analysis-card .figure-chip {
+.analysis-card .figure-chip,
+.report-figure-made .figure-chip {
     margin-left: auto;
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
@@ -1341,13 +1342,18 @@ button {
     cursor: pointer;
 }
 .analysis-card .figure-chip:hover,
-.analysis-card .figure-chip[aria-expanded="true"] { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
+.analysis-card .figure-chip[aria-expanded="true"],
+.report-figure-made .figure-chip:hover,
+.report-figure-made .figure-chip[aria-expanded="true"] { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
 .analysis-card .figure-provenance {
     padding: 10px 14px 14px;
     border-top: 1px solid var(--border-subtle);
     font-size: var(--text-xs);
     color: var(--text-secondary);
 }
+/* On the Report page: the chip under the figure, its panel under the chip. */
+.report-figure-made { margin: -4px 0 14px; font-size: var(--text-xs); }
+.report-figure-made .figure-provenance { margin-top: 8px; padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-secondary); }
 .figure-provenance-rows { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0 0 8px; }
 .figure-provenance-rows dt { color: var(--text-muted); }
 .figure-provenance-rows dd { margin: 0; overflow-wrap: anywhere; }

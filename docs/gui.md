@@ -333,7 +333,8 @@ numbers; where a setting has no flag, a config is given instead. Two buttons
 give the same command drawing it at a journal's column width instead, one
 column (89 mm) or two (183 mm), with its type sized for that width
 (`analysis.figure_width`). A figure made by another release says so, since a
-rerun here is drawn by this one.
+rerun here is drawn by this one. The same figures in the report carry the
+same chip on the Report page, under each figure.
 
 **There is no comparison view.** A campaign's cross-run comparison is written
 to `comparison/` at the campaign root, by the batch layer once every run has

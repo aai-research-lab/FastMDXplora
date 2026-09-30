@@ -63,6 +63,15 @@ def report_payload(root: Path | str) -> dict[str, Any]:
         if (report_dir / name).is_file():
             downloads[key] = f"/artifacts/report/{name}?download=1"
 
+    # What made each analysis's figures, for a chip under each figure the
+    # report shows, as the Analysis page has one (figure_provenance.py).
+    try:
+        from fastmdxplora.gui.figure_provenance import figure_provenance
+
+        provenance = figure_provenance(base)
+    except Exception:  # noqa: BLE001 - the report stands without its chips
+        provenance = {}
+
     return {
         "ok": True,
         "html": html,
@@ -70,6 +79,7 @@ def report_payload(root: Path | str) -> dict[str, Any]:
         "downloads": downloads,
         "generated": _generated_line(text),
         "rendered": rendered,
+        "figure_provenance": provenance,
     }
 
 

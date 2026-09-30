@@ -1,0 +1,88 @@
+"""The Report page's figures carry the chip the Analysis page gives them.
+
+1135 put a chip on each figure of the Analysis page: the release, the
+packages, the frames, the selection and options, and the command that
+draws it again. The same figures in the report, on the Report page, had
+none. Each figure an analysis drew now has the chip under it, the same
+chip and panel, from the same record.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from tests.test_a_figure_says_what_made_it import _trajectory
+
+md = pytest.importorskip("mdtraj")
+
+
+@pytest.fixture(scope="module")
+def study(tmp_path_factory) -> Path:
+    import logging
+
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.utils import logging as fastmdx_logging
+
+    base = tmp_path_factory.mktemp("reported")
+    dcd, pdb = _trajectory(base / "input")
+    root = base / "study"
+    logger = logging.getLogger("fastmdx")
+    kept = (logger.propagate, logger.level, list(logger.handlers),
+            fastmdx_logging._console_handler)
+    try:
+        assert main(["explore", "-s", str(pdb), "--output", str(root),
+                     "--include-phase", "analysis", "report", "--analyze-trajectory", str(dcd),
+                     "--analyze-topology", str(pdb), "--analyze-analyses", "rmsd", "rg",
+                     "--analyze-stride", "2"]) == 0
+    finally:
+        logger.propagate = kept[0]
+        logger.setLevel(kept[1])
+        logger.handlers[:] = kept[2]
+        fastmdx_logging._console_handler = kept[3]
+    return root
+
+
+def test_the_report_is_given_what_made_each_figure(study) -> None:
+    from fastmdxplora.gui.report_page import report_payload
+
+    page = report_payload(study)
+    assert page["ok"] and sorted(page["figure_provenance"]) == ["rg", "rmsd"]
+    assert "../analysis/rmsd/" in (study / "report" / "report.md").read_text(encoding="utf-8")
+
+
+def test_each_figure_in_the_report_carries_its_chip(study) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#report", wait_until="domcontentloaded")
+            chip = '#report-document .report-figure-made .figure-chip[data-provenance="rmsd"]'
+            page.wait_for_selector(chip)
+            chips = page.locator("#report-document .report-figure-made .figure-chip").count()
+            page.locator(chip).first.click()
+            panel = page.locator(chip).first.locator(
+                "xpath=ancestor::div[contains(@class,'report-figure-made')]"
+                "//div[contains(@class,'figure-provenance')]").first
+            panel.wait_for(state="visible")
+            said = panel.text_content()
+            panel.locator('.figure-provenance-widths [data-width="single_column"]').click()
+            narrow = panel.locator(".figure-provenance-command").text_content()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert chips >= 2
+    assert "Made by" in said and "30 frames, every 2nd frame" in said
+    assert "fastmdx explore " in said and "--analyze-analyses rmsd" in said
+    assert "--analyze-figure-width single_column" in narrow
+    assert errors == []
