@@ -1448,6 +1448,16 @@ the atoms' selections, each checked to name one atom
 (`GET /api/measure-over-frames`). Run, it writes MDTraj's distance at every
 frame.
 
+### A plan says a membrane's box and a ligand named by its residue
+
+**The plan said a membrane study would be built in a dodecahedron**, the
+`box_shape` default, which setup does not use for a membrane: its box is
+rectangular, built from whole patches of bilayer. It now says so. **A ligand
+named only by its residue in the structure** (`setup.ligand_name`, with no
+file) was not in the plan at all; it is now said, and a file and a residue
+name together are said together. Found writing the builder's starting
+points.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -102,6 +102,22 @@ class TestThePlan:
         plan = _lines({"systems": [{"system": "1AFO"}], "setup": {"membrane": membrane}})
         assert (plan.get("Membrane") or {}).get("value") == said
 
+    def test_a_membranes_box_is_as_setup_builds_it(self) -> None:
+        """Setup builds a membrane's box rectangular, from whole patches of
+        bilayer; the plan said the dodecahedron `box_shape` defaults to."""
+        plan = _lines({"systems": [{"system": "1AFO"}], "setup": {"membrane": "POPC"}})
+        assert plan["Solvent"]["value"] == (
+            "rectangular box of whole bilayer patches, 1 nm padding, 0.15 M Na+/Cl-")
+
+    @pytest.mark.parametrize("setup,said", [
+        ({"ligand_name": "BNZ"}, "BNZ, as the structure holds it"),
+        ({"ligand": "benzene.sdf", "ligand_name": "BNZ"}, "benzene.sdf (BNZ)"),
+        ({"ligand": "benzene.sdf"}, "benzene.sdf"),
+    ])
+    def test_a_ligand_however_it_is_named(self, setup, said) -> None:
+        plan = _lines({"systems": [{"system": "181L"}], "setup": setup})
+        assert plan["Ligand"]["value"] == said
+
     def test_analyses_named_in_one_string(self) -> None:
         plan = _lines({"systems": [{"system": "1UBQ"}], "analysis": {"include": "rmsd, rg"}})
         assert plan["Analyses"]["value"] == "rmsd, rg"

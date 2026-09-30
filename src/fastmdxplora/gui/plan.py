@@ -60,7 +60,11 @@ def plan_of(config: dict[str, Any]) -> list[dict[str, Any]]:
         salt, c = _value(setup, "setup", "ion_concentration_M")
         positive, _ = _value(setup, "setup", "ion_positive")
         negative, _ = _value(setup, "setup", "ion_negative")
-        line("Solvent", f"{shape} box, {_number(padding)} nm padding, "
+        # A membrane's box is rectangular, built from whole bilayer patches;
+        # `box_shape` is not used for one, so it is not said.
+        box = "rectangular box of whole bilayer patches" if setup.get("membrane") \
+            else f"{shape} box"
+        line("Solvent", f"{box}, {_number(padding)} nm padding, "
                         f"{_number(salt)} M {positive}/{negative}", default=not (a or b or c))
         states = setup.get("residue_states")
         if isinstance(states, dict) and states:
@@ -69,8 +73,14 @@ def plan_of(config: dict[str, Any]) -> list[dict[str, Any]]:
             membrane = setup["membrane"]
             lipid = membrane.get("lipid") if isinstance(membrane, dict) else membrane
             line("Membrane", f"{lipid} bilayer" if lipid else "a bilayer")
-        if setup.get("ligand"):
+        # The ligand is named by its file, its residue name in the structure,
+        # or both; a ligand named only by residue was not said at all.
+        if setup.get("ligand") and setup.get("ligand_name"):
+            line("Ligand", f"{setup['ligand']} ({setup['ligand_name']})")
+        elif setup.get("ligand"):
             line("Ligand", str(setup["ligand"]))
+        elif setup.get("ligand_name"):
+            line("Ligand", f"{setup['ligand_name']}, as the structure holds it")
 
     if "simulation" in phases:
         temperature, t = _value(simulation, "simulation", "temperature_K")
