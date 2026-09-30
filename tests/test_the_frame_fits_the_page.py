@@ -87,7 +87,8 @@ class TestTheNavigation:
             "() => [...document.querySelectorAll('.sidebar-nav .nav-heading')]"
             ".map(h => h.textContent)")
         page.context.close()
-        assert order == STUDY_NAV + NEW_NAV
+        # Every study first, then the one on screen, then the ways to start one.
+        assert order == ["studies"] + STUDY_NAV + NEW_NAV
         assert headings == ["Study", "New study"]
 
     def test_every_entry_is_in_a_short_window(self, browser, studies) -> None:
@@ -215,7 +216,7 @@ class TestAPhone:
         assert facts["title"], "the page's own heading is not on the screen"
         assert facts["wider"] <= 0
         assert facts["panel"] == 0
-        assert facts["nav"] == len(STUDY_NAV + NEW_NAV)
+        assert facts["nav"] == len(["studies"] + STUDY_NAV + NEW_NAV)
 
     def test_the_navigation_goes_where_it_says(self, browser, studies) -> None:
         page = _open(browser, studies["finished"], width=390, height=844)

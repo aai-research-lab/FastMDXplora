@@ -139,6 +139,9 @@
       if (page === "overview") emit("live-page-opened", {});
       if (page === "viewer") emit("viewer-page-opened", {});
       if (page === "analysis" || page === "files") emit("results-page-opened", {});
+      // Any page opened, for a page's own script to load what it shows:
+      // the Report page listened for this and it was never sent.
+      emit("navigate", {page});
     });
   }
 

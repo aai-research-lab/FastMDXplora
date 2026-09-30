@@ -186,6 +186,10 @@
            then the two ways to start another. Above the progress block, so
            the navigation is never the part a short window cuts off. -->
       <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
+        <a href="#studies" class="nav-link" data-view-link="studies">
+          <span class="nav-icon" aria-hidden="true"></span>
+          <span>All studies</span>
+        </a>
         <div class="nav-heading" id="nav-heading-study">Study</div>
         <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true">
           <span class="nav-icon" aria-hidden="true"></span>
@@ -262,6 +266,31 @@
         <!-- Dashboard-first simulation builder -->
         <!-- Shown until the router knows better: with nothing running, the
              thing to do is start something. -->
+        <!-- Every study in the workspace, as cards, and two compared
+             (workspace.py, studies.js). -->
+        <section class="page" data-page="studies" hidden>
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Studies</h1>
+              <div class="page-subtitle" id="studies-where">The studies in your workspace.</div>
+            </div>
+            <div class="page-header-actions">
+              <input type="search" class="studies-search" id="studies-search" autocomplete="off"
+                     placeholder="Search by name, structure, kind or state" aria-label="Search the studies">
+              <button type="button" class="ghost-btn" id="studies-look-in">Look in another folder</button>
+              <input type="hidden" id="studies-path">
+            </div>
+          </div>
+          <div class="studies-compare-bar" id="studies-compare-bar" hidden>
+            <span class="muted small" id="studies-chosen-said"></span>
+            <button type="button" class="primary-btn" id="studies-compare" disabled>Compare</button>
+            <button type="button" class="ghost-btn" id="studies-clear">Clear</button>
+          </div>
+          <div class="card studies-compared" id="studies-compared" hidden></div>
+          <div class="studies-grid" id="studies-grid" role="list"></div>
+          <p class="muted studies-empty" id="studies-empty" hidden></p>
+        </section>
+
         <section class="page" data-page="run">
           <div class="page-header">
             <div>
@@ -1205,6 +1234,7 @@
   <script src="/static/runs-compared.js"></script>
   <script src="/static/stopping.js"></script>
   <script src="/static/fixes.js"></script>
+  <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
 </body>
 </html>

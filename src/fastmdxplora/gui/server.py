@@ -91,6 +91,8 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.agent.tools",
     "fastmdxplora.simulation.umbrella",
     "fastmdxplora.gui.measure",
+    "fastmdxplora.gui.workspace",
+    "fastmdxplora.config.diff",
 )
 
 
@@ -576,6 +578,48 @@ def make_handler(
                         listing["parent"] = None
                     listing["home"] = str(hosting.workspace)
                 self._send_json(listing)
+                return
+            if path in ("/api/studies", "/api/studies-compared", "/api/study-thumbnail"):
+                # The studies in the workspace, two of them compared, and a
+                # figure for a card: read from the studies' records, inside
+                # the workspace when hosted, loopback otherwise, as browsing
+                # folders is.
+                from fastmdxplora.gui import workspace
+
+                query = parse_qs(parsed.query)
+
+                def one(key: str) -> str:
+                    return (query.get(key) or [""])[0]
+
+                if path == "/api/studies":
+                    named = self._path_for(one("path") or str(app_runtime.exploration_root))
+                    if named is None:
+                        return
+                    self._send_json(workspace.studies_in(named))
+                    return
+                if path == "/api/studies-compared":
+                    first, second = self._path_for(one("a")), self._path_for(one("b"))
+                    if first is None or second is None:
+                        return
+                    self._send_json(workspace.studies_compared(first, second))
+                    return
+                named = self._path_for(one("path"))
+                if named is None:
+                    return
+                # `is_study` is the module's: imported here, it would be a
+                # local of the whole handler, unbound on every other route.
+                figure = workspace.thumbnail_of(named) if is_study(Path(named)) else None
+                if figure is None:
+                    self.send_error(404, "Not found")
+                    return
+                data = figure.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             if path == "/api/inspect-directory":
                 # Someone with a trajectory already should be able to point at

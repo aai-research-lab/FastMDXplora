@@ -3845,3 +3845,43 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .starter-what { font-size: var(--text-xs); color: var(--text-secondary); }
 .starter-facts { font-size: var(--text-2xs); color: var(--text-muted); }
 .starters-note:empty { display: none; }
+
+/* Every study in the workspace (studies.js, workspace.py). */
+.studies-search {
+    min-width: 280px; min-height: 36px; padding: 7px 10px;
+    color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 8px;
+    background: color-mix(in srgb, var(--text-primary) 2.8%, transparent); font: inherit;
+    font-size: var(--text-sm); outline: none;
+}
+.studies-search:focus { border-color: color-mix(in srgb, var(--accent-cyan) 62%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-cyan) 8%, transparent); }
+.studies-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.study-card { display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 12px; overflow: hidden; background: var(--panel-glass); box-shadow: var(--shadow-card); }
+.study-thumb { height: 120px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--text-primary) 4%, transparent); border-bottom: 1px solid var(--border-subtle); }
+.study-thumb img { width: 100%; height: 100%; object-fit: contain; background: #ffffff; }
+.study-thumb-none { font-family: var(--font-mono); font-size: var(--text-lg); color: var(--text-muted); }
+.study-body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px 14px; font-size: var(--text-xs); }
+.study-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.study-name { font-weight: 600; font-size: var(--text-sm); color: var(--text-primary); overflow-wrap: anywhere; }
+.study-state { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-primary); color: var(--text-secondary); white-space: nowrap; }
+.study-card[data-state="completed"] .study-state { color: var(--status-completed); border-color: color-mix(in srgb, var(--status-completed) 45%, transparent); }
+.study-card[data-state="running"] .study-state { color: var(--status-live); border-color: color-mix(in srgb, var(--status-live) 45%, transparent); }
+.study-card[data-state="failed"] .study-state { color: var(--status-error); border-color: color-mix(in srgb, var(--status-error) 45%, transparent); }
+.study-card[data-state="stopped"] .study-state,
+.study-card[data-state="incomplete"] .study-state { color: var(--status-stale); border-color: color-mix(in srgb, var(--status-stale) 45%, transparent); }
+.study-what { color: var(--text-secondary); }
+.study-means { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; margin: 2px 0 0; }
+.study-means dt { color: var(--text-muted); }
+.study-means dd { margin: 0; color: var(--text-primary); }
+.study-free-energy { color: var(--text-secondary); }
+.study-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.study-pick { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); cursor: pointer; }
+.studies-compare-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.studies-compare-bar[hidden], .studies-compared[hidden], .studies-empty[hidden] { display: none; }
+.studies-compared { padding: 16px 18px; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.studies-compared .card-header { padding: 0; display: flex; justify-content: space-between; align-items: center; }
+.studies-compared-title { margin: 8px 0 0; font-size: var(--text-sm); }
+.studies-compared table { width: 100%; table-layout: fixed; }
+.studies-compared td, .studies-compared th { overflow-wrap: anywhere; vertical-align: top; }
+.studies-settings td:first-child, .studies-settings th:first-child { width: 34%; }
+.studies-more { align-self: flex-start; }
+.studies-means tr.is-resolved td { color: var(--accent-orange); }

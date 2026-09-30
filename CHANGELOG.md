@@ -1482,6 +1482,25 @@ will run. Chosen, it is loaded into the form as any Config is, and the note
 says what to change first. Folded, the gallery stays folded
 (`gui/starters.py`, in the schema payload).
 
+### Every study in the workspace, and two compared
+
+**The GUI showed one study at a time**, and another was opened by walking to
+its folder in the picker. **All studies**, at the top of the sidebar, finds
+the studies under the workspace, or a folder chosen, and says each in a card:
+its structure, the kind of study (one run, replicas, a sweep, umbrella
+windows, a trajectory analysed), where it stands (completed, running,
+stopped, failed), when it began, the means it recorded with their errors,
+whether an umbrella study's free energy was recombined or refused, and a
+figure it drew. Search narrows the cards as typed; **Open** makes one the
+study on screen. Two chosen are **compared**: the settings in which they
+differ, defaults filled in, as `fastmdx diff` says them, and the means both
+recorded, a difference marked resolved only past twice their combined
+standard error, as the Analysis page marks runs of one study. Everything is
+read from the studies' records (`gui/workspace.py`); the routes are loopback
+only, as browsing folders is, and inside the workspace when hosted. The page
+scripts are now told when a page opens (`navigate`), which the Report page
+already listened for and was never sent.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
