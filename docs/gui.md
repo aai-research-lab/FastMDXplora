@@ -312,6 +312,17 @@ fastmdx gui --output ~/runs/my_run
 
 Re-run the `rsync` as often as you like; the GUI picks up whatever is there.
 
+**Each figure says what made it.** The chip at the foot of a figure on the
+Analysis page names the release that drew it; opened, it says the packages
+whose versions decide its numbers (MDTraj, NumPy, SciPy, Matplotlib), when
+it was made, the trajectory and how many frames it rests on, the selection
+and the options, and the command that draws it again: the one analysis,
+over the same frames with the same selection and options, into a folder of
+its own beside the study, so nothing of the study is overwritten. The
+command is the command line's own rendering, and run, it writes the same
+numbers; where a setting has no flag, a config is given instead. A figure
+made by another release says so, since a rerun here is drawn by this one.
+
 **There is no comparison view.** A campaign's cross-run comparison is written
 to `comparison/` at the campaign root, by the batch layer once every run has
 finished, and read there — see

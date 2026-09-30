@@ -1270,6 +1270,22 @@ GPU platforms can differ in the last bit of a force unless asked for
 deterministic forces; where none was given, a rerun is a new trajectory of
 the same system.
 
+### Each figure says what made it, and the command that makes it again
+
+**A chip at the foot of each figure on the Analysis page names the release
+that drew it, and opens what made it:** the packages whose versions decide
+its numbers, when it was made, the trajectory and how many frames it rests
+on (and every how many), the selection and the options, and the command that
+draws it again. All of it was recorded (the analysis manifest, the
+analysis's `options.json`, the Manifest's record of who produced the phase)
+and none of it was shown, so a figure copied into a paper left its study
+behind. The command reruns the one analysis over the same frames, with the
+same selection and options written out rather than left to defaults, into a
+folder of its own beside the study; it is the command line's own rendering,
+and a test runs it and gets the same numbers byte for byte. Where a setting
+has no flag, the config is given instead; a figure made by another release
+says so.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -1652,12 +1652,22 @@ def _report_panels(root: Path) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - a panel must never break the dashboard
         logger.debug("analysis sections unavailable", exc_info=True)
 
+    try:
+        from fastmdxplora.gui.figure_provenance import figure_provenance
+
+        provenance = figure_provenance(root)
+    except Exception:  # noqa: BLE001 - a chip must never break the dashboard
+        logger.debug("figure provenance unavailable", exc_info=True)
+        provenance = {}
     return {
         "summary_cards": [asdict(card) for card in cards],
         "metric_rows": [asdict(row) for row in metrics],
         "phase_rows": [asdict(row) for row in phases],
         "analysis_sections": sections,
         "quick_actions": quick_actions,
+        # What made each analysis's figures, and the command that makes
+        # them again, for the chip on each figure.
+        "figure_provenance": provenance,
     }
 
 

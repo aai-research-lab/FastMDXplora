@@ -905,10 +905,11 @@
     const host = byId("analysis-sections");
     const flatGrid = byId("analysis-grid");
     if (!host) return;
+    state.figureProvenance = payload.figure_provenance || {};
     // Drawn again only when something in it changed. Every poll replaced
     // the cards, which reloaded each figure and would take a chart from
     // under the pointer reading it.
-    const key = JSON.stringify(sections);
+    const key = JSON.stringify([sections, state.figureProvenance]);
     if (key === state.analysisSectionsKey && host.childElementCount) return;
     state.analysisSectionsKey = key;
     window.FastMDXSeries?.forget();
@@ -943,6 +944,7 @@
         if (series) {
           links.push('<a class="file-action" href="#" data-series-toggle hidden>Show the figure</a>');
         }
+        const made = folder ? provenanceChip(folder[1]) : "";
         return `
         <article class="analysis-card" data-state="complete"${analysisName ? ` data-analysis="${escapeAttr(analysisName)}"` : ""}>
           <div class="ac-header">
@@ -951,7 +953,8 @@
           </div>
           <div class="ac-frame"${series ? ` data-series="${escapeAttr(series)}"` : ""}><img src="${escapeAttr(figure)}" alt="${escapeAttr(panel.title || "")}" loading="lazy"></div>
           <div class="ac-body">${escapeHTML(panel.summary || "")}</div>
-          <div class="ac-footer">${links.join("")}</div>
+          <div class="ac-footer">${links.join("")}${made}</div>
+          ${made ? '<div class="figure-provenance" hidden></div>' : ""}
         </article>`;
       }).join("");
       return `
@@ -965,12 +968,98 @@
     }).join("");
 
     window.FastMDXSeries?.hydrate(host);
+    listenForProvenance(host);
 
     const haveSections = sections.length > 0;
     host.hidden = !haveSections;
     // The flat grid is the fallback for runs with no sectioned data; showing
     // both would list every figure twice.
     if (flatGrid) flatGrid.hidden = haveSections;
+  }
+
+  /* What made a figure: the release, when, from how many frames, with which
+   * selection and options, and the command that draws it again. A chip on
+   * each figure opens it; the numbers are the study's own records (the
+   * analysis manifest, the analysis's options.json and the Manifest's
+   * record of who produced the phase), gathered by figure_provenance.py. */
+  function shortVersion(version) {
+    return String(version || "").split("+")[0].replace(/\.dev\d+$/, "");
+  }
+
+  function provenanceChip(name) {
+    const made = (state.figureProvenance || {})[name];
+    if (!made) return "";
+    const label = made.version ? `v${shortVersion(made.version)}` : "how it was made";
+    return `<button type="button" class="figure-chip" data-provenance="${escapeAttr(name)}" aria-expanded="false" title="What made this figure, and how to make it again">${escapeHTML(label)}</button>`;
+  }
+
+  function provenanceHtml(made) {
+    const rows = [];
+    const row = (label, value) => {
+      if (value === null || value === undefined || value === "") return;
+      rows.push(`<dt>${escapeHTML(label)}</dt><dd>${value}</dd>`);
+    };
+    const code = (value) => `<code>${escapeHTML(value)}</code>`;
+    row("Made by", made.version
+      ? `FastMDXplora ${code(made.version)}` + (made.host ? ` on ${escapeHTML(made.host)}` : "")
+      : "a release that did not record itself");
+    const packages = Object.entries(made.packages || {});
+    if (packages.length) {
+      row("With", packages.map(([name, version]) => `${escapeHTML(name)} ${code(version)}`).join(", "));
+    }
+    if (made.made) row("When", escapeHTML(String(made.made).replace("T", " ").replace(/\.\d+/, "")));
+    const trajectory = Array.isArray(made.trajectory) ? made.trajectory.join(", ") : made.trajectory;
+    if (trajectory) {
+      const frames = made.frames ? `, ${Number(made.frames).toLocaleString("en-US")} frames` : "";
+      const n = Number(made.stride);
+      const nth = n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd"
+        : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th";
+      const every = n > 1 ? `, every ${n}${nth} frame` : "";
+      row("From", `${code(trajectory)}${escapeHTML(frames + every)}`);
+    }
+    if (made.selection) row("Selection", code(made.selection));
+    const options = Object.entries(made.options || {});
+    if (options.length) {
+      row("Options", options.map(([key, value]) => code(`${key}: ${JSON.stringify(value)}`)).join(" "));
+    }
+    const again = made.command || made.config || "";
+    const older = made.version && made.this_version && made.version !== made.this_version
+      ? `<p class="figure-provenance-note">This is FastMDXplora ${code(made.this_version)}; ` +
+        "run again here, the figure is drawn by this release rather than the one above.</p>"
+      : "";
+    const how = made.command
+      ? "Draws it again, from the same frames and options, into a folder of its own:"
+      : "A setting here has no flag, so this config draws it again (fastmdx explore --config):";
+    return `<dl class="figure-provenance-rows">${rows.join("")}</dl>` +
+      (again
+        ? `<p class="figure-provenance-how">${escapeHTML(how)}</p>` +
+          `<pre class="figure-provenance-command">${escapeHTML(again)}</pre>` +
+          '<button type="button" class="file-action figure-provenance-copy">Copy</button>' + older
+        : "");
+  }
+
+  function listenForProvenance(host) {
+    if (!host || host.dataset.provenanceListens) return;
+    host.dataset.provenanceListens = "1";
+    host.addEventListener("click", (event) => {
+      const chip = event.target.closest(".figure-chip");
+      const copy = event.target.closest(".figure-provenance-copy");
+      if (chip) {
+        const card = chip.closest(".analysis-card");
+        const panel = card && card.querySelector(".figure-provenance");
+        const made = (state.figureProvenance || {})[chip.dataset.provenance];
+        if (!panel || !made) return;
+        const open = panel.hidden;
+        if (open) panel.innerHTML = provenanceHtml(made);
+        panel.hidden = !open;
+        chip.setAttribute("aria-expanded", String(open));
+      } else if (copy) {
+        const said = copy.parentElement.querySelector(".figure-provenance-command");
+        if (!said) return;
+        navigator.clipboard?.writeText(said.textContent).then(
+          () => showToast("Copied."), () => showToast("Select the text to copy it."));
+      }
+    });
   }
 
   function renderReportPanels(payload) {

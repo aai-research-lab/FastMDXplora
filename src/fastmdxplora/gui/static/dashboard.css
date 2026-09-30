@@ -1306,6 +1306,41 @@ button {
     gap: 6px;
     flex-wrap: wrap;
 }
+/* What made a figure (dashboard.js, figure_provenance.py): a chip at the
+   end of the footer, and what it opens under it. */
+.analysis-card .figure-chip {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border-primary);
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.analysis-card .figure-chip:hover,
+.analysis-card .figure-chip[aria-expanded="true"] { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
+.analysis-card .figure-provenance {
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--border-subtle);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+.figure-provenance-rows { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0 0 8px; }
+.figure-provenance-rows dt { color: var(--text-muted); }
+.figure-provenance-rows dd { margin: 0; overflow-wrap: anywhere; }
+.figure-provenance-how, .figure-provenance-note { margin: 6px 0; }
+.figure-provenance-command {
+    margin: 0 0 6px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
 
 /* ============================================================ */
 /* Loading screen                            */
