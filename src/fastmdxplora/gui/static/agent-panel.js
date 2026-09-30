@@ -65,7 +65,9 @@
    * and nothing else. Escaped first, quotes included, so the model cannot
    * put markup in the page or close the link's attribute; then the four
    * patterns, in an order that keeps code spans from being reinterpreted.
-   * A link ends at a quote, as it would in prose. Paragraphs are
+   * A link ends at a quote, as it would in prose, and a full stop or
+   * comma after it is the sentence's: "save https://x/BNZ_ideal.sdf." was
+   * linked to "BNZ_ideal.sdf.", which is not there. Paragraphs are
    * blank-line separated. */
   function prose(text) {
     var s = String(text || "")
@@ -77,7 +79,13 @@
      * an arithmetic asterisk with spaces -- stays as typed. */
     s = s.replace(/(^|[^*])\*(\S(?:[^*\n]*\S)?)\*(?!\*)/g, "$1<em>$2</em>");
     s = s.replace(/\bhttps?:\/\/(?:(?!&quot;|&#39;|&lt;|&gt;)[^\s<)])+/g, function (u) {
-      return '<a href="' + u + '" target="_blank" rel="noopener">' + u + "</a>";
+      var tail = "";
+      // An escaped character (&amp;) ends in a semicolon that is the URL's.
+      while (/[.,;:!?]$/.test(u) && !/&[a-z0-9#]+;$/i.test(u)) {
+        tail = u.slice(-1) + tail;
+        u = u.slice(0, -1);
+      }
+      return '<a href="' + u + '" target="_blank" rel="noopener">' + u + "</a>" + tail;
     });
     return s;
   }

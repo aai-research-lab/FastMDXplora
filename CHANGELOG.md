@@ -1635,6 +1635,14 @@ structure given as a file, that its chemistry must be given. The help for
 `heterogens` and `ligand`, which the Agent reads, says where the chemistry
 comes from, and the advisory is plural where the ligands are.
 
+### A link in a reply ends where the address does
+
+The Agent wrote "save https://files.rcsb.org/ligands/download/BNZ_ideal.sdf."
+and the page linked the address with the sentence's full stop inside it,
+which is not a file RCSB has. A full stop, comma, colon, semicolon or mark
+at the end of an address is now left after the link, except the semicolon
+of an escaped character, which is the address's.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
