@@ -368,7 +368,7 @@ def with_general_selection_names(spec: dict[str, Any],
 
     if variable in _TWO_GROUPS:
         raise StudyError(
-            f"`{variable}` is measured between two groups, so `select_atoms` "
+            f"`{variable}` is defined between two groups, so `select_atoms` "
             "does not say which is which. Name them: `select_atoms_a` and "
             "`select_atoms_b` (or `selection_a` and `selection_b`)."
         , code="simulation.cv.inapplicable_setting")
@@ -433,7 +433,7 @@ def plan_from_config(
             site = spec.get("site_selection")
             if not site:
                 raise StudyError(
-                    "ligand_distance measures from the ligand to a site, and "
+                    "ligand_distance is the distance from the ligand to a site, and "
                     "`site_selection` says where the site is -- the pocket "
                     "residues, usually. Without it there is no second point."
                 , code="simulation.cv.missing_companion")
@@ -460,7 +460,7 @@ def plan_from_config(
         if not molecule:
             raise StudyError(
                 "`membrane_depth` needs a `selection` for the molecule whose "
-                "depth is measured, or a ligand for it to default to."
+                "depth is computed, or a ligand for it to default to."
             , code="simulation.cv.missing_companion")
         atoms["molecule"] = select(str(molecule), "molecule")
         # The bilayer centre is the reference, and it moves: a membrane
@@ -680,7 +680,7 @@ def cv_lines(plan: "MetadynamicsPlan",
     if variable == "ligand_rmsd":
         if not reference_pdb:
             raise StudyError(
-                "ligand_rmsd is measured against a reference structure, and "
+                "ligand_rmsd is computed against a reference structure, and "
                 "none was given."
             , code="simulation.reference.unusable")
         lines.append(f"{cv}: RMSD REFERENCE={reference_pdb} TYPE=OPTIMAL")

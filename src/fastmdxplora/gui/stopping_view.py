@@ -109,7 +109,7 @@ def _measures(record: dict[str, Any]) -> list[dict[str, Any]]:
                  else "met" if last["met"]
                  else "no mean" if last["unrecorded"]
                  else "disagree" if last["agree"] is False
-                 else "not yet a measurement" if not last["measured"]
+                 else "not yet determined" if not last["measured"]
                  else "short")
         out.append({
             "analysis": name, "label": SERIES.get(name, (name.replace("_", " "), ""))[0],

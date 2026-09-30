@@ -50,9 +50,9 @@ class TestTellingRepeatsFromComparisons:
             _campaign(tmp_path, runs, {"simulation.random_seed": []}))
 
         assert result["replicas"] is True
-        assert "repeats of one measurement" in result["why"]
+        assert "repeats of one estimate" in result["why"]
         assert result["analyses"]["rmsd"]["spread_is"] == (
-            "the error on one measurement")
+            "the error on one estimate")
 
     def test_several_systems_are_not_replicas(self, tmp_path):
         """Averaging a mutant series would report its biology as noise."""

@@ -59,18 +59,18 @@ class TestTheCaption:
 
     def test_too_few_independent_samples(self, tmp_path) -> None:
         _analysis(tmp_path, "rmsd", RMSD, _measured(effective_samples=4.2))
-        assert _caption(tmp_path, "RMSD").endswith("4 independent samples, too few to measure")
+        assert _caption(tmp_path, "RMSD").endswith("4 independent samples, too few to determine the mean")
 
     def test_a_series_too_short_to_measure(self, tmp_path) -> None:
         _analysis(tmp_path, "rg", RMSD, _measured(
             standard_error=float("nan"),
             not_a_measurement="This run is not long against its own correlation time"))
         assert _caption(tmp_path, "Radius of gyration") == (
-            "mean 0.0130 nm, too short to be a measurement")
+            "mean 0.0130 nm, too short to be determined")
 
     def test_one_with_no_mean_at_all(self, tmp_path) -> None:
         _analysis(tmp_path, "rmsd", RMSD, {"not_a_measurement": "too short", "n_frames": 3})
-        assert _caption(tmp_path, "RMSD") == "no mean: too short to measure"
+        assert _caption(tmp_path, "RMSD") == "no mean: too short to determine"
 
     def test_an_older_study_says_what_its_number_is(self, tmp_path) -> None:
         """No findings recorded: the plain mean, called what it is."""
@@ -115,7 +115,7 @@ class TestTheTable:
     def test_a_series_too_short_says_so(self, tmp_path) -> None:
         _analysis(tmp_path, "rg", RMSD, _measured(not_a_measurement="too short"))
         row = _row(tmp_path, "Radius of gyration")
-        assert row.metric == "Radius of gyration (all frames, too short to measure)"
+        assert row.metric == "Radius of gyration (all frames, too short to determine)"
         assert row.average == "0.2600"
 
     def test_an_older_study_is_as_it_was(self, tmp_path) -> None:

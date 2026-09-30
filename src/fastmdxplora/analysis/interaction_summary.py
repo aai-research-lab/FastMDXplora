@@ -282,8 +282,8 @@ def mode_transitions(
                 f"only {observed} change(s) of mode were seen, and a rate "
                 f"estimated from fewer than {minimum_transitions} carries an "
                 "uncertainty larger than itself. The counts are given; the "
-                "probabilities are not, because they would read as a "
-                "measurement of kinetics that this trajectory cannot support."
+                "probabilities are not, because they would read as an "
+                "estimate of kinetics that this trajectory cannot support."
             ),
             "counts": {str(k): {str(kk): vv for kk, vv in v.items()}
                        for k, v in switches.items()},

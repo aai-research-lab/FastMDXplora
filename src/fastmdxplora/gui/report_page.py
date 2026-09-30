@@ -207,6 +207,6 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
         lines.append(f"| {run['run_id']} | " + " | ".join(cells) + " |")
     lines += ["", "Each mean is over the frames after equilibration, with its standard error."]
     if qualified:
-        lines += ["", "\\* Not a measurement: the analysis found the series too short, or "
-                  "with too few independent samples, for its mean to be one."]
+        lines += ["", "\\* Not determined: the analysis found the series too short, or "
+                  "with too few independent samples, for its mean to be determined."]
     return "\n".join(lines) + "\n"

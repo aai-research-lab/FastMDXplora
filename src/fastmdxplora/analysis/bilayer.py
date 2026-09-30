@@ -117,7 +117,7 @@ def find_bilayer(topology: md.Topology) -> Bilayer:
         raise StudyError(
             f"This system holds {lipid_count(names)} lipid molecule(s), and a "
             f"bilayer has at least {BILAYER_MINIMUM_LIPIDS}. There is no "
-            "bilayer to measure.",
+            "bilayer to analyse.",
             code="analysis.system.inapplicable")
     heads: list[int] = []
     phosphate: list[bool] = []
@@ -225,7 +225,7 @@ def leaflets(traj: md.Trajectory, bilayer: Bilayer) -> Leaflets:
                 f"{near_middle:.0%} of them are within {_MID_PLANE_NM} nm of "
                 f"the middle of the lipid slab, and {upper_share:.0%} are above "
                 "it. A bilayer in the xy plane has almost none in the middle "
-                "and half above. Measuring this as a bilayer would report "
+                "and half above. Analysing this as a bilayer would report "
                 "numbers for a structure that is not there.",
                 code="analysis.system.inapplicable")
     return Leaflets(centre, dz, dz > 0)

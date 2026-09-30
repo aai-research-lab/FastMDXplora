@@ -53,7 +53,7 @@ The corpus runs no dynamics, completes in seconds, and runs every release.
 
 `fastmdxplora.validation.cross_tool`
 
-A real run, measured again by implementations that share no code with this one:
+A real run, analysed again by implementations that share no code with this one:
 **ProLIF** and **MDAnalysis**. Neither is a package dependency; they are
 installed separately, with the `validation` extra, precisely so that the
 comparison is between two stacks rather than inside one.
@@ -124,10 +124,10 @@ you repeat a study yourself.
 
 ## The natural-language interface
 
-How well a model actually writes a [Config](config.md) is measured rather than
+How well a model actually writes a [Config](config.md) is evaluated rather than
 assumed, with `scripts/measure_nli.py`. The harness, what it scores, and the
 result for `claude-sonnet-4-6` are in
-[Developing FastMDXplora](developers.md#measuring-the-natural-language-interface).
+[Developing FastMDXplora](developers.md#evaluating-the-natural-language-interface).
 
 ---
 

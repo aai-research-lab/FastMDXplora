@@ -90,7 +90,7 @@ way.
 runs/trpcage/
 ├── setup/                  prepared.pdb, solvated.pdb, system.xml, and what was decided
 ├── simulation/             production.dcd, energy.csv, and the settings used
-├── analysis/               one directory per measure: data, figure, and its options
+├── analysis/               one directory per analysis: data, figure, and its options
 ├── report/                 report.md, report.pdf, slides.pptx, dashboard.html
 ├── manifest.json           what happened: every phase, artifact and parameter
 ├── resolved_config.yml     what was asked for: a Config that runs this again
@@ -116,7 +116,7 @@ fastmdx gui --output runs/trpcage
 ```
 
 [Reading the results](results.md) is the full map: which record answers which
-question, and how a measure says whether its number is one.
+question, and how an analysis says whether its number is determined.
 
 ---
 
@@ -152,14 +152,14 @@ fastmdx explore --system 181L --setup-forcefield amber-openff --output runs/lyso
 looks its chemistry up, determines its protonation in the binding site,
 parameterises it with OpenFF, and discards the crystallisation additives that
 are not part of the question. The analysis phase then adds the protein–ligand
-measures, including what is holding the ligand there rather than just how much
+analyses, including what is holding the ligand there rather than just how much
 of the protein it touches.
 
 Where a structure is genuinely ambiguous — an unknown residue, a charge that
 cannot be determined — setup stops and says what it could not decide, rather than
 guessing.
 
-See [Protein-ligand interactions](interactions.md) for what the measures mean.
+See [Protein-ligand interactions](interactions.md) for what the analyses mean.
 
 ---
 

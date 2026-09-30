@@ -485,11 +485,11 @@ def check_the_reference(
     if membrane and cone is None:
         record["refused"] = (
             "The system has a bilayer, so bulk is a slab of water and not the "
-            "isotropic solvent a standard binding free energy is measured "
+            "isotropic solvent a standard binding free energy is defined "
             "against: the shell around the site meets the membrane at every "
             "radius, and the -2kT ln r the reference assumes does not hold. "
             "Run the windows under a cone pointing into the water, so the "
-            "reference is the cap there, and the cap's openness is measured.")
+            "reference is the cap there, and the cap's openness is corrected for.")
         return record
 
     # ---- a charged ligand -----------------------------------------------
@@ -556,7 +556,7 @@ def check_the_reference(
     if cone is not None and axis_saved is None:
         record["warnings"].append(
             "The cone's axis atoms could not be found in the saved trajectory, "
-            "so the whole shell was measured rather than the cap.")
+            "so the whole shell was integrated rather than the cap.")
     if shells:
         least = min(shells, key=lambda s: s["open_share"])
         share = least["open_share"]

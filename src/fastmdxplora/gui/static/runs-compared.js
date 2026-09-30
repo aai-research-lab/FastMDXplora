@@ -2,7 +2,7 @@
  *
  * On the Analysis page of a study of several runs: one table with the
  * settings that differ and the mean each run recorded, a difference marked
- * only where the code judged it resolved, and one measure's series from
+ * only where the code judged it resolved, and one quantity's series from
  * every finished run overlaid on one chart. Everything is built as
  * elements; a label read from a study is data, never markup. */
 (function () {
@@ -108,7 +108,7 @@
         } else if (cell.withheld) {
           td.textContent = plain(cell.mean) + " *";
           td.className += " is-withheld";
-          td.title = "Not a measurement: " + cell.withheld;
+          td.title = "Not determined: " + cell.withheld;
         } else {
           td.textContent = withError(cell.mean, cell.error);
           if (m.reference === run.run_id) {
@@ -138,8 +138,8 @@
     });
     if (data.measures.some(function (m) { return m.cells.some(function (c) { return c.withheld; }); })) {
       said.appendChild(el("p", "muted small",
-        "* Not a measurement: the analysis found the series too short, or with too few " +
-        "independent samples, for its mean to be one. Point at the value for why."));
+        "* Not determined: the analysis found the series too short, or with too few " +
+        "independent samples, for its mean to be determined. Point at the value for why."));
     }
 
     var select = document.getElementById("runs-overlay-measure");

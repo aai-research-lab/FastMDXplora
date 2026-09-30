@@ -875,7 +875,7 @@ class TestASeedStartsInsideItsOwnWall:
 
         said = str(raised.value)
         assert "Widen the cone" in said
-        assert "measured from this pull" in said
+        assert "determined from this pull" in said
 
     def test_a_long_list_is_summarized_rather_than_dumped(self, pull,
                                                           tmp_path):

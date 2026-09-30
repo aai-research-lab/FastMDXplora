@@ -38,7 +38,7 @@ STARTERS: tuple[dict[str, Any], ...] = (
         "id": "ligand",
         "title": "A protein and its ligand",
         "what": "The ligand in the structure is parameterised (OpenFF, AM1-BCC "
-                "charges) and the protein-ligand measures are added.",
+                "charges) and the protein-ligand analyses are added.",
         "change": "The structure and `setup.ligand_name`; for a ligand the "
                   "structure does not hold, supply its chemistry as a file.",
         "config": {
@@ -52,7 +52,7 @@ STARTERS: tuple[dict[str, Any], ...] = (
         "title": "A membrane protein",
         "what": "Oriented on the membrane normal, embedded in POPC, held while "
                 "the lipids pack; the bilayer's area per lipid, thickness and "
-                "order measured.",
+                "order computed.",
         "change": "The structure and the lipid. An OPM file keeps its own frame.",
         "config": {
             "systems": [{"system": "1AFO"}],
@@ -67,7 +67,7 @@ STARTERS: tuple[dict[str, Any], ...] = (
         "title": "Run until a quantity is determined",
         "what": "Three replicas extended in pieces until the RMSD's mean is known "
                 "to 0.01 nm and the replicas agree, with a ceiling.",
-        "change": "The measures and the errors asked, and the ceiling.",
+        "change": "The quantities and the errors asked, and the ceiling.",
         "config": {
             "systems": [{"system": "1UAO"}],
             "sweep": {"simulation.random_seed": [1, 2, 3]},

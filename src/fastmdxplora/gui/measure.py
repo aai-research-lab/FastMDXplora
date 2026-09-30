@@ -50,7 +50,7 @@ def over_frames(root: Path | str, a: str, b: str) -> dict[str, Any]:
 
     analysis = _the_trajectory(base)
     if analysis is None:
-        return {"ok": False, "reason": "This study has no trajectory to measure over."}
+        return {"ok": False, "reason": "This study has no trajectory to compute it over."}
     analysis["include"] = ["pair_distance"]
     analysis["options"] = {"pair_distance": {"selection_a": picked[0],
                                              "selection_b": picked[1],

@@ -3,7 +3,7 @@
 > **F**ully **A**utomated **Sy**s**T**em for **M**olecular **D**ynamics e**Xplora**tion
 
 Give FastMDXplora a structure — or just a PDB identifier — and it prepares the
-system, runs the dynamics, measures the trajectory and writes the study up. The
+system, runs the dynamics, analyses the trajectory and writes the study up. The
 steps that usually need an expert are done for you, and refused where the
 structure does not say enough to do them.
 
@@ -22,7 +22,7 @@ A browser tab opens. Type `1L2Y`, press **Run**, and watch a protein fold.
 This is the whole shape of the software, and everything else follows from it.
 
 **A complete study is specified in a FastMDXplora Config.** One file describes
-the system, how it is prepared, how it is simulated, what is measured and how
+the system, how it is prepared, how it is simulated, how it is analysed and how
 it is reported. Nothing about a study lives anywhere else — not in a flag you
 typed once, not in a form you filled in, not in your memory of what you did in
 March.
@@ -101,7 +101,7 @@ restraints, membranes and enhanced sampling;
 
 **Reading a result?** [The FastMDXplora Manifest](manifest.md) for the record
 of what happened, [Reading the results](results.md) for the map of the run
-directory and how to tell a measurement from a number the run could not
+directory and how to tell a determined value from a number the run could not
 support.
 
 **Something refused?** [FastMDXplora refusals](refusals.md).

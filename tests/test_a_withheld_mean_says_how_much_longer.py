@@ -75,7 +75,7 @@ class TestTheShortfall:
         discard = summarise(series)[0].discard
         assert short.more_frames >= series.size - discard
         assert short.as_record()["lower_bound"] is True
-        assert str(short).startswith("The run is too short to measure its own correlation time")
+        assert str(short).startswith("The run is too short to resolve its own correlation time")
         assert "At least" in str(short)
 
     def test_a_resolved_run_asks_for_what_it_lacks(self):
@@ -163,7 +163,7 @@ class TestTheStudyAsks:
         assert ask.lower_bound and ask.seconds is None
         assert ask.as_text().startswith("rg and hbonds withheld their means for want of "
                                         "sampling: at least 2.6 ns more production")
-        assert "measure again" in ask.as_text()
+        assert "estimate again" in ask.as_text()
 
     def test_it_extends_the_study_in_place(self, tmp_path):
         from fastmdxplora.simulation.sampling_ask import sampling_asked_for

@@ -448,7 +448,7 @@ class TestTheRunnerReleasesThemInStages:
         steps, said = schedules["kept"]
         assert _just_before(steps, "Production") == 1000.0
         warning = " ".join(said)
-        assert "measures of flexibility" in warning and "RMSF" in warning
+        assert "flexibility analyses" in warning and "RMSF" in warning
 
     @pytest.mark.slow
     def test_a_run_with_restraints_completes_and_records_them(self, tmp_path) -> None:

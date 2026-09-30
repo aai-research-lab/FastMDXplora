@@ -41,7 +41,7 @@ analysis:
 | | |
 |---|---|
 | `rmsf` | Per-atom or per-residue fluctuation about the mean |
-| `order_parameters` | Backbone N–H order parameters, the quantity NMR relaxation measures |
+| `order_parameters` | Backbone N–H order parameters, the quantity NMR relaxation measures experimentally |
 | `bfactor_comparison` | Per-residue fluctuation against the deposited structure's B-factors |
 | `thermodynamics` | Density, energies and temperature, from the state record the run wrote |
 | `rdf` | The radial distribution between two selections, stopped at half the box |
@@ -68,7 +68,7 @@ minimum in g(r) — never assumed, because the radius decides the number.
 | `lipid_order` | The acyl-chain order parameter S_CD of every carbon, the quantity deuterium NMR measures |
 
 The three numbers a membrane run is checked against before anything about the
-protein in it is believed: each is measured by experiment, and each moves when
+protein in it is believed: each has an experimental value, and each moves when
 the force field, the temperature or the barostat is wrong. They run only where
 there is a bilayer. See [Membrane proteins](membranes.md) for what each
 computes, and what to compare it with.
@@ -129,11 +129,11 @@ of the method rather than a threshold to tune.
 
 The five ligand analyses run automatically when a ligand is present. See
 [Protein-ligand interactions](interactions.md) for what `pl_interactions`
-measures and why some of it is refused.
+computes and why some of it is refused.
 
 ### Enhanced sampling
 
-These three do not measure the trajectory. They read what a biased run itself
+These three do not analyse the trajectory. They read what a biased run itself
 produced, and each runs only where such a run produced it — so none appears
 after an ordinary simulation, and none needs a ligand.
 
@@ -157,7 +157,7 @@ What each method is for, and what its output is and is not, is in
 
 Not every analysis is in the default plan. Several are **gated on what the run
 actually contains**, because running them anyway would mean answering the
-question rather than measuring it.
+question rather than analysing it.
 
 | Gate | Analyses it holds back | Runs when |
 |---|---|---|
@@ -169,14 +169,14 @@ question rather than measuring it.
 | A state record | `thermodynamics` | `simulation/energy.csv` exists |
 | A bilayer | `area_per_lipid`, `bilayer_thickness`, `lipid_order` | The trajectory holds at least 20 lipids and a periodic box |
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
-| Enough atoms to align | any aligning measure | The default selection matches at least 3 atoms |
+| Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
 | **Naming** | `coordination_number`, `pair_distance` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
-`pair_distance` measure between *two named things*, and the trajectory does not
+`pair_distance` compute a quantity between *two named things*, and the trajectory does not
 contain which two. Running them anyway would mean picking a pair, which is
-answering the question rather than measuring it.
+answering the question rather than analysing it.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -184,12 +184,12 @@ coordination number between the two groups you meant.
 
 ---
 
-## What the measures actually compute
+## What the analyses actually compute
 
 Details that change the number, and that are worth knowing before comparing
 against another tool.
 
-- **RMSD** superposes each frame on the reference before measuring, unless
+- **RMSD** superposes each frame on the reference before computing it, unless
   `align: false`.
 
 - **Radius of gyration** is mass-weighted by default, which is the physical
@@ -211,9 +211,9 @@ against another tool.
   reading that takes one distance per residue pair instead, and the two are not
   comparable — on a peeling hairpin they stand 0.26 apart on a scale running
   zero to one. The `selection` narrows it further: `protein` is the all-atom
-  measure, `backbone` reports the fold's topology and ignores side-chain
+  quantity, `backbone` reports the fold's topology and ignores side-chain
   repacking, and `name CA` is the coarse-grained quantity from Gō-model work,
-  which is a different measure rather than a rounding of the others. All four
+  which is a different quantity rather than a rounding of the others. All four
   choices are written to `options.json`, because a Q quoted without them is not
   one number.
 
@@ -221,7 +221,7 @@ against another tool.
   change of seed is a finding; one that does not is an artefact of where the
   algorithm started, and the seed is a setting so that can be tested.
 
-- **Contacts and hydrogen bonds** measure across the periodic boundary where
+- **Contacts and hydrogen bonds** are computed across the periodic boundary where
   the trajectory carries a unit cell.
 
 - **Molecules are made whole when a trajectory is loaded**, and put in one
@@ -229,7 +229,7 @@ against another tool.
   other solute molecule (a ligand, an ion) is moved to the copy whose centre
   is nearest theirs, searched exactly for any box shape. So a radius of
   gyration, SASA or RMSD of a selection that includes a ligand which has left
-  the pocket measures the ligand beside the protein, not a box length away.
+  the pocket describes the ligand beside the protein, not a box length away.
 
 - **Interaction occupancy per residue** is the union of that residue's atom
   pairs' frames, written to `pl_interactions_by_residue.dat` beside the pair
@@ -250,7 +250,7 @@ against another tool.
   correlates it with the simulated RMSF. It is a correlation and **not an
   accuracy**: a B carries static disorder and refinement choices, and the
   lattice damps loop motion, so B-factors bound amplitudes from below. No
-  regression slope is reported, because the two are not the same measurement.
+  regression slope is reported, because the two are not the same quantity.
 
 - **Thermodynamics** reads the state record the simulation wrote and treats
   each column as a correlated series. Density is reported only from a
@@ -268,7 +268,7 @@ against another tool.
 
 A metadynamics trajectory is not a Boltzmann ensemble. The bias flattened it on
 purpose, so a mean over its frames is an average over a distribution nobody
-wanted, and reported without qualification it reads as a measurement of the
+wanted, and reported without qualification it reads as a property of the
 system.
 
 Where the bias is known it can be undone. Each frame is weighted by
@@ -321,7 +321,7 @@ The registry is open, and an analysis is one class:
 
 ```python
 from fastmdxplora.analysis import register_analysis, Analysis
-register_analysis("my_measure", MyAnalysis)
+register_analysis("my_analysis", MyAnalysis)
 ```
 
 See [Developing FastMDXplora](developers.md#writing-an-analysis).
@@ -335,7 +335,7 @@ shape: options in the constructor, `compute()` for the numbers, and `run()` to
 write the data, the figure and the record of what it did.
 
 The docstrings are longer than reference documentation usually is, because a
-docstring is where a decision gets recorded: what a measure computes, what it
+docstring is where a decision gets recorded: what an analysis computes, what it
 refuses and why, and which choices move the number. That is the material to
 read before comparing a result against another tool.
 
@@ -447,6 +447,6 @@ read before comparing a result against another tool.
 
 ## See also
 
-- **[Reading the results](results.md)** — how a measure says whether its number is one
-- **[Selections in a Config](selections.md)** — which atoms an analysis measures
-- **[Protein-ligand interactions](interactions.md)** — the measure with the most criteria
+- **[Reading the results](results.md)** — how an analysis says whether its number is determined
+- **[Selections in a Config](selections.md)** — which atoms an analysis reads
+- **[Protein-ligand interactions](interactions.md)** — the analysis with the most criteria

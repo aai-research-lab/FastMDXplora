@@ -515,8 +515,8 @@ def methods_paragraphs(
             if _get(sim, "restrain_production", default=False):
                 protocol.append(
                     "**The restraints were retained during production**, so "
-                    "the trajectory is biased: measures of flexibility "
-                    "computed from it describe the restraint as well as the "
+                    "the trajectory is biased: flexibility analyses run "
+                    "on it describe the restraint as well as the "
                     "system."
                 )
             else:
@@ -553,8 +553,8 @@ def methods_paragraphs(
             ("umbrella",
              "This run is one window of an umbrella study, held at its own "
              "position on the coordinate by a harmonic restraint. Its "
-             "trajectory analyses describe a system held there and are not "
-             "measurements of the unrestrained system; they are also not "
+             "trajectory analyses describe a system held there and do not "
+             "describe the unrestrained system; they are also not "
              "comparable between windows, which differ because the "
              "restraints differ. What combines the windows is the potential "
              "of mean force, computed from their overlapping distributions "

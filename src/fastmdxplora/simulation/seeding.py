@@ -519,7 +519,7 @@ def measure_the_cone(trajectory: Any, ligand_resname: str,
             "the study its stiffness and buy it nothing. "
             + (f"`axis_selection` is {axis_selection!r}: the angle opens away "
                "from that group, so it has to sit behind the site, on the far "
-               "side from the way out. Leave it out and the axis is measured "
+               "side from the way out. Leave it out and the axis is determined "
                "too."
                if axis_selection else
                "The pull leaves in no consistent direction, so there is no cone "
@@ -969,8 +969,8 @@ def _refuse_seeds_outside_the_cone(trajectory: Any, ligand_resname: str,
         "pushing from the first step, so those windows do not begin where "
         "they were seeded to begin -- and a cone that excludes where the "
         "ligand was is a cone that cuts the state the binding free energy is "
-        "measured over. Widen the cone, or leave the half-angle out and let "
-        "it be measured from this pull, which sizes it to contain the path "
+        "defined over. Widen the cone, or leave the half-angle out and let "
+        "it be determined from this pull, which sizes it to contain the path "
         "the seeds are taken from."
     , code="simulation.cone.windows_outside")
 

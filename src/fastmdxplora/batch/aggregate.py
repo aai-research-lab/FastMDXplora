@@ -105,7 +105,7 @@ def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
     if len(systems) > 1:
         return False, (
             f"the members cover {len(systems)} different systems, so the "
-            "spread between them is what the campaign set out to measure"
+            "spread between them is what the campaign set out to compare"
         )
     if not axes:
         return False, (
@@ -115,7 +115,7 @@ def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
     if axes <= SEED_AXES:
         return True, (
             "the members differ only by random seed, so they are repeats of "
-            "one measurement and the spread of their means is its error"
+            "one estimate and the spread of their means is its error"
         )
     return False, (
         "the members differ by "
@@ -181,7 +181,7 @@ def aggregate_members(batch_dir: str | Path) -> dict[str, Any]:
             "mean_of_means": float(np.mean(means)),
             "spread_of_means": float(np.std(means, ddof=1)),
             "spread_is": (
-                "the error on one measurement" if replicas
+                "the error on one estimate" if replicas
                 else "the difference between the studies compared"),
         }
 

@@ -131,7 +131,7 @@ class TestTickedAfter:
 
         section = _convergence_section(_study(tmp_path / "study"))
         assert "### The checks this run was held to" in section
-        assert ("| Each measure stops drifting before it is averaged | **failed** "
+        assert ("| Each observable equilibrates before it is averaged | **failed** "
                 "| still moving: rmsd |") in section
         assert "| The mean temperature is within 5 K of the target | passed |" in section
 
@@ -148,7 +148,7 @@ class TestTickedAfter:
 
         status = _run_status(Runtime())
         assert "the checks this run was held to (as the report ticks them):" in status
-        assert ("FAILED: each measure stops drifting before it is averaged "
+        assert ("FAILED: each observable equilibrates before it is averaged "
                 "(still moving: rmsd)") in status
         assert "passed: the mean temperature is within 5 K of the target" in status
 

@@ -36,7 +36,7 @@ def _analysis_section() -> str:
     the per-analysis catalogue is a reference of its own.
     """
     text = (DOCS / "analyses.md").read_text(encoding="utf-8")
-    return text[:text.index("## What the measures actually compute")]
+    return text[:text.index("## What the analyses actually compute")]
 
 
 class TestEveryAnalysisIsDocumented:

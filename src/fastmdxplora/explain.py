@@ -128,7 +128,7 @@ EXPLANATIONS: dict[str, Explanation] = {
             "A minimised structure is not at equilibrium, and heating it "
             "lets the solute move as well as the solvent -- side chains "
             "relax into the space crystal packing left, and a ligand drifts "
-            "out of the pose that was measured. Holding the solute while the "
+            "out of the experimental pose. Holding the solute while the "
             "water arranges itself around it, then letting go in stages, "
             "means production starts from the structure somebody determined."
         ),
@@ -159,7 +159,7 @@ EXPLANATIONS: dict[str, Explanation] = {
             "packs near 0.90 g/mL against water's 1.0, while the same "
             "solvation at 2.0 nm reaches 0.96. Only a barostat closes it. A "
             "box that short has voids in it, which is wrong for anything you "
-            "measure and a route to the run falling over. How far off your "
+            "compute from it and a route to the run falling over. How far off your "
             "own box is gets reported rather than assumed."
         ),
         reference=(
@@ -201,7 +201,7 @@ EXPLANATIONS: dict[str, Explanation] = {
     "production": Explanation(
         why=(
             "This is the part that is analysed. Everything before it was "
-            "getting the system into a state worth measuring; from here the "
+            "getting the system into a state worth sampling; from here the "
             "trajectory is a sample of how the system behaves at "
             "equilibrium, and the frames written now are the ones every "
             "later number comes from."

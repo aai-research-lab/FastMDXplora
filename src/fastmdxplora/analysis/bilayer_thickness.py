@@ -49,7 +49,7 @@ class BilayerThickness(BilayerSeries):
         if not bilayer.phosphate.any():
             raise StudyError(
                 "No lipid in this bilayer has a phosphate, and the thickness "
-                "here is measured between the phosphate planes.",
+                "here is the distance between the phosphate planes.",
                 code="analysis.system.inapplicable")
         sides = leaflets(traj, bilayer)
         dz = np.where(bilayer.phosphate[None, :], sides.dz, np.nan)

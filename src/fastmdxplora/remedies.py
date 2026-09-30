@@ -595,7 +595,7 @@ def _umbrella(root: Path, batch: dict[str, Any], planned: dict[str, Any], *,
         return []
     return [Remedy(
         code="simulation.windows.no_sampling", where="the free energy", why=why,
-        fix="The refusal describes what each window measured; no new set of windows "
+        fix="The refusal describes what each window sampled; no new set of windows "
             "could be designed from them.",
         settings=("simulation.umbrella.centres", "simulation.umbrella.force_constant"))]
 
@@ -663,7 +663,7 @@ def _a_new_design(root: Path, payload: dict[str, Any], design: dict[str, Any],
     forces = [round(float(k)) for k in design["force_constants"]]
     covers = design.get("covers") or [centres[0], centres[-1]]
     worst = design.get("worst_predicted_overlap")
-    fix = (f"Run a new study with the windows these measured: {len(centres)} windows "
+    fix = (f"Run a new study with the windows their sampling implies: {len(centres)} windows "
            f"from {float(covers[0]):g} to {float(covers[1]):g}")
     fix += (f", worst overlap {float(worst):.2f} predicted." if isinstance(worst, (int, float))
             else ".")

@@ -196,7 +196,7 @@ will tell you whether you got there. Its convergence section reports how many
 count, because consecutive frames are nearly the same structure.
 
 A useful pattern: run something, read the convergence section, and extend if it
-says the measures have not equilibrated or rest on too little. That is more reliable
+says the observables have not equilibrated or rest on too little. That is more reliable
 than choosing a number in advance.
 
 `sampling_shortfall` turns that into a figure — see
@@ -232,7 +232,7 @@ After each piece:
   what was asked: the error of a mean goes as one over the root of the frames
   after equilibration, so twice the error allowed asks for four times those
   frames.
-- **Every run is extended by the most any measure asks** (side by side in a
+- **Every run is extended by the most any quantity asks** (side by side in a
   parallel study, as its runs were), at least a quarter and at most three
   times what has run so far, in whole frames, and never past
   `max_duration_ns`. The bounds are there because an error estimated from a
@@ -268,7 +268,7 @@ they test trapping only as far as their dynamics carry them apart; runs from
 different starting structures, or replica exchange, test it further.
 
 **What comes out.** `stopping.json` beside the study records every round: the
-production, each measure with its error and what was asked, whether the
+production, each quantity with its error and what was asked, whether the
 replicas agreed, and what was decided. The report (for one run) or the
 comparison report (for replicas) has a section, *How long it ran, and why*,
 built from it, and the Agent is given it. A budget prices the study at its

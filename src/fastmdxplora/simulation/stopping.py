@@ -190,7 +190,7 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
             # its ceiling, judging nothing, and call that undetermined.
             raise StudyError(
                 f"simulation.stop_when judges {target.analysis!r}, which records no "
-                "single mean to judge. A measure is one of the analyses that give "
+                "single mean to judge. A quantity it judges comes from one of the analyses that give "
                 f"one number per frame: {', '.join(judgeable)}.",
                 code="config.option.not_permitted",
                 option="simulation.stop_when.measures.analysis",
@@ -199,7 +199,7 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
     if not isinstance(ceiling, (int, float)) or isinstance(ceiling, bool) or ceiling <= 0:
         raise StudyError(
             "simulation.stop_when needs `max_duration_ns`, the most production any run "
-            "may reach: a study that runs until a measure is determined needs a "
+            "may reach: a study that runs until a quantity is determined needs a "
             "point at which it stops trying.",
             code="config.option.missing_companion", option="simulation.stop_when",
             requires=["max_duration_ns"])
@@ -225,7 +225,7 @@ def check_stopping(config: dict[str, Any], *, replicas: bool, runs: int,
     if simulation.get("umbrella"):
         raise StudyError(
             "simulation.stop_when judges the means of plain runs; an umbrella study's "
-            "free energy has its own measure of convergence and is not extended by it.",
+            "free energy has its own convergence criteria and is not extended by it.",
             code="config.option.inapplicable", option="simulation.stop_when",
             context="an umbrella study")
     independent = str(stop_when.get("independent_starts") or "required")
@@ -383,7 +383,7 @@ def judge(runs: list[Path], targets: list[StopTarget], production_ns: float) -> 
                 asks.append(_finite(short.get("more_ns")) or production_ns)
             where = "" if len(runs) == 1 else f" in {len(withheld)} of {len(runs)} runs"
             verdicts.append(Verdict(target.analysis, False,
-                                    f"{target.analysis} is not yet a measurement{where}",
+                                    f"{target.analysis} is not yet determined{where}",
                                     unit=unit, more_ns=max(asks)))
             continue
         means = [float(found["mean"]) for _run, found in records]
@@ -661,7 +661,7 @@ def stopping_section(root: str | Path) -> list[str]:
         for name in names:
             v = verdicts.get(name) or {}
             if v.get("value") is None or v.get("error") is None:
-                cells.append("not yet a measurement")
+                cells.append("not yet determined")
                 continue
             cell = f"{v['value']:.4g} ± {v['error']:.2g} (±{v['allowed']:.2g} asked)"
             if v.get("agree") is False:

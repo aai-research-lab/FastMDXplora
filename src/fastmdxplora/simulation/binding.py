@@ -219,7 +219,7 @@ def binding_free_energy(
                 "curve should fall as -2kT ln r, because the only thing "
                 "changing there is how much room the shell holds. Where it "
                 "does not, the windows stopped while the ligand was still "
-                "being held, and there is no reference to measure binding "
+                "being held, and there is no reference state to define binding "
                 "against: the run would still give a smooth curve and a "
                 "plausible number, wrong by however much of the well was "
                 "left outside. Extend the range until the tail has that "

@@ -203,7 +203,7 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
         logger.warning(
             "Could not image molecules across the periodic boundary (%s); "
             "the trajectory is analysed as stored. If it was written without "
-            "molecules made whole, contacts and shape measures will be wrong "
+            "molecules made whole, contacts and shape descriptors will be wrong "
             "in ways that do not announce themselves.", _named(exc),
         )
         return trajectory
@@ -215,7 +215,7 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
         except Exception as exc:  # the molecules are whole; only placement is lost
             logger.warning(
                 "Molecules were made whole, but could not be moved to the copy "
-                "nearest the macromolecule (%s); a ligand or ion may be measured "
+                "nearest the macromolecule (%s); a ligand or ion may be analysed "
                 "in a periodic copy up to a box length away.", _named(exc),
             )
     return trajectory

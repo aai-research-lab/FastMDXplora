@@ -118,7 +118,7 @@ the study root for umbrella sampling. Those three are what the
 
 ## analysis
 
-**Measures the trajectory.** Twenty-four analyses of the system, plus three
+**Analyses the trajectory.** Twenty-four analyses of the system, plus three
 that read what a biased run itself produced.
 
 Each writes its data, its figure, and the settings it actually used. The full
@@ -129,7 +129,7 @@ Two behaviours are worth knowing before you read any result:
 
 **Each analysis gets its own copy of the trajectory.** MDTraj's superposition
 rotates coordinates in place, so an analysis that aligns would otherwise change
-what the next one measures. An interaction analysis once reported 252
+what the next one computes. An interaction analysis once reported 252
 hydrophobic contacts after RMSF and ligand RMSD had aligned the frames, and 10
 when run alone. The 10 was right.
 
@@ -160,7 +160,7 @@ filled in with what is usual.
 It then reports **convergence**, which is a statement about how much
 independent information the trajectory holds. A frame is not an observation:
 consecutive frames are nearly the same structure, so the number of independent
-observations depends on how quickly a measure forgets where it was, not on how
+observations depends on how quickly an observable forgets where it was, not on how
 often frames were written. On a five-thousand-frame trajectory of Trp-cage the
 RMSD holds about twenty independent observations, so its uncertainty is some
 sixteen times what counting frames would give. Where a run is too short to say
@@ -197,7 +197,7 @@ Regions attach to **RMSF** and nothing else, because RMSF is indexed by residue
 — RMSD is indexed by frame, so a residue range has no meaning on it. The RMSF
 analysis therefore has to have run.
 
-A range outside the residues RMSF measured is refused, with both ranges named:
+A range outside the residues RMSF was computed over is refused, with both ranges named:
 the one you asked for and the one that exists. That is usually an off-by-one
 between a paper's numbering and the structure's, and seeing both makes it
 obvious.
@@ -253,7 +253,7 @@ line, turns them off.
 runs/study/
 ├── setup/                  prepared and solvated structures, and what was decided
 ├── simulation/             the trajectory, the energy log, the settings used
-├── analysis/               one directory per measure
+├── analysis/               one directory per analysis
 ├── report/                 the written report, slides, dashboard, bundle
 ├── manifest.json           what happened          ← the Manifest
 ├── resolved_config.yml     what was asked for     ← re-runnable
@@ -262,4 +262,4 @@ runs/study/
 
 [The FastMDXplora Manifest](manifest.md) covers `manifest.json` and the
 per-phase records beside it. [Reading the results](results.md) is the map: what
-to open first, and how a measure says whether its number is one.
+to open first, and how an analysis says whether its number is determined.

@@ -109,7 +109,7 @@ asymmetric membrane, which OpenMM does not build.
 
 - **A structure that is not a membrane protein** (`setup.membrane.no_belt`).
   Every one of the 65 membrane proteins buries at least 18.5 nm² of net apolar
-  surface in its best slab, and no soluble protein measured more than 5.4.
+  surface in its best slab, and no soluble protein reached more than 5.4.
   Below 10 the structure is refused. A membrane protein whose transmembrane
   part is missing from the model reads this way too, so check `chains`.
 - **A structure on its side** (`setup.membrane.orientation_unchecked`), when
@@ -158,24 +158,24 @@ when NPT is shorter than 1 ns.
 
 ## Checking the bilayer
 
-Three analyses measure the bilayer itself, and run automatically wherever
-there is one. Each is measured by experiment and each moves when a force
+Three analyses characterise the bilayer itself, and run automatically wherever
+there is one. Each has an experimental value and each moves when a force
 field, a temperature or a barostat is wrong, so they are what a membrane run
 is checked against before anything about the protein in it is believed.
 
-| Analysis | What it measures |
+| Analysis | What it computes |
 |---|---|
 | `area_per_lipid` | The box's area in xy, less the protein's cross section in the hydrophobic core, per lipid of one leaflet. nm², per frame |
 | `bilayer_thickness` | The distance between the two leaflets' phosphate planes, D_PP. nm, per frame |
 | `lipid_order` | The deuterium order parameter S_CD of every acyl-chain carbon, by chain. −S_CD is plotted |
 
-Both per-frame measures carry the mean after equilibration, its error, and the
+Both per-frame quantities carry the mean after equilibration, its error, and the
 number of independent samples behind it, as every time series does.
 
 **The bilayer centre is found across the periodic boundary**, as the middle of
 the lipid slab, and each head is assigned to a leaflet by which side of it it
 is on, every frame. Lipids whose heads do not form two layers normal to z are
-refused rather than measured along the wrong axis.
+refused rather than analysed along the wrong axis.
 
 **The protein's cross section** is the area inside the outline a methylene
 group traces round the protein's van der Waals discs, in five planes across

@@ -150,7 +150,7 @@ def plan_steered(
             # difference is small for a pull that travels a nanometre and a
             # half, and it is not nothing: state `from` to anchor elsewhere.
             logger.info(
-                "Pull anchored at %.4f nm, measured in the structure the "
+                "Pull anchored at %.4f nm, computed from the structure the "
                 "run starts from (%s), before equilibration. Set `from` to "
                 "anchor it elsewhere.", from_value,
                 getattr(structure, "__class__", type(structure)).__name__
@@ -162,8 +162,8 @@ def plan_steered(
             "It would ordinarily be read from the structure being "
             "simulated, and could not be here -- either no structure was "
             "available yet, or this variable is not one that can be "
-            f"measured from coordinates alone ({cv.collective_variable} is "
-            "not). Measure it and set `from`.", code="simulation.bias.parameter_missing")
+            f"computed from coordinates alone ({cv.collective_variable} is "
+            "not). Compute it and set `from`.", code="simulation.bias.parameter_missing")
 
     return SteeredPlan(
         cv=cv,
@@ -292,7 +292,7 @@ def build_steered_script(plan: SteeredPlan,
             "be given a starting anchor, and there is no sensible default -- "
             "zero is a real position for most coordinates, and anchoring "
             "there drags the system towards it before the pull begins. "
-            "Measure the variable in the structure being simulated and set "
+            "Compute the variable from the structure being simulated and set "
             "`from` to it.", code="simulation.bias.parameter_missing")
     lines.append(
         "pull: MOVINGRESTRAINT ARG=cv "

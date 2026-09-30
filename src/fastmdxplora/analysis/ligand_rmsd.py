@@ -319,7 +319,7 @@ class LigandRMSD(Analysis):
                 f"The ligand left the site it started in at {where} and was away "
                 f"from it in {site['share_away']:.0%} of the frames (no heavy "
                 f"atom within {AWAY_NM} nm of the site). Its RMSD from there "
-                "measures a path through solvent, which grows without bound, "
+                "describes a path through solvent, which grows without bound, "
                 "not a pose, so no mean is given. Its distance to the site, "
                 "which the box bounds, is in ligand_site_distance.dat."),
         }

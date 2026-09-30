@@ -1,7 +1,7 @@
 # The FastMDXplora Config
 
 A FastMDXplora Config is the whole description of a study: the system, how it
-is prepared, how it is simulated, what is measured, and how it is written up.
+is prepared, how it is simulated, how it is analysed, and how it is written up.
 Capture that and the four phases run themselves.
 
 It is written as YAML, which is the format rather than the thing. The same Config
@@ -74,7 +74,7 @@ nearest match.
 |---|---|
 | `setup` | 47 settings — structure, ligand, membrane, solvent, force field, forces |
 | `simulation` | 45 settings — length, conditions, integrator, platform, enhanced sampling |
-| `analysis` | 14 settings — which measures, over which atoms, over which frames |
+| `analysis` | 14 settings — which analyses, over which atoms, over which frames |
 | `report` | 11 settings — title, formats, highlighted regions |
 
 Every setting in each is in the [Config reference](config_reference.md).
@@ -417,11 +417,11 @@ chain. `null` is the value, not a question the file failed to answer.
 The one setting the run derives without recording is `report.title`, which falls
 back to `FastMDXplora Study — <system>`. That is a heading on the report, not a
 property of the study: replay it on any version and you get the same
-trajectory, the same measurements and the same numbers, under a title that may
+trajectory, the same analyses and the same numbers, under a title that may
 be worded differently. It is in the first group, not a gap in the second.
 
 The test for whether a derived value has to be written down is whether losing it
-changes the science. `analysis.include` decides which measures run;
+changes the science. `analysis.include` decides which analyses run;
 `simulation.production_steps` decides how long. Both are recorded, above. A
 title decides what the first line says.
 ```
@@ -429,7 +429,7 @@ title decides what the first line says.
 The phases' own records go further than a config can, and are still worth
 reading for what a study actually *did* rather than what it set out to do —
 the atom count after solvation, the platform, the frames written, the
-per-measure findings: `setup/setup_parameters.json`,
+per-analysis findings: `setup/setup_parameters.json`,
 `simulation/simulation_parameters.json`, `analysis/analysis_manifest.json`,
 `analysis/<name>/options.json`. See
 [The FastMDXplora Manifest](manifest.md).

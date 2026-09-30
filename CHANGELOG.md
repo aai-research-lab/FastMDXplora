@@ -1555,6 +1555,21 @@ half transparent over the page and read as unreadable; it now waits until the
 loading screen is gone. The citation test gave a smooth scroll 15 s where the
 other browser tests allow 60; it allows 60.
 
+### What a trajectory gives is analysed, computed or determined
+
+A simulation is not an experiment, and what the software said of its results
+now uses the words of the field. A mean the analysis withholds is "not
+determined" (it was "not a measurement") in the report, the Analysis page,
+the comparison of runs, the Studies page and the Agent's answers. A stopping
+rule's entries are quantities, the builder's section of analyses is
+"Analyses", and the convergence checks read "each observable equilibrates
+before it is averaged" and "each observable's correlation time is resolved by
+the run". Refusals, warnings and the docs say computed, analysed, sampled,
+defined or resolved where each is meant. "Measured" stays where it is the
+right word: a machine's speed, an experimental order parameter or structure,
+the viewer's ruler, and record keys such as `not_a_measurement` and
+`stop_when.measures`, which keep their names so existing studies still read.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -2,7 +2,7 @@
  *
  * `simulation.stop_when` runs a study in pieces and judges it after each.
  * The question a person watching it has is the rule's own: is the answer
- * determined yet? For each measure this draws the error after each round
+ * determined yet? For each quantity this draws the error after each round
  * against the error asked for, with the production at which the error
  * would reach it if it keeps falling as one over the root of the frames,
  * and the mean after each round with every replica's own mean beside it,
@@ -20,7 +20,7 @@
     met: "determined as asked",
     "short": "not yet as asked",
     disagree: "replicas disagree",
-    "not yet a measurement": "not yet a measurement",
+    "not yet determined": "not yet determined",
     "no mean": "no mean recorded",
     waiting: "first piece running"
   };
@@ -299,7 +299,7 @@
     } else {
       item("is-mean", "mean ± error");
     }
-    item("is-withheld", "not yet a measurement");
+    item("is-withheld", "not yet determined");
     item("is-target", "asked");
     item("is-projection", "at the rate it has fallen");
     item("is-ceiling", "ceiling");
@@ -348,7 +348,7 @@
         var p = m.points.filter(function (q) { return q.round === r.round; })[0];
         var text = !p ? "" : p.measured
           ? withError(p.value, p.error) + (p.agree === false ? ", disagree" : p.met ? ", met" : "")
-          : "not yet a measurement";
+          : "not yet determined";
         row.appendChild(el("td", "mono", text));
       });
       var decided = DECIDED[r.decision] || r.decision;

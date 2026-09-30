@@ -169,7 +169,7 @@ def _said(cells: list[dict[str, Any]], reference: str | None, resolved: int,
         parts.append(f"{resolved} of {measured - 1} differ from {reference} by more than "
                      f"{RESOLVED_AT:g} times their combined error.")
     if withheld:
-        parts.append(f"{withheld} not a measurement, and not compared.")
+        parts.append(f"{withheld} not determined, and not compared.")
     if missing:
         parts.append(f"{missing} not yet recorded.")
     return " ".join(parts)

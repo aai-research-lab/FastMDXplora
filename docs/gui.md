@@ -114,7 +114,7 @@ typing a path and finding out later that it was wrong.
 
 **What should happen?** Which phases, and which analyses. The analyses are
 grouped — shape and size, flexibility, conformations, folding, the ligand,
-protein and ligand together — and each explains what it measures, taken from
+protein and ligand together — and each explains what it computes, taken from
 the analysis itself rather than written out a second time.
 
 **Anything to change?** Every setting, at the value it will actually use.
@@ -136,7 +136,7 @@ exactly as it appears in a Config. An example of the right shape sits in the
 box until you type.
 
 **How long it runs** can be a question rather than a number. Under
-`stop when`, choose a measure (only the analyses that record one mean are
+`stop when`, choose a quantity (only the analyses that record one mean are
 offered), the error it must reach in its own unit or as a percentage of its
 mean, and the most production any run may reach; the study then runs until
 each is known as asked. Replicas must agree unless you untick it, and where the
@@ -246,7 +246,7 @@ without loading anything into another program.
 **Whether the answer is determined yet.** A study run until it is determined
 (`simulation.stop_when`, see
 [Running until it is determined](production.md#running-until-it-is-determined)) has a
-card of its own on the Overview. For each measure it draws the standard error
+card of its own on the Overview. For each quantity it draws the standard error
 after each round against the error asked for, where the error would reach it
 if it keeps falling as one over the root of the frames (the estimate the next
 piece is sized by), and the mean after each round with every replica's own
@@ -283,7 +283,7 @@ setup has not finished there is no structure to draw; if production has not
 started there are no frames to play. Each says which, and what would produce
 it.
 
-That is deliberate. An empty axis and a missing measurement look the same on
+That is deliberate. An empty axis and a missing value look the same on
 screen, and only one of them means something is wrong.
 
 ---
@@ -499,8 +499,8 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/residue-states?chain=A&resseq=57&resname=HIS` | A clicked residue's protonation states and this study's Config to start a new study from, the residue named as setup builds the structure |
 | `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom |
 | `GET /api/stream` | Server-sent events: one `change` event each time the study's files or the run's state change, and nothing about what changed; the page then asks the routes here |
-| `GET /api/stopping` | For a study run until it is determined: the rule, each measure's error and mean after each round with the replicas' own means, where the error would reach the target at the rate it has fallen, and the piece now running with its time here |
-| `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each measure's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |
+| `GET /api/stopping` | For a study run until it is determined: the rule, each quantity's error and mean after each round with the replicas' own means, where the error would reach the target at the rate it has fallen, and the piece now running with its time here |
+| `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each quantity's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |
 | `GET /artifacts/<path>` | Any file under the run root, `?download=1` to attach |
 | `GET /structure/topology.pdb`, `/structure/live-frame.pdb`, `/structure/playback.pdb` | Structures for the viewer |
 | `GET /analysis-figures-svg.zip` | Every analysis figure, zipped |

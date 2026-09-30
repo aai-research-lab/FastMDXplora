@@ -237,7 +237,7 @@ class TestJudging:
         _mean(tmp_path, "rmsd", 0.2, None, withheld="too few samples", more_ns=7.5)
         [verdict] = judge([tmp_path], [StopTarget("rmsd", standard_error=0.01)], 2.0)
         assert not verdict.met and verdict.more_ns == 7.5
-        assert "not yet a measurement" in verdict.said
+        assert "not yet determined" in verdict.said
 
     def test_a_mean_withheld_without_a_figure_asks_for_as_long_again(self, tmp_path):
         _mean(tmp_path, "rmsd", 0.2, None, withheld="not equilibrated")

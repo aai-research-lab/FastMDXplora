@@ -578,12 +578,12 @@ def _anchor_the_pull_where_it_starts(simulation: Any, topology: Any,
                 first_step=int(getattr(simulation, "currentStep", 0) or 0)),
             encoding="utf-8")
         logger.info(
-            "Pull re-anchored at %.4f nm, measured in the equilibrated "
+            "Pull re-anchored at %.4f nm, computed from the equilibrated "
             "state rather than the structure the run started from.",
             plan.from_value)
     except Exception as exc:  # noqa: BLE001 -- a refinement, not the run
         logger.warning(
-            "Could not re-measure the pull's anchor from the equilibrated "
+            "Could not recompute the pull's anchor from the equilibrated "
             "state (%s). The script written from the starting structure "
             "stands, and its anchor is that structure's value.", exc)
 
@@ -2126,7 +2126,7 @@ def run_simulation(
                     f"study biases {cv_plan.collective_variable!r}.", code="simulation.bias.parameter_missing")
             if isinstance(cone, ConeToMeasure):
                 raise StudyError(
-                    "This window's cone was never measured. `cone: auto` is "
+                    "This window's cone was never determined. `cone: auto` is "
                     "read off the pull that seeds the windows, so it needs a "
                     "study that pulls -- a `steered` block beside the "
                     "`umbrella` one, or `seed_from` naming a finished pull. "
@@ -2155,7 +2155,7 @@ def run_simulation(
             logger.info(
                 "Cone: the ligand is held within %g degrees of the axis out "
                 "of %r, a cap %.1f%% of a sphere. A binding free energy "
-                "measured under it needs %+.2f kJ/mol adding back, and the "
+                "computed under it needs %+.2f kJ/mol adding back, and the "
                 "run records the angle so the wall can be checked against "
                 "the bound state.",
                 cone.half_angle_deg, cone.axis_selection,
@@ -2845,8 +2845,8 @@ def run_simulation(
                 held = _hold_at(0.0)
                 logger.warning(
                     "Restraints are still applied during production at %g. "
-                    "The trajectory is biased and measures of flexibility "
-                    "computed from it -- RMSF, clustering, dimensionality "
+                    "The trajectory is biased and flexibility analyses "
+                    "run on it -- RMSF, clustering, dimensionality "
                     "reduction -- describe the restraint as much as the "
                     "system.", held,
                 )

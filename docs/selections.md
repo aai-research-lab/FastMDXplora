@@ -62,7 +62,7 @@ script.
 
 ## Where selections appear
 
-### What an analysis measures
+### What an analysis reads
 
 ```yaml
 analysis:
@@ -119,10 +119,10 @@ simulation:
 
 A minimised structure is not at equilibrium, and heating it lets the solute
 move as well as the solvent: side chains relax into space that crystal
-packing left, and a ligand drifts out of the pose that was measured.
+packing left, and a ligand drifts out of the crystallographic pose.
 Restraints are released in stages and are off for production.
 
-### What a biased coordinate is measured between
+### What a biased coordinate is defined between
 
 The `umbrella`, `steered` and `metadynamics` blocks share one
 collective-variable layer, so a variable is named the same way whichever
@@ -198,6 +198,6 @@ make it one. That is what the `resid`/`resSeq` table above is for.
 ## Recorded with the results
 
 Every analysis writes the options it actually used into `options.json` beside
-its output, the resolved selection among them. Two measurements of the same
-trajectory that disagree usually measured different atoms, and this is the
-record that settles it.
+its output, the resolved selection among them. Two analyses of the same
+trajectory that disagree usually read different atoms, and this is the
+record that resolves it.

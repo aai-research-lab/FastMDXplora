@@ -183,7 +183,7 @@ independent of production length** — a 500 ns production run gets the same
 | `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume |
 | `stop_when` | map | — | Run until what the study is for is known, rather than for a fixed length. See below |
 
-`stop_when` states the measures the study is for, how well each must be known,
+`stop_when` states the quantities the study is for, how well each must be determined,
 and a ceiling; `duration_ns` is then the first piece:
 
 ```yaml
@@ -285,7 +285,7 @@ Every key each block takes is in
 | `restraint_release` | list | `[1000, 500, 100, 0]` | Force constants stepped through during equilibration, in kJ/mol/nm² |
 | `restrain_production` | bool | `false` | Keep restraints on during production |
 
-`restrain_production` is off because a biased production run measures the bias:
+`restrain_production` is off because a biased production run samples the bias:
 RMSF, clustering and dimensionality reduction would describe the restraint as
 much as the system. Turning it on logs what it costs and records it with the
 results.
@@ -344,7 +344,7 @@ Nothing leaves the machine: these are files in the run directory that the
 |---|---|---|---|
 | `agent` | str | — | This phase's [Agent](agent.md) mode |
 
-### What to measure
+### What to analyse
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
@@ -364,21 +364,21 @@ area_per_lipid  bilayer_thickness  lipid_order
 
 Several do not run by default and are gated on what the run contains — a
 ligand, water, a periodic box, a bilayer, a biased run. Naming one in `include` runs it
-anyway. [The FastMDXplora analyses](analyses.md) has what each measures and
+anyway. [The FastMDXplora analyses](analyses.md) has what each computes and
 what gates it.
 
-### What to measure it on
+### What to analyse it on
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `trajectory` | str | `simulation/production.dcd` | The trajectory to measure |
+| `trajectory` | str | `simulation/production.dcd` | The trajectory to analyse |
 | `topology` | str | `simulation/trajectory_topology.pdb`, else `simulation/topology.pdb` | The topology that matches it |
 | `select_atoms` | str | — | Which atoms. Overrides `scope` |
 | `selection` | str | — | The earlier name for `select_atoms`. `selection` wins if both |
 | `scope` | str | `solute` | `solute`, `protein`, `ligand`, `all` |
 
 `scope` is shorthand that resolves to a real selection — see
-[Selections in a Config](selections.md#what-an-analysis-measures).
+[Selections in a Config](selections.md#what-an-analysis-reads).
 
 ### Which frames
 

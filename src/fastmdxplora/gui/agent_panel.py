@@ -711,7 +711,7 @@ def _results_summary(root: Any) -> str:
             if isinstance(discard, int) and isinstance(n, int):
                 piece += f", first {discard} of {n} frames discarded as unequilibrated"
             if withheld:
-                piece += f" -- not a measurement: {withheld}"
+                piece += f" -- not determined: {withheld}"
             parts.append(piece)
         if parts:
             rows.append(f"{name}: " + "; ".join(parts))

@@ -1736,7 +1736,7 @@
         value.className = "mono";
         rows.append(term, value);
       });
-      add("p", "muted small", "As drawn in this frame. The analyses measure across the "
+      add("p", "muted small", "As drawn in this frame. The analyses compute distances across the "
         + "periodic box the short way round.");
     }
     if (STATE.picks.length === 2) {
@@ -1747,7 +1747,7 @@
       button.className = "file-action measure-over-frames";
       button.textContent = "Over every frame";
       button.disabled = !ready;
-      button.title = ready ? "The command that measures this distance at every frame"
+      button.title = ready ? "The command that computes this distance at every frame"
         : "Waiting for the atoms' selections";
       button.addEventListener("click", () => overEveryFrame(over));
       over.appendChild(button);

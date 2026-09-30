@@ -122,7 +122,7 @@ def _areas_that_were_written(
         f"The surface-area calculation returned unwritten frames on all "
         f"{ATTEMPTS} attempts ({', '.join(str(n) for n in truncated)} frames "
         "each time). A molecule has surface, so a residue exposed in some "
-        "frames and reading exactly zero in others was not measured -- that "
+        "frames and reading exactly zero in others was not computed -- that "
         "row was not written.\n\n"
         "This is a defect in the underlying library rather than in the "
         "trajectory, seen on Windows. On a platform where it occurs this "

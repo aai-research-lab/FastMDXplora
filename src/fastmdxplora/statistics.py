@@ -354,7 +354,7 @@ def summarise(
         return equilibrated, Withholding(
             f"This run is not long against its own correlation time: taking "
             f"half the frames away changes the estimate, so {kept.size} frames "
-            "cannot measure how correlated they are. The independent-sample "
+            "cannot resolve how correlated they are. The independent-sample "
             f"count of {effective:.1f} is an upper bound, so an error computed "
             "from it would be a lower bound -- and none is reported here "
             "rather than one that is wrong in a knowable direction. On ten "
@@ -443,12 +443,12 @@ class Shortfall:
                     else f", about {self.more_ns:.3g} ns more")
         if not self.resolved:
             return (
-                f"The run is too short to measure its own correlation time, so "
+                f"The run is too short to resolve its own correlation time, so "
                 f"its {self.have:.1f} independent samples are an upper bound. "
                 f"At least {self.more_frames} further frames{duration} (as "
                 f"long again, or to {self.target:g} samples at one every "
                 f"{self.inefficiency:.0f} frames if that is longer), then "
-                "measure again."
+                "estimate again."
             )
         return (
             f"{self.have:.1f} independent samples of the {self.target:g} "

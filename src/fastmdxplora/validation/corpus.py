@@ -1277,12 +1277,12 @@ DEFECTS: list[Case] = [
          mentioning="different machine"),
     Case("binding free energy from a run that never reached bulk",
          _truncated_pmf, "refused",
-         "the reference the well depth is measured against is not a "
+         "the reference the well depth is defined against is not a "
          "reference unless the ligand is free there",
          mentioning="-2kT ln r"),
     Case("order parameters on a structure without hydrogens",
          _order_parameters_without_hydrogens, "refused",
-         "the measurement is of a bond vector and the bond is absent",
+         "the order parameter is of a bond vector and the bond is absent",
          mentioning="without hydrogens"),
     Case("radial distribution with no periodic box",
          _rdf_without_a_box, "refused",
@@ -1426,14 +1426,14 @@ CLEAN: list[Case] = [
     Case("fraction of native contacts on a chain long enough to have a fold",
          _q_on_a_chain_long_enough, "proceeded",
          "a hairpin puts residues far apart in sequence within contact "
-         "distance, which is what Q measures"),
+         "distance, which is what Q counts"),
     Case("a two-dimensional surface where both coordinates moved",
          _a_surface_where_both_coordinates_moved, "proceeded",
          "both variables visited both basins, so neither axis is the "
          "shape of the bias"),
     Case("density from a constant-pressure run",
          _density_at_constant_pressure, "proceeded",
-         "the box breathes, so the density is measured rather than set"),
+         "the box breathes, so the density is sampled rather than set"),
     Case("a save selection that keeps what was asked for",
          _a_selection_that_keeps_something, "proceeded",
          "the selection matches atoms, so there is nothing to cap or "

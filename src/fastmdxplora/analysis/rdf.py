@@ -106,7 +106,7 @@ def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int) -> str:
         return (
             f"The tallest point of g(r) is at {radii[peak]:.3f} nm, within a "
             "few bins of half the box, which is the edge of what a periodic "
-            "cell can measure rather than a shell. A first peak is a local "
+            "cell can resolve rather than a shell. A first peak is a local "
             "maximum; this curve was still flat or climbing where it ran "
             "out of range. No peak position is reported. A larger box, or a "
             "run long enough for structure to appear, is what would change "

@@ -14,7 +14,7 @@ fastmdx explore --system 181L --setup-forcefield amber-openff \
   --output runs/lysozyme
 ```
 
-## What it measures
+## What it computes
 
 Eight interaction types, each implemented against a published criterion named
 in the rule's own docstring.
@@ -47,7 +47,7 @@ bond donor; ProLIF does not. Organic fluorine bound to carbon has a negative
 
 Whether a nitrogen donates, whether a ring is aromatic, whether a group is
 charged — these are chemistry, not coordinates, and a trajectory carries only
-coordinates. The chemistry is resolved before any geometry is measured, by the
+coordinates. The chemistry is resolved before any geometry is computed, by the
 first of these that works:
 
 1. an SDF you supply with `ligand_chemistry`
@@ -60,7 +60,7 @@ because an interaction computed from inferred bond orders is a weaker claim
 than one computed from chemistry that was resolved. A wrong bond order moves a
 hydrogen, and a moved hydrogen invents or destroys a hydrogen bond.
 
-## Some measurements are refused
+## Some interactions are refused
 
 **Salt bridges and π-cation interactions are claims about charge.** A ligand's
 charge inferred from coordinates is ambiguous more often than not: for
@@ -141,7 +141,7 @@ hydrophobic,2637,1385,0.81,13,True,VAL87
 | `ligand_net_charge` | none | The ligand's charge, where you know it |
 | `protein_selection` | `protein` | The other side: a chain, a domain, or `nucleic` for a nucleic-acid receptor |
 | `minimum_occupancy` | 0.1 | How often an interaction must appear to count towards a binding mode |
-| `periodic` | true | Measure across the periodic boundary where the trajectory carries a cell |
+| `periodic` | true | Compute across the periodic boundary where the trajectory carries a cell |
 
 ## Why not PLIP or ProLIF
 
@@ -156,7 +156,7 @@ It re-protonates every frame with OpenBabel, which is not deterministic
 between runs and discards the protonation that setup determined at the simulated
 pH. A tool that re-decides the protonation per frame is answering a different
 question from the one the simulation asked, and that disqualifies it as a
-reference measurement for the same reason it disqualifies it as a dependency.
+reference for the same reason it disqualifies it as a dependency.
 
 **ProLIF was run against this implementation.** It is not a dependency because
 it requires MDAnalysis: a second trajectory library beside MDTraj, with its own

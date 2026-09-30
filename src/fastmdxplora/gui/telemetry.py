@@ -485,7 +485,7 @@ _FINISHED_STATUSES = frozenset({"completed", "complete", "finished", "done", "ok
 
 COMPLETED_EXPLANATION = (
     "The run finished, and the last sample it wrote was within normal "
-    "ranges. Nothing here is being measured any more."
+    "ranges. Nothing here is being recorded any more."
 )
 
 

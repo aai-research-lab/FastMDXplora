@@ -536,7 +536,7 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
         # the whole series only where the analysis recorded no mean.
         kept = None if reweighted else _recorded_mean(project_root, name)
         if kept is not None and kept.get("not_a_measurement"):
-            label = f"{label} (all frames, too short to measure)"
+            label = f"{label} (all frames, too short to determine)"
         elif (kept is not None and _finite(kept.get("mean"))
               and _finite(kept.get("standard_deviation"))):
             rows.append(
@@ -758,9 +758,9 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
     unit = unit_of(data_path.parent.name, found)
     unit = f" {unit}" if unit else ""
     if not _finite(mean):
-        return "no mean: too short to measure" if found.get("not_a_measurement") else None
+        return "no mean: too short to determine" if found.get("not_a_measurement") else None
     if found.get("not_a_measurement"):
-        return f"mean {_format_metric_value(mean)}{unit}, too short to be a measurement"
+        return f"mean {_format_metric_value(mean)}{unit}, too short to be determined"
     error = found.get("standard_error")
     text = (f"mean {_with_its_error(mean, error)}{unit}" if _finite(error) and error > 0
             else f"mean {_format_metric_value(mean)}{unit}")
@@ -774,7 +774,7 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
         count = int(round(samples))
         text += f", {count} independent sample{'s' if count != 1 else ''}"
         if samples < MINIMUM_EFFECTIVE_SAMPLES:
-            text += ", too few to measure"
+            text += ", too few to determine the mean"
     return text
 
 

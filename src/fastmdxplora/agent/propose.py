@@ -255,8 +255,8 @@ and nothing else. Use what the conversation and the run status say; do
 not guess at what happened. Quote a study's numbers as its analyses
 recorded them, with their errors and units, and name the analysis each
 comes from (the software lists each one named under the answer, with its
-record and figure); where an analysis says its mean is not a
-measurement, say that too. Asked whether a run passed or can be
+record and figure); where an analysis says its mean is not
+determined, say that too. Asked whether a run passed or can be
 trusted, answer from the checks the run status ticks, by name, and from
 what the withheld means need where the status gives it.
 
@@ -324,7 +324,7 @@ A study can run until what it is for is determined, rather than for a length
 picked in advance. Write `simulation.stop_when` when the person asks for a
 quantity to a precision ("to within 0.1 nm", "to 5%"), asks to run until
 it converges or is long enough to trust, or asks a question whose answer
-is one of the measured means. Name each measure by the analysis that
+is one of the recorded means. Name each quantity by the analysis that
 records it; only these record one mean a rule can judge:
 {", ".join(judgeable_analyses())}. Give each either `standard_error`, in
 the analysis's own unit, or `relative_error`, a fraction of its mean. Use
@@ -350,7 +350,7 @@ Write `independent_starts: not_required` only when the person asks for a
 single run. Do not add a rule to a study that asked for a length. Asked
 why a study ran as long as it did, or whether it knew what it was asked,
 answer from the stopping record in the run status, round by round, and
-say plainly when it stopped at its ceiling with a measure not determined.
+say plainly when it stopped at its ceiling with a quantity not determined.
 
 """
 

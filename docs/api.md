@@ -253,7 +253,7 @@ means you should do.
 
 ---
 
-## Measuring a trajectory directly
+## Analysing a trajectory directly
 
 `AnalysisOrchestrator` is the analysis phase on its own, for a trajectory that
 came from anywhere.
@@ -288,7 +288,7 @@ from fastmdxplora.analysis import available_analyses, get_analysis_class, regist
 
 available_analyses()              # the 27 names, in execution order
 get_analysis_class("rmsd")
-register_analysis("my_measure", MyAnalysis)
+register_analysis("my_analysis", MyAnalysis)
 ```
 
 Writing one is in [Developing FastMDXplora](developers.md).
@@ -367,7 +367,7 @@ print(sampling_shortfall(rmsd_series, target_independent=10, frame_interval_ns=0
 # that is 72 further frames, about 0.72 ns more.
 ```
 
-Both numbers come from the same statistical inefficiency measured from *this*
+Both numbers come from the same statistical inefficiency estimated from *this*
 series rather than assumed, so the answer is for this system rather than for a
 typical one. Two runs of the same length can need very different amounts of
 further sampling for the same claim, and the difference is not visible in the
@@ -442,7 +442,7 @@ Generated from the source, so it says what the code says. Every entry carries a
 `[source]` link to the implementation.
 
 Docstrings here are longer than reference documentation usually is, because a
-docstring is where a decision gets recorded: what a measure computes, what it
+docstring is where a decision gets recorded: what an analysis computes, what it
 refuses and why, and which choices move the number. That is the material to
 read before comparing a result against another tool.
 

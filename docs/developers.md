@@ -160,7 +160,7 @@ from fastmdxplora.analysis.orchestrator import register_analysis
 
 
 class EndToEndish(Analysis):
-    """One sentence saying what this measures — and what it does not."""
+    """One sentence saying what this computes — and what it does not."""
 
     name = "end_to_endish"
     description = "Distance between the first and last alpha carbon"
@@ -195,8 +195,8 @@ variant, and `options.json`.
 | `name` | The identifier used in `analysis.include`, the output directory and the manifest |
 | `description` | Used in figure titles |
 | `time_series` | `compute` returns one value per frame — **declared, not inferred**, because a per-atom result on a trajectory with as many frames as atoms would otherwise be summarised as a time series and look right |
-| `honours_selection` | Whether `selection` means anything here. A protein–ligand measure works both sides out from the residue name, so offering a control that does nothing is worse than not offering one |
-| `default_selection` | What it measures when nothing narrower is given |
+| `honours_selection` | Whether `selection` means anything here. A protein–ligand analysis works both sides out from the residue name, so offering a control that does nothing is worse than not offering one |
+| `default_selection` | What it analyses when nothing narrower is given |
 | `min_atoms_to_align` | The floor below which a superposition is undefined. Alanine dipeptide has one CA, and MDTraj responded with "UNCONVERGED ROTATION MATRIX. RETURNING IDENTITY" once per frame and a column of numbers that looked like results |
 | `reweightable` | `(column, label)` — the per-frame scalar whose mean can be corrected on a biased run |
 | `reweightable_populations` | `compute` returns per-frame categorical labels, so populations reweight as means do |
@@ -217,7 +217,7 @@ when named in `include`**.
 | `requires_state_record` | `simulation/energy.csv` exists |
 | `requires_tertiary_structure` + `min_seq_separation` | The solute has more residues than the separation |
 | `requires_umbrella` / `requires_metadynamics` / `requires_steered` | That method's result file exists |
-| `requires_naming` | **Never automatically.** The measure is between two named things and the trajectory does not contain which two |
+| `requires_naming` | **Never automatically.** The quantity is between two named things and the trajectory does not contain which two |
 
 ### Two invariants to respect
 
@@ -227,7 +227,7 @@ An interaction analysis once reported 252 hydrophobic contacts after RMSF and
 ligand RMSD had aligned the frames, and 10 when run alone. The 10 was right.
 
 **Put every option in `self.options`.** It is what `options.json` records and
-what makes two disagreeing measurements of the same trajectory resolvable. Also
+what makes two disagreeing analyses of the same trajectory resolvable. Also
 note that unknown options are refused rather than ignored — every analysis ends
 in `**kwargs`, so `n_clusteres` used to cluster at the default and report
 success.
@@ -309,11 +309,11 @@ Unknown names raise `ValueError` listing `sorted(COLLECTIVE_VARIABLES)`.
 
 ---
 
-## Measuring the natural-language interface
+## Evaluating the natural-language interface
 
 `propose_config` has a cycle counter, and what a real model does with
 `describe_schema()` decides whether the [Agent](agent.md) is worth having. So it
-is measured rather than assumed.
+is evaluated rather than assumed.
 
 ```bash
 ANTHROPIC_API_KEY=... python scripts/measure_nli.py
@@ -343,11 +343,11 @@ Two numbers, and the second matters more:
   the wrong study: 300 K when the sentence said 310, a setting simply omitted,
   or a concentration given in millimolar where the field is molar. Validation
   catches ill-formed, not wrong. A harness reporting only the first would score
-  every model perfectly and measure the thing nobody cares about.
+  every model perfectly and evaluate the thing nobody cares about.
 
 Each request asserts only what its sentence specified. A request saying "at
 pH 6.5" checks the pH and leaves the box shape alone — marking a model wrong
-for choosing something it was never asked about would measure obedience rather
+for choosing something it was never asked about would test obedience rather
 than comprehension.
 
 **The refusal tally is the most useful output.** A code appearing in most runs
@@ -364,15 +364,15 @@ Measured with `claude-sonnet-4-6` on the original eight:
 Both reached 8/8. **The help does not change whether the model succeeds; it
 changes how much work that takes.** And a model working from bare field names
 still got every study right — the validator is carrying the weight, which is
-the architecture's claim and now a measurement rather than an argument.
+the architecture's claim and now a result rather than an argument.
 `--attempts` defaults to 3 on that evidence.
 
-## Measuring whether the Agent's looking helps
+## Evaluating whether the Agent's looking helps
 
 The Agent may look with the software's own tools before it answers
 ([Looking before it answers](agent.md#looking-before-it-answers)). Whether a
 real model does, and whether its answers then agree with the software, is
-measured with a model chosen and a connection to the PDB:
+evaluated with a model chosen and a connection to the PDB:
 
 ```bash
 python -m fastmdxplora.validation.agent_looks --repeats 3 --out agent_looks.json
@@ -387,7 +387,7 @@ against the software's answer by the rule
 [pre-registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/agent-looks.md)
 before any reply was seen. The table gives, per question, the replies that
 agreed in each arm and how many looked with the tool the question calls for;
-the file keeps every reply whole. It measures agreement with the software,
+the file keeps every reply whole. It tests agreement with the software,
 not with experiment. No result is recorded here yet.
 
 ---

@@ -36,7 +36,7 @@ fastmdx explore --system 181L \
 `amber-openff` is what parameterises the ligand. The setup phase finds it,
 looks its chemistry up, determines its protonation in the binding site, and
 discards crystallisation additives. The analysis phase adds the protein–ligand
-measures automatically.
+analyses automatically.
 
 The ligand's charges are AM1-BCC, computed by AmberTools, which the conda-forge
 package brings. Where nothing can compute them, the study refuses before setup
@@ -121,7 +121,7 @@ no relation to. A structure that is not a membrane protein is refused rather
 than embedded. An OPM file needs no flag: its frame is recognised and kept.
 
 The restraint holds the protein while the lipids pack around it. The area per
-lipid, thickness and chain order of the bilayer are measured after the run.
+lipid, thickness and chain order of the bilayer are analysed after the run.
 See [Membrane proteins](membranes.md).
 
 ---
@@ -219,7 +219,7 @@ and neighbours further apart than about twice that share too little for the
 stitching to join them. The study reports every overlap and refuses below a
 threshold rather than returning a curve nobody should read.
 
-**A torsion is a circle.** Windows covering part of a turn measure one of the
+**A torsion is a circle.** Windows covering part of a turn sample one of the
 two paths between the states and say nothing about the other — which may be the
 higher. The example above tiles the full turn, from −π to +2.618 radians at
 30-degree spacing, so the last window's neighbour is the first.
@@ -262,7 +262,7 @@ refused rather than guessed, because a pull that begins somewhere the molecule
 is not spends its first half hauling the system to the anchor and reports work
 that means nothing.
 
-Measure it before writing the Config:
+Compute it before writing the Config:
 
 ```bash
 fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses rg
@@ -302,7 +302,7 @@ analysis:
 
 ---
 
-## Choosing what gets measured
+## Choosing what gets analysed
 
 ```bash
 fastmdx explore --system 1UBQ --output runs/focused \
@@ -368,7 +368,7 @@ what you want overnight — the failures are in the
 [Manifest](manifest.md).
 
 A study with more than one run writes a cross-run comparison as well as the
-individual reports — the same measures overlaid, so a difference between
+individual reports — the same quantities overlaid, so a difference between
 systems is visible rather than inferred from reading two reports side by side.
 It is on by default; `report.comparison: false` turns it off. See
 [Comparing runs](results.md#comparing-runs).

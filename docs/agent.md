@@ -381,8 +381,8 @@ teaches the Config language while you wait.
 and water, the solvent and box, the conditions, the equilibration and
 production lengths, any enhanced sampling, the analyses and the report, each
 at the value the run will take, with the ones the Config leaves to their
-defaults marked; and the checks the run will be held to (each measure
-equilibrated, its correlation time measurable, at least ten independent
+defaults marked; and the checks the run will be held to (each observable
+equilibrated, its correlation time resolved, at least ten independent
 samples per mean, the temperature within 5 K of its target, the potential
 energy's range per ns per atom), which the report ticks after the run and the
 Agent is given ticked. It ends with what setup would build, about how many
@@ -500,7 +500,7 @@ A reply is one of four things:
 |---|---|
 | **A Config** | YAML. Validated, repaired if refused, shown with its actions. |
 | **A question** | When the request is short of something only you can supply, a structure most often. The Agent never invents one. Your next message answers it, and goes back with the request it answers. |
-| **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. Under it, each analysis the paragraph names, with the mean the study recorded for it (its error and unit, or that it is not a measurement); choosing one opens its figure on the Analysis page. The value is the record's, whatever the paragraph says, so a number can be checked where it is read. |
+| **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. Under it, each analysis the paragraph names, with the mean the study recorded for it (its error and unit, or that the mean is not determined); choosing one opens its figure on the Analysis page. The value is the record's, whatever the paragraph says, so a number can be checked where it is read. |
 | **An action** | One of: run, stop, run the fix, open viewer, open overview, open report, open builder, show config, download config; or `rerun windows` with the windows and the values you named. |
 
 ### Looking before it answers
@@ -598,7 +598,7 @@ study's own record of what would fix it: the fix, the command or config
 that runs it, and what it costs at the speed the study ran. A stopped run
 is `fastmdx resume`; umbrella windows that sampled too little are run again
 longer with `--rerun-window`, by the length the thinnest needs; gaps between
-windows get the design the windows measured. Where the answer is a choice
+windows get the design their sampling implies. Where the answer is a choice
 only you can make, such as a ligand's protonation, the Agent says so and
 names where it is recorded, and offers no value. See
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
@@ -621,14 +621,14 @@ asked for a stiffer spring or a longer run without a number, it asks for one.
 ### Saying what "done" means before the run
 
 Ask for a quantity to a precision (*simulate chignolin until its RMSD is
-known to 0.01 nm*), or to run until something is known, and the Agent
-writes the study's stopping rule, `simulation.stop_when`: the measures, the
+determined to 0.01 nm*), or to run until something is determined, and the Agent
+writes the study's stopping rule, `simulation.stop_when`: the quantities, the
 error each must reach, three replicas over the seed, and the most production
 any run may reach. The plan shows it on its **Stops when** line before
 anything runs, so the criterion is committed to before any data is seen,
 and the code, not the model, judges it afterwards. Where you state no
 precision, the Agent chooses one to answer your question; it is in the plan
-for you to change. A rule the study cannot keep (no replicas, a measure
+for you to change. A rule the study cannot keep (no replicas, an analysis
 that records no mean, a ceiling below the first piece) is refused by the
 same validator that gates every proposal, so the Agent repairs it before you
 see it. Asked afterwards why the study ran as long as it did, the Agent
@@ -666,4 +666,4 @@ out:
 - **[FastMDXplora refusals](refusals.md)** — the vocabulary it is answering to
 - **[The FastMDXplora Manifest](manifest.md)** — where the provenance lands
 - **[Production runs and GPUs](production.md)** — budgets, calibration and campaigns
-- **[How FastMDXplora is validated](validation.md)** — how well a model actually does at this, measured rather than assumed
+- **[How FastMDXplora is validated](validation.md)** — how well a model actually does at this, evaluated rather than assumed

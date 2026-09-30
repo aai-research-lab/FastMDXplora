@@ -255,8 +255,8 @@ class BFactorComparison(Analysis):
                 "make. B-factors therefore bound loop amplitudes from "
                 "below: agreement everywhere can mean a protein held too "
                 "tightly, and exceeding them in loops can be correct. No "
-                "regression slope is reported, because the quantities are "
-                "not the same measurement."
+                "regression slope is reported, because the two are "
+                "not the same quantity."
             ),
         }
         from fastmdxplora.analysis.residues import columns, distinct

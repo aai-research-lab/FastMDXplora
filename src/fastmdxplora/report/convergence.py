@@ -59,10 +59,10 @@ _TEMPERATURE_LIMIT_K = 5.0
 #: list, so what was promised and what was checked cannot differ. Each is
 #: ``(key, what is checked, the same in a few words)``.
 CHECKS: tuple[tuple[str, str, str], ...] = (
-    ("equilibrated", "each measure stops drifting before it is averaged",
-     "each measure equilibrated"),
-    ("correlation", "each measure's correlation time can be measured from the run",
-     "each correlation time measurable"),
+    ("equilibrated", "each observable equilibrates before it is averaged",
+     "each observable equilibrated"),
+    ("correlation", "each observable's correlation time is resolved by the run",
+     "each correlation time resolved"),
     ("sampled", f"each mean rests on at least {_ENOUGH_SAMPLES:g} independent samples",
      f"at least {_ENOUGH_SAMPLES:g} independent samples per mean"),
     ("temperature", f"the mean temperature is within {_TEMPERATURE_LIMIT_K:g} K of the target",
@@ -426,7 +426,7 @@ def assess_run(
     elif assessments:
         verdicts["equilibrated"] = (True, "on " + ", ".join(sorted(assessments)))
     if unmeasurable:
-        verdicts["correlation"] = (False, "not measurable: " + ", ".join(sorted(unmeasurable)))
+        verdicts["correlation"] = (False, "not resolved: " + ", ".join(sorted(unmeasurable)))
     elif assessments:
         verdicts["correlation"] = (True, "on " + ", ".join(sorted(assessments)))
     measurable = [a for a in assessments.values() if a.correlation_is_measurable]
@@ -439,7 +439,7 @@ def assess_run(
             + f", {min(a.effective_samples for a in measurable):.0f}"
             + ("; the rest cannot be counted" if unmeasurable else ""))
     elif assessments:
-        verdicts["sampled"] = (None, "no measure's correlation time could be measured")
+        verdicts["sampled"] = (None, "no observable's correlation time could be resolved")
 
     # Why a check could not be judged, where it could not.
     if "energy" not in verdicts:

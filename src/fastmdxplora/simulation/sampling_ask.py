@@ -51,8 +51,8 @@ class SamplingAsk:
                 f"sampling: {amount} should give {'it' if one else 'each'} "
                 f"{MINIMUM_EFFECTIVE_SAMPLES:g} independent samples")
         if self.lower_bound:
-            text += (" (a floor: the run is too short to measure its own correlation "
-                     "time, so run that much and measure again)")
+            text += (" (a floor: the run is too short to resolve its own correlation "
+                     "time, so run that much and estimate again)")
         if self.seconds is not None:
             where = f" on {self.platform}" if self.platform else ""
             text += f"; at this run's own speed{where}, about {_duration(self.seconds)}"

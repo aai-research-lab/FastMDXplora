@@ -98,7 +98,7 @@ class TestOverEveryFrame:
     def test_a_study_with_no_trajectory(self, study):
         (study / "simulation" / "production.dcd").unlink()
         assert over_frames(study, A, B)["reason"] == \
-            "This study has no trajectory to measure over."
+            "This study has no trajectory to compute it over."
 
 
 def test_the_viewer_measures(study) -> None:

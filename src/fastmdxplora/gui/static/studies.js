@@ -42,7 +42,7 @@
 
   function meanSaid(record) {
     if (!record) return "not recorded";
-    if (record.withheld) return withError(record.mean, null, record.unit) + ", not a measurement";
+    if (record.withheld) return withError(record.mean, null, record.unit) + ", not determined";
     return withError(record.mean, record.error, record.unit);
   }
 
@@ -214,7 +214,7 @@
     }
     var means = make("table", "kv-table studies-means");
     var header = make("tr");
-    ["Measure", data.first.name, data.second.name, "Difference"].forEach(function (label) {
+    ["Quantity", data.first.name, data.second.name, "Difference"].forEach(function (label) {
       header.appendChild(make("th", "", label));
     });
     means.appendChild(header);

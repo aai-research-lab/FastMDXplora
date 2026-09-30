@@ -424,7 +424,7 @@ def _umbrella_preamble(
         "restraints differ, which is the method working rather than a "
         "disagreement between runs -- a quantity that varies with the "
         "coordinate will vary across windows by construction, and its mean "
-        "over a restrained window is not a measurement of the system.",
+        "over a restrained window is not a property of the system.",
         "",
     ]
 
@@ -538,8 +538,8 @@ def _write_markdown(
                  + (" Where a run recorded none, the mean of every frame is given and "
                     "marked (all frames)." if whole else ""))
     if qualified:
-        lines += ["", "\\* Not a measurement: the run's analysis found the series too "
-                  "short, or with too few independent samples, for its mean to be one."]
+        lines += ["", "\\* Not determined: the run's analysis found the series too "
+                  "short, or with too few independent samples, for its mean to be determined."]
     lines.append("")
     lines.append(f"Full table: `{csv_path.name}`.")
     lines.append("")

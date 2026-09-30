@@ -1,7 +1,7 @@
 # Reading the results
 
 A finished run is a directory, not a number. This page is the map: what is in
-it, what to open first, and how to tell a measurement from something the run
+it, what to open first, and how to tell a determined value from something the run
 could not support.
 
 ---
@@ -12,7 +12,7 @@ could not support.
 runs/study/
 ├── setup/                  prepared and solvated structures, and what was decided
 ├── simulation/             the trajectory, the energy log, the settings used
-├── analysis/               one directory per measure
+├── analysis/               one directory per analysis
 ├── report/                 the written report, slides, dashboard, bundle
 ├── manifest.json           what happened
 ├── resolved_config.yml     what was asked for
@@ -26,7 +26,7 @@ apart:
 |---|---|
 | `resolved_config.yml` | **What was asked for.** A valid Config carrying every setting the run used, defaults included. Give it back to `fastmdx explore --config` to run the study again — see [Reproducing a run](config.md#reproducing-a-run) |
 | `manifest.json` | **What happened.** Every phase, artifact and refusal, plus the exact software stack the run used — [The FastMDXplora Manifest](manifest.md) |
-| `analysis/<name>/options.json` | **What one measure did.** Its selection, every option including the defaults, the findings, and the format of the file beside it |
+| `analysis/<name>/options.json` | **What one analysis did.** Its selection, every option including the defaults, the findings, and the format of the file beside it |
 
 **The trajectory holds the solute, not the box.** `simulation.save_selection`
 defaults to `not water`, because water is nine tenths of a solvated system and
@@ -66,14 +66,14 @@ opens in a browser with no server, and travels inside
 
 ## How a number tells you what it is worth
 
-Every measure reports through the same four registers, and reading them is most
+Every analysis reports through the same four registers, and reading them is most
 of reading a result.
 
 **A number, plainly.** A mean after equilibration arrives with a standard error and the
 number of **independent observations** behind it, not the number of frames,
 and with its unit (`unit` in the analysis's `options.json`, as its figure's
 axis states it; empty for a count or a fraction).
-Saving frames more often makes a file larger without making a measurement
+Saving frames more often makes a file larger without making an estimate
 better, so the effective sample count is the figure to read. The correlation
 behind it is summed over pairs of lags, so frames that alternate, as a stiff
 restraint sampled more slowly than it oscillates makes them, do not read as
@@ -82,7 +82,7 @@ independent when something slower moves underneath.
 **A number, with a statement of what it does not support.** A finding carrying
 `not_a_measurement` is still reported, because the value is often the best
 available, and the note says what is wrong with it. The commonest case: a run
-too short against its own correlation time cannot measure how correlated it is,
+too short against its own correlation time cannot resolve how correlated it is,
 so the effective-sample count is an upper bound and the true figure is smaller.
 
 **A range instead of a number**, where the run recorded enough to bound a
@@ -96,7 +96,7 @@ produces, and it always says what would settle the question.
 
 ### Not enough data is a refusal too
 
-A mean over a trajectory is not a measurement until two things are known about
+A mean over a trajectory is not determined until two things are known about
 it: whether the system had stopped changing by the time averaging started, and
 how many independent observations the average rests on. Where either is
 unresolved, the mean is withheld and the withholding says which condition it
@@ -124,7 +124,7 @@ One caveat the function states and this repeats: where the frames in hand are
 too few to resolve the correlation time, the shortfall is a **lower bound**, and
 it is never less than as long again as the part of the run already averaged,
 since the independent samples the run appears to hold are themselves an upper
-bound. It is a planning figure. Run at least that much and measure again.
+bound. It is a planning figure. Run at least that much and analyse again.
 
 Averages taken on a biased run are corrected back to equilibrium where the bias
 allows, and labelled as biased where it does not —
@@ -134,7 +134,7 @@ allows, and labelled as biased where it does not —
 
 ## Where each kind of result is explained
 
-The detail that changes a number lives with the measure rather than here, so
+The detail that changes a number lives with the analysis rather than here, so
 there is one place to correct when it changes:
 
 - **What each analysis computes**, and the choices that move it — cutoffs,
@@ -173,13 +173,13 @@ runs/campaign/
     └── trend_rmsd.png       only where a numeric sweep axis other than the seed exists
 ```
 
-Four per-frame measures are overlaid — RMSD, radius of gyration, the fraction
+Four per-frame quantities are overlaid — RMSD, radius of gyration, the fraction
 of native contacts Q, and total SASA — and only where at least two runs
 produced them.
 
 Runs are compared on the means their own analyses recorded: over the frames
 after equilibration, each with its standard error, and a mean the run said is
-not a measurement is marked as one. The trend plots carry those errors as
+not determined is marked as such. The trend plots carry those errors as
 bars, and the report calls a difference between the ends of a sweep a trend
 only where it is more than twice its error. `comparison_summary.csv` gives
 each mean with its standard error, the frames discarded before it and what it
@@ -190,14 +190,14 @@ their means against the error each run estimated (below), and no trend plot
 against their seeds.
 
 `members.json` **distinguishes two things that look identical on disk.**
-Members differing only by random seed are repeats of one measurement, so the
+Members differing only by random seed are repeats of one calculation, so the
 spread of their means is the **error** on it, and it is set against the error
 each run estimated for itself; where the replicas spread much wider, the
 single-run estimate missed correlation its run could not see. On ten 20 ns
 replicas of one protein and ligand, the spread was about ten times the error
 one run estimated, including in runs whose correlation time was resolved, so
-replicas are the measure of that error, not a check on it. Members differing by system, mutation or parameter are different
-measurements, so the spread between them is the **result**. The file says which
+replicas are what determines that error, not a check on it. Members differing by system, mutation or parameter are different
+calculations, so the spread between them is the **result**. The file says which
 it decided and why.
 
 ---
@@ -209,7 +209,7 @@ single sample path. Reading it as one loses most of it: a join is a small step
 change, and equilibration detection is built to find step changes, so on a
 ten-segment run it will often discard everything before one of the later joins.
 
-Measured on ten segments drawn from the same distribution with a small shift at
+Checked on ten segments drawn from the same distribution with a small shift at
 each join:
 
 | | discard | independent samples | mean | error vs truth |
@@ -259,5 +259,5 @@ Segmenting a run in the first place is in
 ## See also
 
 - **[The FastMDXplora Manifest](manifest.md)** — the record of what happened
-- **[The FastMDXplora analyses](analyses.md)** — every measure, and what changes it
+- **[The FastMDXplora analyses](analyses.md)** — every analysis, and what changes it
 - **[FastMDXplora refusals](refusals.md)** — reading a refusal, by hand or from a program

@@ -283,7 +283,7 @@ class Analysis(ABC):
             raise StudyError(
                 f"{type(self).__name__} works out its own atoms, so "
                 f"`selection` would have no effect. Accepting it would let a "
-                f"measurement look as though it had been restricted when it "
+                f"result look as though it had been restricted when it "
                 f"had not."
             , code="analysis.option.inapplicable")
         #: What the analysis worked out while running, as opposed to what it

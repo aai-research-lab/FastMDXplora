@@ -152,7 +152,7 @@ the failure are not lost with it.
 ## The other records
 
 `manifest.json` is the index. Four other files record what one phase or one
-measure actually did. They answer a different question from
+analysis actually did. They answer a different question from
 [`resolved_config.yml`](config.md#reproducing-a-run): that file says what the
 study **was**, down to every setting; these say what running it **produced** —
 the solvated atom count, the platform it landed on, the frames written, the
@@ -163,7 +163,7 @@ length actually reached.
 | `setup/setup_parameters.json` | Every resolved setup parameter, the input structure's provenance, the force field that was chosen, and the solvated atom count |
 | `simulation/simulation_parameters.json` | Every resolved simulation parameter, the platform actually used, the pressure used, frames written, and the length actually reached |
 | `analysis/analysis_manifest.json` | The plan, the load settings, frame/atom/residue counts, and a result record per analysis |
-| `analysis/<name>/options.json` | One measure's selection, every option, its findings, and **the format of the `.dat` file beside it** |
+| `analysis/<name>/options.json` | One analysis's selection, every option, its findings, and **the format of the `.dat` file beside it** |
 
 ### `resolved`: the settings a phase worked out
 

@@ -61,7 +61,7 @@ fastmdx info
 |---|---|
 | **A protein on its own** | Fold, flexibility, secondary structure, native contacts, conformational clustering — from a PDB code. Fluctuations can be set against the crystal's own B-factors, and backbone order parameters against what NMR relaxation measures. |
 | **A protein with a ligand** | The ligand is found, its chemistry resolved, its protonation determined in the binding site. Eight interaction types against published criteria tell you what *holds* it, not just what it touches. |
-| **A membrane protein** | Embedded in one of seven bilayers, oriented by a fit checked against OPM, with pressure coupling that suits a lipid system and the bilayer's area, thickness and chain order measured. |
+| **A membrane protein** | Embedded in one of seven bilayers, oriented by a fit checked against OPM, with pressure coupling that suits a lipid system and the bilayer's area, thickness and chain order analysed. |
 | **Free energy along a coordinate** | Umbrella sampling, metadynamics and steered MD from a named collective variable — nine of them, one or two at a time — without writing PLUMED input. Each says what its output is and is not: a surface if the bias converged, a pathway and the work along it, a potential of mean force if the windows overlap. |
 | **A trajectory from another engine** | Skip the simulation and analyse what you already have — GROMACS `.xtc` and `.trr`, Amber `.nc`, NAMD and CHARMM `.dcd`, LAMMPS `.lammpstrj`, or `.pdb`, `.cif` and `.h5` that carry their own topology. |
 | **Many systems at once** | Mutants against wild type — named as `L99A`, and checked against the residue actually there — a sweep across a setting, runs pinned one per GPU, and a comparison report across all of them. Where the members differ only by seed, the spread of their means is set against the error each run claimed for itself. |
@@ -76,7 +76,7 @@ can defend; what you cannot is marked.
 ## The config is the study
 
 A FastMDXplora config is the whole description of a molecular dynamics study:
-the system, how it is prepared, how it is simulated, what is measured, and how
+the system, how it is prepared, how it is simulated, how it is analysed, and how
 it is written up. Capture that, and the four phases — setup, simulation,
 analysis, report — run themselves.
 

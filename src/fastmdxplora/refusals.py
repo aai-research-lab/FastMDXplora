@@ -278,7 +278,7 @@ CODES: tuple[Code, ...] = (
          detail_keys=("packages", "install_command")),
     Code("environment.backend.defective",
          "An optional backend is installed and returning wrong answers, so "
-         "the measurement cannot be made on this platform.",
+         "the analysis cannot be run on this platform.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("backend", "attempts")),
     Code("environment.service.unreachable",
@@ -507,7 +507,7 @@ CODES: tuple[Code, ...] = (
 
     # -- simulation: collective variables -----------------------------------
     Code("simulation.cone.unmeasured",
-         "A window's angular wall was never measured, so there is nothing "
+         "A window's angular wall was never determined, so there is nothing "
          "to restrain the angle against.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("window",)),
@@ -580,7 +580,7 @@ CODES: tuple[Code, ...] = (
          detail_keys=("window", "potential", "measured")),
     Code("simulation.reference.unusable",
          "A reference structure was given and does not support the "
-         "measurement.",
+         "analysis.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("path", "reason")),
     Code("simulation.run.stopped",

@@ -367,7 +367,7 @@ class TestAnUmbrellaStudyIsOneExperiment:
         md = self._study(tmp_path, with_free_energy=True)
         text = "\n".join(_umbrella_preamble(*_umbrella_result(md)))
         assert "restraints differ" in text
-        assert "not a measurement of the system" in text
+        assert "not a property of the system" in text
 
 
     def test_a_refused_study_shows_no_plot(self, tmp_path) -> None:
@@ -554,7 +554,7 @@ class TestTheMeansAreTheRecordedOnes:
         data["findings"]["mean"]["not_a_measurement"] = "too few independent samples"
         record.write_text(json.dumps(data))
         md = (build_comparison_report(root) / "comparison_report.md").read_text()
-        assert "\\*" in md and "Not a measurement" in md
+        assert "\\*" in md and "Not determined" in md
 
 
 class TestReplicas:

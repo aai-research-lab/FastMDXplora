@@ -1,7 +1,7 @@
 # Protein-ligand interactions: implementation
 
 *How FastMDXplora's interaction analysis is built, why it is built that way,
-and what it was checked against. For what it measures and how to use it, see
+and what it was checked against. For what it computes and how to use it, see
 [Protein-ligand interactions](interactions.md).*
 
 ---
@@ -41,7 +41,7 @@ different question from the one the simulation asked.
 That is also why PLIP does not appear in the checking below. Its published
 criteria are adopted and cited throughout — the hydrophobic threshold, the
 π-stacking and π-cation geometry, metal coordination, the water bridge — but a
-non-deterministic re-protonation cannot serve as a reference measurement for a
+non-deterministic re-protonation cannot serve as a reference for a
 trajectory whose protonation was fixed at setup. Citing a tool's criteria and
 running it are different claims, and only the first is made here.
 
@@ -91,7 +91,7 @@ charge — are not reported, and the reason is recorded. The rest continues: a
 ligand whose charge is unknown still has hydrogen bonds.
 
 **A topology without bonds is refused outright**, for the reason and with the
-message given in [Protein-ligand interactions](interactions.md#some-measurements-are-refused).
+message given in [Protein-ligand interactions](interactions.md#some-interactions-are-refused).
 What belongs here is why that refusal is the right behaviour rather than a
 gap.
 

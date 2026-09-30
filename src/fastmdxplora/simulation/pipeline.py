@@ -205,7 +205,7 @@ def _write_steered_work(output_dir: Path, params: dict, presenter: Any) -> str |
             "The work done by a pull depends on how fast the anchor moves. A "
             "fast pull does work against the solvent and against the strain "
             "of the molecule as well as against the interactions being "
-            "measured, and that dissipated work does not cancel -- so a "
+            "probed, and that dissipated work does not cancel -- so a "
             "single pull overestimates a barrier. Jarzynski's equality "
             "recovers a free energy from many pulls, and its average is "
             "dominated by rare low-work trajectories, so it needs many more "

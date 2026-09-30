@@ -154,7 +154,7 @@ runs[0].phase("setup").refusal["code"]
 ## Not enough data is a refusal too
 
 The `analysis.sampling.*` family is the one this software is most distinctive
-for. A mean over a trajectory is not a measurement until two things are known
+for. A mean over a trajectory is not determined until two things are known
 about it: whether the system had stopped changing by the time averaging
 started, and how many independent observations the average rests on.
 
@@ -180,14 +180,14 @@ print(sampling_shortfall(rmsd_series, target_independent=10, frame_interval_ns=0
 ```
 
 Both numbers come from the same statistical inefficiency the refusal used,
-measured from **this** series rather than assumed, so the answer is for this
+estimated from **this** series rather than assumed, so the answer is for this
 system rather than for a typical one. Two systems with the same trajectory
 length can need very different amounts of further sampling for the same claim,
 and the difference is not visible in the length.
 
 Where the frames in hand are too few to resolve the correlation time, the
 shortfall is a **lower bound**. It is a planning figure: run at least that much
-and measure again.
+and analyse again.
 
 See [Reading the results](results.md#how-a-number-tells-you-what-it-is-worth).
 
@@ -220,7 +220,7 @@ for remedy in remedies_of("runs/umbrella"):
 | A run stopped by a signal, or runs never started | `fastmdx resume STUDY`, one command for the whole study | What remains of each run's production; a run that never reached production is counted from the top |
 | Umbrella windows that recorded too few values | Those windows again, longer, with `--rerun-window` and the length that gives the thinnest the values it needs | That production for each window named |
 | Windows that ran with settings the config no longer gives | Those windows again with `--rerun-window`, or the settings restored | The windows named, or nothing |
-| Gaps between windows | A new study with the windows these measured, as a config | Every window of it |
+| Gaps between windows | A new study with the windows these windows' sampling implies, as a config | Every window of it |
 | A window that failed | Its own fix, then it and every window it kept from starting, with `--rerun-window` | Those windows |
 | A withheld mean | The study extended in place by what the analyses asked for | That production |
 | Any other refusal | What its disclosure allows, below | The study again from the top |
@@ -235,7 +235,7 @@ protonation), and never what it should be.
 
 The price is production and equilibration in nanoseconds, and the wall time
 at the speed recorded in the study's own `cost.json`, or in another run of
-the same study where the one that stopped measured nothing. That speed
+the same study where the one that stopped recorded no speed. That speed
 includes minimisation and equilibration, so the time errs long. Where no
 speed was ever measured, no time is given.
 

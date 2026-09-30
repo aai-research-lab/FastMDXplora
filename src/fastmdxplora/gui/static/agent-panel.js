@@ -107,7 +107,7 @@
       var value = document.createElement("span");
       value.className = "agent-cite-value";
       value.textContent = c.value
-        ? c.value + (c.withheld ? ", not a measurement" : "")
+        ? c.value + (c.withheld ? ", not determined" : "")
         : "figure";
       chip.appendChild(value);
       chip.title = (c.withheld ? c.withheld + " " : "") +
@@ -1063,7 +1063,7 @@
     /* What the proposal would build and how long it would take here, added
      * to its plan once the builder holds it: the cost read before the run,
      * not learned from setup's log. A moment after the reply, because a
-     * structure named by its identifier is fetched to be measured. */
+     * structure named by its identifier is fetched to be inspected. */
     loaded.then(function (ok) {
       var run = window.FastMDXRun;
       if (!ok || !run || !run.previewCost) return;

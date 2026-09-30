@@ -183,7 +183,7 @@ class Cone:
                      else (self.axis_atoms or ()))
         if not atoms:
             raise StudyError(
-                "A cone's angle is measured against a group of atoms, and "
+                "A cone's angle is defined against a group of atoms, and "
                 f"none reached it. `axis_selection` is {self.axis_selection!r} "
                 "-- resolve it against the topology and pass the result, or "
                 "give the cone `axis_atoms`.", code="simulation.cv.selection_empty")
@@ -317,7 +317,7 @@ def narrowest_cone(direction: Any, keep: float = 98.0,
             f"{direction.shape} was given.", code="simulation.bias.dimension_mismatch")
     if direction.shape[0] < 3:
         raise StudyError(
-            "Measuring a cone needs a path to measure; "
+            "Determining a cone needs a path to read it from; "
             f"{direction.shape[0]} frames were given.", code="analysis.sampling.too_few_frames")
     lengths = np.linalg.norm(direction, axis=1)
     direction = direction / np.where(lengths == 0.0, 1.0, lengths)[:, None]
@@ -345,7 +345,7 @@ def cone_from_config(spec: "dict[str, Any] | None"
     if isinstance(spec, str):
         if spec.strip().lower() not in ("auto", "measured", "measure"):
             raise StudyError(
-                f"`cone` is {spec!r}. It is either `auto` -- measured from "
+                f"`cone` is {spec!r}. It is either `auto` -- determined from "
                 "the pull that seeds the windows -- or a block with "
                 "`half_angle_deg`.", code="config.option.not_permitted")
         return ConeToMeasure()
@@ -593,7 +593,7 @@ def check_umbrella_keys(spec: dict[str, Any]) -> None:
             "recorded in pmf.json and read by nothing, so a study asking for "
             "it discarded only the default fraction. Use "
             "`equilibration_fraction` instead -- a fraction of each window's "
-            "production, which is what the discard is actually measured in."
+            "production, which is what the discard is actually expressed in."
         , code="config.option.inapplicable")
     named = ", ".join(
         f"'{key}'{_suggest(key, set(accepted))}" for key in unknown)
@@ -1350,7 +1350,7 @@ def _how_hard_they_needed_holding(drifted: list[dict[str, Any]]) -> str:
         "gradient divided by the gate. A softer one will make this worse -- "
         "it is the remedy for windows that never reach each other, and these "
         "have gone somewhere else. Both columns are upper bounds where the "
-        "surface steepens inward, because the gradient is measured where the "
+        "surface steepens inward, because the gradient is estimated where the "
         "window stopped rather than at its centre.\n\n"
         "`at spacing` is not optional. Sigma falls as sqrt(kT/k), so a "
         "stiffer window is a narrower one -- raising the constant and "
@@ -1840,7 +1840,7 @@ def warn_if_a_circle_is_left_open(plan: "UmbrellaPlan") -> str | None:
         f"The windows cover {np.degrees(covered):.0f} degrees of a "
         f"{variable}, leaving {np.degrees(gap):.0f} degrees with no window "
         "on it. A periodic coordinate has no ends, so that arc is a gap and "
-        "not a boundary: the free energy across it is not measured, and the "
+        "not a boundary: the free energy across it is not sampled, and the "
         "barrier between the minima either side of it is unknown. Tile the "
         "full turn, or read the result as the one path it covers.")
 
@@ -2116,7 +2116,7 @@ def compute_pmf(
             "stitches histograms together, and where two neighbours never "
             "visit the same value there is nothing to stitch -- a curve "
             "drawn through the gap would be interpolation presented as a "
-            "measurement.\n\n"
+            "result.\n\n"
         )
         if drifted:
             # The windows are not where they were told to be, so the gap is
@@ -2138,7 +2138,7 @@ def compute_pmf(
                 "the first thing to check is where each window began: seed "
                 "them from a steered run near their own centres. Where they "
                 "did begin there and still slid, the surface is steeper than "
-                "the restraint, and each window measured how much:\n\n"
+                "the restraint, and each window's displacement says how much:\n\n"
                 + _how_hard_they_needed_holding(drifted)
             )
         else:

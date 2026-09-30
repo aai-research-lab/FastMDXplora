@@ -151,7 +151,7 @@ def reweighted_section(project_root: Path,
             record.get("reason", ""), "",
             "They are reported because they describe what the run did, and "
             "they are labelled because reported plainly they would read as "
-            "measurements of the system.", "",
+            "properties of the system.", "",
         ])
 
     ess = record.get("effective_sample_size")
@@ -161,8 +161,8 @@ def reweighted_section(project_root: Path,
     lines = ["### Averages after reweighting", ""]
     lines.append(
         "Production was biased, so the trajectory is not a Boltzmann "
-        "ensemble and an average over its frames is not a measurement of the "
-        "system. Each frame is weighted by exp((V − c(t))/RT), where V is the "
+        "ensemble and an average over its frames is not an estimate for the "
+        "unbiased system. Each frame is weighted by exp((V − c(t))/RT), where V is the "
         "bias it was actually sampled under and c(t) is the Tiwary–Parrinello "
         "offset, which recovers the unbiased average. **The reweighted column "
         "is the result; the biased column is shown so the size of the "

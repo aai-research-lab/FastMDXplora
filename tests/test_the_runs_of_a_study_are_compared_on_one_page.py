@@ -100,7 +100,7 @@ class TestTheTable:
         assert cells["t320"]["withheld"] == "too short to measure"
         assert cells["t320"]["error"] is None and "versus" not in cells["t320"]
         assert cells["t310"]["versus"]["resolved"] is False
-        assert "1 not a measurement, and not compared." in rg["said"]
+        assert "1 not determined, and not compared." in rg["said"]
 
     def test_a_run_not_finished_has_no_mean(self, sweep):
         rmsd = runs_compared(sweep)["measures"][0]

@@ -193,7 +193,7 @@ class TestTheRootReportsTheCollective(unittest.TestCase):
             "analysis": "rg", "options": {},
             "findings": {"mean": _recorded(1.2, frames=12)}}), encoding="utf-8")
         page = report_payload(root)
-        self.assertIn("Not a measurement", page["html"])
+        self.assertIn("Not determined", page["html"])
 
     def test_once_every_run_has_finished_it_is_the_comparison(self):
         import sys

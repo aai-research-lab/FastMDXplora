@@ -31,7 +31,7 @@
     {
       name: "analysis",
       label: "Analyze",
-      blurb: "Measure the trajectory: structure, flexibility, interactions.",
+      blurb: "Analyse the trajectory: structure, flexibility, interactions.",
     },
     {
       name: "report",
@@ -57,7 +57,7 @@
       label: "A trajectory",
       detail:
         "A simulation you already have, from here or anywhere else. It is " +
-        "measured as it stands.",
+        "analysed as it stands.",
       phases: ["analysis", "report"],
       // Setup and simulation have nothing to act on: there is no supported
       // way to continue a run from a trajectory, and re-preparing the
@@ -111,12 +111,12 @@
    * thing that makes a form feel like paperwork. */
   const SUPPLIED = new Set(["trajectory", "topology"]);
 
-  /* Settings another control on this page already owns. The Measurements
+  /* Settings another control on this page already owns. The Analyses
    * panel is the analysis picker: sixteen analyses grouped by what they
-   * answer, each with what it measures and why. Offering `include` and
+   * answer, each with what it computes and why. Offering `include` and
    * `exclude` again in the options grid put two controls on one key -- and
    * the grid won, because the config it builds is merged over the panel's.
-   * Somebody could choose four measurements, then set `include` to something
+   * Somebody could choose four analyses, then set `include` to something
    * else without either control saying the other existed. */
   const OWNED_ELSEWHERE = {analysis: new Set(["include", "exclude"])};
 
@@ -819,10 +819,10 @@
       line.dataset.index = String(index);
       const pick = document.createElement("select");
       pick.className = "builder-stopping-analysis";
-      pick.setAttribute("aria-label", "Measure");
+      pick.setAttribute("aria-label", "Quantity");
       const blank = document.createElement("option");
       blank.value = "";
-      blank.textContent = "Choose a measure";
+      blank.textContent = "Choose a quantity";
       pick.appendChild(blank);
       measures.forEach((m) => {
         const option = document.createElement("option");
@@ -869,7 +869,7 @@
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "run-sweep-remove";
-      remove.setAttribute("aria-label", "Remove this measure");
+      remove.setAttribute("aria-label", "Remove this quantity");
       remove.textContent = "\u00d7";
       remove.addEventListener("click", (event) => {
         event.preventDefault();
@@ -887,7 +887,7 @@
     const add = document.createElement("button");
     add.type = "button";
     add.className = "run-sweep-add builder-stopping-add";
-    add.textContent = draft.rows.length ? "Add a measure" : "Run until a measure is determined";
+    add.textContent = draft.rows.length ? "Add a quantity" : "Run until a quantity is determined";
     add.addEventListener("click", (event) => {
       event.preventDefault();
       draft.rows.push({ analysis: "", kind: "absolute", amount: "" });
@@ -1249,7 +1249,7 @@
     const head = document.createElement("div");
     head.className = "run-section-head run-section-head-static";
     head.innerHTML =
-      '<span class="run-section-name">Measurements</span>' +
+      '<span class="run-section-name">Analyses</span>' +
       `<span class="run-section-count">${
         state.analyses.size ? `${state.analyses.size} chosen` : "all of them"
       }</span>`;

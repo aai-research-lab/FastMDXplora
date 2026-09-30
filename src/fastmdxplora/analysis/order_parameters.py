@@ -289,7 +289,7 @@ class OrderParameters(Analysis):
                 "No backbone amide N--H pairs were found, so there are no "
                 "order parameters to compute. A structure prepared without "
                 "hydrogens does this, and so does a united-atom model: the "
-                "measurement is of a bond vector, and the bond has to be "
+                "order parameter is of a bond vector, and the bond has to be "
                 "present. Prepare the system with hydrogens, or compare "
                 "fluctuations instead."
             , code="analysis.sampling.too_few_frames")
@@ -352,7 +352,7 @@ class OrderParameters(Analysis):
                     "quoted to. Motion slower than the run is motion the run "
                     "did not see, and unsampled motion is indistinguishable "
                     "from rigidity, so these values are an upper bound "
-                    "rather than a measurement and the error is in one "
+                    "rather than an estimate and the error is in one "
                     "direction. A longer run is the only remedy."
                 )
         self._matched: "np.ndarray | None" = None

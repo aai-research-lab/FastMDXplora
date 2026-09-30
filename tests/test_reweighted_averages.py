@@ -641,7 +641,7 @@ class TestABiasedRunThatCannotBeCorrectedStillSaysSo:
             {"rmsd": _Cls((None, "RMSD (nm)"))},
             n_frames=20, frame_times_ps=np.arange(20.0), output_dir=analysis)
         assert "potential of mean force" in record["reason"]
-        assert "not measurements of the unrestrained" in record["reason"]
+        assert "do not describe the unrestrained" in record["reason"]
 
     def test_an_ordinary_run_is_still_left_entirely_alone(
             self, tmp_path: Path) -> None:

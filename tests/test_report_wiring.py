@@ -2092,7 +2092,7 @@ class TestFindingsAreSummarisedNotDumped:
         from fastmdxplora.report.document import _findings_notes
 
         notes = _findings_notes({"not_measured": {"salt_bridge": "charge unknown"}})
-        assert "Not measured" in " ".join(notes)
+        assert "Not computed" in " ".join(notes)
 
 
 class TestTheMethodsSectionReportsTheRestraints:
@@ -2663,7 +2663,7 @@ class TestOneMeanPerObservable:
             "# frame rmsd\n" + "".join(f"{i} {v:.6f}\n" for i, v in zip(frames, relaxing)),
             encoding="utf-8")
         text = _convergence_section(root)
-        assert "| measure | frames | discarded | independent" in text
+        assert "| observable | frames | discarded | independent" in text
         row = next(r for r in _rows(text) if r.startswith("| rmsd |"))
         shown = int(row.split("|")[3].strip().replace(",", ""))
         expected = assess_run({"rmsd": list(relaxing)})["observables"]["rmsd"]["discard"]

@@ -650,13 +650,13 @@ def _convergence_section(project_root: Path) -> str:
     lines.append(
         "A frame is not an observation. Consecutive frames of a trajectory "
         "are nearly the same structure, so the number of independent "
-        "observations is set by how quickly each measure forgets where it "
+        "observations is set by how quickly each observable forgets where it "
         "was, not by how often frames were written. The uncertainties below "
         "count the former."
     )
     lines.append("")
     lines.append(
-        "| measure | frames | discarded | independent | mean | uncertainty "
+        "| observable | frames | discarded | independent | mean | uncertainty "
         "| equilibrated |"
     )
     lines.append("|---|---|---|---|---|---|---|")
@@ -699,7 +699,7 @@ def _convergence_section(project_root: Path) -> str:
         lines += [asked, ""]
     else:
         lines.append(
-            "Every measure equilibrated and carries enough independent observation "
+            "Every observable equilibrated and carries enough independent observation "
             "to average. That is a statement about sampling, not about whether "
             "the force field describes the system."
         )
@@ -780,14 +780,14 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
         notes.append(f"Ligand chemistry: {where}.")
         if chemistry.get("charge_was_ambiguous"):
             notes.append(
-                "The ligand's charge was ambiguous, so the measures that are "
-                "claims about charge were not made."
+                "The ligand's charge was ambiguous, so the analyses that "
+                "depend on it were not run."
             )
 
     refused = findings.get("not_measured")
     if isinstance(refused, dict) and refused:
         notes.append(
-            "Not measured: " + ", ".join(sorted(refused))
+            "Not computed: " + ", ".join(sorted(refused))
             + " — see `options.json` for why."
         )
 
@@ -1013,7 +1013,7 @@ def build_document(
 
     sections.append(
         "## Discussion\n\n"
-        "_Everything above is measurement: what was built, what was run, what "
+        "_Everything above is a record: what was built, what was run, what "
         "was computed from it, and how much of it the run supports. What none "
         "of it says is what the system was doing, or whether that answers the "
         "question the study was for. That judgement is yours, and this "

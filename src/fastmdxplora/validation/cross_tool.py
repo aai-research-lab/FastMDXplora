@@ -102,7 +102,7 @@ def _reference_tools():
         raise BackendUnavailable(
             "The cross-tool comparison needs MDAnalysis and ProLIF, which "
             "are not dependencies of FastMDXplora: they are the independent "
-            "implementations it measures agreement against. Install them "
+            "implementations it checks agreement against. Install them "
             "with `pip install \"fastmdxplora[validation]\"` or `conda "
             "install -c conda-forge mdanalysis prolif`."
         , code="environment.backend.missing") from exc
@@ -593,7 +593,7 @@ def cmd_interactions(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a 
     ours = our_occupancy(run_dir, manifest)
     excluded = unmeasured_interaction_families(run_dir)
     if excluded:
-        print("[excluded] native interaction families not measured: "
+        print("[excluded] native interaction families not computed: "
               f"{', '.join(sorted(excluded))}")
     for harmonized in ((True, False) if args.both else (args.harmonized,)):
         ref = prolif_occupancy(traj, top, resname, harmonized)
@@ -873,7 +873,7 @@ def cmd_probe(args):  # pragma: no cover - needs ProLIF/MDAnalysis and a finishe
         if raw > 2 * mi:
             print("  VERDICT: the pair is split across the periodic "
                   "boundary in the stored coordinates. The FastMDXplora analysis "
-                  "measures minimum-image; a tool reading raw Cartesian "
+                  "uses the minimum image; a tool reading raw Cartesian "
                   "positions sees a different neighbourhood.")
 
 

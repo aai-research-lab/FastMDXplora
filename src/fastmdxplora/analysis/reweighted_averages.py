@@ -151,7 +151,7 @@ NOT_REWEIGHTABLE = {
     "umbrella": (
         "This run is one window of an umbrella study, held at its own position "
         "on the coordinate by a harmonic restraint. Its averages describe a "
-        "system held there and are not measurements of the unrestrained "
+        "system held there and do not describe the unrestrained "
         "system, nor comparable between windows, which differ because the "
         "restraints differ. What combines the windows is the potential of "
         "mean force, not an average of any quantity across them."),

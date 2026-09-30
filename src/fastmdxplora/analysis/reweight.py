@@ -222,7 +222,7 @@ def weighted_uncertainty(
             f"({100 * fraction:.1f}%). Below {100 * WEIGHT_ESS_FLOOR:.0f}% a "
             "resampling error bar on a weighted average is a floor rather "
             "than an estimate: it cannot see how much the weights "
-            "themselves would differ in another run, and measured against "
+            "themselves would differ in another run, and compared with "
             "independent realisations it returned as little as a third of "
             "the true spread. Independent replicas are the honest route.")
         result["note"] = (f"{result['note']} {floor_note}" if result.get("note")

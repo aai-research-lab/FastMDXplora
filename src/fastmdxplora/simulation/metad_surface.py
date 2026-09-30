@@ -505,7 +505,7 @@ def convergence_band(
             "Too few hills to cut the deposition into separate pieces, so "
             "there is no spread to report. This says nothing about whether "
             "the run converged; it says the run is too short for this "
-            "particular measurement to be made on it."
+            "particular estimate to be made from it."
         ),
     }
     if stack.ndim < 2 or stack.shape[0] < 2:
@@ -942,7 +942,7 @@ def compute_surface(
             f"the surface moved {drift:.1f} kJ/mol between three quarters of "
             f"the hills and all of them, against a tolerance of "
             f"{SETTLED_DRIFT_KJMOL:g}, so it has not stopped changing "
-            f"(measured where the surface is within "
+            f"(evaluated where the surface is within "
             f"{DRIFT_CEILING_KJMOL:g} kJ/mol of its minimum; over the whole "
             f"grid it moved {drift_over_the_whole_grid:.1f}, which is "
             "dominated by the top of the highest barrier and says little)"
@@ -964,7 +964,7 @@ def compute_surface(
         reasons.append(
             "the surface has a single minimum, so there is no second state "
             "to cross to and no barrier along this coordinate has been "
-            "measured -- what was counted is movement within one well"
+            "sampled -- what was counted is movement within one well"
         )
     elif crossed < minimum_recrossings:
         reasons.append(
@@ -1163,7 +1163,7 @@ def compute_surface_2d(
             reasons.append(
                 f"along {names[dim]} the surface has a single minimum, so "
                 "there is no second state to cross to and no barrier along "
-                "it has been measured"
+                "it has been sampled"
             )
         if drift > SETTLED_DRIFT_KJMOL:
             reasons.append(
@@ -1180,7 +1180,7 @@ def compute_surface_2d(
             reasons.append(
                 f"along {names[dim]} the system crossed {crossed} time(s), "
                 f"against {minimum_recrossings} needed for a barrier to be a "
-                "measurement rather than an anecdote"
+                "result rather than an anecdote"
             )
 
     if not converged:
@@ -1216,6 +1216,6 @@ def compute_surface_2d(
         "axes": [axis.tolist() for axis in grid],
         "evidence": evidence,
         "refused": (None if not reasons else
-                    "This surface is not a measurement: " + "; ".join(reasons)
+                    "This surface is not converged: " + "; ".join(reasons)
                     + "."),
     }

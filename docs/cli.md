@@ -23,7 +23,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx xplore` | An exact alias of `explore` |
 | `fastmdx setup` | Prepare a system and stop |
 | `fastmdx simulate` | Run dynamics on a prepared system |
-| `fastmdx analyze` | Measure a trajectory |
+| `fastmdx analyze` | Analyse a trajectory |
 | `fastmdx report` | Write up an existing run |
 | `fastmdx agent` | Write a Config from a sentence — [the Agent](agent.md) |
 | `fastmdx gui` | Serve [the GUI](gui.md) |
@@ -629,7 +629,7 @@ fastmdx setup -system protein.pdb --ph 6.5 --output runs/prepared
 fastmdx explore --config study.yml --exclude setup \
   --simulate-setup-from runs/prepared
 
-# Measure a trajectory from another engine
+# Analyse a trajectory from another engine
 fastmdx analyze --trajectory production.xtc --topology system.pdb \
   --output runs/analysis --analyses rmsd rmsf rg
 

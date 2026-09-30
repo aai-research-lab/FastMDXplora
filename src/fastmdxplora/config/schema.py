@@ -634,7 +634,7 @@ SIMULATION = PhaseSchema(
               "its mean) and `max_duration_ns`, the most production any run "
               "may reach. `duration_ns` is then the first piece: after it "
               "the analyses are read, and every run is extended by what the "
-              "numbers say is needed until each measure is determined as asked "
+              "numbers say is needed until each quantity is determined as asked "
               "or the ceiling is reached. By default replicas are required "
               "(a sweep over `random_seed`) and must agree within their own "
               "errors, because one run can look equilibrated while trapped in "
@@ -775,7 +775,7 @@ SIMULATION = PhaseSchema(
               "structure that has just been minimised is not at equilibrium, "
               "and heating it lets the solute move as well as the solvent: "
               "side chains relax into the space crystal packing left, and a "
-              "ligand drifts out of the pose that was measured. Restraints "
+              "ligand drifts out of the experimental pose. Restraints "
               "are released in stages and are off for production."),
         Field("restraint_release", list, None,
               "Force constants in kJ/mol/nm^2 stepped through during "
@@ -785,7 +785,7 @@ SIMULATION = PhaseSchema(
               "formed around a rigid structure."),
         Field("restrain_production", bool, False,
               "Keep the restraints on during production. Off, because a "
-              "biased production run measures the bias: RMSF, clustering and "
+              "biased production run samples the bias: RMSF, clustering and "
               "dimensionality reduction would describe the restraint as much "
               "as the system. Turning it on is recorded with the results."),
         Field("umbrella", dict, None,
@@ -905,7 +905,7 @@ ANALYSIS = PhaseSchema(
               choices=ANALYSIS_NAMES,
               example=["dimred"]),
         Field("select_atoms", str, None,
-              "Which atoms the analyses measure, as an MDTraj selection "
+              "Which atoms the analyses read, as an MDTraj selection "
               "expression. Overrides `scope` when set. The same word the "
               "umbrella, steered and metadynamics blocks take, so a "
               "selection is a selection wherever it appears.",
@@ -915,9 +915,9 @@ ANALYSIS = PhaseSchema(
               "both, `select_atoms` is ignored.",
               example="name CA"),
         Field("scope", str, "solute",
-              "Which atoms an analysis measures when it has no selection of "
+              "Which atoms an analysis reads when it has no selection of "
               "its own. 'solute' is the protein and any ligand, and is the "
-              "default: including the water and ions would measure the "
+              "default: including the water and ions would describe the "
               "solvent box rather than the molecule in it, so a radius of "
               "gyration would report the size of the box and barely move. "
               "'all' is there for when the solvent is the point.",
@@ -1172,14 +1172,14 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "Whether a person wrote it, a model drafted it, or it went "
          "outside this schema and nothing checked it.",
          ("agent",)),
-        ("What to measure",
+        ("What to analyse",
          "Which analyses run, and how each is configured.",
          ("include", "exclude", "options")),
-        ("What to measure it on",
+        ("What to analyse it on",
          "The trajectory, and which atoms count.",
          ("trajectory", "topology", "select_atoms", "selection", "scope")),
         ("Which frames",
-         "Trimming and thinning before anything is measured.",
+         "Trimming and thinning before anything is analysed.",
          ("first", "last", "stride")),
         ("What the figures look like",
          "How every figure is drawn, for the screen or for print.",

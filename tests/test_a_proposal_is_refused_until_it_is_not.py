@@ -642,7 +642,7 @@ class TestTheAgentReadsTheResults(unittest.TestCase):
         text = _results_summary(root)
         self.assertIn("rmsd: no mean: 12 frames: too short", text)
         self.assertIn("rg: mean 1.2", text)
-        self.assertIn("not a measurement: 6 independent samples", text)
+        self.assertIn("not determined: 6 independent samples", text)
 
     def test_no_analysis_no_summary(self):
         import tempfile

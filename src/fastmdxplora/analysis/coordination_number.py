@@ -132,7 +132,7 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray) -> tuple[float, str]:
     if after.size < 3:
         return float("nan"), (
             f"The tallest point of g(r) is at {radii[peak]:.3f} nm, at the "
-            "edge of the measurable range, so the curve never falls out of "
+            "edge of the range the box resolves, so the curve never falls out of "
             "the first shell within half the box. No cutoff can be read from "
             "it."
         )

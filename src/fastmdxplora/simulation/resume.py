@@ -121,7 +121,7 @@ def segmentability(config: dict[str, Any] | None) -> Segmentability:
             "A steered run cannot be split. The moving restraint is placed "
             "by absolute step number, so the second piece would pull from "
             "an anchor the protein is not at, and the work integral -- "
-            "which is the measurement -- would be taken along a path "
+            "which is the result -- would be taken along a path "
             "nothing walked. Run it through in one piece.",
             code="simulation.resume.time_dependent_bias")
 
