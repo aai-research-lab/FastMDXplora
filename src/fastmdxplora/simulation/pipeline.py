@@ -352,9 +352,9 @@ def _where_the_system_was_prepared(
     already prepared this molecule, so a set of runs can share one prepared
     system rather than each solvating separately.
 
-    Sharing matters beyond the minutes saved. Solvation places water by a
-    procedure that does not give the same answer twice, so preparing the same
-    molecule n times gives n systems with different atom counts. Where the
+    Sharing matters beyond the minutes saved. Setup places hydrogens and
+    ions at random, so preparing the same molecule n times without a
+    `setup.random_seed` gives n systems with different atom counts. Where the
     runs are one measurement -- umbrella windows recombined into a single
     free energy -- that difference is noise in the result rather than physics.
     """
@@ -430,8 +430,8 @@ def _the_records_of(prepared: Path) -> Path | None:
 
 def system_digest(setup_dir: Path) -> str | None:
     """The SHA-256 of a prepared system's ``system.xml``: which atoms, which
-    force field, which box. Two preparations of one molecule differ in it,
-    since water is not placed the same way twice."""
+    force field, which box. Two preparations of one molecule differ in it
+    unless they share their settings and `setup.random_seed`."""
     import hashlib
 
     try:

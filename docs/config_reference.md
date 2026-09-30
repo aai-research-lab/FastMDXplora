@@ -37,7 +37,7 @@ For the flag spelling of any setting below, see
 
 ---
 
-## `setup` — 45 settings
+## `setup` — 46 settings
 
 ### How this phase was written
 
@@ -115,6 +115,7 @@ refused, and the barostat that is chosen for you.
 | `ion_positive` | str | `Na+` | Counter-ion cation |
 | `ion_negative` | str | `Cl-` | Counter-ion anion |
 | `ion_concentration_M` | float | `0.15` | Ionic strength in molar. Bounds 0–20 |
+| `random_seed` | int | drawn and recorded | Seeds where hydrogens and ions are placed, so the same seed prepares the same system. Unset, one is drawn and written to the resolved config |
 
 A dodecahedron holds the same clearance around the solute in roughly 71% of a
 cube's volume, so about a third of the water a cube would need is saved.
@@ -214,10 +215,10 @@ By default the runs must be replicas and must agree with each other. See
 | `minimize_max_iterations` | int | `0` | `0` means until convergence |
 
 `setup_from` accepts the study directory — `runs/reference` — and finds the
-`setup/` inside. **Naming one turns preparation off**, because solvation does
-not place water the same way twice: preparing a second system gives a second
-set of atoms, and anything taken from the named one then belongs to a different
-molecule.
+`setup/` inside. **Naming one turns preparation off**, because a second
+preparation is the same system only with the same settings and
+`setup.random_seed`: otherwise it is a second set of atoms, and anything taken
+from the named one then belongs to a different molecule.
 
 `resume_from` is only valid for the exact system, platform and precision the
 checkpoint was written from; loading refuses rather than proceeding on a

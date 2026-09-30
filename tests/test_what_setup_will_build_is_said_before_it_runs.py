@@ -35,6 +35,12 @@ def _prepared(root: Path, text: str, **setup) -> dict:
     from fastmdxplora import FastMDXplora
 
     structure = _file(root, text)
+    # One preparation, the same every time. Unseeded, the hydrogens OpenMM
+    # places at random moved the box by up to 2% and the atom count by up
+    # to 7% between preparations of one structure, and a test of an
+    # estimate against a preparation measured that spread as much as the
+    # estimate (it failed once in a full run, 4,406 against 4,619).
+    setup = {"random_seed": 11, **setup}
     FastMDXplora(config_data={
         "systems": [{"id": "p", "system": str(structure)}],
         "include_phase": ["setup"], "setup": dict(setup)},

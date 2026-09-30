@@ -786,8 +786,9 @@ The windows are the same molecule held at different points along the
 coordinate, so FastMDXplora prepares it **once** — into `shared_setup/` — and
 every window simulates from that.
 
-This matters beyond the minutes saved. Solvation does not place water the same
-way twice: preparing each window separately gives each its own water, and a
+This matters beyond the minutes saved. Unseeded, setup does not place
+hydrogens and ions the same way twice: preparing each window separately gave
+each its own system, and a
 seven-window study came out with 37,212, 37,254, 37,436 and 37,445 atoms. Four
 different systems for one measurement, and the difference between windows is
 then partly where the solvent happened to land rather than the restraint.

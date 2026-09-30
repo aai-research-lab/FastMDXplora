@@ -435,6 +435,19 @@ def methods_paragraphs(
             )
         if atoms:
             solvation.append(f"The solvated system contained {int(atoms):,} atoms.")
+        # Read from what the phase used: `random_seed` here is the setting,
+        # and it is absent where a seed was drawn.
+        seed = _get(setup, "_random_seed")
+        if seed is not None:
+            # The one thing a reader needs to repeat the preparation rather
+            # than make an equivalent one: hydrogens and ions are placed at
+            # random, and a bilayer's packing is not seeded at all.
+            solvation.append(
+                f"Hydrogens and ions were placed with random seed {int(seed)} "
+                "(`setup.random_seed`)"
+                + (", which reproduces the solvated system except the bilayer's "
+                   "packing" if bilayer else ", which reproduces the solvated system")
+                + ".")
 
         method = _get(setup, "nonbonded_method", default="PME")
         cutoff = _get(setup, "nonbonded_cutoff_nm")

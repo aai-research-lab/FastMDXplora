@@ -1,7 +1,7 @@
 """A study that names a prepared system does not prepare a second one.
 
-Solvation does not place water the same way twice, so a second preparation
-is a second set of atoms. A study that says `setup_from` and prepares anyway
+Unless it has the same settings and setup seed, a second preparation is a
+second set of atoms. A study that says `setup_from` and prepares anyway
 gets frames from one system and a topology from another, and the failure --
 if it fails at all -- is a particle count mismatch ten seconds later. A real
 umbrella study stopped with "the prepared system has 36075 particles and the
@@ -58,7 +58,7 @@ class TestANamedSystemIsNotPreparedAgain:
 
         said = " ".join(record.getMessage() for record in caplog.records)
         assert "Preparing nothing" in said
-        assert "water is not placed the same way twice" in said
+        assert "the same one only with the same settings and setup seed" in said
 
     def test_a_name_pointing_at_nothing_is_refused(self, tmp_path):
         study = _a_study(tmp_path, tmp_path / "not-here")

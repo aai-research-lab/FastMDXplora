@@ -85,10 +85,22 @@ def test_umbrella_windows_share_one_preparation(tmp_path, stub_pdb, capsys,
     out = capsys.readouterr().out
     assert "setup" not in _phases(out)
     assert f"prepared once, in {tmp_path / 'pmf' / 'shared_setup'}, for every window" in out
-    assert "solvate independently" not in caplog.text
+    assert "random seed of its own" not in caplog.text
 
 
 def test_a_seed_sweep_is_still_told_it_will_not_share_water(
         tmp_path, stub_pdb, capsys, caplog) -> None:
     _planned(tmp_path, capsys)
-    assert "solvate independently" in caplog.text
+    assert "each is prepared with a random seed of its own" in caplog.text
+    assert "`setup.random_seed` to prepare them alike" in caplog.text
+
+
+def test_a_seed_for_setup_prepares_them_alike_and_says_nothing(
+        tmp_path, stub_pdb, capsys, caplog) -> None:
+    FastMDXplora(config_data={
+        "output": str(tmp_path / "study"),
+        "systems": [{"id": "a", "system": str(tmp_path / "protein.pdb")}],
+        "setup": {"random_seed": 7},
+        "sweep": {"simulation.random_seed": [1, 2]},
+    }).explore(dry_run=True)
+    assert "random seed of its own" not in caplog.text

@@ -47,6 +47,7 @@ class SetupSettings(TypedDict, total=False):
     ion_negative: str
     ion_concentration_M: float
     neutralize: bool
+    random_seed: int
     nonbonded_method: Literal['NoCutoff', 'CutoffNonPeriodic', 'CutoffPeriodic', 'PME', 'Ewald']
     nonbonded_cutoff_nm: float
     ewald_error_tolerance: float

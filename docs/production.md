@@ -251,7 +251,8 @@ not accepted.
 
 `independent_starts: not_required` accepts one run's own precision, and the
 record says that it was not checked against independent starts. Replicas that
-differ only by seed start from one structure (each solvated on its own), so
+differ only by seed start from one structure (each prepared with a setup seed
+of its own unless `setup.random_seed` is given), so
 they test trapping only as far as their dynamics carry them apart; runs from
 different starting structures, or replica exchange, test it further.
 

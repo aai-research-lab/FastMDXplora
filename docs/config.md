@@ -72,7 +72,7 @@ nearest match.
 
 | Key | What it holds |
 |---|---|
-| `setup` | 45 settings — structure, ligand, membrane, solvent, force field, forces |
+| `setup` | 46 settings — structure, ligand, membrane, solvent, force field, forces |
 | `simulation` | 45 settings — length, conditions, integrator, platform, enhanced sampling |
 | `analysis` | 13 settings — which measures, over which atoms, over which frames |
 | `report` | 11 settings — title, formats, highlighted regions |
@@ -374,7 +374,7 @@ leaves a `resolved_config.yml` saying `ph: 6.0`, not the `7.0` the file said.
 **It carries every setting the run used, defaults included.** That is what the
 file is for: a study you can repeat from what the run left behind rather than
 from what somebody remembers typing. Every phase gets a block whether or not
-you touched it, and every option in that block is named — 114 settings for a
+you touched it, and every option in that block is named — 115 settings for a
 study that set two. The block is exactly the dictionary the phase was handed,
 not a reconstruction of it.
 
@@ -436,19 +436,27 @@ per-measure findings: `setup/setup_parameters.json`,
 
 ### What "reproduces" means
 
-Re-running `resolved_config.yml` gives an **equivalent** study, not an
-identical one. Solvation places water by a procedure that does not give the
-same answer twice, so two preparations of the same molecule have different atom
-counts. Fixing the seed fixes the dynamics, not the solvent:
+Re-running `resolved_config.yml` prepares the **same** system. Setup places
+the hydrogens it adds and the ions it swaps for water at random, and the
+hydrogens set the solute's extent, so the box and its water follow: unseeded,
+one decapeptide came out at 4,265 to 4,556 atoms in six preparations. Setup
+therefore seeds those choices with `setup.random_seed`, draws a seed where none
+is given, and records it, so the resolved config carries it and the
+preparation repeats: the same atoms, at the same positions. (A bilayer is
+packed by OpenMM with dynamics of its own random stream, and is not repeated
+exactly.) Setup's minimisations run on one CPU thread for this, since several
+threads add forces in whatever order they finish.
+
+The dynamics repeat only with a fixed integrator seed, on the same platform:
 
 ```yaml
 simulation:
   random_seed: 42
 ```
 
-The report's methods section states whether a seed was fixed, because its
-absence is what makes a run irreproducible. To repeat a study on the *same*
-prepared system rather than an equivalent one, point at the finished setup:
+The report's methods section states both seeds; an integrator seed left unset
+is what makes the dynamics irreproducible. To use the prepared files themselves
+rather than prepare them again, point at the finished setup:
 
 ```yaml
 simulation:

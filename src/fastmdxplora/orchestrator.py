@@ -589,8 +589,7 @@ class FastMDXplora:
             logger.info(
                 "Preparing nothing: `setup_from` names %s, and this run "
                 "simulates that system. A second preparation would solvate "
-                "a box that is never simulated, and water is not placed the "
-                "same way twice.", prepared)
+                "a box that is never simulated.", prepared)
 
         # Dry run: report the plan and return without executing.
         if dry_run:

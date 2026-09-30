@@ -1174,6 +1174,32 @@ it is determined"), and a run trapped in one state is said to look
 equilibrated there, which is the trap. The `Settled` alias and the `settled`
 key in older records are still read.
 
+### A preparation can be repeated
+
+**Preparing one structure twice now gives one system, not two.** OpenMM's
+Modeller places the hydrogens it adds at random before minimising them, and
+picks at random which waters become ions, both from Python's `random`, which
+setup never seeded; the hydrogens set the solute's extent, and the box and
+its water follow. Six preparations of a decapeptide came out at 4,265 to
+4,556 atoms in boxes 2.855 to 2.916 nm wide. `setup.random_seed` now seeds
+those choices; where it is not given a seed is drawn, recorded in
+`setup_parameters.json` and written into `resolved_config.yml`, so every
+preparation can be repeated from the study it produced. Setup's minimisations
+run on one CPU thread (several threads add forces in whatever order they
+finish, which moved a hydrogen by 0.03 Angstrom and, once in four, the water
+by nine atoms), the velocities written to `state.xml` are drawn from the same
+seed, and Python's own random state is put back afterwards. The same seed
+now gives the same atoms at the same positions; a bilayer, which OpenMM packs
+with dynamics of its own random stream, is the exception and is said to be.
+
+The methods paragraph states the seed. A sweep over `setup.random_seed`
+counts as replicas, and runs that share a setup seed are no longer warned
+that they will be prepared differently. The claim that "solvation does not
+place water the same way twice" is corrected wherever it was made: it was the
+unseeded hydrogens and ions. A test of setup's size estimate that measured
+this spread as much as the estimate (it failed once, 4,406 against 4,619)
+now prepares from a fixed seed.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

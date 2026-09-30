@@ -997,7 +997,13 @@ def prepare_system(
     integrator = omm["openmm"].VerletIntegrator(0.001 * unit.picoseconds)
     context = omm["openmm"].Context(system, integrator)
     context.setPositions(modeller.positions)
-    context.setVelocitiesToTemperature(temperature_K * unit.kelvin)
+    # Drawn from Python's stream, which setup seeds (`setup.random_seed`),
+    # so the velocities in `state.xml` repeat with the rest of the system.
+    # Left to OpenMM they came from a seed of its own, different each time.
+    import random
+
+    context.setVelocitiesToTemperature(temperature_K * unit.kelvin,
+                                       random.randint(1, 2**31 - 1))
     state = context.getState(
         getPositions=True, getVelocities=True, enforcePeriodicBox=True
     )

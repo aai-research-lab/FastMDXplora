@@ -992,6 +992,71 @@ def run(
     output_dir: Path,
     **options: Any,
 ) -> list[str]:
+    """Run the setup phase, with its random choices seeded.
+
+    OpenMM's Modeller places the hydrogens it adds at random before
+    minimising them, and picks at random which waters become ions, both
+    from Python's `random`. Unseeded, preparing one structure twice gave
+    two systems: a decapeptide came out at 4,265 to 4,556 atoms in boxes
+    2.855 to 2.916 nm wide, because the hydrogens' positions set the
+    solute's extent and the box is sized from it. The seed is the one
+    asked for (`setup.random_seed`) or one drawn here and recorded, so any
+    preparation can be repeated; Python's own random state is put back
+    afterwards, since it is not this phase's to keep.
+    """
+    import random
+    import secrets
+
+    params: dict[str, Any] = {**DEFAULTS, **options}
+    given = params.get("random_seed")
+    seed = int(given) if given is not None else secrets.randbelow(2**31 - 1) + 1
+    kept = random.getstate()
+    random.seed(seed)
+    threads = _one_cpu_thread()
+    try:
+        return _run(orchestrator=orchestrator, output_dir=output_dir,
+                    **{**options, "_random_seed": seed,
+                       "_random_seed_drawn": given is None})
+    finally:
+        random.setstate(kept)
+        threads()
+
+
+def _one_cpu_thread():
+    """The CPU platform on one thread while setup runs, and a function that
+    puts it back.
+
+    The hydrogens are minimised after they are placed, and on the CPU
+    platform several threads add up the forces in whatever order they
+    finish: seeded alike, two preparations of one decapeptide placed a
+    hydrogen 0.03 Angstrom apart, the box came out 0.0006 nm wider, and one
+    of four held nine more atoms of water. On one thread they were the same
+    to the last digit. The GPU platforms add forces in fixed point, which
+    does not depend on the order, and are left alone.
+    """
+    try:
+        from openmm import Platform
+
+        cpu = Platform.getPlatformByName("CPU")
+        before = cpu.getPropertyDefaultValue("Threads")
+        cpu.setPropertyDefaultValue("Threads", "1")
+    except Exception:  # noqa: BLE001 - no OpenMM, or no CPU platform
+        return lambda: None
+
+    def restore() -> None:
+        try:
+            cpu.setPropertyDefaultValue("Threads", before)
+        except Exception:  # noqa: BLE001 - nothing to put back
+            pass
+    return restore
+
+
+def _run(
+    *,
+    orchestrator: "FastMDXplora",
+    output_dir: Path,
+    **options: Any,
+) -> list[str]:
     """Run the setup phase.
 
     Parameters
@@ -1415,6 +1480,12 @@ def _resolved_settings(
     """
     settings: dict[str, Any] = dict(from_preparation or {})
 
+    # A seed drawn for the random choices setup made, so the preparation
+    # can be repeated from the resolved config. One asked for is already in
+    # the config that asked.
+    if params.get("_random_seed_drawn") and params.get("_random_seed") is not None:
+        settings["random_seed"] = int(params["_random_seed"])
+
     # The force field, as a list of XMLs, is what `force_field` means --
     # and it is the resolution of `forcefield: auto`, which names a family
     # whose membership can change between releases.
@@ -1526,6 +1597,12 @@ def _write_manifest(
         # it was only ever logged -- so the report had to say it was not
         # recorded, of a number the run had printed to the terminal.
         "n_atoms_solvated": n_atoms_solvated,
+        # The seed the hydrogens and ions were placed with, and whether it
+        # was asked for or drawn: the same seed, structure and settings
+        # give the same system again.
+        "random_seed": ({"seed": int(params["_random_seed"]),
+                         "drawn": bool(params.get("_random_seed_drawn"))}
+                        if params.get("_random_seed") is not None else None),
         # The periodic cell, in the terms the cutoff is judged against: the
         # vectors, their perpendicular widths, the smallest of them and the
         # volume. Computed on every setup and, until now, read by nothing,

@@ -868,7 +868,10 @@ ALREADY_HOLD_RESULTS = "These output directories already hold results:"
 def _say_if_the_replicas_will_not_share_water(run_specs) -> None:
     """Name `prepared_from` where runs differ only in how they are driven.
 
-    Solvation does not place water the same way twice. This module already
+    Setup places hydrogens and ions at random (OpenMM's Modeller does), so
+    unless `setup.random_seed` is given two preparations of one system are
+    two systems; the hydrogens set the solute's extent, and the box and its
+    water follow. This module already
     shares one prepared system across umbrella windows for that reason --
     "water arranged differently between windows is noise in the free energy
     rather than physics" -- but that path is gated on `_is_umbrella`, and a
@@ -905,14 +908,19 @@ def _say_if_the_replicas_will_not_share_water(run_specs) -> None:
            or (spec.options.get("simulation") or {}).get("prepared_from")
            for spec in run_specs):
         return
+    # A seed for setup's random choices prepares every run alike.
+    if (run_specs[0].options.get("setup") or {}).get("random_seed") is not None:
+        return
 
     logger.warning(
         "These %d runs share one system and one setup block, so they differ "
-        "only in how they are driven -- but each will solvate independently, "
-        "and solvation does not place water the same way twice. Differences "
-        "between them will include water placement as well as dynamics. Set "
-        "`simulation.setup_from` to a finished study to give them the same "
-        "prepared system.",
+        "only in how they are driven -- but each is prepared with a random "
+        "seed of its own, which places the hydrogens and ions, and so the "
+        "box and its water, differently. Differences between them will "
+        "include the preparation as well as the dynamics. Set "
+        "`setup.random_seed` to prepare them alike, or "
+        "`simulation.setup_from` to a finished study to share one prepared "
+        "system.",
         len(run_specs))
 
 
@@ -1561,9 +1569,10 @@ class BatchExplorer:
         Seven windows of one real study came out with 37,212, 37,254, 37,436
         and 37,445 atoms: four different systems for one measurement. The
         windows are the same molecule held at different points along a
-        coordinate, so they should be the same molecule. Solvation does not
-        place water the same way twice, and water arranged differently
-        between windows is noise in the free energy rather than physics.
+        coordinate, so they should be the same molecule. Unseeded, setup does
+        not place hydrogens and ions the same way twice, and a system
+        arranged differently between windows is noise in the free energy
+        rather than physics; sharing one preparation also saves the time.
 
         A window is not a system of its own, so it does not get a system of
         its own. Preparing seven times was also seven times the work.
@@ -1586,8 +1595,8 @@ class BatchExplorer:
         # umbrella study.
         only_preparing = wanted - set(exclude or []) == {"setup"}
         # A study that names a prepared system is not asking to prepare
-        # another one. Preparing anyway solvates a second box, and solvation
-        # does not place water the same way twice: the named system's frames
+        # another one. Preparing anyway solvates a second box, and unseeded
+        # it is not the same box: the named system's frames
         # -- the seeds a study takes from a pull run in it -- then belong to
         # a different set of atoms. A real study said `setup_from`, ran with
         # the setup phase in its list, and stopped ten seconds later with
@@ -1615,9 +1624,10 @@ class BatchExplorer:
             logger.info(
                 "Preparing nothing: `setup_from` names %s, and this study "
                 "uses that system. A second preparation would solvate a "
-                "second box, and water is not placed the same way twice -- "
-                "so frames from the named system would belong to a different "
-                "set of atoms than the one being simulated.", named)
+                "second box, the same one only with the same settings and "
+                "setup seed -- so frames from the named system could belong "
+                "to a different set of atoms than the one being simulated.",
+                named)
             exclude = list(exclude or []) + ["setup"]
         if "setup" not in wanted or "setup" in set(exclude or []):
             # Nothing is being prepared here -- the windows are simulating

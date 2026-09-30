@@ -476,6 +476,15 @@ SETUP = PhaseSchema(
                     minimum=0.0, maximum=20.0),
         Field("neutralize", bool, True,
               "Add ions to neutralize the net solute charge."),
+        Field("random_seed", int, None,
+              "Seed for the random choices setup makes: where OpenMM puts the "
+              "hydrogens it adds (at random, then minimised) and which waters "
+              "become ions. With it, preparing the same structure again gives "
+              "the same atoms in the same box. Left unset, a seed is drawn "
+              "and recorded, so any preparation can be repeated from its "
+              "resolved config. A bilayer is packed by OpenMM with dynamics "
+              "of its own random stream, and is not repeated exactly.",
+              example=42),
         Field("nonbonded_method", str, "PME",
               "Nonbonded method: NoCutoff, CutoffNonPeriodic, "
               "CutoffPeriodic, PME, or Ewald.",
@@ -1084,7 +1093,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Solvent, ions and the box",
          "How much water, of what kind, at what salt concentration.",
          ("water_model", "solvent_padding_nm", "box_shape", "neutralize",
-          "ion_positive", "ion_negative", "ion_concentration_M")),
+          "ion_positive", "ion_negative", "ion_concentration_M", "random_seed")),
         ("The force field",
          "What the atoms are, and which motions are held rigid.",
          ("forcefield", "force_field", "constraints", "rigid_water",
