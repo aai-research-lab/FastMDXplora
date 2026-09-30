@@ -86,6 +86,11 @@
     playbackLoop: false,
     playbackSpeed: 1,
     playbackTimer: null,
+    // Measuring: whether clicks pick atoms, the atoms picked, and what was
+    // drawn for them, so only that is taken away when it is drawn again.
+    measuring: false,
+    picks: [],
+    measureDrawn: {shapes: [], labels: []},
   };
 
   document.addEventListener("DOMContentLoaded", init);
@@ -724,6 +729,7 @@
     }
     const boxModel = STATE.mode === "playback" ? STATE.environmentModel : model;
     if (!mini && STATE.visibility.box && boxModel) drawPeriodicBox(viewer, boxModel);
+    if (!mini) drawMeasurement(false);
     safeCall(viewer, "render");
   }
 
@@ -991,6 +997,7 @@
       return;
     }
     if (action === "screenshot") takeScreenshot();
+    if (action === "measure") toggleMeasuring(button);
   }
 
   /* The keys a player has: Space plays and pauses, the arrows step a frame
@@ -1004,6 +1011,8 @@
     End: () => goToEnd(true),
     r: () => handleToolbarAction("reset-view"),
     f: () => handleToolbarAction("fullscreen"),
+    m: () => toggleMeasuring(),
+    Escape: () => { if (STATE.picks.length) clearPicks(); },
   };
 
   async function goToEnd(last) {
@@ -1432,6 +1441,8 @@
       safeCall(STATE.viewer, "render");
     }
     if (STATE.miniViewer && STATE.miniPlaybackModel) await setViewerFrame(STATE.miniViewer, index);
+    // The atoms measured have moved with the frame, and so have their numbers.
+    if (STATE.picks.length) { drawMeasurement(true); sayMeasurement(); }
     const slider = document.getElementById("traj-slider");
     if (slider) slider.value = String(index);
     setText("traj-current", String(index));
@@ -1532,6 +1543,268 @@
     if (!atom) return;
     updateSelectionPanel(atom);
     void showSelectionFor(atom);
+    if (STATE.measuring) addPick(atom);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Measuring                                                           */
+  /* ------------------------------------------------------------------ */
+  /* Two atoms clicked give their distance, three the angle at the middle
+   * one, four the dihedral about the middle bond: in the frame on screen,
+   * as drawn, in angstroms and degrees. A fifth click starts again. Each
+   * atom is found again by its chain, residue and name, so the numbers
+   * follow the trajectory as it plays. Two atoms can be measured over
+   * every frame too, by the pair_distance analysis (gui/measure.py). */
+  const MEASURE_COLOR = "#e69f00";
+
+  function toggleMeasuring(button) {
+    STATE.measuring = !STATE.measuring;
+    const pressed = button || document.querySelector('[data-action="measure"]');
+    pressed?.setAttribute("aria-pressed", String(STATE.measuring));
+    pressed?.classList.toggle("active", STATE.measuring);
+    if (!STATE.measuring) STATE.picks = [];
+    else document.querySelector('.info-tab[data-tab="selection"]')?.click();
+    drawMeasurement(true);
+    sayMeasurement();
+    announce(STATE.measuring
+      ? "Measuring. Click two atoms for a distance, three for an angle, four for a dihedral."
+      : "Measuring off.");
+  }
+
+  function clearPicks() {
+    STATE.picks = [];
+    drawMeasurement(true);
+    sayMeasurement();
+  }
+
+  function addPick(atom) {
+    const pick = {chain: atom.chain || "", resi: atom.resi, resn: atom.resn || "",
+                  atom: atom.atom || atom.name || "", selection: null, asked: false};
+    const last = STATE.picks[STATE.picks.length - 1];
+    if (last && ["chain", "resi", "resn", "atom"].every((key) => last[key] === pick[key])) return;
+    if (STATE.picks.length >= 4) STATE.picks = [];
+    STATE.picks.push(pick);
+    drawMeasurement(true);
+    sayMeasurement();
+    void selectionOfPick(pick);
+  }
+
+  /* The atom a pick names, where it is in the frame on screen. */
+  function currentAtom(pick) {
+    const model = STATE.model;
+    if (!model || typeof model.selectedAtoms !== "function") return null;
+    const wanted = {resi: pick.resi, atom: pick.atom};
+    if (pick.chain) wanted.chain = pick.chain;
+    if (pick.resn) wanted.resn = pick.resn;
+    try {
+      return model.selectedAtoms(wanted)[0] || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  const minus = (a, b) => [a.x - b.x, a.y - b.y, a.z - b.z];
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2],
+                           u[0] * v[1] - u[1] * v[0]];
+  const length = (u) => Math.sqrt(dot(u, u));
+
+  /* Distances between consecutive atoms, the angle at each inner atom, and
+   * the dihedral where there are four (IUPAC's sign). */
+  function measurements(atoms) {
+    const said = [];
+    for (let i = 1; i < atoms.length; i += 1) {
+      said.push({kind: "distance", between: [i, i + 1],
+                 value: length(minus(atoms[i], atoms[i - 1]))});
+    }
+    for (let i = 1; i + 1 < atoms.length; i += 1) {
+      const u = minus(atoms[i - 1], atoms[i]);
+      const v = minus(atoms[i + 1], atoms[i]);
+      const cosine = dot(u, v) / (length(u) * length(v));
+      said.push({kind: "angle", at: i + 1,
+                 value: Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI});
+    }
+    if (atoms.length === 4) {
+      const b1 = minus(atoms[1], atoms[0]);
+      const b2 = minus(atoms[2], atoms[1]);
+      const b3 = minus(atoms[3], atoms[2]);
+      const n1 = cross(b1, b2);
+      const n2 = cross(b2, b3);
+      // The sign MDTraj gives, IUPAC's: checked against compute_dihedrals.
+      const m1 = cross(b2.map((c) => c / length(b2)), n1);
+      said.push({kind: "dihedral",
+                 value: Math.atan2(dot(m1, n2), dot(n1, n2)) * 180 / Math.PI});
+    }
+    return said;
+  }
+
+  function measureText(m) {
+    if (m.kind === "distance") return `${m.value.toFixed(2)} \u00c5`;
+    return `${m.value.toFixed(1)}\u00b0`;
+  }
+
+  /* The picked atoms marked, the path between them dashed, and the last
+   * quantity labelled where it belongs: a distance at its middle, an angle
+   * at its vertex, a dihedral on its middle bond. */
+  function drawMeasurement(render) {
+    const viewer = STATE.viewer;
+    if (!viewer) return;
+    STATE.measureDrawn.shapes.forEach((shape) => safeCall(viewer, "removeShape", shape));
+    STATE.measureDrawn.labels.forEach((label) => safeCall(viewer, "removeLabel", label));
+    STATE.measureDrawn = {shapes: [], labels: []};
+    const atoms = STATE.picks.map(currentAtom);
+    if (atoms.some((atom) => !atom)) {
+      if (render) safeCall(viewer, "render");
+      return;
+    }
+    const at = (atom) => ({x: atom.x, y: atom.y, z: atom.z});
+    atoms.forEach((atom) => {
+      const sphere = safeCall(viewer, "addSphere", {center: at(atom), radius: 0.45,
+                                                    color: MEASURE_COLOR, opacity: 0.85});
+      if (sphere) STATE.measureDrawn.shapes.push(sphere);
+    });
+    for (let i = 1; i < atoms.length; i += 1) {
+      const line = safeCall(viewer, "addCylinder", {start: at(atoms[i - 1]), end: at(atoms[i]),
+                                                    radius: 0.07, color: MEASURE_COLOR,
+                                                    dashed: true, fromCap: 1, toCap: 1});
+      if (line) STATE.measureDrawn.shapes.push(line);
+    }
+    const said = measurements(atoms);
+    const last = said[said.length - 1];
+    if (last) {
+      const middle = (a, b) => ({x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2});
+      const where = atoms.length === 2 ? middle(atoms[0], atoms[1])
+        : atoms.length === 3 ? at(atoms[1]) : middle(atoms[1], atoms[2]);
+      const label = safeCall(viewer, "addLabel", measureText(last), {
+        position: where, inFront: true, fontSize: 13, fontColor: "#ffffff",
+        backgroundColor: "#1f2328", backgroundOpacity: 0.85, showBackground: true,
+      });
+      if (label) STATE.measureDrawn.labels.push(label);
+    }
+    if (render) safeCall(viewer, "render");
+  }
+
+  function pickSaid(pick, number) {
+    return `${number}. ${pick.resn} ${pick.resi} ${pick.atom}` + (pick.chain ? `, chain ${pick.chain}` : "");
+  }
+
+  /* What was measured, in the Selection tab: the atoms, every distance,
+   * angle and dihedral between them, and for two atoms the command that
+   * measures them over every frame. Built as elements: atom names are the
+   * file's text. */
+  function sayMeasurement() {
+    const host = document.getElementById("measure-said");
+    if (!host) return;
+    host.replaceChildren();
+    host.hidden = !STATE.measuring && !STATE.picks.length;
+    if (host.hidden) return;
+    const add = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      host.appendChild(node);
+      return node;
+    };
+    add("div", "measure-title", "Measuring");
+    if (!STATE.picks.length) {
+      add("p", "muted small", "Click an atom in the structure. Two give a distance, three an "
+        + "angle, four a dihedral; a fifth starts again.");
+      return;
+    }
+    const list = add("ol", "measure-atoms");
+    STATE.picks.forEach((pick, i) => {
+      const item = document.createElement("li");
+      item.textContent = pickSaid(pick, i + 1).replace(/^\d+\. /, "");
+      list.appendChild(item);
+    });
+    const atoms = STATE.picks.map(currentAtom);
+    if (!atoms.some((atom) => !atom)) {
+      const rows = add("dl", "measure-values");
+      measurements(atoms).forEach((m) => {
+        const term = document.createElement("dt");
+        const value = document.createElement("dd");
+        if (m.kind === "distance") {
+          term.textContent = `Distance, ${m.between[0]} to ${m.between[1]}`;
+          value.textContent = `${m.value.toFixed(2)} \u00c5 (${(m.value / 10).toFixed(3)} nm)`;
+        } else if (m.kind === "angle") {
+          term.textContent = `Angle at ${m.at}`;
+          value.textContent = measureText(m);
+        } else {
+          term.textContent = "Dihedral, 1-2-3-4";
+          value.textContent = measureText(m);
+        }
+        value.className = "mono";
+        rows.append(term, value);
+      });
+      add("p", "muted small", "As drawn in this frame. The analyses measure across the "
+        + "periodic box the short way round.");
+    }
+    if (STATE.picks.length === 2) {
+      const over = add("div", "measure-over");
+      const ready = STATE.picks.every((pick) => pick.selection);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "file-action measure-over-frames";
+      button.textContent = "Over every frame";
+      button.disabled = !ready;
+      button.title = ready ? "The command that measures this distance at every frame"
+        : "Waiting for the atoms' selections";
+      button.addEventListener("click", () => overEveryFrame(over));
+      over.appendChild(button);
+    }
+    const clear = add("button", "file-action measure-clear", "Clear");
+    clear.type = "button";
+    clear.addEventListener("click", clearPicks);
+  }
+
+  async function selectionOfPick(pick) {
+    if (pick.asked) return;
+    pick.asked = true;
+    const query = new URLSearchParams({chain: pick.chain, resseq: String(pick.resi ?? ""),
+                                       resname: pick.resn, atom: pick.atom});
+    try {
+      const answer = await (await fetch(`/api/selection?${query}`)).json();
+      pick.selection = answer && answer.ok && answer.atom ? answer.atom.selection : null;
+    } catch (error) {
+      pick.selection = null;
+    }
+    if (STATE.picks.includes(pick)) sayMeasurement();
+  }
+
+  async function overEveryFrame(host) {
+    const [a, b] = STATE.picks.map((pick) => pick.selection);
+    host.querySelectorAll(".measure-command, .measure-reason, .measure-copy").forEach(
+      (node) => node.remove());
+    let answer = null;
+    try {
+      answer = await (await fetch(`/api/measure-over-frames?${new URLSearchParams({a, b})}`)).json();
+    } catch (error) {
+      answer = {ok: false, reason: "The server did not answer."};
+    }
+    if (!answer || !answer.ok) {
+      const said = document.createElement("p");
+      said.className = "muted small measure-reason";
+      said.textContent = (answer && answer.reason) || "No command for these atoms.";
+      host.appendChild(said);
+      return;
+    }
+    const said = document.createElement("pre");
+    said.className = "measure-command";
+    said.textContent = answer.command || answer.config || "";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "file-action measure-copy";
+    copy.textContent = "Copy";
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(said.textContent);
+        copy.textContent = "Copied";
+      } catch (error) {
+        copy.textContent = "Select and copy";
+      }
+      setTimeout(() => { copy.textContent = "Copy"; }, 1800);
+    });
+    host.append(said, copy);
   }
 
   /* The selection a clicked atom is, as a Config writes it, checked by the
@@ -1747,5 +2020,7 @@
     pollLiveFrame,
     loadPlayback,
     resize: resizeViewers,
+    measurements,
+    pick: addPick,
   };
 }());

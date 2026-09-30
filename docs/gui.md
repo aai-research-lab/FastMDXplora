@@ -44,7 +44,7 @@ you. Nothing is uploaded anywhere.
 | **Agent** | [The FastMDXplora Agent](agent.md): a conversation that writes, edits, runs and reads a study |
 | **Config** | The [Config](config.md) builder: four questions, the phases as tiles |
 | **Overview** | Study Overview. A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
-| **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default |
+| **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default. **Measure** (the ruler, or M): two atoms clicked give their distance, three the angle, four the dihedral, drawn in the structure and listed in the Selection tab, following the frames; two atoms can be measured over every frame with the command it gives |
 | **Analysis** | The figures and tables, grouped. For a study of several runs, the runs side by side: the settings that differ, the mean each run recorded with its error, a difference marked only where it exceeds twice the two runs' combined error (replicas are set against their own errors instead), and one measure from every finished run overlaid |
 | **Report** | The report itself, rendered as a document, with downloads for what was produced and a notice for what could not be |
 | **Files** | Everything the run wrote, grouped by phase |
@@ -494,6 +494,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/protein-preview` | The cached preview image |
 | `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart drawn from them; `&run=ID` for one run of a study of several |
 | `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read |
+| `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom |
 | `GET /api/stream` | Server-sent events: one `change` event each time the study's files or the run's state change, and nothing about what changed; the page then asks the routes here |
 | `GET /api/stopping` | For a study run until it is determined: the rule, each measure's error and mean after each round with the replicas' own means, where the error would reach the target at the rate it has fallen, and the piece now running with its time here |
 | `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each measure's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |

@@ -90,6 +90,7 @@ _IMPORTED_BY_THE_ROUTES = (
     "fastmdxplora.gui.fixes_view",
     "fastmdxplora.agent.tools",
     "fastmdxplora.simulation.umbrella",
+    "fastmdxplora.gui.measure",
 )
 
 
@@ -166,6 +167,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/playback-info", "/api/series", "/api/runs-compared", "/api/selection",
+    "/api/measure-over-frames",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
@@ -665,6 +667,13 @@ def make_handler(
 
                 self._send_json(selection_for(root, chain=one("chain"), resseq=one("resseq"),
                                               resname=one("resname"), atom=one("atom")))
+                return
+            if path == "/api/measure-over-frames":
+                from fastmdxplora.gui.measure import over_frames
+
+                query = parse_qs(parsed.query)
+                self._send_json(over_frames(root, (query.get("a") or [""])[0],
+                                            (query.get("b") or [""])[0]))
                 return
             if path == "/api/stopping":
                 from fastmdxplora.gui.stopping_view import stopping_payload

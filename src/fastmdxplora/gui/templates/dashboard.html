@@ -626,7 +626,7 @@
             <div>
               <h1 class="page-title">Molecular Viewer</h1>
               <div class="page-subtitle">Live molecular canvas, ligand tools, trajectory playback</div>
-              <div class="viewer-keys muted small" id="viewer-keys"><kbd>Space</kbd> play or pause · <kbd>&larr;</kbd><kbd>&rarr;</kbd> a frame, with <kbd>Shift</kbd> ten · <kbd>Home</kbd><kbd>End</kbd> the ends · <kbd>R</kbd> centre · <kbd>F</kbd> full screen</div>
+              <div class="viewer-keys muted small" id="viewer-keys"><kbd>Space</kbd> play or pause · <kbd>&larr;</kbd><kbd>&rarr;</kbd> a frame, with <kbd>Shift</kbd> ten · <kbd>Home</kbd><kbd>End</kbd> the ends · <kbd>R</kbd> centre · <kbd>F</kbd> full screen · <kbd>M</kbd> measure</div>
             </div>
           </div>
           <div class="viewer-layout">
@@ -685,6 +685,7 @@
                     <button class="icon-btn chip-btn" type="button" data-cam="spin" aria-label="Spin" aria-pressed="false" title="Spin, or stop spinning"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></button>
                     <button class="icon-btn ctl-btn" type="button" data-action="fullscreen" aria-label="Full screen" title="Full screen (F)"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button>
                     <button class="icon-btn ctl-btn" type="button" data-action="screenshot" aria-label="Save a picture" title="Save the view as a picture"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+                    <button class="icon-btn ctl-btn" type="button" data-action="measure" aria-label="Measure" aria-pressed="false" title="Measure: click two atoms for a distance, three for an angle, four for a dihedral (M)"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
                   </div>
                   <div class="icon-group text-group" role="group" aria-label="Centre on">
                     <span class="control-label">Centre</span>
@@ -795,6 +796,8 @@
                   </table>
                   <!-- The clicked atom as a selection a Config can use. -->
                   <div class="selection-strings" id="selection-strings" hidden></div>
+                  <!-- What the measuring tool measured (molecule-viewer.js). -->
+                  <div class="measure-said" id="measure-said" hidden></div>
                 </div>
                 <div class="info-pane" data-tab="ligand" hidden>
                   <table class="kv-table mono">

@@ -1433,6 +1433,21 @@ selection and options, and the command that draws it again, with the two
 column widths. One chip and one panel, from the same record
 (`figure_provenance`, now also in the report's payload).
 
+### The viewer measures a distance, an angle and a dihedral
+
+**The viewer said where a clicked atom was and nothing about how far it was
+from another.** With **Measure** on (the ruler in the view tools, or M), two
+atoms clicked give their distance, three the angle at the middle one and four
+the dihedral about the middle bond (MDTraj's sign), drawn in the structure
+and listed in the Selection tab in angstroms and nanometres or degrees. They
+are measured in the frame on screen, as drawn, and follow the trajectory as
+it plays; Escape clears them. Two atoms can be measured over every frame:
+**Over every frame** gives the command that runs `pair_distance` over the
+study's trajectory, with the minimum image, into a folder of its own, from
+the atoms' selections, each checked to name one atom
+(`GET /api/measure-over-frames`). Run, it writes MDTraj's distance at every
+frame.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

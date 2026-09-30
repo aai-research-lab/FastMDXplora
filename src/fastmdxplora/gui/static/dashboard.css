@@ -3814,3 +3814,14 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 .fix-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 .fix-said { font-size: var(--text-xs); color: var(--text-secondary); }
+
+/* What the viewer's measuring tool measured, in the Selection tab. */
+.measure-said { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); font-size: var(--text-xs); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.measure-said[hidden] { display: none; }
+.measure-title { font-weight: 600; color: var(--text-primary); }
+.measure-atoms { margin: 0; padding-left: 18px; color: var(--text-secondary); }
+.measure-values { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 0; }
+.measure-values dt { color: var(--text-muted); }
+.measure-values dd { margin: 0; color: var(--text-primary); }
+.measure-over { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; }
+.measure-command { margin: 0; width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--text-primary) 5%, transparent); font-family: var(--font-mono); font-size: var(--text-2xs); white-space: pre-wrap; overflow-wrap: anywhere; }
