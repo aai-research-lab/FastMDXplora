@@ -1336,6 +1336,15 @@ from a request or a reply; a fix waiting on a choice only the person can
 make, a setting to change and an install command are said and never run.
 `GET /api/fixes` and `POST /api/fix` are answered on loopback only.
 
+### The figure tests leave the logger as they found it
+
+**A test module's fixture that ran the command line left the package logger
+unable to propagate for every test after it** (1135's figure tests), so a
+later `caplog` assertion read nothing: the suite's own restoring fixture takes
+its baseline after module fixtures are set up, and took the command line's.
+The fixture now puts the logger back itself, and a test says so. Found by the
+full suite, where a test of the command line's logging failed after it.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

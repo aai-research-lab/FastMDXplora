@@ -41,16 +41,39 @@ def _trajectory(where: Path) -> tuple[Path, Path]:
 
 @pytest.fixture(scope="module")
 def study(tmp_path_factory) -> Path:
+    import logging
+
     from fastmdxplora.cli.main import main
+    from fastmdxplora.utils import logging as fastmdx_logging
 
     base = tmp_path_factory.mktemp("figures")
     dcd, pdb = _trajectory(base / "input")
     root = base / "study"
-    assert main(["explore", "-s", str(pdb), "--output", str(root),
-                 "--include-phase", "analysis", "--analyze-trajectory", str(dcd),
-                 "--analyze-topology", str(pdb), "--analyze-analyses", "rmsd", "rg",
-                 "--analyze-stride", "2"]) == 0
+    # The CLI configures the package logger for a command-line session. A
+    # fixture of the module is set up before the suite's own per-test
+    # restoring fixture takes its baseline, so that baseline was the CLI's,
+    # and every later test in the process inherited a logger that does not
+    # propagate: `caplog` read nothing. The state is put back here.
+    logger = logging.getLogger("fastmdx")
+    kept = (logger.propagate, logger.level, list(logger.handlers),
+            fastmdx_logging._console_handler)
+    try:
+        assert main(["explore", "-s", str(pdb), "--output", str(root),
+                     "--include-phase", "analysis", "--analyze-trajectory", str(dcd),
+                     "--analyze-topology", str(pdb), "--analyze-analyses", "rmsd", "rg",
+                     "--analyze-stride", "2"]) == 0
+    finally:
+        logger.propagate = kept[0]
+        logger.setLevel(kept[1])
+        logger.handlers[:] = kept[2]
+        fastmdx_logging._console_handler = kept[3]
     return root
+
+
+def test_the_study_leaves_the_logger_as_it_found_it(study) -> None:
+    import logging
+
+    assert logging.getLogger("fastmdx").propagate is True
 
 
 class TestWhatItSays:
