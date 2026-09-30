@@ -90,6 +90,9 @@ def test_a_starter_chosen_is_the_study_the_builder_writes(tmp_path) -> None:
             system = page.input_value("#run-system")
             # Folded, it stays folded.
             page.click("#run-starters-card > summary")
+            # The fold is kept when the card's toggle event fires, a task
+            # after the click: reload once it has been kept, not before.
+            page.wait_for_function("() => window.localStorage.getItem('fastmdx-starters-folded') === '1'")
             page.reload(wait_until="domcontentloaded")
             page.wait_for_selector("#run-starters .starter", state="attached")
             folded = page.evaluate("() => !document.getElementById('run-starters-card').open")

@@ -1586,6 +1586,12 @@ of them, found as files and read as text so that finding them imports
 nothing. The GUI starts in the same time as before. A failing route now logs
 its traceback at debug level, and the concurrent first-load test shows it.
 
+### The starters test reloads once the fold is kept
+
+The builder keeps the starters card's fold when the card's toggle event
+fires, a moment after the click. The test clicked and reloaded at once, and
+under load the reload came first. It now reloads once the fold is kept.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
