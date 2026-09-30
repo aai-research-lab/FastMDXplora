@@ -1306,6 +1306,24 @@ button {
     gap: 6px;
     flex-wrap: wrap;
 }
+/* What the Agent looked at before it answered (agent-panel.js, agent/tools.py). */
+.agent-looks { margin: 6px 0 8px; font-size: var(--text-xs); color: var(--text-secondary); }
+.agent-looks > summary { cursor: pointer; color: var(--text-muted); }
+.agent-looks > summary:hover { color: var(--accent-cyan); }
+.agent-look { margin: 8px 0 0 12px; }
+.agent-look-name { color: var(--text-secondary); font-weight: 600; }
+.agent-look.is-refused .agent-look-name { color: var(--accent-orange); }
+.agent-look-said {
+    margin: 4px 0 0;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 /* What made a figure (dashboard.js, figure_provenance.py): a chip at the
    end of the footer, and what it opens under it. */
 .analysis-card .figure-chip {

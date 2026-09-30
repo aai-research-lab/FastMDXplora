@@ -102,15 +102,20 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def propose_endpoint(payload: dict[str, Any],
-                     runtime: Any = None) -> dict[str, Any]:
+                     runtime: Any = None, *,
+                     path_for: Any = None) -> dict[str, Any]:
     """A sentence in, a config out, or the refusal that stopped it.
 
     The attempts come back whole rather than as a count. They are the only
     visible sign that anything checked the config, and a reader watching
     the model correct itself learns the config language while they wait.
-    """
-    import yaml
 
+    The model may look with the software's own tools before it answers
+    (:mod:`fastmdxplora.agent.tools`); what it looked at comes back as
+    ``looks`` with every kind of answer, and is shown under it. ``path_for``
+    is the server's rule for a path (inside the workspace, when hosted),
+    which a tool reading a structure is held to as the builder is.
+    """
     from fastmdxplora.agent import completion_for, propose_config
     from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
     from fastmdxplora.refusals import StudyError, refusal_of
@@ -144,15 +149,29 @@ def propose_endpoint(payload: dict[str, Any],
          "truncated": bool(a.get("truncated"))}
         for a in (payload.get("attachments") or []) if isinstance(a, dict) and a.get("text")
     ][:6]
+    from fastmdxplora.agent.tools import Toolbox
+
+    tools = Toolbox(path_for=path_for)
     try:
         proposal = propose_config(
             request, complete, phases=list(phases),
             max_cycles=int(payload.get("attempts") or DEFAULT_ATTEMPTS),
             history=history or None, current_config=current,
-            run_status=_run_status(runtime), attachments=attachments or None)
+            run_status=_run_status(runtime), attachments=attachments or None,
+            tools=tools)
     except StudyError as exc:
         found = refusal_of(exc)
-        return {"ok": False, "error": found.message, "code": found.code}
+        return {"ok": False, "error": found.message, "code": found.code,
+                "looks": [look.as_record() for look in tools.looks]}
+    answer = _proposal_answer(proposal, payload, runtime, request, mode)
+    answer["looks"] = [look.as_record() for look in proposal.looks]
+    return answer
+
+
+def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
+                     request: str, mode: str) -> dict[str, Any]:
+    """What the browser is sent for a proposal, by what kind it is."""
+    import yaml
 
     attempts = [
         {"number": attempt.number,

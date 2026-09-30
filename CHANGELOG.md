@@ -1300,6 +1300,27 @@ gives the command that draws it again at one column or two; a test draws the
 RMSD at one column from that command and gets a figure 88 mm wide over the
 same numbers.
 
+### The Agent looks with the software's own tools before it answers
+
+**The Agent may look before it replies**, up to four times: a reply that
+opens `USE: <tool>` runs the tool and the model is asked again with what the
+software said. `inspect_structure` gives a structure's chains, protein
+residues, ligands, ions and water, the residues whose protonation state a
+study may set and any side chain by a structural metal; `preview_setup` what
+setup will build from a Config and how long the study takes here;
+`check_config` whether the validator accepts a Config, and if not what would
+fix it, and if so the plan; `check_selection` what an MDTraj selection
+matches; `read_study` another study's record (its Config, findings, checks,
+rounds and fixes), so "compare this with last week's run" is answered from
+both records. It wrote sizes, times and chain names from what it was given, which
+for anything the software measures meant guessing. It is told to look rather
+than guess and to quote the software rather than contradict it. The tools
+only look, a look is not an attempt, and hosted they read inside the
+workspace only; a tool reads a structure or a study's record and nothing
+else. What it looked at
+is folded under its reply as **Checked with the software** and kept with the
+thread, and `fastmdx agent` prints a line for each (`fastmdxplora.agent.tools`).
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

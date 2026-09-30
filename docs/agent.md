@@ -482,8 +482,9 @@ Each request goes to the model with three things beside the schema:
   bytes. The Agent is told to cite a file when it uses it: *the setup
   manifest records `ligand_pose: auto`*, not a paraphrase.
 
-The Agent does not open files on its own. What it needs, it is handed; what
-you want it to see, you attach.
+The Agent does not open files on its own, with two exceptions: its tools read
+a structure you name and a study's record (below), and nothing else. What else it needs, it is
+handed; what you want it to see, you attach.
 
 A reply is one of four things:
 
@@ -493,6 +494,31 @@ A reply is one of four things:
 | **A question** | When the request is short of something only you can supply, a structure most often. The Agent never invents one. Your next message answers it, and goes back with the request it answers. |
 | **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. Under it, each analysis the paragraph names, with the mean the study recorded for it (its error and unit, or that it is not a measurement); choosing one opens its figure on the Analysis page. The value is the record's, whatever the paragraph says, so a number can be checked where it is read. |
 | **An action** | One of: run, stop, open viewer, open overview, open report, open builder, show config, download config. |
+
+### Looking before it answers
+
+Before it replies, the Agent may look with the software's own tools, up to
+four times per reply:
+
+| Tool | What the software tells it |
+|---|---|
+| `inspect_structure` | The chains, protein residues, ligands, ions and water a structure holds (a PDB identifier or a PDB or mmCIF file), the residues whose protonation state a study may set, any side chain within 3 Å of a structural metal, and what is worth knowing about it |
+| `preview_setup` | What setup will build from a Config (particles, box, solute, water, ions, a padding grown for the cutoff) and how long the whole study takes on this machine, where it has been timed: what the builder says under a structure |
+| `check_config` | Whether the validator accepts a Config, and if not, why and what would fix it; if so, the plan you will read, defaults marked |
+| `check_selection` | How many atoms, and which residues, an MDTraj selection matches in a structure, as `fastmdx select` says |
+| `read_study` | Another study's record, not the one on screen: its Config, what its analyses found, the checks it was held to, how long it ran and why, and what would fix it |
+
+It is told to look rather than guess: to preview before stating a size or a
+time, to inspect a structure before choosing its chains, ligand or a residue's
+state, to check a selection before writing one into a Config, and to quote
+what the software said rather than a number of its own. The tools only look:
+nothing is run, written or started by one, and a look is not one of the
+attempts a Config is allowed. Hosted, a tool reads inside the workspace only,
+as the builder does.
+
+What it looked at is folded under its reply, **Checked with the software**,
+each tool with what was asked and what the software said, and kept with the
+thread. From the command line, `fastmdx agent` prints a line for each.
 
 ### Acting
 

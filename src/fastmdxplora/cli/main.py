@@ -2690,16 +2690,24 @@ def _run_agent(args: Any) -> int:
 
     from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
 
+    from fastmdxplora.agent.tools import Toolbox
+
     print("Writing a config...")
     try:
         proposal = propose_config(
             request, complete,
             phases=[p.strip() for p in args.phases.split(",") if p.strip()],
             max_cycles=(DEFAULT_ATTEMPTS if args.attempts is None
-                        else int(args.attempts)))
+                        else int(args.attempts)),
+            tools=Toolbox())
     except StudyError as exc:
         print(refusal_of(exc).message)
         return 1
+
+    # What it looked at with the software's own tools, first line of each.
+    for look in proposal.looks:
+        first = (look.said.splitlines() or [""])[0]
+        print(f"  looked: {look.tool}{'' if look.ok else ' (refused)'}: {first}")
 
     # The corrections, shown rather than hidden. They are the only visible
     # sign that anything checked the config, and the count is worth seeing.

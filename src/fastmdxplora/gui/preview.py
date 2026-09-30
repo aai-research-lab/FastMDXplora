@@ -30,15 +30,23 @@ def system_preview(state: dict[str, Any], *,
     ``path_for`` is the server's rule for a path a request names (inside the
     workspace, when hosted); ``None`` from it means refused.
     """
-    from fastmdxplora.advisories import advise
     from fastmdxplora.gui.config_builder import build_config
-    from fastmdxplora.setup.estimate import estimate_system
-    from fastmdxplora.structure_info import count_structure
 
     try:
         config = build_config(state)
     except Exception as exc:  # noqa: BLE001 - said under the form, as the config route says it
         return {"ok": False, "reason": str(exc)}
+    return preview_of_config(config, path_for=path_for)
+
+
+def preview_of_config(config: dict[str, Any], *,
+                      path_for: Callable[[Any], str | None] | None = None) -> dict[str, Any]:
+    """The same, for a config rather than the builder's form: what the
+    Agent's `preview_setup` tool reads."""
+    from fastmdxplora.advisories import advise
+    from fastmdxplora.setup.estimate import estimate_system
+    from fastmdxplora.structure_info import count_structure
+
     systems = config.get("systems") or []
     given = str((systems[0] if systems else {}).get("system") or "").strip()
     if not given:

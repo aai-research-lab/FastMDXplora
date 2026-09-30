@@ -123,6 +123,48 @@
     return row;
   }
 
+  /* What the Agent looked at with the software's own tools before it
+   * answered: each look, what it asked and what the software said, folded
+   * under one line so the answer stays first. The words are the software's,
+   * put in as text: a tool's answer quotes a structure file's names. */
+  var LOOKED = {
+    inspect_structure: "Inspected the structure",
+    preview_setup: "Previewed what setup builds",
+    check_config: "Checked the config",
+    check_selection: "Checked a selection",
+    read_study: "Read another study's record"
+  };
+
+  function looked(box, looks) {
+    if (!looks || !looks.length) return null;
+    var fold = document.createElement("details");
+    fold.className = "agent-looks";
+    var head = document.createElement("summary");
+    head.textContent = "Checked with the software: " + looks.map(function (l) {
+      return (LOOKED[l.tool] || l.tool).toLowerCase() + (l.ok ? "" : " (refused)");
+    }).join("; ");
+    fold.appendChild(head);
+    looks.forEach(function (l) {
+      var item = document.createElement("div");
+      item.className = "agent-look" + (l.ok ? "" : " is-refused");
+      item.setAttribute("data-tool", l.tool || "");
+      var name = document.createElement("div");
+      name.className = "agent-look-name";
+      var asked = l.asked && typeof l.asked === "object"
+        ? Object.keys(l.asked).map(function (k) { return k + ": " + l.asked[k]; }).join(", ")
+        : "";
+      name.textContent = (LOOKED[l.tool] || l.tool) + (asked ? " (" + asked + ")" : "");
+      item.appendChild(name);
+      var said = document.createElement("pre");
+      said.className = "agent-look-said";
+      said.textContent = l.said || "";
+      item.appendChild(said);
+      fold.appendChild(item);
+    });
+    box.appendChild(fold);
+    return fold;
+  }
+
   function note(box, text, ok) {
     var line = document.createElement("div");
     line.className = "agent-attempt" + (ok ? " ok" : "");
@@ -574,6 +616,7 @@
       (data.attempts || []).forEach(function (attempt) {
         if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
       });
+      looked(box, data.looks);
       if (data.action) {
         /* An instruction, carried out through the same door the button
          * uses. The thread says what was done, so nothing happens
@@ -609,7 +652,7 @@
         cite(box, data.cites);
         history.push({ role: "agent", text: data.answer });
         transcript.push({ role: "agent", kind: "answer", text: data.answer,
-                          cites: data.cites || [] });
+                          cites: data.cites || [], looks: data.looks || [] });
         persist();
         area.focus();
         scrollToEnd();
@@ -618,7 +661,8 @@
       if (data.question) {
         note(box, data.question);
         history.push({ role: "agent", text: data.question });
-        transcript.push({ role: "agent", kind: "question", text: data.question });
+        transcript.push({ role: "agent", kind: "question", text: data.question,
+                          looks: data.looks || [] });
         persist();
         pending = request;
         area.focus();
@@ -639,7 +683,7 @@
       history.push({ role: "agent", text: "Wrote a config:\n" + data.yaml });
       currentConfig = data.yaml;
       transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
-                        plan: data.plan || [],
+                        plan: data.plan || [], looks: data.looks || [],
                         cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
                           return a.refusal ? { refusal: { message: a.refusal.message } } : {};
                         }) });
@@ -978,6 +1022,7 @@
         }
         var r = reply();
         var box = r.part("attempts");
+        looked(box, e.looks);
         if (e.kind === "config") {
           (e.attempts || []).forEach(function (a) {
             if (a.refusal) note(box, "Refused: " + a.refusal.message);

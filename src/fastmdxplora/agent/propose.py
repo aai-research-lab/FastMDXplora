@@ -126,6 +126,11 @@ class Proposal:
     #: uses, so the mode's gates -- a budget for autonomous, control for
     #: stop -- apply to a word in the thread as they do to a press.
     action: str | None = None
+    #: What the model looked at with the software's tools before it
+    #: answered (:mod:`fastmdxplora.agent.tools`), in order: shown under
+    #: the answer, so a size or a time in it can be read against the
+    #: software's own finding.
+    looks: tuple[Any, ...] = ()
 
     @property
     def accepted(self) -> bool:
@@ -142,6 +147,7 @@ class Proposal:
             "cycles": self.cycles,
             "refusal": self.refusal.as_dict() if self.refusal else None,
             "codes": [a.refusal.code for a in self.attempts if a.refusal],
+            "looks": [look.tool for look in self.looks],
         }
 
 
@@ -340,7 +346,8 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
                history: list[dict[str, str]] | None = None,
                current_config: str | None = None,
                run_status: str | None = None,
-               attachments: list[dict[str, Any]] | None = None) -> str:
+               attachments: list[dict[str, Any]] | None = None,
+               tools: Any = None) -> str:
     """The first prompt: what the language is, and what is wanted.
 
     The schema description is generated, so it cannot name a setting
@@ -349,8 +356,10 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
     refuses rather than embedding a protein sideways proposes fewer
     studies that will be refused.
     """
-    parts = [_INSTRUCTIONS, "\n", _stopping_instructions(),
-             describe_schema(phases=phases, verbose=verbose), "\n\n"]
+    parts = [_INSTRUCTIONS, "\n", _stopping_instructions()]
+    if tools is not None:
+        parts += [tools.describe(), "\n"]
+    parts += [describe_schema(phases=phases, verbose=verbose), "\n\n"]
     if history:
         parts.append("## The conversation so far\n")
         for turn in history[-12:]:
@@ -519,6 +528,7 @@ def propose_config(
     current_config: str | None = None,
     run_status: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    tools: Any = None,
 ) -> Proposal:
     """Ask for a config, and keep asking until it validates or the cap.
 
@@ -534,6 +544,12 @@ def propose_config(
         config in that many passes over a generated schema description is
         not converging, and further passes mostly produce configs that
         validate for reasons nobody chose.
+
+    tools
+        A :class:`~fastmdxplora.agent.tools.Toolbox`, to let the model
+        look with the software's tools before it answers. A look is not an
+        attempt: it runs nothing and is not validated, and at most
+        :data:`~fastmdxplora.agent.tools.MOST_LOOKS` are taken per answer.
 
     Returns
     -------
@@ -551,27 +567,55 @@ def propose_config(
     a question the software declined to guess at, which is the behaviour
     this design exists to prevent.
     """
+    from fastmdxplora.agent.tools import MOST_LOOKS, use_in
+
     attempts: list[Attempt] = []
     prompt = prompt_for(request, phases=phases, verbose=verbose_schema,
                         history=history, current_config=current_config,
-                        run_status=run_status, attachments=attachments)
+                        run_status=run_status, attachments=attachments, tools=tools)
     refusal: Refusal | None = None
 
-    for number in range(1, max_cycles + 1):
-        raw = complete(prompt)
+    def looked() -> tuple[Any, ...]:
+        return tuple(tools.looks) if tools is not None else ()
+
+    number = 0
+    asked_to_look = 0
+    while number < max_cycles:
+        raw = complete(prompt + (tools.said_so_far() if tools is not None else ""))
+        wanted = use_in(raw) if tools is not None else None
+        if wanted is not None and asked_to_look < MOST_LOOKS:
+            # Not an answer: the tool is run and the model asked again with
+            # what it said. Looks are counted apart from attempts, since
+            # nothing was proposed.
+            asked_to_look += 1
+            tools.use(*wanted)
+            continue
+        number += 1
+        if wanted is not None:
+            # Asked to look again with the looking used up. Not a config,
+            # and not to be read as one: `USE: x` parses as a mapping.
+            refusal = Refusal(
+                code="config.file.unparseable",
+                message="The looks for this reply are used up; answer from what "
+                        "the software said.",
+                details={"attempt": number})
+            attempts.append(Attempt(number, raw, None, refusal))
+            continue
         act = _action_in(raw)
         if act:
-            return Proposal(config=None, attempts=tuple(attempts), action=act)
+            return Proposal(config=None, attempts=tuple(attempts), action=act,
+                            looks=looked())
         said = _answer_in(raw)
         if said:
-            return Proposal(config=None, attempts=tuple(attempts), answer=said)
+            return Proposal(config=None, attempts=tuple(attempts), answer=said,
+                            looks=looked())
         asked = _question_in(raw)
         if asked:
             # The request is short of something a model cannot supply and
             # should not guess. Stop here; retrying would only ask a model
             # to invent what it was told not to.
             return Proposal(config=None, attempts=tuple(attempts),
-                            question=asked)
+                            question=asked, looks=looked())
         config = _parse(raw)
 
         if config is None:
@@ -607,6 +651,6 @@ def propose_config(
             continue
 
         attempts.append(Attempt(number, raw, config, None))
-        return Proposal(config=config, attempts=tuple(attempts))
+        return Proposal(config=config, attempts=tuple(attempts), looks=looked())
 
-    return Proposal(config=None, attempts=tuple(attempts), refusal=refusal)
+    return Proposal(config=None, attempts=tuple(attempts), refusal=refusal, looks=looked())

@@ -325,6 +325,10 @@ CODES: tuple[Code, ...] = (
          "A segment that never ran, because an earlier one settled the "
          "question it was part of.",
          Kind.SEMANTIC, Disclosure.NOTHING),
+    Code("agent.tool.refused",
+         "A tool the Agent asked for declined what it was asked: a file it does "
+         "not read, a place outside the workspace, or arguments it cannot use.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
     Code("environment.model.unset",
          "No model has been chosen, so there is nothing to ask.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
