@@ -1792,6 +1792,20 @@ one of two states looked determined in about one in ten. The counts, what was
 tried and not taken, and what the held-out set was to show are in
 `preregistration/stopping-calibration.md`.
 
+### The calibrated error holds on a held-out set
+
+The remedy of 1172 was counted on the held-out set its registration named
+(5000 studies and 6000 series with seeds it had not seen), with the claims it
+had to meet written down and committed first. Every one held: the stated
+precision for single fast and slow runs and for fast and slow replicas (65.4%
+to 69.2% of studies within one error, 93.5% to 96.4% within two), and the rule
+usable on fast replicas, slow single runs and the transient (93.4% to 99.0%
+determined before the ceiling). As expected, a transient shared by replicas
+from one start still biases them (60.3% and 87.3%), slow replicas still
+reach a 200 ns ceiling in 44% of studies, and a study trapped in one of two
+states looked determined in 9% to 13%. Every study is in
+`preregistration/stopping-calibration-heldout.json`.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

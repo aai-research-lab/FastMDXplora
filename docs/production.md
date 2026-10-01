@@ -292,7 +292,8 @@ error's estimate corrected, the start discarded chosen with the relaxation in
 mind, an unresolved correlation judged on 25 independent samples, and the
 rule's two judgements above, single runs and replicas of stationary series
 held the truth within one error in 65% to 70% of studies and within two in
-91% to 97%. Two things are not in the error. A relaxation that replicas from
+91% to 97%, on the set these were chosen on and again on a held-out set. Two
+things are not in the error. A relaxation that replicas from
 one structure share left them a bias of about 0.4 of their error, and studies
 trapped in one of two slowly exchanging states looked determined in about one
 in ten; replicas from different structures test both.

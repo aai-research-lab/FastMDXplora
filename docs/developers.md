@@ -429,7 +429,8 @@ after a discard that gained little, a later start, resolution at 25
 independent samples, and in the rule an error widened by its degrees of
 freedom and a single run judged alone only on 50 independent samples) is
 counted there too, with what the held-out set had to show for it to be
-adopted.
+adopted, and the held-out count, where it showed it
+(`preregistration/stopping-calibration-heldout.json`).
 
 ---
 
