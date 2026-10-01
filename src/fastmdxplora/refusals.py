@@ -329,6 +329,11 @@ CODES: tuple[Code, ...] = (
          "A tool the Agent asked for declined what it was asked: a file it does "
          "not read, a place outside the workspace, or arguments it cannot use.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
+    Code("assistant.tool.refused",
+         "A tool an assistant called declined what it was asked: a path outside "
+         "the workspace, a config that is not a file, a study already running, or "
+         "arguments it cannot use.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
     Code("environment.model.unset",
          "No model has been chosen, so there is nothing to ask.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),

@@ -1,4 +1,51 @@
 """FastMDXplora for assistants, over the Model Context Protocol.
 
-:mod:`fastmdxplora.mcp.protocol` speaks the protocol, both its eras.
+``fastmdx mcp`` lets an assistant (a chat app, a code editor) design, check,
+run and read studies on this machine, inside one workspace folder. The
+FastMDXplora Agent stays in the loop: ``ask_agent`` writes a study as the
+Agent does in the GUI, with the software's own tools and the validator,
+and the lower-level tools beside it say what the software finds. Nothing
+bypasses the checks: a study runs only from a config the validator
+accepted, whose plan was checked, with the person's go-ahead.
+
+See ``docs/mcp.md``.
 """
+
+from __future__ import annotations
+
+import os
+import sys
+
+from fastmdxplora.mcp.app import App
+from fastmdxplora.mcp.workspace import Workspace
+
+__all__ = ["App", "Workspace", "serve_stdio"]
+
+
+def serve_stdio(workspace: str | os.PathLike[str], *, runs: bool = True) -> int:
+    """Serve on this process's standard streams until the client closes them.
+
+    Standard output carries the protocol and nothing else, so it is taken
+    for the protocol first and everything else that would print there (a
+    log line, a library's progress, a C extension's own output) is sent to
+    standard error, which the protocol leaves for logging.
+    """
+    from fastmdxplora.agent.models import completion_for
+    from fastmdxplora.utils.logging import setup_console
+
+    place = Workspace.at(workspace)
+    protocol_out = os.fdopen(os.dup(sys.stdout.fileno()), "wb", buffering=0)
+    sys.stdout.flush()
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    sys.stdout = sys.stderr
+    setup_console()  # the log follows standard output, which is standard error now
+    # Paths in a config are the workspace's, for the checks here and the runs.
+    os.chdir(place.root)
+    print(f"FastMDXplora MCP server: workspace {place.root}"
+          + ("" if runs else " (read and check only)"), file=sys.stderr)
+    app = App(place, runs=runs, complete_for=completion_for)
+    try:
+        app.server().serve(sys.stdin.buffer, protocol_out)
+    except KeyboardInterrupt:
+        pass
+    return 0

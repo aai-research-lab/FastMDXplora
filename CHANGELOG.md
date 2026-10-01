@@ -17,6 +17,20 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### An assistant can check and read studies: `fastmdx mcp`
+
+**`fastmdx mcp --workspace DIR`** serves FastMDXplora to an assistant that
+speaks the Model Context Protocol (a chat app or a code editor), on standard
+input and output, in both eras of the protocol: per-request versions
+(2026-07-28) and the `initialize` handshake (2025-11-25 back to 2024-11-05).
+Its tools say what the software finds, in its words: `inspect_structure`,
+`check_selection`, `preview_setup`, `check_study` (the validator's verdict,
+the plan with defaults marked, whether this machine can run it, and a
+`plan_id` for the exact file), `save_study` (a new file, never written over,
+only once accepted), `list_studies`, `read_study` and `compare_studies` (a
+difference marked resolved only past twice its combined error). Every path is
+read inside the workspace, and standard output carries the protocol alone.
+
 ### The Agent takes tools from outside
 
 A package installed beside FastMDXplora can give the Agent tools of its own

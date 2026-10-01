@@ -17,7 +17,12 @@ FastMDXplora/
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
-│       │                          #   analyze/report/gui/info/init-config/remote)
+│       │                          #   analyze/report/gui/info/init-config/remote/mcp)
+│       ├── mcp/
+│       │   ├── protocol.py        # The Model Context Protocol over stdio, both eras
+│       │   ├── app.py             # What `fastmdx mcp` offers an assistant
+│       │   ├── tools.py           # Its tools: look, check, save, read
+│       │   └── workspace.py       # The one folder the tools may use
 │       ├── setup/
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
 │       │   ├── prepare.py         # Modeller assembly, ligand merge, clash checks

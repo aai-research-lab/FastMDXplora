@@ -1120,6 +1120,28 @@ def _build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--json", action="store_true",
                         help="Print the outcome as one line of JSON, for a program to read.")
 
+    # ---------- mcp: the same, for an assistant -----------------------------
+    mc = sub.add_parser(
+        "mcp",
+        help="Serve FastMDXplora to an assistant over the Model Context Protocol.",
+        description=(
+            "Let an assistant (a chat app or a code editor that speaks MCP) "
+            "design, check, run and read studies in one workspace folder. "
+            "The assistant starts this command itself and talks to it over "
+            "standard input and output; it is not run by hand. Its "
+            "ask_agent tool writes a study as the FastMDXplora Agent does, "
+            "with the model `fastmdx agent set` chose; a study runs only "
+            "from a config the validator accepted, with your go-ahead."
+        ),
+    )
+    mc.add_argument("--workspace", default=None, metavar="DIR",
+                    help="The one folder the assistant's tools read and write: "
+                         "studies are written here, and nothing outside it is "
+                         "opened. Default: the current directory.")
+    mc.add_argument("--read-only", action="store_true",
+                    help="Offer only the tools that read and check: the "
+                         "assistant cannot start or stop a study.")
+
     # ---------- agent: write a study from a sentence ------------------------
     ag = sub.add_parser(
         "agent",
@@ -2611,6 +2633,18 @@ def _cmd_resume(args: argparse.Namespace) -> int:
     return 0 if answer.get("ok") else 1
 
 
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    """`fastmdx mcp`: serve an assistant on standard input and output."""
+    from fastmdxplora.mcp import serve_stdio
+    from fastmdxplora.refusals import StudyError
+
+    try:
+        return serve_stdio(args.workspace or Path.cwd(), runs=not args.read_only)
+    except StudyError as exc:
+        print(f"fastmdx: {exc}", file=sys.stderr)
+        return 2
+
+
 def _startup_dashboard_details(argv: Sequence[str]) -> tuple[str, bool]:
     """Resolve the GUI address shown by the startup wordmark."""
     host = "127.0.0.1"
@@ -2893,7 +2927,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Show the FastMDXplora identity as soon as the CLI starts. Keep version
     # and citation output machine-friendly; help and an empty invocation are
     # intentionally branded.
-    if not any(flag in raw_argv for flag in ("--version", "-V", "--cite", "--json")):
+    # Nor for `mcp`, whose standard output is the protocol's alone.
+    if (not any(flag in raw_argv for flag in ("--version", "-V", "--cite", "--json"))
+            and raw_argv[:1] != ["mcp"]):
         from fastmdxplora.utils.presenter import get_presenter
 
         dashboard_url, dashboard_enabled = _startup_dashboard_details(raw_argv)
@@ -2939,6 +2975,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_gui(args)
     if args.command == "resume":
         return _cmd_resume(args)
+    if args.command == "mcp":
+        return _cmd_mcp(args)
 
     # Commands that build an orchestrator can hit config-file errors;
     # surface those cleanly rather than as a traceback.
