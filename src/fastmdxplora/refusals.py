@@ -735,6 +735,11 @@ CODES: tuple[Code, ...] = (
          "A parameter sweep that does not describe a set of runs.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
          detail_keys=("option", "reason")),
+    Code("batch.members.not_replicas",
+         "Members compared as replicas of one study that differ by more than "
+         "a seed or an ensemble's model.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
+         detail_keys=("axes",)),
     Code("batch.sweep.empty",
          "A sweep whose cross-product holds no runs.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,

@@ -1866,6 +1866,18 @@ it. A record already written from it is not written again, and a study that
 cannot be written to is read as it stands. Members that are variants keep
 their own starts.
 
+### A campaign of replicas checks the error each run states
+
+`python -m fastmdxplora.validation.replica_calibration <campaign>` sets the
+spread of replicas' means against the mean error each run states, for every
+analysis that wrote a series of its frames in every replica, three ways: as
+recorded when the runs were analysed, computed again by this release from
+each run's own start, and from the start the replicas share. It writes
+nothing in the campaign, and refuses members that are variants rather than
+replicas. It is the read-back for a set of replicas run before 1172 (V5r's
+errors were five to ten times too small): the same trajectories, read by the
+calibrated estimator, without simulating again.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

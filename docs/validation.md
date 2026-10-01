@@ -131,6 +131,28 @@ result for `claude-sonnet-4-6` are in
 
 ---
 
+## Errors against replicas
+
+A mean's error is calibrated two ways. On series with a known mean, the
+stopping rule's calibration counts how often the stated error holds the
+truth ([Developing FastMDXplora](developers.md#calibrating-the-stopping-rule)).
+On a real system, replicas give the error a second way, as the spread of
+their means, and each run's stated error should predict it:
+
+```bash
+python -m fastmdxplora.validation.replica_calibration <campaign folder> --out calibration.json
+```
+
+For every analysis that wrote a series of its frames in every replica, it
+gives the spread of the means against the mean stated error three ways: as
+the runs recorded them, computed again by this release from each run's own
+start, and from the start the replicas share. One is honest; with ten
+replicas the spread is itself uncertain by about a quarter, so a ratio
+between one half and two cannot be told from one. It writes nothing in the
+campaign.
+
+---
+
 ## Pre-registration
 
 `preregistration/` at the repository root holds the thresholds and the claims
