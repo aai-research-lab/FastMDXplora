@@ -803,8 +803,8 @@ def stopping_section(root: str | Path) -> list[str]:
                "spread shows, " if len(runs) > 1 else
                ", and one run is judged alone only on 50 independent samples, ")
             + "and calibrated on series with a known mean, the errors judged this way held "
-            "the truth about as often as they state. What replicas from one structure "
-            "share, a relaxation or a state none of them left, is not in the error.", ""]
+            "the truth about as often as they state. A state none of the runs left is not "
+            "in the error.", ""]
     return lines
 
 

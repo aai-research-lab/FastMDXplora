@@ -412,3 +412,29 @@ this section. It is adopted if the stated precision holds there for
 `fast_three_replicas`, `slow_three_replicas` and `transient_three_replicas`,
 and the rule is usable there on `fast_three_replicas` and
 `transient_three_replicas`. Both results are reported, whichever way they go.
+
+### Result on the second held-out set
+
+**Counted 2026-10-01**, after the section above was committed, with the same
+code. Every study is in
+[`stopping-calibration-shared-start-heldout.json`](stopping-calibration-shared-start-heldout.json).
+**Every claim it was to show holds, so the shared start is adopted.**
+
+What fails, first: slow replicas reach the 200 ns ceiling in 259 of 500
+studies (48.2% end determined), and studies trapped in one of two states
+looked determined in 31 of 500 started together (6.2%) and 17 of 500 with
+drawn starts (3.4%), every one with the truth outside two errors.
+
+| Case | Determined | At the ceiling | Median production | Within 1 error | Within 2 | Floors | Holds | Fixed length, within 1 / 2 |
+|---|---|---|---|---|---|---|---|---|
+| `fast_three_replicas` | 979 of 1000 (97.9%) | 21 | 27.5 ns | 67.4% | 94.3% | 62.3%, 92.8% | yes | 69.7% / 96.1% (829 given at 27.5 ns) |
+| `slow_three_replicas` | 241 of 500 (48.2%) | 259 | 200.0 ns | 68.0% | 94.2% | 56.3%, 90.1% | yes | 69.3% / 94.8% (287 given at 200.0 ns) |
+| `transient_three_replicas` | 986 of 1000 (98.6%) | 14 | 44.6 ns | 68.6% | 94.3% | 62.3%, 92.8% | yes | 71.4% / 95.6% (773 given at 44.6 ns) |
+| `two_states_one_start` | 31 of 500 (6.2%) | 469 | 20.0 ns | 0.0% | 0.0% | 34.8%, 80.5% | no | 47.5% / 50.8% (59 given at 20.0 ns) |
+| `two_states_drawn_starts` | 17 of 500 (3.4%) | 483 | 26.2 ns | 0.0% | 0.0% | 23.1%, 75.2% | no | 72.5% / 75.4% (69 given at 26.2 ns) |
+
+What holds: the stated precision for `fast_three_replicas` (67.4% and
+94.3%), `slow_three_replicas` (68.0% and 94.2%) and
+`transient_three_replicas` (68.6% and 94.3%, a mean `(value - truth) /
+error` of +0.18), and usability for `fast_three_replicas` (97.9%) and
+`transient_three_replicas` (98.6%).

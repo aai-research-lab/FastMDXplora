@@ -1840,6 +1840,19 @@ determined less often (7.2% and 4.2%, from 10.8% and 8.6%). A single run is
 unchanged. What a second held-out set has to show for it to be adopted is in
 `preregistration/stopping-calibration.md`, committed before it was counted.
 
+### The shared start holds on a second held-out set
+
+The start replicas share (1175) was counted on a second held-out set
+(indices it had not seen, with its claims committed first), and every claim
+held: the stated precision for fast, slow and relaxing replicas (67.4% to
+68.6% of studies within one error, 94.2% to 94.3% within two; the relaxing
+case's mean `(value - truth) / error` +0.18) and the rule usable on fast and
+relaxing replicas (97.9% and 98.6%). Slow replicas still reach a 200 ns
+ceiling in half their studies, and studies trapped in one of two states
+looked determined in 6.2% (one start) and 3.4% (drawn starts). The
+documentation and the report's *How long it ran, and why* now say that a
+state no run left is what the error does not include.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
