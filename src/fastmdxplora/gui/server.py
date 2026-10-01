@@ -1510,7 +1510,9 @@ def serve_dashboard(
     try:
         session.wait_forever()
     except KeyboardInterrupt:
-        pass
+        # On its own line: the terminal has just echoed ^C, and without a
+        # newline the shell's next prompt starts where it left off.
+        print("\nGUI stopped.")
     finally:
         session.stop()
         # The run is its own session and is not stopped by stopping the

@@ -1679,7 +1679,7 @@ def _finish_dashboard_for_command(session, args: argparse.Namespace) -> None:
     try:
         session.wait_forever()
     except KeyboardInterrupt:
-        pass
+        print("\nGUI stopped.")
     finally:
         session.stop()
 

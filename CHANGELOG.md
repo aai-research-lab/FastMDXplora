@@ -1690,6 +1690,15 @@ whether the report or its empty state is shown, the addresses of its
 figures, whether the chip code is there, what `/api/report` returned, and
 what the page logged.
 
+### Ctrl+C says the GUI stopped, on a line of its own
+
+Stopped with Ctrl+C, the GUI printed nothing. The terminal had echoed `^C`,
+and without a newline after it the shell's next prompt began on the same
+line, which zsh marks with a `%`. It now prints "GUI stopped." on a line of
+its own, from `fastmdx gui` and from a GUI left open after `fastmdx
+explore`. A test starts the GUI as its own process and stops it with one
+interrupt.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
