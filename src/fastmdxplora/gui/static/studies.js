@@ -3,7 +3,7 @@
  *
  * Each card says the study's structure, what kind of study it is, where it
  * stands, when it began, the means it recorded with their errors and a
- * figure it drew. Search narrows the cards as typed. Two chosen are
+ * figure it plotted. Search narrows the cards as typed. Two chosen are
  * compared: the settings in which they differ, defaults filled in, as
  * `fastmdx diff` says them, and the means both recorded, a difference
  * marked only past twice their combined error. Open makes a study the one

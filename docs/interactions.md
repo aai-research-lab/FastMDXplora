@@ -98,7 +98,7 @@ So each interaction is reported with:
 - **well sampled** — whether it rests on enough independent observation to
   average
 
-The figure draws thinly observed contacts hollow rather than footnoting them,
+The figure plots thinly observed contacts as hollow markers rather than footnoting them,
 because an occupancy resting on one observation should not look like one
 resting on four hundred.
 

@@ -1,7 +1,7 @@
 """What made each figure, and the command that makes it again.
 
 A figure copied into a paper leaves its study behind, and with it everything
-that says what it is: which release drew it and from which numbers, how many
+that says what it is: which release plotted it and from which numbers, how many
 frames it rests on, the selection and the options, and how to draw it again.
 All of that is recorded (the analysis manifest, each analysis's
 `options.json`, the phase's `produced_by` in the Manifest), and the Analysis

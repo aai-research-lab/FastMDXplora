@@ -398,7 +398,7 @@ what gates it.
 | `figure_width` | str | `page` | `page` (6.5 in), `single_column` (89 mm) or `double_column` (183 mm) |
 
 `both` writes `<name>_greyscale.png` beside each figure. American spellings of
-the values are accepted. `figure_width` draws every figure at the width it will
+the values are accepted. `figure_width` plots every figure at the width it will
 be printed at, with its type sized for it: 7 to 8 pt at one column, where a
 page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 

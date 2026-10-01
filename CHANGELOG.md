@@ -1667,6 +1667,19 @@ any has succeeded is tried again, up to five times, further apart each
 time: a finished study's state does not change, so nothing else would ask.
 A test fails the fetches in a browser, and fails on the old page.
 
+### A figure is plotted, and a molecule rendered
+
+What the software said of its figures and the viewer now uses the field's
+words. A figure, a curve, a surface or a chart is plotted: the chip under a
+figure says "Plotted for" its width and gives the command that plots it
+again, an analysis with nothing to show says it has no surface, result or
+pull to plot, and `figure_colours` and `figure_width` say how a figure is
+plotted. The viewer's representation is chosen under "Representation", and
+a structure in the builder or the viewer is rendered. A ligand's chemistry
+file is said to give a form, not to draw it. "Drawn" stays where it is the
+statistical word: a seed or velocities drawn at random, pairs drawn once. A
+test holds pages, messages and the docs to it.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -41,11 +41,11 @@ you. Nothing is uploaded anywhere.
 
 | | |
 |---|---|
-| **All studies** | Every study under the workspace (or a folder you choose), as cards: the structure, the kind of study, where it stands, when it began, the means it recorded with their errors, and a figure it drew. Search narrows them; **Open** makes one the study on screen; two chosen are **compared**: the settings in which they differ, defaults filled in as `fastmdx diff` says them, and the means both recorded, a difference marked resolved only past twice their combined standard error |
+| **All studies** | Every study under the workspace (or a folder you choose), as cards: the structure, the kind of study, where it stands, when it began, the means it recorded with their errors, and a figure it plotted. Search narrows them; **Open** makes one the study on screen; two chosen are **compared**: the settings in which they differ, defaults filled in as `fastmdx diff` says them, and the means both recorded, a difference marked resolved only past twice their combined standard error |
 | **Agent** | [The FastMDXplora Agent](agent.md): a conversation that writes, edits, runs and reads a study |
 | **Config** | The [Config](config.md) builder: four questions, the phases as tiles. Above them, **Start from an example**: a protein in water, a protein and its ligand, a membrane protein, a study run until a quantity is determined, and a free energy along a distance, each a complete Config (the [worked examples](examples.md)) loaded into the form to change |
 | **Overview** | Study Overview. A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
-| **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default. **Measure** (the ruler, or M): two atoms clicked give their distance, three the angle, four the dihedral, drawn in the structure and listed in the Selection tab, following the frames; two atoms can be measured over every frame with the command it gives. A clicked histidine, aspartate, glutamate or lysine offers its protonation states: choosing one opens the Config page with this study's Config and that residue set in `setup.residue_states`, found as setup builds the structure |
+| **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default. **Measure** (the ruler, or M): two atoms clicked give their distance, three the angle, four the dihedral, shown in the structure and listed in the Selection tab, following the frames; two atoms can be measured over every frame with the command it gives. A clicked histidine, aspartate, glutamate or lysine offers its protonation states: choosing one opens the Config page with this study's Config and that residue set in `setup.residue_states`, found as setup builds the structure |
 | **Analysis** | The figures and tables, grouped. For a study of several runs, the runs side by side: the settings that differ, the mean each run recorded with its error, a difference marked only where it exceeds twice the two runs' combined error (replicas are set against their own errors instead), and one measure from every finished run overlaid |
 | **Report** | The report itself, rendered as a document, with downloads for what was produced and a notice for what could not be |
 | **Files** | Everything the run wrote, grouped by phase |
@@ -155,7 +155,7 @@ content to arrive turns the switch on.
 still open, and said again as they change: the particles, the box (its shape,
 how wide it is from face to face, and the padding setup will grow it to where
 the cutoff needs more), the solute's residues, atoms and charge, the ligands
-kept, the water and the ions; and it is drawn beside them, the chains setup
+kept, the water and the ions; and it is rendered beside them, the chains setup
 keeps (copies from the assembly's symmetry included) inside the periodic cell
 it builds, to scale: a cube, a rhombic dodecahedron or a truncated
 octahedron. It is worked out from the structure and the
@@ -238,7 +238,7 @@ Once a run starts, the page becomes a live view of it.
 so a system going wrong is visible while it is going wrong rather than
 afterwards.
 
-**The molecule, in 3D.** The structure is drawn as it is simulated, and once
+**The molecule, in 3D.** The structure is rendered as it is simulated, and once
 frames exist the trajectory plays back. For a protein–ligand system the ligand
 and its binding pocket are picked out, so what the ligand is doing is visible
 without loading anything into another program.
@@ -246,7 +246,7 @@ without loading anything into another program.
 **Whether the answer is determined yet.** A study run until it is determined
 (`simulation.stop_when`, see
 [Running until it is determined](production.md#running-until-it-is-determined)) has a
-card of its own on the Overview. For each quantity it draws the standard error
+card of its own on the Overview. For each quantity it plots the standard error
 after each round against the error asked for, where the error would reach it
 if it keeps falling as one over the root of the frames (the estimate the next
 piece is sized by), and the mean after each round with every replica's own
@@ -257,7 +257,7 @@ study's record and nothing else, so it says what the report says.
 
 The page is told when the study changes. The server looks at the study's files
 twice a second and sends one event over `GET /api/stream` when any of them, or
-the state of the run, is different, and the page then asks for what it draws;
+the state of the run, is different, and the page then asks for what it shows;
 so what the run writes appears within about a second, and an idle page asks
 for nothing. The page still asks every thirty seconds while the stream is open,
 and every three (the dashboard's refresh setting) where it cannot be opened, as
@@ -278,8 +278,8 @@ already running."*
 
 ## When there is nothing to show
 
-A page with no run behind it says so rather than drawing an empty chart. If
-setup has not finished there is no structure to draw; if production has not
+A page with no run behind it says so rather than plotting an empty chart. If
+setup has not finished there is no structure to render; if production has not
 started there are no frames to play. Each says which, and what would produce
 it.
 
@@ -323,18 +323,18 @@ setting to change and an install command are said, never run. See
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
 
 **Each figure says what made it.** The chip at the foot of a figure on the
-Analysis page names the release that drew it; opened, it says the packages
+Analysis page names the release that plotted it; opened, it says the packages
 whose versions decide its numbers (MDTraj, NumPy, SciPy, Matplotlib), when
 it was made, the trajectory and how many frames it rests on, the selection
-and the options, and the command that draws it again: the one analysis,
+and the options, and the command that plots it again: the one analysis,
 over the same frames with the same selection and options, into a folder of
 its own beside the study, so nothing of the study is overwritten. The
 command is the command line's own rendering, and run, it writes the same
 numbers; where a setting has no flag, a config is given instead. Two buttons
-give the same command drawing it at a journal's column width instead, one
+give the same command plotting it at a journal's column width instead, one
 column (89 mm) or two (183 mm), with its type sized for that width
 (`analysis.figure_width`). A figure made by another release says so, since a
-rerun here is drawn by this one. The same figures in the report carry the
+rerun here is plotted by this one. The same figures in the report carry the
 same chip on the Report page, under each figure.
 
 **There is no comparison view.** A campaign's cross-run comparison is written
@@ -493,7 +493,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/structure-info`, `/api/ligands` | Atom, residue, chain and ligand counts |
 | `GET /api/playback-info`, `/api/live-frame-index`, `/api/live-coordinates` | The viewer's frames |
 | `GET /api/protein-preview` | The cached preview image |
-| `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart drawn from them; `&run=ID` for one run of a study of several |
+| `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart plotted from them; `&run=ID` for one run of a study of several |
 | `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read |
 | `GET /api/studies?path=`, `/api/studies-compared?a=&b=`, `/api/study-thumbnail?path=` | The studies under a folder as cards, two compared, and a card's figure; loopback only, as browsing folders is, and inside the workspace when hosted |
 | `GET /api/residue-states?chain=A&resseq=57&resname=HIS` | A clicked residue's protonation states and this study's Config to start a new study from, the residue named as setup builds the structure |

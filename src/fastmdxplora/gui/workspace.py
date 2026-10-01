@@ -3,7 +3,7 @@
 The GUI showed one study at a time, and another was opened by walking to
 its folder. This finds the studies under a folder and says each in a card:
 its structure, what kind of study it is, where it stands, when it was made,
-and the means it recorded with their errors, with a figure it drew. Two
+and the means it recorded with their errors, with a figure it plotted. Two
 chosen are compared as `fastmdx diff` compares them, the settings in which
 they differ with defaults filled in, and beside that the means both
 recorded, a difference marked only past twice their combined error, the
@@ -121,7 +121,7 @@ def card_of(folder: Path | str) -> dict[str, Any]:
 
 
 def thumbnail_of(folder: Path | str) -> Path | None:
-    """A figure the study drew, for its card: the first of its measures'
+    """A figure the study plotted, for its card: the first of its measures'
     own figures, else the report's summary figure."""
     base = Path(folder)
     for name in _FIRST:

@@ -140,7 +140,7 @@ after an ordinary simulation, and none needs a ligand.
 | | |
 |---|---|
 | `pmf` | The free energy along an umbrella study's coordinate, from the windows it stitched. Reads the study's result rather than recomputing it |
-| `metad_surface` | The free energy surface a metadynamics run filled, from its hills. Draws a provisional surface as readily as a converged one, saying which it is |
+| `metad_surface` | The free energy surface a metadynamics run filled, from its hills. Plots a provisional surface as readily as a converged one, saying which it is |
 | `steered_work` | The work done by a steered pull, against the coordinate |
 
 `steered_work` gives the curve rather than the total, because a pull that

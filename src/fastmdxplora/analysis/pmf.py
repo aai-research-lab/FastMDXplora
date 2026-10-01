@@ -76,7 +76,7 @@ class PMF(Analysis):
         if path is None:
             raise MissingResultError(
                 "No pmf.json beside this run, so there is no umbrella result "
-                "to draw. This analysis reports what the umbrella phase "
+                "to plot. This analysis reports what the umbrella phase "
                 "computed; it does not recompute it, because stitching the "
                 "windows twice would invite two answers to one question."
             , code="analysis.data.absent")

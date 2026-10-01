@@ -91,7 +91,7 @@ quantity but not to pin it.
 **No number at all**, with the reason. A free energy from a bias that never
 converged, a potential of mean force across windows that do not overlap, a
 binding free energy from a run that never reached bulk: each is refused by name
-rather than drawn. A refusal is the most informative thing this software
+rather than reported. A refusal is the most informative thing this software
 produces, and it always says what would settle the question.
 
 ### Not enough data is a refusal too
@@ -184,7 +184,7 @@ bars, and the report calls a difference between the ends of a sweep a trend
 only where it is more than twice its error. `comparison_summary.csv` gives
 each mean with its standard error, the frames discarded before it and what it
 is over. A run whose analyses recorded no mean is given the mean of every
-frame, marked so. The overlays are drawn against time where every run
+frame, marked so. The overlays are plotted against time where every run
 recorded its saving interval, and against the frame otherwise. Replicas get a section of their own, setting the spread of
 their means against the error each run estimated (below), and no trend plot
 against their seeds.

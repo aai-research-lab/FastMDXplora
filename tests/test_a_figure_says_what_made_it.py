@@ -182,7 +182,7 @@ def test_each_figure_carries_its_chip(study) -> None:
             assert "30 frames, every 2nd frame" in said and "name CA" in said
             command = page.text_content(f"{panel} .figure-provenance-command")
             assert command.startswith("fastmdx explore ") and "--analyze-analyses rmsd" in command
-            assert "Drawn for" in said and "the page (6.5 in)" in said
+            assert "Plotted for" in said and "the page (6.5 in)" in said
             page.click(f'{panel} .figure-provenance-widths [data-width="single_column"]')
             assert "--analyze-figure-width single_column" in page.text_content(
                 f"{panel} .figure-provenance-command")

@@ -39,8 +39,8 @@ succeeded is recorded, because an interaction computed from inferred bond
 orders is a weaker claim than one computed from chemistry that was known.
 
 **A chemistry file sets the protonation state.** The file is what gets
-parameterised, so the form it is drawn in is the form that is simulated. An
-ideal SDF from the Chemical Component Dictionary draws amidines and
+parameterised, so the form it is given in is the form that is simulated. An
+ideal SDF from the Chemical Component Dictionary gives amidines and
 carboxylates neutral, which is not their state at physiological pH, and a study
 that meant the charged form needs a file in that form. Stating
 `setup.ligand_net_charge` checks the file rather than overriding it: where the
@@ -203,7 +203,7 @@ between a paper's numbering and the structure's, and seeing both makes it
 obvious.
 
 The labels are yours. FastMDXplora does not work out that residues 84 to 92 are
-a binding loop; it draws what you tell it to and calls it what you call it.
+a binding loop; it plots what you tell it to and calls it what you call it.
 
 **Writes** `report.md`, `report.pdf`, `slides.pptx`, `slides_outline.md`,
 `dashboard.html`, `analysis_summary.png`, `project_bundle.zip`. The PDF needs

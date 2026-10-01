@@ -370,7 +370,7 @@ def _with_a_real_clock(
     logger.warning(
         "No saving interval is recorded for this trajectory and %s does not "
         "carry one, so there is no way to know how much simulated time a "
-        "frame represents. Time-series figures will be drawn against frame "
+        "frame represents. Time-series figures will be plotted against frame "
         "number rather than against a nanosecond axis that would be invented. "
         "Pass saving_interval_ps to label them in time.",
         ", ".join(sorted(suffixes)) or "the format",

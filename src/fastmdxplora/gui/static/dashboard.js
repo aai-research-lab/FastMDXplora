@@ -1026,19 +1026,19 @@
     }
     const WIDTH_SAID = { page: "the page (6.5 in)", single_column: "one column (89 mm)",
                          double_column: "two columns (183 mm)" };
-    if (made.width) row("Drawn for", escapeHTML(WIDTH_SAID[made.width] || made.width));
+    if (made.width) row("Plotted for", escapeHTML(WIDTH_SAID[made.width] || made.width));
     const again = made.command || made.config || "";
     const older = made.version && made.this_version && made.version !== made.this_version
       ? `<p class="figure-provenance-note">This is FastMDXplora ${code(made.this_version)}; ` +
-        "run again here, the figure is drawn by this release rather than the one above.</p>"
+        "run again here, the figure is plotted by this release rather than the one above.</p>"
       : "";
     const how = made.command
-      ? "Draws it again, from the same frames and options, into a folder of its own:"
-      : "A setting here has no flag, so this config draws it again (fastmdx explore --config):";
+      ? "Plots it again, from the same frames and options, into a folder of its own:"
+      : "A setting here has no flag, so this config plots it again (fastmdx explore --config):";
     // The same command at another width: a journal's column, or the page.
     const widths = Object.entries(made.at_widths || {});
     const choose = widths.length
-      ? '<div class="figure-provenance-widths" role="group" aria-label="Draw it at">' +
+      ? '<div class="figure-provenance-widths" role="group" aria-label="Plot it at">' +
         `<button type="button" class="file-action is-chosen" data-width="">as it is</button>` +
         widths.map(([width]) => `<button type="button" class="file-action" data-width="${escapeAttr(width)}">` +
           `${escapeHTML(WIDTH_SAID[width] || width)}</button>`).join("") + "</div>"

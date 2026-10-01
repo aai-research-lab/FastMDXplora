@@ -69,7 +69,7 @@ class MetadynamicsSurface(Analysis):
         if path is None:
             raise MissingResultError(
                 "No metadynamics_surface.json beside this run, so there is "
-                "no surface to draw. This analysis reports what the "
+                "no surface to plot. This analysis reports what the "
                 "simulation phase computed from the hills; it does not "
                 "recompute it."
             , code="analysis.data.absent")
@@ -117,14 +117,14 @@ class MetadynamicsSurface(Analysis):
         else:
             raise StudyError(
                 f"The metadynamics record has {dimensions} dimensions; this "
-                "analysis can draw one- and two-dimensional surfaces."
+                "analysis can plot one- and two-dimensional surfaces."
             , code="simulation.bias.dimension_mismatch")
 
         raise StudyError(
             "The metadynamics record holds no surface: "
             + (str(self._refused) if self._refused
                else "the coordinate did not move, so there is nothing "
-                    "along it to draw.")
+                    "along it to plot.")
         , code="analysis.data.absent")
 
     def _band(self) -> "np.ndarray | None":

@@ -2173,7 +2173,7 @@ class BatchExplorer:
             print("Free energy:    not computed -- "
                   + payload["refused"].split(".")[0])
         else:
-            drawn_note = f", drawn in {drawn.parent.name}/" if drawn else ""
+            drawn_note = f", plotted in {drawn.parent.name}/" if drawn else ""
             print(f"Free energy:    {destination}{drawn_note}")
         for line in _what_the_binding_says(payload.get("binding")):
             print(line)
@@ -2291,7 +2291,7 @@ class BatchExplorer:
         def unaffected(reason: object) -> None:
             logger.warning(
                 "The free energy was computed and written to %s but could "
-                "not be drawn (%s). The numbers are unaffected.",
+                "not be plotted (%s). The numbers are unaffected.",
                 pmf_json.name, reason)
 
         try:

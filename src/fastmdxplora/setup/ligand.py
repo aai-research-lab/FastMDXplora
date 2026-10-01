@@ -634,14 +634,14 @@ def load_ligand(
             "Supply a file in the protonation state the study means (for an "
             "amidine or a carboxylate at physiological pH that is usually "
             "not the Chemical Component Dictionary's ideal form, which is "
-            "drawn neutral), or drop `ligand_net_charge` and let the file "
+            "given neutral), or drop `ligand_net_charge` and let the file "
             "speak for itself."
         , code="setup.chemistry.charge_contradicted", resname=name, stated=net_charge)
     resolved_charge = net_charge if net_charge is not None else inferred
     logger.info(
         "Loaded ligand %s from %s (net charge=%s, taken from the file's own "
         "formal charges). Supplying chemistry as a file sets the protonation "
-        "state: an ideal SDF is drawn in one particular form, and it is the "
+        "state: an ideal SDF is given in one particular form, and it is the "
         "form that will be simulated.",
         name, path.name,
         resolved_charge if resolved_charge is not None else "unknown",

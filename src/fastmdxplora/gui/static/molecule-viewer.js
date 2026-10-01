@@ -1736,7 +1736,7 @@
         value.className = "mono";
         rows.append(term, value);
       });
-      add("p", "muted small", "As drawn in this frame. The analyses compute distances across the "
+      add("p", "muted small", "As shown in this frame. The analyses compute distances across the "
         + "periodic box the short way round.");
     }
     if (STATE.picks.length === 2) {

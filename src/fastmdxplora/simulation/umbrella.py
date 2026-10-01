@@ -2115,7 +2115,7 @@ def compute_pmf(
             f"computed across the gap: {described}. Recombination "
             "stitches histograms together, and where two neighbours never "
             "visit the same value there is nothing to stitch -- a curve "
-            "drawn through the gap would be interpolation presented as a "
+            "continued across the gap would be interpolation presented as a "
             "result.\n\n"
         )
         if drifted:

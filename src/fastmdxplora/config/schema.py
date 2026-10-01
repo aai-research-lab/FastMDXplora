@@ -407,7 +407,7 @@ SETUP = PhaseSchema(
               "is what gets parameterised and a number cannot change the "
               "atoms in it. Supplying chemistry as a file therefore sets the "
               "protonation state, and an ideal SDF from the Chemical "
-              "Component Dictionary is drawn in one particular form -- "
+              "Component Dictionary is given in one particular form -- "
               "amidines and carboxylates in it are neutral, which is not "
               "their state at physiological pH.",
               example=1),
@@ -942,7 +942,7 @@ ANALYSIS = PhaseSchema(
               "Last frame index (exclusive). Default: full trajectory.",
               example=10000),
         Field("figure_colours", str, "colour",
-              "What every figure is drawn in. 'colour' uses the Okabe-Ito "
+              "What every figure is plotted in. 'colour' uses the Okabe-Ito "
               "palette, which is chosen to stay distinguishable under the "
               "common forms of colour vision deficiency. 'greyscale' drops "
               "hue and carries the same distinctions in value and hatching, "
@@ -954,11 +954,11 @@ ANALYSIS = PhaseSchema(
               choices=("colour", "greyscale", "both"),
               example="both"),
         Field("figure_width", str, "page",
-              "How wide every figure is drawn, with its type sized for that "
+              "How wide every figure is plotted, with its type sized for that "
               "width: 'page' (6.5 in, a manuscript page's text width), "
               "'single_column' (89 mm, one journal column, 7-8 pt type) or "
-              "'double_column' (183 mm, two). A figure drawn at the width it "
-              "is printed at keeps its type legible; one drawn for the page "
+              "'double_column' (183 mm, two). A figure plotted at the width it "
+              "is printed at keeps its type legible; one plotted for the page "
               "and scaled into a column takes its 9 pt ticks to about 5 pt.",
               choices=("page", "single_column", "double_column"),
               example="single_column"),
@@ -1191,7 +1191,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "Trimming and thinning before anything is analysed.",
          ("first", "last", "stride")),
         ("What the figures look like",
-         "How every figure is drawn, for the screen or for print.",
+         "How every figure is plotted, for the screen or for print.",
          ("figure_colours", "figure_width")),
     ),
     "report": (

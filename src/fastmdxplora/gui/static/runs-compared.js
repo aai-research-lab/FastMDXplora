@@ -184,7 +184,7 @@
     chart.innerHTML = "";
     legend.innerHTML = "";
     if (!drawn.length) {
-      chart.appendChild(el("div", "muted small", "No finished run has this series to draw."));
+      chart.appendChild(el("div", "muted small", "No finished run has this series to plot."));
       return;
     }
     var W = 720, H = 280, L = 64, R = 16, T = 12, B = 40;

@@ -213,7 +213,7 @@ The Config is validated exactly as in any other mode. A study asking for a
 setting that does not exist is refused here too.
 
 > **What it does today.** The mode is recorded in the Config, travels into the
-> run's records, and stamps every figure the marked phase draws. The behaviour
+> run's records, and stamps every figure the marked phase plots. The behaviour
 > it is meant to unlock — the Agent writing code of its own, outside the schema
 > — is **specified and not yet built**, and `fastmdx agent --unvalidated` says
 > so when you run it. So the marking works; what it currently marks is a study
@@ -654,7 +654,7 @@ One thing is specified and incomplete, and it is better to know than to find
 out:
 
 - **`unvalidated` is recorded and marked, not enforced.** The mode reaches the
-  Config, the Manifest and every figure the marked phase draws. What it is
+  Config, the Manifest and every figure the marked phase plots. What it is
   meant to unlock — the Agent writing code of its own, outside the schema — is
   not built, so there is currently nothing outside the schema for it to mark.
 

@@ -143,8 +143,8 @@ def settle_figure_colours(value: Any) -> str:
     if settled is None:
         raise StudyError(
             f"figure_colours does not accept {value!r}. It accepts "
-            f"{', '.join(FIGURE_COLOURS)} -- 'colour' draws the figure in "
-            "colour, 'greyscale' draws it without hue, and 'both' writes the "
+            f"{', '.join(FIGURE_COLOURS)} -- 'colour' plots the figure in "
+            "colour, 'greyscale' plots it without hue, and 'both' writes the "
             "colour figure and a greyscale copy beside it. American "
             "spellings are accepted."
         , code="analysis.option.not_permitted")

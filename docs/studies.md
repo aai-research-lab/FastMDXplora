@@ -149,7 +149,7 @@ So each variable states what it does **not** separate:
 `membrane_depth` is defined against the bilayer's own centre rather than a
 fixed plane — a membrane drifts, and depth against a fixed plane becomes depth
 against nothing. `q` is biased over exactly the contacts the
-[`qvalue` analysis](analyses.md) counts, so the coordinate a surface is drawn
+[`qvalue` analysis](analyses.md) counts, so the coordinate a surface is plotted
 along is the one the run reports.
 
 Which selections each variable needs is in
@@ -412,7 +412,7 @@ execution:
 
 Recombination stitches the windows' histograms together. Where two neighbours
 never visit the same value there is nothing to stitch: the free energy on one
-side cannot be placed relative to the other, and a curve drawn through the gap
+side cannot be placed relative to the other, and a curve continued across the gap
 is interpolation presented as a result.
 
 So overlap is computed and **a gap is reported rather than bridged**, naming
