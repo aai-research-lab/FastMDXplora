@@ -403,9 +403,11 @@ class Server:
 
     def _finished(self, call: Call, result: dict[str, Any]) -> dict[str, Any]:
         """A result as the call's era writes it."""
-        if call.era != "modern":
-            return result
         out = dict(result)
+        if call.era != "modern":
+            for key in ("resultType", "ttlMs", "cacheScope"):
+                out.pop(key, None)
+            return out
         out.setdefault("resultType", "complete")
         meta = dict(out.get("_meta") or {})
         meta[_SERVER_INFO] = self.info
@@ -413,9 +415,11 @@ class Server:
         if call.method == "server/discover":
             out["ttlMs"], out["cacheScope"] = self.discover_ttl_ms, "public"
         else:
+            # A result may say its own, where one method's answers differ.
             served = self.methods.get(call.method)
             if served is not None and served.ttl_ms is not None:
-                out["ttlMs"], out["cacheScope"] = served.ttl_ms, served.scope
+                out.setdefault("ttlMs", served.ttl_ms)
+                out.setdefault("cacheScope", served.scope)
         return out
 
     # ---- asking the person ----

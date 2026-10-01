@@ -46,6 +46,8 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
         "a residue's state; preview_setup before stating a size or a time; "
         "check_selection before writing a selection.",
         "- check_study before anything runs: its plan is what the person should read.",
+        "- The resource fastmdxplora://guide/working-with-studies says what the "
+        "software's words mean (a mean, 'not determined', 'resolved', a refusal).",
     ]
     if runs:
         lines.append("- start_study only when the person has agreed to that plan: a study "
@@ -72,13 +74,33 @@ class App:
         self.tools: tuple[Tool, ...] = tuple(t for t in TOOLS if runs or not t.acts)
 
     def server(self, *, workers: int = 4) -> Server:
+        from fastmdxplora.mcp import content
+
+        place = self.workspace
+
+        def listed(call: Call, items: Any, key: str) -> dict[str, Any]:
+            _no_cursor(call)
+            return {key: items}
+
         methods = {
             "tools/list": Method(self._list_tools, ttl_ms=_AN_HOUR_MS),
             "tools/call": Method(self._call_tool),
+            "prompts/list": Method(lambda call: listed(
+                call, [p.listed() for p in content.PROMPTS], "prompts"), ttl_ms=_AN_HOUR_MS),
+            "prompts/get": Method(lambda call: content.prompt_messages(
+                place, call.params.get("name"), call.params.get("arguments"))),
+            "resources/list": Method(lambda call: listed(
+                call, content.resources(place), "resources"),
+                ttl_ms=content.STUDY_TTL_MS, scope="private"),
+            "resources/templates/list": Method(lambda call: listed(
+                call, content.TEMPLATES, "resourceTemplates"), ttl_ms=_AN_HOUR_MS),
+            "resources/read": Method(lambda call: content.read_resource(
+                place, call.params.get("uri")), ttl_ms=content.STUDY_TTL_MS, scope="private"),
         }
         return Server(methods, info=server_info(),
                       instructions=_instructions(self.workspace, self.runs),
-                      capabilities={"tools": {}}, workers=workers)
+                      capabilities={"tools": {}, "prompts": {}, "resources": {}},
+                      workers=workers)
 
     def _list_tools(self, call: Call) -> dict[str, Any]:
         _no_cursor(call)

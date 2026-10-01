@@ -17,6 +17,17 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### An assistant reads the guides and each study, and offers four prompts
+
+`fastmdx mcp` serves two guides as resources, **working with studies** (the
+order of work, and what a mean, "not determined", "resolved" and a refusal
+mean) and **the config language** as the Agent is shown it, and each study in
+the workspace as its record (`fastmdxplora://study/<folder>`). Its prompts,
+offered by most clients as slash commands, start a piece of work the way
+FastMDXplora does it: **design a study**, **explain what a study found**,
+**why did a study stop?** and **continue a study**, each with the Agent in the
+loop and nothing run without your word; one about a study carries its record.
+
 ### An assistant starts a study only from a checked file, with your go-ahead
 
 `fastmdx mcp` offers **`start_study`** and **`stop_study`**. A study starts
