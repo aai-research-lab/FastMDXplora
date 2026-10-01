@@ -528,6 +528,41 @@ What it looked at is folded under its reply, **Checked with the software**,
 each tool with what was asked and what the software said, and kept with the
 thread. From the command line, `fastmdx agent` prints a line for each.
 
+#### Tools from outside
+
+A package installed beside FastMDXplora can give the Agent tools of its own,
+such as a service's record of what a lab has run before, without this package
+changing. It names them under the `fastmdxplora.agent_tools` entry point:
+
+```toml
+[project.entry-points."fastmdxplora.agent_tools"]
+lab = "my_service.agent_tools:tools"
+```
+
+where `tools` is an `AgentTool`, a list of them, or a function returning
+either:
+
+```python
+from fastmdxplora.agent.tools import AgentTool, ToolRefused
+
+def _history(box, asked):
+    lab = asked.get("lab")
+    if not lab:
+        raise ToolRefused("Name the lab as `lab`.")
+    return f"{lab} ran 3 studies of 1UBQ at 300 K."  # what was found, in words
+
+tools = [AgentTool("lab_history", "`lab` (its name).",
+                   "the studies a lab has run before.", _history)]
+```
+
+A program can pass the same objects for one toolbox only, as
+`Toolbox(extra=(...))`. Either way a tool is held to the rules above: it only
+looks, what it says is quoted to the model as the software's finding, and
+`box.path_for` is the rule for any path it reads. A name already taken keeps
+its first owner, a name must be lower case (letters, digits and underscores),
+and a tool that fails to load is left out with a warning rather than stopping
+the Agent.
+
 ### Written as it goes
 
 The reply is shown as the model writes it, and each look as it is taken; a

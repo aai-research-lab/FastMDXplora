@@ -17,19 +17,47 @@ the person under the answer as what the Agent checked.
 The rule the Agent was built on holds: the model never judges convergence or
 chemistry. A tool says what the software measured or refused; the model may
 repeat it and may not overrule it.
+
+Tools can be added from outside without changing this file: an installed
+package names them under the ``fastmdxplora.agent_tools`` entry point, or a
+program hands them to :class:`Toolbox` as ``extra``. Each is an
+:class:`AgentTool`, held to the same contract as the tools here: it only
+looks. One cannot take the name of a tool already here, and one that fails
+to load is left out with a warning rather than stopping the Agent.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
 from fastmdxplora.refusals import CodedError
 
-__all__ = ["Look", "Toolbox", "use_in", "MOST_LOOKS"]
+__all__ = ["AgentTool", "ENTRY_POINT_GROUP", "Look", "ToolRefused", "Toolbox",
+           "plugged_in", "use_in", "MOST_LOOKS"]
+
+logger = logging.getLogger("fastmdx.agent.tools")
+
+#: Where an installed package names tools for the Agent.
+ENTRY_POINT_GROUP = "fastmdxplora.agent_tools"
+
+#: A tool's name: lower case, as ``USE:`` is read, and short.
+_TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+_warned: set[str] = set()
+
+
+def _warn_once(message: str, *args: Any) -> None:
+    """A tool left out is said once, not at every reply that lists the tools."""
+    said = message % args
+    if said not in _warned:
+        _warned.add(said)
+        logger.warning(said)
 
 #: Looks the model may take before one answer. Enough to inspect a
 #: structure, preview a setup and check the config; beyond that a model is
@@ -59,21 +87,51 @@ class Look:
                 "ok": self.ok}
 
 
+@dataclass(frozen=True)
+class AgentTool:
+    """A tool for the Agent from outside this module.
+
+    ``look`` is called with the :class:`Toolbox` (for its ``path_for``) and
+    the arguments the model gave, and returns what the software found, in
+    words. It may raise :class:`ToolRefused` to decline; any other error is
+    said to the model as the tool's failure. It must only look: nothing
+    run, written or started.
+    """
+
+    name: str
+    arguments: str
+    what: str
+    look: Callable[[Toolbox, dict[str, Any]], str]
+
+
 @dataclass
 class Toolbox:
     """The tools, and what they may reach.
 
     ``path_for`` is the server's rule for a path a request names (inside the
     workspace, when hosted), the same rule the builder's preview is held to;
-    ``None`` from it means refused.
+    ``None`` from it means refused. ``extra`` adds tools for this toolbox
+    only, after those here and those installed packages provide.
     """
 
     path_for: Callable[[Any], str | None] | None = None
     looks: list[Look] = field(default_factory=list)
+    extra: tuple[AgentTool, ...] = ()
+
+    def _table(self) -> dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]]:
+        """Every tool this toolbox has: those here, then installed, then extra."""
+        table = dict(_TOOLS)
+        for tool in (*plugged_in(), *_checked(self.extra, "given as extra")):
+            if tool.name in table:
+                _warn_once("Agent tool %r is already taken; the one given later "
+                           "is left out.", tool.name)
+                continue
+            table[tool.name] = (tool.arguments, tool.what, tool.look)
+        return table
 
     @property
     def names(self) -> tuple[str, ...]:
-        return tuple(_TOOLS)
+        return tuple(self._table())
 
     def describe(self) -> str:
         """The tools as the prompt states them."""
@@ -95,17 +153,18 @@ class Toolbox:
             "refused says why; do not look again with the same arguments.",
             "",
         ]
-        for name, (arguments, what, _) in _TOOLS.items():
+        for name, (arguments, what, _) in self._table().items():
             lines.append(f"- `{name}`: {what} Arguments: {arguments}")
         return "\n".join(lines) + "\n"
 
     def use(self, name: str, asked: dict[str, Any]) -> Look:
         """Run one tool and keep what it said. Never raises: a tool that
         fails says so, and that is what the model is told."""
-        entry = _TOOLS.get(name)
+        table = self._table()
+        entry = table.get(name)
         if entry is None:
             look = Look(name, asked, f"There is no tool called {name!r}. The tools are: "
-                        + ", ".join(_TOOLS) + ".", False)
+                        + ", ".join(table) + ".", False)
         else:
             try:
                 said = entry[2](self, dict(asked or {}))
@@ -138,6 +197,58 @@ class _Refused(CodedError, Exception):
     """A tool that declines what it was asked, in words for the model."""
 
     default_code = "agent.tool.refused"
+
+
+#: The name a tool from outside raises to decline.
+ToolRefused = _Refused
+
+
+def _checked(tools: Any, where: str) -> list[AgentTool]:
+    """The tools that are well formed, each one that is not named in a warning."""
+    kept = []
+    for tool in tools or ():
+        if not isinstance(tool, AgentTool):
+            _warn_once("Agent tool %s is not an AgentTool (%r); left out.", where, tool)
+        elif not isinstance(tool.name, str) or not _TOOL_NAME.match(tool.name):
+            _warn_once("Agent tool %r %s is not a lower-case name of letters, digits "
+                       "and underscores; left out.", tool.name, where)
+        elif not callable(tool.look) or not str(tool.what).strip():
+            _warn_once("Agent tool %r %s needs a look to call and a line saying "
+                       "what it tells; left out.", tool.name, where)
+        else:
+            kept.append(tool)
+    return kept
+
+
+@lru_cache(maxsize=1)
+def plugged_in() -> tuple[AgentTool, ...]:
+    """The tools installed packages provide, read once per process.
+
+    Each entry point in :data:`ENTRY_POINT_GROUP` loads to an
+    :class:`AgentTool`, a list of them, or a function returning either. One
+    that fails to load is named in a warning and left out: a plug-in that
+    breaks must not take the Agent with it.
+    """
+    from importlib.metadata import entry_points
+
+    found: list[AgentTool] = []
+    try:
+        points = list(entry_points(group=ENTRY_POINT_GROUP))
+    except Exception as exc:  # noqa: BLE001 - a broken install is not the Agent's
+        logger.warning("Agent tools from installed packages could not be listed: %s", exc)
+        return ()
+    for point in sorted(points, key=lambda p: p.name):
+        try:
+            given = point.load()
+            if callable(given) and not isinstance(given, AgentTool):
+                given = given()
+            if isinstance(given, AgentTool):
+                given = [given]
+            found.extend(_checked(list(given), f"from {point.value}"))
+        except Exception as exc:  # noqa: BLE001 - said, and left out
+            logger.warning("Agent tools from %s could not be loaded, so they are left "
+                           "out: %s", point.value, exc)
+    return tuple(found)
 
 
 def use_in(raw: str) -> tuple[str, dict[str, Any]] | None:

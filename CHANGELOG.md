@@ -17,6 +17,15 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### The Agent takes tools from outside
+
+A package installed beside FastMDXplora can give the Agent tools of its own
+under the **`fastmdxplora.agent_tools`** entry point, and a program can pass
+them to one toolbox as `Toolbox(extra=...)`. Each is an `AgentTool` held to the
+same rules as the Agent's own: it only looks, it cannot take a name already
+taken, and one that fails to load is left out with a warning rather than
+stopping the Agent. See [The FastMDXplora Agent](docs/agent.md).
+
 ### A hosted GUI can send a study to its service's compute
 
 **`fastmdx gui --hosted --runs-url PATH`** adds **Run on a GPU** beside
