@@ -135,7 +135,7 @@ def test_a_change_and_a_study_reach_the_agent(workspace):
 
 def test_without_a_model_it_says_how_to_choose_one(workspace):
     def no_model():
-        raise StudyError("No model is chosen for the Agent.", code="environment.model.absent")
+        raise StudyError("No model is chosen for the Agent.", code="environment.model.unset")
 
     wire = Wire(App(Workspace.at(workspace), complete_for=no_model).server())
     result = ask(wire, request="Five nanoseconds of ghg.pdb")
@@ -143,4 +143,26 @@ def test_without_a_model_it_says_how_to_choose_one(workspace):
     assert result["content"][0]["text"] == (
         "No model is chosen for the Agent.\nThe Agent writes with a model you choose once, "
         "in a terminal: `fastmdx agent set`. Every other tool here works without one.")
+    wire.close()
+
+
+def test_a_study_naming_a_file_outside_is_not_saved(workspace):
+    outside = workspace.parent / "elsewhere.pdb"
+    wire = _wire(workspace, Model(f"systems:\n  - system: {outside}\n"))
+    result = ask(wire, request="Simulate the structure next door")
+    assert result["isError"]
+    assert f"`systems[0].system` names {outside}, outside the workspace" in \
+        result["content"][0]["text"]
+    assert list(workspace.glob("*.yml")) == []
+    wire.close()
+
+
+def test_a_read_only_server_says_where_a_study_is_run(workspace):
+    model = Model("DO: run", STUDY)
+    wire = Wire(App(Workspace.at(workspace), runs=False,
+                    complete_for=lambda: model).server())
+    run = ask(wire, request="run it")["content"][0]["text"]
+    assert "This server does not start or stop studies" in run
+    wrote = ask(wire, request="Five nanoseconds of ghg.pdb")["content"][0]["text"]
+    assert "plan_id" not in wrote and "To run it: `fastmdx explore --config " in wrote
     wire.close()

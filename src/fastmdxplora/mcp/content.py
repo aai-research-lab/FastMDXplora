@@ -11,6 +11,7 @@ person's word.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
 
@@ -43,14 +44,17 @@ recorded beside the results.
 2. **Show the plan.** `check_study` on the file gives the plan the person
    should read, defaults marked, and whether this machine can run it.
 3. **Run it only on the person's word.** `start_study` with the `plan_id`
-   `check_study` gave. A changed file needs checking again.
+   `check_study` gave; a changed file needs checking again. A server started
+   read-only offers no `start_study`: the person runs the file with
+   `fastmdx explore --config FILE` or from the GUI.
 4. **Read what it found.** `read_study` while it runs (step, time left,
    health) and after (what each analysis found, the checks, why it stopped).
 
 ## What the software's words mean
 
-- A mean is given with its standard error and unit, and with the number of
-  independent samples behind it. Quote all three as given.
+- A mean is given with its standard error and unit, the mean to the
+  decimal place of the error's second significant figure; `read_study` also
+  gives the number of independent samples behind it. Quote them as given.
 - "Not determined" means the software withheld a mean and says why (too
   few independent samples, or a correlation time it could not resolve,
   for example). Say so, with its reason; do not estimate one.
@@ -92,13 +96,11 @@ _GUIDES = {
 
 def resources(workspace: Workspace) -> list[dict[str, Any]]:
     """The guides, then every study in the workspace, newest first."""
-    from fastmdxplora.gui.workspace import studies_in
+    from fastmdxplora.mcp.tools import studies_here
 
     listed = [{"uri": _GUIDE + key, "name": key, "title": title, "description": what,
                "mimeType": "text/markdown"} for key, (title, what, _) in _GUIDES.items()]
-    for card in studies_in(workspace.root).get("studies") or []:
-        if workspace.inside(card["path"]) == workspace.root:
-            continue  # the workspace itself: its record is read_study's
+    for card in studies_here(workspace)[0]:
         where = workspace.shown(card["path"])
         listed.append({"uri": _STUDY + quote(where, safe="/"), "name": where,
                        "title": f"{card.get('system') or 'Study'}: {where}",
@@ -113,10 +115,23 @@ TEMPLATES = [{"uriTemplate": _STUDY + "{+path}", "name": "study",
               "mimeType": "text/plain"}]
 
 
-def read_resource(workspace: Workspace, uri: Any) -> dict[str, Any]:
+def _a_study(workspace: Workspace, given: str) -> Path | None:
+    """A study folder in the workspace, held to the tools' rules, or None."""
+    from fastmdxplora.mcp.tools import Context, ToolError, _study
+
+    try:
+        return _study(Context(workspace), given)
+    except ToolError:
+        return None
+
+
+#: Not found, as each era says it: 2025-11-25 and before used its own code.
+NOT_FOUND = {"modern": INVALID_PARAMS, "legacy": -32002}
+
+
+def read_resource(workspace: Workspace, uri: Any, era: str = "modern") -> dict[str, Any]:
     """The contents of a guide or a study's record; a URI naming neither
-    is refused as the protocol says, with the URI."""
-    from fastmdxplora.gui.browse import is_study
+    is refused as the call's era says, with the URI."""
     from fastmdxplora.mcp.tools import study_record
 
     text = str(uri or "")
@@ -125,13 +140,12 @@ def read_resource(workspace: Workspace, uri: Any) -> dict[str, Any]:
         return {"contents": [{"uri": text, "mimeType": "text/markdown", "text": make()}],
                 "ttlMs": GUIDE_TTL_MS, "cacheScope": "public"}
     if text.startswith(_STUDY):
-        folder = workspace.inside(unquote(text[len(_STUDY):]))
-        if folder is not None and folder != workspace.root and folder.is_dir() \
-                and is_study(folder):
+        folder = _a_study(workspace, unquote(text[len(_STUDY):]))
+        if folder is not None:
             return {"contents": [{"uri": text, "mimeType": "text/plain",
                                   "text": f"The study at {workspace.shown(folder)}\n"
                                           + study_record(folder)}]}
-    raise ProtocolError(INVALID_PARAMS, "Resource not found", {"uri": text})
+    raise ProtocolError(NOT_FOUND.get(era, INVALID_PARAMS), "Resource not found", {"uri": text})
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +205,6 @@ PROMPTS: tuple[Prompt, ...] = (
 
 def prompt_messages(workspace: Workspace, name: Any, arguments: Any) -> dict[str, Any]:
     """A prompt with its arguments filled in, and the study's record with it."""
-    from fastmdxplora.gui.browse import is_study
     from fastmdxplora.mcp.tools import study_record
 
     prompt = next((p for p in PROMPTS if p.name == name), None)
@@ -210,9 +223,8 @@ def prompt_messages(workspace: Workspace, name: Any, arguments: Any) -> dict[str
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": {"type": "text", "text": prompt.said.format(**values)}}]
     if prompt.study is not None:
-        folder = workspace.inside(values[prompt.study])
-        if folder is None or folder == workspace.root or not folder.is_dir() \
-                or not is_study(folder):
+        folder = _a_study(workspace, values[prompt.study])
+        if folder is None:
             raise ProtocolError(INVALID_PARAMS,
                                 f"{values[prompt.study]} is not a study in the workspace.")
         where = workspace.shown(folder)

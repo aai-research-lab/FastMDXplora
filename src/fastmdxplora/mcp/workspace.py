@@ -36,6 +36,17 @@ class Workspace:
                 "The workspace cannot be the top of the file system; give the folder "
                 "your studies live in, as `fastmdx mcp --workspace FOLDER`.",
                 code="config.option.not_permitted", setting="--workspace")
+        try:
+            home = Path.home().resolve()
+        except (RuntimeError, OSError):  # no home folder to be told of
+            home = None
+        if root == home:
+            # An app may start the server in the home folder; the whole of it
+            # is not a folder of studies.
+            raise StudyError(
+                "The workspace cannot be your home folder itself; give the folder "
+                "your studies live in, as `fastmdx mcp --workspace FOLDER`.",
+                code="config.option.not_permitted", setting="--workspace")
         return cls(root)
 
     def inside(self, given: Any) -> Path | None:
@@ -47,13 +58,16 @@ class Workspace:
         text = str(given or "").strip()
         if not text:
             return self.root
-        candidate = Path(text).expanduser()
+        try:
+            candidate = Path(text).expanduser()
+        except RuntimeError:  # ~user for a user this machine does not have
+            return None
         if not candidate.is_absolute():
             candidate = self.root / candidate
         try:
             resolved = candidate.resolve()
-        except (OSError, RuntimeError):
-            return None
+        except (OSError, RuntimeError, ValueError):
+            return None  # a loop of links, or a NUL in the name
         if resolved == self.root or self.root in resolved.parents:
             return resolved
         return None
@@ -66,9 +80,16 @@ class Workspace:
     def shown(self, path: str | os.PathLike[str]) -> str:
         """A path as the person reads it: relative to the workspace."""
         target = Path(path)
+        # As named first, so a link is shown where it is, not where it leads.
+        candidates = [target]
         try:
-            relative = target.resolve().relative_to(self.root)
-        except (OSError, ValueError):
-            return str(target)
-        text = relative.as_posix()
-        return text if text != "." else "the workspace"
+            candidates.append(target.resolve())
+        except (OSError, RuntimeError, ValueError):
+            pass
+        for candidate in candidates:
+            try:
+                text = candidate.relative_to(self.root).as_posix()
+            except ValueError:
+                continue
+            return text if text != "." else "the workspace"
+        return str(target)

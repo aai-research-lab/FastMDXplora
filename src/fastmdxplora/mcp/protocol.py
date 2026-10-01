@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any, BinaryIO, Callable
 
 __all__ = [
-    "MODERN_VERSIONS", "LEGACY_VERSIONS", "ProtocolError", "InputRequired",
+    "MODERN_VERSIONS", "LEGACY_VERSIONS", "ProtocolError", "InputRequired", "Cancelled",
     "Call", "Method", "Server",
     "PARSE_ERROR", "INVALID_REQUEST", "METHOD_NOT_FOUND", "INVALID_PARAMS",
     "INTERNAL_ERROR", "UNSUPPORTED_VERSION",
@@ -72,9 +72,14 @@ UNSUPPORTED_VERSION = -32022
 #: plan; a call left open longer is treated as declined.
 ANSWER_WITHIN_S = 900.0
 
-#: Requests that can take a while: handled beside the reader, so a
-#: listing is never queued behind a model or a structure download.
-_SLOW = frozenset({"tools/call", "prompts/get", "resources/read"})
+#: Requests that can take a while: handled beside the reader, so the
+#: reader is never held up behind a model, a download or a long walk.
+_SLOW = frozenset({"tools/call", "prompts/get", "resources/read", "resources/list"})
+
+#: How long calls still being served are given to answer once the client
+#: has closed its side: enough for a quick one, not long enough to hold
+#: an exit the client is waiting on.
+DRAIN_S = 5.0
 
 
 class ProtocolError(Exception):
@@ -89,6 +94,11 @@ class ProtocolError(Exception):
         if self.data is not None:
             error["data"] = self.data
         return error
+
+
+class Cancelled(Exception):
+    """The client cancelled the call: whatever it was doing stops, and
+    nothing more is sent for it."""
 
 
 class InputRequired(Exception):
@@ -132,10 +142,17 @@ class Call:
         meta = self.params.get("_meta")
         return meta.get("progressToken") if isinstance(meta, dict) else None
 
+    @property
+    def cancelled(self) -> bool:
+        return self._server.cancelled(self.id)
+
     def progress(self, message: str) -> None:
-        """Tell the client where a long call has got to, if it asked."""
+        """Tell the client where a long call has got to, if it asked; and
+        stop the call here if it has been cancelled."""
+        if self.cancelled:
+            raise Cancelled(self.method)
         token = self.progress_token
-        if token is None or self._server.cancelled(self.id):
+        if token is None:
             return
         self._steps += 1
         self._server.notify("notifications/progress", {
@@ -159,20 +176,29 @@ class Call:
         call asked again with the answer gets it back. Legacy: the question
         is sent now and the answer waited for. An answer never given reads
         as ``cancel``.
+
+        A modern call that carries an answer is read as answering, whatever
+        capabilities it declares this time: a retry that left elicitation
+        out never turns a "no" into a call with nobody asked.
         """
-        if not self.can_ask():
-            return None
         if self.era == "modern":
             answers = self.params.get("inputResponses")
             state = self.params.get("requestState")
-            if (isinstance(answers, dict) and isinstance(state, str)
+            answering = answers is not None or state is not None
+            if (isinstance(answers, dict) and isinstance(answers.get(key), dict)
+                    and isinstance(state, str)
                     and self._server.redeem(state, self.method, bound_to)):
-                answer = answers.get(key)
-                return answer if isinstance(answer, dict) else {"action": "cancel"}
+                return answers[key]
+            if not self.can_ask():
+                return {"action": "cancel"} if answering else None
+            # Asked, or asked again: an answer missing, altered, expired,
+            # used before or given to another call is not an answer.
             asked = {"method": "elicitation/create",
                      "params": {"mode": "form", "message": message,
                                 "requestedSchema": schema}}
             raise InputRequired({key: asked}, self._server.state_for(self.method, bound_to))
+        if not self.can_ask():
+            return None
         params: dict[str, Any] = {"message": message, "requestedSchema": schema}
         if self.version >= "2025-11-25":
             params["mode"] = "form"
@@ -189,7 +215,7 @@ class Server:
 
     def __init__(self, methods: dict[str, Method], *, info: dict[str, str],
                  instructions: str, capabilities: dict[str, Any],
-                 workers: int = 4, discover_ttl_ms: int = 3_600_000) -> None:
+                 workers: int = 8, discover_ttl_ms: int = 3_600_000) -> None:
         self.methods = dict(methods)
         self.info = dict(info)
         self.instructions = instructions
@@ -210,23 +236,29 @@ class Server:
 
     # ---- the streams ----
     def serve(self, reader: BinaryIO, writer: BinaryIO) -> None:
-        """Serve until the reader ends. Workers are daemons: a call still
-        running when the client goes is not waited for."""
+        """Serve until the reader ends, then give the calls still being
+        served :data:`DRAIN_S` to answer. Workers are daemons: a call
+        running longer than that is not waited for."""
         self._out = writer
-        for number in range(self._workers):
-            threading.Thread(target=self._work, name=f"fastmdx-mcp-{number}",
-                             daemon=True).start()
+        workers = [threading.Thread(target=self._work, name=f"fastmdx-mcp-{number}",
+                                    daemon=True) for number in range(self._workers)]
+        for worker in workers:
+            worker.start()
         try:
             for raw in iter(reader.readline, b""):
                 if raw.strip():
                     self._on_line(raw)
         finally:
+            # Nobody is left to answer a question, so none is waited on.
             with self._state_lock:
                 asks = list(self._asks.values())
             for future, _ in asks:
                 future.cancel()
-            for _ in range(self._workers):
+            for _ in workers:
                 self._jobs.put(None)
+            deadline = time.monotonic() + DRAIN_S
+            for worker in workers:
+                worker.join(max(0.0, deadline - time.monotonic()))
 
     def _send(self, message: dict[str, Any]) -> None:
         line = json.dumps(message, ensure_ascii=False, separators=(",", ":"),
@@ -338,6 +370,10 @@ class Server:
     # ---- serving ----
     def _serve(self, request_id: Any, method: str, params: dict[str, Any]) -> None:
         call: Call | None = None
+        if self.cancelled(request_id):
+            # Cancelled while it waited: never started, never answered.
+            self._answer(request_id)
+            return
         try:
             call = self._call_for(request_id, method, params)
             result = self._dispatch(call)
@@ -348,6 +384,8 @@ class Server:
                 "requestState": needed.state, "_meta": {_SERVER_INFO: self.info}})
         except ProtocolError as exc:
             self._answer(request_id, error=exc)
+        except Cancelled:
+            self._answer(request_id)  # dropped: the call was cancelled
         except Exception as exc:  # noqa: BLE001 - answered, never a dead server
             logger.exception("MCP %s failed", method)
             self._answer(request_id, error=ProtocolError(
@@ -413,7 +451,8 @@ class Server:
         meta[_SERVER_INFO] = self.info
         out["_meta"] = meta
         if call.method == "server/discover":
-            out["ttlMs"], out["cacheScope"] = self.discover_ttl_ms, "public"
+            # Private: the instructions name this person's workspace.
+            out["ttlMs"], out["cacheScope"] = self.discover_ttl_ms, "private"
         else:
             # A result may say its own, where one method's answers differ.
             served = self.methods.get(call.method)
@@ -430,6 +469,8 @@ class Server:
         ask_id = f"fastmdx-ask-{next(self._ask_ids)}"
         future: Future[dict[str, Any]] = Future()
         with self._state_lock:
+            if call.id in self._cancelled:
+                return {"action": "cancel"}  # nobody is waiting for the answer
             self._asks[ask_id] = (future, call.id)
         try:
             self._send({"jsonrpc": "2.0", "id": ask_id, "method": method, "params": params})

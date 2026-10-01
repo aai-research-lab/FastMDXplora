@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import math
+import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -106,8 +109,10 @@ def plan_id_of(path: Path) -> str:
 
 
 def _is_a_path(given: str) -> bool:
+    """A file named, rather than YAML given: one line, not a setting."""
     text = given.strip()
-    return "\n" not in text and text.lower().endswith((".yml", ".yaml"))
+    return "\n" not in text and ": " not in text and not text.endswith(":") \
+        and not text.startswith(("{", "["))
 
 
 def _config_from(ctx: Context, given: str) -> tuple[dict[str, Any], Path | None]:
@@ -119,6 +124,9 @@ def _config_from(ctx: Context, given: str) -> tuple[dict[str, Any], Path | None]
         file = ctx.workspace.inside(given)
         if file is None:
             raise ToolError(f"{given} is outside the workspace ({ctx.workspace.root}).")
+        if file.suffix.lower() not in (".yml", ".yaml"):
+            raise ToolError(f"{given} is not a config file: a config is YAML, in a .yml "
+                            "or .yaml file, or the YAML itself.")
         if not file.is_file():
             raise ToolError(f"There is no config at {given} in the workspace.")
         text = file.read_text(encoding="utf-8")
@@ -162,9 +170,48 @@ def _refused(exc: BaseException) -> str:
     return said
 
 
+def _confined(ctx: Context, config: Any, where: str = "") -> None:
+    """Refuse a config naming a file or folder outside the workspace.
+
+    Read from the values rather than from a list of the settings that take
+    a path, as a study sent to another machine gathers its files: a setting
+    added later that takes one is held to the workspace without anyone
+    remembering to add it here. A value is taken for a path where it names
+    something that exists, is absolute, starts from a home folder or climbs
+    out with ``..``; a PDB identifier or a selection is none of those.
+    """
+    if isinstance(config, dict):
+        for key, value in config.items():
+            _confined(ctx, value, f"{where}.{key}" if where else str(key))
+        return
+    if isinstance(config, list):
+        for index, value in enumerate(config):
+            _confined(ctx, value, f"{where}[{index}]")
+        return
+    if not isinstance(config, str) or not config.strip():
+        return
+    # As a reader of the value would take it: stripped, and with `//` and
+    # `/./` gone, which is what pathlib makes of them anyway. A value still
+    # holding a line break after that is text, not a file name.
+    text = os.path.normpath(config.strip())
+    if "\n" in text:
+        return
+    try:
+        named = Path(text).expanduser()
+        exists = (named if named.is_absolute() else ctx.workspace.root / named).exists()
+    except (OSError, RuntimeError, ValueError):
+        named, exists = Path(text), False
+    if (exists or named.is_absolute() or text.startswith("~") or ".." in Path(text).parts) \
+            and ctx.workspace.inside(text) is None:
+        raise ToolError(f"`{where}` names {text}, outside the workspace "
+                        f"({ctx.workspace.root}). Copy it into the workspace and name it "
+                        "there.")
+
+
 def _accepted(ctx: Context, config: dict[str, Any]) -> Path | None:
     """Validate as a run would, raising the refusal as a tool error; the
-    study continued, where the config continues one."""
+    study continued, where the config continues one. Every path it names
+    is held to the workspace too."""
     from fastmdxplora.config.loader import ConfigError, validate_config
 
     continuing = _continued(ctx, config)
@@ -172,6 +219,8 @@ def _accepted(ctx: Context, config: dict[str, Any]) -> Path | None:
         validate_config(copy.deepcopy(config), require_systems=continuing is None)
     except ConfigError as exc:
         raise ToolError(_refused(exc)) from None
+    # After the validator, so a setting it refuses is refused for what it is.
+    _confined(ctx, config)
     return continuing
 
 
@@ -202,17 +251,89 @@ def _looked(ctx: Context, tool: str, asked: dict[str, Any]) -> str:
     return look.said
 
 
+#: What a study's card is read from: checked for links out before a study
+#: is listed, as the whole study is before it is read.
+_CARD_READS = ("resolved_config.yml", "exploration.yml", "manifest.json",
+               "batch_manifest.json", "analysis", "pmf.json")
+
+
+def _links_out(workspace: Workspace, folder: Path, *, whole: bool = True) -> Path | None:
+    """A link inside a study that leads out of the workspace, if any: what
+    is read through it would be read from outside. ``whole`` false looks
+    only at what a listing reads, which is quick for a study of many runs."""
+    if not whole:
+        named = [folder / name for name in _CARD_READS]
+        named += list((folder / "analysis").glob("*/options.json"))
+        named += list((folder / "analysis").glob("*"))
+        return next((p for p in named if p.is_symlink() and workspace.inside(p) is None),
+                    None)
+    for here, folders, files in os.walk(folder, followlinks=False):
+        for name in (*folders, *files):
+            path = Path(here) / name
+            if path.is_symlink() and workspace.inside(path) is None:
+                return path
+    return None
+
+
 def _study(ctx: Context, given: str) -> Path:
     from fastmdxplora.gui.browse import is_study
 
     folder = ctx.workspace.inside(given)
     if folder is None:
         raise ToolError(f"{given} is outside the workspace ({ctx.workspace.root}).")
-    if not folder.is_dir() or not is_study(folder):
+    if folder == ctx.workspace.root or not folder.is_dir() or not is_study(folder):
         raise ToolError(f"{given} is not a study folder: one holding a manifest, a "
                         "resolved config, or simulation, analysis or report. "
                         "list_studies names the studies here.")
+    leaving = _links_out(ctx.workspace, folder)
+    if leaving is not None:
+        raise ToolError(f"{ctx.workspace.shown(leaving)} links out of the workspace, so "
+                        f"{given} is not read.")
     return folder
+
+
+def studies_here(workspace: Workspace) -> tuple[list[dict[str, Any]], bool]:
+    """The studies in the workspace as cards, newest first, and whether
+    there are more than were looked at.
+
+    Each folder at the top is looked in, whatever its name: one called
+    `runs` at the top is a folder of studies, not a study's own runs. A
+    study reached through a link out of the workspace is left out."""
+    from fastmdxplora.gui.workspace import studies_in
+
+    cards: list[dict[str, Any]] = []
+    more = False
+    try:
+        tops = sorted(p for p in workspace.root.iterdir()
+                      if p.is_dir() and not p.is_symlink() and not p.name.startswith("."))
+    except OSError:
+        tops = []
+    for top in tops:
+        found = studies_in(top)
+        more = more or bool(found.get("more"))
+        for card in found.get("studies") or []:
+            folder = workspace.inside(card["path"])
+            if folder is not None and folder != workspace.root \
+                    and _links_out(workspace, folder, whole=False) is None:
+                cards.append(card)
+    cards.sort(key=lambda card: card.get("when") or "", reverse=True)
+    return cards, more
+
+
+def with_error(value: float, error: float | None, *, sign: bool = False) -> str:
+    """A value and its standard error as the report gives them: the error to
+    two figures and the value to the same decimal place, so neither says
+    more than the other. With no error, four significant figures; with an
+    error of zero, that zero."""
+    from fastmdxplora.gui.report_dashboard import _with_its_error
+
+    if error is None or not math.isfinite(error) or error < 0:
+        said = f"{value:.4g}"
+    elif error == 0:
+        said = f"{value:.4g} ± 0"
+    else:
+        said = _with_its_error(value, error)
+    return f"+{said}" if sign and not said.startswith("-") else said
 
 
 def _mean(side: dict[str, Any] | None) -> str:
@@ -223,10 +344,7 @@ def _mean(side: dict[str, Any] | None) -> str:
     mean, error, unit = side.get("mean"), side.get("error"), side.get("unit") or ""
     if mean is None:
         return "not recorded"
-    said = f"{mean:.4g}"
-    if error is not None:
-        said += f" ± {error:.2g}"
-    return f"{said} {unit}".strip()
+    return f"{with_error(mean, error)} {unit}".strip()
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +382,8 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
             current = file.read_text(encoding="utf-8") if file is not None else None
         else:
             current = given
-    status = study_record(_study(ctx, args["study"])) if args.get("study") else None
+    status = (study_record(_study(ctx, args["study"]), for_the_agent=True)
+              if args.get("study") else None)
 
     box = Toolbox(path_for=ctx.workspace.path_for)
     told = ctx.call.progress if ctx.call is not None else (lambda message: None)
@@ -299,6 +418,9 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
         if proposal.action in _IN_THE_WINDOW:
             next_step = ("That is done in FastMDXplora's own window, which `fastmdx gui` "
                          "opens.")
+        elif not ctx.runs:
+            next_step = ("This server does not start or stop studies: that is done in "
+                         "FastMDXplora itself, with `fastmdx explore` or the GUI.")
         elif proposal.action == "stop":
             next_step = "stop_study stops a running study, once the person has agreed."
         else:
@@ -329,6 +451,7 @@ def _proposed(ctx: Context, args: dict[str, Any], proposal: Any, corrected: list
     from fastmdxplora.naming import default_output_name, system_of
 
     config = dict(proposal.config)
+    _confined(ctx, config)
     # Whose study this is, as `fastmdx agent` records it: a model wrote it,
     # and which one.
     config["agent"] = "assisted"
@@ -350,9 +473,7 @@ def _proposed(ctx: Context, args: dict[str, Any], proposal: Any, corrected: list
         target.write_text(f"# Written by the FastMDXplora Agent, asked: {asked}\n" + text,
                           encoding="utf-8")
         lines += [f"Saved to {ctx.workspace.shown(target)}. Nothing has been run.", "",
-                  "The plan:", *_plan_lines(config), "",
-                  f"plan_id: {plan_id_of(target)} (for start_study, once the person has "
-                  "agreed to this plan)"]
+                  "The plan:", *_plan_lines(config), "", _plan_id_line(ctx, target)]
     else:
         lines += ["Not saved; save_study writes it.", "", "The plan:", *_plan_lines(config)]
     return "\n".join([*lines, *after, "", "The config:", text.rstrip()])
@@ -399,11 +520,20 @@ def _check_study(ctx: Context, args: dict[str, Any]) -> str:
     if lacking:
         lines += ["", f"This machine cannot run it yet: {lacking}"]
     if file is not None:
-        lines += ["", f"plan_id: {plan_id_of(file)} (for start_study; it changes if "
-                      f"{ctx.workspace.shown(file)} does)"]
+        lines += ["", _plan_id_line(ctx, file)]
     else:
         lines += ["", "To run it, save it first with save_study."]
     return "\n".join(lines)
+
+
+def _plan_id_line(ctx: Context, file: Path) -> str:
+    """What runs a checked file: start_study with its plan_id, or, on a
+    server that does not run studies, FastMDXplora itself."""
+    if ctx.runs:
+        return (f"plan_id: {plan_id_of(file)} (for start_study, once the person has agreed "
+                f"to this plan; it changes if {ctx.workspace.shown(file)} does)")
+    return (f"To run it: `fastmdx explore --config {ctx.workspace.shown(file)}`, or the GUI. "
+            "This server does not start studies.")
 
 
 def _save_study(ctx: Context, args: dict[str, Any]) -> str:
@@ -416,6 +546,9 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
     stem = re.sub(r"\.(ya?ml)$", "", stem, flags=re.IGNORECASE)[:96]
     if not stem:
         raise ToolError("Name the file with letters or digits.")
+    if f"{stem}.yml".lower() in _MARKERS:
+        raise ToolError(f"{stem}.yml is the name a study gives its own config, and would "
+                        "make the workspace look like a study. Give another name.")
     target = ctx.workspace.root / f"{stem}.yml"
     try:
         with target.open("x", encoding="utf-8") as out:
@@ -423,18 +556,20 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
     except FileExistsError:
         raise ToolError(f"{target.name} is in the workspace already, and is never written "
                         "over. Give a new name.") from None
-    return (f"Saved to {ctx.workspace.shown(target)}; accepted by the validator. Nothing "
-            f"has been run.\nplan_id: {plan_id_of(target)}")
+    return "\n".join([f"Saved to {ctx.workspace.shown(target)}; accepted by the validator. "
+                      "Nothing has been run.", "The plan:", *_plan_lines(config), "",
+                      _plan_id_line(ctx, target)])
+
+
+#: The names a study gives files of its own, which mark a folder as a study.
+_MARKERS = frozenset({"exploration.yml", "resolved_config.yml"})
 
 
 # ---------------------------------------------------------------------------
 # Reading studies
 # ---------------------------------------------------------------------------
 def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
-    from fastmdxplora.gui.workspace import studies_in
-
-    found = studies_in(ctx.workspace.root)
-    cards = found.get("studies") or []
+    cards, more = studies_here(ctx.workspace)
     lines = [f"{len(cards)} stud{'y' if len(cards) == 1 else 'ies'} in {ctx.workspace.root}"
              + (", newest first:" if cards else ".")]
     for card in cards:
@@ -449,12 +584,12 @@ def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
         lines.append(f"- {ctx.workspace.shown(card['path'])}: " + ", ".join(s for s in said if s))
         for mean in card.get("means") or []:
             lines.append(f"    {mean.get('label') or mean['analysis']}: {_mean(mean)}")
-    if found.get("more"):
+    if more:
         lines.append("(There are more; only the first are listed.)")
     configs = sorted(p.name for p in ctx.workspace.root.iterdir()
                      if p.is_file() and p.suffix.lower() in (".yml", ".yaml"))
     if configs:
-        lines += ["", "Config files here: " + ", ".join(configs)]
+        lines += ["", "YAML files at the top of the workspace: " + ", ".join(configs)]
     return "\n".join(lines)
 
 
@@ -469,15 +604,31 @@ class _Viewed:
                 "process_running": self._state == "running"}
 
 
-def study_record(root: Path) -> str:
+#: The record's words for the Agent in the GUI, and what they mean here.
+_SAID_HERE = (
+    ("one marked [runs here] is what `DO: run the fix` runs, the first of them",
+     "one marked [runs here] can be run on this machine"),
+    ("To continue it, answer with this config.",
+     "To continue it, save this config with save_study and run it."),
+    ("To run it, answer with this config;",
+     "To run it, save this config with save_study and run it;"),
+)
+
+
+def study_record(root: Path, *, for_the_agent: bool = False) -> str:
     """Everything a study recorded that a model can read: where it stands,
     its config, what its analyses found, its checks, why it stopped and
-    what would fix it. The Agent's own reading of a run."""
+    what would fix it. The Agent's own reading of a run; for an assistant,
+    its words for the GUI's Agent said as they apply here."""
     from fastmdxplora.gui.agent_panel import _run_status
     from fastmdxplora.gui.workspace import card_of
 
     state = str(card_of(root).get("state") or "unknown")
-    return _run_status(_Viewed(root, state)) or f"status: {state}"
+    said = _run_status(_Viewed(root, state)) or f"status: {state}"
+    if not for_the_agent:
+        for theirs, ours in _SAID_HERE:
+            said = said.replace(theirs, ours)
+    return said
 
 
 def _read_study(ctx: Context, args: dict[str, Any]) -> str:
@@ -510,13 +661,29 @@ def _compare_studies(ctx: Context, args: dict[str, Any]) -> str:
         for row in measures:
             said = f"  {row.get('label')}: {_mean(row.get('first'))} | {_mean(row.get('second'))}"
             versus = row.get("versus")
-            if versus:
-                said += (f"; second minus first {versus['difference']:+.4g} ± "
-                         f"{versus['error']:.2g} {row.get('unit') or ''}".rstrip()
-                         + (", resolved" if versus.get("resolved") else
-                            ", not resolved"))
+            if versus and versus.get("error"):
+                said += (f"; second minus first "
+                         f"{with_error(versus['difference'], versus['error'], sign=True)} "
+                         f"{row.get('unit') or ''}".rstrip()
+                         + (", resolved" if versus.get("resolved") else ", not resolved"))
+            else:
+                said += "; the difference is not assessed: " + _why_not(row)
             lines.append(said)
     return "\n".join(lines)
+
+
+def _why_not(row: dict[str, Any]) -> str:
+    """Why two means were not compared, so a model does not compare them."""
+    for side, name in ((row.get("first"), "the first"), (row.get("second"), "the second")):
+        if not side or side.get("mean") is None:
+            return f"{name} recorded no mean"
+        if side.get("withheld"):
+            return f"{name} mean is not determined"
+        if side.get("error") is None:
+            return f"{name} recorded no standard error"
+        if side.get("error") == 0:
+            return f"{name} recorded a standard error of zero"
+    return "no standard error to judge it by"
 
 
 # ---------------------------------------------------------------------------
@@ -556,12 +723,49 @@ class _Inside:
         return self._place.shown(path)
 
 
-def _running_here(ctx: Context) -> list[str]:
-    from fastmdxplora.gui.workspace import studies_in
+#: Held from the check that nothing is running to the start, so two calls
+#: at once cannot both find the machine free.
+_STARTING = threading.Lock()
 
-    return [ctx.workspace.shown(card["path"])
-            for card in studies_in(ctx.workspace.root).get("studies") or []
-            if card.get("state") == "running"]
+#: The runs this server started, by folder and process: a run is known
+#: here before it has written its own record, which takes a few seconds.
+_STARTED: dict[Path, int] = {}
+
+#: How deep the workspace is searched for runs' records.
+_DEEPEST = 6
+
+
+def _running_here(ctx: Context) -> list[str]:
+    """The studies running in the workspace, found by the record each run
+    keeps while it runs, wherever the study is, and the runs this server
+    started (each only while its process is still that run)."""
+    import json
+
+    from fastmdxplora.gui.exploration import _identify_run
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
+
+    going: set[Path] = set()
+    for folder, pid in list(_STARTED.items()):
+        if _identify_run(pid, folder, None) is False:
+            _STARTED.pop(folder, None)  # ended; its number may be another's now
+        else:
+            going.add(folder)
+    root = ctx.workspace.root
+    for here, folders, files in os.walk(root, followlinks=False):
+        depth = len(Path(here).relative_to(root).parts)
+        folders[:] = [] if depth >= _DEEPEST else [f for f in folders
+                                                   if not f.startswith(".")]
+        if RUN_PROCESS_FILE not in files:
+            continue
+        try:
+            record = json.loads((Path(here) / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        pid = record.get("pid") if isinstance(record, dict) else None
+        if isinstance(pid, int) and pid > 0 and not record_is_from_elsewhere(record) \
+                and _identify_run(pid, Path(here), record.get("argv")) is not False:
+            going.add(Path(here))
+    return sorted(ctx.workspace.shown(folder) for folder in going)
 
 
 def _time_here(ctx: Context, config: dict[str, Any]) -> str | None:
@@ -575,9 +779,24 @@ def _time_here(ctx: Context, config: dict[str, Any]) -> str | None:
                 None)
 
 
+def _none_running(ctx: Context) -> None:
+    going = _running_here(ctx)
+    if going:
+        raise ToolError(f"{', '.join(going)} is running here. One study runs at a time, so "
+                        "each has the machine to itself and its timings mean what they "
+                        "say; stop_study stops one.")
+
+
+def _unused(ctx: Context, folder: Path) -> None:
+    if folder == ctx.workspace.root or (folder.exists() and (
+            not folder.is_dir() or any(folder.iterdir()))):
+        raise ToolError(f"{ctx.workspace.shown(folder)} is in use already, and a run is "
+                        "never written over anything. Set `output` in the config to a new "
+                        "folder, save it under a new name and check it again.")
+
+
 def _start_study(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.gui.exploration import DashboardRuntime
-    from fastmdxplora.naming import default_output_name, system_of
 
     given = args["config"]
     if not _is_a_path(given):
@@ -595,22 +814,17 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
     lacking = _cannot_run_here(config)
     if lacking:
         raise ToolError(f"This machine cannot run it yet: {lacking}")
-    going = _running_here(ctx)
-    if going:
-        raise ToolError(f"{', '.join(going)} is running here. One study runs at a time, so "
-                        "each has the machine to itself and its timings mean what they "
-                        "say; stop_study stops one.")
+    _none_running(ctx)
     if continuing is not None:
         where = continuing
     else:
-        requested = str(config.get("output") or default_output_name(system_of(config)))
+        # A config with no `output` writes beside itself, named after it, so
+        # the folder the person agrees to is the folder written.
+        requested = str(config.get("output") or file.with_suffix(""))
         found = ctx.workspace.inside(requested)
         if found is None:
             raise ToolError(f"The results folder {requested} is outside the workspace.")
-        if found.exists() and any(found.iterdir()):
-            raise ToolError(f"{ctx.workspace.shown(found)} is in use already, and a run is "
-                            "never written over another. Change `output` in the config, "
-                            "save it under a new name and check it again.")
+        _unused(ctx, found)
         config = {**config, "output": str(found)}
         where = found
 
@@ -622,20 +836,109 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
           else [f"Results: {shown}"]),
         *([line] if (line := _time_here(ctx, config)) else []),
     ])
-    agreed = _went_ahead(ctx, "start", message, f"start_study:{file}:{now}")
+    agreed = _went_ahead(ctx, "start", message, f"start_study:{file}:{now}:{where}")
     if agreed is False:
         return "Not started: the person did not go ahead."
 
-    runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
-                               exploration_root=ctx.workspace.root,
-                               hosting=_Inside(ctx.workspace))
-    started = runtime.launch_from_config(None, config=config)
-    if not started.get("ok"):
-        raise ToolError(str(started.get("error") or "It could not be started."))
-    return (f"Started {shown} (process {started['pid']}). It runs on its own: closing "
+    with _STARTING, _starting_in(ctx.workspace):
+        # Asked again now: the person may have taken minutes to answer.
+        if ctx.call is not None and ctx.call.cancelled:
+            return "Not started: the call was cancelled."
+        _none_running(ctx)
+        if continuing is None:
+            _unused(ctx, where)
+        runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
+                                   exploration_root=ctx.workspace.root,
+                                   hosting=_Inside(ctx.workspace))
+        started = runtime.launch_from_config(None, config=config)
+        if not started.get("ok"):
+            raise ToolError(str(started.get("error") or "It could not be started."))
+        folder, pid = Path(started["output"]).resolve(), int(started["pid"])
+        _STARTED[folder] = pid
+        _recorded(ctx, folder, pid)
+    return (f"Started {shown} (process {pid}). It runs on its own: closing "
             "the assistant does not stop it. read_study says how far it has got; "
             "stop_study stops it. Its log is "
-            f"{ctx.workspace.shown(Path(started['output']) / 'exploration.log')}.")
+            f"{ctx.workspace.shown(folder / 'exploration.log')}.")
+
+
+#: How long a run started here is watched for a record of itself, which it
+#: writes once its program has loaded (a study of several runs, and a
+#: continuation, in the folder of the run going): a run that ends before
+#: then failed to start, and is said to have.
+RECORDED_WITHIN_S = 20.0
+
+#: Held in the workspace while a study is being started, so a second server
+#: (another assistant, another window) cannot start one at the same moment.
+_STARTING_FILE = ".fastmdxplora-starting"
+
+
+class _starting_in:
+    """The workspace's starting lock: a file made only if it is not there,
+    naming the process holding it; one left by a process that has gone is
+    taken over."""
+
+    def __init__(self, workspace: Workspace) -> None:
+        self.path = workspace.root / _STARTING_FILE
+
+    def __enter__(self) -> _starting_in:
+        from fastmdxplora.gui.exploration import _process_alive
+
+        for _ in range(2):
+            try:
+                handle = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            except FileExistsError:
+                try:
+                    holder = int(self.path.read_text(encoding="utf-8").strip() or 0)
+                except (OSError, ValueError):
+                    holder = 0
+                if holder > 0 and holder != os.getpid() and _process_alive(holder):
+                    raise ToolError("Another study is being started in this workspace "
+                                    "right now. Try again in a minute.") from None
+                self.path.unlink(missing_ok=True)
+                continue
+            with os.fdopen(handle, "w", encoding="utf-8") as out:
+                out.write(str(os.getpid()))
+            return self
+        raise ToolError("The workspace's starting lock could not be taken.")
+
+    def __exit__(self, *exc: Any) -> None:
+        self.path.unlink(missing_ok=True)
+
+
+def _recorded(ctx: Context, folder: Path, pid: int) -> None:
+    """Wait for the run to record itself; a run that ends first failed to
+    start, and says why from its log."""
+    import time
+
+    from fastmdxplora.gui.exploration import _process_alive
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    def recorded() -> bool:
+        for here, folders, files in os.walk(folder, followlinks=False):
+            if RUN_PROCESS_FILE in files:
+                return True
+            if len(Path(here).relative_to(folder).parts) >= 3:
+                folders[:] = []
+        return False
+
+    deadline = time.monotonic() + RECORDED_WITHIN_S
+    while time.monotonic() < deadline:
+        if recorded():
+            return
+        if not _process_alive(pid):
+            if recorded():
+                return
+            _STARTED.pop(folder, None)
+            try:
+                lines = (folder / "exploration.log").read_text(
+                    encoding="utf-8", errors="replace").strip().splitlines()
+            except OSError:
+                lines = []
+            tail = "\n".join(lines[-12:]) or "It wrote nothing to its log."
+            raise ToolError(f"The run of {ctx.workspace.shown(folder)} ended as it "
+                            f"started. The end of its log:\n{tail}")
+        time.sleep(0.5)
 
 
 def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
@@ -661,6 +964,12 @@ def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
         "checkpoint there, and can be carried on from it."), f"stop_study:{folder}:{pid}")
     if agreed is False:
         return "Not stopped: the person did not go ahead."
+    # Identified again before each signal: the person may have taken
+    # minutes to answer, and a process number is reused once its run ends.
+    if ctx.call is not None and ctx.call.cancelled:
+        return "Not stopped: the call was cancelled."
+    if _identify_run(pid, folder, record.get("argv")) is not True:
+        return f"{shown} has stopped already."
     process = _AdoptedProcess(pid, folder)
     process.terminate()
 
@@ -670,7 +979,8 @@ def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
         try:
             process.wait(timeout=stop_grace_seconds() + 10)
         except Exception:  # noqa: BLE001 - not stopped in time
-            process.kill()
+            if _identify_run(pid, folder, record.get("argv")) is True:
+                process.kill()
 
     threading.Thread(target=make_sure, name="fastmdx-mcp-stop", daemon=True).start()
     return (f"Asked {shown} to stop. A run in production stops at its next frame with a "
@@ -739,8 +1049,9 @@ TOOLS: tuple[Tool, ...] = (
     Tool("start_study", "Start a study",
          "Run a checked config on this machine, in the workspace, once the person has "
          "agreed to its plan. Needs the plan_id check_study gave for the file as it is "
-         "now. Where the client can ask, the person is asked here too. The run goes on "
-         "after the assistant closes; one study runs at a time.",
+         "now. Where the client can ask, the person is asked here too. Results go to the "
+         "config's `output`, or a folder named after the file beside it, never one in "
+         "use. The run goes on after the assistant closes; one study runs at a time.",
          {"config": {"type": "string", "description": "A config file in the workspace."},
           "plan_id": {"type": "string", "description": "From check_study, for this file."}},
          ("config", "plan_id"),
@@ -754,7 +1065,7 @@ TOOLS: tuple[Tool, ...] = (
           "openWorldHint": False}, _stop_study, acts=True),
     Tool("list_studies", "List the studies here",
          "The studies in the workspace, newest first, each with its system, state and the "
-         "means it recorded with their errors; and the config files not yet run.",
+         "means it recorded with their errors; and the YAML files at its top.",
          {}, (), _READS, _list_studies),
     Tool("read_study", "Read a study",
          "Where a study stands (running, with its step and time left, or finished) and "
@@ -762,7 +1073,8 @@ TOOLS: tuple[Tool, ...] = (
          "the checks it was held to, why it stopped and what would fix it.",
          {"study": _STUDY}, ("study",), _READS, _read_study),
     Tool("compare_studies", "Compare two studies",
-         "The settings two studies differ in, and the means each recorded, with each "
-         "difference marked resolved only where it exceeds its combined error.",
+         "The settings two studies differ in, and the means each recorded, each "
+         "difference marked resolved only where it is more than twice its combined "
+         "standard error.",
          {"first": _STUDY, "second": _STUDY}, ("first", "second"), _READS, _compare_studies),
 )

@@ -1131,7 +1131,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "standard input and output; it is not run by hand. Its "
             "ask_agent tool writes a study as the FastMDXplora Agent does, "
             "with the model `fastmdx agent set` chose; a study runs only "
-            "from a config the validator accepted, with your go-ahead."
+            "from a config the validator accepted and whose plan was checked, "
+            "with your go-ahead where your client can ask for it, and its own "
+            "approval of the call where it cannot."
         ),
     )
     mc.add_argument("--workspace", default=None, metavar="DIR",
@@ -1139,8 +1141,9 @@ def _build_parser() -> argparse.ArgumentParser:
                          "studies are written here, and nothing outside it is "
                          "opened. Default: the current directory.")
     mc.add_argument("--read-only", action="store_true",
-                    help="Offer only the tools that read and check: the "
-                         "assistant cannot start or stop a study.")
+                    help="Offer no tool that starts or stops a study: the "
+                         "assistant can still write and check configs, and "
+                         "read studies, but runs nothing.")
 
     # ---------- agent: write a study from a sentence ------------------------
     ag = sub.add_parser(

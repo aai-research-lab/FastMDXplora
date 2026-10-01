@@ -55,6 +55,9 @@ def spawned(monkeypatch):
     monkeypatch.setattr("fastmdxplora.mcp.tools._cannot_run_here", lambda config: None)
     monkeypatch.setattr("fastmdxplora.gui.exploration.exploration_environment_error",
                         lambda config: None)
+    # Nothing ran, so nothing records itself: not waited for.
+    monkeypatch.setattr("fastmdxplora.mcp.tools.RECORDED_WITHIN_S", 0.0)
+    monkeypatch.setattr("fastmdxplora.mcp.tools._STARTED", {})
     return commands
 
 
@@ -238,3 +241,147 @@ def test_a_real_run_starts_records_itself_and_stops(workspace):
         assert not _process_alive(pid), "the run did not stop"
     finally:
         wire.close()
+
+
+class TestWhereAndWhen:
+    def test_a_config_without_output_writes_beside_itself_named_after_it(
+            self, wire, workspace, spawned):
+        (workspace / "plain.yml").write_text("systems:\n  - system: ghg.pdb\n")
+        first = wire.request("tools/call", {"name": "start_study", "arguments": {
+            "config": "plain.yml", "plan_id": plan_id_of(workspace / "plain.yml")}},
+            capabilities=ELICIT)["result"]
+        assert "Results: plain" in \
+            first["inputRequests"]["start"]["params"]["message"].splitlines()
+        yes = {"start": {"action": "accept", "content": {"go": True}}}
+        done = wire.request("tools/call", {
+            "name": "start_study", "arguments": {
+                "config": "plain.yml", "plan_id": plan_id_of(workspace / "plain.yml")},
+            "inputResponses": yes, "requestState": first["requestState"]},
+            capabilities=ELICIT)["result"]
+        assert done["content"][0]["text"].startswith("Started plain (process 4242).")
+        assert spawned[0]["output"] == workspace / "plain"
+
+    def test_a_decline_is_a_decline_even_where_the_retry_leaves_out_elicitation(
+            self, wire, workspace, spawned):
+        first = start(wire, workspace, capabilities=ELICIT)
+        done = start(wire, workspace, capabilities={},
+                     inputResponses={"start": {"action": "decline"}},
+                     requestState=first["requestState"])
+        assert done["content"][0]["text"] == "Not started: the person did not go ahead."
+        assert spawned == []
+
+    def test_a_study_running_in_a_folder_called_runs_is_found(self, wire, workspace, spawned):
+        busy = _study(workspace / "runs" / "reference", duration=5, means={},
+                      started="2026-09-02T10:00:00+00:00")
+        sleeper = _sleeper(busy)
+        try:
+            refused = start(wire, workspace)
+            assert refused["content"][0]["text"].startswith("runs/reference is running here.")
+        finally:
+            sleeper.kill()
+            sleeper.wait()
+        assert spawned == []
+
+    def test_a_run_this_server_started_counts_before_it_records_itself(
+            self, wire, workspace, monkeypatch):
+        # Named by its folder on its command line, as a run is.
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)",
+                                    str(workspace / "ghg_run")])
+
+        def spawn(self, command, output_dir, dashboard_url):
+            return {"launched": True, "output": str(output_dir), "pid": sleeper.pid,
+                    "command": command}
+
+        monkeypatch.setattr(DashboardRuntime, "_spawn", spawn)
+        monkeypatch.setattr("fastmdxplora.mcp.tools._cannot_run_here", lambda config: None)
+        monkeypatch.setattr("fastmdxplora.gui.exploration.exploration_environment_error",
+                            lambda config: None)
+        monkeypatch.setattr("fastmdxplora.mcp.tools._STARTED", {})
+        monkeypatch.setattr("fastmdxplora.mcp.tools.RECORDED_WITHIN_S", 0.0)
+        try:
+            assert text_of(wire.request("tools/call", {"name": "start_study", "arguments": {
+                "config": "ghg.yml", "plan_id": plan_id_of(workspace / "ghg.yml")}})
+                           ).startswith("Started ghg_run")
+            (workspace / "other.yml").write_text(STUDY.replace("ghg_run", "other_run"))
+            second = wire.request("tools/call", {"name": "start_study", "arguments": {
+                "config": "other.yml", "plan_id": plan_id_of(workspace / "other.yml")}})
+            assert second["result"]["content"][0]["text"].startswith("ghg_run is running here.")
+        finally:
+            sleeper.kill()
+            sleeper.wait()
+
+    def test_a_run_that_ended_while_the_person_was_asked_is_not_signalled(self, wire, workspace):
+        study = _study(workspace / "busy", duration=10, means={},
+                       started="2026-09-02T10:00:00+00:00")
+        sleeper = _sleeper(study)
+
+        def ends_then_agrees(asked):
+            sleeper.kill()
+            sleeper.wait()
+            return {"action": "accept", "content": {"go": True}}
+
+        wire.initialize("2025-06-18", {"elicitation": {}})
+        said = text_of(wire.request("tools/call", {"name": "stop_study", "arguments": {
+            "study": "busy"}}, modern=False, answer=ends_then_agrees))
+        assert said == "busy has stopped already."
+
+
+def test_a_run_that_ends_as_it_starts_says_why(wire, workspace, spawned, monkeypatch):
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+
+    def spawn(self, command, output_dir, dashboard_url):
+        (output_dir / "exploration.log").write_text("Setting up\nImportError: no openmm\n")
+        return {"launched": True, "output": str(output_dir), "pid": gone.pid,
+                "command": command}
+
+    monkeypatch.setattr(DashboardRuntime, "_spawn", spawn)
+    monkeypatch.setattr("fastmdxplora.mcp.tools.RECORDED_WITHIN_S", 10.0)
+    result = start(wire, workspace)
+    assert result["isError"]
+    assert result["content"][0]["text"] == (
+        "The run of ghg_run ended as it started. The end of its log:\n"
+        "Setting up\nImportError: no openmm")
+
+
+def test_a_second_server_starting_at_the_same_moment_waits_its_turn(wire, workspace, spawned):
+    holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        (workspace / ".fastmdxplora-starting").write_text(str(holder.pid))
+        busy = start(wire, workspace)
+        assert busy["isError"] and busy["content"][0]["text"].startswith(
+            "Another study is being started in this workspace right now.")
+    finally:
+        holder.kill()
+        holder.wait()
+    # Left by a process that has gone: taken over.
+    assert start(wire, workspace)["content"][0]["text"].startswith("Started ghg_run")
+    assert not (workspace / ".fastmdxplora-starting").exists()
+
+
+def test_what_stops_a_start_before_it_is_asked_is_said(wire, workspace, spawned, monkeypatch):
+    (workspace / "out.yml").write_text(STUDY.replace("output: ghg_run", "output: ../away"))
+    away = wire.request("tools/call", {"name": "start_study", "arguments": {
+        "config": "out.yml", "plan_id": plan_id_of(workspace / "out.yml")}})["result"]
+    assert away["isError"] and "outside the workspace" in away["content"][0]["text"]
+    monkeypatch.setattr("fastmdxplora.mcp.tools._cannot_run_here",
+                        lambda config: "OpenMM is not installed.")
+    lacking = start(wire, workspace)
+    assert lacking["content"][0]["text"] == "This machine cannot run it yet: OpenMM is not installed."
+    assert spawned == []
+
+
+def test_a_launch_the_runtime_refuses_is_said(wire, workspace, spawned, monkeypatch):
+    monkeypatch.setattr(DashboardRuntime, "launch_from_config",
+                        lambda self, state, config=None: {"ok": False, "error": "No GPU here."})
+    result = start(wire, workspace)
+    assert result["isError"] and result["content"][0]["text"] == "No GPU here."
+    assert not (workspace / ".fastmdxplora-starting").exists()
+
+
+def test_a_record_that_cannot_be_read_is_no_run(wire, workspace):
+    study = _study(workspace / "odd", duration=10, means={}, started="2026-09-02T10:00:00+00:00")
+    (study / RUN_PROCESS_FILE).write_text("{not json")
+    result = wire.request("tools/call", {"name": "stop_study",
+                                         "arguments": {"study": "odd"}})["result"]
+    assert result["content"][0]["text"] == "No run of odd is going on this machine."

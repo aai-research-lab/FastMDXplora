@@ -67,6 +67,7 @@ class TestResources:
 
     @pytest.mark.parametrize("uri", ["fastmdxplora://study/project",
                                      "fastmdxplora://study/../../etc",
+                                     "fastmdxplora://study/project%00x",
                                      "fastmdxplora://guide/nothing", "file:///etc/passwd"])
     def test_anything_else_is_not_found_with_its_uri(self, wire, uri):
         error = wire.request("resources/read", {"uri": uri})["error"]
@@ -77,6 +78,18 @@ class TestResources:
         result = wire.request("resources/read", {
             "uri": "fastmdxplora://guide/working-with-studies"}, modern=False)["result"]
         assert set(result) == {"contents"}
+        missing = wire.request("resources/read", {"uri": "fastmdxplora://guide/x"},
+                               modern=False)["error"]
+        assert missing["code"] == -32002  # not found, as that era says it
+
+    def test_a_study_reached_through_a_link_out_is_not_offered(self, wire, workspace):
+        _study(workspace.parent / "outside", duration=1, means={},
+               started="2026-09-04T10:00:00+00:00")
+        (workspace / "linked").symlink_to(workspace.parent / "outside")
+        uris = [r["uri"] for r in wire.request("resources/list")["result"]["resources"]]
+        assert not any("outside" in uri or "linked" in uri for uri in uris)
+        error = wire.request("resources/read", {"uri": "fastmdxplora://study/linked"})["error"]
+        assert error["message"] == "Resource not found"
 
 
 class TestPrompts:

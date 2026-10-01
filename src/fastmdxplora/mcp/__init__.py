@@ -34,9 +34,15 @@ def serve_stdio(workspace: str | os.PathLike[str], *, runs: bool = True) -> int:
     from fastmdxplora.utils.logging import setup_console
 
     place = Workspace.at(workspace)
-    protocol_out = os.fdopen(os.dup(sys.stdout.fileno()), "wb", buffering=0)
+    # Both streams are the protocol's: taken for it here, and what is left on
+    # them for everything else is standard error and nothing, so neither a
+    # line printed nor a program the tools start can touch the protocol.
+    protocol_in = os.fdopen(os.dup(sys.stdin.fileno()), "rb")
+    protocol_out = os.fdopen(os.dup(sys.stdout.fileno()), "wb")
     sys.stdout.flush()
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    with open(os.devnull, "rb") as nothing:
+        os.dup2(nothing.fileno(), sys.stdin.fileno())
     sys.stdout = sys.stderr
     setup_console()  # the log follows standard output, which is standard error now
     # Paths in a config are the workspace's, for the checks here and the runs.
@@ -45,7 +51,7 @@ def serve_stdio(workspace: str | os.PathLike[str], *, runs: bool = True) -> int:
           + ("" if runs else " (read and check only)"), file=sys.stderr)
     app = App(place, runs=runs, complete_for=completion_for)
     try:
-        app.server().serve(sys.stdin.buffer, protocol_out)
+        app.server().serve(protocol_in, protocol_out)
     except KeyboardInterrupt:
         pass
     return 0

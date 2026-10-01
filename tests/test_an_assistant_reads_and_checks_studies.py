@@ -126,7 +126,8 @@ class TestChecking:
         assert said.startswith("Accepted by the validator. The plan:\n  System: ghg.pdb")
         assert "  Production: 5 ns, 2 fs steps" in said
         digest = hashlib.sha256((workspace / "ghg.yml").read_bytes()).hexdigest()[:12]
-        assert f"plan_id: {digest} (for start_study; it changes if ghg.yml does)" in said
+        assert said.endswith(f"plan_id: {digest} (for start_study, once the person has "
+                             "agreed to this plan; it changes if ghg.yml does)")
 
     def test_a_config_given_as_text_is_checked_but_has_no_plan_id(self, wire):
         said = text_of(wire.request("tools/call", {"name": "check_study", "arguments": {
@@ -190,8 +191,8 @@ class TestReading:
         lines = said.splitlines()
         assert lines[0].startswith("2 studies in ") and lines[0].endswith(", newest first:")
         assert lines[1].startswith("- ubq_20ns: 1UBQ, ") and "20 ns production" in lines[1]
-        assert "    RMSD: 0.15 ± 0.004 nm" in lines
-        assert lines[-1] == "Config files here: ghg.yml"
+        assert "    RMSD: 0.1500 ± 0.0040 nm" in lines
+        assert lines[-1] == "YAML files at the top of the workspace: ghg.yml"
 
     def test_a_study_is_read_and_a_folder_that_is_not_one_is_said(self, wire, workspace):
         said = call(wire, "read_study", study="ubq_10ns")["content"][0]["text"]
@@ -207,9 +208,9 @@ class TestReading:
         assert said.splitlines()[:3] == [
             "ubq_10ns against ubq_20ns", "1 setting differs:",
             "  simulation.duration_ns: 10 -> 20"]
-        assert "RMSD: 0.1234 ± 0.0056 nm | 0.15 ± 0.004 nm; second minus first +0.0266 ± " \
-               "0.0069 nm, resolved" in said
-        assert "+0.001 ± 0.0036 nm, not resolved" in said
+        assert "  RMSD: 0.1234 ± 0.0056 nm | 0.1500 ± 0.0040 nm; second minus first " \
+               "+0.0266 ± 0.0069 nm, resolved" in said
+        assert "; second minus first +0.0010 ± 0.0036 nm, not resolved" in said
 
 
 class TestTheCommand:
@@ -230,3 +231,245 @@ class TestTheCommand:
                               input="", capture_output=True, text=True, timeout=120)
         assert done.returncode == 2 and done.stdout == ""
         assert "cannot be the top of the file system" in done.stderr
+
+
+class TestTheWorkspaceHolds:
+    def test_a_config_naming_a_file_outside_is_refused(self, wire, workspace):
+        outside = workspace.parent / "elsewhere.pdb"
+        result = call(wire, "check_study", config=f"systems:\n  - system: {outside}\n")
+        assert result["isError"]
+        assert result["content"][0]["text"].startswith(
+            f"`systems[0].system` names {outside}, outside the workspace")
+        climbing = call(wire, "check_study", config=(
+            "systems:\n  - system: ghg.pdb\nsimulation:\n  setup_from: ../elsewhere\n"))
+        assert "`simulation.setup_from` names ../elsewhere" in climbing["content"][0]["text"]
+        assert call(wire, "save_study", name="out", config=(
+            f"systems:\n  - system: {outside}\n"))["isError"]
+        assert not (workspace / "out.yml").exists()
+
+    def test_a_study_holding_a_link_out_is_not_read_or_listed(self, wire, workspace):
+        secret = workspace.parent / "secret.txt"
+        secret.write_text("API_KEY=not-for-the-model")
+        study = workspace / "ubq_10ns"
+        (study / "resolved_config.yml").unlink()
+        (study / "resolved_config.yml").symlink_to(secret)
+        refused = call(wire, "read_study", study="ubq_10ns")
+        assert refused["isError"]
+        assert refused["content"][0]["text"] == ("ubq_10ns/resolved_config.yml links out of "
+                                                 "the workspace, so ubq_10ns is not read.")
+        _study(workspace.parent / "outside_study", duration=1, means={},
+               started="2026-09-04T10:00:00+00:00")
+        (workspace / "linked").symlink_to(workspace.parent / "outside_study")
+        listed = text_of(wire.request("tools/call", {"name": "list_studies", "arguments": {}}))
+        assert listed.startswith("1 study in ") and "- ubq_20ns: " in listed
+        assert "secret" not in listed and "outside_study" not in listed
+
+    def test_a_folder_of_studies_named_runs_is_looked_in(self, wire, workspace):
+        _study(workspace / "runs" / "reference", duration=5, means={},
+               started="2026-09-05T10:00:00+00:00")
+        listed = text_of(wire.request("tools/call", {"name": "list_studies", "arguments": {}}))
+        assert listed.splitlines()[1].startswith("- runs/reference: 1UBQ")
+
+    def test_a_config_is_not_saved_under_a_name_that_makes_a_study(self, wire, workspace):
+        said = call(wire, "save_study", name="exploration", config="systems:\n  - system: x.pdb\n")
+        assert said["isError"] and "the name a study gives its own config" in \
+            said["content"][0]["text"]
+        saved = text_of(wire.request("tools/call", {"name": "save_study", "arguments": {
+            "name": "plain", "config": "systems:\n  - system: ghg.pdb\n"}}))
+        assert "\nThe plan:\n  System: ghg.pdb\n" in saved and "\nplan_id: " in saved
+
+    def test_a_one_line_setting_is_yaml_and_another_file_is_said_not_to_be_a_config(self, wire):
+        setting = call(wire, "check_study", config="output: run.yml")
+        assert setting["isError"] and "There is no config" not in setting["content"][0]["text"]
+        other = call(wire, "check_study", config="ghg.pdb")
+        assert other["content"][0]["text"] == ("ghg.pdb is not a config file: a config is "
+                                               "YAML, in a .yml or .yaml file, or the YAML "
+                                               "itself.")
+
+    def test_the_top_of_the_file_system_and_the_home_folder_are_not_workspaces(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.refusals import StudyError
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        (tmp_path / "work").mkdir()
+        for folder in ("/", tmp_path):
+            with pytest.raises(StudyError):
+                Workspace.at(folder)
+        assert Workspace.at(tmp_path / "work").inside("x\0y") is None
+
+
+class TestNumbers:
+    @pytest.mark.parametrize("value, error, said", [
+        (0.1234, 0.0056, "0.1234 ± 0.0056"),
+        (0.15, 0.004, "0.1500 ± 0.0040"),
+        (-123456.7, 12.0, "-123,457 ± 12"),
+        (0.0001234, 0.12, "0.00 ± 0.12"),
+        (5432.1, 0.0004, "5,432.10000 ± 0.00040"),
+        (1.5, None, "1.5"),
+        (2.0, 0.0, "2 ± 0"),
+    ])
+    def test_a_value_is_given_to_the_place_its_error_allows(self, value, error, said):
+        from fastmdxplora.mcp.tools import with_error
+
+        assert with_error(value, error) == said
+
+    def test_a_difference_is_given_with_its_sign(self):
+        from fastmdxplora.mcp.tools import with_error
+
+        assert with_error(0.0266, 0.0069, sign=True) == "+0.0266 ± 0.0069"
+        assert with_error(-0.0266, 0.0069, sign=True) == "-0.0266 ± 0.0069"
+
+    def test_a_difference_that_cannot_be_judged_is_said_so(self, wire, workspace):
+        study = _study(workspace / "no_error", duration=10, means={"rmsd": (0.13, 0.0)},
+                       started="2026-09-06T10:00:00+00:00")
+        options = study / "analysis" / "rmsd" / "options.json"
+        record = json.loads(options.read_text())
+        record["findings"]["mean"]["standard_error"] = None
+        options.write_text(json.dumps(record))
+        said = text_of(wire.request("tools/call", {"name": "compare_studies", "arguments": {
+            "first": "ubq_10ns", "second": "no_error"}}))
+        assert ("  RMSD: 0.1234 ± 0.0056 nm | 0.13 nm; the difference is not assessed: "
+                "the second recorded no standard error") in said
+
+
+def test_a_read_only_server_says_how_a_checked_file_is_run(workspace):
+    wire = Wire(App(Workspace.at(workspace), runs=False).server())
+    said = text_of(wire.request("tools/call", {"name": "check_study",
+                                               "arguments": {"config": "ghg.yml"}}))
+    assert said.endswith("To run it: `fastmdx explore --config ghg.yml`, or the GUI. This "
+                         "server does not start studies.")
+    wire.close()
+
+
+def test_the_records_words_for_the_gui_agent_are_said_as_they_apply_here(monkeypatch, tmp_path):
+    """The record tells the GUI's Agent to `DO: run the fix` and to answer
+    with a config; an assistant is told what those mean here. The record is
+    made by its own code, with a study that can be continued, has a fix and
+    has a withheld mean standing in for one that ran."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.mcp import tools
+    from fastmdxplora.simulation.resume import Continuation
+
+    study = _study(tmp_path / "s", duration=1, means={}, started="2026-09-01T10:00:00+00:00")
+    going_on = Continuation(parent=str(study), checkpoint=str(study / "end.chk"),
+                            production_done_ns=1.0, production_planned_ns=2.0, config={})
+    monkeypatch.setattr("fastmdxplora.simulation.resume.last_segment", lambda root: root)
+    monkeypatch.setattr("fastmdxplora.simulation.resume.continuation_of",
+                        lambda root, **kw: going_on)
+    fix = SimpleNamespace(argv=("resume", str(study)), decision=False,
+                          as_text=lambda: "fastmdx resume s; about 15 min here")
+    monkeypatch.setattr("fastmdxplora.remedies.remedies_of", lambda here: [fix])
+    asked = SimpleNamespace(as_text=lambda: "2 ns more for rmsd",
+                            config=lambda root: {"simulation": {"extra_ns": 2.0}})
+    monkeypatch.setattr("fastmdxplora.simulation.sampling_ask.sampling_asked_for",
+                        lambda root: asked)
+
+    for_the_agent = tools.study_record(study, for_the_agent=True)
+    here = tools.study_record(study)
+    for theirs, ours in tools._SAID_HERE:
+        assert theirs in for_the_agent, theirs
+        assert theirs not in here and ours in here
+
+
+
+class TestWhatIsSaidBack:
+    def test_arguments_of_the_wrong_shape_are_said_so(self, wire):
+        listed = wire.request("tools/call", {"name": "list_studies", "arguments": None})
+        assert not listed["result"]["isError"]
+        shapes = [
+            ({"name": "list_studies", "arguments": [1]}, "The arguments are an object"),
+            ({"name": "ask_agent", "arguments": {"request": "x", "save": "yes"}},
+             "`save` is true or false."),
+            ({"name": "ask_agent", "arguments": {"request": "x", "phases": ["setup", "fold"]}},
+             "`phases` is a list of: setup, simulation, analysis, report."),
+            ({"name": "check_study", "arguments": {"config": "systems: [\n"}},
+             "That is not YAML a config can be read from"),
+            ({"name": "check_study", "arguments": {"config": "just: [1]\n- 2"}},
+             "That is not YAML a config can be read from"),
+            ({"name": "check_study", "arguments": {"config": "- 1\n- 2\n"}},
+             "A config is a mapping of settings, as written to a file."),
+            ({"name": "check_study", "arguments": {
+                "config": "simulation:\n  resume_from: ../elsewhere\n  extra_ns: 1\n"}},
+             "resume_from names ../elsewhere, outside the workspace."),
+            ({"name": "save_study", "arguments": {"name": "///",
+                                                  "config": "systems:\n  - system: ghg.pdb\n"}},
+             "Name the file with letters or digits."),
+        ]
+        for params, said in shapes:
+            result = wire.request("tools/call", params)["result"]
+            assert result["isError"], params
+            assert result["content"][0]["text"].startswith(said), (params, result)
+
+    def test_a_continuation_and_a_machine_that_cannot_run_are_said(self, wire, workspace,
+                                                                  monkeypatch):
+        monkeypatch.setattr("fastmdxplora.mcp.tools._cannot_run_here",
+                            lambda config: "OpenMM is not installed.")
+        said = text_of(wire.request("tools/call", {"name": "check_study", "arguments": {
+            "config": "simulation:\n  resume_from: ubq_10ns\n  extra_ns: 5\n"}}))
+        assert ("It continues the study at ubq_10ns in place: its next segment, joined to "
+                "the others, with the analyses rerun over the whole.") in said
+        assert "\nThis machine cannot run it yet: OpenMM is not installed.\n" in said
+
+    def test_a_mean_not_determined_is_listed_and_compared_as_such(self, wire, workspace):
+        study = _study(workspace / "short", duration=0.1, means={"rmsd": (0.2, 0.01)},
+                       started="2026-09-07T10:00:00+00:00")
+        options = study / "analysis" / "rmsd" / "options.json"
+        record = json.loads(options.read_text())
+        record["findings"]["mean"]["not_a_measurement"] = "too few independent samples"
+        options.write_text(json.dumps(record))
+        listed = text_of(wire.request("tools/call", {"name": "list_studies", "arguments": {}}))
+        assert "    RMSD: not determined (too few independent samples)" in listed
+        compared = text_of(wire.request("tools/call", {"name": "compare_studies", "arguments": {
+            "first": "short", "second": "ubq_10ns"}}))
+        assert "the difference is not assessed: the first mean is not determined" in compared
+
+    def test_a_standard_error_of_zero_is_said_as_zero(self, wire, workspace):
+        """A series that never moved: its error is zero, said, and the
+        difference is judged on the other's error alone, as the software
+        combines them."""
+        _study(workspace / "flat", duration=10, means={"rmsd": (0.13, 0.0)},
+               started="2026-09-08T10:00:00+00:00")
+        compared = text_of(wire.request("tools/call", {"name": "compare_studies", "arguments": {
+            "first": "ubq_10ns", "second": "flat"}}))
+        assert ("  RMSD: 0.1234 ± 0.0056 nm | 0.13 ± 0 nm; second minus first +0.0066 ± "
+                "0.0056 nm, not resolved") in compared
+
+    def test_why_a_difference_was_not_assessed_names_the_side(self):
+        from fastmdxplora.mcp.tools import _why_not
+
+        zero = {"mean": 1.0, "error": 0.0}
+        some = {"mean": 1.0, "error": 0.1}
+        assert _why_not({"first": zero, "second": zero}) == \
+            "the first recorded a standard error of zero"
+        assert _why_not({"first": some, "second": {"mean": 1.0, "error": None}}) == \
+            "the second recorded no standard error"
+        assert _why_not({"first": some, "second": some}) == "no standard error to judge it by"
+
+
+def test_a_tool_that_fails_says_so_and_a_cursor_is_refused(workspace):
+    from fastmdxplora.mcp.tools import Tool
+
+    def breaks(ctx, args):
+        raise RuntimeError("the disk is full")
+
+    app = App(Workspace.at(workspace))
+    app.tools = (Tool("breaks", "Breaks", "It breaks.", {}, (), {"readOnlyHint": True},
+                      breaks),)
+    wire = Wire(app.server())
+    result = wire.request("tools/call", {"name": "breaks", "arguments": {}})["result"]
+    assert result["isError"] and result["content"][0]["text"].endswith("the disk is full")
+    assert wire.request("tools/list", {"cursor": "2"})["error"] == {
+        "code": -32602, "message": "Unknown cursor: every list here is one page."}
+    wire.close()
+
+
+def test_the_workspace_reads_paths_as_a_shell_does(workspace):
+    from fastmdxplora.refusals import StudyError
+
+    place = Workspace.at(workspace)
+    assert place.inside("") == place.root and place.shown(place.root) == "the workspace"
+    assert place.inside("~no_such_user_here/x") is None
+    assert place.shown("/somewhere/else") == "/somewhere/else"
+    with pytest.raises(StudyError):
+        Workspace.at(workspace / "not_a_folder")

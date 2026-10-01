@@ -33,13 +33,16 @@ loop and nothing run without your word; one about a study carries its record.
 `fastmdx mcp` offers **`start_study`** and **`stop_study`**. A study starts
 only from a config file in the workspace, only while its `plan_id` is the one
 `check_study` gave for the file as it is, only when no other study is running
-there, and never into a folder already used; a continuation runs in the study
-it continues. Where the client can put a form in front of you, you are asked
+there (found by each run's own record, wherever it is), and never into a folder
+already used: the config's `output`, or a folder named after the file beside
+it. A continuation runs in the study it continues. A start is said once the
+run is going, and one that ends as it starts says so with the end of its log. Where the client can put a form in front of you, you are asked
 with the plan, the results folder and the time this machine is known to take,
 and only a ticked **Go ahead** starts it (or stops one). The run is started as
 the GUI starts it and goes on after the assistant closes. `stop_study` stops
 only a run it can identify as the study's, at its next frame with a checkpoint
-there. **`fastmdx mcp --read-only`** offers neither.
+there. A cancelled call starts and stops nothing. **`fastmdx mcp --read-only`**
+offers neither.
 
 ### An assistant asks the FastMDXplora Agent
 
@@ -63,8 +66,10 @@ Its tools say what the software finds, in its words: `inspect_structure`,
 the plan with defaults marked, whether this machine can run it, and a
 `plan_id` for the exact file), `save_study` (a new file, never written over,
 only once accepted), `list_studies`, `read_study` and `compare_studies` (a
-difference marked resolved only past twice its combined error). Every path is
-read inside the workspace, and standard output carries the protocol alone.
+difference marked resolved only past twice its combined standard error, each
+mean given to the decimal place of its error). Every path is read inside the
+workspace, every file a config names included, and standard input and output
+carry the protocol alone.
 How to give an assistant the command, and what it can and cannot do: see
 [FastMDXplora in an assistant](docs/mcp.md). The test suite drives the server
 with the protocol's own client library in both eras (`mcp` joins the `[test]`

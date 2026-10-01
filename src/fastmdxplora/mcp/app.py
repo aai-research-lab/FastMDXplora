@@ -8,6 +8,7 @@ from typing import Any, Callable
 from fastmdxplora.mcp.protocol import (
     INVALID_PARAMS,
     Call,
+    Cancelled,
     InputRequired,
     Method,
     ProtocolError,
@@ -95,7 +96,8 @@ class App:
             "resources/templates/list": Method(lambda call: listed(
                 call, content.TEMPLATES, "resourceTemplates"), ttl_ms=_AN_HOUR_MS),
             "resources/read": Method(lambda call: content.read_resource(
-                place, call.params.get("uri")), ttl_ms=content.STUDY_TTL_MS, scope="private"),
+                place, call.params.get("uri"), call.era),
+                ttl_ms=content.STUDY_TTL_MS, scope="private"),
         }
         return Server(methods, info=server_info(),
                       instructions=_instructions(self.workspace, self.runs),
@@ -117,8 +119,8 @@ class App:
             failed = False
         except ToolError as exc:
             said, failed = str(exc), True
-        except InputRequired:
-            raise  # the person is asked first; the protocol says so
+        except (InputRequired, Cancelled):
+            raise  # the person is asked first, or nobody is waiting any more
         except Exception as exc:  # noqa: BLE001 - said to the model, not a dead call
             from fastmdxplora.refusals import refusal_of
 

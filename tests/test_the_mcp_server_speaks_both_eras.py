@@ -11,10 +11,11 @@ stand-ins; what is tested is the protocol.
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
-from fastmdxplora.mcp.protocol import Call, Method, ProtocolError, Server
+from fastmdxplora.mcp.protocol import Call, Cancelled, Method, ProtocolError, Server
 from tests._mcp_wire import KEY, MODERN, Wire, meta
 
 INFO = {"name": "fastmdxplora", "version": "0"}
@@ -22,14 +23,33 @@ FORM = {"type": "object", "properties": {"go": {"type": "boolean"}}, "required":
 
 
 @pytest.fixture
-def wire():
-    released = threading.Event()
-    seen: dict[str, object] = {}
+def wire(request):
+    released, entered = threading.Event(), threading.Event()
+    seen: dict[str, object] = {"ran": 0}
 
     def call_tool(call: Call) -> dict:
         name = call.params.get("name")
+        seen["ran"] += 1
         if name == "wait":
             released.wait(10)
+            return {"content": [], "isError": False}
+        if name == "keep_going":
+            entered.set()
+            try:
+                for _ in range(200):
+                    call.progress("a step")
+                    time.sleep(0.05)
+            except Cancelled:
+                seen["stopped"] = True
+                raise
+            return {"content": [], "isError": False}
+        if name == "nap":
+            time.sleep(0.5)
+            return {"content": [{"type": "text", "text": "rested"}], "isError": False}
+        if name == "wait_then_confirm":
+            entered.set()
+            released.wait(10)
+            seen["answer"] = call.confirm("go", "Start it?", FORM, bound_to="x")
             return {"content": [], "isError": False}
         if name == "boom":
             raise RuntimeError("it broke")
@@ -48,9 +68,10 @@ def wire():
 
     server = Server({"tools/list": Method(lambda call: {"tools": []}, ttl_ms=60_000),
                      "tools/call": Method(call_tool)},
-                    info=INFO, instructions="Use it well.", capabilities={"tools": {}})
+                    info=INFO, instructions="Use it well.", capabilities={"tools": {}},
+                    workers=getattr(request, "param", 8))
     wire = Wire(server)
-    wire.released, wire.answers = released, seen
+    wire.released, wire.entered, wire.answers = released, entered, seen
     yield wire
     released.set()
     wire.close()
@@ -64,7 +85,8 @@ class TestModern:
         assert result["capabilities"] == {"tools": {}}
         assert result["instructions"] == "Use it well."
         assert result["_meta"][f"{KEY}serverInfo"] == INFO
-        assert result["ttlMs"] > 0 and result["cacheScope"] == "public"
+        # Private: the instructions can name the person's own folders.
+        assert result["ttlMs"] > 0 and result["cacheScope"] == "private"
 
     def test_a_list_carries_its_caching_hints_and_a_call_does_not(self, wire):
         listed = wire.request("tools/list")["result"]
@@ -147,6 +169,52 @@ class TestTheWire:
         assert all(m.get("id") != "slow" for m in wire.seen)
         assert wire.read(timeout=0.5) is None
 
+    @pytest.mark.parametrize("wire", [1], indirect=True)
+    def test_a_call_cancelled_while_it_waited_never_runs(self, wire):
+        wire.send({"jsonrpc": "2.0", "id": "first", "method": "tools/call",
+                   "params": {"_meta": meta(), "name": "wait"}})
+        wire.send({"jsonrpc": "2.0", "id": "queued", "method": "tools/call",
+                   "params": {"_meta": meta(), "name": "plain"}})
+        wire.send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                   "params": {"requestId": "queued"}})
+        wire.request("tools/list")
+        wire.released.set()
+        assert wire.read()["id"] == "first"
+        wire.request("tools/call", {"name": "plain"})
+        assert wire.answers["ran"] == 2  # "first" and the last, never "queued"
+        assert all(m.get("id") != "queued" for m in wire.seen)
+
+    def test_a_call_cancelled_before_it_asks_asks_nobody(self, wire):
+        wire.initialize("2025-11-25", {"elicitation": {}})
+        wire.send({"jsonrpc": "2.0", "id": "gone", "method": "tools/call",
+                   "params": {"name": "wait_then_confirm"}})
+        assert wire.entered.wait(10)  # running, not waiting to be: it gets as far as asking
+        wire.send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                   "params": {"requestId": "gone"}})
+        wire.request("ping", modern=False)
+        wire.released.set()
+        assert wire.read(timeout=1.0) is None
+        assert wire.answers["answer"] == {"action": "cancel"}
+
+    def test_a_cancelled_call_stops_at_its_next_step(self, wire):
+        wire.send({"jsonrpc": "2.0", "id": "long", "method": "tools/call",
+                   "params": {"_meta": meta(), "name": "keep_going"}})
+        assert wire.entered.wait(10)
+        wire.send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                   "params": {"requestId": "long"}})
+        deadline = time.monotonic() + 10
+        while "stopped" not in wire.answers and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert wire.answers.get("stopped") is True
+        wire.request("tools/list")
+        assert all(m.get("id") != "long" for m in wire.seen)
+
+    def test_a_call_still_running_when_the_input_closes_is_answered(self, wire):
+        wire.send({"jsonrpc": "2.0", "id": "last", "method": "tools/call",
+                   "params": {"_meta": meta(), "name": "nap"}})
+        wire._to.close()
+        assert wire.read()["result"]["content"][0]["text"] == "rested"
+
     def test_progress_is_sent_only_when_asked_for(self, wire):
         wire.request("tools/call", {"name": "progress"})
         assert wire.seen == []
@@ -191,6 +259,39 @@ class TestAskingThePerson:
             == "complete"
         assert wire.request("tools/call", good,
                             capabilities=caps)["result"]["resultType"] == "input_required"
+
+    def test_an_answer_is_read_even_where_the_retry_leaves_out_elicitation(self, wire):
+        params = {"name": "confirm", "arguments": {"study": "a"}}
+        state = wire.request("tools/call", params, capabilities={"elicitation": {}})[
+            "result"]["requestState"]
+        no = {**params, "inputResponses": {"go": {"action": "decline"}}, "requestState": state}
+        assert wire.request("tools/call", no, capabilities={})["result"]["resultType"] \
+            == "complete"
+        assert wire.answers["answer"] == {"action": "decline"}
+        # Answering with nothing usable, and unable to be asked again: not a yes.
+        wire.request("tools/call", {**params, "inputResponses": {}, "requestState": state},
+                     capabilities={})
+        assert wire.answers["answer"] == {"action": "cancel"}
+
+    def test_a_missing_answer_is_asked_for_again_and_the_state_kept(self, wire):
+        caps = {"elicitation": {}}
+        params = {"name": "confirm", "arguments": {"study": "a"}}
+        state = wire.request("tools/call", params, capabilities=caps)["result"]["requestState"]
+        again = wire.request("tools/call", {**params, "inputResponses": {},
+                                            "requestState": state}, capabilities=caps)
+        assert again["result"]["resultType"] == "input_required"
+        yes = {"go": {"action": "accept", "content": {"go": True}}}
+        done = wire.request("tools/call", {**params, "inputResponses": yes,
+                                           "requestState": state}, capabilities=caps)
+        assert done["result"]["resultType"] == "complete"
+
+    def test_a_state_that_is_not_one_is_asked_about_again(self, wire):
+        caps = {"elicitation": {}}
+        yes = {"go": {"action": "accept", "content": {"go": True}}}
+        for state in ("not a state", "e30.AAAA", 7):
+            again = wire.request("tools/call", {"name": "confirm", "inputResponses": yes,
+                                                "requestState": state}, capabilities=caps)
+            assert again["result"]["resultType"] == "input_required", state
 
     def test_a_client_that_cannot_ask_gets_no_question(self, wire):
         done = wire.request("tools/call", {"name": "confirm"},
