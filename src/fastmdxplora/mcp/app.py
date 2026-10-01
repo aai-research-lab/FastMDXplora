@@ -5,7 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from fastmdxplora.mcp.protocol import INVALID_PARAMS, Call, Method, ProtocolError, Server
+from fastmdxplora.mcp.protocol import (
+    INVALID_PARAMS,
+    Call,
+    InputRequired,
+    Method,
+    ProtocolError,
+    Server,
+)
 from fastmdxplora.mcp.tools import TOOLS, Context, Tool, ToolError
 from fastmdxplora.mcp.workspace import Workspace
 
@@ -88,6 +95,8 @@ class App:
             failed = False
         except ToolError as exc:
             said, failed = str(exc), True
+        except InputRequired:
+            raise  # the person is asked first; the protocol says so
         except Exception as exc:  # noqa: BLE001 - said to the model, not a dead call
             from fastmdxplora.refusals import refusal_of
 

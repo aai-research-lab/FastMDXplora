@@ -519,6 +519,165 @@ def _compare_studies(ctx: Context, args: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Running
+# ---------------------------------------------------------------------------
+#: What the person is asked before a study starts or stops: a box to tick,
+#: so that going ahead is something they did rather than a default.
+_GO_AHEAD = {"type": "object", "required": ["go"], "properties": {"go": {
+    "type": "boolean", "title": "Go ahead",
+    "description": "Tick to go ahead; leave it to change nothing."}}}
+
+
+def _went_ahead(ctx: Context, key: str, message: str, bound_to: str) -> bool | None:
+    """True where the person agreed, False where they did not, None where
+    the client cannot ask (its own approval of the call is then the gate)."""
+    if ctx.call is None:
+        return None
+    answer = ctx.call.confirm(key, message, _GO_AHEAD, bound_to=bound_to)
+    if answer is None:
+        return None
+    content = answer.get("content") if isinstance(answer.get("content"), dict) else {}
+    return answer.get("action") == "accept" and content.get("go") is True
+
+
+class _Inside:
+    """The workspace as the GUI's runtime reads a hosted one: where a
+    results folder may be."""
+
+    def __init__(self, workspace: Workspace) -> None:
+        self.workspace = workspace.root
+        self._place = workspace
+
+    def inside(self, given: Any) -> Path | None:
+        return self._place.inside(given)
+
+    def shown(self, path: Any) -> str:
+        return self._place.shown(path)
+
+
+def _running_here(ctx: Context) -> list[str]:
+    from fastmdxplora.gui.workspace import studies_in
+
+    return [ctx.workspace.shown(card["path"])
+            for card in studies_in(ctx.workspace.root).get("studies") or []
+            if card.get("state") == "running"]
+
+
+def _time_here(ctx: Context, config: dict[str, Any]) -> str | None:
+    """The preview's time for the study on this machine, where known."""
+    from fastmdxplora.agent.tools import Toolbox
+
+    look = Toolbox(path_for=ctx.workspace.path_for).use("preview_setup", {"config": config})
+    if not look.ok:
+        return None
+    return next((line for line in look.said.splitlines() if line.startswith("time here:")),
+                None)
+
+
+def _start_study(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.naming import default_output_name, system_of
+
+    given = args["config"]
+    if not _is_a_path(given):
+        raise ToolError("start_study runs a config file in the workspace; save it first "
+                        "with save_study, then check it with check_study.")
+    config, file = _config_from(ctx, given)
+    if file is None:  # pragma: no cover - a path always names its file
+        raise ToolError("start_study runs a config file in the workspace.")
+    now = plan_id_of(file)
+    if args["plan_id"] != now:
+        raise ToolError(f"{ctx.workspace.shown(file)} is not the file that was checked: its "
+                        f"plan_id is {now} now. check_study it again and show the person "
+                        "that plan.")
+    continuing = _accepted(ctx, config)
+    lacking = _cannot_run_here(config)
+    if lacking:
+        raise ToolError(f"This machine cannot run it yet: {lacking}")
+    going = _running_here(ctx)
+    if going:
+        raise ToolError(f"{', '.join(going)} is running here. One study runs at a time, so "
+                        "each has the machine to itself and its timings mean what they "
+                        "say; stop_study stops one.")
+    if continuing is not None:
+        where = continuing
+    else:
+        requested = str(config.get("output") or default_output_name(system_of(config)))
+        found = ctx.workspace.inside(requested)
+        if found is None:
+            raise ToolError(f"The results folder {requested} is outside the workspace.")
+        if found.exists() and any(found.iterdir()):
+            raise ToolError(f"{ctx.workspace.shown(found)} is in use already, and a run is "
+                            "never written over another. Change `output` in the config, "
+                            "save it under a new name and check it again.")
+        config = {**config, "output": str(found)}
+        where = found
+
+    shown = ctx.workspace.shown(where)
+    message = "\n".join([
+        f"Start the study in {ctx.workspace.shown(file)} on this machine?",
+        *(_plan_lines(config)),
+        *([f"It continues {shown} in place."] if continuing is not None
+          else [f"Results: {shown}"]),
+        *([line] if (line := _time_here(ctx, config)) else []),
+    ])
+    agreed = _went_ahead(ctx, "start", message, f"start_study:{file}:{now}")
+    if agreed is False:
+        return "Not started: the person did not go ahead."
+
+    runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
+                               exploration_root=ctx.workspace.root,
+                               hosting=_Inside(ctx.workspace))
+    started = runtime.launch_from_config(None, config=config)
+    if not started.get("ok"):
+        raise ToolError(str(started.get("error") or "It could not be started."))
+    return (f"Started {shown} (process {started['pid']}). It runs on its own: closing "
+            "the assistant does not stop it. read_study says how far it has got; "
+            "stop_study stops it. Its log is "
+            f"{ctx.workspace.shown(Path(started['output']) / 'exploration.log')}.")
+
+
+def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
+    import json
+    import threading
+
+    from fastmdxplora.gui.exploration import _AdoptedProcess, _identify_run
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
+    from fastmdxplora.simulation.runner import stop_grace_seconds
+
+    folder = _study(ctx, args["study"])
+    shown = ctx.workspace.shown(folder)
+    try:
+        record = json.loads((folder / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {}
+    pid = record.get("pid") if isinstance(record, dict) else None
+    if (not isinstance(pid, int) or pid <= 0 or record_is_from_elsewhere(record)
+            or _identify_run(pid, folder, record.get("argv")) is not True):
+        raise ToolError(f"No run of {shown} is going on this machine.")
+    agreed = _went_ahead(ctx, "stop", (
+        f"Stop the study {shown}? A run in production stops at its next frame with a "
+        "checkpoint there, and can be carried on from it."), f"stop_study:{folder}:{pid}")
+    if agreed is False:
+        return "Not stopped: the person did not go ahead."
+    process = _AdoptedProcess(pid, folder)
+    process.terminate()
+
+    def make_sure() -> None:
+        # As the GUI's Stop: time to reach the next frame and checkpoint,
+        # then an end that cannot be ignored.
+        try:
+            process.wait(timeout=stop_grace_seconds() + 10)
+        except Exception:  # noqa: BLE001 - not stopped in time
+            process.kill()
+
+    threading.Thread(target=make_sure, name="fastmdx-mcp-stop", daemon=True).start()
+    return (f"Asked {shown} to stop. A run in production stops at its next frame with a "
+            "checkpoint there; read_study says when it has. `fastmdx resume` carries it "
+            "on, or ask_agent to continue it.")
+
+
 _LOOKS = {"readOnlyHint": True, "openWorldHint": True}
 _READS = {"readOnlyHint": True, "openWorldHint": False}
 
@@ -577,6 +736,22 @@ TOOLS: tuple[Tool, ...] = (
          ("name", "config"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
           "openWorldHint": False}, _save_study),
+    Tool("start_study", "Start a study",
+         "Run a checked config on this machine, in the workspace, once the person has "
+         "agreed to its plan. Needs the plan_id check_study gave for the file as it is "
+         "now. Where the client can ask, the person is asked here too. The run goes on "
+         "after the assistant closes; one study runs at a time.",
+         {"config": {"type": "string", "description": "A config file in the workspace."},
+          "plan_id": {"type": "string", "description": "From check_study, for this file."}},
+         ("config", "plan_id"),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
+          "openWorldHint": True}, _start_study, acts=True),
+    Tool("stop_study", "Stop a study",
+         "Stop a study running on this machine. A run in production stops at its next "
+         "frame with a checkpoint there, so it can be carried on.",
+         {"study": _STUDY}, ("study",),
+         {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True,
+          "openWorldHint": False}, _stop_study, acts=True),
     Tool("list_studies", "List the studies here",
          "The studies in the workspace, newest first, each with its system, state and the "
          "means it recorded with their errors; and the config files not yet run.",

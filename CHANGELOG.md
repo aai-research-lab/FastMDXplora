@@ -17,6 +17,19 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### An assistant starts a study only from a checked file, with your go-ahead
+
+`fastmdx mcp` offers **`start_study`** and **`stop_study`**. A study starts
+only from a config file in the workspace, only while its `plan_id` is the one
+`check_study` gave for the file as it is, only when no other study is running
+there, and never into a folder already used; a continuation runs in the study
+it continues. Where the client can put a form in front of you, you are asked
+with the plan, the results folder and the time this machine is known to take,
+and only a ticked **Go ahead** starts it (or stops one). The run is started as
+the GUI starts it and goes on after the assistant closes. `stop_study` stops
+only a run it can identify as the study's, at its next frame with a checkpoint
+there. **`fastmdx mcp --read-only`** offers neither.
+
 ### An assistant asks the FastMDXplora Agent
 
 `fastmdx mcp` offers **`ask_agent`**: the Agent as the GUI has it, with the
