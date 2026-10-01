@@ -657,7 +657,7 @@ def _results_summary(root: Any) -> str:
     import json
     import math
 
-    from fastmdxplora.gui.report_dashboard import unit_of
+    from fastmdxplora.gui.report_dashboard import _with_its_error, unit_of
     from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
 
     rows: list[str] = []
@@ -695,11 +695,19 @@ def _results_summary(root: Any) -> str:
             # model answering in Angstrom had nothing to say it was nm.
             unit = unit_of(name, f) if key == "mean" else (
                 f["unit"] if isinstance(f.get("unit"), str) else "")
-            piece = (f"{label}mean {mean:.4g}" if isinstance(mean, (int, float))
-                     else f"{label}mean {mean}")
             has_error = isinstance(se, (int, float)) and math.isfinite(se)
-            if has_error:
-                piece += f" \u00b1 {se:.2g}"
+            # As the report and the citations under the answer give it: the
+            # error to two figures and the mean to the same place. To four
+            # figures each, an energy of -123,456.7 +/- 12 read -1.235e+05,
+            # coarser than its own error, and differed from what the person
+            # read beside it.
+            if isinstance(mean, (int, float)) and has_error and se > 0:
+                piece = f"{label}mean {_with_its_error(mean, se)}"
+            else:
+                piece = (f"{label}mean {mean:.4g}" if isinstance(mean, (int, float))
+                         else f"{label}mean {mean}")
+                if has_error:
+                    piece += f" \u00b1 {se:.2g}"
             if unit:
                 piece += f" {unit}"
             if has_error:

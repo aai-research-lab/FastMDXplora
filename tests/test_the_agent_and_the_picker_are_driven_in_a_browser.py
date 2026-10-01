@@ -82,7 +82,8 @@ def test_a_question_typed_and_sent_is_answered_from_the_study(study, monkeypatch
     # The model was asked the question with the file and the study's record.
     assert "Did the RMSD settle?" in prompts[-1]
     assert "The ligand is benzamidine, bound at Asp189." in prompts[-1]
-    assert "rmsd: mean 0.112 ± 0.002 nm (s.e.)" in prompts[-1]
+    # The model reads the mean as the person does under the answer.
+    assert "rmsd: mean 0.1120 ± 0.0020 nm (s.e.)" in prompts[-1]
     assert page.errors == []
     # And the thread was kept with the study, the answer's citations with it.
     kept = list((study / "agent" / "conversations").glob("*.json"))

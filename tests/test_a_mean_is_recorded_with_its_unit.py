@@ -145,13 +145,23 @@ class TestTheAgentIsTold:
             "hbonds": {"mean": 3.2, "standard_error": 0.1, "effective_samples": 30.0, "unit": ""}}))
         assert "rmsd: mean 0.0212 ± 0.0014 nm (s.e.)" in text
         assert "area_per_lipid: mean 0.62 nm²," in text
-        assert "hbonds: mean 3.2 ± 0.1 (s.e.)" in text
+        assert "hbonds: mean 3.20 ± 0.10 (s.e.)" in text
+
+    def test_a_mean_is_given_to_the_place_its_error_allows(self, tmp_path):
+        """As the report gives it, not to four figures whatever its error."""
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        text = _results_summary(_study(tmp_path, {
+            "potential_energy": {"mean": -123456.7, "standard_error": 12.0, "unit": "kJ/mol"},
+            "rmsd": {"mean": 0.0001234, "standard_error": 0.12, "unit": "nm"}}))
+        assert "potential_energy: mean -123,457 ± 12 kJ/mol (s.e.)" in text
+        assert "rmsd: mean 0.00 ± 0.12 nm (s.e.)" in text
 
     def test_a_study_analysed_before_units_were_recorded(self, tmp_path):
         from fastmdxplora.gui.agent_panel import _results_summary
 
         text = _results_summary(_study(tmp_path, {"rg": {"mean": 1.2, "standard_error": 0.01}}))
-        assert "rg: mean 1.2 ± 0.01 nm (s.e.)" in text
+        assert "rg: mean 1.200 ± 0.010 nm (s.e.)" in text
 
     def test_an_error_that_is_not_a_number_is_not_given(self, tmp_path):
         """A series whose error was withheld records NaN, and the Agent was

@@ -17,6 +17,14 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### The Agent reads each mean as the report gives it
+
+What the Agent is told a study found now gives each mean as the report and the
+citations under its answer do: the standard error to two figures and the mean
+to the same decimal place. To four figures each, an energy of -123,456.7 ± 12
+kJ/mol read -1.235e+05, coarser than its own error, and a mean the person read
+as 0.1120 ± 0.0020 nm the model read as 0.112 ± 0.002.
+
 ### An assistant reads the guides and each study, and offers four prompts
 
 `fastmdx mcp` serves two guides as resources, **working with studies** (the

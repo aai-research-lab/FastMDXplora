@@ -147,7 +147,7 @@ class TestTheTools:
         said = Toolbox().use("read_study", {"study": str(root)})
         assert said.ok
         assert "duration_ns: 0.5" in said.said
-        assert "rmsd: mean 0.112 \u00b1 0.002 nm (s.e.)" in said.said
+        assert "rmsd: mean 0.1120 \u00b1 0.0020 nm (s.e.)" in said.said
         assert "fastmdx resume" in said.said and "about 15 min" in said.said
         not_one = Toolbox().use("read_study", {"study": str(tmp_path / "missing")})
         assert not not_one.ok and "is not a study folder" in not_one.said
