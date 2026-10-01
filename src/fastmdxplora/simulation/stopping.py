@@ -413,7 +413,7 @@ def _series_in(path: Path) -> "Any | None":
     return np.asarray(values, dtype=float)
 
 
-def share_the_start(runs: list[Path], analysis: str, production_ns: float) -> int:
+def share_the_start(runs: list[Path], analysis: str, production_ns: float | None = None) -> int:
     """Write each replica's mean again from the start found on their average.
 
     Replicas over a seed begin in one structure and share its relaxation.
@@ -429,7 +429,8 @@ def share_the_start(runs: list[Path], analysis: str, production_ns: float) -> in
 
     Done only where every run has its series beside its record, of the
     length the record says; otherwise the records are judged as written.
-    Returns the shared start, in frames.
+    ``production_ns`` sizes a withheld mean's shortfall in time; without it
+    the shortfall is in frames. Returns the shared start, in frames.
     """
     from fastmdxplora.statistics import mean_record, shared_start
 
@@ -448,14 +449,21 @@ def share_the_start(runs: list[Path], analysis: str, production_ns: float) -> in
         found.append((folder / "options.json", document, record, series))
     at = shared_start([series for *_, series in found])
     for path, document, record, series in found:
-        if at <= int(record.get("discard") or 0) and not record.get("start_shared_with_replicas"):
+        shared = record.get("start_shared_with_replicas")
+        if shared == at or (not shared and at <= int(record.get("discard") or 0)):
             continue
-        again = mean_record(series, frame_interval_ns=production_ns / series.size,
-                            start_at_least=at)
+        again = mean_record(series, start_at_least=at,
+                            frame_interval_ns=(production_ns / series.size
+                                               if production_ns else None))
         kept = {k: v for k, v in record.items() if k not in _RECOMPUTED}
         again = {k: (str(v) if k == "not_a_measurement" else v) for k, v in again.items()}
         document["findings"]["mean"] = {**kept, **again}
-        path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        try:
+            path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        except OSError:
+            # A study that cannot be written to (one served read-only) is
+            # read as its analyses wrote it.
+            return 0
     return at
 
 

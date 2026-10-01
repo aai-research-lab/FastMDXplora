@@ -213,7 +213,11 @@ each run estimated for itself; where the replicas spread much wider, the
 single-run estimate missed correlation its run could not see. On ten 20 ns
 replicas of one protein and ligand, the spread was about ten times the error
 one run estimated, including in runs whose correlation time was resolved, so
-replicas are what determines that error, not a check on it. Members differing by system, mutation or parameter are different
+replicas are what determines that error, not a check on it. Replicas'
+means are taken from the start they share, found on their frame-by-frame
+average, where a relaxation from their one structure shows above the noise
+each run alone sees it through; each member's record then says
+`start_shared_with_replicas`. Members differing by system, mutation or parameter are different
 calculations, so the spread between them is the **result**. The file says which
 it decided and why.
 

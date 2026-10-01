@@ -135,3 +135,61 @@ def test_a_comma_separated_file_with_a_header_is_read(tmp_path):
     path.write_text("frame,rmsd\n0,0.10\n1,0.12\n2,0.11\n", encoding="utf-8")
     assert _series_in(path).tolist() == pytest.approx([0.10, 0.12, 0.11])
     assert _series_in(tmp_path / "absent.dat") is None
+
+
+def _campaign(root, sweep_axis="simulation.random_seed"):
+    runs = []
+    for k in range(3):
+        _write(root / "runs" / f"r{k}", _relaxing(2200, 70 + k), unit="nm")
+        runs.append({"run_id": f"r{k}", "status": "ok", "system": "1UAO",
+                     "output_dir_relative": f"runs/r{k}", "sweep_values": {sweep_axis: k}})
+    (root / "batch_manifest.json").write_text(json.dumps(
+        {"sweep": {sweep_axis: [0, 1, 2]}, "runs": runs}), encoding="utf-8")
+    return [root / "runs" / f"r{k}" for k in range(3)]
+
+
+def test_a_campaign_of_replicas_compares_them_from_the_shared_start(tmp_path):
+    """Replicas run for a fixed length are compared as the rule judges them:
+    their spread and pooled mean from the start they share."""
+    from fastmdxplora.batch.aggregate import aggregate_members
+
+    members = _campaign(tmp_path)
+    at = shared_start([_relaxing(2200, 70 + k) for k in range(3)])
+    owns = [_read(m)["discard"] for m in members]
+    assert at > min(owns)
+    summary = aggregate_members(tmp_path)
+    shared = [_read(m) for m in members]
+    assert [r["discard"] for r in shared] == [max(own, at) for own in owns]
+    assert summary["analyses"]["rmsd"]["mean_of_means"] == pytest.approx(
+        np.mean([r["mean"] for r in shared]))
+    # Read again, nothing is written again.
+    stamps = [(m / "analysis" / "rmsd" / "options.json").stat().st_mtime_ns for m in members]
+    aggregate_members(tmp_path)
+    assert stamps == [(m / "analysis" / "rmsd" / "options.json").stat().st_mtime_ns
+                      for m in members]
+
+
+def test_variants_keep_their_own_starts(tmp_path):
+    from fastmdxplora.batch.aggregate import aggregate_members
+
+    members = _campaign(tmp_path, sweep_axis="setup.ph")
+    before = [_read(m) for m in members]
+    aggregate_members(tmp_path)
+    assert [_read(m) for m in members] == before
+
+
+def test_a_study_that_cannot_be_written_is_read_as_it_stands(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from fastmdxplora.simulation.stopping import share_the_start
+
+    members = _campaign(tmp_path)
+    before = [_read(m) for m in members]
+
+    def refuse(self, *args, **kwargs):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(Path, "write_text", refuse)
+    assert share_the_start(members, "rmsd") == 0
+    monkeypatch.undo()
+    assert [_read(m) for m in members] == before

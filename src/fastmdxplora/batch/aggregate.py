@@ -124,6 +124,21 @@ def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
     )
 
 
+def _share_the_start(root: Path, runs: list[dict[str, Any]]) -> None:
+    """Replicas' means from the start they share, as the stopping rule takes
+    them (:func:`fastmdxplora.simulation.stopping.share_the_start`): each
+    run's own equilibration detection keeps a little of the relaxation they
+    share from their one structure, and the replicas' spread and pooled
+    mean then carry it. Written into each member's record, which says so."""
+    from fastmdxplora.simulation.stopping import share_the_start
+
+    members = [member_directory(root, run) for run in runs]
+    names = set.intersection(*[
+        {p.parent.name for p in member.glob("analysis/*/options.json")} for member in members])
+    for name in sorted(names):
+        share_the_start(members, name)
+
+
 def aggregate_members(batch_dir: str | Path) -> dict[str, Any]:
     """Collect a campaign's members into one comparison.
 
@@ -149,6 +164,8 @@ def aggregate_members(batch_dir: str | Path) -> dict[str, Any]:
         )}
 
     replicas, why = _members_are_replicas(manifest)
+    if replicas:
+        _share_the_start(root, runs)
 
     per_analysis: dict[str, list[dict[str, Any]]] = {}
     for run in runs:

@@ -1853,6 +1853,19 @@ looked determined in 6.2% (one start) and 3.4% (drawn starts). The
 documentation and the report's *How long it ran, and why* now say that a
 state no run left is what the error does not include.
 
+### Replicas run for a fixed length are compared from the start they share
+
+The shared start of 1175 applied only to a study run until it is determined.
+A campaign of replicas run for a fixed length (members differing only by a
+seed or by an ensemble's model) set the spread of its members' means against
+their errors, and pooled them, from each run's own start, which keeps a little
+of the relaxation they share. `aggregate_members`, and so `members.json`, the
+comparison report and the GUI's runs compared, now take each member's mean
+from the start the replicas share, written into its record as the rule writes
+it. A record already written from it is not written again, and a study that
+cannot be written to is read as it stands. Members that are variants keep
+their own starts.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
