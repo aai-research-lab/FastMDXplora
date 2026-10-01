@@ -1728,6 +1728,31 @@ an analysis records of a series is one function, `statistics.mean_record`,
 which every analysis now calls, and the loop can be told how much
 production a run has done.
 
+### The stopping rule's stated precision, as counted: it does not hold
+
+The calibration pre-registered in 1170 was run on its registered set (seven
+cases, 5000 studies, and 6000 series for the check under the rule), and no
+claim holds. A single run that stops reports an error about half the size the
+truth needs: the truth was within one reported error in 42.7% of studies of a
+fast-decorrelating series and 31.0% of a slow one, against a floor of 62.4%,
+and within two in 70.9% and 51.1%. Three replicas came closest (64.4% and
+91.6%), but 20% of fast and 66% of slow replica studies reached their
+ceiling, because the check that withholds a mean whose run does not resolve
+its own correlation withheld 19% to 41% of stationary series 50 to 250 times
+their inefficiency, while giving a mean for 11% of series 1.25 times it. A
+transient shared by replicas from one start left them a mean biased by about
+one error. Studies trapped in one of two states looked determined in 7.4%
+(one start) and 4.6% (drawn starts) of cases, every one with the truth
+outside two errors. The counts, the causes found afterwards (the start
+discarded where the error reads smallest, the halving check's noise, the
+sample mean's bias on the inefficiency, the few degrees of freedom of one
+run's error, and the stop itself) are in
+`preregistration/stopping-calibration.md`; every study is in
+`preregistration/stopping-calibration-registered.json`. The documentation of
+`stop_when`, and the report's *How long it ran, and why*, no longer say its
+error is "biased a little low": they say how far, and to read it as a lower
+bound.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

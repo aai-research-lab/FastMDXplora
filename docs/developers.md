@@ -417,6 +417,14 @@ the seeds, and what is claimed were
 before any coverage was computed; `--check-only` counts the withholding
 alone, and `--start` and `--studies` choose the set.
 
+On the registered set no claim held: single runs reported errors about half
+the size the truth needs, the check that withholds a mean for its correlation
+withheld 19% to 41% of long stationary series and gave a tenth of the
+shortest, and an equilibration transient shared by replicas biased their
+mean. The counts, and what was found to cause them, are in the
+pre-registration; every study is in
+`preregistration/stopping-calibration-registered.json`.
+
 ---
 
 ## See also

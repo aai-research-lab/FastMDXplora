@@ -274,10 +274,18 @@ comparison report (for replicas) has a section, *How long it ran, and why*,
 built from it, and the Agent is given it. A budget prices the study at its
 ceiling, since that is what it may spend.
 
-Stopping as soon as an error falls below a target favours a round whose error
-came out small by chance, so an error judged this way is biased a little low;
-the rounds' minimum size and, between replicas, the spread of their means
-limit that.
+**How far to trust the precision it states.** Stopping as soon as an error
+falls below a target favours a round whose error came out small by chance.
+The rule was calibrated on series with a known mean
+([pre-registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/stopping-calibration.md)),
+and its stated precision does not hold. A single run that stops reports an
+error about half the size the truth needs: the truth was within one error in
+43% of studies of a series that decorrelates in 0.4 ns and in 31% of one that
+takes 4 ns, where an honest error gives 68%. Three replicas of a stationary
+series came closest, 64% within one error and 92% within two, but a fifth of
+those studies never stopped. Replicas started from one structure share what
+their equilibration leaves behind, which no error here includes. Read an error
+from `stop_when` as a lower bound, and prefer replicas.
 
 The rule needs a study that can be run in pieces (not metadynamics, steered
 or PLUMED runs), is not applied to umbrella windows, and is refused before

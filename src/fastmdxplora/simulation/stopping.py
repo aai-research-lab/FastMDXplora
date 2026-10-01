@@ -682,11 +682,13 @@ def stopping_section(root: str | Path) -> list[str]:
     if record.get("outcome") == "met":
         lines += [
             "Stopping as soon as an error falls below a target favours a round whose error "
-            "came out small by chance, so an error judged this way is biased a little low. "
-            + ("Between replicas the combined error is the larger of what the runs claim "
-               "and what their spread shows, which limits that. " if len(runs) > 1 else "")
-            + "Each round adds at least a quarter of what ran before, so the rule is not "
-            "consulted after every frame.", ""]
+            "came out small by chance. Calibrated on series with a known mean, the error "
+            "this rule reports was about half what the truth needed for a single run, "
+            + ("and nearer honest for replicas, whose combined error is the larger of what "
+               "the runs claim and what their spread shows, " if len(runs) > 1 else
+               "and nearer honest for replicas, ")
+            + "though replicas from one structure share what their equilibration leaves. "
+            "Read the error as a lower bound.", ""]
     return lines
 
 

@@ -101,3 +101,108 @@ and lengths were seen; no coverage was computed. They showed means withheld
 as unresolved at 100 ns in replicas of the fast series, and a single run of
 the slow series determined at 5 ns. The withholding counts above were added
 to this registration because of them, and the cases were not changed.
+
+## Result on the registered set
+
+**Counted 2026-10-01**, as registered: the seven cases at their registered
+numbers of studies from index 0, and the withholding count, with the harness
+as committed with this file. Every study and every count is in
+[`stopping-calibration-registered.json`](stopping-calibration-registered.json).
+**No claim holds.**
+
+### The stated precision
+
+| Case | Determined | At the ceiling | Median production | Within 1 error | Within 2 | Floors | Holds | Fixed length, within 1 / 2 |
+|---|---|---|---|---|---|---|---|---|
+| `fast_one_run` | 1000 of 1000 (100.0%) | 0 | 6.6 ns | 42.7% | 70.9% | 62.4%, 92.8% | no | 52.9% / 77.8% (446 given at 6.6 ns) |
+| `fast_three_replicas` | 797 of 1000 (79.7%) | 203 | 32.0 ns | 64.4% | 91.6% | 61.7%, 92.5% | no | 69.5% / 94.6% (295 given at 32.0 ns) |
+| `slow_one_run` | 497 of 500 (99.4%) | 3 | 23.5 ns | 31.0% | 51.1% | 59.9%, 91.7% | no | 33.6% / 56.6% (152 given at 23.5 ns) |
+| `slow_three_replicas` | 168 of 500 (33.6%) | 332 | 150.4 ns | 64.9% | 86.3% | 53.9%, 89.0% | no | 61.3% / 91.4% (93 given at 150.4 ns) |
+| `transient_three_replicas` | 748 of 1000 (74.8%) | 252 | 47.7 ns | 48.9% | 79.0% | 61.5%, 92.4% | no | 59.0% / 89.5% (344 given at 47.7 ns) |
+| `two_states_one_start` | 37 of 500 (7.4%) | 463 | 20.0 ns | 0.0% | 0.0% | 37.7%, 81.8% | no | 54.4% / 68.4% (57 given at 20.0 ns) |
+| `two_states_drawn_starts` | 23 of 500 (4.6%) | 477 | 23.0 ns | 0.0% | 0.0% | 29.4%, 78.1% | no | 52.7% / 69.1% (55 given at 23.0 ns) |
+
+The fixed-length column counts only the comparisons whose mean was given;
+the rest were withheld.
+
+- **A single run reports an error about half the size the truth needs.**
+  `fast_one_run` stopped at a median of 6.6 ns, 17 times its inefficiency,
+  with the truth within one reported error in 42.7% of studies and within
+  two in 70.9%. `slow_one_run`: 31.0% and 51.1%. The root mean square of
+  `(value - truth) / error`, which is 1 for an honest error, was 2.5 and 5.5.
+- **Stopping on the data makes it worse; the estimator under-covers without
+  it.** At the median length fixed in advance the same estimator gave 52.9%
+  and 77.8% (fast) and 33.6% and 56.6% (slow).
+- **Replicas come closest, and the rule is not usable on them.**
+  `fast_three_replicas` held within one error (64.4%) and not within two
+  (91.6% against 92.5%), and 203 of 1000 studies reached the 100 ns ceiling,
+  where the rule is usable only if 90% end determined. `slow_three_replicas`:
+  332 of 500 at the ceiling. A study of three replicas is held whenever any
+  one of them has its mean withheld, and the check below withholds at random.
+- **The transient leaves a bias.** `transient_three_replicas`: 48.9% and
+  79.0%, with a mean `(value - truth) / error` of +1.05. The start each run
+  discards leaves part of the relaxation in its mean, and three replicas from
+  one start carry the same part, so their agreement cannot reveal it. 252 of
+  1000 reached the ceiling.
+- **Two states.** A study trapped in one state looked determined in 37 of 500
+  started together (7.4%) and 23 of 500 with drawn starts (4.6%), and in every
+  one of them the truth was outside two errors. The rest reached the ceiling
+  with their replicas disagreeing, which is the rule declining as it should.
+  Drawn starts lowered the rate little: with two states, all three replicas
+  begin in the same one a quarter of the time.
+
+### The check under the rule
+
+| Series | Length (x inefficiency) | Said unresolved | Withheld | Given within 1 / 2 errors |
+|---|---|---|---|---|
+| fast | 1.25 | 431 of 500 | 442 | 6.9% / 13.8% (58 given) |
+| fast | 5 | 337 of 500 | 373 | 30.7% / 52.8% (127 given) |
+| fast | 12.5 | 292 of 500 | 293 | 48.3% / 78.7% (207 given) |
+| fast | 50 | 194 of 500 | 194 | 55.2% / 85.6% (306 given) |
+| fast | 100 | 148 of 500 | 148 | 63.6% / 93.2% (352 given) |
+| fast | 250 | 101 of 500 | 101 | 69.7% / 95.2% (399 given) |
+| slow | 1.25 | 375 of 500 | 447 | 5.7% / 15.1% (53 given) |
+| slow | 5 | 336 of 500 | 367 | 29.3% / 51.1% (133 given) |
+| slow | 12.5 | 285 of 500 | 288 | 44.3% / 72.6% (212 given) |
+| slow | 50 | 205 of 500 | 205 | 60.0% / 87.5% (295 given) |
+| slow | 100 | 150 of 500 | 150 | 70.3% / 94.6% (350 given) |
+| slow | 250 | 94 of 500 | 94 | 69.7% / 94.8% (406 given) |
+
+- **Long stationary series are withheld.** At 50 to 250 times its
+  inefficiency a series was said unresolved 19% to 41% of the time; none
+  should be.
+- **Short series are given.** At 1.25 times its inefficiency 11% to 12% of
+  means were given, with the truth within their errors 6% to 7% of the time;
+  all should be withheld. At 5 times, a quarter to a third were given, and
+  29% to 31% of those had the truth within one error.
+- Halving a series moves its estimated inefficiency by more than the 15% the
+  check allows through noise alone, until the series is far longer than any
+  run here. So the check withholds at random, and the means it gives are
+  those whose whole-series inefficiency happened to read low against its
+  half: the ones whose errors are too small.
+
+### Why, as examined after the count
+
+Examined after the counts, to choose a remedy, on series made from the
+registered seeds and from seeds outside both sets. None of this is a
+registered claim.
+
+1. **The start discarded is chosen where the error reads small.** Detecting
+   equilibration keeps the start that gives the most independent samples,
+   which is where the inefficiency of what remains reads lowest. On
+   stationary series 25 times their inefficiency (600 series) it discarded a
+   start in 43%; the truth was within one and two errors in 68% and 92% with
+   no discard, 60% and 86% with it, and 66% and 92% for the mean after the
+   discard with the error of the whole run scaled to the frames kept. The
+   mean is not what goes wrong; its error is.
+2. **The halving check**, as counted above.
+3. **The inefficiency reads low by the sample mean's own fluctuation.** An
+   autocorrelation taken about the sample mean is low by about `g/N` at every
+   lag, and summed over the `M` lags kept that lowers the inefficiency by a
+   factor of about `(1 - (2M+1)/N) / (1 - g/N)`.
+4. **An error from one run has few degrees of freedom**, about `N/(2M+1)`:
+   a median of eight at 25 times the inefficiency, half of such series
+   between six and twelve. With eight the truth lies within one error 65% of
+   the time and within two 92%, not 68% and 95%.
+5. **Stopping at the first look whose error is within the target** keeps the
+   looks where the error reads low.

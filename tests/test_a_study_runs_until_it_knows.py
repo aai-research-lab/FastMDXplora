@@ -493,7 +493,7 @@ class TestTheReport:
         assert "| 1 | 2 | " in text and "extended by 6 ns" in text
         assert "stopped: determined as asked" in text
         assert "**Determined as asked.**" in text
-        assert "biased a little low" in text
+        assert "Read the error as a lower bound." in text
 
     def test_nothing_where_the_length_was_fixed(self, tmp_path):
         assert stopping_section(tmp_path) == []
@@ -506,7 +506,7 @@ class TestTheReport:
                         extend_all=made.extend_all, say=lambda _: None)
         text = "\n".join(stopping_section(tmp_path))
         assert ", replicas disagree |" in text and "**Not determined as asked.**" in text
-        assert "biased a little low" not in text
+        assert "lower bound" not in text
 
     def test_the_study_report_carries_it(self, tmp_path, replicas):
         from fastmdxplora.report.document import _stopping_section
