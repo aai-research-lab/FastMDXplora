@@ -1699,6 +1699,17 @@ its own, from `fastmdx gui` and from a GUI left open after `fastmdx
 explore`. A test starts the GUI as its own process and stops it with one
 interrupt.
 
+### The Report page renders the report on any install
+
+The two chip tests that failed on CI's browser job said why once 1167 let
+them: the report route answered `rendered: 'plain'`. The `markdown` library
+was in the `[pdf]` extra alone, so an install without it, CI's `.[test]` and
+`.[md]` among them, showed the report in the GUI as plain Markdown, with no
+figure in it and no chip under one. It is a dependency of the package now,
+in `pyproject.toml` and in the conda recipe's base group, and `fastmdx info`
+no longer lists it as an optional backend for the PDF. A test holds both
+declarations to it.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

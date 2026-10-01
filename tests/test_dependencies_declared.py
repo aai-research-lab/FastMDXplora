@@ -318,7 +318,7 @@ def test_info_reports_every_backend_the_software_reaches_for() -> None:
         for _display, import_name, _hint in backends
     }
     for needed in ("openmm", "pdbfixer", "openff.toolkit", "openmmforcefields",
-                   "rdkit", "propka", "am1bcc", "weasyprint", "markdown"):
+                   "rdkit", "propka", "am1bcc", "weasyprint"):
         assert needed in reported, f"info does not mention {needed}"
 
 

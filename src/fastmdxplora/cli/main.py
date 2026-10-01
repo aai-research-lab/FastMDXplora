@@ -1908,7 +1908,6 @@ _BACKENDS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
     )),
     ("to write the report as a PDF", (
         ("WeasyPrint", "weasyprint", "conda install -c conda-forge weasyprint"),
-        ("Markdown", "markdown", "conda install -c conda-forge markdown"),
     )),
     ("for optional extras", (
         ("UMAP", "umap", "conda install -c conda-forge umap-learn"),

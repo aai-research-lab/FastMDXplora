@@ -65,6 +65,10 @@ dependencies = [
     # it, but relying on another package's dependency is how a working install
     # becomes a broken one after an upstream release.
     "pillow>=10.0",
+    # The report as a page: the GUI's Report page and the report's HTML. It
+    # was in the [pdf] extra, so a pip install without it showed the report
+    # in the GUI as plain Markdown, with no figure in it. Pure Python, small.
+    "markdown>=3.4",
 ]
 
 [project.optional-dependencies]
@@ -80,7 +84,6 @@ agent = []
 # conda distribution is the easier route.
 pdf = [
     "weasyprint>=60",
-    "markdown>=3.4",
 ]
 md = [
     "pdbfixer",
