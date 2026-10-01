@@ -17,6 +17,17 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### An assistant asks the FastMDXplora Agent
+
+`fastmdx mcp` offers **`ask_agent`**: the Agent as the GUI has it, with the
+model `fastmdx agent set` chose, the software's own tools to look with, and the
+validator as the judge. A study it writes comes back accepted, recorded as the
+Agent's (`agent: assisted` and the model), saved as a new file headed by what
+was asked, with its plan and `plan_id`; a question, an answer or an
+instruction comes back as itself, and nothing is run. It can change a config
+(`config`), read a study's record first (`study`), and say what it looked at;
+a client that asked for progress is told each look as it is taken.
+
 ### An assistant can check and read studies: `fastmdx mcp`
 
 **`fastmdx mcp --workspace DIR`** serves FastMDXplora to an assistant that

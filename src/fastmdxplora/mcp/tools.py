@@ -230,6 +230,147 @@ def _mean(side: dict[str, Any] | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The Agent
+# ---------------------------------------------------------------------------
+#: The phases the Agent is told about unless asked for others: as the GUI
+#: and `fastmdx agent` tell it, a smaller space to go wrong in.
+_AGENT_PHASES = ["setup", "simulation"]
+
+#: The Agent's instructions that are done in FastMDXplora's own window.
+_IN_THE_WINDOW = ("open viewer", "open overview", "open report", "open builder",
+                  "show config", "download config")
+
+
+def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
+    """The FastMDXplora Agent, as in the GUI: the person's model, the
+    software's tools to look with, and the validator as the judge."""
+    from fastmdxplora.agent import propose_config
+    from fastmdxplora.agent.tools import Toolbox
+    from fastmdxplora.refusals import StudyError, refusal_of
+
+    if ctx.complete_for is None:
+        raise ToolError("The Agent has no model here.")
+    try:
+        complete = ctx.complete_for()
+    except StudyError as exc:
+        raise ToolError(f"{refusal_of(exc).message}\nThe Agent writes with a model you choose "
+                        "once, in a terminal: `fastmdx agent set`. Every other tool here "
+                        "works without one.") from None
+    current = None
+    if args.get("config"):
+        given = args["config"]
+        if _is_a_path(given):
+            _, file = _config_from(ctx, given)
+            current = file.read_text(encoding="utf-8") if file is not None else None
+        else:
+            current = given
+    status = study_record(_study(ctx, args["study"])) if args.get("study") else None
+
+    box = Toolbox(path_for=ctx.workspace.path_for)
+    told = ctx.call.progress if ctx.call is not None else (lambda message: None)
+    used = box.use
+
+    def use(name: str, asked: dict[str, Any]) -> Any:
+        told(f"The Agent looks: {name}")
+        return used(name, asked)
+
+    box.use = use  # type: ignore[method-assign]
+
+    def written(prompt: str) -> str:
+        told("The Agent is writing")
+        return complete(prompt)
+
+    try:
+        proposal = propose_config(args["request"], written,
+                                  phases=args.get("phases") or list(_AGENT_PHASES),
+                                  current_config=current, run_status=status, tools=box)
+    except StudyError as exc:
+        raise ToolError(refusal_of(exc).message) from None
+
+    checked = [f"  - {look.tool}{'' if look.ok else ' (refused)'}: "
+               f"{(look.said.splitlines() or [''])[0]}" for look in proposal.looks]
+    after = (["", "What the Agent checked with the software:", *checked] if checked else [])
+    if proposal.question:
+        return "\n".join([f"The Agent asks: {proposal.question}",
+                          "Answer it in a new request, with what it asks for.", *after])
+    if proposal.answer:
+        return "\n".join([f"The Agent says: {proposal.answer}", *after])
+    if proposal.action:
+        if proposal.action in _IN_THE_WINDOW:
+            next_step = ("That is done in FastMDXplora's own window, which `fastmdx gui` "
+                         "opens.")
+        elif proposal.action == "stop":
+            next_step = "stop_study stops a running study, once the person has agreed."
+        else:
+            next_step = ("check_study shows the plan; start_study runs it once the person "
+                         "has agreed to that plan.")
+        return "\n".join([f"The Agent read this as an instruction: {proposal.action}.",
+                          next_step, *after])
+    corrected = [f"  - {a.refusal.code}: {a.refusal.message}"
+                 for a in proposal.attempts if a.refusal is not None]
+    if not proposal.accepted:
+        last = proposal.refusal
+        raise ToolError("\n".join([
+            f"The Agent gave up after {proposal.cycles} attempt"
+            f"{'' if proposal.cycles == 1 else 's'}; the validator refused each.",
+            *(["Refused:", *corrected] if corrected else []),
+            *([f"Last: {last.message}"] if last is not None and not corrected else []),
+            "Say more of what the study is for, or check a config by hand with check_study.",
+            *after]))
+    return _proposed(ctx, args, proposal, corrected, after)
+
+
+def _proposed(ctx: Context, args: dict[str, Any], proposal: Any, corrected: list[str],
+              after: list[str]) -> str:
+    """An accepted study: recorded as the Agent's, saved, and its plan said."""
+    import yaml
+
+    from fastmdxplora.agent import load_choice
+    from fastmdxplora.naming import default_output_name, system_of
+
+    config = dict(proposal.config)
+    # Whose study this is, as `fastmdx agent` records it: a model wrote it,
+    # and which one.
+    config["agent"] = "assisted"
+    chosen = load_choice()
+    if chosen is not None:
+        config["agent_model"] = f"{chosen.provider}/{chosen.model}"
+    name = default_output_name(system_of(config))
+    if _continued(ctx, config) is None and not config.get("output"):
+        config["output"] = name
+    text = yaml.safe_dump(config, sort_keys=False)
+    tries = proposal.cycles
+    lines = [f"The FastMDXplora Agent wrote a study, and the validator accepted it "
+             f"{'first time' if tries == 1 else f'after {tries} attempts'}."]
+    if corrected:
+        lines += ["Refused on the way, and corrected:", *corrected]
+    if args.get("save", True):
+        asked = " ".join(str(args["request"]).split())[:400]
+        target = _new_file(ctx.workspace.root, name)
+        target.write_text(f"# Written by the FastMDXplora Agent, asked: {asked}\n" + text,
+                          encoding="utf-8")
+        lines += [f"Saved to {ctx.workspace.shown(target)}. Nothing has been run.", "",
+                  "The plan:", *_plan_lines(config), "",
+                  f"plan_id: {plan_id_of(target)} (for start_study, once the person has "
+                  "agreed to this plan)"]
+    else:
+        lines += ["Not saved; save_study writes it.", "", "The plan:", *_plan_lines(config)]
+    return "\n".join([*lines, *after, "", "The config:", text.rstrip()])
+
+
+def _new_file(folder: Path, stem: str) -> Path:
+    """``stem.yml``, or ``stem-2.yml`` and so on: never one already there."""
+    for n in range(1, 1000):
+        target = folder / (f"{stem}.yml" if n == 1 else f"{stem}-{n}.yml")
+        try:
+            target.open("x", encoding="utf-8").close()
+        except FileExistsError:
+            continue
+        return target
+    raise ToolError(f"Too many files named {stem} in the workspace.")
+
+
+# ---------------------------------------------------------------------------
 # Looking
 # ---------------------------------------------------------------------------
 def _inspect_structure(ctx: Context, args: dict[str, Any]) -> str:
@@ -383,6 +524,30 @@ _READS = {"readOnlyHint": True, "openWorldHint": False}
 
 #: In the order they are listed, which is the order to reach for them.
 TOOLS: tuple[Tool, ...] = (
+    Tool("ask_agent", "Ask the FastMDXplora Agent",
+         "Write or change a study from a description, or ask about one. The Agent looks "
+         "with the software's own tools before it answers, and a study it writes is "
+         "accepted by the validator before it is returned, saved in the workspace with "
+         "its plan and plan_id; it also answers questions and asks when the request is "
+         "short of something only the person can say. Nothing is run. Uses the model "
+         "chosen with `fastmdx agent set`.",
+         {"request": {"type": "string", "description": (
+             "What the study should do or what to ask, in the person's words.")},
+          "config": {"type": "string", "description": (
+              "The study config being changed, if any: a file in the workspace or the "
+              "YAML. The Agent returns the whole config with the change.")},
+          "study": {"type": "string", "description": (
+              "A study folder the request is about, if any: its record (where it stands, "
+              "what it found, why it stopped) is given to the Agent.")},
+          "phases": {"type": "array", "items": {"type": "string", "enum": [
+              "setup", "simulation", "analysis", "report"]}, "description": (
+              "The phases whose settings the Agent is told about. Default: setup and "
+              "simulation; add analysis or report to have it set those.")},
+          "save": {"type": "boolean", "description": (
+              "Save an accepted study as a new file (default true).")}},
+         ("request",),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
+          "openWorldHint": True}, _ask_agent),
     Tool("inspect_structure", "Inspect a structure",
          "What a structure holds: its chains, protein residues, ligands, ions and "
          "water, the residues whose protonation state a study may set, any side chain "

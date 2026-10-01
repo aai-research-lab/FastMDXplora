@@ -28,6 +28,10 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
     lines = [
         "FastMDXplora designs, checks, runs and reads molecular dynamics studies on this "
         f"machine, in the workspace {workspace.root}.",
+        "- To write or change a study from a description, or to ask about one, use "
+        "ask_agent first. It is FastMDXplora's own Agent: it looks with the software's "
+        "tools, says what it checked, and a study it writes is accepted by the "
+        "validator before you see it.",
         "- What a tool says is the software's own finding. Quote its numbers with their "
         "errors and units as given; never overrule a refusal or a check with a number "
         "or judgement of your own.",

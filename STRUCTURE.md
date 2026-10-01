@@ -21,7 +21,7 @@ FastMDXplora/
 │       ├── mcp/
 │       │   ├── protocol.py        # The Model Context Protocol over stdio, both eras
 │       │   ├── app.py             # What `fastmdx mcp` offers an assistant
-│       │   ├── tools.py           # Its tools: look, check, save, read
+│       │   ├── tools.py           # Its tools: the Agent; look, check, save, read
 │       │   └── workspace.py       # The one folder the tools may use
 │       ├── setup/
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
