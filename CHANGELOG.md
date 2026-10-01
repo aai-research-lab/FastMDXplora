@@ -65,6 +65,10 @@ the plan with defaults marked, whether this machine can run it, and a
 only once accepted), `list_studies`, `read_study` and `compare_studies` (a
 difference marked resolved only past twice its combined error). Every path is
 read inside the workspace, and standard output carries the protocol alone.
+How to give an assistant the command, and what it can and cannot do: see
+[FastMDXplora in an assistant](docs/mcp.md). The test suite drives the server
+with the protocol's own client library in both eras (`mcp` joins the `[test]`
+extra for that).
 
 ### The Agent takes tools from outside
 

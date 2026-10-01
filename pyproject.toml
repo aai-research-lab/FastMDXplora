@@ -175,6 +175,10 @@ test = [
     # and without it every protonation-settling test skips where coverage is
     # measured.
     "propka>=3.5",
+    # `fastmdx mcp` is written without the MCP SDK; the SDK's own client is
+    # what checks it speaks the protocol, in both eras. Without it here that
+    # test would skip on CI, and a skip is invisible in a green run.
+    "mcp>=2.2",
 ]
 docs = [
     "sphinx>=7.0",

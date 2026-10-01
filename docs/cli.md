@@ -27,6 +27,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx report` | Write up an existing run |
 | `fastmdx agent` | Write a Config from a sentence — [the Agent](agent.md) |
 | `fastmdx gui` | Serve [the GUI](gui.md) |
+| `fastmdx mcp` | Serve FastMDXplora to an assistant: [FastMDXplora in an assistant](mcp.md) |
 | `fastmdx init-config` | Write a commented Config template |
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx diff` | The settings two studies or Configs differ in |
@@ -395,6 +396,21 @@ fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete
 
 `--dashboard` turns live telemetry on for the simulation whether or not
 `live_telemetry` was set.
+
+---
+
+## `mcp`
+
+```bash
+fastmdx mcp --workspace ~/studies               # started by an assistant, not by hand
+fastmdx mcp --workspace ~/studies --read-only   # it may check and read, not run
+```
+
+Serves FastMDXplora to an assistant that speaks the Model Context Protocol, on
+standard input and output: the Agent (`ask_agent`), the tools that look and
+check, and starting and stopping a checked study with your go-ahead, all inside
+the one workspace folder. The assistant starts it from its own settings. See
+[FastMDXplora in an assistant](mcp.md).
 
 ---
 

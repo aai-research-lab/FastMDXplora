@@ -137,6 +137,7 @@ gui
 cli
 api
 agent
+mcp
 ```
 
 ```{toctree}
