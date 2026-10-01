@@ -68,14 +68,6 @@ def _unit_in(label: str) -> str:
     return ""
 
 
-#: The withholdings a longer run of the same system answers. Three usable
-#: frames is not one of them: that is a run with almost nothing written.
-_WANT_A_LONGER_RUN = frozenset({
-    "analysis.sampling.correlation_unresolved",
-    "analysis.sampling.too_few_independent",
-})
-
-
 def _frame_interval_ns(traj: Any) -> float | None:
     """How far apart the analysed frames are, from the clock the loader set.
 
@@ -505,7 +497,7 @@ class Analysis(ABC):
 
         import numpy as np
 
-        from fastmdxplora.statistics import summarise
+        from fastmdxplora.statistics import mean_record
 
         values = self.result
         if hasattr(values, "columns"):
@@ -524,25 +516,7 @@ class Analysis(ABC):
         if series.ndim != 1 or series.size != traj.n_frames:
             return
 
-        equilibrated, reason = summarise(series)
-        record: dict[str, Any] = {}
-        if equilibrated is not None:
-            record.update(equilibrated.as_record())
-        if reason is not None:
-            record["not_a_measurement"] = reason
-            # And what would make it one. "The remedy is a longer run" left
-            # the length to guess; the correlation this series already
-            # shows says how much longer, which is what a person deciding
-            # whether to extend needs.
-            code = getattr(getattr(reason, "refusal", None), "code", "")
-            if code in _WANT_A_LONGER_RUN:
-                from fastmdxplora.statistics import sampling_shortfall
-
-                shortfall = sampling_shortfall(
-                    series, frame_interval_ns=_frame_interval_ns(traj))
-                if not shortfall.met:
-                    record["shortfall"] = shortfall.as_record()
-        record["n_frames"] = int(series.size)
+        record = mean_record(series, frame_interval_ns=_frame_interval_ns(traj))
         unit = self._recorded_unit()
         if unit is not None:
             record["unit"] = unit

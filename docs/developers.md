@@ -395,6 +395,28 @@ entries, so they cannot separate the arms. The replies without tools
 answered the two sizes as ranges and said every count was from memory; the
 result and what a stricter set would need are in the pre-registration.
 
+## Calibrating the stopping rule
+
+A study run until it is determined (`simulation.stop_when`) stops at the
+first look where its error is within the target, and an error read low at
+that look is the one it reports. Whether its stated precision holds is
+evaluated on series with a known true mean, recorded as the analyses
+record them and judged and extended by the rule's own loop, with no
+simulation engine:
+
+```bash
+python -m fastmdxplora.validation.stopping_calibration --out stopping_calibration.json
+```
+
+Seven cases (correlated series fast and slow, one run and three replicas,
+an equilibration transient, and two slowly exchanging states started
+together or independently), and the check under the rule that withholds a
+mean whose run does not resolve its own correlation time. What is counted,
+the seeds, and what is claimed were
+[pre-registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/stopping-calibration.md)
+before any coverage was computed; `--check-only` counts the withholding
+alone, and `--start` and `--studies` choose the set.
+
 ---
 
 ## See also

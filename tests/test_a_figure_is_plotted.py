@@ -26,6 +26,7 @@ RIGHT = (
     "velocities drawn afresh",
     "drawn once and held fixed across frames",
     "where the boundary between them is drawn is a convention",
+    "a state drawn at random",
 )
 
 

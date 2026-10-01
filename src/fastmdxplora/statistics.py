@@ -57,6 +57,7 @@ __all__ = [
     "correlation_is_resolved",
     "detect_equilibration",
     "summarise",
+    "mean_record",
 ]
 
 #: Below this many independent samples, a mean and its error describe the
@@ -516,6 +517,39 @@ def sampling_shortfall(
         resolved=resolved,
     )
 
+
+#: The withholdings a longer run of the same system answers, for which the
+#: record therefore says how much more. Three usable frames is not one of
+#: them: that is a run with almost nothing written.
+WANT_A_LONGER_RUN = frozenset({
+    "analysis.sampling.correlation_unresolved",
+    "analysis.sampling.too_few_independent",
+})
+
+
+def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None) -> dict[str, Any]:
+    """What an analysis records of a per-frame series: its mean and error
+    after equilibration, or why there is none and how much longer would give
+    one. One function for every analysis and for whatever reads the records
+    as the analyses would write them (the stopping rule's calibration among
+    them), so the two cannot differ."""
+    values = np.asarray(series, dtype=float)
+    equilibrated, reason = summarise(values)
+    record: dict[str, Any] = {}
+    if equilibrated is not None:
+        record.update(equilibrated.as_record())
+    if reason is not None:
+        record["not_a_measurement"] = reason
+        # And what would make it one: "the remedy is a longer run" left the
+        # length to guess, and the correlation the series already shows
+        # says how much longer.
+        code = getattr(getattr(reason, "refusal", None), "code", "")
+        if code in WANT_A_LONGER_RUN:
+            shortfall = sampling_shortfall(values, frame_interval_ns=frame_interval_ns)
+            if not shortfall.met:
+                record["shortfall"] = shortfall.as_record()
+    record["n_frames"] = int(values.size)
+    return record
 
 @dataclass(frozen=True)
 class Pooled:

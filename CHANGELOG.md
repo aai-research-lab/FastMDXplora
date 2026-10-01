@@ -1710,6 +1710,24 @@ in `pyproject.toml` and in the conda recipe's base group, and `fastmdx info`
 no longer lists it as an optional backend for the PDF. A test holds both
 declarations to it.
 
+### The stopping rule's stated precision, pre-registered
+
+A study run until it is determined stops at the first look where its error
+is within the target, and an error read low at that look is the one it
+reports. `fastmdxplora.validation.stopping_calibration` asks whether that
+stated precision holds: series with a known true mean are made round by
+round, recorded as every analysis records a series, and judged and
+extended by the rule's own loop, `run_until_known`, so nothing of the rule
+is reimplemented. Seven cases, from fast and slow correlated series to two
+slowly exchanging states, and the check under the rule that withholds a
+mean whose run does not resolve its correlation time, counted on its own.
+What is counted, the seeds and what is claimed are in
+`preregistration/stopping-calibration.md`, written before any coverage
+was computed. Two seams make this possible without a copy of anything: what
+an analysis records of a series is one function, `statistics.mean_record`,
+which every analysis now calls, and the loop can be told how much
+production a run has done.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

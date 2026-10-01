@@ -504,7 +504,8 @@ def planned_record(targets: list[StopTarget], stop_when: dict[str, Any],
 def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict[str, Any],
                     *, record_in: Path, extend_all: Any = None,
                     say: Any = print, at_once: int = 1,
-                    earlier_rounds: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                    earlier_rounds: list[dict[str, Any]] | None = None,
+                    production_of: Any = None) -> dict[str, Any]:
     """Judge the runs, extend every one of them by what is needed, and judge
     again, until each target is met or the ceiling is reached. The rounds
     are written to ``record_in / stopping.json`` as they happen.
@@ -514,10 +515,14 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
     that runs them side by side, and says in ``at_once`` how many run
     together, which is what the time a round takes rests on.
     ``earlier_rounds`` are a resumed study's rounds before it stopped,
-    kept so its record reads as one history."""
+    kept so its record reads as one history. ``production_of(run)`` says how
+    much production a run has done; it is read from the run's checkpoints
+    unless given, which the rule's calibration does with series it makes
+    itself (`validation/stopping_calibration.py`)."""
     from fastmdxplora.simulation.resume import production_done_ns
 
     extend_all = extend_all or extend_one_after_another
+    production_of = production_of or production_done_ns
     ceiling = float(stop_when["max_duration_ns"])
     independent = str(stop_when.get("independent_starts") or "required")
     record: dict[str, Any] = {
@@ -530,7 +535,7 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         (record_in / RECORD).write_text(json.dumps(record, indent=2), encoding="utf-8")
 
     for _ in range(MOST_ROUNDS):
-        production = min(production_done_ns(run) for run in runs)
+        production = min(production_of(run) for run in runs)
         verdicts = judge(runs, targets, production)
         entry: dict[str, Any] = {"production_ns": round(production, 9),
                                  "verdicts": [v.as_record() for v in verdicts]}
