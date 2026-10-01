@@ -909,7 +909,7 @@
     const flatGrid = byId("analysis-grid");
     if (!host) return;
     state.figureProvenance = payload.figure_provenance || {};
-    // Drawn again only when something in it changed. Every poll replaced
+    // Rendered again only when something in it changed. Every poll replaced
     // the cards, which reloaded each figure and would take a chart from
     // under the pointer reading it.
     const key = JSON.stringify([sections, state.figureProvenance]);
@@ -1168,7 +1168,15 @@
       }, plot));
     });
 
-    grid.innerHTML = cards.join("");
+    // Rendered again only when a card changed, as the sections are. Every poll
+    // replaced the cards: each figure reloaded, the page's height changed
+    // under the reader while it did, and a card an Agent's answer had just
+    // scrolled to and marked lost its mark and could leave the view.
+    const html = cards.join("");
+    if (html !== state.analysisGridHtml || !grid.childElementCount) {
+      grid.innerHTML = html;
+      state.analysisGridHtml = html;
+    }
     const svgBundle = byId("download-all-svg");
     const svgCount = Number(payload.svg_figure_count || 0);
     if (svgBundle) {
@@ -1740,27 +1748,72 @@
   }
 
   /* Open the Analysis page on one analysis's figure: the one an Agent's
-   * answer cited. Its cards may still be arriving (the page fetches its
-   * results when opened), so it is looked for until it is there, for a
-   * few seconds, and then the page is left open at its top. */
+   * answer cited. Its cards may still be arriving: results are rendered
+   * when every request of a poll has answered, which on a busy machine can
+   * take longer than the six seconds this used to wait. The card is looked
+   * for whenever results are rendered and every quarter second besides,
+   * while the Analysis page stays open, for up to a minute. */
+  const CITED_LOOK_MS = 60000;
+
   function showAnalysis(name) {
     navigate("analysis");
     const wanted = String(name || "");
-    let tries = 0;
-    const look = () => {
+    const started = Date.now();
+    let timer = null;
+    const finish = () => {
+      clearInterval(timer);
+      window.removeEventListener("dashboard:results-updated", look);
+    };
+    function look() {
+      if (state.activePage !== "analysis" || Date.now() - started > CITED_LOOK_MS) {
+        finish();
+        return;
+      }
       const card = $$(`.page[data-page="analysis"] .analysis-card[data-analysis]`)
         .find((element) => element.getAttribute("data-analysis") === wanted
           && element.offsetParent !== null);
-      if (card) {
-        card.scrollIntoView({block: "center", behavior: "smooth"});
-        card.classList.add("is-cited");
-        setTimeout(() => card.classList.remove("is-cited"), 2400);
-        return;
-      }
-      tries += 1;
-      if (tries < 40 && state.activePage === "analysis") setTimeout(look, 150);
-    };
+      if (!card) return;
+      finish();
+      // Which figure the page was opened on, kept after the mark fades.
+      const pageEl = card.closest(".page");
+      pageEl.dataset.cited = wanted;
+      card.scrollIntoView({block: "center", behavior: "smooth"});
+      card.classList.add("is-cited");
+      setTimeout(() => card.classList.remove("is-cited"), 2400);
+      keepInView(card, pageEl);
+    }
+    window.addEventListener("dashboard:results-updated", look);
+    timer = setInterval(look, 250);
     look();
+  }
+
+  /* The figures and charts around a card load after it is scrolled to,
+   * and as they take their height the card moved: opened from an answer,
+   * the RMSD card ended a whole card above the view. For a few seconds,
+   * while the page's content changes size, it is brought back, unless the
+   * reader has scrolled, clicked or pressed a key in the meantime. */
+  const KEEP_IN_VIEW_MS = 5000;
+
+  function keepInView(card, pageEl) {
+    if (typeof ResizeObserver !== "function") return;
+    const column = document.querySelector(".main");
+    const reader = ["wheel", "touchstart", "keydown", "mousedown"];
+    let done = false;
+    const observer = new ResizeObserver(() => {
+      if (done || !card.isConnected) return;
+      card.scrollIntoView({block: "center"});
+    });
+    const stop = () => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      reader.forEach((name) => window.removeEventListener(name, stop, true));
+    };
+    reader.forEach((name) => window.addEventListener(name, stop, true));
+    observer.observe(pageEl);
+    if (column) Array.from(column.children).forEach((child) => observer.observe(child));
+    Array.from(pageEl.querySelectorAll(".analysis-card")).forEach((each) => observer.observe(each));
+    setTimeout(stop, KEEP_IN_VIEW_MS);
   }
 
   function emit(name, detail) {

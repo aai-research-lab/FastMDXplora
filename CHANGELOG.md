@@ -1806,6 +1806,21 @@ reach a 200 ns ceiling in 44% of studies, and a study trapped in one of two
 states looked determined in 9% to 13%. Every study is in
 `preregistration/stopping-calibration-heldout.json`.
 
+### A figure an answer cites stays in view
+
+Opening a cited figure from an Agent's answer scrolled to its card, and the
+figures and charts around it then took their height and moved it: the RMSD
+card ended a whole card above the view here, and CI's browser test of it
+timed out (Ubuntu 3.11, on `52877c1`), most likely for this reason. For a few seconds after it is
+opened, while the page's content changes size, the card is brought back,
+unless the reader scrolls, clicks or presses a key. The card is looked for
+whenever results arrive, for up to a minute, where it was looked for six
+seconds; the Analysis page records which figure it was opened on; and its
+grid of figures is rendered again only when a figure changed (every poll
+reloaded each one where a study has no sections). The browser test waits on
+what the page keeps rather than on the mark that fades, and says what the page
+held if it times out.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

@@ -168,25 +168,69 @@ def test_the_page_shows_them_and_one_opens_its_figure(tmp_path) -> None:
             name = chip.locator(".agent-cite-name").text_content()
             value = chip.locator(".agent-cite-value").text_content()
             chip.click()
-            page.wait_for_function(
-                "() => { const c = document.querySelector("
-                "'.page[data-page=\"analysis\"] .analysis-card.is-cited');"
-                " return c && c.getAttribute('data-analysis') === 'rmsd'; }")
-            on = page.evaluate("document.documentElement.getAttribute('data-page')")
-            # The scroll is smooth, and on a loaded machine slow: waited for
-            # rather than given a fixed time.
-            # The highlight fades after a moment; the card it marked is the
-            # one that has to be in view.
-            page.wait_for_function(
-                "() => { const c = document.querySelector("
-                "'.page[data-page=\"analysis\"] .analysis-card[data-analysis=\"rmsd\"]');"
-                " if (!c) return false; const r = c.getBoundingClientRect();"
-                " return r.top < innerHeight && r.bottom > 0; }", timeout=60000)
+            # What the page holds, said if a wait runs out: which page is
+            # open, the figure it was opened on, and each card's place.
+            why = """() => JSON.stringify({
+              page: document.documentElement.getAttribute('data-page'),
+              cited: document.querySelector('.page[data-page="analysis"]')?.dataset.cited,
+              scrolled: document.querySelector('.main')?.scrollTop,
+              cards: [...document.querySelectorAll(
+                '.page[data-page="analysis"] .analysis-card[data-analysis]')].map((c) => {
+                  const r = c.getBoundingClientRect();
+                  return [c.getAttribute('data-analysis'), c.offsetParent !== null,
+                          Math.round(r.top), Math.round(r.bottom)];
+                }),
+            })"""
+            try:
+                # Waited for on what the page keeps, not on the mark, which
+                # fades after a moment.
+                page.wait_for_function(
+                    "() => document.querySelector('.page[data-page=\"analysis\"]')"
+                    "?.dataset.cited === 'rmsd'")
+                on = page.evaluate("document.documentElement.getAttribute('data-page')")
+                # The scroll is smooth, and on a loaded machine slow: waited
+                # for rather than given a fixed time. The card in view is the
+                # one shown, not one in the grid the sections replace.
+                page.wait_for_function(
+                    "() => { const c = [...document.querySelectorAll("
+                    "'.page[data-page=\"analysis\"] .analysis-card[data-analysis=\"rmsd\"]')]"
+                    ".find((e) => e.offsetParent !== null);"
+                    " if (!c) return false; const r = c.getBoundingClientRect();"
+                    " return r.top < innerHeight && r.bottom > 0; }", timeout=60000)
+            except Exception as error:
+                raise AssertionError(f"{error}\n{page.evaluate(why)}") from None
+            # And stays there once the figures around it have taken their
+            # height: it ended a card above the view, here and on CI.
+            page.wait_for_timeout(6000)
+            settled = page.evaluate(why)
+            # Results that have not changed leave the cards as they are,
+            # with or without the sections: every poll replaced the flat
+            # grid's cards, which reloaded each figure under the reader.
+            kept = page.evaluate(
+                """async () => {
+                  const results = await (await fetch('/api/results')).json();
+                  const flat = Object.assign({}, results, {analysis_sections: []});
+                  const pick = () => [...document.querySelectorAll(
+                    '.page[data-page="analysis"] .analysis-card[data-analysis="rmsd"]')]
+                    .find((e) => e.offsetParent !== null);
+                  window.FastMDXDashboard.applyResults(results);
+                  const shown = pick();
+                  window.FastMDXDashboard.applyResults(results);
+                  const sections = pick() === shown;
+                  const first = () => document.querySelector('#analysis-grid .analysis-card');
+                  window.FastMDXDashboard.applyResults(flat);
+                  const grid = first();
+                  window.FastMDXDashboard.applyResults(flat);
+                  return [sections, grid !== null && first() === grid];
+                }""")
             seen = True
             browser.close()
     finally:
         session.server.shutdown()
     assert (name, value) == ("RMSD", "0.1120 ± 0.0020 nm")
     assert on == "analysis"
+    assert kept == [True, True], "the same results replaced the cards"
+    place = next(c for c in json.loads(settled)["cards"] if c[0] == "rmsd" and c[1])
+    assert place[2] < 700 and place[3] > 0, settled
     assert seen
     assert errors == []
