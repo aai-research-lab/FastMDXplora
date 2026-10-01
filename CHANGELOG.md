@@ -1680,6 +1680,16 @@ file is said to give a form, not to draw it. "Drawn" stays where it is the
 statistical word: a seed or velocities drawn at random, pairs drawn once. A
 test holds pages, messages and the docs to it.
 
+### The Report page's chip tests say what the page holds when they fail
+
+Both tests of a figure's chip on the Report page failed on CI's Ubuntu 3.11
+job, the only one that runs the browser tests, on `e0e5829` and on
+`38505df`, and pass here with the same browser, the same order, coverage
+and the newest Markdown. Waiting in vain, they now say what the page holds:
+whether the report or its empty state is shown, the addresses of its
+figures, whether the chip code is there, what `/api/report` returned, and
+what the page logged.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are
