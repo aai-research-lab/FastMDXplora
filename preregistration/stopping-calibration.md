@@ -364,3 +364,51 @@ What holds:
   `transient_three_replicas` (98.5%).
 - The root mean square of `(value - truth) / error` was 1.00 to 1.09 for the
   four stationary cases, from 1.13 to 5.49 as registered.
+
+## A second remedy: the start replicas share
+
+What the held-out set left failing above, a relaxation shared by replicas
+from one start, was examined on the registered set after it was counted. Each
+run's own equilibration detection sees the relaxation through that run's
+noise and keeps a little of it, and three replicas keep the same little.
+Chosen on the registered set: **before replicas are judged, the start is
+found again on their frame-by-frame average** (`statistics.shared_start`),
+where the relaxation is the same and the noise smaller by the square root of
+the replicas, and **each run's mean is taken from the later of its own start
+and that one** (`simulation.stopping.share_the_start`, from the series each
+analysis writes beside its record; the harness now writes it too). A single
+run is unchanged.
+
+### Counted on the registered set
+
+Single runs are as above and were not counted again. Every replica study is
+in
+[`stopping-calibration-shared-start-registered.json`](stopping-calibration-shared-start-registered.json).
+
+| Case | Determined | At the ceiling | Median production | Within 1 error | Within 2 | Floors | Holds | Fixed length, within 1 / 2 |
+|---|---|---|---|---|---|---|---|---|
+| `fast_three_replicas` | 990 of 1000 (99.0%) | 10 | 27.4 ns | 70.7% | 96.1% | 62.4%, 92.8% | yes | 73.5% / 97.4% (821 given at 27.4 ns) |
+| `slow_three_replicas` | 272 of 500 (54.4%) | 228 | 200.0 ns | 68.0% | 93.8% | 57.0%, 90.4% | yes | 71.6% / 97.6% (292 given at 200.0 ns) |
+| `transient_three_replicas` | 988 of 1000 (98.8%) | 12 | 44.2 ns | 65.1% | 93.0% | 62.4%, 92.8% | yes | 72.5% / 97.3% (746 given at 44.2 ns) |
+| `two_states_one_start` | 36 of 500 (7.2%) | 464 | 20.6 ns | 0.0% | 0.0% | 37.2%, 81.6% | no | 57.8% / 62.5% (64 given at 20.6 ns) |
+| `two_states_drawn_starts` | 21 of 500 (4.2%) | 479 | 25.4 ns | 0.0% | 0.0% | 27.6%, 77.3% | no | 65.7% / 75.7% (70 given at 25.4 ns) |
+
+- **The transient now holds**: 65.1% within one error and 93.0% within two,
+  from 61.2% and 88.5%, and the mean `(value - truth) / error` fell from
+  +0.43 to +0.13. It costs length: a median of 44 ns per replica, from 32.
+- **Two states.** Studies trapped in one state looked determined less often:
+  36 of 500 started together (7.2%, from 10.8%) and 21 of 500 with drawn
+  starts (4.2%, from 8.6%).
+- Fast and slow replicas still hold. Slow replicas reach the ceiling a
+  little more often (228 of 500, from 206).
+
+### What the second held-out set is to show
+
+Written before it was counted. Neither set above was used to choose this, but
+the first held-out set has been read, so the shared start is counted on a
+second: study indices 2000 to 2999 for the cases of 1000 studies and 1000 to
+1499 for those of 500, the replica cases only, with the code committed with
+this section. It is adopted if the stated precision holds there for
+`fast_three_replicas`, `slow_three_replicas` and `transient_three_replicas`,
+and the rule is usable there on `fast_three_replicas` and
+`transient_three_replicas`. Both results are reported, whichever way they go.

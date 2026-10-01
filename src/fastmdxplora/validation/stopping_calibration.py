@@ -187,6 +187,10 @@ def _record(run: Path, series: np.ndarray) -> None:
     record = {k: v for k, v in record.items() if v is not None}
     (where / "options.json").write_text(json.dumps({"findings": {"mean": record}}),
                                         encoding="utf-8")
+    # And the series beside it, as an analysis writes its data, so the rule
+    # can find the start replicas share.
+    np.savetxt(where / f"{ANALYSIS}.dat", series, fmt="%.17g",
+               header=f"{ANALYSIS}: whitespace-delimited, no column header.")
 
 
 def _rng(case_number: int, index: int, purpose: int) -> np.random.Generator:

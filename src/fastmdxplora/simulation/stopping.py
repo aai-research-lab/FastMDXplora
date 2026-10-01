@@ -384,12 +384,90 @@ def _more_for(error: float, allowed: float, production_ns: float, kept: float) -
     return production_ns * kept * ((error / allowed) ** 2 - 1.0)
 
 
+#: What a run's mean record says that is worked out again from a shared start.
+_RECOMPUTED = frozenset({
+    "discard", "statistical_inefficiency", "effective_samples", "mean", "standard_error",
+    "standard_deviation", "degrees_of_freedom", "not_a_measurement", "shortfall", "n_frames",
+    "start_shared_with_replicas"})
+
+
+def _series_in(path: Path) -> "Any | None":
+    """The last number on each data line of an analysis's `.dat` file: the
+    series its mean was taken over. Comments and a header are left out."""
+    import numpy as np
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    values = []
+    for line in lines:
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        last = text.replace(",", " ").split()[-1]
+        try:
+            values.append(float(last))
+        except ValueError:
+            continue
+    return np.asarray(values, dtype=float)
+
+
+def share_the_start(runs: list[Path], analysis: str, production_ns: float) -> int:
+    """Write each replica's mean again from the start found on their average.
+
+    Replicas over a seed begin in one structure and share its relaxation.
+    Each run's own equilibration detection sees that relaxation through the
+    run's noise and keeps a little of it, and three replicas keep the same
+    little: calibrated on series with a known mean
+    (``preregistration/stopping-calibration.md``), their pooled mean was
+    biased by about half its error. On the frame-by-frame average of the
+    replicas the relaxation is the same and the noise smaller, so the start
+    found there (:func:`fastmdxplora.statistics.shared_start`) is later where
+    the relaxation is real. Each run then averages from the later of its own
+    start and the shared one, and its record says so.
+
+    Done only where every run has its series beside its record, of the
+    length the record says; otherwise the records are judged as written.
+    Returns the shared start, in frames.
+    """
+    from fastmdxplora.statistics import mean_record, shared_start
+
+    found = []
+    for run in runs:
+        folder = run / "analysis" / analysis
+        try:
+            document = json.loads((folder / "options.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return 0
+        record = (document.get("findings") or {}).get("mean") if isinstance(document, dict) else None
+        series = _series_in(folder / f"{analysis}.dat")
+        if (not isinstance(record, dict) or series is None or not series.size
+                or record.get("n_frames") != series.size):
+            return 0
+        found.append((folder / "options.json", document, record, series))
+    at = shared_start([series for *_, series in found])
+    for path, document, record, series in found:
+        if at <= int(record.get("discard") or 0) and not record.get("start_shared_with_replicas"):
+            continue
+        again = mean_record(series, frame_interval_ns=production_ns / series.size,
+                            start_at_least=at)
+        kept = {k: v for k, v in record.items() if k not in _RECOMPUTED}
+        again = {k: (str(v) if k == "not_a_measurement" else v) for k, v in again.items()}
+        document["findings"]["mean"] = {**kept, **again}
+        path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+    return at
+
+
 def judge(runs: list[Path], targets: list[StopTarget], production_ns: float) -> list[Verdict]:
-    """Each target, judged on the runs as they stand."""
+    """Each target, judged on the runs as they stand. Replicas are first
+    given the start they share (:func:`share_the_start`)."""
     from fastmdxplora.gui.report_dashboard import unit_of
 
     verdicts = []
     for target in targets:
+        if len(runs) > 1:
+            share_the_start(runs, target.analysis, production_ns)
         records = [(run, _recorded(run, target.analysis)) for run in runs]
         missing = [run.name for run, found in records if found is None]
         if missing:

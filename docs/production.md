@@ -234,6 +234,12 @@ After each piece:
   frames. The error judged is the standard error widened by Student's t at
   its own degrees of freedom, so that it holds the truth as often as one
   standard error should.
+- **Replicas average from the start they share.** Replicas over a seed begin
+  in one structure and share its relaxation, which each run's own
+  equilibration detection sees through that run's noise. Before replicas are
+  judged, the start is found again on their frame-by-frame average, and each
+  run's mean is taken from the later of its own start and that one; its
+  record says so (`start_shared_with_replicas`).
 - **One run is judged alone** only once its mean rests on 50 independent
   samples, and until then asks for the production that would give them. An
   error estimated from one run is itself uncertain, and stopping where it first

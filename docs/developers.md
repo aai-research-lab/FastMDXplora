@@ -430,7 +430,8 @@ independent samples, and in the rule an error widened by its degrees of
 freedom and a single run judged alone only on 50 independent samples) is
 counted there too, with what the held-out set had to show for it to be
 adopted, and the held-out count, where it showed it
-(`preregistration/stopping-calibration-heldout.json`).
+(`preregistration/stopping-calibration-heldout.json`). A second remedy, the
+start replicas share, is counted the same way on a second held-out set.
 
 ---
 

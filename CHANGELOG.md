@@ -1821,6 +1821,25 @@ reloaded each one where a study has no sections). The browser test waits on
 what the page keeps rather than on the mark that fades, and says what the page
 held if it times out.
 
+### Replicas average from the start they share
+
+Replicas over a seed begin in one structure and share its relaxation, and
+each run's own equilibration detection kept a little of it: on the stopping
+rule's calibration, three such replicas left their pooled mean biased by
+about half its error, the one case 1172 did not remedy (60.3% within one
+error and 87.3% within two). Before replicas are judged, the start is now
+found again on their frame-by-frame average (`statistics.shared_start`),
+where the relaxation is the same and the noise smaller, and each run's mean is
+taken from the later of its own start and that one, written into its record
+with `start_shared_with_replicas` (`simulation.stopping.share_the_start`,
+read from the series each analysis writes; a run without it is judged as
+written). `summarise` and `mean_record` take `start_at_least`. On the
+registered set the transient holds (65.1% and 93.0%), at a median of 44 ns per
+replica rather than 32, and studies trapped in one of two states looked
+determined less often (7.2% and 4.2%, from 10.8% and 8.6%). A single run is
+unchanged. What a second held-out set has to show for it to be adopted is in
+`preregistration/stopping-calibration.md`, committed before it was counted.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

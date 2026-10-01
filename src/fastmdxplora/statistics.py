@@ -58,6 +58,7 @@ __all__ = [
     "detect_equilibration",
     "summarise",
     "mean_record",
+    "shared_start",
 ]
 
 #: Below this many independent samples, a mean and its error describe the
@@ -379,8 +380,14 @@ def summarise(
     series: np.ndarray,
     *,
     minimum_effective_samples: float = MINIMUM_EFFECTIVE_SAMPLES,
+    start_at_least: int = 0,
 ) -> tuple[Equilibrated | None, str | None]:
     """A mean with an honest error on it, or a reason there is not one.
+
+    ``start_at_least`` is a start found elsewhere that this series should not
+    average before: replicas from one structure share their relaxation, and
+    the start found on their average (:func:`shared_start`) sees it where one
+    run's noise hides it. Never past two thirds of the series.
 
     The refusal is about independence, not length: a long run of highly
     correlated frames can hold fewer independent samples than a short run of
@@ -398,6 +405,9 @@ def summarise(
         )
 
     discard, raw, _most = detect_equilibration(values)
+    later = min(int(start_at_least), int(values.size * 2 / 3))
+    if later > discard:
+        discard, raw = later, statistical_inefficiency(values[later:])
     kept = values[discard:]
     spread = float(np.std(kept, ddof=1))
     g, dof = _for_the_mean(kept)
@@ -613,14 +623,38 @@ WANT_A_LONGER_RUN = frozenset({
 })
 
 
-def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None) -> dict[str, Any]:
+def shared_start(series: "list[np.ndarray]") -> int:
+    """Where replicas started from one structure have all equilibrated: the
+    start detected on their frame-by-frame average.
+
+    Replicas over a seed share the relaxation from the structure they began
+    in, and each run's own detection sees it through that run's noise. On
+    the average the relaxation is the same and the noise is smaller by the
+    square root of the replicas, so the start found there is later where
+    the relaxation is real and no later where it is not. On three replicas
+    sharing a relaxation, each run's own start left their mean biased by
+    about half its error.
+    """
+    runs = [np.asarray(s, dtype=float) for s in series if np.asarray(s).size]
+    if len(runs) < 2:
+        return 0
+    n = min(r.size for r in runs)
+    stacked = np.vstack([r[:n] for r in runs])
+    average = np.nanmean(stacked, axis=0) if np.isnan(stacked).any() else stacked.mean(axis=0)
+    average = average[np.isfinite(average)]
+    return int(detect_equilibration(average)[0]) if average.size else 0
+
+
+def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
+                start_at_least: int = 0) -> dict[str, Any]:
     """What an analysis records of a per-frame series: its mean and error
     after equilibration, or why there is none and how much longer would give
     one. One function for every analysis and for whatever reads the records
     as the analyses would write them (the stopping rule's calibration among
-    them), so the two cannot differ."""
+    them), so the two cannot differ. ``start_at_least`` is a start shared
+    with replicas (:func:`shared_start`); the record says where it came from."""
     values = np.asarray(series, dtype=float)
-    equilibrated, reason = summarise(values)
+    equilibrated, reason = summarise(values, start_at_least=start_at_least)
     record: dict[str, Any] = {}
     if equilibrated is not None:
         record.update(equilibrated.as_record())
@@ -640,6 +674,8 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None) -
             if not shortfall.met:
                 record["shortfall"] = shortfall.as_record()
     record["n_frames"] = int(values.size)
+    if start_at_least:
+        record["start_shared_with_replicas"] = int(start_at_least)
     return record
 
 @dataclass(frozen=True)
