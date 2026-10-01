@@ -206,3 +206,105 @@ registered claim.
    the time and within two 92%, not 68% and 95%.
 5. **Stopping at the first look whose error is within the target** keeps the
    looks where the error reads low.
+
+## The remedy, chosen on the registered set
+
+Chosen after the counts above by looking at the registered set only, as this
+registration requires, and committed with its count here before the held-out
+set was run. Five changes, in `statistics.py` and `simulation/stopping.py`:
+
+1. **The inefficiency is corrected for the sample mean**, by the factor in
+   cause 3 above.
+2. **After a discard, the error is the whole run's**, scaled to the frames
+   kept, unless discarding gained at least twice the independent samples
+   (cause 1). A real relaxation gains far more than twice; on stationary
+   series 25 to 100 times their inefficiency, noise alone gained twice in
+   under 4% of them.
+3. **The start discarded is the latest that keeps within a tenth of the most
+   independent samples** any start keeps, not the start that keeps the most,
+   which leaves the most of a relaxation in the mean. It costs at most a
+   tenth of the samples.
+4. **A correlated series resolves its correlation time at 25 independent
+   samples** by its own count (cause 2), replacing the halving check.
+5. **The rule widens each run's error by Student's t** at the error's own
+   degrees of freedom, `N/(2M+1)`, recorded with every mean (cause 4), **and
+   judges a single run alone only once its mean rests on 50 independent
+   samples** (cause 5). Replicas need no such floor; their spread checks what
+   each claims.
+
+Tried on the registered set and not taken: confirming a met target at the
+next look (it raised a single run's coverage less than judging it on 50
+independent samples did, and sent more replica studies to the ceiling); a test
+of the first half of what was kept against the second, pooled over replicas
+(it barely moved the transient: a bias the size of the error is the size of
+the test's own noise); requiring 50 independent samples of every analysis
+(replicas then ran 39 ns where 26 sufficed); and a start within a fifth
+rather than a tenth (the transient's best, 66.9% and 91.4%, but slow single
+runs reached the ceiling in 13% of studies).
+
+### Counted on the registered set
+
+Every study is in
+[`stopping-calibration-remedy-registered.json`](stopping-calibration-remedy-registered.json).
+
+| Case | Determined | At the ceiling | Median production | Within 1 error | Within 2 | Floors | Holds | Fixed length, within 1 / 2 |
+|---|---|---|---|---|---|---|---|---|
+| `fast_one_run` | 1000 of 1000 (100.0%) | 0 | 25.0 ns | 65.2% | 92.9% | 62.4%, 92.8% | yes | 69.5% / 94.9% (928 given at 25.0 ns) |
+| `fast_three_replicas` | 990 of 1000 (99.0%) | 10 | 26.1 ns | 69.8% | 96.7% | 62.4%, 92.8% | yes | 73.8% / 96.7% (839 given at 26.1 ns) |
+| `slow_one_run` | 461 of 500 (92.2%) | 39 | 258.4 ns | 66.2% | 90.7% | 59.6%, 91.6% | no | 68.9% / 94.9% (473 given at 258.4 ns) |
+| `slow_three_replicas` | 294 of 500 (58.8%) | 206 | 200.0 ns | 66.7% | 94.2% | 57.4%, 90.6% | yes | 72.7% / 97.0% (333 given at 200.0 ns) |
+| `transient_three_replicas` | 987 of 1000 (98.7%) | 13 | 31.9 ns | 61.2% | 88.5% | 62.3%, 92.8% | no | 66.4% / 93.9% (724 given at 31.9 ns) |
+| `two_states_one_start` | 54 of 500 (10.8%) | 446 | 24.3 ns | 0.0% | 0.0% | 42.9%, 84.1% | no | 59.8% / 68.5% (127 given at 24.3 ns) |
+| `two_states_drawn_starts` | 43 of 500 (8.6%) | 457 | 24.3 ns | 0.0% | 0.0% | 39.9%, 82.7% | no | 62.3% / 72.1% (122 given at 24.3 ns) |
+
+| Series | Length (x inefficiency) | Said unresolved | Withheld | Given within 1 / 2 errors |
+|---|---|---|---|---|
+| fast | 1.25 | 415 of 500 | 455 | 4.4% / 13.3% (45 given) |
+| fast | 5 | 499 of 500 | 499 | 0.0% / 0.0% (1 given) |
+| fast | 12.5 | 468 of 500 | 468 | 37.5% / 65.6% (32 given) |
+| fast | 50 | 72 of 500 | 72 | 61.7% / 91.1% (428 given) |
+| fast | 100 | 6 of 500 | 6 | 66.0% / 94.3% (494 given) |
+| fast | 250 | 0 of 500 | 0 | 69.4% / 96.4% (500 given) |
+| slow | 1.25 | 499 of 500 | 499 | 0.0% / 0.0% (1 given) |
+| slow | 5 | 498 of 500 | 498 | 0.0% / 50.0% (2 given) |
+| slow | 12.5 | 475 of 500 | 475 | 36.0% / 60.0% (25 given) |
+| slow | 50 | 79 of 500 | 79 | 63.9% / 90.5% (421 given) |
+| slow | 100 | 3 of 500 | 3 | 70.6% / 95.4% (497 given) |
+| slow | 250 | 0 of 500 | 0 | 71.6% / 96.8% (500 given) |
+
+- **The stated precision holds** for `fast_one_run`, `fast_three_replicas` and
+  `slow_three_replicas`. It does not for `slow_one_run` within two errors
+  (90.7% against 91.6%), nor for `transient_three_replicas` (61.2% and 88.5%,
+  against 62.3% and 92.8%), whose mean `(value - truth) / error` fell from
+  +1.05 to +0.43 and is not gone.
+- **The rule is usable** on `fast_three_replicas` (99.0%), `slow_one_run`
+  (92.2%) and `transient_three_replicas` (98.7%), and not on
+  `slow_three_replicas` (58.8%): each replica now needs about 25 times its
+  4 ns inefficiency, 100 ns, before its mean is given, and the ceiling is
+  200 ns.
+- **The cost is length.** A single fast run stopped at a median of 25 ns
+  rather than 6.6 ns, since one run is judged alone only on 50 independent
+  samples; the replicas at 26 ns rather than 32, since none is withheld at
+  random.
+- **Two states.** Studies trapped in one state looked determined more often:
+  54 of 500 started together (10.8%, from 7.4%) and 43 of 500 with drawn
+  starts (8.6%, from 4.6%), every one with the truth outside two errors. The
+  random withholding had blocked some of these stops by accident; what tests
+  trapping is independent starts, and three replicas from one structure, or
+  from two states drawn at random, are too few.
+- **The check.** At 100 and 250 times its inefficiency a stationary series is
+  withheld in at most 1.2% of cases, from 19% to 30%; at 50 times, in 14% to
+  16%, from 39% to 41%. At 1.25 and 5 times, 49 of 2000 means are given, from
+  371.
+
+### What the held-out set is to show
+
+Written before it was counted. The held-out set is study indices 1000 to
+1999 (500 to 999 for the cases of 500 studies) and 500 to 999 for the check,
+run with the code committed with this section. The remedy is adopted if each
+claim that holds for it above holds there too: the stated precision for
+`fast_one_run`, `fast_three_replicas` and `slow_three_replicas`, and
+usability for `fast_three_replicas`, `slow_one_run` and
+`transient_three_replicas`. The claims that fail above are not expected to
+hold there and do not decide it. Both results are reported, whichever way
+they go.

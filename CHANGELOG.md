@@ -1753,6 +1753,45 @@ run's error, and the stop itself) are in
 error is "biased a little low": they say how far, and to read it as a lower
 bound.
 
+### An error on a mean holds the truth about as often as it says
+
+Chosen on the registered set of the stopping rule's calibration (1171), after
+the counts there showed single-run errors about half the size the truth
+needed. Every analysis's mean and error change with it:
+
+- **The inefficiency is corrected for the sample mean.** An autocorrelation
+  taken about the sample mean reads low by about `g/N` at every lag; summed
+  over the lags kept, the inefficiency was a tenth low at 25 times its own
+  length. The sum itself is now taken by Fourier transform, the same numbers
+  in `n log n`.
+- **After a discard, the error is the whole run's**, scaled to the frames
+  kept, unless discarding gained at least twice the independent samples. The
+  start is chosen where what remains reads least correlated, so an error from
+  what remains read low: 60% within one error on stationary series, where the
+  whole run's gave 66%.
+- **The start discarded is the latest that keeps within a tenth of the most
+  independent samples**, rather than the one that keeps the most, which leaves
+  the most of a relaxation in the mean.
+- **A correlated run resolves its correlation time at 25 independent
+  samples** (`statistics.RESOLVED_SAMPLES`), replacing the check that halved
+  the series, which withheld 19% to 41% of long stationary series at random
+  and passed the means whose errors were too small. A withheld mean's
+  shortfall asks for 25.
+- **Each mean records its error's degrees of freedom** (`degrees_of_freedom`,
+  the frames over the lags summed), and `stop_when` widens each error by
+  Student's t at them, and judges a single run alone only once its mean rests
+  on 50 independent samples (`stopping.JUDGED_ALONE`).
+
+Counted on the registered set, single runs and replicas of stationary series
+held the truth within one error in 65% to 70% of studies and within two in
+91% to 97% (from 31% to 65% and 51% to 92%). A single fast run now stops at a
+median of 25 ns rather than 6.6. Not remedied: a relaxation shared by replicas
+from one structure still biases their mean by about 0.4 of its error, slow
+replicas reached a 200 ns ceiling in 41% of studies, and studies trapped in
+one of two states looked determined in about one in ten. The counts, what was
+tried and not taken, and what the held-out set was to show are in
+`preregistration/stopping-calibration.md`.
+
 ### What the records say matches what the code does
 
 **Help, docs and records that said something the code does not are

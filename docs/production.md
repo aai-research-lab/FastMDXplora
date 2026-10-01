@@ -231,7 +231,14 @@ After each piece:
 - **A mean with an error** asks for enough production that its error falls to
   what was asked: the error of a mean goes as one over the root of the frames
   after equilibration, so twice the error allowed asks for four times those
-  frames.
+  frames. The error judged is the standard error widened by Student's t at
+  its own degrees of freedom, so that it holds the truth as often as one
+  standard error should.
+- **One run is judged alone** only once its mean rests on 50 independent
+  samples, and until then asks for the production that would give them. An
+  error estimated from one run is itself uncertain, and stopping where it first
+  falls within the target keeps the looks where it read low; replicas need no
+  such floor, since their spread checks what each claims.
 - **Every run is extended by the most any quantity asks** (side by side in a
   parallel study, as its runs were), at least a quarter and at most three
   times what has run so far, in whole frames, and never past
@@ -278,14 +285,17 @@ ceiling, since that is what it may spend.
 falls below a target favours a round whose error came out small by chance.
 The rule was calibrated on series with a known mean
 ([pre-registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/stopping-calibration.md)),
-and its stated precision does not hold. A single run that stops reports an
-error about half the size the truth needs: the truth was within one error in
-43% of studies of a series that decorrelates in 0.4 ns and in 31% of one that
-takes 4 ns, where an honest error gives 68%. Three replicas of a stationary
-series came closest, 64% within one error and 92% within two, but a fifth of
-those studies never stopped. Replicas started from one structure share what
-their equilibration leaves behind, which no error here includes. Read an error
-from `stop_when` as a lower bound, and prefer replicas.
+and as first written its stated precision did not hold: a single run that
+stopped reported an error about half the size the truth needed, the truth
+within one error in 43% of studies where an honest error gives 68%. With the
+error's estimate corrected, the start discarded chosen with the relaxation in
+mind, an unresolved correlation judged on 25 independent samples, and the
+rule's two judgements above, single runs and replicas of stationary series
+held the truth within one error in 65% to 70% of studies and within two in
+91% to 97%. Two things are not in the error. A relaxation that replicas from
+one structure share left them a bias of about 0.4 of their error, and studies
+trapped in one of two slowly exchanging states looked determined in about one
+in ten; replicas from different structures test both.
 
 The rule needs a study that can be run in pieces (not metadynamics, steered
 or PLUMED runs), is not applied to umbrella windows, and is refused before

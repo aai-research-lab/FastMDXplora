@@ -662,7 +662,7 @@ class Analysis(ABC):
         inefficiency -- so arithmetically it is a ratio and comes out at
         9.77. Printing that as "9.8 independent samples" claims a precision
         it does not have: `g` is itself an estimate, and on a run this short
-        the software's own record says halving the frames changes it. There
+        it reads low, to a third of the truth at five times its length. There
         is also no such thing as eight tenths of an observation.
 
         So it is rounded and hedged. "About 10" is both more honest about

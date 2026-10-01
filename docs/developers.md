@@ -423,7 +423,13 @@ withheld 19% to 41% of long stationary series and gave a tenth of the
 shortest, and an equilibration transient shared by replicas biased their
 mean. The counts, and what was found to cause them, are in the
 pre-registration; every study is in
-`preregistration/stopping-calibration-registered.json`.
+`preregistration/stopping-calibration-registered.json`. The remedy chosen on
+that set (the inefficiency corrected for the sample mean, the whole run's error
+after a discard that gained little, a later start, resolution at 25
+independent samples, and in the rule an error widened by its degrees of
+freedom and a single run judged alone only on 50 independent samples) is
+counted there too, with what the held-out set had to show for it to be
+adopted.
 
 ---
 

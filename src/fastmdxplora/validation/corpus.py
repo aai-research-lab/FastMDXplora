@@ -1418,8 +1418,8 @@ CLEAN: list[Case] = [
          "flattened"),
     Case("a run long against its correlation time",
          _a_run_long_against_its_correlation, "proceeded",
-         "the halves agree, so the effective sample count means what it "
-         "says"),
+         "the frames are independent, so the effective sample count means "
+         "what it says"),
     Case("a box that already fits its cutoff",
          _a_box_that_already_fits, "proceeded",
          "no growing was needed, so nothing is reported about it"),

@@ -66,6 +66,29 @@ __all__ = [
 #: a judgement, so a study can set its own.
 MINIMUM_EFFECTIVE_SAMPLES = 10.0
 
+#: A correlated series must hold this many of its own inefficiencies before
+#: it measures its correlation time well enough to put an error on its mean.
+#: Calibrated (``preregistration/stopping-calibration.md``): shorter than about
+#: 25 times its inefficiency, the estimate of it reads low, and the error with
+#: it. This replaced a check that halved the series and compared the two
+#: estimates, which on series 50 to 250 times their inefficiency withheld 19%
+#: to 41% at random and passed the ones whose estimate had read low.
+RESOLVED_SAMPLES = 25.0
+
+#: Equilibration is detected as the latest start that keeps at least this
+#: share of the most independent samples any start keeps. The start that
+#: keeps the most leaves the most of a relaxation in the mean: on a transient
+#: shared by three replicas it left a bias about the size of their error.
+EQUILIBRATION_TOLERANCE = 0.1
+
+#: The error of a mean after a discard is taken from the whole run, scaled to
+#: the frames kept, unless discarding gained at least this many times the
+#: independent samples. Choosing the start where the most remain chooses
+#: where the inefficiency reads lowest, and on stationary series the error
+#: from what was kept covered the truth in 60% of cases where 68% is honest.
+#: A real relaxation gains far more than twice; noise rarely does.
+WHOLE_RUN_UNLESS_GAIN = 2.0
+
 
 @dataclass(frozen=True)
 class Equilibrated:
@@ -93,6 +116,11 @@ class Equilibrated:
     #: The spread of the series itself, which is a property of the system
     #: rather than of how long it was watched.
     standard_deviation: float
+    #: How well the error itself is known: about ``N / (2M + 1)`` for ``N``
+    #: frames and ``M`` lags of autocorrelation summed. An error resting on
+    #: eight degrees of freedom holds the truth within itself 65% of the
+    #: time, not 68%; the stopping rule judges with that.
+    degrees_of_freedom: float = float("nan")
 
     def as_record(self) -> dict[str, Any]:
         return {
@@ -102,6 +130,7 @@ class Equilibrated:
             "mean": self.mean,
             "standard_error": self.standard_error,
             "standard_deviation": self.standard_deviation,
+            "degrees_of_freedom": self.degrees_of_freedom,
         }
 
 
@@ -141,6 +170,29 @@ def statistical_inefficiency(series: np.ndarray) -> float:
     return _inefficiency_and_reach(fluctuation, variance, n)[0]
 
 
+def _correlation(fluctuation: np.ndarray, variance: float) -> np.ndarray:
+    """``C(t) = sum_i f[i] f[i+t] / (n var)`` at every lag, by Fourier
+    transform: the numbers a sum over each lag gives, in ``n log n`` rather
+    than ``n`` times the lags."""
+    n = fluctuation.size
+    size = 1 << (2 * n - 1).bit_length()
+    spectrum = np.fft.rfft(fluctuation, size)
+    correlation = np.fft.irfft(spectrum * np.conj(spectrum), size)[:n] / (n * variance)
+    correlation[0] = 1.0
+    return correlation
+
+
+def _geyer(fluctuation: np.ndarray, variance: float, n: int) -> tuple[float, bool, int]:
+    """The initial positive sequence: the inefficiency, whether a pair went
+    non-positive before the run ran out, and how many pairs were summed."""
+    correlation = _correlation(fluctuation, variance)
+    pairs = np.arange((n - 1) // 2)
+    summed = correlation[2 * pairs] + correlation[2 * pairs + 1]
+    stops = np.flatnonzero(summed <= 0.0)
+    kept = int(stops[0]) if stops.size else int(pairs.size)
+    return max(1.0, -1.0 + 2.0 * float(summed[:kept].sum())), bool(stops.size), kept
+
+
 def _inefficiency_and_reach(
     fluctuation: np.ndarray, variance: float, n: int
 ) -> tuple[float, bool]:
@@ -173,69 +225,76 @@ def _inefficiency_and_reach(
     measurement and a lower bound, and a run in that state is too short to
     say how short it is.
     """
-    def correlation(lag: int) -> float:
-        if lag == 0:
-            return 1.0
-        return (1.0 - lag / n) * float(
-            np.mean(fluctuation[: n - lag] * fluctuation[lag:]) / variance)
-
-    total = -1.0
-    decayed = False
-    pair = 0
-    while 2 * pair + 1 < n - 1:
-        value = correlation(2 * pair) + correlation(2 * pair + 1)
-        if value <= 0.0:
-            decayed = True
-            break
-        total += 2.0 * value
-        pair += 1
-
-    return max(1.0, total), decayed
+    g, decayed, _pairs = _geyer(fluctuation, variance, n)
+    return g, decayed
 
 
-#: How far the inefficiency may move when the series is halved before the
-#: correlation is taken as unresolved. Well-resolved series move by under a
-#: tenth; a series shorter than a few times its own correlation time moves by
-#: half, and its inefficiency is low by a factor of five.
-RESOLVED_RATIO = 1.15
+def _for_the_mean(series: np.ndarray) -> tuple[float, float]:
+    """The inefficiency an error of the mean should use, and the degrees of
+    freedom of that error.
+
+    An autocorrelation taken about the sample mean rather than the true one
+    is low by about ``g / N`` at every lag, since the sample mean has followed
+    the series' own slow fluctuation. Summed over the ``M`` lags kept, the
+    inefficiency comes out low by a factor of about
+    ``(1 - (2M + 1) / N) / (1 - g / N)``, which is undone here. On series 25
+    times their inefficiency the estimate's median went from 0.90 of the
+    truth to 0.99.
+
+    The degrees of freedom are ``N / (2M + 1)``: the variance of a sum of
+    ``2M + 1`` correlation estimates, each about as noisy as ``1 / N``.
+    """
+    values = np.asarray(series, dtype=float)
+    n = values.size
+    if n < 3:
+        return 1.0, float(max(n - 1, 1))
+    fluctuation = values - values.mean()
+    variance = float(np.mean(fluctuation ** 2))
+    if variance <= 0.0:
+        return float(n), 1.0
+    g, _decayed, pairs = _geyer(fluctuation, variance, n)
+    if pairs == 0:
+        return g, float(n - 1)
+    window = 4 * pairs - 1
+    room = 1.0 - window / n
+    corrected = g / (room + g / n) if room > 0.0 else float(n)
+    return min(corrected, float(n)), n / window
 
 
 def correlation_is_resolved(series: np.ndarray) -> bool:
-    """Whether the series is long enough to measure its own correlation time.
+    """Whether the series is long enough to measure its own correlation time:
+    at least :data:`RESOLVED_SAMPLES` times its inefficiency.
 
-    Checked by halving it: an inefficiency the series can resolve does not
-    change much when half the frames are taken away, and one it cannot moves
-    a great deal. On an AR(1) series with a true inefficiency of 2000, four
-    thousand frames gave 361 -- which is not an error to tolerate but a number
-    with the wrong meaning, since the independent-sample count built from it
-    said eleven when the truth was two.
+    A run shorter than a few times its correlation time reads that time low,
+    and its own error with it: on an AR(1) series with a true inefficiency of
+    2000, four thousand frames gave 361, and the independent-sample count
+    built from it said eleven when the truth was two. The count is checked
+    against 25 because the estimate reads low until about then, from a third
+    of the truth at five times to nine tenths at 25 (calibrated in
+    ``preregistration/stopping-calibration.md``), so a run that reaches 25 by
+    its own estimate is not far short of 25 in truth.
 
-    The obvious check does not work and it is worth saying why. A sample
-    autocorrelation sums to roughly -1/2 whatever the series, so it goes
-    negative on its own: on that series it crossed zero at lag 334 while the
-    real correlation there was still 0.7. Asking where the correlation decayed
-    answers a question about the estimator rather than the run.
+    The check this replaced halved the series and asked whether the estimate
+    moved by more than 15%. The estimate's own noise is larger than that
+    until a run is far longer than most: on stationary series 50 to 250 times
+    their inefficiency it withheld 19% to 41% at random, and the means it
+    gave were those whose whole-run estimate had read low against its half,
+    the ones whose errors were too small.
+
+    The obvious check does not work either, and it is worth saying why. A
+    sample autocorrelation sums to roughly -1/2 whatever the series, so it
+    goes negative on its own: on that series it crossed zero at lag 334 while
+    the real correlation there was still 0.7. Asking where the correlation
+    decayed answers a question about the estimator rather than the run.
     """
     values = np.asarray(series, dtype=float)
-    whole = statistical_inefficiency(values)
 
-    # Nothing to resolve. Frames this close to independent have no correlation
-    # time for a longer run to pin down, and putting a short uncorrelated
-    # series through a halving comparison only measures the noise in the
-    # comparison -- discarding a single frame flipped the verdict on
-    # twenty-five.
-    if whole < 2.0:
+    # Nothing to resolve. Frames this close to independent have no
+    # correlation time for a longer run to pin down.
+    if statistical_inefficiency(values) < 2.0:
         return True
-
-    # There is a correlation time, and a series this short cannot measure it
-    # whatever the halves happen to say.
-    if values.size < 50:
-        return False
-
-    half = statistical_inefficiency(values[: values.size // 2])
-    if half <= 0:
-        return False
-    return (whole / half) <= RESOLVED_RATIO
+    g, _dof = _for_the_mean(values)
+    return values.size / g >= RESOLVED_SAMPLES
 
 
 def detect_equilibration(
@@ -252,6 +311,14 @@ def detect_equilibration(
     Candidate points are strided rather than exhaustive, because the count
     varies smoothly with where the average starts and evaluating every frame
     is quadratic for an answer no better.
+
+    Of the starts, the latest that keeps within
+    :data:`EQUILIBRATION_TOLERANCE` of the most independent samples is taken,
+    not the one that keeps the most. Near its maximum the count is flat, and
+    the start that maximises it leaves the most of a relaxation in the
+    average: on three replicas sharing one relaxation, their mean was biased
+    by about its own error. Starting a little later costs at most a tenth of
+    the samples.
     """
     values = np.asarray(series, dtype=float)
     n = values.size
@@ -263,16 +330,18 @@ def detect_equilibration(
     candidates = np.unique(
         np.linspace(0, int(n * 2 / 3), num=min(steps, n), dtype=int))
 
-    best = (0, 1.0, 0.0)
+    counted = []
     for start in candidates:
         remaining = values[start:]
         if remaining.size < 3:
             continue
         g = statistical_inefficiency(remaining)
-        effective = remaining.size / g
-        if effective > best[2]:
-            best = (int(start), g, float(effective))
-    return best
+        counted.append((int(start), g, float(remaining.size / g)))
+    if not counted:
+        return 0, 1.0, 0.0
+    most = max(effective for _start, _g, effective in counted)
+    return [row for row in counted
+            if row[2] >= (1.0 - EQUILIBRATION_TOLERANCE) * most][-1]
 
 
 class Withholding(str):
@@ -328,14 +397,29 @@ def summarise(
             found=int(values.size), needed=3,
         )
 
-    discard, g, effective = detect_equilibration(values)
+    discard, raw, _most = detect_equilibration(values)
     kept = values[discard:]
-    resolved = correlation_is_resolved(kept)
+    spread = float(np.std(kept, ddof=1))
+    g, dof = _for_the_mean(kept)
+    error = spread * float(np.sqrt(g / kept.size))
+    if discard:
+        # The start was chosen where the most independent samples remain,
+        # which is where the inefficiency of what remains reads lowest; the
+        # mean after it is sound, the error from it is not. Unless the
+        # discard removed a relaxation that dominated the run, the error is
+        # the whole run's, scaled to the frames kept.
+        g_whole, dof_whole = _for_the_mean(values)
+        if kept.size / g < WHOLE_RUN_UNLESS_GAIN * values.size / g_whole:
+            whole = float(np.std(values, ddof=1)) * float(np.sqrt(g_whole / kept.size))
+            if whole > error:
+                error, dof = whole, dof_whole
+    effective = (spread / error) ** 2 if error > 0.0 else kept.size / g
+    resolved = raw < 2.0 or effective >= RESOLVED_SAMPLES
 
     equilibrated = Equilibrated(
         discard=discard,
-        inefficiency=g,
-        effective_samples=effective,
+        inefficiency=float(kept.size / effective) if effective > 0 else float(kept.size),
+        effective_samples=float(effective),
         mean=float(np.mean(kept)),
         # Withheld where the correlation is unresolved, rather than printed
         # beside a warning that it cannot be trusted. An effective-sample
@@ -344,40 +428,42 @@ def summarise(
         # than no number: the caveat is read once and the figure is used
         # thereafter. Measured on ten replicas of one system differing only
         # by integrator seed, 20 ns each, errors computed from one run came
-        # out about ten times smaller than the spread of the ten means, and
-        # no better in the runs whose correlation this test called resolved.
-        standard_error=float(np.std(kept, ddof=1) / np.sqrt(effective))
-        if (effective > 1 and resolved) else float("nan"),
-        standard_deviation=float(np.std(kept, ddof=1)),
+        # out about ten times smaller than the spread of the ten means.
+        standard_error=error if (effective > 1 and resolved) else float("nan"),
+        standard_deviation=spread,
+        degrees_of_freedom=float(dof),
     )
 
     if not resolved:
         return equilibrated, Withholding(
-            f"This run is not long against its own correlation time: taking "
-            f"half the frames away changes the estimate, so {kept.size} frames "
-            "cannot resolve how correlated they are. The independent-sample "
-            f"count of {effective:.1f} is an upper bound, so an error computed "
-            "from it would be a lower bound -- and none is reported here "
-            "rather than one that is wrong in a knowable direction. On ten "
-            "replicas of one system differing only by seed, errors computed "
-            "from one run were about ten times smaller than the spread of the "
-            "ten means. The remedy is a longer run, or better, replicas.",
+            f"This run is not long against its own correlation time: "
+            f"{kept.size} frames hold {effective:.1f} independent samples by "
+            f"their own estimate, and a correlated run shorter than "
+            f"{RESOLVED_SAMPLES:g} of them reads its correlation time low. "
+            "That count is an upper bound, so an error computed from it would "
+            "be a lower bound -- and none is reported here rather than one "
+            "that is wrong in a knowable direction. On ten replicas of one "
+            "system differing only by seed, errors computed from one run were "
+            "about ten times smaller than the spread of the ten means. The "
+            "remedy is a longer run, or better, replicas.",
             code="analysis.sampling.correlation_unresolved",
             frames=int(kept.size), independent=float(effective),
-            statistical_inefficiency=float(g),
+            statistical_inefficiency=float(equilibrated.inefficiency),
+            needed=float(RESOLVED_SAMPLES),
         )
 
     if effective < minimum_effective_samples:
         return equilibrated, Withholding(
             f"{effective:.1f} independent samples in {kept.size} frames "
-            f"(one every {g:.0f}). Below {minimum_effective_samples:g} a mean "
+            f"(one every {equilibrated.inefficiency:.0f}). Below "
+            f"{minimum_effective_samples:g} a mean "
             "and its error describe how this particular run happened to go "
             "rather than the system it was run on. The frames are correlated, "
             "so recording them more often will not help -- the run has to be "
             "longer.",
             code="analysis.sampling.too_few_independent",
             independent=float(effective), frames=int(kept.size),
-            statistical_inefficiency=float(g),
+            statistical_inefficiency=float(equilibrated.inefficiency),
             needed=float(minimum_effective_samples),
         )
     return equilibrated, None
@@ -545,7 +631,12 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None) -
         # says how much longer.
         code = getattr(getattr(reason, "refusal", None), "code", "")
         if code in WANT_A_LONGER_RUN:
-            shortfall = sampling_shortfall(values, frame_interval_ns=frame_interval_ns)
+            # An unresolved correlation is answered at the count that
+            # resolves it, not at the fewest a mean may rest on.
+            target = (RESOLVED_SAMPLES if code == "analysis.sampling.correlation_unresolved"
+                      else MINIMUM_EFFECTIVE_SAMPLES)
+            shortfall = sampling_shortfall(values, target_independent=target,
+                                           frame_interval_ns=frame_interval_ns)
             if not shortfall.met:
                 record["shortfall"] = shortfall.as_record()
     record["n_frames"] = int(values.size)

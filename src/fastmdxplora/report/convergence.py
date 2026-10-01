@@ -288,9 +288,10 @@ def assess_series(name: str, values: Any,
     # The rule here was a tenth of the run, which is the usual working limit
     # and lets the flattering case through: a series with a true correlation
     # of 2000 measured 361 over 4000 frames, and 361 is under a tenth of 4000.
-    # Halving the series and asking whether the estimate moves catches it,
-    # and it is the same criterion the analyses apply -- one run should not be
-    # measurable in the report and unresolved in the findings.
+    # Asking whether the series holds 25 of its own inefficiencies catches it
+    # (361 over 4000 frames is 11 at most), and it is the same criterion the analyses
+    # apply -- one run should not be measurable in the report and unresolved
+    # in the findings.
     measurable = correlation_is_resolved(series)
     # Drift is compared between the first and last thirds, so a series that
     # cannot be divided into thirds with anything in them says nothing about

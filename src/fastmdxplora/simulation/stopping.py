@@ -56,6 +56,19 @@ MOST_ROUNDS = 25
 #: the threshold the pooled estimate uses for segments.
 AGREE_WITHIN = 2.0
 
+#: A single run is judged on its own error only once that error rests on this
+#: many independent samples. An error estimated from one run is itself
+#: uncertain, and stopping at the first look where it falls within the target
+#: keeps the looks where it read low: calibrated on series with a known mean
+#: (``preregistration/stopping-calibration.md``), single runs stopped this way
+#: reported errors about half what the truth needed. Replicas need no such
+#: floor, since their spread checks what each claims.
+JUDGED_ALONE = 50.0
+
+#: The share of the time the error judged should hold the truth: one
+#: standard error of a normal mean.
+ONE_ERROR = 0.8413447460685429
+
 
 @dataclass(frozen=True)
 class StopTarget:
@@ -347,6 +360,21 @@ def _kept_share(mean: dict[str, Any]) -> float:
     return 1.0
 
 
+def _judged_error(found: dict[str, Any]) -> float:
+    """A run's error as judged: its standard error widened by Student's t at
+    the error's own degrees of freedom, so that it holds the truth as often
+    as one standard error should. With eight degrees of freedom that is 7%
+    wider; a record without them (written before they were) is taken as it
+    stands."""
+    error = float(found["standard_error"])
+    dof = _finite(found.get("degrees_of_freedom"))
+    if dof is None or dof <= 0:
+        return error
+    from scipy.stats import t
+
+    return error * float(t.ppf(ONE_ERROR, dof))
+
+
 def _more_for(error: float, allowed: float, production_ns: float, kept: float) -> float:
     """Production to add for an error to fall to what is allowed: the error
     of a mean goes as one over the root of the frames it rests on, and only
@@ -387,18 +415,27 @@ def judge(runs: list[Path], targets: list[StopTarget], production_ns: float) -> 
                                     unit=unit, more_ns=max(asks)))
             continue
         means = [float(found["mean"]) for _run, found in records]
-        errors = [float(found["standard_error"]) for _run, found in records]
+        errors = [_judged_error(found) for _run, found in records]
         kept = min(_kept_share(found) for _run, found in records)
         if len(runs) == 1:
             allowed = target.allowed(means[0])
             met = errors[0] <= allowed
+            more = None if met else _more_for(errors[0], allowed, production_ns, kept)
+            alone = _finite(records[0][1].get("effective_samples"))
+            short = met and alone is not None and alone < JUDGED_ALONE
+            if short:
+                met = False
+                more = production_ns * kept * (JUDGED_ALONE / max(alone, 1e-9) - 1.0)
             verdicts.append(Verdict(
                 target.analysis, met,
                 f"{target.analysis} {means[0]:.4g} ± {errors[0]:.2g}"
                 + (f" {unit}" if unit else "")
-                + (", within" if met else ", outside") + f" the ±{allowed:.2g} asked",
+                + (f", within the ±{allowed:.2g} asked but resting on {alone:.0f} "
+                   f"independent samples, and one run is judged alone on "
+                   f"{JUDGED_ALONE:g}" if short else
+                   (", within" if met else ", outside") + f" the ±{allowed:.2g} asked"),
                 value=means[0], error=errors[0], allowed=allowed, unit=unit,
-                more_ns=None if met else _more_for(errors[0], allowed, production_ns, kept)))
+                more_ns=more))
             continue
         verdicts.append(_judge_replicas(target, runs, means, errors, unit, production_ns, kept))
     return verdicts
@@ -682,13 +719,14 @@ def stopping_section(root: str | Path) -> list[str]:
     if record.get("outcome") == "met":
         lines += [
             "Stopping as soon as an error falls below a target favours a round whose error "
-            "came out small by chance. Calibrated on series with a known mean, the error "
-            "this rule reports was about half what the truth needed for a single run, "
-            + ("and nearer honest for replicas, whose combined error is the larger of what "
-               "the runs claim and what their spread shows, " if len(runs) > 1 else
-               "and nearer honest for replicas, ")
-            + "though replicas from one structure share what their equilibration leaves. "
-            "Read the error as a lower bound.", ""]
+            "came out small by chance, so each error is widened by its own degrees of "
+            "freedom"
+            + (", the combined error is the larger of what the runs claim and what their "
+               "spread shows, " if len(runs) > 1 else
+               ", and one run is judged alone only on 50 independent samples, ")
+            + "and calibrated on series with a known mean, the errors judged this way held "
+            "the truth about as often as they state. What replicas from one structure "
+            "share, a relaxation or a state none of them left, is not in the error.", ""]
     return lines
 
 

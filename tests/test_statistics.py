@@ -82,7 +82,10 @@ class TestCountingIndependentSamples:
 class TestFindingWhereARunSettled:
     def test_a_relaxation_is_discarded(self) -> None:
         """Several relaxation times of it, which is what leaves the average
-        describing the equilibrium rather than the approach to it."""
+        describing the equilibrium rather than the approach to it. The start
+        is the latest that keeps within a tenth of the most independent
+        samples, so it may lie up to a tenth of the run past the start that
+        keeps the most: past the relaxation, not short of it."""
         rng = np.random.RandomState(0)
         tau = 200.0
         frames = np.arange(6000)
@@ -90,7 +93,7 @@ class TestFindingWhereARunSettled:
 
         discard, _g, _n = detect_equilibration(series)
 
-        assert 2 * tau < discard < 6 * tau
+        assert 2 * tau < discard < 6 * tau + 0.1 * frames.size
 
     def test_an_already_equilibrated_run_keeps_its_frames(self) -> None:
         rng = np.random.RandomState(0)
@@ -267,7 +270,7 @@ class TestARunTooShortToMeasureItsOwnCorrelation:
         equilibrated, _ = summarise(_correlated(0.5, 20000, seed=8))
         assert set(equilibrated.as_record()) == {
             "discard", "statistical_inefficiency", "effective_samples",
-            "mean", "standard_error", "standard_deviation"}
+            "mean", "standard_error", "standard_deviation", "degrees_of_freedom"}
 
     def test_the_threshold_is_a_judgement_a_study_can_make(self) -> None:
         rng = np.random.RandomState(0)

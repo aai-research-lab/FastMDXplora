@@ -79,11 +79,28 @@ behind it is summed over pairs of lags, so frames that alternate, as a stiff
 restraint sampled more slowly than it oscillates makes them, do not read as
 independent when something slower moves underneath.
 
+How the error is computed was calibrated on series with a known mean
+([pre-registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/stopping-calibration.md)),
+and three things follow from it. The inefficiency is corrected for being
+taken about the sample mean, which makes it read low by about the number of
+lags summed over the number of frames. After a start is discarded, the error is
+the whole run's, scaled to the frames kept, unless the discard gained at least
+twice the independent samples: the start is chosen where the inefficiency of
+what remains reads lowest, so an error from what remains reads low with it,
+while a real relaxation gains far more than twice. And each error records its
+**degrees of freedom** (`degrees_of_freedom`, about the frames over the lags
+summed): an error resting on eight of them holds the truth within itself 65%
+of the time rather than 68%, and the stopping rule widens it by Student's t
+to judge it.
+
 **A number, with a statement of what it does not support.** A finding carrying
 `not_a_measurement` is still reported, because the value is often the best
 available, and the note says what is wrong with it. The commonest case: a run
 too short against its own correlation time cannot resolve how correlated it is,
 so the effective-sample count is an upper bound and the true figure is smaller.
+A correlated run is taken to resolve it once it holds 25 independent samples
+by its own count: shorter than that, the estimate reads low, from a third of
+the truth at five times the inefficiency to nine tenths at 25.
 
 **A range instead of a number**, where the run recorded enough to bound a
 quantity but not to pin it.

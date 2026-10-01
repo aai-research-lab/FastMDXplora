@@ -718,7 +718,7 @@ CODES: tuple[Code, ...] = (
          "The run is not long against its own correlation time, so the "
          "independent-sample count is an upper bound.",
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
-         detail_keys=("frames", "independent", "statistical_inefficiency")),
+         detail_keys=("frames", "independent", "statistical_inefficiency", "needed")),
     Code("analysis.sampling.drifting",
          "The segment means move in order across the run, so it had not "
          "equilibrated at the scale of the whole run.",
