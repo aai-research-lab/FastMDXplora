@@ -98,6 +98,62 @@ def _protect_capping_groups(topology):
     return _guard()
 
 
+def _remove_heterogens(fixer, *, keep_water: bool, sparing: frozenset[str]) -> None:
+    """PDBFixer's heterogen removal, sparing the components named.
+
+    The ligands re-added with their own parameters stay through the repair,
+    so the residues built into a gap are placed around them, and go before
+    the hydrogens are added. Without them it is PDBFixer's own call.
+    """
+    if not sparing:
+        fixer.removeHeterogens(keepWater=keep_water)
+        return
+    from pdbfixer import pdbfixer as _pf
+
+    keep = set(_pf.proteinResidues) | set(_pf.dnaResidues) | set(_pf.rnaResidues)
+    keep |= {"N", "UNK"} | ({"HOH"} if keep_water else set())
+    _delete_residues(fixer, [residue for residue in fixer.topology.residues()
+                             if residue.name not in keep
+                             and residue.name.upper() not in sparing])
+
+
+def _delete_residues(fixer, residues) -> None:
+    if not residues:
+        return
+    from openmm import app
+
+    modeller = app.Modeller(fixer.topology, fixer.positions)
+    modeller.delete(residues)
+    fixer.topology = modeller.topology
+    fixer.positions = modeller.positions
+
+
+def _write_complex(fixer, target: Path, ph: float) -> None:
+    """The repaired structure with its ligands, hydrogens added, for the
+    ligands' pKa: the environment that will be simulated.
+
+    Written first without hydrogens, so a failure to add them leaves the
+    repaired heavy atoms, which the pKa calculation reads, rather than
+    nothing.
+    """
+    from openmm.app import PDBFile
+    from pdbfixer import PDBFixer
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as handle:
+        PDBFile.writeFile(fixer.topology, fixer.positions, handle, keepIds=True)
+    try:
+        protonated = PDBFixer(filename=str(target))
+        protonated.addMissingHydrogens(pH=float(ph))
+        with open(target, "w", encoding="utf-8") as handle:
+            PDBFile.writeFile(protonated.topology, protonated.positions, handle,
+                              keepIds=True)
+    except Exception as exc:  # noqa: BLE001 - the heavy atoms still serve
+        logger.warning("Hydrogens could not be added to the complex for the pKa "
+                       "calculation (%s); it reads the repaired heavy atoms.", exc)
+    logger.info(" - wrote the repaired complex to %s", target)
+
+
 def _heterogen_residue_counts(topology) -> dict[str, int]:
     """Count non-water, non-ion heterogen residues about to be discarded."""
     counts: dict[str, int] = {}
@@ -223,7 +279,8 @@ def _drop_untemplated_gaps(fixer) -> None:
     fixer.missingResidues = pruned
 
 
-def _drop_terminal_extensions(fixer, *, build_termini: bool = False) -> None:
+def _drop_terminal_extensions(fixer, *, build_termini: bool = False,
+                              ignoring: frozenset[str] = frozenset()) -> None:
     """Build gaps between resolved residues; do not extend a chain past its end.
 
     ``findMissingResidues`` compares SEQRES against what was modelled, so every
@@ -252,9 +309,13 @@ def _drop_terminal_extensions(fixer, *, build_termini: bool = False) -> None:
     if not missing or build_termini:
         return
 
+    # A ligand kept through the repair is not part of the chain it is
+    # written in: counted, a run past the last residue would sit inside the
+    # chain and be built as a loop.
     try:
         lengths = {
-            index: sum(1 for _ in chain.residues())
+            index: sum(1 for residue in chain.residues()
+                       if not ignoring or residue.name.upper() not in ignoring)
             for index, chain in enumerate(fixer.topology.chains())
         }
     except (AttributeError, TypeError):
@@ -498,6 +559,7 @@ def fix_pdb_with_pdbfixer(
     explained: tuple[str, ...] = (),
     replace_nonstandard: bool = True,
     residue_states: dict[str, str] | None = None,
+    complex_pdb: str | None = None,
 ) -> list[str]:
     """Strict PDBFixer wrapper: raises on failure.
 
@@ -521,6 +583,14 @@ def fix_pdb_with_pdbfixer(
         If True (and ``keep_heterogens=False``), retain crystallographic
         waters during heterogen removal. Has no effect when
         ``keep_heterogens=True``.
+    reinstated : tuple of str
+        The components re-added afterwards with their own parameters. They
+        stay in the structure while missing residues and atoms are built,
+        so nothing is built into their place, and are taken out before the
+        hydrogens are added.
+    complex_pdb : path-like, optional
+        Where to write the repaired structure with those components still
+        in it, hydrogens added, for their pKa.
 
     Raises
     ------
@@ -592,10 +662,11 @@ def fix_pdb_with_pdbfixer(
         )
         fixer.applyMutations(applied, chain_id)
 
+    around = frozenset(str(name).upper() for name in reinstated)
     if not keep_heterogens:
         removed = _heterogen_residue_counts(fixer.topology)
         with _protect_capping_groups(fixer.topology) as caps:
-            fixer.removeHeterogens(keepWater=keep_water)
+            _remove_heterogens(fixer, keep_water=keep_water, sparing=around)
         if caps:
             logger.info(
                 "Kept %s: capping groups terminate the chain and are part of "
@@ -621,7 +692,8 @@ def fix_pdb_with_pdbfixer(
     # inserted into its gap. That failure is silent, and a quietly wrong
     # structure is worse than a loud crash.
     _drop_untemplated_gaps(fixer)
-    _drop_terminal_extensions(fixer, build_termini=build_missing_termini)
+    _drop_terminal_extensions(fixer, build_termini=build_missing_termini,
+                              ignoring=around)
 
     # Modified residues are part of the polymer, not ligands: a selenomethionine
     # or an oxidised cysteine belongs in the chain. Left in place they reach the
@@ -631,7 +703,10 @@ def fix_pdb_with_pdbfixer(
     # every comparable tool does.
     if replace_nonstandard:
         fixer.findNonstandardResidues()
-        substitutions = list(getattr(fixer, "nonstandardResidues", []) or [])
+        substitutions = [(residue, standard) for residue, standard
+                         in getattr(fixer, "nonstandardResidues", []) or []
+                         if residue.name.upper() not in around]
+        fixer.nonstandardResidues = substitutions
         if substitutions:
             described = ", ".join(
                 f"{residue.name}{getattr(residue, 'id', '')}->{standard}"
@@ -645,6 +720,10 @@ def fix_pdb_with_pdbfixer(
 
     fixer.findMissingAtoms()
     fixer.addMissingAtoms()
+    if complex_pdb is not None:
+        _write_complex(fixer, Path(complex_pdb), ph)
+    _delete_residues(fixer, [residue for residue in fixer.topology.residues()
+                             if residue.name.upper() in around])
     applied = _apply_residue_states(fixer, parse_residue_states(residue_states))
     if applied:
         logger.info("Protonation states set by hand: %s.", "; ".join(applied))

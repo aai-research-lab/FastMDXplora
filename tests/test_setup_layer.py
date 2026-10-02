@@ -471,15 +471,16 @@ class TestSetupArtifactsAreNotNested:
         from pathlib import Path
 
         pytest.importorskip("pdbfixer")
-        from fastmdxplora.setup.pipeline import _repaired_complex
+        from fastmdxplora.setup.pipeline import DEFAULTS, _repaired_complex
         from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
 
         structure = tmp_path / "peptide.pdb"
         structure.write_text(TRI_ALANINE, encoding="utf-8")
         setup = tmp_path / "study" / "setup"
-        written = Path(_repaired_complex(structure, setup, 7.0))
+        written = Path(_repaired_complex({**DEFAULTS, "ph": 7.0}, structure, setup))
         assert written == setup / "complex_for_pka.pdb"
         assert written.is_file()
+        assert (setup / "prepared.pdb").is_file()
 
 class TestPhysiologicalPhIsTheDefault:
     """Blood is 7.4, and a protein studied without a stated reason is there."""

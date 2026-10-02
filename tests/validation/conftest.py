@@ -96,13 +96,13 @@ def _run_setup(expectation: Expectation, workspace: Path) -> Prepared:
     # 1800, measured rather than guessed, and every rise has been read off a
     # log rather than doubled hopefully. 6B73 needed more than 420 s to
     # embed 192,906 atoms in a bilayer and build the System; it passes at
-    # 900. 5WYZ needs two PDBFixer passes that are genuinely different --
-    # one keeping heterogens for the pKa complex, one with the ligand
-    # stripped for `prepared.pdb` -- and each takes about 475 s on a
-    # 1,600-residue dimer with 48 unresolved termini. At 900 it ran out
-    # roughly eighty seconds short of finishing the second, with solvation
-    # still to come. That is a large structure, not a stall. The corpus
-    # command raises pytest's own timeout to match.
+    # 900. 5WYZ needed two PDBFixer passes, one keeping heterogens for the
+    # pKa complex and one with the ligand stripped for `prepared.pdb`, each
+    # building 79 residues in five gaps of a 1,600-residue dimer: about
+    # 475 s each on CI's threads, and 992 s each once setup ran on one
+    # thread, so it stopped at 1800 in the second (2026-10-02). It is now
+    # one pass, which gives both. That is a large structure, not a stall.
+    # The corpus command raises pytest's own timeout to match.
     budget = int(os.environ.get("FASTMDXPLORA_SETUP_TIMEOUT_S", "1800"))
     try:
         completed = subprocess.run(

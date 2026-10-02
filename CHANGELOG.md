@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A structure is repaired once, with its ligands in place
+
+**A titratable ligand's structure is no longer repaired twice.** Its pKa was
+computed in a repair of the deposition with every heterogen kept, and
+`prepared.pdb` came from a second repair with the ligands stripped. Building
+missing residues is most of a repair's time: 5WYZ, a dimer with 79 residues
+missing in five gaps, took 992 s a repair on the one CPU thread setup runs
+on, and the validation corpus stopped it at 1800 s. The structure is now
+repaired once, as it will be simulated: the ligands stay in it while what is
+missing is built, so the residues built are kept from the ligand's atoms as
+they are from the protein's, the pKa is computed in that repair, and
+`prepared.pdb` is the same repair with the ligands taken out. A ligand that
+cannot be given charges is refused before the repair rather than after it.
+
 ### An extended study keeps its own config, at its whole length
 
 **The join's analysis no longer writes the last piece's config over the

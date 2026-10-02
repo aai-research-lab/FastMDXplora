@@ -557,7 +557,7 @@ def _refuse_without_a_charge_provider(params: dict) -> None:
     from fastmdxplora.setup.forcefields import resolve_forcefield
 
     small_molecule = (params.get("ligand_forcefield")
-                      or resolve_forcefield(params["forcefield"])
+                      or resolve_forcefield(params.get("forcefield"))
                       .small_molecule_forcefield)
     if not ligand_module.takes_am1bcc_charges(small_molecule):
         return
@@ -584,59 +584,77 @@ def _refuse_without_a_charge_provider(params: dict) -> None:
 
 
 
-#: One repaired complex per (structure, setup directory, pH), because that is
-#: what determines it. `_repaired_complex` is called once per ligand copy and
-#: writes a fixed path from unchanging arguments, so every call after the first
-#: rebuilt a file identical to the one already on disk. On 5WYZ -- TLR8, a
-#: homodimer carrying the same ligand in both chains -- PDBFixer takes 475 s,
-#: and it ran twice; 6B73, with three ligands, ran it four times. The key holds
-#: the setup directory, so runs in one batch process do not see each other's.
-_REPAIRED_COMPLEXES = {}
+def _repair_arguments(params: dict, input_pdb) -> dict[str, Any]:
+    """What the repair is given, from the setup settings: the same for the
+    ligand's pKa as for `prepared.pdb`, since they are now one repair."""
+    retained = params.get("_retained_pdb")
+    return {
+        "input_pdb": str(retained or input_pdb),
+        "ph": float(params["ph"]),
+        "keep_heterogens": True if retained else _keep_heterogens(params, input_pdb),
+        "keep_water": bool(params["keep_water"]),
+        "reinstated": tuple(params.get("_reinstated_heterogens", ())),
+        "explained": tuple(params.get("_explained_heterogens", ())),
+        "replace_nonstandard": bool(params["replace_nonstandard_residues"]),
+        "build_missing_termini": bool(params.get("build_missing_termini", False)),
+        "mutations": tuple(params.get("mutations") or ()),
+        "mutation_chain": params.get("mutation_chain"),
+        "residue_states": params.get("residue_states"),
+    }
 
 
-def _repaired_complex(input_pdb, setup_dir, ph: float):
-    """A structure with missing atoms rebuilt, for the pKa calculation.
+def _repaired_complex(params: dict, input_pdb, setup_dir):
+    """The repaired structure with its ligands in place, for their pKa.
 
-    Crystal structures routinely leave surface side chains unmodelled where
-    the density is poor. Computing a pKa in a structure with those gaps means
-    computing it in the wrong electrostatic environment, so the ligand and the
-    protein are repaired first. Falls back to the deposition if repair fails,
-    since a less accurate pKa is better than none.
+    Crystal structures routinely leave side chains and loops unmodelled where
+    the density is poor, and a pKa computed with those gaps is computed in
+    the wrong electrostatic environment. The structure is repaired as it will
+    be simulated, with the ligands in place while what is missing is built,
+    and the same repair gives `prepared.pdb` once the ligands are taken out.
 
-    Repaired once per structure rather than once per ligand: the result
-    depends on the structure and the pH, and neither changes between the
-    copies of a ligand in one complex.
+    It was two repairs: one of the deposition with every heterogen kept, for
+    the pKa, and one with the ligands stripped, for `prepared.pdb`. Building
+    missing residues is most of a repair's time, and on 5WYZ (TLR8, a dimer
+    with 79 residues missing in five gaps) each took 475 s on several CPU
+    threads and 992 s on the one thread setup runs on, so a structure
+    was repaired for half an hour. The second repair also built its loops
+    with the ligand's site empty, and one of 5WYZ's ends 7 Angstrom from it.
+
+    Repaired once per setup, whatever the number of ligand copies. A repair
+    that fails is remembered too, and the pKa is then computed in the
+    deposition as given, since a less accurate pKa is better than none;
+    `prepared.pdb` is then repaired on its own, and fails or not there. A
+    refusal is an answer and is raised.
     """
     from fastmdxplora.setup.pdbfix import fix_pdb_with_pdbfixer
 
-    # setup_dir is already the setup directory, as it is for the ligand
-    # files: appending "setup" again buried this in setup/setup/.
+    done = params.get("_repaired")
+    if done is not None:
+        return done["complex"]
+    arguments = _repair_arguments(params, input_pdb)
+    # setup_dir is already the setup directory: appending "setup" again
+    # buried this in setup/setup/.
     repaired = Path(setup_dir) / "complex_for_pka.pdb"
-    key = (str(input_pdb), str(repaired), float(ph))
-
-    remembered = _REPAIRED_COMPLEXES.get(key)
-    if remembered is not None and Path(remembered).is_file():
-        return remembered
-
+    prepared = Path(setup_dir) / "prepared.pdb"
     repaired.parent.mkdir(parents=True, exist_ok=True)
     try:
-        fix_pdb_with_pdbfixer(
-            str(input_pdb), str(repaired), ph=ph,
-            keep_heterogens=True,   # the ligand must be present to be assessed
-            keep_water=False,
-        )
-        _REPAIRED_COMPLEXES[key] = repaired
-        return repaired
+        settings = dict(arguments)
+        set_by_hand = fix_pdb_with_pdbfixer(
+            settings.pop("input_pdb"), str(prepared), complex_pdb=str(repaired),
+            **settings)
+    except StudyError:
+        raise
     except Exception as exc:  # noqa: BLE001 - fall back rather than fail
         logger.warning(
             "Could not repair the structure for the pKa calculation (%s); "
             "using the deposition as given, which may have unmodelled side "
             "chains near the site.", exc,
         )
-        # Remembered too. A repair that failed will fail the same way for the
-        # next copy of the same ligand, and saying so once is enough.
-        _REPAIRED_COMPLEXES[key] = input_pdb
+        params["_repaired"] = {"complex": input_pdb, "arguments": None}
         return input_pdb
+    params["_repaired"] = {"complex": repaired, "arguments": arguments,
+                           "prepared": str(prepared), "set_by_hand": set_by_hand}
+    return repaired
 
 
 
@@ -646,7 +664,9 @@ def _retain_in_structure(input_pdb, setup_dir, keep_decisions):
     PDBFixer keeps heterogens all or nothing, so selecting a few means
     filtering the input first. Everything the classifier discarded is dropped
     here; what remains is prepared by the protein force field, in place, under
-    its own residue name, at its own coordinates.
+    its own residue name, at its own coordinates. A ligand to simulate is kept
+    too, so the repair builds around it; the repair takes it out again, and
+    it is re-added with its own parameters.
 
     What is kept is the atoms the decisions hold, record by record, not every
     residue carrying a kept name: a zinc written at two alternate locations
@@ -793,8 +813,10 @@ def _keep_in_place(params: dict, input_pdb, setup_dir, decisions) -> list:
     in_place = ions
     if not in_place:
         return []
+    ligands = [d for d in simulate
+               if not d.is_monatomic and d.resname not in WATER_NAMES]
     params["_retained_pdb"] = str(
-        _retain_in_structure(input_pdb, setup_dir, in_place + waters)
+        _retain_in_structure(input_pdb, setup_dir, in_place + waters + ligands)
     )
     # Which copies, for the setup record: the log says it once, and the
     # record is what is read afterwards.
@@ -928,6 +950,19 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
         , code="setup.structure.undetermined")
 
     copies = [(d, het) for d in wanted for het in d.instances]
+    # Known before the first copy's pKa, which repairs the structure. The
+    # ligands are re-added with their own parameters, so preparation reports
+    # them as that rather than as removed, and they stay in the structure
+    # while what is missing is built. Every component the classifier judged
+    # has been reported with its reason, so preparation does not warn about
+    # it again.
+    params["_reinstated_heterogens"] = tuple(
+        sorted({decision.resname for decision, _ in copies})
+    )
+    params["_explained_heterogens"] = tuple(sorted({d.resname for d in decisions}))
+    # And before that repair: it is most of setup's time, and a ligand that
+    # cannot be given charges stops setup whatever the repair gives.
+    _refuse_without_a_charge_provider(params)
     # setup_dir is already the setup directory: input.pdb and prepared.pdb
     # sit directly in it. Appending "setup" again buried the ligands in
     # setup/setup/ligands.
@@ -949,12 +984,12 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
         )
         # A pKa is a property of the environment, so the environment should be
         # the one that will be simulated: repaired, with the missing side
-        # chains rebuilt. The raw deposition has gaps that would bias the
-        # answer. Only built when the ligand is actually titratable, since
-        # repairing costs a second and otherwise changes nothing.
+        # chains and loops rebuilt. The raw deposition has gaps that would
+        # bias the answer. Only repaired here when the ligand is titratable;
+        # otherwise the repair waits for `prepared.pdb`.
         pka_structure = input_pdb
         if chemistry.titratable_groups:
-            pka_structure = _repaired_complex(input_pdb, setup_dir, float(params["ph"]))
+            pka_structure = _repaired_complex(params, input_pdb, setup_dir)
 
         state = settle(
             pka_structure,
@@ -993,14 +1028,6 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
         names.append(decision.resname)
         charges.append(net_charge)
 
-    # Remembered so preparation can report these as re-added with parameters
-    # rather than warning that they were removed.
-    params["_reinstated_heterogens"] = tuple(
-        sorted({decision.resname for decision, _ in copies})
-    )
-    # Every component the classifier judged, so preparation does not warn
-    # about ones whose fate has already been reported with a reason.
-    params["_explained_heterogens"] = tuple(sorted({d.resname for d in decisions}))
     params["ligand_name"] = names[0] if len(names) == 1 else names
     if params.get("ligand_net_charge") is None:
         params["ligand_net_charge"] = charges[0] if len(charges) == 1 else charges
@@ -1298,7 +1325,6 @@ def _run(
             # When ions are being kept, PDBFixer runs on a structure already
             # filtered to the polymer plus those ions, so "keep heterogens"
             # retains exactly them and nothing else.
-            retained = params.get("_retained_pdb")
             if filtered_out is not None:
                 # PDBFixer keeps all of a filtered structure and so reports
                 # no removal; beside a supplied ligand nothing else names
@@ -1307,21 +1333,18 @@ def _run(
                     filtered_out,
                     reinstated=tuple(params.get("_reinstated_heterogens", ())),
                 )
-            set_by_hand = fix_pdb_with_pdbfixer(
-                retained or str(input_pdb),
-                str(prepared_pdb),
-                ph=float(params["ph"]),
-                keep_heterogens=(True if params.get("_retained_pdb")
-                                 else _keep_heterogens(params, input_pdb)),
-                keep_water=bool(params["keep_water"]),
-                reinstated=tuple(params.get("_reinstated_heterogens", ())),
-                explained=tuple(params.get("_explained_heterogens", ())),
-                replace_nonstandard=bool(params["replace_nonstandard_residues"]),
-                build_missing_termini=bool(params.get("build_missing_termini", False)),
-                mutations=tuple(params.get("mutations") or ()),
-                mutation_chain=params.get("mutation_chain"),
-                residue_states=params.get("residue_states"),
-            )
+            arguments = _repair_arguments(params, input_pdb)
+            done = params.get("_repaired") or {}
+            if (done.get("arguments") == arguments
+                    and Path(done.get("prepared", "")).is_file()):
+                # Repaired already, for a ligand's pKa, with these settings.
+                set_by_hand = done["set_by_hand"]
+                logger.info("prepared.pdb is the repair made for the ligands' "
+                            "pKa, with the ligands taken out.")
+            else:
+                settings = dict(arguments)
+                set_by_hand = fix_pdb_with_pdbfixer(
+                    settings.pop("input_pdb"), str(prepared_pdb), **settings)
             artifacts.append("prepared.pdb")
             if set_by_hand:
                 # In the record's notes and on screen: a state chosen by hand
