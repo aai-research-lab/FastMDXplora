@@ -679,9 +679,14 @@ def _results_summary(root: Any) -> str:
             # AI model was told nothing: asked whether the RMSD had equilibrated it
             # had no number and no reason, only silence to read.
             withheld = f.get("not_a_measurement")
+            # The findings key is usually "mean", and some analyses key their
+            # finding by their own name; naming it again reads as a stutter
+            # ("order_parameters: order_parameters mean 0.8565"). Name the
+            # key only when it says something else.
+            own = key in ("mean", name)
             if "mean" not in f:
                 if withheld:
-                    label = "" if key == "mean" else f"{key} "
+                    label = "" if own else f"{key} "
                     parts.append(f"{label}no mean: {withheld}")
                 continue
             mean = f.get("mean")
@@ -689,12 +694,10 @@ def _results_summary(root: Any) -> str:
             n_eff = f.get("effective_samples")
             discard = f.get("discard")
             n = f.get("n_frames")
-            # The findings key is usually "mean"; naming it twice reads as
-            # a stutter. Name the key only when it says something else.
-            label = "" if key == "mean" else f"{key} "
+            label = "" if own else f"{key} "
             # With its unit: an RMSD of 0.013 was handed over bare, and an
             # AI model answering in Angstrom had nothing to say it was nm.
-            unit = unit_of(name, f) if key == "mean" else (
+            unit = unit_of(name, f) if own else (
                 f["unit"] if isinstance(f.get("unit"), str) else "")
             has_error = isinstance(se, (int, float)) and math.isfinite(se)
             # As the report and the citations under the answer give it: the

@@ -7,6 +7,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### An analysis is named once in what the Agent and an AI app read
+
+**A finding keyed by its analysis's own name is no longer named twice**:
+`read_study` and the Agent read "order_parameters: order_parameters mean
+0.8565", since the name was dropped only for a finding keyed `mean`.
+
 ### A misspelled key's fix renames it
 
 **The fix for an unknown key now says "Rename `simulation.temprature_K` to
