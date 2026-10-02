@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import math
 import os
 import re
@@ -359,30 +360,61 @@ _IN_THE_WINDOW = ("open viewer", "open overview", "open report", "open builder",
                   "show config", "download config")
 
 
+#: As much as the Agent's own model is given to write a reply in.
+AGENT_MAX_TOKENS = 4000
+
+
 def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
-    """The FastMDXplora Agent, as in the GUI: the person's model, the
-    software's tools to look with, and the validator as the judge."""
+    """The FastMDXplora Agent, as in the GUI: a model, the software's tools
+    to look with, and the validator as the judge. The model is the app's
+    own where it lends it, so nothing is paid twice; else the person's,
+    on their own key."""
     from fastmdxplora.agent import propose_config
-    from fastmdxplora.agent.tools import Toolbox
+    from fastmdxplora.agent.tools import Look, Toolbox
+    from fastmdxplora.mcp.protocol import NotLent
     from fastmdxplora.refusals import StudyError, refusal_of
 
-    if ctx.complete_for is None:
+    lent = ctx.call is not None and ctx.call.can_sample()
+    replied: list[str] = []
+    if lent:
+        # Bound to what was asked, so a reply lent for one request is never
+        # given back to another.
+        bound_to = "ask_agent:" + hashlib.sha256(json.dumps(
+            args, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+        def complete(prompt: str) -> str:
+            text, model = ctx.call.sample(prompt, bound_to=bound_to,
+                                          max_tokens=AGENT_MAX_TOKENS)
+            replied.append(model)
+            return text
+    elif ctx.complete_for is None:
         raise ToolError("The Agent has no model here.")
-    try:
-        complete = ctx.complete_for()
-    except StudyError as exc:
-        raise ToolError(f"{refusal_of(exc).message}\nThe Agent writes with a model you choose "
-                        "once, in a terminal: `fastmdx agent model`. Every other tool here "
-                        "works without one.") from None
-    current = None
-    if args.get("config"):
+    else:
+        try:
+            complete = ctx.complete_for()
+        except StudyError as exc:
+            raise ToolError(f"{refusal_of(exc).message}\nThis app does not lend its own "
+                            "model, so the Agent writes with one you choose once, in a "
+                            "terminal: `fastmdx agent model`. Every other tool here works "
+                            "without one.") from None
+    def keep(key: str, make: Callable[[], Any]) -> Any:
+        # Lent in rounds, each round works the prompts out again: from what
+        # the first round read, so a running study's record or a look that
+        # has moved on since does not change them.
+        if lent and ctx.call is not None:
+            return ctx.call.kept(key, make, bound_to=bound_to)
+        return make()
+
+    def given_config() -> str | None:
         given = args["config"]
         if _is_a_path(given):
             _, file = _config_from(ctx, given)
-            current = file.read_text(encoding="utf-8") if file is not None else None
-        else:
-            current = given
-    status = (study_record(_study(ctx, args["study"]), for_the_agent=True)
+            return file.read_text(encoding="utf-8") if file is not None else None
+        return given
+
+    current = keep("config", given_config) if args.get("config") else None
+    status = (keep("study", lambda: study_record(_study(ctx, args["study"]),
+                                                 for_the_agent=True))
               if args.get("study") else None)
 
     box = Toolbox(path_for=ctx.workspace.path_for)
@@ -391,7 +423,17 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
 
     def use(name: str, asked: dict[str, Any]) -> Any:
         told(f"The Agent looks: {name}")
-        return used(name, asked)
+
+        def looked() -> dict[str, Any]:
+            look = used(name, asked)
+            box.looks.pop()  # kept below, the same way every round
+            return {"tool": look.tool, "asked": look.asked, "said": look.said,
+                    "ok": look.ok}
+
+        said = keep(f"look-{len(box.looks)}", looked)
+        look = Look(said["tool"], said["asked"], said["said"], said["ok"])
+        box.looks.append(look)
+        return look
 
     box.use = use  # type: ignore[method-assign]
 
@@ -405,10 +447,15 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
                                   current_config=current, run_status=status, tools=box)
     except StudyError as exc:
         raise ToolError(refusal_of(exc).message) from None
+    except NotLent as exc:
+        raise ToolError(f"{exc} Nothing was written. Ask again to have the app lend it; "
+                        "your own API key is not used in its place.") from None
+    recorded, said_whose = _whose(ctx, lent, replied)
 
     checked = [f"  - {look.tool}{'' if look.ok else ' (refused)'}: "
                f"{(look.said.splitlines() or [''])[0]}" for look in proposal.looks]
-    after = (["", "What the Agent checked with the software:", *checked] if checked else [])
+    after = (["", said_whose]
+             + (["", "What the Agent checked with the software:", *checked] if checked else []))
     if proposal.question:
         return "\n".join([f"The Agent asks: {proposal.question}",
                           "Answer it in a new request, with what it asks for.", *after])
@@ -439,25 +486,45 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
             *([f"Last: {last.message}"] if last is not None and not corrected else []),
             "Say more of what the study is for, or check a config by hand with check_study.",
             *after]))
-    return _proposed(ctx, args, proposal, corrected, after)
+    return _proposed(ctx, args, proposal, corrected, after, recorded)
+
+
+def _whose(ctx: Context, lent: bool, replied: list[str]) -> tuple[str | None, str]:
+    """Which model the Agent wrote with, as a study records it
+    (``agent_model``), and as it is said to the person."""
+    from fastmdxplora.agent import load_choice
+
+    if lent:
+        models = list(dict.fromkeys(replied))
+        app = (ctx.call.client_name if ctx.call is not None else None) or "the app"
+        named = ", ".join(models) or "none"
+        return (", ".join(f"{app}/{m}" for m in models) or None,
+                f"Written with {app}'s own model ({named}), lent through the protocol: "
+                "your own API key was not used.")
+    chosen = load_choice()
+    if chosen is None:
+        return None, "Written with the model chosen with `fastmdx agent model`."
+    return (f"{chosen.provider}/{chosen.model}",
+            f"Written with your model ({chosen.provider}/{chosen.model}), chosen with "
+            "`fastmdx agent model`, on your own API key.")
 
 
 def _proposed(ctx: Context, args: dict[str, Any], proposal: Any, corrected: list[str],
-              after: list[str]) -> str:
+              after: list[str], recorded: str | None) -> str:
     """An accepted study: recorded as the Agent's, saved, and its plan said."""
     import yaml
 
-    from fastmdxplora.agent import load_choice
     from fastmdxplora.naming import default_output_name, system_of
 
     config = dict(proposal.config)
     _confined(ctx, config)
     # Whose study this is, as `fastmdx agent` records it: a model wrote it,
-    # and which one.
+    # and which one, as the app named it where it lent its own.
     config["agent"] = "assisted"
-    chosen = load_choice()
-    if chosen is not None:
-        config["agent_model"] = f"{chosen.provider}/{chosen.model}"
+    if recorded is not None:
+        config["agent_model"] = recorded
+    else:
+        config.pop("agent_model", None)
     name = default_output_name(system_of(config))
     if _continued(ctx, config) is None and not config.get("output"):
         config["output"] = name
@@ -1107,15 +1174,17 @@ TOOLS: tuple[Tool, ...] = (
          "difference marked resolved only where it is more than twice its combined "
          "standard error.",
          {"first": _STUDY, "second": _STUDY}, ("first", "second"), _READS, _compare_studies),
-    Tool("ask_agent", "Ask the FastMDXplora Agent (optional, your API key)",
-         "Optional: only when the person asks for FastMDXplora's own Agent. It is a "
-         "second model, the one the person chose with `fastmdx agent model`, called on "
-         "their own API key: each call is paid for on top of this conversation. Without "
-         "it, write the config yourself and give it to check_study; the validator "
-         "judges it either way. The Agent writes or changes a study from a description, "
-         "or answers about one; a study it writes is accepted by the validator before it "
-         "is returned, saved in the workspace with its plan and plan_id, and recorded as "
-         "its model's. Nothing is run.",
+    Tool("ask_agent", "Ask the FastMDXplora Agent (optional; may use your API key)",
+         "Optional: only when the person asks for FastMDXplora's own Agent. It writes "
+         "with this app's own model where the app lends it (the app may ask the person "
+         "first); otherwise with a second model, the one the person chose with `fastmdx "
+         "agent model`, on their own API key, each call paid for on top of this "
+         "conversation. Without it, write the config yourself and give it to "
+         "check_study; the validator judges it either way. The Agent writes or changes a "
+         "study from a description, or answers about one; a study it writes is accepted "
+         "by the validator before it is returned, saved in the workspace with its plan "
+         "and plan_id, and recorded as its model's; the answer says which model wrote "
+         "and whose. Nothing is run.",
          {"request": {"type": "string", "description": (
              "What the study should do or what to ask, in the person's words.")},
           "config": {"type": "string", "description": (

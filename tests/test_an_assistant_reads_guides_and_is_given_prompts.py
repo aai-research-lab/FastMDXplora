@@ -57,7 +57,7 @@ class TestResources:
             "uri": "fastmdxplora://guide/config-language"})["result"]["contents"][0]["text"]
         assert "duration_ns" in language and "resume_from" in language
         assert "1. **Write the study as a config.**" in text
-        assert "`ask_agent` is optional" in text and "own API key" in text
+        assert "`ask_agent` is optional" in text and "own API\nkey" in text
 
     def test_a_study_is_read_as_its_record(self, wire):
         result = wire.request("resources/read", {

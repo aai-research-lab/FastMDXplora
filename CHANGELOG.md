@@ -66,11 +66,18 @@ offers neither.
 
 `fastmdx mcp` offers **`ask_agent`**, optional and listed last: the assistant
 writes a study itself and the validator judges it, and is told to use the Agent
-only when you ask for it, as it is a second model called on your own API key.
-It is the Agent as the GUI has it, with the
-model `fastmdx agent model` chose, the software's own tools to look with, and the
+only when you ask for it. It writes with the app's own model where the app
+lends it (sampling, in both eras of the protocol), so nothing is paid twice;
+otherwise with the model `fastmdx agent model` chose, on your own API key. A
+declined loan writes nothing and never falls back to your key. Lent, what the
+Agent sends a model (its instructions and the config language, with the
+request) goes to the app, which may show it to you first; a call answered in
+rounds works each round from what the first one read, so a running study's
+record does not move under it. It is the Agent
+as the GUI has it, with the software's own tools to look with and the
 validator as the judge. A study it writes comes back accepted, recorded as the
-Agent's (`agent: assisted` and the model), saved as a new file headed by what
+Agent's (`agent: assisted`, and in `agent_model` the model that wrote it, as
+the app named it), saved as a new file headed by what
 was asked, with its plan and `plan_id`; a question, an answer or an
 instruction comes back as itself, and nothing is run. It can change a config
 (`config`), read a study's record first (`study`), and say what it looked at;

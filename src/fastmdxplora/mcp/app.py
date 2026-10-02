@@ -51,8 +51,9 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
         "- check_study before anything runs: its plan is what the person should read.",
         "- The resource fastmdxplora://guide/working-with-studies says what the "
         "software's words mean (a mean, 'not determined', 'resolved', a refusal).",
-        "- ask_agent is optional: FastMDXplora's own Agent, a second model called on "
-        "the person's own API key. Use it only when the person asks for the Agent.",
+        "- ask_agent is optional: FastMDXplora's own Agent. It writes with this app's "
+        "model where the app lends it, and otherwise with a second model on the person's "
+        "own API key. Use it only when the person asks for the Agent.",
     ]
     if runs:
         lines.append("- start_study only when the person has agreed to that plan: a study "

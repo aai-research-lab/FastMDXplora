@@ -58,9 +58,10 @@ recorded beside the results.
    health) and after (what each analysis found, the checks, why it stopped,
    and the config that continues it).
 
-`ask_agent` is optional. It is FastMDXplora's own Agent, a second model
-the person chose and pays for on their own API key; use it only when the
-person asks for it. What it writes is judged by the same validator.
+`ask_agent` is optional; use it only when the person asks for it. It is
+FastMDXplora's own Agent, writing with this app's model where the app lends
+it, and otherwise with a second model the person chose, on their own API
+key. What it writes is judged by the same validator.
 
 ## What the software's words mean
 

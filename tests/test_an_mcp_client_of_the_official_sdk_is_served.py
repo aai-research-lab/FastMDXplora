@@ -5,7 +5,8 @@ checked against the SDK's client where that is installed: `fastmdx mcp` is
 started as a subprocess, as an assistant starts it, and driven once as a
 modern client (it probes `server/discover`) and once as a legacy one (it
 opens with `initialize`), the person being asked before a study starts in
-each. Skipped where the SDK is not installed; it is not a dependency.
+each, and the app's own model lent to the Agent in each. Skipped where the
+SDK is not installed; it is not a dependency.
 """
 
 from __future__ import annotations
@@ -44,12 +45,22 @@ async def _drive(workspace, mode: str) -> dict:
         asked.append(params.message)
         return types.ElicitResult(action="decline")
 
+    lent: list[str] = []
+
+    async def sample(context, params):
+        lent.append(params.messages[0].content.text)
+        return types.CreateMessageResult(
+            role="assistant", model="sdk-model", content=types.TextContent(
+                type="text", text="systems:\n  - system: ghg.pdb\nsimulation:\n"
+                                  "  duration_ns: 5\n"))
+
     server = StdioServerParameters(
         command=sys.executable, args=["-m", "fastmdxplora", "mcp", "--workspace", str(workspace)],
         env={"FASTMDXPLORA_CONFIG_DIR": str(workspace.parent / "settings"),
              "FASTMDXPLORA_CACHE_DIR": str(workspace.parent / "cache")})
-    seen: dict = {"asked": asked}
-    async with Client(server, mode=mode, elicitation_callback=elicit) as client:
+    seen: dict = {"asked": asked, "lent": lent}
+    async with Client(server, mode=mode, elicitation_callback=elicit,
+                      sampling_callback=sample) as client:
         seen["version"] = client.protocol_version
         seen["name"] = client.server_info.name
         seen["tools"] = [tool.name for tool in (await client.list_tools()).tools]
@@ -68,6 +79,9 @@ async def _drive(workspace, mode: str) -> dict:
         seen["resources"] = [str(r.uri) for r in resources]
         guide = await client.read_resource("fastmdxplora://guide/working-with-studies")
         seen["guide"] = guide.contents[0].text
+        agent = await client.call_tool("ask_agent", {"request": "Five nanoseconds of ghg.pdb",
+                                                     "save": False})
+        seen["agent"] = (agent.is_error, agent.content[0].text)
     return seen
 
 
@@ -92,5 +106,11 @@ def test_the_sdk_client_is_served(workspace, mode, version):
     assert seen["prompts"][0] == "design_a_study"
     assert seen["resources"][-1] == "fastmdxplora://study/ubq"
     assert seen["guide"].startswith("# Working with FastMDXplora studies")
+    # The Agent wrote with the app's model, asked once, and no key of the person's.
+    assert len(seen["lent"]) == 1 and "Five nanoseconds of ghg.pdb" in seen["lent"][0]
+    assert seen["agent"][0] is False
+    assert "own model (sdk-model), lent through the protocol" in seen["agent"][1]
+    # Named as the app names itself, not as "the app".
+    assert seen["agent"][1].count("Written with the app's own model") == 0
     # Nothing was run, so nothing was written.
     assert sorted(p.name for p in workspace.iterdir()) == ["ghg.pdb", "ghg.yml", "ubq"]

@@ -5,7 +5,8 @@ run and read studies on this machine, inside one workspace folder. The
 assistant writes a study's config and the validator judges it, as it judges
 one written by hand; the tools say what the software finds. ``ask_agent``,
 the FastMDXplora Agent as the GUI has it, is there for a person who asks
-for it, and calls a model of their own. Nothing bypasses the checks: a
+for it: it writes with the app's own model where the app lends it, and
+otherwise with the person's, on their own key. Nothing bypasses the checks: a
 study runs only from a config the validator accepted, whose plan was
 checked, with the person's go-ahead.
 

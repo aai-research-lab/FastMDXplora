@@ -182,7 +182,9 @@ TOP_LEVEL = PhaseSchema(
               example="./my_study"),
         Field("agent_model", str, None,
               "Which model wrote this study, as provider/model. Written by "
-              "`fastmdx agent`; absent when a person wrote the config. "
+              "`fastmdx agent`, and by the Agent an assistant asks, which "
+              "writes app/model where the assistant's app lent its own; "
+              "absent when a person wrote the config. "
               "Recorded because `agent: assisted` says a model was "
               "involved and not which one, and six months on that is the "
               "difference between a record and a note. Pin a dated version "

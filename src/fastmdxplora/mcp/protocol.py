@@ -41,9 +41,11 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO, Callable
 
+from fastmdxplora.refusals import CodedError
+
 __all__ = [
     "MODERN_VERSIONS", "LEGACY_VERSIONS", "ProtocolError", "InputRequired", "Cancelled",
-    "Call", "Method", "Server",
+    "NotLent", "Call", "Method", "Server",
     "PARSE_ERROR", "INVALID_REQUEST", "METHOD_NOT_FOUND", "INVALID_PARAMS",
     "INTERNAL_ERROR", "UNSUPPORTED_VERSION",
 ]
@@ -102,6 +104,13 @@ class Cancelled(Exception):
     nothing more is sent for it."""
 
 
+class NotLent(CodedError, Exception):
+    """The client did not lend its model: the person declined, or it
+    answered with something that is not a reply."""
+
+    default_code = "assistant.model.not_lent"
+
+
 class InputRequired(Exception):
     """Raised by :meth:`Call.confirm` on a modern call: the answer is the
     person's to give, and the client is to ask the call again with it."""
@@ -120,7 +129,7 @@ class Method:
     for anyone, ``private`` where it holds the person's own files.
     """
 
-    serve: Callable[["Call"], dict[str, Any]]
+    serve: Callable[[Call], dict[str, Any]]
     ttl_ms: int | None = None
     scope: str = "public"
 
@@ -137,6 +146,12 @@ class Call:
     capabilities: dict[str, Any]
     _server: Server = field(repr=False)
     _steps: int = 0
+    #: Replies the client's model gave this call in earlier rounds (modern),
+    #: each with the prompt it answered, and how many have been used again;
+    #: and what the call worked out once and keeps the same every round.
+    _replies: list[list[str]] | None = field(default=None, repr=False)
+    _replayed: int = 0
+    _kept: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
     def client_name(self) -> str | None:
@@ -179,6 +194,85 @@ class Call:
             return False
         # An empty object is form mode, for clients written before modes.
         return not asked or isinstance(asked.get("form"), dict)
+
+    def can_sample(self) -> bool:
+        """Whether the client lends its own model (sampling)."""
+        return isinstance(self.capabilities.get("sampling"), dict)
+
+    def sample(self, prompt: str, *, bound_to: str, max_tokens: int) -> tuple[str, str]:
+        """The client's own model's reply to ``prompt``, and the model's name.
+
+        Legacy: asked now, and waited for. Modern: there is no asking
+        mid-call, so the call is answered ``input_required`` and asked
+        again with the reply; the replies given so far travel in the
+        signed state, and the work is done again up to the next prompt
+        with each one given back. A prompt that comes out differently on
+        the way back is not given another prompt's reply.
+        """
+        params = {"messages": [{"role": "user", "content": {"type": "text", "text": prompt}}],
+                  "maxTokens": max_tokens,
+                  "modelPreferences": {"intelligencePriority": 0.9, "speedPriority": 0.2}}
+        if self.era != "modern":
+            answered = self._server.request(self, "sampling/createMessage", params)
+            if self.cancelled:
+                raise Cancelled(self.method)
+            reply = _sampled(answered)
+            if reply is None:
+                raise NotLent("The app did not lend its model for this.")
+            return reply
+        self._rounds(bound_to)
+        replies = self._replies if self._replies is not None else []
+        heard = _digest(prompt)
+        if self._replayed < len(replies):
+            asked, text, model = replies[self._replayed]
+            if asked != heard:
+                raise NotLent("The work came out differently when done again with the "
+                              "replies given so far, so they no longer answer it.")
+            self._replayed += 1
+            return text, model
+        key = f"fastmdx-sample-{len(replies)}"
+        carried = {"replies": replies, "asked": heard, "key": key, "kept": self._kept}
+        raise InputRequired({key: {"method": "sampling/createMessage", "params": params}},
+                            self._server.state_for(self.method, bound_to, carried))
+
+    def kept(self, key: str, make: Callable[[], Any], *, bound_to: str) -> Any:
+        """What ``make`` gives, worked out once for a call answered in
+        rounds (modern sampling) and given back the same every later round,
+        so the prompts are made again from what the first round saw: a
+        running study's record, or a look, does not move under them. For
+        a call in one piece, just what ``make`` gives. JSON, as it travels
+        in the signed state."""
+        if self.era != "modern":
+            return make()
+        self._rounds(bound_to)
+        if key not in self._kept:
+            self._kept[key] = make()
+        return self._kept[key]
+
+    def _rounds(self, bound_to: str) -> None:
+        """The earlier rounds' replies and kept values, read once."""
+        if self._replies is None:
+            self._replies, self._kept = self._given_back(bound_to)
+
+    def _given_back(self, bound_to: str) -> tuple[list[list[str]], dict[str, Any]]:
+        """The replies of earlier rounds and the one this round carries, and
+        what the call kept."""
+        state = self.params.get("requestState")
+        answers = self.params.get("inputResponses")
+        if not isinstance(state, str):
+            if answers is not None:
+                raise NotLent("A reply came without the state it answers.")
+            return [], {}
+        carried = self._server.opened(state, self.method, bound_to)
+        if not isinstance(carried, dict) or not isinstance(carried.get("replies"), list):
+            raise NotLent("The state given back is not this server's for this call, has "
+                          "expired, or was used before.")
+        reply = _sampled(answers.get(carried.get("key")) if isinstance(answers, dict) else None)
+        if reply is None:
+            raise NotLent("The app did not lend its model for this.")
+        kept = carried.get("kept")
+        return ([*carried["replies"], [str(carried.get("asked")), *reply]],
+                dict(kept) if isinstance(kept, dict) else {})
 
     def confirm(self, key: str, message: str, schema: dict[str, Any], *,
                 bound_to: str) -> dict[str, Any] | None:
@@ -483,34 +577,42 @@ class Server:
         """Send a legacy client a question and wait for its answer. Any
         answer that is not a result (an error, a timeout, a cancelled
         call) is ``cancel``: nothing goes ahead on silence."""
+        return self.request(call, method, params) or {"action": "cancel"}
+
+    def request(self, call: Call, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
+        """Send a legacy client a request for ``call`` and wait for its
+        result; None for an error, no answer in time, or a cancelled call."""
         ask_id = f"fastmdx-ask-{next(self._ask_ids)}"
         future: Future[dict[str, Any]] = Future()
         with self._state_lock:
             if call.id in self._cancelled:
-                return {"action": "cancel"}  # nobody is waiting for the answer
+                return None  # nobody is waiting for the answer
             self._asks[ask_id] = (future, call.id)
         try:
             self._send({"jsonrpc": "2.0", "id": ask_id, "method": method, "params": params})
             answered = future.result(timeout=ANSWER_WITHIN_S)
         except (FutureTimeout, CancelledError):
-            return {"action": "cancel"}
+            return None
         finally:
             with self._state_lock:
                 self._asks.pop(ask_id, None)
         result = answered.get("result")
-        return result if isinstance(result, dict) else {"action": "cancel"}
+        return result if isinstance(result, dict) else None
 
     def cancelled(self, request_id: Any) -> bool:
         with self._state_lock:
             return request_id in self._cancelled
 
-    def state_for(self, method: str, bound_to: str) -> str:
-        """A modern call's state while the person is asked: what it is
-        about and until when, signed with this process's key."""
-        body = json.dumps({"m": method, "b": bound_to,
-                           "e": time.time() + ANSWER_WITHIN_S,
-                           "n": base64.urlsafe_b64encode(os.urandom(12)).decode()},
-                          separators=(",", ":")).encode()
+    def state_for(self, method: str, bound_to: str, carried: Any = None) -> str:
+        """A modern call's state while the client is asked: what it is
+        about, until when, and what it carries to the next round, signed
+        with this process's key."""
+        said: dict[str, Any] = {"m": method, "b": bound_to, "e": time.time() + ANSWER_WITHIN_S,
+                                "n": base64.urlsafe_b64encode(os.urandom(12)).decode()}
+        if carried is not None:
+            said["c"] = carried
+        body = json.dumps(said, separators=(",", ":"), ensure_ascii=False,
+                          default=str).encode()
         mac = hmac.new(self._secret, body, hashlib.sha256).digest()
         return (base64.urlsafe_b64encode(body).decode() + "."
                 + base64.urlsafe_b64encode(mac).decode())
@@ -518,22 +620,52 @@ class Server:
     def redeem(self, state: str, method: str, bound_to: str) -> bool:
         """Whether a state is this server's, unaltered, unexpired, about
         this call, and not used before. Used once only."""
+        return self._opened(state, method, bound_to) is not None
+
+    def opened(self, state: str, method: str, bound_to: str) -> Any:
+        """What a state carries, where :meth:`redeem` would take it; None
+        otherwise. Used once only."""
+        said = self._opened(state, method, bound_to)
+        return None if said is None else said.get("c")
+
+    def _opened(self, state: str, method: str, bound_to: str) -> dict[str, Any] | None:
         try:
             body_text, mac_text = state.split(".", 1)
-            body = base64.urlsafe_b64decode(body_text.encode())
-            mac = base64.urlsafe_b64decode(mac_text.encode())
+            # Strictly: a state is taken only exactly as it was given out.
+            body = base64.b64decode(body_text.encode(), altchars=b"-_", validate=True)
+            mac = base64.b64decode(mac_text.encode(), altchars=b"-_", validate=True)
             if not hmac.compare_digest(mac, hmac.new(self._secret, body, hashlib.sha256).digest()):
-                return False
+                return None
             said = json.loads(body)
         except (ValueError, TypeError):
-            return False
+            return None
         if not isinstance(said, dict) or said.get("m") != method or said.get("b") != bound_to:
-            return False
+            return None
         if not isinstance(said.get("e"), (int, float)) or said["e"] < time.time():
-            return False
+            return None
         nonce = str(said.get("n"))
         with self._state_lock:
             if nonce in self._redeemed:
-                return False
+                return None
             self._redeemed.add(nonce)
-        return True
+        return said
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+def _sampled(result: Any) -> tuple[str, str] | None:
+    """The text and the model's name from a sampling result, or None where
+    it is not one (a refusal, an error, nothing)."""
+    if not isinstance(result, dict):
+        return None
+    content = result.get("content")
+    blocks = content if isinstance(content, list) else [content]
+    texts = [b.get("text") for b in blocks
+             if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)]
+    if not texts:
+        return None
+    model = result.get("model")
+    return "".join(texts), (model.strip() if isinstance(model, str) and model.strip()
+                            else "a model the app did not name")

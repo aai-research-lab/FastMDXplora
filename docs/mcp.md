@@ -102,11 +102,25 @@ saved as a new file with its plan and `plan_id` and recorded as its model's,
 and it answers questions or asks you what only you can say. It runs nothing.
 
 It is optional, offered last, and the assistant is told to use it only when you
-ask for the Agent, because it is a second model: the one you chose once, in a
-terminal, with `fastmdx agent model` (see
-[Connecting a model](agent.md#connecting-a-model)), called on your own API key.
-Each call is paid for on top of the assistant's own. What it writes is judged
-by the same validator as what the assistant writes.
+ask for the Agent. Which model it writes with:
+
+- **The app's own**, where the app lends it (the protocol's *sampling*, which
+  the app declares; it may ask you first). Nothing is paid twice and no key of
+  yours is used. What the Agent sends a model, its instructions and the config
+  language with your request, is then sent to the app, which may show it to
+  you before it answers, as it is sent to your provider when your own key is
+  used. In the 2026-07-28 protocol each reply is a round of the call,
+  carried back in its signed state, so the Agent's looks and corrections still
+  happen between replies. If the app declines, nothing is written, and your own
+  key is not used in its place.
+- **Otherwise, yours**: the one you chose once, in a terminal, with
+  `fastmdx agent model` (see [Connecting a model](agent.md#connecting-a-model)),
+  called on your own API key, each call paid for on top of the assistant's own.
+
+Its answer says which it was, and a study it writes records the model in
+`agent_model`: the app's name and the model the app named, such as
+`app-name/model-name`, or your provider and model. What it writes is
+judged by the same validator as what the assistant writes.
 
 ## Starting a study
 

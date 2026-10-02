@@ -334,6 +334,10 @@ CODES: tuple[Code, ...] = (
          "the workspace, a config that is not a file, a study already running, or "
          "arguments it cannot use.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
+    Code("assistant.model.not_lent",
+         "The assistant's app did not lend its own model to the Agent: the person "
+         "declined, or what came back was not a reply to what was asked.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.model.unset",
          "No model has been chosen, so there is nothing to ask.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
