@@ -15,12 +15,14 @@ from typing import Any
 
 _LOCK = threading.RLock()
 _STORE = Path(".research/bookmarks.json")
+BOOKMARK_TAGS = ("Simulation settings", "Graph", "Figure", "Trajectory frame",
+                 "Structure", "Preparation", "Observation")
 _PAGES = {"overview", "viewer", "analysis", "report", "files", "run", "agent", "studies",
           "cite", "settings"}
 
 
 def clean_view(value: Any) -> dict[str, Any]:
-    """Keep only bounded view state; no HTML, file paths or executable actions."""
+    """Keep bounded view state; no external artifact paths or executable actions."""
     if not isinstance(value, dict):
         raise ValueError("A research view must be an object.")
     page = value.get("page")
@@ -30,6 +32,12 @@ def clean_view(value: Any) -> dict[str, Any]:
         text = value.get(name)
         if isinstance(text, str) and re.fullmatch(r"[\w.-]{1,100}", text):
             view[name] = text
+    figure = value.get("figure")
+    if isinstance(figure, str) and re.fullmatch(r"analysis/[a-z][a-z0-9_]{0,63}/[A-Za-z0-9_.-]{1,128}\.(?:png|svg|jpg|jpeg)", figure):
+        view["figure"] = figure
+    field_value = value.get("field_value")
+    if isinstance(field_value, bool) or isinstance(field_value, str) and len(field_value) <= 2000:
+        view["field_value"] = field_value
     warning = value.get("warning")
     if isinstance(warning, str) and len(warning) <= 160:
         view["warning"] = warning
@@ -42,6 +50,12 @@ def clean_view(value: Any) -> dict[str, Any]:
     frame = value.get("frame")
     if isinstance(frame, int) and not isinstance(frame, bool) and 0 <= frame <= 10_000_000:
         view["frame"] = frame
+    mode = value.get("mode")
+    if isinstance(mode, str) and mode in {"structure", "live", "playback"}:
+        view["mode"] = mode
+    live_step = value.get("live_step")
+    if isinstance(live_step, int) and not isinstance(live_step, bool) and 0 <= live_step <= 10**15:
+        view["live_step"] = live_step
     for name, sizes in (("camera", (8,)), ("range", (2,))):
         numbers = value.get(name)
         if (isinstance(numbers, list) and len(numbers) in sizes
@@ -60,7 +74,44 @@ def clean_view(value: Any) -> dict[str, Any]:
         if isinstance(number, int) and not isinstance(number, bool) and abs(number) < 1_000_000:
             kept["resseq"] = number
             view["selection"] = kept
+    display = value.get("display")
+    if isinstance(display, dict):
+        kept_display: dict[str, Any] = {}
+        if isinstance(display.get("representation"), str) and display["representation"] in {"cartoon", "backbone", "sticks", "ballAndStick", "surface", "lines"}:
+            kept_display["representation"] = display["representation"]
+        if isinstance(display.get("colorMode"), str) and display["colorMode"] in {"chain", "spectrum", "residue", "element", "secondary_structure", "monochrome"}:
+            kept_display["colorMode"] = display["colorMode"]
+        visible = display.get("visibility")
+        if isinstance(visible, dict):
+            kept_display["visibility"] = {key: visible[key] for key in
+                ("protein", "ligand", "pocket", "water", "ions", "hydrogens", "box")
+                if isinstance(visible.get(key), bool)}
+        for key in ("pocketSurface", "pocketOnly", "isolateLigand"):
+            if isinstance(display.get(key), bool):
+                kept_display[key] = display[key]
+        cutoff = display.get("pocketCutoff")
+        if isinstance(cutoff, (int, float)) and not isinstance(cutoff, bool) and math.isfinite(cutoff) and 0 < cutoff <= 100:
+            kept_display["pocketCutoff"] = cutoff
+        ligand = display.get("ligandResname")
+        if "ligandResname" in display and (ligand is None or isinstance(ligand, str) and re.fullmatch(r"[A-Za-z0-9]{1,8}", ligand)):
+            kept_display["ligandResname"] = ligand
+        if kept_display:
+            view["display"] = kept_display
     return view
+
+
+def clean_tags(value: Any) -> list[str]:
+    """Retain portable user tags as bounded text, never markup or actions."""
+    if not isinstance(value, list) or len(value) > 16:
+        raise ValueError("Use up to 16 bookmark tags.")
+    result = []
+    for tag in value:
+        if not isinstance(tag, str) or not tag.strip() or len(tag.strip()) > 48:
+            raise ValueError("Each tag must contain 1–48 characters.")
+        tag = tag.strip()
+        if tag not in result:
+            result.append(tag)
+    return result
 
 
 def context_for(root: Any, value: Any) -> str:
@@ -74,6 +125,8 @@ def context_for(root: Any, value: Any) -> str:
              "A graph range only crops the view: recorded means and uncertainty "
              "still refer to the full analysis. "
              "Explain only evidence available in the study; say when it is absent."]
+    if "field_value" in view:
+        lines.append("field_value is the current browser draft value. It is not an applied or scientifically validated setting; distinguish it from recorded study parameters below.")
     if root:
         lines.extend(_issue_context(Path(root), view.get("warning")))
         if view.get("analysis"):
@@ -252,7 +305,7 @@ def bookmarks_endpoint(runtime: Any, payload: Any = None, *, path_for: Any = Non
             if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
                 raise ValueError("The bookmark file is malformed; preserve it before repairing it.")
             if payload is None:
-                return {"ok": True, "study": str(root), "bookmarks": rows}
+                return {"ok": True, "study": str(root), "bookmarks": rows, "tags": BOOKMARK_TAGS}
             supplied = payload.get("study") if isinstance(payload, dict) else None
             if path_for is not None and supplied:
                 supplied = path_for(supplied)
@@ -261,6 +314,10 @@ def bookmarks_endpoint(runtime: Any, payload: Any = None, *, path_for: Any = Non
                 raise ValueError("The study changed. Reload bookmarks before saving.")
             action = payload.get("action", "save")
             bid = payload.get("id")
+            old = next((r for r in rows if r.get("id") == bid), None)
+            expected = payload.get("expected_updated_at")
+            if expected is not None and (old is None or old.get("updated_at") != expected):
+                raise ValueError("This bookmark changed in another window. Reload before editing or deleting it.")
             if action == "delete":
                 rows = [row for row in rows if row.get("id") != bid]
             elif action == "save":
@@ -268,7 +325,6 @@ def bookmarks_endpoint(runtime: Any, payload: Any = None, *, path_for: Any = Non
                 note = str(payload.get("note") or "")
                 if not title or len(title) > 160 or len(note) > 8000:
                     raise ValueError("Use a title up to 160 characters and a note up to 8000.")
-                old = next((r for r in rows if r.get("id") == bid), None)
                 if bid and old is None:
                     raise ValueError("That bookmark no longer exists.")
                 if not old and len(rows) >= 500:
@@ -276,18 +332,77 @@ def bookmarks_endpoint(runtime: Any, payload: Any = None, *, path_for: Any = Non
                 now = datetime.now(timezone.utc).isoformat()
                 row = {"id": old["id"] if old else uuid.uuid4().hex,
                        "title": title, "note": note, "view": clean_view(payload.get("view")),
+                       "tags": clean_tags(payload.get("tags", old.get("tags", []) if old else [])),
+                       "version": 2,
                        "created_at": old["created_at"] if old else now, "updated_at": now}
+                from fastmdxplora.gui.research_sources import source_for
+
+                row["source"] = old.get("source", {}) if old and old.get("view") == row["view"] else source_for(root, row["view"])
+                if payload.get("screenshot"):
+                    from fastmdxplora.gui.research_images import store_image
+
+                    row["screenshot"] = store_image(root, payload["screenshot"])
+                elif old and old.get("screenshot") and not payload.get("remove_screenshot"):
+                    row["screenshot"] = old["screenshot"]
                 rows = [r for r in rows if r.get("id") != row["id"]] + [row]
             else:
                 raise ValueError("Unknown bookmark action.")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fd, temporary = tempfile.mkstemp(dir=path.parent, prefix="bookmarks-", suffix=".tmp")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                    json.dump(rows, stream, indent=2, allow_nan=False)
-                os.replace(temporary, path)
-            finally:
-                Path(temporary).unlink(missing_ok=True)
+            write_rows(root, rows)
             return {"ok": True, "study": str(root), "bookmarks": rows}
     except (OSError, ValueError, TypeError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def write_rows(root: Path, rows: list[dict]) -> None:
+    """Atomic store replacement; callers hold the shared research lock."""
+    path = root / _STORE
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Bookmark storage must stay inside the study.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix="bookmarks-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(rows, stream, indent=2, allow_nan=False)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def screenshot_endpoint(runtime: Any, bookmark_id: str) -> dict[str, Any]:
+    from fastmdxplora.gui.research_images import read_image
+
+    answer = bookmarks_endpoint(runtime)
+    if not answer.get("ok"):
+        return answer
+    row = next((row for row in answer["bookmarks"] if row.get("id") == bookmark_id), None)
+    try:
+        if row is None:
+            raise ValueError("That bookmark is unavailable.")
+        return {"ok": True, "image": read_image(Path(answer["study"]), row.get("screenshot"))}
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def restore_endpoint(runtime: Any, bookmark_id: str) -> dict[str, Any]:
+    from fastmdxplora.gui.research_sources import compatible
+
+    answer = bookmarks_endpoint(runtime)
+    if not answer.get("ok"):
+        return answer
+    row = next((row for row in answer["bookmarks"] if row.get("id") == bookmark_id), None)
+    try:
+        if row is None:
+            raise ValueError("That bookmark is unavailable.")
+        root = Path(answer["study"])
+        ok, reason = compatible(root, row)
+        if not ok:
+            return {"ok": False, "error": reason}
+        view = clean_view(row.get("view"))
+        view["study"] = str(root)
+        if view.get("frame") is not None:
+            record = _read_record(root, "simulation/playback_index.json")
+            if record.get("source_signature"):
+                view["playback_signature"] = record["source_signature"]
+        return {"ok": True, "view": view, "note": row.get("note", "")}
+    except (OSError, ValueError) as exc:
         return {"ok": False, "error": str(exc)}

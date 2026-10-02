@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import base64
+import io
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from urllib.error import HTTPError
@@ -9,7 +11,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from fastmdxplora.gui.research import bookmarks_endpoint, clean_view, context_for
+from fastmdxplora.gui.research import bookmarks_endpoint, clean_view, context_for, screenshot_endpoint
 from fastmdxplora.gui.server import start_test_server
 
 
@@ -37,6 +39,17 @@ def test_views_are_bounded_and_cannot_carry_actions():
     assert clean_view({"page": [], "frame": -1, "camera": [float("nan")] * 8,
                        "analysis": "../../secrets", "action": "run"}) == {"page": "overview"}
     assert clean_view({"page": "analysis", "range": [2, 1]}) == {"page": "analysis"}
+    assert "figure" not in clean_view({"figure": "../../private.png"})
+    assert "figure" not in clean_view({"figure": "https://example.com/image.png"})
+    assert "field_value" not in clean_view({"field_value": "x" * 2001})
+    assert clean_view({"field_value": False})["field_value"] is False
+
+
+def test_current_draft_setting_is_labelled_separately_from_applied_values(study):
+    text = context_for(study.active_root, {"page": "run", "field": "temperature_kelvin", "field_value": "310"})
+    assert '"field_value": "310"' in text
+    assert "current browser draft value" in text
+    assert "not an applied" in text
 
 
 def test_bookmarks_survive_a_new_runtime_and_update_and_delete(study):
@@ -56,6 +69,78 @@ def test_stale_study_and_no_study_are_refused(study):
     assert not save(study, study="another study")["ok"]
     assert not bookmarks_endpoint(SimpleNamespace(active_root=None))["ok"]
     assert not (study.active_root / ".research").exists()
+
+
+def test_tags_survive_edits_without_implicit_replacement(study):
+    first = save(study, tags=[" Graph ", "Graph", "Observation", "Custom research tag"])
+    row = first["bookmarks"][0]
+    assert row["tags"] == ["Graph", "Observation", "Custom research tag"]
+    assert row["version"] == 2
+    edited = save(study, id=row["id"], note="Edited")
+    assert edited["bookmarks"][0]["tags"] == row["tags"]
+    assert "Trajectory frame" in bookmarks_endpoint(study)["tags"]
+
+
+def test_stale_edit_and_delete_preserve_the_newer_note(study):
+    row = save(study)["bookmarks"][0]
+    updated = save(study, id=row["id"], expected_updated_at=row["updated_at"], note="Newer note")
+    assert updated["ok"]
+    assert not save(study, id=row["id"], expected_updated_at=row["updated_at"], note="Stale note")["ok"]
+    assert not bookmarks_endpoint(study, {"study": str(study.active_root), "action": "delete",
+        "id": row["id"], "expected_updated_at": row["updated_at"]})["ok"]
+    assert bookmarks_endpoint(study)["bookmarks"] == updated["bookmarks"]
+
+
+@pytest.mark.parametrize("tags", [None, "Graph", [""], ["x" * 49], [False], ["tag"] * 17])
+def test_invalid_tags_do_not_change_existing_bookmarks(study, tags):
+    first = save(study)
+    assert not save(study, tags=tags)["ok"]
+    assert bookmarks_endpoint(study)["bookmarks"] == first["bookmarks"]
+
+
+def test_display_state_keeps_only_supported_view_controls():
+    view = clean_view({"page": "viewer", "display": {"representation": "ballAndStick",
+        "colorMode": "secondary_structure", "visibility": {"protein": True,
+            "water": False, "ions": "yes", "action": "run"}, "action": "run"}})
+    assert view["display"] == {"representation": "ballAndStick",
+        "colorMode": "secondary_structure", "visibility": {"protein": True, "water": False}}
+    assert "display" not in clean_view({"display": {"representation": [], "colorMode": {}}})
+
+
+def png_data(width=100, height=50):
+    from PIL import Image, PngImagePlugin
+
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("private", "must not survive image normalization")
+    stream = io.BytesIO()
+    Image.new("RGB", (width, height), "blue").save(stream, format="PNG", pnginfo=metadata)
+    return "data:image/png;base64," + base64.b64encode(stream.getvalue()).decode()
+
+
+def test_screenshot_survives_note_edits_and_metadata_is_removed(study):
+    from PIL import Image
+
+    answer = save(study, screenshot=png_data())
+    assert answer["ok"]
+    row = answer["bookmarks"][0]
+    image = screenshot_endpoint(study, row["id"])
+    assert image["ok"]
+    with Image.open(io.BytesIO(base64.b64decode(image["image"].partition(",")[2]))) as pixels:
+        assert pixels.size == (100, 50)
+        assert pixels.getpixel((0, 0)) == (0, 0, 255)
+        assert "private" not in pixels.info
+    assert save(study, id=row["id"], note="Edited")["bookmarks"][0]["screenshot"] == row["screenshot"]
+    removed = save(study, id=row["id"], remove_screenshot=True)
+    assert "screenshot" not in removed["bookmarks"][0]
+    assert not screenshot_endpoint(study, row["id"])["ok"]
+
+
+@pytest.mark.parametrize("screenshot", ["data:image/svg+xml,<svg/>", "data:image/png;base64,invalid", png_data(1601, 1)])
+def test_invalid_screenshot_does_not_replace_saved_notes(study, screenshot):
+    first = save(study)
+    assert not save(study, id=first["bookmarks"][0]["id"], screenshot=screenshot)["ok"]
+    assert bookmarks_endpoint(study)["bookmarks"] == first["bookmarks"]
+    assert not screenshot_endpoint(study, "../../secrets")["ok"]
 
 
 def test_hosted_path_policy_and_stale_data_apply(study):
@@ -120,11 +205,13 @@ def test_api_does_not_expose_bookmarks_as_artifacts(served, study):
     from fastmdxplora.gui.exploration import DashboardRuntime
     from tests.test_a_public_dashboard_answers_only_what_it_lists import _serving
 
-    save(study)
+    row = save(study, screenshot=png_data())["bookmarks"][0]
     with urlopen(served + "/api/research/bookmarks") as response:
         assert len(json.load(response)["bookmarks"]) == 1
     with urlopen(served + "/api/artifacts") as response:
         assert ".research" not in json.dumps(json.load(response))
+    with urlopen(served + "/api/research/bookmarks/image?id=" + row["id"]) as response:
+        assert json.load(response)["image"].startswith("data:image/png;base64,")
     request = Request(served + "/api/research/bookmarks", data=b"{}", method="POST",
                       headers={"Origin": "https://example.com", "Content-Type": "application/json"})
     with pytest.raises(HTTPError) as exc:
@@ -135,11 +222,32 @@ def test_api_does_not_expose_bookmarks_as_artifacts(served, study):
                                active_root=study.active_root)
     with _serving(runtime, allow_control=False) as public:
         for request in (public + "/api/research/bookmarks",
+                        public + "/api/research/bookmarks/image?id=" + row["id"],
+                        public + "/api/research/bookmarks/restore?id=" + row["id"],
+                        public + "/api/research/bookmarks/export",
+                        Request(public + "/api/research/bookmarks/import-preview", data=b"{}", method="POST"),
+                        Request(public + "/api/research/bookmarks/import", data=b"{}", method="POST"),
                         Request(public + "/api/research/bookmarks", data=b"{}", method="POST",
                                 headers={"Content-Type": "application/json"})):
             with pytest.raises(HTTPError) as denied:
                 urlopen(request)
             assert denied.value.code == 403
+
+
+def test_import_api_checks_origin_and_size_before_preview(served, study, monkeypatch):
+    import fastmdxplora.gui.research_bundle as bundles
+
+    request = Request(served + "/api/research/bookmarks/import-preview", data=b"{}", method="POST",
+                      headers={"Origin": "https://example.com", "Content-Type": "application/octet-stream"})
+    with pytest.raises(HTTPError) as denied:
+        urlopen(request)
+    assert denied.value.code == 403
+    monkeypatch.setattr(bundles, "MAX_BUNDLE_BYTES", 100)
+    request = Request(served + "/api/research/bookmarks/import-preview", data=b"x" * 101, method="POST")
+    with pytest.raises(HTTPError) as oversized:
+        urlopen(request)
+    assert oversized.value.code == 400
+    assert not (study.active_root / ".research").exists()
 
 
 def test_browser_docks_agent_saves_restores_and_exports(served, study, tmp_path):
@@ -162,22 +270,48 @@ def test_browser_docks_agent_saves_restores_and_exports(served, study, tmp_path)
         page.evaluate("FastMDXDashboard.showAnalysis('rmsd'); FastMDXSeries.setRange('rmsd', [1,3])")
         page.locator(".series-range").wait_for()
         assert "View cropped" in page.locator(".series-chart").inner_text()
-        page.locator("#research-bookmarks-toggle").click()
+        page.locator('.page[data-page="analysis"] [data-research-bookmark="rmsd"]').click()
         page.locator("#research-title").fill("My RMSD range")
         page.locator("#research-note").fill("Does this plateau persist?")
+        page.locator('#research-tags input[value="Graph"]').check()
+        page.locator('#research-tags input[value="Figure"]').check()
+        page.locator("#research-screenshot").check()
         page.locator("#research-save").click()
         page.locator(".research-bookmark").wait_for()
+        assert "without screenshot" not in page.locator("#research-status").inner_text(), page.locator("#research-status").inner_text()
+        page.wait_for_function("document.querySelector('.research-screenshot')?.complete && document.querySelector('.research-screenshot')?.naturalWidth > 0")
         page.reload()
         page.locator("#research-bookmarks-toggle").click()
         page.locator(".research-bookmark").wait_for()
         assert "Does this plateau persist?" in page.locator(".research-bookmark").inner_text()
+        page.locator("#research-tag-filter").select_option("Structure")
+        assert page.locator(".research-bookmark").count() == 0
+        page.locator("#research-tag-filter").select_option("Figure")
+        assert page.locator(".research-bookmark").count() == 1
+        page.locator("#research-search").fill("missing phrase")
+        assert page.locator(".research-bookmark").count() == 0
+        page.locator("#research-search").fill("plateau")
+        assert page.locator(".research-bookmark").count() == 1
         page.locator(".research-bookmark button", has_text="Restore").click()
+        page.wait_for_function("JSON.stringify(FastMDXSeries.getRange('rmsd')) === '[1,3]'")
         assert page.evaluate("FastMDXSeries.getRange('rmsd')") == [1, 3]
         with page.expect_download() as download:
             page.locator("#research-export").click()
         exported = tmp_path / "export.json"
         download.value.save_as(exported)
         assert json.loads(exported.read_text())["bookmarks"][0]["view"]["range"] == [1, 3]
+        assert json.loads(exported.read_text())["bookmarks"][0]["tags"] == ["Graph", "Figure"]
+        assert "screenshot" not in json.loads(exported.read_text())["bookmarks"][0]
+        with page.expect_download() as download:
+            page.locator("#research-export-bundle").click()
+        bundle = tmp_path / "research.zip"
+        download.value.save_as(bundle)
+        page.locator("#research-import-file").set_input_files(bundle)
+        page.locator("#research-import-preview").wait_for(state="visible")
+        assert "1 matching IDs" in page.locator("#research-import-summary").inner_text()
+        assert page.locator(".research-bookmark").count() == 1
+        page.locator("#research-import-apply").click()
+        page.wait_for_function("document.querySelectorAll('.research-bookmark').length === 2")
         page.locator("#research-bookmarks-close").click()
         page.locator("#research-agent-toggle").click()
         page.screenshot(path=str(tmp_path / "research-dashboard.png"))
@@ -188,8 +322,11 @@ def test_browser_docks_agent_saves_restores_and_exports(served, study, tmp_path)
 def test_viewer_bookmark_restores_frame_camera_and_selection(tmp_path):
     sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
     from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+    from fastmdxplora.gui.live_frames import write_live_frame
 
     root = _write_study(tmp_path / "viewer-study")
+    write_live_frame(root / "simulation", pdb_text=(root / "setup/topology.pdb").read_text(),
+                     frame_index=2500, stage="production", simulation_time_ns=0.005)
     server, url = start_test_server(root)
     try:
         with sync_playwright() as p:
@@ -206,13 +343,30 @@ def test_viewer_bookmark_restores_frame_camera_and_selection(tmp_path):
             }""")
             view = page.evaluate("FastMDXResearch.capture()")
             assert view["frame"] == 3
+            page.evaluate("FastMDXMoleculeViewer.pollLiveFrame()")
+            assert page.evaluate("FastMDXResearch.capture().frame") == 3
+            assert page.locator("#overlay-frame").inner_text() == "frame 3"
+            time_label = page.locator("#overlay-simtime").inner_text()
+            page.evaluate("window.dispatchEvent(new CustomEvent('dashboard:status-updated', {detail:{status:{status:'completed',stage:'report',simulation_time_completed_ns:9}}}))")
+            assert page.locator("#overlay-frame").inner_text() == "frame 3"
+            assert page.locator("#overlay-simtime").inner_text() == time_label
             assert view["selection"]["resseq"] == 1
             assert view["camera"] == [0, 0, 0, -50, 0, 0, 0, 1]
+            page.locator("#viewer-rep").select_option("sticks")
+            page.locator('input[data-vis="hydrogens"]').check()
             result = page.evaluate("v => FastMDXMoleculeViewer.restoreResearchView(v)",
                                    {**view, "frame": 6})
             assert result == "Bookmark restored."
             assert page.evaluate("FastMDXResearch.capture().frame") == 6
             assert page.evaluate("v => FastMDXMoleculeViewer.restoreResearchView(v)", view) == "Bookmark restored."
+            assert page.evaluate("FastMDXResearch.capture().frame") == 3
+            assert page.locator("#viewer-rep").input_value() == view["display"]["representation"]
+            assert not page.locator('input[data-vis="hydrogens"]').is_checked()
+            residue = {**view, "selection": {"chain": "A", "resseq": 1, "resname": "ALA", "atom": ""}}
+            assert page.evaluate("v => FastMDXMoleculeViewer.restoreResearchView(v)", residue) == "Bookmark restored."
+            assert page.evaluate("FastMDXResearch.capture().selection.atom") == ""
+            page.evaluate("v => FastMDXResearch.restore(v)", {**view, "study": "different-study"})
+            assert "study changed" in page.locator("#research-status").inner_text().lower()
             assert page.evaluate("FastMDXResearch.capture().frame") == 3
             assert "changed" in page.evaluate("v => FastMDXMoleculeViewer.restoreResearchView(v)",
                                                 {**view, "playback_signature": "stale"})

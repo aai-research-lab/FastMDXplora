@@ -44,6 +44,7 @@
     structurePdb: null,
     currentPdb: null,
     liveFrameIndex: null,
+    liveDisplayInfo: null,
     liveUpdates: true,
     mode: "structure",
     representation: "cartoon",
@@ -129,6 +130,9 @@
     pausePlayback();
     STATE.liveUpdates = true;
     STATE.liveFrameIndex = null;
+    STATE.liveDisplayInfo = null;
+    const bookmark = document.getElementById("research-viewer-bookmark");
+    if (bookmark) bookmark.disabled = true;
     STATE.mode = "structure";
     STATE.structureInfo = null;
     STATE.structureUrl = null;
@@ -315,6 +319,7 @@
       if (!response.ok) throw new Error(`structure HTTP ${response.status}`);
       const pdb = await response.text();
       if (!isViewerGenerationCurrent(generation)) return;
+      if (STATE.mode === "playback") return;
       if (!pdb.includes("ATOM") && !pdb.includes("HETATM")) {
         throw new Error("structure response contains no atoms");
       }
@@ -326,8 +331,8 @@
       // the solvated system, stored it, and went on drawing the frame.
       if (STATE.mode !== "live" || !STATE.currentPdb || needsFullTopology()) {
         STATE.currentPdb = pdb;
+        STATE.mode = "structure";
       }
-      STATE.mode = STATE.liveFrameIndex != null ? "live" : "structure";
       mountStoredStructureWhereVisible(true, {forceFit: true});
       hideViewerMessage();
     } catch (error) {
@@ -457,6 +462,8 @@
     }
     if (opts.main) {
       STATE.model = model;
+      const bookmark = document.getElementById("research-viewer-bookmark");
+      if (bookmark) bookmark.disabled = false;
       // Made clickable here, not once at viewer creation. 3Dmol sets the
       // property on the atoms currently selected, and at creation there are
       // none -- the model is added afterwards, and every atom in it arrived
@@ -558,24 +565,30 @@
   /* ------------------------------------------------------------------ */
   async function pollLiveFrame() {
     const generation = STATE.viewerGeneration;
-    if (!STATE.liveUpdates || document.body.classList.contains("state-loading")) return;
+    if (!STATE.liveUpdates || STATE.mode === "playback" || document.body.classList.contains("state-loading")) return;
     try {
       const response = await fetch("/api/live-frame-index", {cache: "no-store"});
       if (!isViewerGenerationCurrent(generation)) return;
       if (!response.ok) return;
       const index = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
+      if (!STATE.liveUpdates || STATE.mode === "playback") return;
       if (!index.live_frame_available) {
         setOverlay(false, {stage: index.simulation_stage || "waiting", age: "—"});
         return;
       }
-      if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
-        setOverlay(true, {
+      if (needsFullTopology()) {
+        setOverlay(false, {stage: "prepared system"});
+        return;
+      }
+      if (STATE.mode === "live" && String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
+        STATE.liveDisplayInfo = {
           stage: index.simulation_stage || STATE.mode,
           age: liveFrameAge(index),
           step: index.live_frame_index,
           simtime: index.simulation_time_ns,
-        });
+        };
+        setOverlay(true, STATE.liveDisplayInfo);
         return;
       }
       const frameResponse = await fetch(
@@ -586,6 +599,7 @@
       if (!frameResponse.ok) return;
       const pdb = await frameResponse.text();
       if (!isViewerGenerationCurrent(generation)) return;
+      if (!STATE.liveUpdates || STATE.mode === "playback") return;
       if (!pdb.includes("ATOM") && !pdb.includes("HETATM")) return;
       STATE.liveFrameIndex = index.live_frame_index;
       if (needsFullTopology()) {
@@ -597,12 +611,13 @@
       STATE.mode = "live";
       STATE.playbackLoaded = false;
       updateViewerCoordinates(pdb);
-      setOverlay(true, {
+      STATE.liveDisplayInfo = {
         stage: index.simulation_stage || "live",
         age: liveFrameAge(index),
         step: index.live_frame_index,
         simtime: index.simulation_time_ns,
-      });
+      };
+      setOverlay(true, STATE.liveDisplayInfo);
     } catch (error) {
       console.debug("live molecular frame unavailable", error);
     }
@@ -960,7 +975,8 @@
     if (action === "live-toggle") {
       pausePlayback();
       STATE.liveUpdates = true;
-      STATE.mode = STATE.liveFrameIndex != null ? "live" : "structure";
+      STATE.mode = "structure";
+      STATE.liveFrameIndex = null;
       const viewer = ensureMainViewer();
       if (STATE.currentPdb && viewer) installPdb(viewer, STATE.currentPdb, {main: true, center: false});
       const mini = ensureMiniViewer();
@@ -1435,6 +1451,10 @@
   async function setPlaybackFrame(frame) {
     const generation = STATE.viewerGeneration;
     if (!STATE.viewer || !STATE.playbackLoaded) return;
+    // A displayed saved frame must not be replaced by the latest live PDB
+    // on the next poll. The Now control explicitly resumes live updates.
+    STATE.liveUpdates = false;
+    STATE.mode = "playback";
     const index = clamp(Math.round(Number(frame)), 0, Math.max(0, STATE.playbackFrames - 1), 0);
     await setViewerFrame(STATE.viewer, index);
     if (!isViewerGenerationCurrent(generation) || !STATE.playbackLoaded) return;
@@ -1527,14 +1547,17 @@
     // run writes them, and the last once it has stopped.
     const note = document.getElementById("mini-preview-note");
     if (note && STATE.runStatus) {
-      note.textContent = running || STATE.runStatus === "starting"
+      note.textContent = STATE.mode === "playback" && STATE.miniPlaybackModel
+        ? `Trajectory frame ${Number(document.getElementById("traj-slider")?.value || 0)}`
+        : running || STATE.runStatus === "starting"
         ? "The newest frame, as it is written."
         : "The last frame the run wrote.";
     }
-    setOverlay(running, {
-      stage: status?.stage || "—",
-      simtime: status?.simulation_time_completed_ns,
-    });
+    if (STATE.mode === "playback") {
+      const frame = Number(document.getElementById("traj-slider")?.value || 0);
+      setOverlay(false, {stage: "playback", frame, simtime: STATE.playbackFrameTimes[frame]});
+    } else if (STATE.mode === "live" && STATE.liveDisplayInfo) setOverlay(true, STATE.liveDisplayInfo);
+    else setOverlay(false, {stage: "prepared system"});
   }
 
   function onHoverAtom(atom) {
@@ -1996,8 +2019,9 @@
     // and the step number as the two updates arrived.
     if (info?.step != null) setText("overlay-frame", `step ${Number(info.step).toLocaleString()}`);
     if (info?.frame != null) setText("overlay-frame", `frame ${info.frame}`);
-    if (info?.age != null) setText("overlay-age", `age ${info.age}`);
-    if (info?.simtime != null) setText("overlay-simtime", `${Number(info.simtime).toFixed(3)} ns`);
+    if (info?.step == null && info?.frame == null) setText("overlay-frame", "");
+    setText("overlay-age", info?.age != null ? `age ${info.age}` : "");
+    setText("overlay-simtime", info?.simtime != null ? `${Number(info.simtime).toFixed(3)} ns` : "");
     tidyOverlay();
   }
 
@@ -2130,10 +2154,58 @@
         if (generation !== STATE.viewerGeneration) return "The study changed during restore.";
       }
       if (!STATE.viewer || !STATE.model) return "The saved structure is unavailable.";
+      if (view.frame == null && view.mode === "structure" && STATE.structurePdb) {
+        STATE.mode = "structure"; STATE.currentPdb = STATE.structurePdb;
+        STATE.playbackLoaded = false;
+        installPdb(STATE.viewer, STATE.currentPdb, {main: true, center: false});
+      }
+      if (view.frame == null && view.mode === "live") {
+        const before = await (await fetch("/api/live-frame-index", {cache: "no-store"})).json();
+        if (before.live_frame_index !== view.live_step) return "The saved live frame is no longer available. The screenshot remains saved.";
+        const response = await fetch("/structure/live-frame.pdb", {cache: "no-store"});
+        if (!response.ok) return "The saved live frame is unavailable.";
+        const pdb = await response.text();
+        const after = await (await fetch("/api/live-frame-index", {cache: "no-store"})).json();
+        if (generation !== STATE.viewerGeneration) return "The study changed during restore.";
+        if (after.live_frame_index !== before.live_frame_index || after.live_frame_mtime !== before.live_frame_mtime) return "The live frame changed during restore. The screenshot remains saved.";
+        STATE.mode = "live"; STATE.currentPdb = pdb; STATE.playbackLoaded = false;
+        STATE.liveFrameIndex = view.live_step;
+        STATE.liveDisplayInfo = {stage: after.simulation_stage, step: view.live_step,
+          simtime: after.simulation_time_ns, age: liveFrameAge(after)};
+        installPdb(STATE.viewer, pdb, {main: true, center: false});
+      }
+      if (view.display) {
+        for (const [id, key] of [["viewer-rep", "representation"], ["viewer-color", "colorMode"]]) {
+          const control = document.getElementById(id), value = view.display[key];
+          if (control && Array.from(control.options).some((option) => option.value === value)) {
+            control.value = value; STATE[key] = value;
+          }
+        }
+        const previouslyFull = needsFullTopology();
+        document.querySelectorAll(".chip-toggle input[data-vis]").forEach((control) => {
+          const value = view.display.visibility?.[control.getAttribute("data-vis")];
+          if (typeof value === "boolean" && control.checked !== value) {
+            control.checked = value; STATE.visibility[control.getAttribute("data-vis")] = value;
+          }
+        });
+        for (const key of ["pocketSurface", "pocketOnly", "isolateLigand"]) STATE[key] = view.display[key] === true;
+        if (Number.isFinite(view.display.pocketCutoff)) STATE.pocketCutoff = view.display.pocketCutoff;
+        if ("ligandResname" in view.display) STATE.ligandResname = view.display.ligandResname;
+        if (STATE.mode === "playback") await ensurePlaybackEnvironment();
+        else if (previouslyFull !== needsFullTopology()) {
+          STATE.structureUrl = null;
+          await onStructureUpdated(STATE.structureInfo || {});
+        }
+        if (generation !== STATE.viewerGeneration) return "The study changed during restore.";
+        restyleViewers();
+      }
       STATE.researchSelection = view.selection || null;
       if (view.selection) {
-        const atom = STATE.model.selectedAtoms({chain: view.selection.chain,
-          resi: view.selection.resseq, resn: view.selection.resname, atom: view.selection.atom})[0];
+        const selection = {chain: view.selection.chain || "", resi: view.selection.resseq, resn: view.selection.resname};
+        if (view.selection.atom) selection.atom = view.selection.atom;
+        const atom = STATE.model.selectedAtoms(selection).find((atom) =>
+          (atom.icode || "").trim() === (view.selection.icode || "") &&
+          (atom.altLoc || atom.altloc || "").trim() === (view.selection.altloc || ""));
         if (!atom) return "The saved residue or atom is unavailable in this structure.";
         onClickAtom(atom);
         STATE.researchSelection = view.selection;

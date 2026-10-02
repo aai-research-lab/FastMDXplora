@@ -744,7 +744,8 @@
                   </div>
                 </div>
                 <div class="control-row display-tools">
-                  <label class="select-field">Click selection
+                <button id="research-viewer-bookmark" class="ctl-btn" type="button" data-research-bookmark="" disabled>Bookmark this view</button>
+                <label class="select-field">Click selection
                     <select id="viewer-click-mode"><option value="residue">Protein residue</option><option value="atom">Atom / measurement</option></select>
                   </label>
                   <label class="select-field">Representation
@@ -1238,15 +1239,30 @@
     <p class="muted small">Save this page, graph range, trajectory frame, camera angle and clicked residue with a research note.</p>
     <label class="builder-field">Title<input id="research-title" maxlength="160" placeholder="Evidence to revisit"></label>
     <label class="builder-field">Note<textarea id="research-note" rows="3" maxlength="8000" placeholder="Observation, question, or reporting note"></textarea></label>
+    <fieldset id="research-tags"><legend>Tags</legend></fieldset>
+    <label><input id="research-screenshot" type="checkbox">Include a screenshot of the current research view</label>
+    <label><input id="research-remove-screenshot" type="checkbox">Remove the saved screenshot when editing</label>
+    <label class="builder-field">Search bookmarks<input id="research-search" type="search" placeholder="Title, note or tag"></label>
+    <label class="builder-field">Filter by tag<select id="research-tag-filter"><option value="">All tags</option></select></label>
+    <label><input id="research-export-filtered" type="checkbox" checked>Export only matching search/tag results</label>
     <div class="control-row"><button id="research-save" class="primary-btn" type="button" disabled>Save bookmark</button>
       <button id="research-cancel-edit" class="ghost-btn" type="button">Clear</button>
       <button id="research-export" class="ghost-btn" type="button" disabled>Export JSON</button></div>
+    <div class="control-row"><button id="research-export-bundle" class="ghost-btn" type="button" disabled>Export with screenshots</button>
+      <label class="builder-field">Import bookmarks<input id="research-import-file" type="file" accept=".json,.zip,application/json,application/zip"></label></div>
+    <section id="research-import-preview" aria-label="Bookmark import preview" hidden>
+      <h3>Import preview</h3><p id="research-import-summary"></p><div id="research-import-list"></div>
+      <label>Matching bookmark IDs<select id="research-import-duplicates"><option value="copy">Keep both (create copies)</option><option value="skip">Skip existing bookmarks</option><option value="replace">Replace matching bookmarks</option></select></label>
+      <div class="control-row"><button id="research-import-apply" class="primary-btn" type="button">Import previewed bookmarks</button><button id="research-import-cancel" class="ghost-btn" type="button">Cancel import</button></div>
+    </section>
     <p id="research-status" class="muted small" role="status">Load a study to save bookmarks.</p>
     <div id="research-list"></div>
+    <button id="research-more" class="ghost-btn" type="button" hidden>Show more bookmarks</button>
   </aside>
   <div class="sr-only" aria-live="polite" id="sr-live"></div>
 
   <script src="/static/3Dmol-min.js"></script>
+  <script src="/static/html2canvas.min.js"></script>
   <script src="/static/agent-panel.js"></script>
   <script src="/static/research.js"></script>
     <script src="/static/frame.js"></script>

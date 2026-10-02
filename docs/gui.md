@@ -311,21 +311,50 @@ On interactive series, the **View range** controls crop the displayed data.
 The reported mean and uncertainty continue to describe the full analysis;
 cropping does not perform a new statistical calculation.
 
-Bookmarks persist in `.research/bookmarks.json` inside the loaded study.
-**Restore** opens the saved page and restores its graph or viewer state;
-unavailable structures, atoms or frames are reported. **Edit note** preserves
-the saved view. Frame restoration also checks the trajectory/playback signature
-and refuses a stale frame mapping after the trajectory or sampling changes.
-**Export JSON** downloads the study's bookmarks for reporting
-or archiving. The export is a view record, not a copy of the trajectory: keep
-the original study files to revisit its evidence. Bookmarks require a loaded
-study and are separate from the static report dashboard.
+Bookmarks persist in `.research/bookmarks.json` inside the loaded study. Use
+multiple tags such as **Graph**, **Figure**, **Trajectory frame**, **Structure**,
+**Simulation settings**, **Preparation** and **Observation**; search titles,
+notes and tags or select a tag filter. Imported custom tags remain editable.
+The list loads thumbnails in groups of twenty.
+
+**Include a screenshot** captures the current molecular view, selected graph or
+selected setting. An unavailable screenshot does not prevent a text bookmark.
+PNG thumbnails are stored privately under `.research/screenshots/`, stripped of
+embedded metadata, and limited to 1600 × 1600 pixels, 600 KB each and 64 MB per
+study. Existing screenshots survive note edits unless explicitly removed or
+replaced. Conflicting edits in another window require a reload.
+
+**Restore** verifies content fingerprints before restoring a saved graph or
+viewer state. Camera, representation and component visibility are retained.
+Trajectory frames and latest live steps are distinct. Missing/changed sources
+leave the note and screenshot available and refuse an unreliable restoration.
+Restoring a selected setting focuses its field; it does not apply a scientific
+value. Source hashing reads files once in bounded memory and caches unchanged
+files, so the first bookmark of a large trajectory may take longer.
+
+**Export JSON** downloads notes and view metadata without images. Export the
+current search/tag matches, or untick that option to export the full list. This
+also lets a large screenshot collection travel as several smaller bundles.
+**Export with
+screenshots** downloads a portable ZIP. Neither contains molecular trajectories,
+model conversations or credential settings. Keep the original scientific study
+to revisit the evidence. **Import bookmarks** accepts JSON or ZIP up to 32 MB,
+previews source compatibility and matching IDs, and writes only after **Import
+previewed bookmarks**. Keep both, skip existing or explicitly replace matching
+IDs. A preview expires after ten minutes and must be repeated if the study or
+bookmark list changes. Legacy notes import with an unverified source; they are
+not silently rebound to the current molecule. Bookmarks require a loaded study
+and are separate from the static report dashboard.
 
 The bookmark API (`GET` and `POST /api/research/bookmarks`) follows the local
 dashboard's control restrictions and is not exposed by public viewing mode.
 Saving requires the currently loaded study path, so a browser with stale study
 state cannot silently write notes into another study. The hidden store is
-excluded from artifact listings; use explicit JSON export to share notes.
+excluded from artifact listings; use explicit export to share notes. Screenshot,
+restore, export and import routes have the same local/control restrictions.
+
+DOM screenshot rendering uses locally bundled html2canvas 1.4.1 under the MIT
+license (shipped as `html2canvas.LICENSE.txt`). Captures do not require a CDN.
 
 Point the GUI at a finished run and it opens on it:
 

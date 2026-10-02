@@ -98,8 +98,15 @@ overlay is a display transformation and never alters scientific coordinates.
 
 ## Interface features
 
-The Agent sidebar can be closed or disabled. Bookmarks preserve a note/view and
-optional screenshot; incompatible sources cannot be silently restored. Clips
-render saved frames with optional labels and camera motion; export does not
-resimulate or interpolate coordinates. Preparation audit is a secondary panel
-that works without AI. Account login does not authorize scientific execution.
+The Agent sidebar can be closed or disabled. Bookmarks preserve tags, a note/view
+and an optional screenshot. JSON exports omit images; ZIP exports include them.
+Imports require a preview and human confirmation. Incompatible sources cannot
+be silently restored; imported legacy notes do not establish molecular identity.
+Restoring a setting focuses its field without applying a scientific value.
+
+Trajectory clips and the preparation-audit panel are planned dashboard additions
+until their controls and recorded outputs are available. Do not claim that an
+export or audit exists without verifying it. Clips must use saved frames and
+never resimulate/interpolate coordinates. Audit explanations must cite recorded
+preparation evidence. Provider connection availability must be verified; account
+login does not authorize scientific execution.

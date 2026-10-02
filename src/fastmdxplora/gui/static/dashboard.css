@@ -3924,3 +3924,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 /* A clicked residue's states, for a new study (molecule-viewer.js). */
 .residue-states { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .residue-state-choices { display: flex; gap: 6px; flex-wrap: wrap; }
+.research-screenshot { display:block; width:100%; max-height:300px; object-fit:contain; margin:0.75rem 0; }
+#research-tags { display:flex; flex-wrap:wrap; gap:0.5rem 1rem; border:1px solid var(--border); margin:0.75rem 0; }
+.research-bookmarks-panel > label { display:flex; align-items:flex-start; gap:0.5rem; margin:0.5rem 0; }
+.research-bookmarks-panel > label input[type="checkbox"] { flex-shrink:0; margin-top:0.2rem; }

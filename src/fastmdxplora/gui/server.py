@@ -508,6 +508,37 @@ def make_handler(
 
                 self._send_json(bookmarks_endpoint(app_runtime))
                 return
+            if path == "/api/research/bookmarks/image":
+                from fastmdxplora.gui.research import screenshot_endpoint
+
+                bookmark_id = parse_qs(parsed.query).get("id", [""])[0]
+                self._send_json(screenshot_endpoint(app_runtime, bookmark_id))
+                return
+            if path == "/api/research/bookmarks/restore":
+                from fastmdxplora.gui.research import restore_endpoint
+
+                self._send_json(restore_endpoint(app_runtime, parse_qs(parsed.query).get("id", [""])[0]))
+                return
+            if path == "/api/research/bookmarks/export":
+                from fastmdxplora.gui.research_bundle import export_bundle
+
+                images = parse_qs(parsed.query).get("images", ["1"])[0] != "0"
+                selected = parse_qs(parsed.query).get("ids", [None])[0]
+                try:
+                    data = export_bundle(app_runtime, images=images,
+                                         bookmark_ids=selected.split(",") if selected is not None else None)
+                except (OSError, ValueError) as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip" if images else "application/json")
+                self.send_header("Cache-Control", "no-store")
+                extension = "zip" if images else "json"
+                self.send_header("Content-Disposition", f'attachment; filename="research-bookmarks.{extension}"')
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if path == "/api/file-text":
                 # A run's own text file, for the Files tab's preview.
                 # Confined to the run root, over the same list of types
@@ -816,7 +847,29 @@ def make_handler(
                 # Refused unless listed as open; see the list for why.
                 self._refuse_beyond_loopback()
                 return
+            if path == "/api/research/bookmarks/import-preview":
+                from fastmdxplora.gui.research_bundle import MAX_BUNDLE_BYTES, preview_import
+
+                try:
+                    length = int(self.headers.get("Content-Length", "0") or 0)
+                except ValueError:
+                    length = 0
+                if not 0 < length <= MAX_BUNDLE_BYTES or self.headers.get("Transfer-Encoding"):
+                    self.close_connection = True
+                    self._body_was_read = True
+                    self._send_json({"ok": False, "error": "Import a JSON or ZIP file up to 32 MB."}, status=400)
+                    return
+                self._body_was_read = True
+                raw = self.rfile.read(length)
+                self._send_json(preview_import(app_runtime, raw))
+                return
             payload = self._read_json_body()
+            if path == "/api/research/bookmarks/import":
+                from fastmdxplora.gui.research_bundle import apply_import
+
+                self._send_json(apply_import(app_runtime, payload,
+                    path_for=hosting.inside if hosting is not None else None))
+                return
             if path == "/api/research/bookmarks":
                 from fastmdxplora.gui.research import bookmarks_endpoint
 

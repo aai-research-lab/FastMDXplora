@@ -432,3 +432,30 @@ Keep scientific algorithms unchanged; inspect each milestone before commit and p
 - Live acceptance used the existing completed 1L2Y study on port 8780 without
   launching a simulation. Provider-backed explanations await milestone M3.
 - Clip export and preparation-audit prototypes are excluded from this milestone.
+
+### Verified milestone M2 — portable research bookmarks
+
+Implemented preset/custom tags, title/note/tag search, tag filtering, saved viewer
+representation/color/visibility, and optimistic edit/delete conflict checks.
+Optional PNG thumbnails are normalized without embedded metadata, bounded by
+dimensions/bytes/storage, and served only through the private study API.
+Graph captures use the offline bundled html2canvas 1.4.1 MIT dependency; modern
+CSS colors are normalized only in its private rendering clone. Viewer capture
+uses the molecular renderer's PNG output. Text bookmarks survive unavailable
+capture. JSON metadata and ZIP screenshot bundles support filtered exports and
+preview-before-apply imports with copy/skip/replace choices. Imports are bounded,
+path-contained, and reject stale study/revision changes. Source fingerprints
+protect graph, figure, topology and trajectory restoration; changed sources
+retain notes/screenshots without silently selecting different scientific data.
+Contextual save controls cover graphs, report figures, settings and viewer frames.
+Playback restoration preserves camera, whole-residue selections and display state.
+Live polling cannot overwrite a selected playback frame, and workflow telemetry
+cannot replace its physical timestamp with the total study duration.
+Preparation-event bookmark controls will connect to milestone M6 audit records.
+
+Validation: 113 dashboard/viewer/public-access checks passed with one skipped;
+63 final bookmark/portable-bundle/Agent-boundary checks passed. Ruff F/B and diff
+checks passed. Nine new/updated package resources were compared byte-for-byte
+against the built wheel. Scientific preparation/simulation/analysis modules are
+unchanged; verification uses completed studies and fixtures without a new MD run.
+Provider connections, clip export and preparation audit remain future milestones.

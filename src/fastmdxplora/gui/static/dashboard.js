@@ -947,13 +947,14 @@
         if (analysisName) named.add(analysisName);
         const links = [
           `<a class="file-action" href="${escapeAttr(figure)}" target="_blank" rel="noopener">Open full size</a>`,
+          ...(folder ? [`<button class="file-action" type="button" data-research-bookmark="${escapeAttr(folder[1])}">Bookmark figure</button>`] : []),
         ];
         if (series) {
           links.push('<a class="file-action" href="#" data-series-toggle hidden>Show the figure</a>');
         }
         const made = folder ? provenanceChip(folder[1]) : "";
         return `
-        <article class="analysis-card" data-state="complete"${analysisName ? ` data-analysis="${escapeAttr(analysisName)}"` : ""}>
+        <article class="analysis-card" data-state="complete" data-research-figure="${escapeAttr(panel.original_source || panel.source || "")}"${analysisName ? ` data-analysis="${escapeAttr(analysisName)}"` : ""}>
           <div class="ac-header">
             <div class="ac-title">${escapeHTML(panel.title || "")}</div>
             <div class="ac-status">${escapeHTML(section.title || "")}</div>
@@ -1215,6 +1216,7 @@
       ? `<div class="ac-frame"><img src="${escapeAttr(displayPlot.href)}" alt="${escapeAttr(title)}" loading="lazy"></div>`
       : `<div class="ac-frame ac-no-plot"><div class="muted">No saved figure file was found for this analysis. Re-run the analysis with this revised version to generate PNG and SVG figures.</div></div>`;
     const links = [];
+    if (displayPlot?.href && analysis.name) links.push(`<button class="file-action" type="button" data-research-bookmark="${escapeAttr(analysis.name)}">Bookmark graph</button>`);
     if (displayPlot?.href) {
       links.push(`<a class="file-action" href="${escapeAttr(displayPlot.href)}" target="_blank" rel="noopener">Open figure</a>`);
       if (!/\.svg(?:$|\?)/i.test(displayPlot.href)) {
@@ -1228,7 +1230,7 @@
       links.push(`<a class="file-action" href="${escapeAttr(primary.href)}" target="_blank" rel="noopener">Open data</a>`);
     }
     return `
-      <article class="analysis-card" data-state="${escapeAttr(status)}"${analysis.name ? ` data-analysis="${escapeAttr(analysis.name)}"` : ""}>
+      <article class="analysis-card" data-state="${escapeAttr(status)}" data-research-figure="${escapeAttr(String(displayPlot?.href || "").replace(/^\/artifacts\//, "").split("?")[0])}"${analysis.name ? ` data-analysis="${escapeAttr(analysis.name)}"` : ""}>
         <div class="ac-header">
           <div class="ac-title">${escapeHTML(title)}</div>
           <div class="ac-status">${escapeHTML(status)}</div>
