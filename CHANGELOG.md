@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Overview says why a study has no live record
+
+**A finished study of several runs no longer waits for its simulation.**
+Its folder keeps no live record, since each run keeps its own, and the
+Overview said "Waiting for the simulation" and "Setup is under way" for it,
+as for any study open without one. Now a study of several runs says how many
+it has, how many completed, and that each is viewed from Runs in the
+sidebar; a study being run from the GUI waits for its simulation as before;
+and any other study says it kept no live record, because it stopped before
+its simulation began or ran with `simulation.live_telemetry` off.
+
 ### A repair that builds missing residues is seeded
 
 **`setup.random_seed` now seeds PDBFixer as well.** Where an atom it builds

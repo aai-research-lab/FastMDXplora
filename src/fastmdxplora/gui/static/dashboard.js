@@ -472,6 +472,9 @@
       emit("run-changed", {previousRun, activeRun});
     }
     if (activeRun) state.outputDir = activeRun;
+    // Why there is no live record follows the study's state, which changes
+    // without a status arriving: a run of the study starting or ending.
+    if (!state.status || Object.keys(state.status).length === 0) renderLiveProgress({});
 
     if (!state.initialRouteResolved) {
       state.initialRouteResolved = true;
@@ -786,6 +789,44 @@
     });
   }
 
+  /* Why a study open here has no live record, said as what it is. Several
+   * situations look the same to this page -- no status -- and they used to
+   * get one message: a finished study of several runs, whose runs each keep
+   * their own record and whose folder keeps none, was told "Waiting for the
+   * simulation" and that setup was under way. With no study open, say so
+   * and offer to start one. */
+  function liveAbsence(app) {
+    app = app || {};
+    if (!app.active_run) {
+      return {title: "Nothing running", body: "", offerToStart: true};
+    }
+    const runs = Array.isArray(app.runs) ? app.runs : null;
+    if (runs) {
+      const count = (s) => runs.filter((r) => r.state === s).length;
+      const where = count("running")
+        ? `${count("running")} running, ${count("completed")} of ${runs.length} completed.`
+        : `${count("completed")} of ${runs.length} completed.`;
+      return {
+        title: `A study of ${runs.length} runs`,
+        body: `${where} Each run keeps its own record of its simulation: view one from Runs in the sidebar.`,
+        offerToStart: false,
+      };
+    }
+    if (app.process_running) {
+      return {
+        title: "Waiting for the simulation",
+        body: "Setup is under way. This page fills in once the simulation starts.",
+        offerToStart: false,
+      };
+    }
+    return {
+      title: "No live record",
+      body: "This study kept no record of its simulation as it ran: it stopped before "
+        + "the simulation began, or ran with simulation.live_telemetry off.",
+      offerToStart: false,
+    };
+  }
+
   function renderLiveProgress(status) {
     // With no telemetry there is nothing for these panels to read, and
     // filling twelve fields with "not available" is an apparatus for reading
@@ -796,20 +837,13 @@
     if (panels) panels.hidden = nothing;
     if (absent) {
       absent.hidden = !nothing;
-      /* Two different situations look the same to this page -- no
-       * status yet -- and used to get one message, about a setting that
-       * is on by default. With a run under way the simulation has not
-       * started: say so, and hide the "start one" buttons. With no run,
-       * say that, and show them. */
-      const hasRun = Boolean(state.appState && state.appState.active_run);
+      const said = liveAbsence(state.appState);
       const title = document.getElementById("live-absent-title");
       const body = document.getElementById("live-absent-body");
       const actions = document.getElementById("live-absent-actions");
-      if (title) title.textContent = hasRun ? "Waiting for the simulation" : "Nothing running";
-      if (body) body.textContent = hasRun
-        ? "Setup is under way. This page fills in once the simulation starts."
-        : "";
-      if (actions) actions.hidden = hasRun;
+      if (title) title.textContent = said.title;
+      if (body) body.textContent = said.body;
+      if (actions) actions.hidden = !said.offerToStart;
     }
     if (nothing) return;
 
