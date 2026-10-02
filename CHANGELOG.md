@@ -129,6 +129,14 @@ answers that commit to nothing. The first registration's run agreed in every
 reply in both arms, because its questions were within what an AI model knows.
 `agent_looks.run` and `ask` take the judging rule as `judge_with`.
 
+### The viewer saves a picture for a page
+
+**The viewer's camera button saves the view at least 2,400 pixels across**, a
+double-column figure (183 mm) at 300 dpi, whatever the size of the window: the
+view is rendered once at that resolution and put back as it was. It was saved
+as the canvas stood, about 900 pixels across on a laptop, a third of what a
+journal asks for.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

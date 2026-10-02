@@ -1165,11 +1165,51 @@
     }
   }
 
+  /* A picture for a page, not for the screen: at least this many pixels
+   * across, which is a double-column figure (183 mm) at 300 dpi. The canvas
+   * is drawn at the screen's pixel ratio, so a 900 px view saved as it
+   * stood was 900 px wide, a third of what a journal asks for. */
+  const PICTURE_WIDTH_PX = 2400;
+  const PICTURE_MOST_RATIO = 6;
+
+  function pictureRatio(cssWidth) {
+    const screen = window.devicePixelRatio || 1;
+    if (!(cssWidth > 0)) return screen;
+    return Math.min(PICTURE_MOST_RATIO, Math.max(screen, PICTURE_WIDTH_PX / cssWidth));
+  }
+
   function takeScreenshot() {
     if (!STATE.viewer || typeof STATE.viewer.pngURI !== "function") return;
-    safeCall(STATE.viewer, "render");
+    const viewer = STATE.viewer;
+    const canvas = typeof viewer.getCanvas === "function" ? viewer.getCanvas() : null;
+    const ratio = pictureRatio(canvas ? canvas.clientWidth : 0);
+    // 3Dmol sizes its drawing buffer from window.devicePixelRatio when it
+    // resizes, so the view is drawn once at the picture's ratio and then
+    // put back, the browser's own property with it (deleting a replacement
+    // leaves none at all).
+    let uri = "";
+    const own = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+    let replaced = false;
+    try {
+      if (ratio > (window.devicePixelRatio || 1)) {
+        Object.defineProperty(window, "devicePixelRatio",
+          {value: ratio, configurable: true, writable: true});
+        replaced = true;
+        safeCall(viewer, "resize");
+      }
+      safeCall(viewer, "render");
+      uri = viewer.pngURI();
+    } finally {
+      if (replaced) {
+        if (own) Object.defineProperty(window, "devicePixelRatio", own);
+        else delete window.devicePixelRatio;
+        safeCall(viewer, "resize");
+        safeCall(viewer, "render");
+      }
+    }
+    if (!uri) return;
     const anchor = document.createElement("a");
-    anchor.href = STATE.viewer.pngURI();
+    anchor.href = uri;
     anchor.download = "fastmdxplora-molecular-viewer.png";
     document.body.appendChild(anchor);
     anchor.click();

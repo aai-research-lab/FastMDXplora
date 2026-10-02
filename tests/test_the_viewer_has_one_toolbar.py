@@ -143,3 +143,25 @@ def test_the_pocket_cutoff_is_said_in_nanometres_too(page) -> None:
     page.dispatch_event("#pocket-cutoff", "change")
     assert page.text_content("#pocket-cutoff-nm") == "(0.75 nm)"
     assert page.evaluate(f"() => {VIEWER}.pocketCutoff") == 7.5
+
+
+def test_a_picture_is_saved_for_a_page_and_the_view_is_put_back(page) -> None:
+    """Saved as the canvas stood, a picture was as wide as the view on the
+    screen, about 900 pixels: a third of a double-column figure at 300 dpi.
+    It is now drawn once at least 2,400 pixels across, and the view on the
+    screen is as it was."""
+    import struct
+
+    before = page.evaluate(f"() => {{ const c = {VIEWER}.viewer.getCanvas(); "
+                           "return [c.width, c.height, c.clientWidth, window.devicePixelRatio]; }")
+    with page.expect_download() as caught:
+        page.click('[data-action="screenshot"]')
+    saved = Path(caught.value.path()).read_bytes()
+    assert saved[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height = struct.unpack(">II", saved[16:24])
+    assert width >= 2400 and abs(width / height - before[0] / before[1]) < 0.01
+    after = page.evaluate(f"() => {{ const c = {VIEWER}.viewer.getCanvas(); "
+                          "return [c.width, c.height, c.clientWidth, window.devicePixelRatio]; }")
+    assert after == before
+    assert "2,400 pixels" in page.get_attribute('[data-action="screenshot"]', "title")
+    assert page.errors == []
