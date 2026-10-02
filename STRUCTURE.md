@@ -8,6 +8,7 @@ FastMDXplora/
 │       ├── _version.py            # Written by setuptools-scm (not committed)
 │       ├── orchestrator.py        # FastMDXplora project-level orchestrator
 │       ├── runs_here.py           # One study at a time in a workspace: its starting lock and runs
+│       ├── stop_after.py          # Sees a stop through, in a process that outlives the asker
 │       ├── dependencies.py        # Optional-backend detection (OpenMM, PDBFixer, …)
 │       ├── statistics.py          # Statistical inefficiency: how many independent samples a mean rests on
 │       ├── lipids.py              # Which residues are lipids, and how many make a bilayer

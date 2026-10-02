@@ -67,17 +67,22 @@ continuing starts from the config that record gives.
 
 `fastmdx mcp` offers **`start_study`** and **`stop_study`**. A study starts
 only from a config file in the workspace, only while its `plan_id` is the one
-`check_study` gave for the file as it is, only when no other study is running
-there (found by each run's own record, wherever it is), and never into a folder
-already used: the config's `output`, or a folder named after the file beside
-it. A continuation runs in the study it continues. A start is said once the
-run is going, and one that ends as it starts says so with the end of its log. Where the client can put a form in front of you, you are asked
-with the plan, the results folder and the time this machine is known to take,
-and only a ticked **Go ahead** starts it (or stops one). The run is started as
-the GUI starts it and goes on after the assistant closes. `stop_study` stops
-only a run it can identify as the study's, at its next frame with a checkpoint
-there. A cancelled call starts and stops nothing. **`fastmdx mcp --read-only`**
-offers neither.
+`check_study` gave for the file as it is, never from one saying `agent:
+autonomous` (that it runs unseen, where here it is shown first), only when no
+other study is running there (found by each run's own record, wherever it is),
+and never into a folder already used: the config's `output`, or a folder named
+after the file beside it. A continuation runs in the study it continues. A
+start is said once the run is going, and one that ends as it starts says so
+with the end of its log. Where the client can put a form in front of you, you
+are asked with the plan, the results folder and the time this machine is known
+to take, and only a ticked **Go ahead** starts it (or stops one). The run is
+started as the GUI starts it and goes on after the assistant closes.
+`stop_study` stops only a run it can identify as the study's, at its next frame
+with a checkpoint there; one that has not stopped when the GUI's Stop would end
+it is ended, with what is left of its process group, by a watcher in a process
+of its own (`fastmdxplora.stop_after`), so an assistant closed in the meantime
+does not leave it going. A cancelled call starts and stops nothing.
+**`fastmdx mcp --read-only`** offers neither.
 
 ### An assistant can ask the FastMDXplora Agent, when you ask for it
 

@@ -143,7 +143,16 @@ the gate; most clients ask before a tool that is not read-only runs. The run is
 started as the GUI starts it, writes its log beside its results, and goes on
 after the assistant closes; the GUI shows it, and `read_study` says how far it
 has got. A start is said once the run is going: one that ends as it starts says
-so, with the end of its log. `stop_study` asks the same way before it stops one.
+so, with the end of its log.
+
+`stop_study` asks the same way before it stops one. The run is given time to
+reach its next frame and write a checkpoint there (20 s by default,
+`FASTMDX_STOP_GRACE_SECONDS`, and 10 s more), as the GUI's Stop gives it; one
+that has not stopped by then is ended, with what is left of its process group,
+and a line in its log says so. That is watched from a process of its own, so it
+happens whether or not the assistant is still open, and the run is identified
+again first, so a process number given to something else since is never
+signalled.
 
 The GUI keeps the same rule. Every start, from the GUI's **Run** or an
 assistant's `start_study`, holds the workspace's starting lock

@@ -17,7 +17,6 @@ import json
 import math
 import os
 import re
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -994,11 +993,11 @@ def _recorded(ctx: Context, folder: Path, pid: int) -> None:
 
 def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
     import json
-    import threading
 
     from fastmdxplora.gui.exploration import _AdoptedProcess, _identify_run
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
     from fastmdxplora.simulation.runner import stop_grace_seconds
+    from fastmdxplora.stop_after import see_it_stops
 
     folder = _study(ctx, args["study"])
     shown = ctx.workspace.shown(folder)
@@ -1021,22 +1020,21 @@ def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
         return "Not stopped: the call was cancelled."
     if _identify_run(pid, folder, record.get("argv")) is not True:
         return f"{shown} has stopped already."
-    process = _AdoptedProcess(pid, folder)
-    process.terminate()
-
-    def make_sure() -> None:
-        # As the GUI's Stop: time to reach the next frame and checkpoint,
-        # then an end that cannot be ignored.
-        try:
-            process.wait(timeout=stop_grace_seconds() + 10)
-        except Exception:  # noqa: BLE001 - not stopped in time
-            if _identify_run(pid, folder, record.get("argv")) is True:
-                process.kill()
-
-    threading.Thread(target=make_sure, name="fastmdx-mcp-stop", daemon=True).start()
+    _AdoptedProcess(pid, folder).terminate()
+    # As the GUI's Stop: time to reach the next frame and checkpoint, then
+    # an end that cannot be ignored. Watched from a process of its own, so
+    # an assistant closed in the meantime does not take the watching with it.
+    try:
+        see_it_stops(pid, folder, record.get("argv"), stop_grace_seconds() + 10)
+    except OSError as exc:
+        return (f"Asked {shown} to stop. Ending it if it does not could not be arranged "
+                f"({exc}): if read_study still finds it running in a minute, stop it "
+                "again.")
     return (f"Asked {shown} to stop. A run in production stops at its next frame with a "
             "checkpoint there; read_study says when it has, and gives the config that "
-            "continues it.")
+            "continues it. One that has not stopped "
+            f"{stop_grace_seconds() + 10:g} s from now is ended, whether or not this "
+            "assistant is still open.")
 
 
 _LOOKS = {"readOnlyHint": True, "openWorldHint": True}
