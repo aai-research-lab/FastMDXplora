@@ -107,6 +107,28 @@ def test_residue_comparison_refuses_ambiguous_analysis_mapping(tmp_path, monkeyp
     assert "rmsf" not in residue_evidence(tmp_path, {**selected, "icode": "A"})
 
 
+def test_pinned_comparison_supplies_two_verified_residue_measurements(tmp_path, monkeypatch):
+    import fastmdxplora.gui.series as series
+    setup = tmp_path / "setup"
+    setup.mkdir()
+    (setup / "topology.pdb").write_text(
+        "ATOM      1  CA  GLU A  57       0.000   0.000   0.000  1.00  0.00           C\n"
+        "ATOM      2  CA  GLU B  57       1.000   0.000   0.000  1.00  0.00           C\n")
+    monkeypatch.setattr(series, "series_payload", lambda *args: {"ok": True,
+        "residues": [{"chain": "A", "resi": 57}, {"chain": "B", "resi": 57}],
+        "y": [0.1, 0.8], "unit": "nm"})
+    selection = {"chain": "A", "resseq": 57, "resname": "GLU"}
+    text = context_for(tmp_path, {"page": "viewer", "selection": selection,
+                                "comparison_selection": {**selection, "chain": "B"}})
+    assert '"value": 0.1' in text and '"value": 0.8' in text
+    assert "Pinned comparison residue evidence" in text
+    assert "does not establish its chemical cause" in text
+    missing = context_for(tmp_path, {"page": "viewer", "selection": selection,
+                                   "comparison_selection": {**selection, "chain": "Z"}})
+    assert '"value": 0.8' not in missing
+    assert "not verified" in missing
+
+
 def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_path, monkeypatch, model):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server
@@ -166,6 +188,26 @@ def test_protein_residue_clicks_highlight_and_prepare_a_question(tmp_path, monke
             assert view["selection"]["resname"] == "ALA"
             assert view["selection"]["atom"] == ""
             assert page.evaluate("FastMDXMoleculeViewer.STATE.focusResidue.resi") == 1
+            page.locator("#research-pin-residue").click()
+            assert page.evaluate("FastMDXResearch.capture().comparison_selection.resname") == "ALA"
+            assert page.locator("#research-compare-residues").is_disabled()
+            page.evaluate("""() => {
+                const atom = FastMDXMoleculeViewer.STATE.model.selectedAtoms({resn:'ALA',resi:2,atom:'CA'})[0];
+                atom.callback(atom);
+            }""")
+            comparison = page.evaluate("FastMDXResearch.capture()")
+            assert comparison["selection"]["resseq"] == 2
+            assert comparison["comparison_selection"]["resseq"] == 1
+            assert page.locator("#research-compare-residues").is_enabled()
+            page.locator("#research-compare-residues").click()
+            assert "pinned comparison residue" in page.locator("#agent-request").input_value()
+            assert not page.locator("#agent-thread").inner_text()
+            page.locator("#research-agent-close").click()
+            page.locator("#research-clear-comparison").click()
+            assert "comparison_selection" not in page.evaluate("FastMDXResearch.capture()")
+            page.evaluate("view => FastMDXResearch.restore(view)", comparison)
+            assert page.evaluate("FastMDXResearch.capture().comparison_selection.resseq") == 1
+            assert page.locator("#research-compare-residues").is_enabled()
             page.locator("#research-explain-residue").click()
             assert page.locator("#research-agent-dock").is_visible()
             assert "selected residue" in page.locator("#agent-request").input_value()

@@ -63,7 +63,7 @@ def clean_view(value: Any) -> dict[str, Any]:
                         and math.isfinite(n) and abs(n) < 1e12 for n in numbers)):
             if name != "range" or numbers[0] < numbers[1]:
                 view[name] = numbers
-    for name in ("selection", "audit_selection"):
+    for name in ("selection", "comparison_selection", "audit_selection"):
         selection = value.get(name)
         if isinstance(selection, dict):
             kept = {}
@@ -170,6 +170,10 @@ def context_for(root: Any, value: Any) -> str:
                                   atom=selected.get("atom", "")) if verified else {"ok": False, "reason": "The selected identity cannot be mapped unambiguously to the analysis topology."}
             lines.append("Selection checked against the analysis topology: " + json.dumps(found))
             lines.append("Selected residue evidence: " + json.dumps(residue_evidence(Path(root), selected)))
+            if view.get("comparison_selection"):
+                comparison = view["comparison_selection"]
+                lines.append("Pinned comparison residue evidence: " + json.dumps(residue_evidence(Path(root), comparison)))
+                lines.append("Compare only recorded measurements with matching analysis scope and units. A difference in RMSF does not establish its chemical cause; explain hypotheses separately from evidence.")
         if view.get("frame") is not None:
             record = _read_record(Path(root), "simulation/playback_index.json")
             index = view["frame"]

@@ -396,6 +396,16 @@ tests; expand testing when failures or scientific instrumentation justify it.
 
 ## 11. Completion definition and status tracking
 
+Residue-comparison follow-up: the molecular viewer can pin one clicked residue,
+select another, and prepare an unsent comparison question. Both identities are
+independently checked against the study topology and per-residue analysis.
+Pinned comparison state is included in bookmarks, cleared on study changes,
+and restored with saved viewer state. Same-residue comparisons are disabled.
+Missing/ambiguous mappings have no invented measurement, and measured RMSF
+differences are explicitly distinguished from possible chemical mechanisms.
+Validation: 83 Agent/bookmark/import-export/script checks passed; after extending
+the browser flow, both targeted evidence and native-click/restore checks passed.
+
 Maintain a requirement-to-milestone checklist with `planned`, `implemented`,
 `verified`, and `blocked` states. A blocked provider is named with its exact
 dependency or unsupported route; a login button does not count as verification.

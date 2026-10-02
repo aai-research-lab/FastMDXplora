@@ -7,6 +7,7 @@
   let refreshGeneration = 0;
   let warning = null, auditEvent = null, auditSource = null, auditSelection = null;
   let importPreview = null, shownCount = 20;
+  let comparisonSelection = null;
   let tags = ["Simulation settings", "Graph", "Figure", "Trajectory frame", "Structure", "Preparation", "Observation"];
   let enabled = localStorage.getItem("fastmdx-agent-sidebar-enabled") !== "false";
   const board = () => window.FastMDXDashboard;
@@ -39,6 +40,7 @@
       const viewer = molecule()?.STATE;
       if (viewer) view.mode = viewer.mode;
       if (viewer?.researchSelection) view.selection = viewer.researchSelection;
+      if (comparisonSelection) view.comparison_selection = comparisonSelection;
       if (viewer) view.display = {representation: viewer.representation,
         colorMode: viewer.colorMode, visibility: viewer.visibility,
         pocketSurface: viewer.pocketSurface, pocketOnly: viewer.pocketOnly,
@@ -261,8 +263,11 @@
       await window.FastMDXPreparationAudit?.restore(view.audit_event, view.audit_source, view.audit_selection, view.audit_display);
       status("Preparation bookmark restored.");
     } else if (view.page === "viewer") {
+      comparisonSelection = view.comparison_selection || null;
+      updateComparison();
       status("Restoring viewer…");
       const result = await molecule()?.restoreResearchView(view);
+      updateComparison();
       status(result || "The viewer is unavailable.");
     } else {
       if (view.field) document.querySelector('[data-research-field="' + CSS.escape(view.field) + '"]')?.focus();
@@ -286,9 +291,11 @@
       const next = state.active_run || null;
       if (next !== loadedStudy) {
         loadedStudy = next; analysis = null; field = null; figure = null; warning = null; auditEvent = null;
+        comparisonSelection = null;
         importPreview = null; el("research-import-preview").hidden = true;
         el("research-import-file").value = ""; shownCount = 20;
         if (molecule()) molecule().STATE.researchSelection = null;
+        updateComparison();
         editing = null; el("research-title").value = ""; el("research-note").value = "";
         renderTags([]);
         el("research-save").textContent = "Save bookmark";
@@ -341,6 +348,18 @@
     });
     el("research-explain-residue").addEventListener("click", () => {
       ask("Explain the selected residue using its recorded analysis and preparation evidence. What is known, and what cannot be established from this frame?");
+    });
+    el("research-pin-residue").addEventListener("click", () => {
+      const selected = molecule()?.STATE.researchSelection;
+      comparisonSelection = selected ? JSON.parse(JSON.stringify(selected)) : null;
+      updateComparison(); updateContext();
+    });
+    el("research-clear-comparison").addEventListener("click", () => {
+      comparisonSelection = null; updateComparison(); updateContext();
+    });
+    el("research-compare-residues").addEventListener("click", () => {
+      if (!comparisonSelection || !molecule()?.STATE.researchSelection) return;
+      ask("Compare the selected residue with the pinned comparison residue using recorded analysis and preparation evidence for both. Which measured differences are supported, and which possible chemical explanations remain unproven?");
     });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -458,12 +477,22 @@
     renderTags();
     board()?.on("research-selection", () => {
       el("research-explain-residue").disabled = !molecule()?.STATE.researchSelection;
+      updateComparison();
       warning = null; auditEvent = null; updateContext();
     });
     board()?.on("research-frame", updateContext);
     board()?.on("research-analysis", (event) => { analysis = event.analysis; figure = null; updateContext(); });
     updateContext();
   });
+  function updateComparison() {
+    const selected = molecule()?.STATE.researchSelection;
+    el("research-pin-residue").disabled = !selected;
+    el("research-compare-residues").disabled = !selected || !comparisonSelection ||
+      ["chain", "resseq", "resname", "icode"].every(key => (selected[key] || "") === (comparisonSelection[key] || ""));
+    el("research-clear-comparison").hidden = !comparisonSelection;
+    el("research-comparison-status").textContent = comparisonSelection ?
+      "Pinned: " + [comparisonSelection.resname, comparisonSelection.chain, comparisonSelection.resseq].join(" ") + ". Select another residue to compare." : "";
+  }
   function ask(text) {
     if (!enabled) { el("research-status").textContent = "Enable the Agent sidebar in Settings to ask about this selection."; return; }
     origin = board()?.state.activePage === "agent" ? origin : board()?.state.activePage;
