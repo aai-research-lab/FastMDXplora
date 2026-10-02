@@ -267,6 +267,8 @@ def methods_paragraphs(
     extended: tuple[float, int] | None = None,
     means: dict[str, dict[str, Any]] | None = None,
     stopping: dict[str, Any] | None = None,
+    written: dict[str, Any] | None = None,
+    conversations: int = 0,
 ) -> str:
     """The methods text, as prose rather than a list of settings.
 
@@ -285,6 +287,11 @@ def methods_paragraphs(
     study run until it knew (``stopping.json``); from them the Analysis
     paragraph says how each mean and error was determined, and why the
     production is as long as it is.
+
+    ``written`` is the manifest's record of how the study was written
+    (``agent``: the mode of the study and of each phase, and the AI model) and
+    ``conversations`` how many of the Agent's conversations are kept with
+    it; from them a paragraph discloses the use of an AI model.
     """
     from fastmdxplora.simulation.ensembles import NPT, recorded_ensemble
 
@@ -661,6 +668,11 @@ def methods_paragraphs(
     if analysis:
         parts.append("**Analysis.** " + analysis)
 
+    # ---- an AI model ---------------------------------------------------
+    label, disclosed = _model_paragraph(written, conversations)
+    if disclosed:
+        parts.append(f"**{label}.** " + disclosed)
+
     # ---- software -----------------------------------------------------
     if versions or made_with is not None:
         # FastMDXplora did the work -- setup, simulation and analysis -- and
@@ -849,3 +861,60 @@ def _analysis_paragraph(means: dict[str, dict[str, Any]],
         units = {name: str(record.get("unit") or "") for name, record in means.items()}
         said += _stopping_sentences(stopping, units)
     return " ".join(said)
+
+
+#: How each way of writing a study reads in a methods section.
+_WRITTEN = {
+    None: "written by a person",
+    "assisted": "drafted with an AI model and approved by a person before it ran",
+    "autonomous": ("drafted by an AI model and run without being shown to a person "
+                   "first, within a stated cost ceiling"),
+    "unvalidated": ("written outside the configuration schema, so the software's "
+                    "validator did not check it"),
+}
+
+
+def _model_paragraph(written: dict[str, Any] | None,
+                     conversations: int) -> tuple[str, str]:
+    """The use of an AI model, disclosed as journals ask it to be: what
+    an AI model wrote, which one, what checked it, and where the conversation
+    is kept; with its label. Empty for a study a person wrote, which records
+    nothing, and labelled for what it says where a phase went outside the
+    schema and no AI model is recorded."""
+    label = "Use of an AI model"
+    if not isinstance(written, dict):
+        return label, ""
+    study = written.get("study")
+    phases = written.get("phases") if isinstance(written.get("phases"), dict) else {}
+    departures = (written.get("departures")
+                  if isinstance(written.get("departures"), dict) else {})
+    model = written.get("model")
+    modes = {study, *phases.values()}
+    if not (modes - {None}):
+        # An AI model named and no mode set: the record says one was involved
+        # and not how, and claiming either would be inventing it.
+        return label, (f"The configuration names an AI model, {model}, without "
+                       "saying how it was used (`agent` was not set)." if model else "")
+    used = bool(model) or bool(modes & {"assisted", "autonomous"})
+    said = [f"The study's configuration was {_WRITTEN.get(study, str(study))}."]
+    for phase, mode in sorted(departures.items()):
+        said.append(f"Its {phase} phase was {_WRITTEN.get(mode, str(mode))}.")
+    if model:
+        said.append(f"The AI model was recorded as {model}.")
+    elif used:
+        said.append("Which AI model was not recorded.")
+    unchecked = sorted(name for name, ok in (written.get("checked") or {}).items()
+                       if ok is False)
+    if not unchecked:
+        said.append("Every setting was checked by the software's validator before it ran.")
+    else:
+        said.append("Every setting outside the "
+                    + _listed(unchecked).replace("`", "")
+                    + (" phase" if len(unchecked) == 1 else " phases")
+                    + " was checked by the software's validator before it ran.")
+    if conversations:
+        said.append("The conversation" + ("s" if conversations > 1 else "")
+                    + " with the FastMDXplora Agent about this study "
+                    + ("are" if conversations > 1 else "is")
+                    + " kept with it, in `agent/conversations`.")
+    return (label if used else "How the configuration was written"), " ".join(said)

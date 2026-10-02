@@ -77,6 +77,18 @@ determined and how well, the ceiling, the replicas and how they were judged
 agreement; 50 independent samples for a run judged alone), and how it ended.
 One of a campaign's runs reads the campaign's record where it is named in it.
 
+### The methods disclose an AI model's part
+
+**A study an AI model drafted says so in its methods**, as journals ask:
+whether its configuration was drafted with an AI model and approved before it
+ran (`agent: assisted`), or run without being shown to anybody (`autonomous`);
+any phase written outside the schema, which the validator did not check; the AI
+model recorded (`agent_model`), or that none was; and that the Agent's conversations
+about the study are kept with it, in `agent/conversations` (counted only where
+they say anything). The manifest recorded all of this and the report said none
+of it. A study a person wrote says nothing here, and an AI model named without
+a mode is said as exactly that.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

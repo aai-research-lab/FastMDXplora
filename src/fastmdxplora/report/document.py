@@ -268,6 +268,20 @@ def _recorded_means(project_root: Path) -> dict[str, dict[str, Any]]:
     return means
 
 
+def _conversations_kept(project_root: Path) -> int:
+    """How many of the Agent's conversations about this study it keeps, of
+    those that say anything: a conversation opened and left empty is not
+    one in which the study was written."""
+    from fastmdxplora.gui.agent_panel import CONVERSATIONS_SUBDIR
+
+    kept = 0
+    for path in sorted((project_root / CONVERSATIONS_SUBDIR).glob("conv-*.json")):
+        document = _load_json_safely(path)
+        if isinstance(document, dict) and document.get("entries"):
+            kept += 1
+    return kept
+
+
 def _stopping_record_of(project_root: Path) -> dict[str, Any] | None:
     """The record of the rule this study ran under: its own, or, for one of a
     campaign's runs, the campaign's where it names this run."""
@@ -315,12 +329,15 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
 
     made_with, tools, recorded = _recorded_software(orchestrator)
     extended = extended_production(project_root)
+    study_manifest = _load_json_safely(project_root / "manifest.json")
     prose = methods_paragraphs(
         project_root, setup, sim,
         system_name=(setup.get("input") or {}).get("system"),
         versions=tools, made_with=made_with, tools_recorded=recorded,
         extended=extended, means=_recorded_means(project_root),
         stopping=_stopping_record_of(project_root),
+        written=study_manifest.get("agent") if isinstance(study_manifest, dict) else None,
+        conversations=_conversations_kept(project_root),
     )
     if prose:
         lines.append(prose)
