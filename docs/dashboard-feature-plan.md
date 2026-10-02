@@ -482,3 +482,22 @@ on the completed 1L2Y study saved both formats together without a new MD run.
 Ruff F/B and JavaScript syntax/diff checks passed. Provider connections and
 preparation provenance/audit remain in progress; this independently complete
 visualization milestone does not claim the full framework is finished.
+
+### Verified milestone M5 — future preparation provenance
+
+New preparations record observed input/model/assembly choices, heterogen policy,
+PDBFixer mutation and repair stages, requested protonation settings, prepared
+solute/system snapshots, and existing resolved setup choices. Snapshots are
+immutable per preparation and checksum identified. Storage limits and recording
+failures are explicit; recording never supplies scientific settings or replaces
+backend failures. Historical studies are not retroactively claimed recorded.
+Aggregate system snapshots do not claim every solvation/ionization step was
+individually observed. The record does not certify chemical suitability.
+
+Validation: five recorder checks passed, including a full seeded preparation
+with audit on/off on OpenMM Reference: input/prepared/topology PDB and System XML
+were identical, and positions/box matched within 1e-10. Initial automatic-device
+comparison differed slightly in hydrogen coordinates; preservation verification
+is limited to the explicit Reference backend, not a general GPU determinism
+claim. Existing setup suites passed after repairing an incompatible local OpenMM
+binary with the same 8.5.2 Python 3.11 wheel. No production MD was launched.

@@ -1101,6 +1101,11 @@ def _run(
     # happened again.
     setup_dir = output_dir
 
+    from fastmdxplora.setup.audit import PreparationRecorder
+
+    audit = PreparationRecorder(setup_dir)
+    orchestrator._preparation_audit = audit
+
     params: dict[str, Any] = {**DEFAULTS, **options}
 
     # One ligand, either spelling. The collective-variable blocks call this
@@ -1161,6 +1166,10 @@ def _run(
 
     # ---- Stage 1: resolve input ----------------------------------------
     try:
+        if input_form == "pdb_file":
+            audit.capture_file(orchestrator.system, "original_supplied_source",
+                               details={"input_form": input_form},
+                               reason="Supplied structure bytes before the existing conversion or selection operations.")
         input_pdb = _resolve_input(orchestrator.system, input_form, setup_dir)
 
         # Recorded here rather than at the manifest, because this is the last
@@ -1169,6 +1178,9 @@ def _run(
         # from, not what this run then did to it.
         orchestrator._structure_provenance = structure_provenance(
             orchestrator.system, input_form, input_pdb)
+        audit.capture_file(input_pdb, "resolved_input",
+                           details={"provenance": orchestrator._structure_provenance},
+                           reason="Input delivered by the existing resolver; format conversion may already have occurred.")
 
         # An OPM file marks its membrane with pseudo-atoms, which are not a
         # molecule: read as one they were a component to parameterise. Taken
@@ -1176,6 +1188,8 @@ def _run(
         # a bilayer.
         opm = _take_out_opm_markers(input_pdb)
         if opm is not None:
+            audit.capture_file(input_pdb, "remove_opm_markers", details=opm,
+                               reason="Existing OPM marker-removal operation; the recorded membrane frame is retained.")
             params["_membrane_frame"] = "opm"
             logger.info(
                 "OPM file: %d membrane marker pseudo-atoms taken out; its frame "
@@ -1187,9 +1201,15 @@ def _run(
         # One model of an ensemble, where the study names one; where it does
         # not and the file holds several, which one is prepared is said.
         _the_model(input_pdb, params, notes)
+        audit.capture_file(input_pdb, "model_selection",
+                           details={"requested_model": params.get("model"), "notes": list(notes)},
+                           reason="Existing model-selection result; no extra selection is performed for the audit.")
 
         input_pdb = _the_chains_to_simulate(
             orchestrator, input_pdb, input_form, params, presenter=presenter)
+        audit.capture_file(input_pdb, "assembly_chain_selection",
+                           details={"assembly": orchestrator._assembly},
+                           reason="Assembly/chain decisions recorded by the existing selection path.")
 
         artifacts.append("input.pdb")
         if presenter:
@@ -1273,6 +1293,11 @@ def _run(
         _refuse_without_a_charge_provider(params)
 
     # ---- Stage 2: PDBFixer (or skip via fixed_pdb) ---------------------
+    audit.decision("heterogen_policy", {"requested": params.get("heterogens"),
+                    "decisions": params.get("_heterogen_decisions"),
+                    "reinstated": params.get("_reinstated_heterogens"),
+                    "explained": params.get("_explained_heterogens")},
+                   reason="Existing heterogen classifier outputs; unavailable reasons are not inferred.")
     prepared_pdb = setup_dir / "prepared.pdb"
     fixed_pdb = params.get("fixed_pdb")
     if fixed_pdb:
@@ -1321,6 +1346,7 @@ def _run(
                 mutations=tuple(params.get("mutations") or ()),
                 mutation_chain=params.get("mutation_chain"),
                 residue_states=params.get("residue_states"),
+                audit=audit,
             )
             artifacts.append("prepared.pdb")
             if set_by_hand:
@@ -1351,6 +1377,9 @@ def _run(
             return artifacts
 
     # ---- Stage 3: Solvate, ionize, parameterize, serialize -------------
+    audit.capture_file(prepared_pdb, "prepared_solute",
+                       details={"provided_fixed_pdb": bool(params.get("fixed_pdb"))},
+                       reason="Prepared solute passed to the existing system builder; a supplied fixed PDB is not claimed to have been repaired here.")
     try:
         from fastmdxplora.setup.prepare import prepare_system
 
@@ -1408,6 +1437,12 @@ def _run(
         for _key, path in produced.items():
             if isinstance(path, (str, Path)):
                 artifacts.append(Path(path).relative_to(setup_dir).as_posix())
+        if produced.get("topology_pdb"):
+            audit.capture_file(produced["topology_pdb"], "prepared_system",
+                               details={"n_atoms_solvated": produced.get("n_atoms_solvated"),
+                                        "resolved_forcefield": produced.get("resolved_forcefield"),
+                                        "box": produced.get("box"), "membrane": produced.get("membrane")},
+                               reason="System saved by the existing solvation/ionization/parameterization path; these aggregate outputs do not establish every individual repair cause.")
         if presenter:
             # What it resolved to, not what was asked for: "auto" tells a
             # reader nothing, and the run recorded the answer.
@@ -1655,3 +1690,8 @@ def _write_manifest(
     }
     with (setup_dir / "setup_parameters.json").open("w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, default=str)
+    from fastmdxplora.setup.audit import PreparationRecorder
+
+    audit = getattr(orchestrator, "_preparation_audit", None)
+    if isinstance(audit, PreparationRecorder):
+        audit.manifest(manifest)

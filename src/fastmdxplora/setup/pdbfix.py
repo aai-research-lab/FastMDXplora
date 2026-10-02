@@ -498,6 +498,7 @@ def fix_pdb_with_pdbfixer(
     explained: tuple[str, ...] = (),
     replace_nonstandard: bool = True,
     residue_states: dict[str, str] | None = None,
+    audit=None,
 ) -> list[str]:
     """Strict PDBFixer wrapper: raises on failure.
 
@@ -560,6 +561,9 @@ def fix_pdb_with_pdbfixer(
     logger.info("Fixing PDB with PDBFixer: %s (pH=%s)", inp, ph)
 
     fixer = PDBFixer(filename=str(inp))
+    from fastmdxplora.setup.audit import observe_fixer, residue_identity
+
+    observe_fixer(audit, "pdbfixer_input", fixer)
 
     # Before anything is removed or rebuilt, because a mutation is stated
     # against the deposited numbering and removeHeterogens can renumber
@@ -591,6 +595,8 @@ def fix_pdb_with_pdbfixer(
             chain_id, ", ".join(applied),
         )
         fixer.applyMutations(applied, chain_id)
+        observe_fixer(audit, "apply_mutations", fixer,
+                      {"chain": chain_id, "applied": applied})
 
     if not keep_heterogens:
         removed = _heterogen_residue_counts(fixer.topology)
@@ -602,7 +608,14 @@ def fix_pdb_with_pdbfixer(
                 "the molecule, not heterogens.", ", ".join(sorted(caps)))
         report_removed_heterogens(removed, reinstated=reinstated,
                                   explained=explained)
+        observe_fixer(audit, "remove_heterogens", fixer,
+                      {"keep_water": keep_water, "protected_caps": sorted(caps),
+                       "input_heterogen_counts": removed, "reinstated": reinstated,
+                       "explained": explained})
     fixer.findMissingResidues()
+    observe_fixer(audit, "detected_missing_residues", fixer,
+                  lambda: {"scheduled": [{"chain_index": key[0], "insertion_index": key[1], "resnames": value}
+                                        for key, value in fixer.missingResidues.items()]})
 
     # removeHeterogens() deletes components from the topology but not from
     # SEQRES, so findMissingResidues() reads the hole they leave as unresolved
@@ -622,6 +635,11 @@ def fix_pdb_with_pdbfixer(
     # structure is worse than a loud crash.
     _drop_untemplated_gaps(fixer)
     _drop_terminal_extensions(fixer, build_termini=build_missing_termini)
+    observe_fixer(audit, "missing_residue_schedule", fixer,
+                  lambda: {"scheduled": [{"chain_index": key[0], "insertion_index": key[1], "resnames": value}
+                                        for key, value in fixer.missingResidues.items()],
+                           "build_missing_termini": build_missing_termini,
+                           "note": "Existing untemplated-gap and terminal-extension filters have already run."})
 
     # Modified residues are part of the polymer, not ligands: a selenomethionine
     # or an oxidised cysteine belongs in the chain. Left in place they reach the
@@ -641,14 +659,29 @@ def fix_pdb_with_pdbfixer(
                 "Replaced %d modified residue(s) with their standard "
                 "equivalents: %s", len(substitutions), described,
             )
+            observe_fixer(audit, "nonstandard_substitution_requests", fixer,
+                          lambda: {"substitutions": [{"residue": residue_identity(residue), "standard": standard}
+                                                     for residue, standard in substitutions]})
             fixer.replaceNonstandardResidues()
+            observe_fixer(audit, "replace_nonstandard_residues", fixer)
 
     fixer.findMissingAtoms()
+    observe_fixer(audit, "missing_atom_requests", fixer,
+                  lambda: {"missing_atoms": [{"residue": residue_identity(residue),
+                                              "atoms": [atom.name for atom in atoms]}
+                                             for residue, atoms in fixer.missingAtoms.items()],
+                           "terminal_atoms": [{"residue": residue_identity(residue), "atoms": atoms}
+                                              for residue, atoms in fixer.missingTerminals.items()]})
     fixer.addMissingAtoms()
+    observe_fixer(audit, "add_missing_atoms", fixer)
     applied = _apply_residue_states(fixer, parse_residue_states(residue_states))
     if applied:
         logger.info("Protonation states set by hand: %s.", "; ".join(applied))
+    observe_fixer(audit, "explicit_protonation_choices", fixer, {"applied": applied})
     fixer.addMissingHydrogens(pH=float(ph))
+    observe_fixer(audit, "add_missing_hydrogens", fixer,
+                  {"ph": float(ph), "explicit_choices": applied,
+                   "notice": "Settings and observed hydrogen additions do not independently verify chemical protonation states."})
 
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
