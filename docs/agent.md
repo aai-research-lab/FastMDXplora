@@ -367,6 +367,20 @@ that study; and *New*, which starts a fresh thread and keeps the last. Every
 exchange is saved as it happens; a reload shows the thread as it was. A
 conversation that launches a run moves into the study it created.
 
+**Its questions about a study are answered from the study's records when no
+AI model is set.** The start page offers three about the study open: what it
+found, whether it ran long enough, and what would strengthen it most. With no
+AI model set, each is answered from what the study recorded, and the answer
+says so: the report's line on what the run supports, each mean with its
+standard error or the reason it gave none, the checks the run was held to,
+how much more production the withheld means need, what that takes at the
+run's own speed and the command that extends the study in place, and that a
+single run's error cannot show a state the run never left, which replicas
+started independently can. Nothing is said that the records do not hold.
+Typed rather than asked from the start page, a question still needs an AI
+model. With one set, the three go to it, and it reads the same records with
+its tools.
+
 The page is a conversation. What you said sits on the right; what came back
 sits under it: the refusals as the Agent corrected itself, then the Config
 with its actions, or an answer, or a question. Newest at the bottom, where the

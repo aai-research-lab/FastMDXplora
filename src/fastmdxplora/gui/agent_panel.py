@@ -135,6 +135,13 @@ def propose_endpoint(payload: dict[str, Any],
     try:
         complete = completion_for()
     except StudyError as exc:
+        # The start page's questions about the study open are answered from
+        # its records where no AI model can be asked.
+        from fastmdxplora.gui.records_answer import answered_from_the_records
+
+        answered = answered_from_the_records(payload, runtime)
+        if answered is not None:
+            return answered
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
 

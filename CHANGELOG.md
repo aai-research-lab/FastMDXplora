@@ -7,6 +7,26 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent answers its questions about a study from the records
+
+**With no AI model set, the start page's questions about the study open are
+answered from what the study recorded.** "Summarise what this study found",
+"Is this run long enough?" and "What would strengthen it most?" were each
+refused, though every part of each answer is recorded. They are now said from
+the records, and the answer says so: the report's line on what the run
+supports, each mean with its standard error or the reason it gave none, the
+checks the run was held to, how much more production the withheld means need,
+what that takes at the run's own speed and the command that extends the study
+in place, and that a single run's error cannot show a state the run never
+left, which replicas started independently can. A study of several runs is
+pointed to its runs and its comparison, and an umbrella study says first what
+its windows gave: the binding free energy with its error and warnings, the
+profile alone, or why there is none. Nothing is said that the records do
+not hold; a question typed rather than asked from the start page still needs
+an AI model, and with one set the three go to it as before
+(`gui/records_answer.py`). The page's subtitle now reads "Describe a study,
+or ask about the one open".
+
 ### The Overview gives the checkpoint and the last update briefly
 
 **The health card's checkpoint and last update read whole.** The checkpoint

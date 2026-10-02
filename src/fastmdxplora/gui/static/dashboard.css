@@ -3083,6 +3083,7 @@ html[data-page="viewer"] .page-shell { max-width: none; }
 .agent-start-note, .agent-start-engine { margin: -8px 0 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
 .agent-start-engine { display: flex; align-items: center; gap: 10px; color: var(--accent-orange); }
 .agent-start-engine[hidden] { display: none; }
+.agent-start-records { color: var(--text-secondary); }
 .agent-start-label {
     color: var(--text-muted); font-size: var(--text-2xs); letter-spacing: 0.12em;
     text-transform: uppercase; font-weight: 600; margin-bottom: 8px;

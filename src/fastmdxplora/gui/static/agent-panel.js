@@ -271,6 +271,8 @@
     if (engine) engine.hidden = engineChosen;
     var study = el("agent-start-study");
     if (study) study.hidden = !studyOpen;
+    var records = el("agent-start-records");
+    if (records) records.hidden = engineChosen || !studyOpen;
     var note = el("agent-start-note");
     var mode = el("agent-mode");
     if (note && mode) {
@@ -356,6 +358,7 @@
   var convStudy = null;
   /* Files attached to the next message: what read_attachment returned. */
   var pendingFiles = [];
+  var fromStarter = null;
 
   function fmtSize(n) {
     return n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
@@ -617,8 +620,11 @@
     note(box, "Thinking\u2026");
     scrollToEnd();
 
+    var asked = fromStarter && fromStarter.prompt === typed ? fromStarter.key : null;
+    fromStarter = null;
     propose({
       request: request,
+      records_question: asked,
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
       current_config: currentConfig,
@@ -1457,6 +1463,10 @@
     Array.prototype.forEach.call(document.querySelectorAll(".agent-starter"), function (b) {
       b.addEventListener("click", function () {
         area.value = b.getAttribute("data-prompt") || b.textContent;
+        /* A question about the study open, which its records answer where
+         * no AI model is set: asked as it was offered, it says which. */
+        fromStarter = b.getAttribute("data-records")
+          ? { key: b.getAttribute("data-records"), prompt: area.value } : null;
         autosize(area);
         area.focus();
         area.setSelectionRange(area.value.length, area.value.length);

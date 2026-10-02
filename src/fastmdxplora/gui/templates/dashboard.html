@@ -997,7 +997,7 @@
           <div class="page-header">
             <div>
               <h1 class="page-title">Agent</h1>
-              <div class="page-subtitle">Describe a study in natural language.</div>
+              <div class="page-subtitle">Describe a study, or ask about the one open.</div>
             </div>
           </div>
 
@@ -1017,13 +1017,14 @@
             <p class="agent-start-engine" id="agent-start-engine" hidden>
               No AI model is set yet.
               <button type="button" class="ghost-btn" id="agent-start-settings">Choose one</button>
+              <span class="agent-start-records" id="agent-start-records" hidden>Until then, the questions about this study are answered from its records.</span>
             </p>
             <div class="agent-start-group" id="agent-start-study" hidden>
               <div class="agent-start-label">About this study</div>
               <div class="agent-starters">
-                <button type="button" class="agent-starter" data-prompt="Summarise what this study found, with the uncertainty of each number.">Summarise what this study found</button>
-                <button type="button" class="agent-starter" data-prompt="Is this run long enough for its averages to be trusted? If not, what should I run?">Is this run long enough?</button>
-                <button type="button" class="agent-starter" data-prompt="What would strengthen this result most: a longer run, or more replicas? Say how much of either.">What would strengthen it most?</button>
+                <button type="button" class="agent-starter" data-records="found" data-prompt="Summarise what this study found, with the uncertainty of each number.">Summarise what this study found</button>
+                <button type="button" class="agent-starter" data-records="long_enough" data-prompt="Is this run long enough for its averages to be trusted? If not, what should I run?">Is this run long enough?</button>
+                <button type="button" class="agent-starter" data-records="strengthen" data-prompt="What would strengthen this result most: a longer run, or more replicas? Say how much of either.">What would strengthen it most?</button>
               </div>
             </div>
             <div class="agent-start-group">

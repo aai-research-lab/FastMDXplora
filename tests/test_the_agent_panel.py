@@ -741,7 +741,7 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
 
     def test_the_subtitle_says_what_to_do_and_not_how_it_works(self):
         panel = self.panel()
-        self.assertIn("Describe a study in natural language", panel)
+        self.assertIn("Describe a study, or ask about the one open", panel)
         for mechanism in ("corrects itself", "same rules as one you wrote",
                           "cannot ask for a study"):
             with self.subTest(phrase=mechanism):
