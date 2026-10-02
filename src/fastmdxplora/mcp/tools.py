@@ -646,7 +646,7 @@ def _as_assisted(text: str, config: dict[str, Any],
     assisted`` where it says nothing of how it was written, as the Agent's
     own are, and in ``agent_model`` the AI app it was written in, where the
     config names no AI model and the AI app named itself (the AI app does
-    not say which model it runs, so none is claimed). A study with no
+    not say which AI model it runs, so none is claimed). A study with no
     ``agent`` says a person wrote it, which an AI model's draft is not. Added as lines above
     the rest, so the comments and order written stay as written; where
     that would not read back as the same settings, the whole is written

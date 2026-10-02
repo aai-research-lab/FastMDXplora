@@ -217,7 +217,7 @@ class TestTheCommand(unittest.TestCase):
     def test_asking_without_a_model_refuses_and_explains(self):
         code, out = self.run_command(["agent", "simulate ubiquitin"])
         self.assertEqual(code, 1)
-        self.assertIn("No model has been chosen", out)
+        self.assertIn("No AI model has been chosen", out)
 
     def test_a_request_becomes_a_config(self):
         save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
@@ -293,7 +293,7 @@ class TestChoosingTheModel(unittest.TestCase):
         code, out = self.choose(["agent", "model"],
                                 ["1", "claude-sonnet-4-6", "sk-x"])
         self.assertEqual(code, 0)
-        self.assertIn("No model chosen yet.", out)
+        self.assertIn("No AI model chosen yet.", out)
         chosen = load_choice()
         self.assertEqual((chosen.provider, chosen.model),
                          ("anthropic", "claude-sonnet-4-6"))
@@ -304,7 +304,7 @@ class TestChoosingTheModel(unittest.TestCase):
         code, out = self.choose(["agent", "model"], [""])
         # Nothing picked leaves the choice as it was.
         self.assertEqual(code, 1)
-        self.assertLess(out.index("In use: OpenAI, gpt-5"), out.index("Model:"))
+        self.assertLess(out.index("In use: OpenAI, gpt-5"), out.index("AI model:"))
         self.assertEqual(load_choice().model, "gpt-5")
 
     def test_the_old_name_stops_and_names_the_new_one(self):

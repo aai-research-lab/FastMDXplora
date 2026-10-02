@@ -1,6 +1,6 @@
 /* The Agent panel.
  *
- * The subject of this page is the FastMDXplora Agent. Which language model
+ * The subject of this page is the FastMDXplora Agent. Which AI model
  * it drafts with is an engine setting -- chosen once, then out of the way.
  * An earlier version led with "Asking anthropic, claude-sonnet-4-6", which
  * put another company's product in the primary status line of this one.
@@ -46,7 +46,7 @@
    * `fastmdx agent model`; there is a Settings button here instead. */
   var IN_THE_GUI = {
     "environment.model.unset":
-      "No model set yet. Open Settings and choose one.",
+      "No AI model set yet. Open Settings and choose one.",
     "environment.credentials.absent":
       "API key required. Open Settings and paste one."
   };
@@ -62,7 +62,7 @@
   }
 
   /* The little markdown a reply may carry -- bold, italic, code, a link --
-   * and nothing else. Escaped first, quotes included, so the model cannot
+   * and nothing else. Escaped first, quotes included, so the AI model cannot
    * put markup in the page or close the link's attribute; then the four
    * patterns, in an order that keeps code spans from being reinterpreted.
    * A link ends at a quote, as it would in prose, and a full stop or
@@ -181,7 +181,7 @@
     return line;
   }
 
-  /* Ready or not, and nothing else. The model is recorded on the study --
+  /* Ready or not, and nothing else. The AI model is recorded on the study --
    * `agent_model` in the config and the manifest -- which is where a
    * reader needs it. It does not belong in the chrome. */
   function describeEngine(current) {
@@ -193,10 +193,10 @@
 
   var OTHER = "__other__";
 
-  /* The models a provider is known to have, plus a way to name one that is
-   * not on the list. A closed list would lock out a model released next
+  /* The AI models a provider is known to have, plus a way to name one that is
+   * not on the list. A closed list would lock out an AI model released next
    * month; free text alone made somebody type a string exactly right with
-   * nothing to check it against, and left the previous provider's model
+   * nothing to check it against, and left the previous provider's AI model
    * sitting there when they switched. */
   function fillModels(spec, chosen) {
     var select = el("agent-model");
@@ -209,11 +209,11 @@
     });
     var other = document.createElement("option");
     other.value = OTHER;
-    /* Said outright rather than as "Other…". Somebody looking for a model
+    /* Said outright rather than as "Other…". Somebody looking for an AI model
      * the list does not have needs to see that typing one is possible;
      * reported as "I still can't choose any model, only prelisted ones"
      * while this option was sitting in the dropdown saying "Other…". */
-    other.textContent = "Type a model name\u2026";
+    other.textContent = "Type an AI model name\u2026";
     select.appendChild(other);
 
     var known = (spec.models || []).indexOf(chosen) !== -1;
@@ -238,8 +238,8 @@
     var spec = providers.filter(function (p) { return p.id === id; })[0];
     if (!spec) return;
     el("agent-url-field").hidden = !spec.needs_url;
-    /* The model follows the provider. It used to be filled only when the
-     * field was empty, so switching provider left the previous one's model
+    /* The AI model follows the provider. It used to be filled only when the
+     * field was empty, so switching provider left the previous one's AI model
      * in place -- OpenAI selected and claude-sonnet-4-6 still showing. */
     fillModels(spec, chosen || spec.default_model || "");
     el("agent-key-help").textContent =
@@ -346,7 +346,7 @@
   var history = [];
   var currentConfig = null;
   /* The transcript, as it can be replayed: every entry carries enough to
-   * draw it again without asking the model. Saved to the workspace after
+   * draw it again without asking the AI model. Saved to the workspace after
    * each exchange, restored when the page opens. The thread used to live
    * only in the browser's memory, and a refresh emptied it. */
   var transcript = [];
@@ -650,7 +650,7 @@
           /* Asked, not done. A stop is recorded when it is confirmed, so
            * a reloaded thread never says "Did: stop" about a run that was
            * never stopped -- which it did, and the person's "yes" then
-           * went to the model as a new message. */
+           * went to the AI model as a new message. */
           transcript.push({ role: "agent", kind: "question",
                             text: "Stop the run" + (data.where ? " at " + data.where : "") + "? Say yes." });
         } else {
@@ -726,8 +726,8 @@
 
   /* ---- The reply as it is written ------------------------------------ */
 
-  /* The server sends the reply as the model writes it, one event a line
-   * (`/api/agent/propose-stream`): a `begin` each time the model is asked,
+  /* The server sends the reply as the AI model writes it, one event a line
+   * (`/api/agent/propose-stream`): a `begin` each time the AI model is asked,
    * its text in pieces, each look as it is taken, and the answer at the
    * end, the same as `/api/agent/propose` gives. The send button stops it
    * while it is written. A browser without streams asks for it whole. */
@@ -742,7 +742,7 @@
     button.textContent = on ? "\u25a0" : "\u2191";
   }
 
-  /* What the model is writing, as a person reads it: a look is said as
+  /* What the AI model is writing, as a person reads it: a look is said as
    * one, the reply's own marker is left off. */
   function writtenSoFar(raw) {
     if (/^\s*USE:/.test(raw)) return "Looking with the software\u2026";
@@ -1187,7 +1187,7 @@
    * into the thread as the person's next message, and the Agent rewrites
    * the config it wrote. A choice only the person can make, a budget, an
    * install and a machine's state are said and not handed on: the
-   * software does not choose them, so neither does the model. Built as
+   * software does not choose them, so neither does the AI model. Built as
    * elements; a refusal's text is data. */
   function runFix(host, started, data) {
     if (!host) return;

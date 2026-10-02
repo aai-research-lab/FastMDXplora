@@ -3,7 +3,7 @@
 The GUI's form, the CLI's flags and the Python API all come from
 :mod:`fastmdxplora.config.schema`, so none of them can drift from the
 others or from what validation accepts. This is the fourth reader of that
-same declaration, and it exists because a language model proposing a
+same declaration, and it exists because an AI model proposing a
 config needs to be told what the language is, and being told by hand is
 how the four become five things that disagree.
 
@@ -15,10 +15,10 @@ cannot offer a setting that does not exist, and a config built from it
 still has to survive :func:`~fastmdxplora.config.loader.validate_config`
 before anything reaches a GPU.
 
-So this renders, and it does not parse. What comes back from a model is
+So this renders, and it does not parse. What comes back from an AI model is
 a config like any other, and it goes through the same door.
 
-Nothing here imports a model client, and nothing here holds a key. The
+Nothing here imports an AI model client, and nothing here holds a key. The
 caller supplies whatever it wants to talk to; this package's business is
 saying what a study may contain.
 """
@@ -84,7 +84,7 @@ def describe_field(field: Field, *, verbose: bool = True) -> str:
     the audience here. ``membrane_orientation_checked`` explains that the
     bilayer is built in the xy plane, that a deposited entry is rarely
     aligned to z, and that setup refuses rather than embedding a protein
-    sideways. A model that has read that will not propose a membrane
+    sideways. An AI model that has read that will not propose a membrane
     study without it; one given only the field's name will.
     """
     parts = [f"{field.name} ({_type_name(field.type)})"]
@@ -118,22 +118,22 @@ def describe_schema(
     phases: Iterable[str] | None = None,
     verbose: bool = True,
 ) -> str:
-    """The whole config language, as text to put in front of a model.
+    """The whole config language, as text to put in front of an AI model.
 
     Parameters
     ----------
     phases
         Which phase blocks to include. The four phases by default. A caller
         working on setup alone can leave the other three out, which is
-        worth doing: a shorter description is a cheaper call and a model
+        worth doing: a shorter description is a cheaper call and an AI model
         cannot propose a setting it was never shown. ``execution``, how a
         campaign's runs are scheduled on this machine, is described only
-        when named: it is about the machine rather than the study, and a
-        model proposing GPU indices for a machine it cannot see would be
+        when named: it is about the machine rather than the study, and an
+        AI model proposing GPU indices for a machine it cannot see would be
         guessing.
     verbose
         Include each setting's help text. On by default, because the help
-        is where the refusals are explained and a model that has read them
+        is where the refusals are explained and an AI model that has read them
         proposes fewer studies that will be refused.
 
     Notes
@@ -168,7 +168,7 @@ def schema_as_json(*, phases: Iterable[str] | None = None) -> dict[str, Any]:
     For a caller building a tool schema, a JSON-schema document, or a
     structured-output constraint. The point of returning this rather than
     only the text is that the constraint and the description then come
-    from one source: a model told about a setting is a model permitted to
+    from one source: an AI model told about a setting is an AI model permitted to
     set it, and neither list can gain an entry the other lacks.
     """
     def block(schema: PhaseSchema) -> dict[str, Any]:

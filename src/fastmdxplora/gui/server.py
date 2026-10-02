@@ -824,7 +824,7 @@ def make_handler(
                 )
                 return
             if path == "/api/agent/model":
-                # Reading and setting which model to ask. The key is
+                # Reading and setting which AI model to ask. The key is
                 # accepted here and stored by `save_choice`, which puts it
                 # in a file of its own; it is never echoed back, never put
                 # in a config, and never logged.
@@ -853,7 +853,7 @@ def make_handler(
                     path_for=hosting.inside if hosting is not None else None))
                 return
             if path == "/api/agent/propose-stream":
-                # The same, sent on as the model writes it, and stopped when
+                # The same, sent on as the AI model writes it, and stopped when
                 # the page stops reading.
                 self._stream_proposal(payload or {})
                 return
@@ -1040,7 +1040,7 @@ def make_handler(
             A browser sends a request to 127.0.0.1 for any page it has open,
             so on loopback "only this machine" meant "any website visited
             while the GUI runs": a form posted as text/plain switched the
-            served folder, stored a model and key, or started a run, and a
+            served folder, stored an AI model and key, or started a run, and a
             name that resolves to 127.0.0.1 (DNS rebinding) let a page read
             the answers too. On loopback the server answers only to a
             loopback name, and anywhere it refuses a POST whose Origin is
@@ -1246,7 +1246,7 @@ def make_handler(
             """`POST /api/agent/propose-stream`: the Agent's reply as it is
             written, one JSON event a line, ending with the answer
             `/api/agent/propose` gives. The page stopping the request is
-            the reply stopping: the next write fails, and the model's
+            the reply stopping: the next write fails, and the AI model's
             request is closed with it."""
             from fastmdxplora.gui.agent_panel import propose_endpoint
 

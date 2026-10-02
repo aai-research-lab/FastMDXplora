@@ -80,7 +80,7 @@ the platform it *actually ran on* rather than the one that was asked for, since
 a constant labelled CUDA that was measured on CPU would understate a real CUDA
 run enormously.
 
-The calibration is stored beside the model choice, in
+The calibration is stored beside the AI model choice, in
 `$XDG_CONFIG_HOME/fastmdxplora/calibration.json`.
 
 **A budget measures the machine itself when it has to.** A study given
@@ -473,7 +473,7 @@ single piece. See
 ## Running a campaign with a budget
 
 For an unattended campaign — many candidates, one card, a fixed allowance —
-`fastmdxplora.agent` carries a queue. It has nothing to do with a language
+`fastmdxplora.agent` carries a queue. It has nothing to do with an AI
 model; it lives there because
 [`--autonomous`](agent.md#autonomous--draft-it-and-run-it) needs something that
 can stop a run.

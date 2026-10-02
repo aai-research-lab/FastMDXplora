@@ -116,7 +116,7 @@ ask for the Agent. Which AI model it writes with:
   happen between replies. If the AI app declines, nothing is written, and your
   own key is not used in its place.
 - **Otherwise, your own AI model**: the one you chose once, in a terminal, with
-  `fastmdx agent model` (see [Connecting a model](agent.md#connecting-a-model)),
+  `fastmdx agent model` (see [Connecting an AI model](agent.md#connecting-an-ai-model)),
   called on your own API key, each call paid for on top of the AI app's own.
 
 Its answer says which it was, and a study it writes records the AI model in

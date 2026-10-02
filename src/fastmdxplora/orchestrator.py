@@ -1515,8 +1515,8 @@ class FastMDXplora:
             # also said `setup: {agent: assisted}` recorded that phase as
             # *departing* from a study value the resolver could not see.
             modes = resolve_agent_modes({**options, **self.study_options})
-            # Which model, too: `agent_model` was kept in the resolved
-            # config and not here, so the manifest said a model was
+            # Which AI model, too: `agent_model` was kept in the resolved
+            # config and not here, so the manifest said an AI model was
             # involved and not which one.
             model = self.study_options.get("agent_model")
             if modes.study is not None or modes.departures or model:

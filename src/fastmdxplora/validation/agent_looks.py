@@ -1,12 +1,12 @@
-"""Whether the Agent's looking helps, measured on a real model.
+"""Whether the Agent's looking helps, measured on a real AI model.
 
 The Agent may look with the software's own tools before it answers
 (:mod:`fastmdxplora.agent.tools`). That it can is tested; whether a real
-model uses them, and whether its answers then agree with the software, is a
+AI model uses them, and whether its answers then agree with the software, is a
 measurement, and this is the harness for it. Each question has an answer
-the software itself computes, with no model involved: a solvated system's
+the software itself computes, with no AI model involved: a solvated system's
 size, a box's width, what a structure contains, what a selection matches.
-The same questions go to the configured model twice over, with the tools
+The same questions go to the configured AI model twice over, with the tools
 and without, and each reply is judged against the software's answer by a
 rule written here before any reply is seen.
 
@@ -23,7 +23,7 @@ how many looked with the tool the question calls for. Nothing here decides
 whether the difference is large enough to claim: the counts are reported
 as counted.
 
-Run it with a model chosen (`fastmdx agent model`), on a machine that can
+Run it with an AI model chosen (`fastmdx agent model`), on a machine that can
 fetch from the PDB::
 
     python -m fastmdxplora.validation.agent_looks --repeats 3 --out agent_looks.json
@@ -50,9 +50,9 @@ class Question:
     name: str
     #: What the person asks, as they would type it.
     request: str
-    #: The tool a model that looks would use for it.
+    #: The tool an AI model that looks would use for it.
     tool: str
-    #: The software's answer, computed with no model: a number, or a list
+    #: The software's answer, computed with no AI model: a number, or a list
     #: of names every one of which a reply must give.
     truth: Callable[[], Any]
     #: For a number, how far a reply's may be from it, as a fraction.
@@ -190,7 +190,7 @@ class Trial:
 
 def ask(question: Question, truth: Any, complete: Callable[[str], str], *,
         with_tools: bool, toolbox: Callable[[], Any] | None = None) -> Trial:
-    """One question to the model, one arm, judged."""
+    """One question to the AI model, one arm, judged."""
     from fastmdxplora.agent import propose_config
     from fastmdxplora.agent.tools import Toolbox
 
@@ -281,7 +281,7 @@ def _table(result: dict[str, Any]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m fastmdxplora.validation.agent_looks",
-        description="Ask the configured model questions the software can answer, "
+        description="Ask the configured AI model questions the software can answer, "
                     "with its tools and without, and count the replies that agree.")
     parser.add_argument("--repeats", type=int, default=3,
                         help="how many times each question is asked in each arm")

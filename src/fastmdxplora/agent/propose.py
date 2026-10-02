@@ -1,11 +1,11 @@
 """Propose a study, have it refused, repair it, try again.
 
-The smallest useful thing a language model can do with this package, and
+The smallest useful thing an AI model can do with this package, and
 the safest. A deterministic validator gates every attempt before anything
 reaches a GPU, so a wrong proposal costs a few seconds and a retry rather
 than a trajectory.
 
-What the model does here is narrow on purpose. It writes YAML and it
+What the AI model does here is narrow on purpose. It writes YAML and it
 repairs YAML. It does not decide whether a run converged, whether a
 difference is meaningful, or whether a structure is worth simulating.
 Those stay in code, where they were already.
@@ -15,17 +15,17 @@ accidents.
 
 **The validator does not hand over the answer.** It names the offending
 setting and, where the schema holds a complete set, what that set is. It
-does not say what the chemistry requires. Telling a model the legal box
+does not say what the chemistry requires. Telling an AI model the legal box
 shapes costs nothing and saves a round trip; telling it what protonation
 state to use would be inventing an answer, and the software does not have
 one. :class:`~fastmdxplora.refusals.Refusal` enforces which is which by
 reading the registry rather than the raise site.
 
 **Repair cycles are counted and capped.** Counted because the number is
-a measurement: how many attempts a model needs to reach a valid config is
-a direct reading of its domain competence, comparable across models, and
-free to collect. Capped because cheap validation invites thrashing, and a
-model that mutates fields until something passes will eventually produce
+a measurement: how many attempts an AI model needs to reach a valid config is
+a direct reading of its domain competence, comparable across AI models, and
+free to collect. Capped because cheap validation invites thrashing, and an
+AI model that mutates fields until something passes will eventually produce
 a config that validates and is scientifically wrong -- which is the
 failure this whole mechanism exists to prevent. Exhausting the cap is a
 refusal, not a fall-through to whatever last validated.
@@ -33,9 +33,9 @@ refusal, not a fall-through to whatever last validated.
 **Semantic refusals end the loop.** A structural refusal is answerable
 from the schema and worth retrying. A refusal because the pH margin does
 not determine a protonation state is not negotiable by trying again, and
-a model that retries it is guessing. The loop stops and says so.
+an AI model that retries it is guessing. The loop stops and says so.
 
-No model client is imported here and no key is handled. The caller passes
+No AI model client is imported here and no key is handled. The caller passes
 a function that takes a prompt and returns text; what is behind it is
 none of this package's business.
 """
@@ -64,7 +64,7 @@ class Completion(Protocol):
     """Anything that turns a prompt into text.
 
     Deliberately the whole interface. A caller wiring this to a hosted
-    API, a local model, or a recorded fixture for a test should not have
+    API, a local AI model, or a recorded fixture for a test should not have
     to satisfy anything more, and this package should not know which of
     those it is talking to.
     """
@@ -77,7 +77,7 @@ class Attempt:
     """One pass round the loop.
 
     Kept whole rather than reduced to its outcome, because the sequence of
-    attempts is the interesting artefact. It shows what a model got wrong
+    attempts is the interesting artefact. It shows what an AI model got wrong
     and what it did when told, which is the evidence for whether the
     description is doing its job, and it is what a benchmark would score.
     """
@@ -126,7 +126,7 @@ class Proposal:
     #: uses, so the mode's gates -- a budget for autonomous, control for
     #: stop -- apply to a word in the thread as they do to a press.
     action: str | None = None
-    #: What the model looked at with the software's tools before it
+    #: What the AI model looked at with the software's tools before it
     #: answered (:mod:`fastmdxplora.agent.tools`), in order: shown under
     #: the answer, so a size or a time in it can be read against the
     #: software's own finding.
@@ -284,16 +284,16 @@ happens, and so is a `DO: run` their message did not plainly ask for;
 you need not ask, the software does.
 
 You are the FastMDXplora Agent. Asked who or what you are, say so by
-that name, then what you do, in a sentence each. Asked which model or
+that name, then what you do, in a sentence each. Asked which AI model or
 engine runs you, say it is the one chosen in Settings and name it if the
 current config's `agent_model` shows it; otherwise say to look in
-Settings. Do not volunteer the model unasked, do not present it as who
+Settings. Do not volunteer the AI model unasked, do not present it as who
 you are, and do not repeat a phrase across turns because it was used
 once. Asked what you know beyond this software, answer plainly: the
 molecular dynamics this job needs, and general knowledge you would not
 lean on here.
 
-Write the way a careful colleague writes, not the way a model writes.
+Write the way a careful colleague writes, not the way an AI model writes.
 Short sentences. One idea per sentence. No em dashes and no en dashes;
 use a comma, a full stop, or a new sentence. No colon-then-list where
 prose would do. No "I'd be happy to", no "great question", no summary
@@ -366,7 +366,7 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
 
     The schema description is generated, so it cannot name a setting
     validation would refuse. `verbose` keeps each setting's help text,
-    which is where the refusals are explained -- a model told that setup
+    which is where the refusals are explained -- an AI model told that setup
     refuses rather than embedding a protein sideways proposes fewer
     studies that will be refused.
     """
@@ -436,7 +436,7 @@ ACTIONS = ("run", "stop", "run the fix", "open viewer", "open overview", "open r
 
 # The person's message when it is itself the instruction to run: "run it",
 # "start the study", "go ahead". Read from what they typed, never from the
-# reply, so a model cannot supply it.
+# reply, so an AI model cannot supply it.
 _TOLD_TO_RUN = re.compile(
     r"(?:(?:ok|okay|yes|please|now|then|right|so),?\s+)*"
     r"(?:(?:run|start|launch)(?:\s+(?:it|this|that|the\s+(?:study|run|config|simulation)))?"
@@ -448,9 +448,9 @@ def told_to_run(message: str) -> bool:
     """Whether the person's own message plainly says to run.
 
     `DO: run` starts work on this machine, and the reply that carries it
-    comes from a model, which reads the person's files and can be wrong or
+    comes from an AI model, which reads the person's files and can be wrong or
     be told what to say by one of them. The prompt asks it to act only when
-    told; this is the check that does not depend on the model agreeing. A
+    told; this is the check that does not depend on the AI model agreeing. A
     run the message did not plainly ask for is confirmed with the person
     first, as a stop always is.
     """
@@ -463,7 +463,7 @@ def _action_in(raw: str) -> str | None:
 
     Only the named actions, and only one. Anything else after DO: is not
     an action, and a reply that is not exactly one line is not an action
-    either -- a model that says "DO: run" and then keeps talking is not
+    either -- an AI model that says "DO: run" and then keeps talking is not
     acting, it is narrating, and the person should see the narration.
     """
     said = _do_line(raw)
@@ -526,7 +526,7 @@ def _question_in(raw: str) -> str | None:
     """The question a reply carries, if the reply is one.
 
     A line starting ``ASK:`` and nothing else. Looked for on the first
-    non-blank line so a model that adds a courtesy sentence after it still
+    non-blank line so an AI model that adds a courtesy sentence after it still
     reads as asking; anything that parses as YAML instead is a config.
     """
     for line in (raw or "").splitlines():
@@ -540,7 +540,7 @@ def _question_in(raw: str) -> str | None:
 
 
 def _parse(raw: str) -> dict[str, Any] | None:
-    """YAML out of a reply, tolerating the fences a model adds anyway."""
+    """YAML out of a reply, tolerating the fences an AI model adds anyway."""
     import yaml
 
     text = raw.strip()
@@ -587,13 +587,13 @@ def propose_config(
         Prompt in, text out. No client is constructed here.
     max_cycles
         Attempts in all, the first included, before giving up
-        (:data:`DEFAULT_ATTEMPTS`). A model that has not produced a valid
+        (:data:`DEFAULT_ATTEMPTS`). An AI model that has not produced a valid
         config in that many passes over a generated schema description is
         not converging, and further passes mostly produce configs that
         validate for reasons nobody chose.
 
     tools
-        A :class:`~fastmdxplora.agent.tools.Toolbox`, to let the model
+        A :class:`~fastmdxplora.agent.tools.Toolbox`, to let the AI model
         look with the software's tools before it answers. A look is not an
         attempt: it runs nothing and is not validated, and at most
         :data:`~fastmdxplora.agent.tools.MOST_LOOKS` are taken per answer.
@@ -607,10 +607,10 @@ def propose_config(
     Notes
     -----
     Stops early on a semantic refusal. A structural one says the config
-    does not match the schema, which a model can fix by reading. A
+    does not match the schema, which an AI model can fix by reading. A
     semantic one says the *system* does not determine what to do -- an
     undetermined protonation, an ambiguous structure -- and no rewording
-    of the config changes that. Retrying it would be the model guessing at
+    of the config changes that. Retrying it would be the AI model guessing at
     a question the software declined to guess at, which is the behaviour
     this design exists to prevent.
     """
@@ -631,7 +631,7 @@ def propose_config(
         raw = complete(prompt + (tools.said_so_far() if tools is not None else ""))
         wanted = use_in(raw) if tools is not None else None
         if wanted is not None and asked_to_look < MOST_LOOKS:
-            # Not an answer: the tool is run and the model asked again with
+            # Not an answer: the tool is run and the AI model asked again with
             # what it said. Looks are counted apart from attempts, since
             # nothing was proposed.
             asked_to_look += 1
@@ -662,8 +662,8 @@ def propose_config(
                             looks=looked())
         asked = _question_in(raw)
         if asked:
-            # The request is short of something a model cannot supply and
-            # should not guess. Stop here; retrying would only ask a model
+            # The request is short of something an AI model cannot supply and
+            # should not guess. Stop here; retrying would only ask an AI model
             # to invent what it was told not to.
             return Proposal(config=None, attempts=tuple(attempts),
                             question=asked, looks=looked())
@@ -685,7 +685,7 @@ def propose_config(
             # config can be checked -- a GUI form mid-edit, a fragment --
             # and the agent inherited that leniency without meaning to.
             #
-            # Found in use: asked for a water simulation, the model wrote
+            # Found in use: asked for a water simulation, the AI model wrote
             # `output`, `simulation.duration_ns` and no `systems` at all.
             # That passed, reported "Accepted first time", and produced a
             # study with nothing in it to simulate. An empty `systems` list
@@ -696,7 +696,7 @@ def propose_config(
             attempts.append(Attempt(number, raw, config, refusal))
             if refusal.kind != Kind.STRUCTURAL:
                 # Not answerable by rewriting the config. Stop rather than
-                # let the model guess at what the software declined to.
+                # let the AI model guess at what the software declined to.
                 break
             prompt = repair_prompt_for(raw, refusal)
             continue

@@ -22,9 +22,9 @@ checked before the stored file, because that is how a cluster job and a CI
 run get a key without anybody storing one, and because it is what people
 already expect.
 
-**Which model wrote a study belongs in the record.** The provider and the
-model name, never the key. Six months on, "why did this study pick 300 K"
-has a different answer depending on whether a frontier model or a 7B
+**Which AI model wrote a study belongs in the record.** The provider and
+the AI model's name, never the key. Six months on, "why did this study pick
+300 K" has a different answer depending on whether a frontier AI model or a 7B
 running on a laptop proposed it, and that is provenance like any other.
 
 Two providers are offered by name. A third option takes any
@@ -67,7 +67,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         #: What to offer before a key is set, and if the provider cannot
         #: be reached. The real list comes from `list_models`, which asks
         #: the provider -- a list written here is stale the week after it
-        #: is written, and a model released next month would be missing
+        #: is written, and an AI model released next month would be missing
         #: with nothing to explain why.
         #: One string, not a guessed list. `claude-opus-4-1` sat here and
         #: 404s -- a name invented from a pattern rather than read from the
@@ -94,7 +94,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         # because a list of vendors goes stale and a protocol does not.
         "label": "Other (any OpenAI-compatible server)",
         #: Shown when this option is picked, because somebody choosing it
-        #: knows they want DeepSeek or a local model and does not know the
+        #: knows they want DeepSeek or a local AI model and does not know the
         #: URL. Examples rather than a list of supported vendors: the
         #: protocol is what is supported, and a vendor list goes stale.
         "examples": (
@@ -102,7 +102,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             ("OpenRouter", "https://openrouter.ai/api/v1",
              "anthropic/claude-sonnet-4-6"),
             ("Ollama (local)", "http://localhost:11434/v1", "llama3.1"),
-            ("vLLM (local)", "http://localhost:8000/v1", "<your model>"),
+            ("vLLM (local)", "http://localhost:8000/v1", "<your AI model>"),
         ),
         "url": "",
         "default_model": "",
@@ -114,7 +114,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 
 @dataclass(frozen=True)
 class ModelChoice:
-    """Which model to ask, and where. Never the key."""
+    """Which AI model to ask, and where. Never the key."""
 
     provider: str
     model: str
@@ -131,7 +131,7 @@ class ModelChoice:
         return str(PROVIDERS[self.provider]["auth"])
 
     def as_record(self) -> dict[str, str]:
-        """What goes in a manifest. Provider and model, and that is all."""
+        """What goes in a manifest. Provider and AI model, and that is all."""
         record = {"provider": self.provider, "model": self.model}
         if self.base_url:
             record["base_url"] = self.base_url
@@ -218,10 +218,10 @@ def _key_for(choice: ModelChoice, path: Path | None = None) -> str:
 
 def list_models(choice: ModelChoice | None = None, *,
                 path: Path | None = None, timeout: float = 10.0) -> tuple:
-    """The models this provider currently has, asked of the provider.
+    """The AI models this provider currently has, asked of the provider.
 
     A list written into this file is stale the week after it is written,
-    and a model released next month would simply be missing with nothing to
+    and an AI model released next month would simply be missing with nothing to
     explain why. Both hosted providers publish one at ``/v1/models``, and
     an OpenAI-compatible server serves the same path relative to its base
     URL, so a local Ollama answers this too.
@@ -289,14 +289,14 @@ def completion_for(choice: ModelChoice | None = None, *,
     settled = choice or load_choice(path)
     if settled is None:
         raise StudyError(
-            "No model has been chosen. Run `fastmdx agent model` to pick one. "
-            "Nothing in FastMDXplora needs a model unless you ask for the "
+            "No AI model has been chosen. Run `fastmdx agent model` to pick one. "
+            "Nothing in FastMDXplora needs an AI model unless you ask for the "
             "agent, so this only comes up when you do.",
             code="environment.model.unset",
         )
 
     def complete(prompt: str, on_text: Callable[[str], None] | None = None) -> str:
-        """The model's reply to ``prompt``. With ``on_text``, asked for as a
+        """The AI model's reply to ``prompt``. With ``on_text``, asked for as a
         stream and handed to ``on_text`` piece by piece as it is written;
         the whole reply is returned either way. An exception from
         ``on_text`` (the page that asked has gone) ends the request."""
@@ -378,7 +378,7 @@ def _streamed(response: Any, on_text: Callable[[str], None], url: str) -> str:
         if event.get("type") == "error":
             error = event.get("error") if isinstance(event.get("error"), dict) else {}
             raise StudyError(
-                f"The model stopped with an error: {str(error.get('message') or error)[:400]}",
+                f"The AI model stopped with an error: {str(error.get('message') or error)[:400]}",
                 code="environment.service.unusable_response", url=url)
         piece = ""
         delta = event.get("delta")
@@ -398,7 +398,7 @@ def describe_choice(path: Path | None = None) -> str:
     """What is set, for `fastmdx agent model` and the agent panel."""
     settled = load_choice(path)
     if settled is None:
-        return "No model chosen. Run `fastmdx agent model` to pick one."
+        return "No AI model chosen. Run `fastmdx agent model` to pick one."
     env_name = str(PROVIDERS[settled.provider]["env"])
     where = ("the environment" if os.environ.get(env_name)
              else "the stored file" if _has_stored_key(path) else "nowhere")

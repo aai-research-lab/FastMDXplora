@@ -311,7 +311,7 @@ Unknown names raise `ValueError` listing `sorted(COLLECTIVE_VARIABLES)`.
 
 ## Evaluating the natural-language interface
 
-`propose_config` has a cycle counter, and what a real model does with
+`propose_config` has a cycle counter, and what a real AI model does with
 `describe_schema()` decides whether the [Agent](agent.md) is worth having. So it
 is evaluated rather than assumed.
 
@@ -328,8 +328,8 @@ ANTHROPIC_API_KEY=... python scripts/measure_nli.py --terse   # no help text
 ```
 
 Fourteen requests across three tiers, reported apart — one number over three
-difficulties hides where a model stops rather than whether it succeeds.
-**Easy** states the value outright. **Medium** makes the model supply what the
+difficulties hides where an AI model stops rather than whether it succeeds.
+**Easy** states the value outright. **Medium** makes the AI model supply what the
 sentence did not: the number behind "physiological", a microsecond in
 nanoseconds, four settings at once. **Hard** is where a plausible answer is
 wrong.
@@ -337,21 +337,21 @@ wrong.
 Two numbers, and the second matters more:
 
 - **Valid** is cycles to a Config the validator accepts. Cheap, comparable
-  between models, and a direct reading of whether the generated schema
+  between AI models, and a direct reading of whether the generated schema
   description does its job.
 - **Correct** is whether it meant what was asked. A Config can validate and be
   the wrong study: 300 K when the sentence said 310, a setting simply omitted,
   or a concentration given in millimolar where the field is molar. Validation
   catches ill-formed, not wrong. A harness reporting only the first would score
-  every model perfectly and evaluate the thing nobody cares about.
+  every AI model perfectly and evaluate the thing nobody cares about.
 
 Each request asserts only what its sentence specified. A request saying "at
-pH 6.5" checks the pH and leaves the box shape alone — marking a model wrong
+pH 6.5" checks the pH and leaves the box shape alone — marking an AI model wrong
 for choosing something it was never asked about would test obedience rather
 than comprehension.
 
 **The refusal tally is the most useful output.** A code appearing in most runs
-is not a model being careless. It is the schema description failing to say
+is not an AI model being careless. It is the schema description failing to say
 something, and it says where to look.
 
 Measured with `claude-sonnet-4-6` on the original eight:
@@ -361,8 +361,8 @@ Measured with `claude-sonnet-4-6` on the original eight:
 | with help text | 7 / 8 | 1.1 | 1 |
 | `--terse` | 3 / 8 | 2.0 | 8 |
 
-Both reached 8/8. **The help does not change whether the model succeeds; it
-changes how much work that takes.** And a model working from bare field names
+Both reached 8/8. **The help does not change whether the AI model succeeds; it
+changes how much work that takes.** And an AI model working from bare field names
 still got every study right — the validator is carrying the weight, which is
 the architecture's claim and now a result rather than an argument.
 `--attempts` defaults to 3 on that evidence.
@@ -371,17 +371,17 @@ the architecture's claim and now a result rather than an argument.
 
 The Agent may look with the software's own tools before it answers
 ([Looking before it answers](agent.md#looking-before-it-answers)). Whether a
-real model does, and whether its answers then agree with the software, is
-evaluated with a model chosen and a connection to the PDB:
+real AI model does, and whether its answers then agree with the software, is
+evaluated with an AI model chosen and a connection to the PDB:
 
 ```bash
 python -m fastmdxplora.validation.agent_looks --repeats 3 --out agent_looks.json
 ```
 
-Six questions the software answers itself with no model: the size of a
+Six questions the software answers itself with no AI model: the size of a
 solvated 1L2Y and the width of 1AKE's box (setup's estimate), 1UBQ's
 protein residues and 1AKE's ligands, the atoms a selection matches in 1L2Y,
-and the histidines of the 1HHO assembly setup builds. Each goes to the model
+and the histidines of the 1HHO assembly setup builds. Each goes to the AI model
 with the tools and without, `--repeats` times, and each reply is judged
 against the software's answer by the rule
 [pre-registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/agent-looks.md)
@@ -390,7 +390,7 @@ agreed in each arm and how many looked with the tool the question calls for;
 the file keeps every reply whole. It tests agreement with the software,
 not with experiment. The first run (2026-09-30, three repeats) agreed in
 all 18 replies with tools, all 18 of which looked, and in all 18 without:
-the six questions are within what a model knows of these well-known
+the six questions are within what an AI model knows of these well-known
 entries, so they cannot separate the arms. The replies without tools
 answered the two sizes as ranges and said every count was from memory; the
 result and what a stricter set would need are in the pre-registration.

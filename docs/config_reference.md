@@ -30,7 +30,7 @@ For the flag spelling of any setting below, see
 | `explain` | bool | `true` | Say why each step is happening, as it happens |
 | `verbose` | bool | `false` | Stream debug logging to the terminal |
 | `agent` | str | — | `assisted`, `autonomous`, `unvalidated` — see [the Agent](agent.md) |
-| `agent_model` | str | — | Which model wrote it, as `provider/model` |
+| `agent_model` | str | — | Which AI model wrote it, as `provider/model` |
 
 `systems`, `sweep` and `execution` are also top-level; they are described in
 [The FastMDXplora Config](config.md).

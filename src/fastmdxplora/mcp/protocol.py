@@ -76,7 +76,7 @@ UNSUPPORTED_VERSION = -32022
 ANSWER_WITHIN_S = 900.0
 
 #: Requests that can take a while: handled beside the reader, so the
-#: reader is never held up behind a model, a download or a long walk.
+#: reader is never held up behind an AI model, a download or a long walk.
 _SLOW = frozenset({"tools/call", "prompts/get", "resources/read", "resources/list"})
 
 #: How long calls still being served are given to answer once the client
@@ -146,7 +146,7 @@ class Call:
     capabilities: dict[str, Any]
     _server: Server = field(repr=False)
     _steps: int = 0
-    #: Replies the client's model gave this call in earlier rounds (modern),
+    #: Replies the client's AI model gave this call in earlier rounds (modern),
     #: each with the prompt it answered, and how many have been used again;
     #: and what the call worked out once and keeps the same every round.
     _replies: list[list[str]] | None = field(default=None, repr=False)
@@ -200,7 +200,7 @@ class Call:
         return isinstance(self.capabilities.get("sampling"), dict)
 
     def sample(self, prompt: str, *, bound_to: str, max_tokens: int) -> tuple[str, str]:
-        """The client's own model's reply to ``prompt``, and the model's name.
+        """The client's own AI model's reply to ``prompt``, and the AI model's name.
 
         Legacy: asked now, and waited for. Modern: there is no asking
         mid-call, so the call is answered ``input_required`` and asked
@@ -318,7 +318,7 @@ class Server:
 
     ``methods`` maps a method name to the :class:`Method` serving it;
     ``info`` is the server's name, title and version; ``instructions`` are
-    said to the client's model once, at discovery or ``initialize``.
+    said to the client's AI model once, at discovery or ``initialize``.
     """
 
     def __init__(self, methods: dict[str, Method], *, info: dict[str, str],
@@ -656,7 +656,7 @@ def _digest(text: str) -> str:
 
 
 def _sampled(result: Any) -> tuple[str, str] | None:
-    """The text and the model's name from a sampling result, or None where
+    """The text and the AI model's name from a sampling result, or None where
     it is not one (a refusal, an error, nothing)."""
     if not isinstance(result, dict):
         return None

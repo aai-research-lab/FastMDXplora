@@ -4,18 +4,18 @@ The Agent wrote YAML and answered from what it was given. What it could not
 do was ask: how big a box setup will build from this structure, how long the
 study takes here, whether a config it is about to hand over would be refused,
 which chains and ligands a structure holds, how many atoms a selection
-matches. The software answers every one of those, and a model left to guess
+matches. The software answers every one of those, and an AI model left to guess
 them states sizes, times and chain names it made up.
 
 So the Agent may look before it answers. A reply whose first line is
 ``USE: <tool>``, with the tool's arguments as YAML on the lines after it, is
-not an answer: the tool is run and the model is asked again with what it
+not an answer: the tool is run and the AI model is asked again with what it
 said. The tools only look. Nothing is run, written or started by one, and
-what each says is the software's own words, quoted to the model and shown to
+what each says is the software's own words, quoted to the AI model and shown to
 the person under the answer as what the Agent checked.
 
-The rule the Agent was built on holds: the model never judges convergence or
-chemistry. A tool says what the software measured or refused; the model may
+The rule the Agent was built on holds: the AI model never judges convergence or
+chemistry. A tool says what the software measured or refused; the AI model may
 repeat it and may not overrule it.
 
 Tools can be added from outside without changing this file: an installed
@@ -59,12 +59,12 @@ def _warn_once(message: str, *args: Any) -> None:
         _warned.add(said)
         logger.warning(said)
 
-#: Looks the model may take before one answer. Enough to inspect a
-#: structure, preview a setup and check the config; beyond that a model is
+#: Looks the AI model may take before one answer. Enough to inspect a
+#: structure, preview a setup and check the config; beyond that an AI model is
 #: exploring rather than answering, and each look is a round trip.
 MOST_LOOKS = 4
 
-#: The most of a tool's answer given to the model and shown to the person.
+#: The most of a tool's answer given to the AI model and shown to the person.
 MOST_SAID = 4000
 
 #: A structure a tool may read: a PDB identifier or a structure file. Only
@@ -92,9 +92,9 @@ class AgentTool:
     """A tool for the Agent from outside this module.
 
     ``look`` is called with the :class:`Toolbox` (for its ``path_for``) and
-    the arguments the model gave, and returns what the software found, in
+    the arguments the AI model gave, and returns what the software found, in
     words. It may raise :class:`ToolRefused` to decline; any other error is
-    said to the model as the tool's failure. It must only look: nothing
+    said to the AI model as the tool's failure. It must only look: nothing
     run, written or started.
     """
 
@@ -159,7 +159,7 @@ class Toolbox:
 
     def use(self, name: str, asked: dict[str, Any]) -> Look:
         """Run one tool and keep what it said. Never raises: a tool that
-        fails says so, and that is what the model is told."""
+        fails says so, and that is what the AI model is told."""
         table = self._table()
         entry = table.get(name)
         if entry is None:
@@ -194,7 +194,7 @@ class Toolbox:
 
 
 class _Refused(CodedError, Exception):
-    """A tool that declines what it was asked, in words for the model."""
+    """A tool that declines what it was asked, in words for the AI model."""
 
     default_code = "agent.tool.refused"
 
@@ -329,7 +329,7 @@ def _inspect_structure(box: Toolbox, asked: dict[str, Any]) -> str:
     # Setup builds the biological assembly the file declares, which may be
     # more chains than the file holds (1HHO: A and B in the file, four in
     # the assembly). The counts above are the file's; what follows is what
-    # setup builds, and said so, or a model reads 287 residues beside 38
+    # setup builds, and said so, or an AI model reads 287 residues beside 38
     # histidines and one of them as wrong.
     built = list(dict.fromkeys(str(a.chain) for a in atoms))
     if len(built) > len(chains):

@@ -521,7 +521,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `POST /api/run` | Start a run from form state |
 | `POST /api/run-config` | Start a run from a Config file, unmodified |
 | `POST /api/explore/stop` | Terminate the running workflow |
-| `POST /api/agent/model` | Read or set the [Agent](agent.md)'s model choice. Never returns the key |
+| `POST /api/agent/model` | Read or set the [Agent](agent.md)'s AI model choice. Never returns the key |
 | `POST /api/agent/propose` | A sentence to a validated Config |
 
 `GET /api/schema` is the one worth knowing about: it is the same declaration

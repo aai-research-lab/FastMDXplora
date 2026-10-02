@@ -328,7 +328,7 @@ Write a Config from a sentence. Full documentation:
 [The FastMDXplora Agent](agent.md).
 
 ```bash
-fastmdx agent model                                      # choose a model, once
+fastmdx agent model                                      # choose an AI model, once
 fastmdx agent "simulate ubiquitin at pH 6.5 for 50 ns"
 fastmdx agent -f request.txt -o study.yml
 fastmdx agent                                            # opens the GUI Agent panel
@@ -336,7 +336,7 @@ fastmdx agent                                            # opens the GUI Agent p
 
 | Flag | Default | What it does |
 |---|---|---|
-| `request` (positional) | — | The study, in plain language. The literal word `model` shows the model in use and runs the chooser instead (`set`, its old name, stops and names `model`). With no request, the agent panel opens |
+| `request` (positional) | — | The study, in plain language. The literal word `model` shows the AI model in use and runs the chooser instead (`set`, its old name, stops and names `model`). With no request, the agent panel opens |
 | `-f`, `-file`, `--file FILE` | — | Read the request from a file |
 | `-o`, `--output FILE` | — | Also write the Config here; it prints either way |
 | `--phases PHASES` | `setup,simulation` | Which phases to write, comma-separated |

@@ -122,7 +122,7 @@ shown exactly as they are on disk.
 structure or a trajectory, and those are read by the run, not by the GUI. In a
 hosted service each person's workspace runs in a container of its own, and the
 container is the boundary for those. Setting `HOME` to the workspace keeps the
-Agent's stored model choice with the person's other files.
+Agent's stored AI model choice with the person's other files.
 
 ## The container image
 

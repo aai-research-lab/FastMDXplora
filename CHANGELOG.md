@@ -17,6 +17,15 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### "AI model" wherever the Agent's model is meant
+
+The Agent's own words say **AI model** where they mean the model that writes:
+`fastmdx agent model` (which prints "AI model:" and "No AI model chosen yet."),
+the `fastmdx agent` help, the GUI's Agent settings ("AI model", "AI model
+name"), the messages that say none is chosen, the Agent's instructions, the
+schema's help for `agent` and `agent_model`, and the docs. A water model, a
+model of an NMR ensemble and the cost model keep their names.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

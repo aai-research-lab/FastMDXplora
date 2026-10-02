@@ -208,9 +208,9 @@ TOP_LEVEL = PhaseSchema(
         Field("agent", str, None,
               "How this study was written. Absent means a person wrote it, "
               "by hand or through the CLI, the API or the GUI, and that is "
-              "the default: nothing here needs a model unless you ask for "
-              "one. 'assisted' means a model drafted it and you approved "
-              "it before it ran. 'autonomous' means a model drafted it and "
+              "the default: nothing here needs an AI model unless you ask for "
+              "one. 'assisted' means an AI model drafted it and you approved "
+              "it before it ran. 'autonomous' means an AI model drafted it and "
               "it ran without being shown to you, which needs a cost "
               "estimate so there is a ceiling on what an unseen study may "
               "spend. 'unvalidated' means the work went outside this "
@@ -1088,7 +1088,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "One directory holds everything a study wrote.",
          ("output",)),
         ("How it was written",
-         "Whether a model was involved and which one, so the record "
+         "Whether an AI model was involved and which one, so the record "
          "identifies the software rather than the category.",
          ("agent", "agent_model")),
         ("What it may spend",
@@ -1101,7 +1101,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
     ),
     "setup": (
         ("How this phase was written",
-         "Whether a person wrote it, a model drafted it, or it went "
+         "Whether a person wrote it, an AI model drafted it, or it went "
          "outside this schema and nothing checked it.",
          ("agent",)),
         ("The structure",
@@ -1137,7 +1137,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
     ),
     "simulation": (
         ("How this phase was written",
-         "Whether a person wrote it, a model drafted it, or it went "
+         "Whether a person wrote it, an AI model drafted it, or it went "
          "outside this schema and nothing checked it.",
          ("agent",)),
         ("How long it runs",
@@ -1182,7 +1182,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
     ),
     "analysis": (
         ("How this phase was written",
-         "Whether a person wrote it, a model drafted it, or it went "
+         "Whether a person wrote it, an AI model drafted it, or it went "
          "outside this schema and nothing checked it.",
          ("agent",)),
         ("What to analyse",
@@ -1200,7 +1200,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
     ),
     "report": (
         ("How this phase was written",
-         "Whether a person wrote it, a model drafted it, or it went "
+         "Whether a person wrote it, an AI model drafted it, or it went "
          "outside this schema and nothing checked it.",
          ("agent",)),
         ("What it says",

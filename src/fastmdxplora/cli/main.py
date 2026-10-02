@@ -639,7 +639,7 @@ def _normalize_analysis_options(kwargs: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def _study_level_args(p: argparse.ArgumentParser) -> None:
     """The three study-level settings the config file carries and the study
-    records: how it was written, by which model, and its budget. On
+    records: how it was written, by which AI model, and its budget. On
     `explore` only: a single-phase command attaches that phase's own
     `agent` field without a prefix, so `--agent` there means the phase's.
     Generated from the schema, as the phase settings are."""
@@ -1151,13 +1151,13 @@ def _build_parser() -> argparse.ArgumentParser:
     # ---------- agent: write a study from a sentence ------------------------
     ag = sub.add_parser(
         "agent",
-        help="Write a study from a sentence, using a model you choose.",
+        help="Write a study from a sentence, using an AI model you choose.",
         description=(
             "Describe a study in plain language and get a config. The "
             "config goes through the same validation as one written by "
             "hand, so a refusal here is the refusal you would have got "
             "anyway -- the agent cannot ask for something the software "
-            "will not do. Run `fastmdx agent model` once to choose a model; "
+            "will not do. Run `fastmdx agent model` once to choose an AI model; "
             "nothing else in FastMDXplora needs one."
         ),
         formatter_class=_PercentSafeHelp,
@@ -1168,7 +1168,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REQUEST",
         help=(
             "What the study should do, in plain language. The word `model` "
-            "shows the model in use and chooses one instead. With neither, "
+            "shows the AI model in use and chooses one instead. With neither, "
             "opens the agent panel."
         ),
     )
@@ -1195,7 +1195,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PHASES",
         default="setup,simulation",
         help=(
-            "Which phases to describe to the model (default: "
+            "Which phases to describe to the AI model (default: "
             "setup,simulation). Fewer is a cheaper call and a smaller "
             "space to go wrong in."
         ),
@@ -2693,7 +2693,7 @@ def _cmd_dashboard_home() -> int:
 
 
 def _run_agent(args: Any) -> int:
-    """`fastmdx agent` -- choose a model, or write a study from a sentence."""
+    """`fastmdx agent` -- choose an AI model, or write a study from a sentence."""
     from pathlib import Path as _Path
 
     from fastmdxplora.agent import (
@@ -2706,7 +2706,7 @@ def _run_agent(args: Any) -> int:
     if request == "model":
         return _choose_model()
     if request == "set":
-        # The old name chose a model too. It stops rather than writes a
+        # The old name chose an AI model too. It stops rather than writes a
         # study from the word "set", and says where the choosing went.
         print("`fastmdx agent set` is now `fastmdx agent model`.")
         return 2
@@ -2803,8 +2803,8 @@ def _run_agent(args: Any) -> int:
 
     config = dict(proposal.config)
     config["agent"] = args.agent_mode
-    # And which model, not only that one was used. `agent: assisted` says a
-    # model was involved; this says which, so the record identifies the
+    # And which AI model, not only that one was used. `agent: assisted` says an
+    # AI model was involved; this says which, so the record identifies the
     # software rather than the category.
     from fastmdxplora.agent import load_choice
 
@@ -2870,13 +2870,13 @@ def _choose_model() -> int:
     )
 
     # What is in use first, so a look at the choice is not a change to it:
-    # nothing is saved unless a model is picked below.
+    # nothing is saved unless an AI model is picked below.
     if load_choice() is None:
-        print("No model chosen yet.\n")
+        print("No AI model chosen yet.\n")
     else:
         print("In use: " + describe_choice() + "\n")
     names = list(PROVIDERS)
-    print("Model:")
+    print("AI model:")
     for index, name in enumerate(names, 1):
         print(f"  [{index}] {PROVIDERS[name]['label']}")
     try:
@@ -2889,17 +2889,17 @@ def _choose_model() -> int:
     if picked == "compatible":
         print("\nAnything speaking the OpenAI chat shape. For example:")
         for label, url, model in PROVIDERS[picked].get("examples", ()):
-            print(f"  {label:<16} {url:<34} model: {model}")
+            print(f"  {label:<16} {url:<34} AI model: {model}")
         base_url = input("\nBase URL: ").strip()
         if not base_url:
             print("A base URL is needed for an OpenAI-compatible server.")
             return 1
 
     default_model = str(PROVIDERS[picked]["default_model"])
-    prompt = (f"Model [{default_model}]: " if default_model else "Model: ")
+    prompt = (f"AI model [{default_model}]: " if default_model else "AI model: ")
     model = input(prompt).strip() or default_model
     if not model:
-        print("A model name is needed.")
+        print("An AI model name is needed.")
         return 1
 
     env_name = str(PROVIDERS[picked]["env"])

@@ -124,7 +124,7 @@ you repeat a study yourself.
 
 ## The natural-language interface
 
-How well a model actually writes a [Config](config.md) is evaluated rather than
+How well an AI model actually writes a [Config](config.md) is evaluated rather than
 assumed, with `scripts/measure_nli.py`. The harness, what it scores, and the
 result for `claude-sonnet-4-6` are in
 [Developing FastMDXplora](developers.md#evaluating-the-natural-language-interface).

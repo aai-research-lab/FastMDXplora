@@ -1,30 +1,30 @@
-"""How well a model writes a study, measured rather than assumed.
+"""How well an AI model writes a study, measured rather than assumed.
 
 ``propose_config`` has a repair loop and a cycle counter, and nothing has
 ever counted anything: it is tested against stubs that make the mistakes I
-imagined. What a real model does with ``describe_schema()`` -- how often it
+imagined. What a real AI model does with ``describe_schema()`` -- how often it
 gets there, how many passes it needs, which mistakes recur -- decides
 whether the natural language interface is worth having, and none of it is
 known.
 
 This is the instrument. It needs a completion function and nothing else,
-so it runs against a hosted model, a local one, or a recorded fixture.
+so it runs against a hosted AI model, a local one, or a recorded fixture.
 
 Two things are measured, and the second matters more.
 
 **Does it validate.** Cycles to a config the validator accepts. This is
-cheap, comparable between models, and a direct reading of whether the
+cheap, comparable between AI models, and a direct reading of whether the
 generated schema description is doing its job.
 
 **Does it mean what was asked.** A config can validate and be the wrong
 study: 300 K when the request said 310, an unrequested barostat, the right
 setting in the wrong phase block. Validation catches ill-formed, not
 wrong, and a harness that reported only the first would flatter every
-model and measure the thing nobody cares about.
+AI model and measure the thing nobody cares about.
 
 So each request carries assertions about the config it should produce.
 They are deliberately loose -- they check what the sentence actually
-specified and leave everything else to the model -- because a strict
+specified and leave everything else to the AI model -- because a strict
 expected config would measure agreement with my taste rather than
 correctness.
 
@@ -66,7 +66,7 @@ class Request:
     ``must`` maps a dotted config path to the value the sentence
     specified. Only what the sentence specified: a request that says
     "at pH 7.4" checks ``setup.ph`` and nothing else, because everything
-    else was left to the model and marking it wrong for choosing would be
+    else was left to the AI model and marking it wrong for choosing would be
     measuring obedience rather than comprehension.
     """
 
@@ -74,18 +74,18 @@ class Request:
     text: str
     must: dict[str, Any] = field(default_factory=dict)
     #: easy, medium or hard. Easy states the value outright. Medium makes
-    #: the model supply something the sentence did not -- a number behind a
+    #: the AI model supply something the sentence did not -- a number behind a
     #: phrase, a unit conversion, a setting in a block a person would not
     #: guess. Hard is where a plausible answer is wrong: the sentence
     #: contains a trap, or asks for something the schema will refuse.
     tier: str = "easy"
     #: Settings the answer must NOT carry, mapped to why. For a request
     #: where the failure is inventing something rather than omitting it --
-    #: a model that reads "a microsecond" and writes a timestep has not
+    #: an AI model that reads "a microsecond" and writes a timestep has not
     #: misunderstood the units, it has answered a different question.
     must_not: dict[str, str] = field(default_factory=dict)
     #: Phases to describe. Fewer is a cheaper call and a smaller space for
-    #: a model to go wrong in, and a request about setup has no business
+    #: an AI model to go wrong in, and a request about setup has no business
     #: being shown the report options.
     phases: tuple[str, ...] = ("setup", "simulation")
 
@@ -221,7 +221,7 @@ class Report:
         """Correct and total, per tier.
 
         One number over three difficulties hides which is failing, and the
-        interesting question is not whether a model succeeds but where it
+        interesting question is not whether an AI model succeeds but where it
         stops succeeding.
         """
         tally: dict[str, list[int]] = {}
@@ -238,7 +238,7 @@ class Report:
         """Which refusals came up, most often first.
 
         The most useful output here. A code that appears in most runs is
-        not a model being careless; it is the schema description failing
+        not an AI model being careless; it is the schema description failing
         to say something, and it says where to look.
         """
         tally: dict[str, int] = {}

@@ -345,7 +345,7 @@ CODES: tuple[Code, ...] = (
          "Another study is being started in this workspace at this moment.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.model.unset",
-         "No model has been chosen, so there is nothing to ask.",
+         "No AI model has been chosen, so there is nothing to ask.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.credentials.absent",
          "No API key for the chosen provider, in the environment or stored.",

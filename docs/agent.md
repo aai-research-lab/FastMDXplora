@@ -69,20 +69,20 @@ is the `agent:` setting, which is **provenance, not permission**. Including
 
 ---
 
-## Connecting a model
+## Connecting an AI model
 
-Nothing in FastMDXplora needs a model. The Agent does, and it asks once.
+Nothing in FastMDXplora needs an AI model. The Agent does, and it asks once.
 
 ```
 $ fastmdx agent model
-  No model chosen yet.
+  No AI model chosen yet.
 
-  Model:
+  AI model:
     [1] Anthropic
     [2] OpenAI
     [3] Other (any OpenAI-compatible URL)
   > 1
-  Model [claude-sonnet-4-6]:
+  AI model [claude-sonnet-4-6]:
   API key (leave blank to read ANTHROPIC_API_KEY from the environment instead):
   > sk-ant-...
 
@@ -90,7 +90,7 @@ $ fastmdx agent model
   ✓ Key stored there, readable only by you. It is never written into a study.
 ```
 
-| Provider | Default model | Environment variable |
+| Provider | Default AI model | Environment variable |
 |---|---|---|
 | `anthropic` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
 | `openai` | `gpt-5` | `OPENAI_API_KEY` |
@@ -104,7 +104,7 @@ a list of vendors goes stale and a protocol does not. It takes a base URL —
 
 **Nothing extra has to be installed.** `fastmdxplora.agent` ships with the
 package; `pip install "fastmdxplora[agent]"` installs no additional
-dependencies. The Agent talks to a model over the standard library, with no
+dependencies. The Agent talks to an AI model over the standard library, with no
 vendor client library anywhere in it.
 
 ### Where the key lives
@@ -123,7 +123,7 @@ Written with mode `0600`.
 
 **The key never enters a Config, a Manifest, a log line or an error message.**
 Those files get shared, pasted into issues and committed; a key in one is a key
-on the internet. What is recorded is the provider and the model and nothing
+on the internet. What is recorded is the provider and the AI model and nothing
 else.
 
 ---
@@ -229,14 +229,14 @@ setting that does not exist is refused here too.
 answer for the whole thing; a phase sets its own where it differs.
 
 ```yaml
-agent: assisted          # a model drafted the study
+agent: assisted          # an AI model drafted the study
 analysis:
   agent: unvalidated     # and the analysis went outside the schema
 ```
 
 Two levels rather than one, because a single value cannot say what is true of a
 real study. A simulation written by hand because the protocol matters, an
-analysis explored outside the schema, a setup a model drafted — that is one
+analysis explored outside the schema, a setup an AI model drafted — that is one
 study, and flattening it to a word loses the only thing a reader needs: which
 part to be suspicious of.
 
@@ -264,16 +264,16 @@ that; naming the departure does not.
 `agent` absent everywhere means a person wrote it, so every study run before
 this existed stays truthful without being rewritten.
 
-### Which model wrote it
+### Which AI model wrote it
 
 ```yaml
 agent: assisted
 agent_model: anthropic/claude-sonnet-4-5-20250929
 ```
 
-`agent: assisted` says a model was involved, not which one, and six months on
+`agent: assisted` says an AI model was involved, not which one, and six months on
 that is the difference between a record and a note. "Why did this study pick
-300 K" has a different answer depending on whether a frontier model or a 7B on
+300 K" has a different answer depending on whether a frontier AI model or a 7B on
 a laptop proposed it.
 
 **An alias is not a version.** `claude-sonnet-4-6` names different software at
@@ -287,7 +287,7 @@ string where the record needs to identify what ran.
 One sentence in, up to a few attempts, one Config out.
 
 ```
-    request ──▶ prompt (instructions + generated schema) ──▶ model
+    request ──▶ prompt (instructions + generated schema) ──▶ AI model
                                                               │
                           ┌───────────────────────────────────┘
                           ▼
@@ -299,12 +299,12 @@ One sentence in, up to a few attempts, one Config out.
         │             refusal              refusal
         ▼                 │                  │
      Config          repair prompt         stop
-                          └──▶ back to the model
+                          └──▶ back to the AI model
 ```
 
 **Structural refusals are retried; semantic ones are not.** A Config that does
 not match the schema is answerable by reading it. A system that does not
-determine its own protonation is not, and a model that retries it is guessing
+determine its own protonation is not, and an AI model that retries it is guessing
 at the question the software declined to guess at. The loop stops and returns
 the refusal.
 
@@ -334,7 +334,7 @@ fastmdx agent "..." --phases setup,simulation,analysis --attempts 5
 ### From the CLI
 
 ```bash
-fastmdx agent model                            # choose a model, once
+fastmdx agent model                            # choose an AI model, once
 fastmdx agent "simulate 1UBQ for 50 ns"        # a sentence
 fastmdx agent -f request.txt -o study.yml      # from a file, written to a file
 fastmdx agent "..." --autonomous --budget-hours 12
@@ -376,7 +376,7 @@ message on, so the conversation continues from there rather than with a fork
 in it.
 
 **The attempts are shown rather than summarised.** They are the only visible
-sign that anything checked the Config, and watching a model correct itself
+sign that anything checked the Config, and watching an AI model correct itself
 teaches the Config language while you wait.
 
 **A Config is said as a plan** above its actions: the system, the force field
@@ -404,7 +404,7 @@ builder's refusals do: the setting to change, or the install command where a
 package is missing. Where the fix is a setting of the study, **Ask the Agent
 to fix it** sends the refusal into the thread as your next message and the
 Agent rewrites its Config. A budget, an install and a choice only you can
-make are said and not handed to the model. An `autonomous` Config that
+make are said and not handed to the AI model. An `autonomous` Config that
 carries its own `budget_hours` runs with it when the Settings field is empty.
 
 The engine, the mode and the GPU-hour ceiling are in Settings, at the foot of
@@ -414,7 +414,7 @@ Nothing in the GUI layer decides whether a Config is acceptable. The validator
 does that, as it does for a Config written by hand.
 
 **The key is typed in the browser, sent once, and stored server-side.** It is
-never sent back: the endpoint reports which provider and model are set and
+never sent back: the endpoint reports which provider and AI model are set and
 never the secret, so a page that never receives a key cannot leak one to a
 screenshot, an extension or a bug report. A browser cannot hold a secret —
 anything the page keeps is readable by anything else the page runs.
@@ -441,7 +441,7 @@ proposal.config     # the validated study, as a dict
 proposal.refusal    # None here; the reason it stopped, otherwise
 ```
 
-`complete` is the entire model interface: a callable taking a prompt string and
+`complete` is the entire AI model interface: a callable taking a prompt string and
 returning text.
 
 ```python
@@ -451,7 +451,7 @@ proposal = propose_config("…", complete=my_model)
 ```
 
 No client object, no message array, no streaming — which is why swapping in a
-local server, a mock, or a model this package has never heard of takes no
+local server, a mock, or an AI model this package has never heard of takes no
 integration work. `proposal.config` is `None` unless validation accepted it.
 
 Then run it like any Config:
@@ -465,7 +465,7 @@ fastmdx.FastMDXplora(config_data=proposal.config, output_dir="runs/study").explo
 
 ## What the Agent sees, and what it can do
 
-Each request goes to the model with three things beside the schema:
+Each request goes to the AI model with three things beside the schema:
 
 - **The conversation so far**, the last twelve turns each way, so a request
   that refers to one can be read.
@@ -559,7 +559,7 @@ tools = [AgentTool("lab_history", "`lab` (its name).",
 
 A program can pass the same objects for one toolbox only, as
 `Toolbox(extra=(...))`. Either way a tool is held to the rules above: it only
-looks, what it says is quoted to the model as the software's finding, and
+looks, what it says is quoted to the AI model as the software's finding, and
 `box.path_for` is the rule for any path it reads. A name already taken keeps
 its first owner, a name must be lower case (letters, digits and underscores),
 and a tool that fails to load is left out with a warning rather than stopping
@@ -567,9 +567,9 @@ the Agent.
 
 ### Written as it goes
 
-The reply is shown as the model writes it, and each look as it is taken; a
+The reply is shown as the AI model writes it, and each look as it is taken; a
 config appears line by line. While it is written the send button is a stop:
-pressing it ends the reply, the request to the model is closed with it, and
+pressing it ends the reply, the request to the AI model is closed with it, and
 nothing it had written is kept. The next message goes on from yours. Both
 stream shapes the providers use are read, content-block events and the OpenAI
 chat shape, so a local or compatible server streams too.
@@ -586,7 +586,7 @@ not because it thinks you would want it, and never twice in one reply. A
 reply that names an action and then keeps talking is shown as prose and not
 carried out.
 
-**A run you did not plainly ask for is confirmed.** The model reads what you
+**A run you did not plainly ask for is confirmed.** The AI model reads what you
 attach, and a file can tell it what to say, so the prompt is not what decides.
 The software reads your own message: *run it*, *start the study*, *go ahead*
 and the like run at once; after anything else a `run` asks first, and only
@@ -663,7 +663,7 @@ writes the study's stopping rule, `simulation.stop_when`: the quantities, the
 error each must reach, three replicas over the seed, and the most production
 any run may reach. The plan shows it on its **Stops when** line before
 anything runs, so the criterion is committed to before any data is seen,
-and the code, not the model, judges it afterwards. Where you state no
+and the code, not the AI model, judges it afterwards. Where you state no
 precision, the Agent chooses one to answer your question; it is in the plan
 for you to change. A rule the study cannot keep (no replicas, an analysis
 that records no mean, a ceiling below the first piece) is refused by the
@@ -703,4 +703,4 @@ out:
 - **[FastMDXplora refusals](refusals.md)** — the vocabulary it is answering to
 - **[The FastMDXplora Manifest](manifest.md)** — where the provenance lands
 - **[Production runs and GPUs](production.md)** — budgets, calibration and campaigns
-- **[How FastMDXplora is validated](validation.md)** — how well a model actually does at this, evaluated rather than assumed
+- **[How FastMDXplora is validated](validation.md)** — how well an AI model actually does at this, evaluated rather than assumed

@@ -23,7 +23,7 @@ __all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
 
 
 def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
-    """Read or set which model to ask.
+    """Read or set which AI model to ask.
 
     With no ``provider``, reports what is set. With one, stores the choice
     and, if a key came with it, the key.
@@ -36,7 +36,7 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         current = load_choice()
         # Ask the provider now, if there is already a key to ask with. The
         # list used to be fetched only when a choice was saved, so opening
-        # Settings showed the written fallback and a model chosen from it
+        # Settings showed the written fallback and an AI model chosen from it
         # could 404 -- which is how `claude-opus-4-1` reached somebody.
         live: dict[str, list] = {}
         if current is not None:
@@ -82,7 +82,7 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 
     model = str(payload.get("model") or PROVIDERS[provider]["default_model"])
     if not model:
-        return {"ok": False, "error": "A model name is needed.",
+        return {"ok": False, "error": "An AI model name is needed.",
                 "code": "config.option.missing_companion"}
 
     save_choice(ModelChoice(provider, model, base_url),
@@ -109,16 +109,16 @@ def propose_endpoint(payload: dict[str, Any],
 
     The attempts come back whole rather than as a count. They are the only
     visible sign that anything checked the config, and a reader watching
-    the model correct itself learns the config language while they wait.
+    the AI model correct itself learns the config language while they wait.
 
-    The model may look with the software's own tools before it answers
+    The AI model may look with the software's own tools before it answers
     (:mod:`fastmdxplora.agent.tools`); what it looked at comes back as
     ``looks`` with every kind of answer, and is shown under it. ``path_for``
     is the server's rule for a path (inside the workspace, when hosted),
     which a tool reading a structure is held to as the builder is.
 
     With ``emit``, the reply is sent on as it is written: a ``begin`` each
-    time the model is asked, its text in pieces, each look as it is taken.
+    time the AI model is asked, its text in pieces, each look as it is taken.
     What comes back at the end is the same.
     """
     from fastmdxplora.agent import completion_for, propose_config
@@ -177,7 +177,7 @@ def propose_endpoint(payload: dict[str, Any],
 
 
 def _written_as_it_goes(complete: Any, emit: Any) -> Any:
-    """The completion, each reply sent on as the model writes it. One that
+    """The completion, each reply sent on as the AI model writes it. One that
     cannot stream (a test's, another's) is sent on whole when it answers."""
     def written(prompt: str) -> str:
         emit({"type": "begin"})
@@ -271,8 +271,8 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
     # resolved_config.yml and the manifest like any other setting.
     config = dict(proposal.config)
     config["agent"] = mode
-    # And which model, not only that one was used. `agent: assisted` says a
-    # model was involved; this says which, so the record identifies the
+    # And which AI model, not only that one was used. `agent: assisted` says an
+    # AI model was involved; this says which, so the record identifies the
     # software rather than the category.
     from fastmdxplora.agent import load_choice
 
@@ -391,7 +391,7 @@ def _with_its_fix(answer: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_status(runtime: Any) -> str | None:
-    """What the run is doing, in a few lines a model can read.
+    """What the run is doing, in a few lines an AI model can read.
 
     So "why did it stop?" can be answered from what happened rather than
     from a guess. Stage, status, the last error if there was one, the
@@ -551,7 +551,7 @@ def _checks_summary(root: Any) -> str:
     """The checks the run was held to, each ticked, as the report ticks them.
 
     The same list an Agent's plan states before a run, so "did it pass?" is
-    answered against what was promised rather than whatever the model
+    answered against what was promised rather than whatever the AI model
     thinks a good run looks like.
     """
     if not root:
@@ -637,14 +637,14 @@ def _config_the_run_used(root: Any) -> str:
 
 
 def _results_summary(root: Any) -> str:
-    """What the analyses found, in a few lines a model can read.
+    """What the analyses found, in a few lines an AI model can read.
 
     The same numbers the Report page shows, from the same computation:
     for each analysis, the mean, its standard error, how many effective
     samples the trajectory held and how many frames were discarded as
     not yet equilibrated. "Is the RMSD converged?" is answerable from
     that -- the effective sample count against the ten a mean needs --
-    and not from a figure the model cannot see.
+    and not from a figure the AI model cannot see.
     """
     if not root:
         return ""
@@ -675,7 +675,7 @@ def _results_summary(root: Any) -> str:
             if not isinstance(f, dict):
                 continue
             # A series too short to measure records why and no mean, and the
-            # model was told nothing: asked whether the RMSD had equilibrated it
+            # AI model was told nothing: asked whether the RMSD had equilibrated it
             # had no number and no reason, only silence to read.
             withheld = f.get("not_a_measurement")
             if "mean" not in f:
@@ -691,8 +691,8 @@ def _results_summary(root: Any) -> str:
             # The findings key is usually "mean"; naming it twice reads as
             # a stutter. Name the key only when it says something else.
             label = "" if key == "mean" else f"{key} "
-            # With its unit: an RMSD of 0.013 was handed over bare, and a
-            # model answering in Angstrom had nothing to say it was nm.
+            # With its unit: an RMSD of 0.013 was handed over bare, and an
+            # AI model answering in Angstrom had nothing to say it was nm.
             unit = unit_of(name, f) if key == "mean" else (
                 f["unit"] if isinstance(f.get("unit"), str) else "")
             has_error = isinstance(se, (int, float)) and math.isfinite(se)

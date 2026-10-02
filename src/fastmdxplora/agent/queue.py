@@ -17,9 +17,9 @@ candidates in a week and finishing one.
 
 **The budget is enforced here, in code.** A worker refuses to start a job
 whose estimate would take the campaign past its allocation. This is not a
-number in a prompt that a model is asked to respect: a model that has been
+number in a prompt that an AI model is asked to respect: an AI model that has been
 told to be mindful of compute, and can submit jobs, will spend the
-allocation. The refusal is arithmetic and the model has no say in it.
+allocation. The refusal is arithmetic and the AI model has no say in it.
 
 **The line survives the process.** State is a SQLite file, so a worker can
 be restarted, a caller can come back tomorrow, and a machine that lost

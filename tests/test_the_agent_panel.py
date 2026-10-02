@@ -1235,7 +1235,7 @@ class TestTheModelListIsAskedForRatherThanGuessed(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn("Type a model name", script)
+        self.assertIn("Type an AI model name", script)
         self.assertNotIn('? "Other\\u2026"', script)
 
 
