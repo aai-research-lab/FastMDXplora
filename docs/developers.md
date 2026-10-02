@@ -395,6 +395,23 @@ entries, so they cannot separate the arms. The replies without tools
 answered the two sizes as ranges and said every count was from memory; the
 result and what a stricter set would need are in the pre-registration.
 
+The stricter set is
+[registered](https://github.com/aai-research-lab/FastMDXplora/blob/main/preregistration/agent-looks-v2.md)
+and not yet run:
+
+```bash
+python -m fastmdxplora.validation.agent_looks_v2 --truths-only
+python -m fastmdxplora.validation.agent_looks_v2 --repeats 3 --out agent_looks_v2.json
+```
+
+Seven questions no AI model can answer from memory: four structure files made
+from PDB entries at the start of the run (`--work` says where), trimmed,
+renumbered, with a ligand renamed, or one chain alone, and settings that are
+not the defaults. Each request asks for a closing `ANSWER:` line, and only
+that line is judged, so a range or a list of guesses does not agree because
+one of its numbers is near. `--truths-only` makes the files and prints the
+software's answers without asking an AI model.
+
 ## Calibrating the stopping rule
 
 A study run until it is determined (`simulation.stop_when`) stops at the

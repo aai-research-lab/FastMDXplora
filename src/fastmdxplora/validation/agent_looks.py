@@ -189,8 +189,10 @@ class Trial:
 
 
 def ask(question: Question, truth: Any, complete: Callable[[str], str], *,
-        with_tools: bool, toolbox: Callable[[], Any] | None = None) -> Trial:
-    """One question to the AI model, one arm, judged."""
+        with_tools: bool, toolbox: Callable[[], Any] | None = None,
+        judge_with: Callable[[Question, Any, str], tuple[bool, str]] | None = None) -> Trial:
+    """One question to the AI model, one arm, judged (by :func:`judge` unless
+    another rule is given, as a later registration's is)."""
     from fastmdxplora.agent import propose_config
     from fastmdxplora.agent.tools import Toolbox
 
@@ -209,14 +211,16 @@ def ask(question: Question, truth: Any, complete: Callable[[str], str], *,
     else:
         reply, kind = (proposal.refusal.message if proposal.refusal else ""), "refused"
     looks = [look.tool for look in proposal.looks]
-    correct, why = judge(question, truth, reply) if kind == "answer" else (
+    correct, why = (judge_with or judge)(question, truth, reply) if kind == "answer" else (
         False, f"a {kind}, not an answer")
     return Trial(question.name, arm, reply, kind, looks, question.tool in looks, correct, why)
 
 
 def run(complete: Callable[[str], str], *, repeats: int = 3,
         questions: tuple[Question, ...] = QUESTIONS, arms: tuple[bool, ...] = (True, False),
-        toolbox: Callable[[], Any] | None = None) -> dict[str, Any]:
+        toolbox: Callable[[], Any] | None = None,
+        judge_with: Callable[[Question, Any, str], tuple[bool, str]] | None = None
+        ) -> dict[str, Any]:
     """Every question, in every arm, ``repeats`` times; the software's
     answer computed once per question before any reply."""
     truths: dict[str, Any] = {}
@@ -234,7 +238,8 @@ def run(complete: Callable[[str], str], *, repeats: int = 3,
         for _ in range(max(1, int(repeats))):
             for with_tools in arms:
                 trials.append(ask(question, truths[question.name], complete,
-                                  with_tools=with_tools, toolbox=toolbox))
+                                  with_tools=with_tools, toolbox=toolbox,
+                                  judge_with=judge_with))
     return {"truths": truths, "trials": [t.as_record() for t in trials],
             "summary": summary(trials)}
 

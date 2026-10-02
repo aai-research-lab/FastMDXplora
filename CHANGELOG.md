@@ -114,6 +114,21 @@ hosted GUI's, is refused rather than read (refusal code
 `environment.workspace.outside`), and the GUI's `GET /api/methods` is held to a
 hosted workspace too.
 
+### A second registration of whether the Agent's looking helps
+
+**`python -m fastmdxplora.validation.agent_looks_v2`**, registered in
+`preregistration/agent-looks-v2.md` before any reply was seen, asks seven
+questions no AI model can answer from memory: about four structure files made
+from PDB entries at the start of the run (1L2Y trimmed to 12 residues, a 1UBQ
+fragment renumbered from 201, 1AKE's chain A with its ligand renamed LG7,
+1HHO's chain A alone) and settings that are not the defaults. Each request
+asks for a closing `ANSWER:` line, and only that line is judged, so a range
+no longer agrees because one of its numbers is near. The registration fixes
+the software's answers, the tolerances, three predictions and a count of
+answers that commit to nothing. The first registration's run agreed in every
+reply in both arms, because its questions were within what an AI model knows.
+`agent_looks.run` and `ask` take the judging rule as `judge_with`.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study
