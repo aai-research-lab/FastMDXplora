@@ -866,10 +866,60 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
     # described a shorter trajectory than the study now has, and leaving
     # them would leave a report whose numbers are for a run that is no
     # longer the whole of it. The segments themselves are never touched.
+    resolved = root / "resolved_config.yml"
+    try:
+        kept = resolved.read_text(encoding="utf-8")
+    except OSError:
+        kept = None
     FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
     _production_carried_on(root, record)
+    _keep_the_study_s_config(root, kept)
     return {"ok": True, "segment": segment_text, "joined": record,
             "analysed": True, "trajectory": str(joined_dir / "production.dcd")}
+
+
+def _keep_the_study_s_config(root: Path, kept: str | None) -> None:
+    """The study's resolved config as the study, not as its last piece.
+
+    Analysing the joined trajectory runs the study's analysis and report
+    from the last piece's config, and that run wrote it over the study's
+    `resolved_config.yml`: its `resume_from`, its own length, no
+    minimisation or equilibration, and the joined trajectory's path. The
+    file kept so the study can be run again then described the last
+    extension. Put back as the study wrote it, with `duration_ns` the
+    production of every piece, it runs the study to its whole length; an
+    extended study analysed again in place finds its joined trajectory
+    itself (`analysis.analyze.study_trajectory`).
+    """
+    import yaml
+
+    if not kept:
+        return
+    resolved = root / "resolved_config.yml"
+    header = "".join(line for line in kept.splitlines(keepends=True)
+                     if line.startswith("#"))
+    try:
+        config = yaml.safe_load(kept)
+    except yaml.YAMLError:
+        config = None
+    try:
+        # Put back first: what the pieces add up to is counted against the
+        # study's own plan, its equilibration included.
+        resolved.write_text(kept, encoding="utf-8")
+        if not isinstance(config, dict):
+            return
+        simulation = dict(config.get("simulation") or {})
+        simulation.pop("production_steps", None)
+        simulation["duration_ns"] = round(production_done_ns(root), 9)
+        config["simulation"] = simulation
+        resolved.write_text(header + yaml.safe_dump(config, sort_keys=False,
+                                                    default_flow_style=False),
+                            encoding="utf-8")
+    except OSError:
+        from fastmdxplora.utils.logging import get_logger
+
+        get_logger(__name__).warning(
+            "The study's resolved config could not be written back.")
 
 
 def _production_carried_on(root: Path, joined: dict[str, Any]) -> None:
@@ -1133,6 +1183,20 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
                 return False, None
             return False, f"{name}: {phase.get('message') or 'it stopped with an error'}"
         states[name] = str(phase.get("status"))
+    # Carried on in pieces after the run that began production was stopped:
+    # that run never wrote its record, and the pieces wrote theirs in their
+    # own folders, so the study's record holds only the analyses the join
+    # ran. A joined trajectory newer than the first piece's is the setup and
+    # the production done and put together. The study's config, put back
+    # after the join, plans every phase, so they are read here and not from
+    # a config that named only the analyses.
+    if any(states.get(p) not in ("ok", "skipped") for p in ("setup", "simulation")):
+        from fastmdxplora.analysis.analyze import study_trajectory
+
+        if study_trajectory(root)[0] is not None:
+            for made in ("setup", "simulation"):
+                if states.get(made) not in ("ok", "skipped"):
+                    states[made] = "ok"
     include = config.get("include_phase") or config.get("include")
     exclude = config.get("exclude_phase") or config.get("exclude") or []
     planned = [p for p in PHASES if (not include or p in include) and p not in exclude]

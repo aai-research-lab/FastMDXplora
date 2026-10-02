@@ -82,8 +82,7 @@ def test_the_dashboard_card_gives_the_whole_production():
 
 
 def test_its_card_gives_the_whole_production():
-    """The card an AI app's list of studies reads: the joined config
-    carries the last piece's length."""
+    """The card an AI app's list of studies reads, from the pieces."""
     from fastmdxplora.gui.workspace import card_of
 
     card = card_of(_extended())

@@ -39,6 +39,36 @@ def __getattr__(name: str):
     raise AttributeError(name)
 
 
+def study_trajectory(project_root: Path) -> tuple[Path | None, Path | None]:
+    """An extended study's joined trajectory and its topology, where it has
+    one newer than its own first piece; otherwise ``(None, None)``.
+
+    Analysed again in place, an extended study is its pieces, not its first
+    one. The join used to say so by writing the joined trajectory's path
+    into the study's resolved config, which then carried it to any study run
+    from that file: a new study would simulate and analyse the old one's
+    trajectory. The study's own folder says it instead.
+    """
+    import json
+
+    root = Path(project_root)
+    joined = root / "joined" / "production.dcd"
+    record = root / "joined" / "joined.json"
+    own = root / "simulation" / "production.dcd"
+    try:
+        if not (joined.is_file() and record.is_file() and joined.stat().st_size > 0):
+            return None, None
+        # A study simulated again in place after it was joined has a first
+        # piece newer than the join, and the join is not its trajectory.
+        if own.is_file() and own.stat().st_mtime > joined.stat().st_mtime:
+            return None, None
+        named = json.loads(record.read_text(encoding="utf-8")).get("topology")
+    except (OSError, ValueError, AttributeError):
+        return None, None
+    topology = Path(str(named)) if named else None
+    return joined, (topology if topology is not None and topology.is_file() else None)
+
+
 def run(
     *,
     orchestrator: "FastMDXplora",
@@ -81,7 +111,11 @@ def run(
         selection = select_atoms
 
     project_root = orchestrator.output_dir
-    traj_path = Path(trajectory) if trajectory else project_root / "simulation" / "production.dcd"
+    joined_trajectory, joined_topology = study_trajectory(project_root)
+    traj_path = Path(trajectory) if trajectory else (
+        joined_trajectory or project_root / "simulation" / "production.dcd")
+    if not trajectory and not topology and joined_topology is not None:
+        topology = str(joined_topology)
     # The topology that matches the trajectory, where the two differ.
     # `save_selection` defaults to leaving the solvent out, so the file
     # beside the trajectory describes fewer atoms than the prepared system

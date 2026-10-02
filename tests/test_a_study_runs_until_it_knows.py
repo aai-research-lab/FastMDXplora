@@ -829,7 +829,9 @@ def test_a_real_study_is_run_until_its_ceiling(tmp_path):
     assert "## How long it ran, and why" in report
     assert f"| {len(produced)} | 0.0012 | " in report and "stopped at the ceiling" in report
     # Writing the report again leaves the record of what the study ran as
-    # the last extension left it, not as one step that wrote a report.
+    # the study, at its whole length: not as one step that wrote a report,
+    # and not as its last extension.
     resolved = yaml.safe_load((study / "resolved_config.yml").read_text(encoding="utf-8"))
     assert resolved.get("include_phase") != ["report"]
-    assert resolved["simulation"]["resume_from"].endswith("checkpoint.chk")
+    assert not resolved["simulation"].get("resume_from")
+    assert resolved["simulation"]["duration_ns"] == produced[-1]

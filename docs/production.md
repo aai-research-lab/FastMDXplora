@@ -468,6 +468,16 @@ Concatenation is four lines. The refusals are the module:
 single piece. See
 [What a joined run needs read differently](results.md#what-a-joined-run-needs-read-differently).
 
+**After an extension the study's config is still the study's.** The join's
+analyses run from the last piece's config, which names that piece's
+checkpoint, its own length and no equilibration. The study's
+`resolved_config.yml` is put back as it was, with `duration_ns` the production
+of every piece, so `fastmdx diff`, the All studies comparison and a study run
+again from the file read the study and not its last extension. Analysing the
+study again in place reads `joined/production.dcd`, found from the study's own
+folder rather than from a path in the config, and only while it is newer than
+the first piece's `simulation/production.dcd`.
+
 ---
 
 ## Running a campaign with a budget

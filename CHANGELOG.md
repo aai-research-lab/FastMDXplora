@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### An extended study keeps its own config, at its whole length
+
+**The join's analysis no longer writes the last piece's config over the
+study's**: after an extension, `resolved_config.yml` named the last piece's
+checkpoint, its own length and no equilibration, so `fastmdx diff`, the All
+studies comparison and a study run again from the file read the last
+extension as the study. The study's config is now put back with `duration_ns`
+the production of every piece, and analysing the study again in place reads
+its joined trajectory from its own folder. A study carried on in pieces
+after it was stopped is read as finished from its joined trajectory, since
+the run that began its production never wrote its record.
+
 ### An analysis is named once in what the Agent and an AI app read
 
 **A finding keyed by its analysis's own name is no longer named twice**:
