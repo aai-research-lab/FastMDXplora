@@ -443,6 +443,16 @@ Keep scientific algorithms unchanged; inspect each milestone before commit and p
   launching a simulation. Provider-backed explanations await milestone M3.
 - Clip export and preparation-audit prototypes are excluded from this milestone.
 
+Residue evidence follow-up: verified RMSF options now gate residue assignment.
+Per-atom or unknown table granularity is refused. Tables without chain columns
+map only when the residue number identifies a unique topology residue; duplicate
+numbers across chains remain ambiguous. Evidence includes recorded atom selection,
+alignment reference, frame count and sampling fields without filling missing
+metadata with assumed defaults. Twenty-two Agent-boundary checks passed. The
+completed 1L2Y study returned ASN A:1 = 0.131109476 nm and LEU A:2 = 0.0686216503 nm
+from its per-residue table; topology, trajectory and RMSF source checksums stayed
+unchanged. These measurements do not establish a causal chemical explanation.
+
 ### Verified milestone M2 — portable research bookmarks
 
 Implemented preset/custom tags, title/note/tag search, tag filtering, saved viewer

@@ -76,6 +76,13 @@ topology indices and deposited residue numbers are different identifiers.
 Uncertain mappings must be reported, not guessed. A click selects display context;
 it does not change chemical identity, protonation or simulation settings.
 
+Assign a residue RMSF value only when the recorded options explicitly say
+per_residue=true. Per-atom rows and formats without verified granularity are
+not residue measurements. A table without chain labels can identify a residue
+only when its number is unique across the analysis topology. Compare the
+recorded selection, alignment reference and sampling scope; missing metadata
+is unknown, not an assumed default.
+
 Browser playback may be solvent-stripped and downsampled. Browser frame index is
 not necessarily the original trajectory frame. Use the supplied source mapping
 and simulation time. Displayed PDB/viewer coordinates use angstroms; many OpenMM

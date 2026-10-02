@@ -274,15 +274,30 @@ def residue_evidence(root: Path, selected: dict) -> dict:
     if not _residue_identity(root, selected):
         evidence["reason"] = "The selected identity is not verified against this study's analysis topology."
         return evidence
+    record = _read_record(root, "analysis/rmsf/options.json")
+    options = record.get("options")
+    if not isinstance(options, dict) or options.get("per_residue") is not True:
+        evidence["reason"] = "RMSF is not recorded as per-residue analysis; an atom index or an unverified table format cannot be assigned to a residue."
+        return evidence
     profile = series_payload(root, "rmsf")
     if profile.get("ok"):
+        unqualified = _residue_identity(root, selected, unqualified=True)
         matches = [i for i, residue in enumerate(profile.get("residues") or [])
-                   if str(residue.get("chain") or "") == str(selected.get("chain") or "")
+                   if (residue.get("chain") and str(residue["chain"]) == str(selected.get("chain") or "")
+                       or not residue.get("chain") and unqualified)
                    and str(residue.get("resi")) == str(selected.get("resseq"))]
         if len(matches) == 1:
             i = matches[0]
+            manifest = _read_record(root, "analysis/analysis_manifest.json")
+            loaded = manifest.get("load_kwargs")
+            scope = {"selection": record.get("selection"), "per_residue": True,
+                     "alignment_reference_frame": options.get("ref"),
+                     "n_frames": manifest.get("n_frames"),
+                     "sampling": {key: loaded.get(key) for key in
+                                  ("first", "last", "stride", "saving_interval_ps")}
+                                 if isinstance(loaded, dict) else None}
             evidence["rmsf"] = {"value": profile["y"][i], "unit": profile.get("unit"),
-                                "source": "analysis/rmsf", "scope": "recorded analysis selection and sampling"}
+                                "source": "analysis/rmsf", "scope": scope}
         else:
             evidence["reason"] = "The RMSF table does not uniquely match this chain/residue."
     else:
@@ -290,7 +305,7 @@ def residue_evidence(root: Path, selected: dict) -> dict:
     return evidence
 
 
-def _residue_identity(root: Path, selected: dict) -> bool:
+def _residue_identity(root: Path, selected: dict, *, unqualified: bool = False) -> bool:
     """Reject chain/name/number/insertion ambiguities before using analysis tables."""
     from fastmdxplora.gui.selection import topology_the_analyses_read
 
@@ -306,10 +321,11 @@ def _residue_identity(root: Path, selected: dict) -> bool:
                 if line.startswith("ENDMDL"):
                     break
                 if line[:6].strip() in {"ATOM", "HETATM"} and len(line) >= 54:
-                    if (line[21:22].strip() == selected.get("chain", "")
+                    if ((unqualified or line[21:22].strip() == selected.get("chain", ""))
                             and line[22:26].strip() == str(selected.get("resseq"))):
-                        identities.add((line[17:20].strip(), line[26:27].strip(), line[16:17].strip()))
-        return identities == {(selected.get("resname", ""), "", "")}
+                        identities.add((line[21:22].strip(), line[17:20].strip(),
+                                        line[26:27].strip(), line[16:17].strip()))
+        return identities == {(selected.get("chain", ""), selected.get("resname", ""), "", "")}
     except OSError:
         return False
 

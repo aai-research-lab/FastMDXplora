@@ -107,6 +107,9 @@ def test_residue_comparison_refuses_ambiguous_analysis_mapping(tmp_path, monkeyp
     setup = tmp_path / "setup"
     setup.mkdir()
     (setup / "topology.pdb").write_text("ATOM      1  CA  GLU A  57       0.000   0.000   0.000  1.00  0.00           C\n")
+    folder = tmp_path / "analysis/rmsf"
+    folder.mkdir(parents=True)
+    (folder / "options.json").write_text('{"options":{"per_residue":true}}')
 
     monkeypatch.setattr(series, "series_payload", lambda *args: {"ok": True,
         "residues": [{"chain": "A", "resi": 57}, {"chain": "B", "resi": 57}],
@@ -126,6 +129,9 @@ def test_pinned_comparison_supplies_two_verified_residue_measurements(tmp_path, 
     (setup / "topology.pdb").write_text(
         "ATOM      1  CA  GLU A  57       0.000   0.000   0.000  1.00  0.00           C\n"
         "ATOM      2  CA  GLU B  57       1.000   0.000   0.000  1.00  0.00           C\n")
+    folder = tmp_path / "analysis/rmsf"
+    folder.mkdir(parents=True)
+    (folder / "options.json").write_text('{"options":{"per_residue":true}}')
     monkeypatch.setattr(series, "series_payload", lambda *args: {"ok": True,
         "residues": [{"chain": "A", "resi": 57}, {"chain": "B", "resi": 57}],
         "y": [0.1, 0.8], "unit": "nm"})
@@ -139,6 +145,41 @@ def test_pinned_comparison_supplies_two_verified_residue_measurements(tmp_path, 
                                    "comparison_selection": {**selection, "chain": "Z"}})
     assert '"value": 0.8' not in missing
     assert "not verified" in missing
+
+
+@pytest.mark.parametrize("per_residue", [False, None, "true", 1])
+def test_atom_rmsf_or_unknown_granularity_is_not_assigned_to_residue(tmp_path, per_residue):
+    setup = tmp_path / "setup"
+    setup.mkdir()
+    (setup / "topology.pdb").write_text("ATOM      1  CA  GLU A  57       0.000   0.000   0.000  1.00  0.00           C\n")
+    folder = tmp_path / "analysis/rmsf"
+    folder.mkdir(parents=True)
+    (folder / "options.json").write_text(json.dumps({"options": {"per_residue": per_residue}}))
+    (folder / "rmsf.dat").write_text("57 0.8\n")
+    result = residue_evidence(tmp_path, {"chain": "A", "resseq": 57, "resname": "GLU"})
+    assert "rmsf" not in result
+    assert "atom index" in result["reason"]
+
+
+def test_chainless_residue_table_requires_globally_unique_identity_and_records_scope(tmp_path):
+    setup = tmp_path / "setup"
+    setup.mkdir()
+    topology = setup / "topology.pdb"
+    topology.write_text("ATOM      1  CA  GLU A  57       0.000   0.000   0.000  1.00  0.00           C\n")
+    folder = tmp_path / "analysis/rmsf"
+    folder.mkdir(parents=True)
+    (folder / "options.json").write_text('{"selection":"name CA","options":{"per_residue":true,"ref":2}}')
+    (folder / "rmsf.dat").write_text("57 0.8\n")
+    (folder.parent / "analysis_manifest.json").write_text('{"n_frames":100,"load_kwargs":{"stride":2,"first":3}}')
+    selected = {"chain": "A", "resseq": 57, "resname": "GLU"}
+    result = residue_evidence(tmp_path, selected)
+    assert result["rmsf"]["value"] == 0.8
+    assert result["rmsf"]["scope"]["selection"] == "name CA"
+    assert result["rmsf"]["scope"]["alignment_reference_frame"] == 2
+    assert result["rmsf"]["scope"]["sampling"]["stride"] == 2
+    assert result["rmsf"]["scope"]["n_frames"] == 100
+    topology.write_text(topology.read_text() + "ATOM      2  CA  GLU B  57       1.000   0.000   0.000  1.00  0.00           C\n")
+    assert "rmsf" not in residue_evidence(tmp_path, selected)
 
 
 def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_path, monkeypatch, model):
