@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The config-language guide says how to name a structure
+
+**`systems` and `sweep` are described in the guide** an AI app reads
+(`fastmdxplora://guide/config-language`) and in the Agent's instructions, from
+one text beside their declaration (`config.schema.BATCH_KEY_HELP`). The guide
+listed every field and said "a key not listed here is refused", but these two
+have a shape of their own and were not listed: an AI app writing from the guide
+wrote `system:`, which is refused, and could not write a study that runs.
+`execution` stays out, since it is how this machine schedules a campaign.
+
 ### A hosted GUI shows its service's name and the person signed in
 
 **`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the

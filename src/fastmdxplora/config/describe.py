@@ -113,6 +113,17 @@ def _phase_section(name: str, schema: PhaseSchema, *, verbose: bool) -> str:
     return "\n".join(lines)
 
 
+def _study_keys_section() -> str:
+    """`systems` and `sweep`, which have a shape of their own and are not
+    fields: as the batch layer reads them."""
+    from fastmdxplora.config.schema import BATCH_KEY_HELP
+
+    lines = ["", "## systems and sweep"]
+    for key, said in BATCH_KEY_HELP.items():
+        lines.append(f"  - {key}\n      {' '.join(said.split())}")
+    return "\n".join(lines)
+
+
 def describe_schema(
     *,
     phases: Iterable[str] | None = None,
@@ -153,6 +164,7 @@ def describe_schema(
         "stops the study instead of silently running with a default.",
         "",
         _phase_section("top level", TOP_LEVEL, verbose=verbose),
+        _study_keys_section(),
     ]
     for phase in wanted:
         schema = _schema(phase)

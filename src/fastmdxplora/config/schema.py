@@ -1266,6 +1266,32 @@ PHASE_KEYS = tuple(PHASE_SCHEMAS.keys())
 # batch layer rather than the per-field type checker.
 BATCH_KEYS = ("systems", "sweep", "execution")
 
+#: What `systems` and `sweep` are, said where they are declared, so the
+#: config-language guide, the Agent's instructions and anything else that
+#: describes the language read one text. The guide listed every field of
+#: the top level and of each phase and neither of these, while saying that
+#: a key not listed is refused: an AI app writing from it wrote `system:`,
+#: which is refused, and could not write a study that runs. `execution`
+#: is left out on purpose: it is how this machine schedules a campaign's
+#: runs, not the study.
+BATCH_KEY_HELP: dict[str, str] = {
+    "systems": (
+        "Required. The structures to study, as a list of mappings, even for "
+        "one: each has `system`, a PDB identifier or a structure file's "
+        "path; an optional `id`, the name its run's folder and records carry "
+        "(default s1, s2, ... in order); and optionally a block named after "
+        "a phase (`setup`, `simulation`, `analysis`, `report`) whose settings "
+        "apply to that system alone, over the study's. There is no "
+        "top-level `system` key. Example: `systems: [{system: 1L2Y, id: "
+        "trpcage}]`."),
+    "sweep": (
+        "Optional. Settings to run at several values, as a mapping from a "
+        "dotted `phase.setting` name to a list of values; every system runs "
+        "at every combination, each as a run of its own. Sweeping "
+        "`simulation.random_seed` over three values gives three replicas. "
+        "Example: `sweep: {simulation.temperature_K: [300, 310]}`."),
+}
+
 # All keys recognized at the top level: the scalar top-level fields plus
 # the per-phase block names plus the batch keys.
 TOP_LEVEL_KEYS = TOP_LEVEL.field_names() | set(PHASE_KEYS) | set(BATCH_KEYS)
