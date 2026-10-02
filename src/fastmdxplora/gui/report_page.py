@@ -164,7 +164,8 @@ def _study_of_runs_payload(base: Path) -> dict[str, Any]:
                 downloads[key] = f"/artifacts/comparison/{name}?download=1"
         return {"ok": True, "html": html, "not_produced": [], "downloads": downloads,
                 "generated": _generated_line(text), "rendered": rendered,
-                "figures_under": "comparison", "runs": len(runs), "pending": pending}
+                "figures_under": "comparison", "runs": len(runs), "pending": pending,
+                "figure_provenance": _comparison_provenance(comparison.parent)}
     if not completed:
         return {"ok": False, "reason": f"none of {len(runs)} runs completed yet",
                 "html": "", "not_produced": [], "downloads": {},
@@ -173,6 +174,26 @@ def _study_of_runs_payload(base: Path) -> dict[str, Any]:
     return {"ok": True, "html": html, "not_produced": [], "downloads": {},
             "generated": "", "rendered": rendered, "figures_under": "comparison",
             "runs": len(runs), "pending": pending}
+
+
+def _comparison_provenance(folder: Path) -> dict[str, dict[str, Any]]:
+    """What each comparison figure was plotted from, by its file's stem, as
+    the comparison recorded it (`figures.json`): the runs, the release that
+    analysed each, and the release that plotted them. Empty for a comparison
+    plotted before it was recorded."""
+    from fastmdxplora import __version__
+
+    try:
+        record = json.loads((folder / "figures.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    figures = record.get("figures") if isinstance(record, dict) else None
+    if not isinstance(figures, dict):
+        return {}
+    return {str(name): {**figure, "version": record.get("version"),
+                        "host": record.get("host"), "made": record.get("made"),
+                        "this_version": str(__version__)}
+            for name, figure in figures.items() if isinstance(figure, dict)}
 
 
 def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, Any]]) -> str:

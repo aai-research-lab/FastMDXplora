@@ -8,6 +8,7 @@ outputs and produces a single comparison report at the batch root:
         trend_<analysis>.png          # summary scalar vs swept parameter
         comparison_summary.csv        # one row per run, summary scalars
         comparison_report.md          # the written report tying it together
+        figures.json                  # what each figure was plotted from
 
 Two complementary views are produced:
 
@@ -237,6 +238,7 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
     overlay_figs: dict[str, Path] = {}
     trend_figs: dict[str, Path] = {}
     summary_scalar_keys: list[str] = []
+    plotted_from: dict[str, dict[str, Any]] = {}
 
     # First pass: each run's mean of each analysis. The one the analysis
     # recorded, over the frames after equilibration and with its standard
@@ -287,18 +289,26 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
         # Overlay: load each run's series again (cheap; keeps memory low).
         series_by_run: list[tuple[str, np.ndarray]] = []
         trend_points: list[tuple[float, float]] = []
+        overlaid: list[dict[str, Any]] = []
+        trended: list[dict[str, Any]] = []
         for run in runs:
             rid = run["run_id"]
             run_out = member_directory(root, run)
             series = _load_series(_run_analysis_dir(run_out, analysis))
             if series is None or not len(series):
                 continue
-            series_by_run.append((_run_label(run, axis), series, _times(run_out, len(series))))
+            times = _times(run_out, len(series))
+            series_by_run.append((_run_label(run, axis), series, times))
+            who = _the_run(root, run, axis, run_out)
+            overlaid.append({**who, "frames": int(len(series)), "timed": times is not None})
             if axis is not None:
                 xval = _axis_numeric_value(run, axis)
                 if xval is not None and analysis in per_run_means.get(rid, {}):
                     mean = per_run_means[rid][analysis]
                     trend_points.append((xval, mean["mean"], mean["error"]))
+                    trended.append({**who, "x": xval, "mean": mean["mean"],
+                                    "error": mean["error"], "over": _over(mean),
+                                    "said": with_its_error(mean["mean"], mean["error"])})
 
         fig = _overlay_plot(
             analysis, label, unit, series_by_run,
@@ -306,6 +316,10 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
         )
         if fig is not None:
             overlay_figs[analysis] = fig
+            plotted_from[fig.stem] = {
+                "kind": "overlay", "analysis": analysis, "unit": unit,
+                "against": "time" if all(r["timed"] for r in overlaid) else "frame",
+                "runs": overlaid}
 
         if axis is not None:
             tfig = _trend_plot(
@@ -314,6 +328,9 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
             )
             if tfig is not None:
                 trend_figs[analysis] = tfig
+                plotted_from[tfig.stem] = {
+                    "kind": "trend", "analysis": analysis, "unit": unit,
+                    "against": axis, "runs": trended}
 
     # Safety net: if figure generation produced nothing (e.g. every run
     # had a single frame), don't leave an empty directory behind.
@@ -353,6 +370,8 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
                         "" if mean["discard"] is None else mean["discard"],
                         _over(mean)]
             writer.writerow(row)
+
+    _write_what_was_plotted(cmp_dir, plotted_from)
 
     # Build the Markdown report.
     md_path = cmp_dir / "comparison_report.md"
@@ -636,6 +655,47 @@ def _recorded_mean(findings: dict[str, Any] | None) -> dict[str, Any] | None:
     return {"mean": float(value), "error": error,
             "discard": int(discard) if isinstance(discard, (int, float)) else None,
             "qualified": record.get("not_a_measurement") or None, "recorded": True}
+
+
+def _the_run(root: Path, run: dict[str, Any], axis: str | None,
+             run_out: Path) -> dict[str, Any]:
+    """A run as a comparison figure names it: its label, where it is, and
+    the release that analysed it, from its own Manifest."""
+    import os
+
+    analysed_by = None
+    try:
+        record = json.loads((run_out / "manifest.json").read_text(encoding="utf-8"))
+        for phase in record.get("phases") or []:
+            if isinstance(phase, dict) and phase.get("name") == "analysis":
+                made = phase.get("produced_by")
+                analysed_by = made.get("version") if isinstance(made, dict) else None
+    except (OSError, ValueError, AttributeError):
+        pass
+    where = os.path.relpath(run_out.resolve(), root.resolve())
+    return {"run_id": run.get("run_id"), "label": _run_label(run, axis),
+            "path": Path(where).as_posix(), "analysed_by": analysed_by}
+
+
+def _write_what_was_plotted(cmp_dir: Path, figures: dict[str, dict[str, Any]]) -> None:
+    """Each figure's runs, the release that analysed each, and the release
+    that plotted them, for the chip the GUI puts under the figure. Written
+    as the figures are, so it says what they were plotted from even after a
+    run is analysed again."""
+    import platform
+    from datetime import datetime, timezone
+
+    from fastmdxplora import __version__
+
+    record = {"version": __version__, "host": platform.node() or None,
+              "made": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              "figures": figures}
+    try:
+        (cmp_dir / "figures.json").write_text(json.dumps(record, indent=2, default=str),
+                                              encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Could not record what the comparison's figures were plotted "
+                       "from: %s", exc)
 
 
 def _over(mean: dict[str, Any]) -> str:

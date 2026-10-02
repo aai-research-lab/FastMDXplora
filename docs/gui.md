@@ -357,9 +357,15 @@ column (89 mm) or two (183 mm), with its type sized for that width
 rerun here is plotted by this one. The same figures in the report carry the
 same chip on the Report page, under each figure.
 
-**There is no comparison view.** A campaign's cross-run comparison is written
-to `comparison/` at the campaign root, by the batch layer once every run has
-finished, and read there — see
+**A study of several runs is compared on its Report page.** Once every run
+has finished, the batch layer writes the comparison to `comparison/` at the
+study's root, and the Report page shows it with its figures; before then it
+shows the means the finished runs determined. Under each overlay and trend a
+chip names the runs it was plotted from, where each is, the release that
+analysed each and, for a trend, the mean and error plotted for each run. It
+is recorded in `comparison/figures.json` as the figures are plotted, so a
+comparison plotted by an earlier release has no chip; runs analysed by more
+than one release are said to be. See
 [Reading the results](results.md#comparing-runs).
 
 ---

@@ -1057,7 +1057,41 @@
     return `<button type="button" class="figure-chip" data-provenance="${escapeAttr(name)}" aria-expanded="false" title="What made this figure, and how to make it again">${escapeHTML(label)}</button>`;
   }
 
+  /* A comparison's overlay or trend: the runs it was plotted from, the
+   * release that analysed each, and the release that plotted them, as the
+   * comparison recorded them (comparison/figures.json). */
+  function comparisonProvenanceHtml(made) {
+    const code = (value) => `<code>${escapeHTML(value)}</code>`;
+    const release = (version) => version
+      ? `FastMDXplora ${code(version)}` : "a release that did not record itself";
+    const rows = [];
+    const row = (label, value) => rows.push(`<dt>${escapeHTML(label)}</dt><dd>${value}</dd>`);
+    row("Plotted by", release(made.version) + (made.host ? ` on ${escapeHTML(made.host)}` : ""));
+    if (made.made) row("When", escapeHTML(String(made.made).replace("T", " ").replace(/\+00:00$/, " UTC")));
+    const unit = made.unit ? ` (${escapeHTML(made.unit)})` : "";
+    row("Against", made.kind === "trend"
+      ? `${code(made.against)}, each run's mean of ${escapeHTML(made.analysis)}${unit}`
+      : `${made.against === "time" ? "time (ns)" : "frame"}, each run's ${escapeHTML(made.analysis)}${unit}`);
+    const runs = Array.isArray(made.runs) ? made.runs : [];
+    const items = runs.map((run) => {
+      const what = made.kind === "trend"
+        ? ` at ${escapeHTML(String(run.x))}: ${escapeHTML(run.said || String(run.mean))}, ${escapeHTML(run.over || "")}`
+        : `: ${Number(run.frames || 0).toLocaleString("en-US")} frames`;
+      return `<li>${escapeHTML(run.label || run.run_id || "a run")} ${code(run.path || "")}${what}; ` +
+        `analysed by ${release(run.analysed_by)}</li>`;
+    });
+    const releases = new Set(runs.map((run) => run.analysed_by || ""));
+    const mixed = releases.size > 1
+      ? '<p class="figure-provenance-note">The runs were analysed by more than one release, ' +
+        "so a difference between them may be a difference between releases.</p>"
+      : "";
+    return `<dl class="figure-provenance-rows">${rows.join("")}</dl>` +
+      `<p class="figure-provenance-how">Plotted from ${runs.length} run${runs.length === 1 ? "" : "s"}:</p>` +
+      `<ul class="figure-provenance-runs">${items.join("")}</ul>` + mixed;
+  }
+
   function provenanceHtml(made) {
+    if (made.kind === "overlay" || made.kind === "trend") return comparisonProvenanceHtml(made);
     const rows = [];
     const row = (label, value) => {
       if (value === null || value === undefined || value === "") return;

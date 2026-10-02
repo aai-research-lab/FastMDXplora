@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A comparison's figures say what they were plotted from
+
+**The overlays and trends of a study of several runs carry a chip.** An
+analysis's figure has had one since 1135: the release, the frames and
+options, and the command that plots it again. A comparison's figures rest
+on more, one curve or point per run, each analysed by whatever release
+analysed it, and said none of it. The comparison now records, as it plots
+them, each figure's runs, where each is, the release that analysed each and,
+for a trend, the mean and error plotted (`comparison/figures.json`), and the
+Report page puts a chip under each figure that opens them. Runs analysed by
+more than one release are said to be, since a difference between them may
+be a difference between releases. A comparison plotted before this has no
+record and no chip. The GUI guide no longer says there is no comparison
+view.
+
 ### The Overview says why a study has no live record
 
 **A finished study of several runs no longer waits for its simulation.**
