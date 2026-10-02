@@ -63,8 +63,55 @@ def series_payload(root: Path, analysis: str) -> dict[str, Any]:
         return {"ok": False, "reason": f"{analysis}'s data file holds no numbers"}
     unit = unit_of(analysis, found)
     if kind == "residue":
-        return _residues(analysis, label, unit, rows)
+        profile = _residues(analysis, label, unit, rows)
+        options = record.get("options")
+        per_residue = options.get("per_residue") if isinstance(options, dict) else None
+        if per_residue is not True:
+            profile["kind"] = "atom" if per_residue is False else "index"
+            profile["x_label"] = "Atom identifier" if per_residue is False else "Recorded index"
+            profile.pop("residues", None)
+            profile["notice"] = ("Recorded per-atom RMSF; atom identifiers are not residue numbers."
+                                 if per_residue is False else
+                                 "RMSF granularity is not recorded; these labels are not verified residue identities.")
+        else:
+            _resolve_profile_chains(Path(root), profile)
+        return profile
     return _over_time(Path(root), analysis, label, unit, rows, found)
+
+
+def _resolve_profile_chains(root: Path, profile: dict) -> None:
+    """Missing chain columns require unique identities in the saved topology."""
+    from fastmdxplora.gui.selection import topology_the_analyses_read
+
+    topology = topology_the_analyses_read(root)
+    identities: dict[int, set[tuple[str, str, str, str]]] = {}
+    try:
+        if (topology is not None and topology.suffix.lower() == ".pdb"
+                and topology.resolve().is_relative_to(root.resolve())
+                and topology.stat().st_size <= 32_000_000):
+            with topology.open(encoding="utf-8", errors="replace") as stream:
+                for line in stream:
+                    if line.startswith("ENDMDL"):
+                        break
+                    if line[:6].strip() in {"ATOM", "HETATM"} and len(line) >= 54:
+                        try:
+                            number = int(line[22:26])
+                        except ValueError:
+                            continue
+                        identities.setdefault(number, set()).add((line[21:22].strip(),
+                            line[17:20].strip(), line[26:27].strip(), line[16:17].strip()))
+    except OSError:
+        pass
+    for residue in profile.get("residues", []):
+        if residue.get("chain") is not None:
+            continue
+        matches = identities.get(residue["resi"], set())
+        if len(matches) == 1:
+            chain, _, insertion, alternate = next(iter(matches))
+            if not insertion and not alternate:
+                residue["chain"] = chain
+    if any(residue.get("chain") is None for residue in profile.get("residues", [])):
+        profile["notice"] = "Some residue labels cannot be uniquely mapped to the saved analysis topology; those points cannot focus a residue."
 
 
 def _over_time(root: Path, analysis: str, label: str, unit: str,

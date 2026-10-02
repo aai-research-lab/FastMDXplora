@@ -4,6 +4,8 @@ Status: implementation resumed after user approval. Milestones are committed and
 This document replaces the preliminary plan using the user's clarified requirements.
 Working checkout: `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`.
 Branch: `context-aware-agent`, tracking `princeote/context-aware-agent`.
+User instruction (2026-10-02): keep the existing branch base and all feature
+changes on princeote/context-aware-agent; do not integrate upstream main.
 The initial provisional edits are being reconciled into verified milestones.
 
 ## 1. Product contract and priorities
@@ -452,6 +454,18 @@ metadata with assumed defaults. Twenty-two Agent-boundary checks passed. The
 completed 1L2Y study returned ASN A:1 = 0.131109476 nm and LEU A:2 = 0.0686216503 nm
 from its per-residue table; topology, trajectory and RMSF source checksums stayed
 unchanged. These measurements do not establish a causal chemical explanation.
+
+Graph identity follow-up: RMSF graphs now distinguish recorded per-atom,
+per-residue and unverified-index profiles. Atom/unknown profiles have matching
+axis/tooltips and cannot focus a residue or trajectory frame. Missing chain
+columns are resolved only against unique saved analysis-topology identities;
+ambiguous/unavailable mappings remain unfocusable with an explicit notice.
+Cropping now slices residue identities alongside plotted values and labels, so
+clicking a cropped point cannot focus a different residue. Fifty-seven graph
+and Agent tests passed, including native browser tooltip, focus and crop checks.
+Only dashboard readers/rendering changed; RMSF calculations and source values
+were not altered. Upstream main was inspected but not integrated, per the user's
+instruction to retain the existing princeote branch base.
 
 ### Verified milestone M2 — portable research bookmarks
 

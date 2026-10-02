@@ -1349,7 +1349,7 @@
       const detail = event.detail || {};
       const resi = Number(detail.resi);
       STATE.focusResidue = Number.isFinite(resi)
-        ? {resi, chain: detail.chain || null} : null;
+        ? {resi, chain: detail.chain == null ? null : detail.chain} : null;
       whenDrawn(() => {
         restyleViewers();
         const selection = focusSelection();

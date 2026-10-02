@@ -29,7 +29,8 @@ def _analysis(root: Path, name: str, text: str, mean: dict | None = None) -> Non
     (folder / f"{name}.dat").write_text(text, encoding="utf-8")
     _figure(folder / f"{name}.png")
     (folder / "options.json").write_text(json.dumps(
-        {"analysis": name, "findings": {} if mean is None else {"mean": mean}}),
+        {"analysis": name, "findings": {} if mean is None else {"mean": mean},
+         "options": {"per_residue": True} if name == "rmsf" else {}}),
         encoding="utf-8")
 
 
@@ -112,6 +113,30 @@ class TestTheSeries:
     def test_a_profile_of_one_chain(self, tmp_path) -> None:
         _analysis(tmp_path, "rmsf", "1.0 0.2\n2.0 0.3\n")
         assert series_payload(tmp_path, "rmsf")["labels"] == ["1", "2"]
+
+    def test_missing_chain_labels_require_unique_topology_mapping(self, tmp_path):
+        _analysis(tmp_path, "rmsf", "57 0.8\n")
+        setup = tmp_path / "setup"
+        setup.mkdir()
+        topology = setup / "topology.pdb"
+        topology.write_text("ATOM      1  CA  GLU A  57       0.000   0.000   0.000  1.00  0.00           C\n")
+        profile = series_payload(tmp_path, "rmsf")
+        assert profile["residues"] == [{"chain": "A", "resi": 57}]
+        assert profile["labels"] == ["57"] and profile["y"] == [0.8]
+        topology.write_text(topology.read_text() + "ATOM      2  CA  GLU B  57       1.000   0.000   0.000  1.00  0.00           C\n")
+        ambiguous = series_payload(tmp_path, "rmsf")
+        assert ambiguous["residues"] == [{"chain": None, "resi": 57}]
+        assert "cannot be uniquely mapped" in ambiguous["notice"]
+
+    @pytest.mark.parametrize("mode,kind,axis", [(False, "atom", "Atom identifier"),
+        (None, "index", "Recorded index"), ("true", "index", "Recorded index")])
+    def test_atom_and_unknown_profiles_do_not_supply_residue_identities(self, tmp_path, mode, kind, axis):
+        _analysis(tmp_path, "rmsf", "57 0.8\n103 0.2\n")
+        (tmp_path / "analysis/rmsf/options.json").write_text(json.dumps({"options": {"per_residue": mode}}))
+        data = series_payload(tmp_path, "rmsf")
+        assert data["kind"] == kind and data["x_label"] == axis
+        assert data["labels"] == ["57", "103"] and data["y"] == [0.8, 0.2]
+        assert "residues" not in data and "frames" not in data and not data["linked"]
 
     def test_a_column_of_values_alone_is_numbered_from_one(self, tmp_path) -> None:
         _analysis(tmp_path, "rmsf", "# rmsf_nm\n0.2\n0.3\n")
@@ -238,6 +263,26 @@ def _point_at(page, analysis: str, share: float) -> None:
 
 class TestTheChart:
 
+    @pytest.mark.parametrize("kind,axis,prefix", [("atom", "Atom identifier", "atom"),
+        ("index", "Recorded index", "recorded index")])
+    def test_non_residue_profiles_have_honest_tooltips_and_do_not_focus_a_residue(self, page, kind, axis, prefix):
+        page.route("**/api/series?analysis=rmsf", lambda route: route.fulfill(json={
+            "ok": True, "analysis": "rmsf", "label": "RMSF", "unit": "nm", "kind": kind,
+            "x_label": axis, "x": [1, 2], "y": [0.8, 0.2], "labels": ["57", "103"],
+            "linked": False, "mean": None}))
+        page.reload(wait_until="domcontentloaded")
+        page.locator('.series-chart[data-analysis="rmsf"] svg').wait_for()
+        page.wait_for_timeout(500)
+        svg = page.locator('.series-chart[data-analysis="rmsf"] svg')
+        svg.focus()
+        tip = page.locator('.series-chart[data-analysis="rmsf"] .series-tip')
+        assert f"{prefix} 57" in tip.text_content()
+        assert "frame" not in tip.text_content() and "residue" not in tip.text_content()
+        assert "Click to" not in tip.text_content()
+        page.keyboard.press("Enter")
+        assert page.evaluate("document.documentElement.dataset.page") == "analysis"
+        assert page.errors == []
+
     def test_it_draws_what_the_analysis_settled_on(self, page) -> None:
         chart = page.locator('.series-chart[data-analysis="rmsd"]')
         assert chart.locator(".series-line").count() == 1
@@ -286,7 +331,9 @@ class TestTheChart:
         assert slider == "19"
 
     def test_choosing_a_residue_shows_it(self, page) -> None:
-        _point_at(page, "rmsf", 0.5)
+        # Target the sixth of ten points, rather than the midpoint between
+        # the fifth and sixth (which depends on SVG pixel rounding).
+        _point_at(page, "rmsf", 5 / 9)
         page.mouse.down()
         page.mouse.up()
         page.wait_for_function(
@@ -297,4 +344,18 @@ class TestTheChart:
             " return v && v.selectedAtoms({resi: 6}).some(a => a.style && a.style.stick); }",
             timeout=15000)
         focus = page.evaluate("() => window.FastMDXMoleculeViewer.STATE.focusResidue")
-        assert focus == {"resi": 6, "chain": None}
+        assert focus == {"resi": 6, "chain": "A"}
+
+    def test_a_cropped_residue_profile_focuses_the_displayed_residue(self, page):
+        chart = page.locator('.series-chart[data-analysis="rmsf"]')
+        chart.locator('.series-range input').nth(0).fill("6")
+        chart.locator('.series-range input').nth(1).fill("10")
+        chart.get_by_role("button", name="Apply", exact=True).click()
+        svg = chart.locator("svg")
+        svg.focus()
+        page.keyboard.press("Home")
+        assert "residue 6" in chart.locator('.series-tip').text_content()
+        page.keyboard.press("Enter")
+        page.wait_for_function("() => document.documentElement.dataset.page === 'viewer' && window.FastMDXMoleculeViewer.STATE.focusResidue")
+        assert page.evaluate("window.FastMDXMoleculeViewer.STATE.focusResidue") == {"resi": 6, "chain": "A"}
+        assert page.errors == []

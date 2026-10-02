@@ -21,6 +21,10 @@
   var cache = {};
   var ranges = {};
 
+  function isProfile(data) {
+    return data.kind === "residue" || data.kind === "atom" || data.kind === "index";
+  }
+
   function setRange(name, range) {
     if (range && range.length === 2 && range.every(Number.isFinite) && range[0] < range[1]) ranges[name] = range.slice();
     else delete ranges[name];
@@ -122,6 +126,10 @@
 
   function draw(host, data) {
     host.innerHTML = "";
+    if (data.notice) {
+      var notice = document.createElement("div"); notice.className = "muted small";
+      notice.textContent = data.notice; host.appendChild(notice);
+    }
     var original = data;
     var name = host.dataset.analysis;
     var range = ranges[name];
@@ -152,7 +160,7 @@
         host.appendChild(document.createTextNode("Fewer than two points in this range. Reset or widen it.")); return;
       }
       data = Object.assign({}, data);
-      ["x", "y", "frames", "labels"].forEach(function (key) {
+      ["x", "y", "frames", "labels", "residues"].forEach(function (key) {
         if (Array.isArray(original[key])) data[key] = indices.map(function (i) { return original[key][i]; });
       });
       var note = document.createElement("div"); note.className = "muted small";
@@ -177,7 +185,7 @@
       yLow = Math.min(yLow, mean.value - reach);
       yHigh = Math.max(yHigh, mean.value + reach);
     }
-    if (data.kind === "residue" || yLow >= 0) yLow = Math.min(0, yLow);
+    if (isProfile(data) || yLow >= 0) yLow = Math.min(0, yLow);
     var pad = (yHigh - yLow) * 0.06 || Math.abs(yHigh) * 0.1 || 1;
     yHigh += pad;
     if (yLow < 0) yLow -= pad;
@@ -214,7 +222,7 @@
       }, svg);
       label.textContent = yText(v);
     });
-    var xTicks = data.kind === "residue"
+    var xTicks = isProfile(data)
       ? ticks(xLow, xHigh, Math.min(8, xs.length)).filter(function (v) { return v === Math.round(v); })
       : ticks(xLow, xHigh, 5);
     var xText = tickText(xTicks);
@@ -223,7 +231,7 @@
       var label = el("text", {
         x: px(v), y: plot.bottom + 15, fill: c.axis, "font-size": 10, "text-anchor": "middle",
       }, svg);
-      label.textContent = data.kind === "residue"
+      label.textContent = isProfile(data)
         ? (data.labels[xs.indexOf(v)] || "") : xText(v);
     });
     el("line", { x1: plot.left, x2: plot.right, y1: plot.bottom, y2: plot.bottom, stroke: c.axis }, svg);
@@ -246,7 +254,7 @@
       d: path, fill: "none", stroke: c.line, "stroke-width": 1.5,
       "stroke-linejoin": "round", class: "series-line",
     }, svg);
-    if (data.kind === "residue" && xs.length <= 400) {
+    if (isProfile(data) && xs.length <= 400) {
       xs.forEach(function (x, i) {
         el("circle", { cx: px(x), cy: py(ys[i]), r: 2.2, fill: c.line }, svg);
       });
@@ -289,11 +297,11 @@
       cursor.setAttribute("visibility", "visible");
       dot.setAttribute("cx", x); dot.setAttribute("cy", y);
       dot.setAttribute("visibility", "visible");
-      var where = data.kind === "residue"
-        ? "residue " + data.labels[index]
+      var where = isProfile(data)
+        ? (data.kind === "residue" ? "residue " : data.kind === "atom" ? "atom " : "recorded index ") + data.labels[index]
         : (data.x_label === "Frame" ? "frame " + data.frames[index]
           : format(xs[index]) + " ns · frame " + data.frames[index]);
-      var action = data.kind === "residue" ? "show it in the structure"
+      var action = data.kind === "residue" ? (data.residues[index].chain !== null ? "show it in the structure" : "")
         : (data.linked ? "open this frame" : "");
       tip.innerHTML = "";
       var value = document.createElement("strong");
@@ -357,6 +365,7 @@
   function open(data, index) {
     if (index < 0 || !window.FastMDXDashboard) return;
     if (data.kind === "residue") {
+      if (data.residues[index].chain === null) return;
       window.FastMDXDashboard.navigate("viewer");
       window.dispatchEvent(new CustomEvent("dashboard:residue-focus",
         { detail: data.residues[index] }));

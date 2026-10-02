@@ -153,7 +153,7 @@ def context_for(root: Any, value: Any) -> str:
 
             found = series_payload(Path(root), view["analysis"])
             if found.get("ok"):
-                evidence = {k: found.get(k) for k in ("label", "unit", "kind", "mean", "x_label")}
+                evidence = {k: found.get(k) for k in ("label", "unit", "kind", "mean", "x_label", "notice")}
                 if found.get("x"):
                     evidence["available_range"] = [found["x"][0], found["x"][-1]]
                 lines.append("Selected analysis, read from this study: " + json.dumps(evidence))
