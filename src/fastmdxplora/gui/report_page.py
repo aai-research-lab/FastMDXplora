@@ -31,7 +31,8 @@ def report_payload(root: Path | str) -> dict[str, Any]:
         return {"ok": False, "reason": "no report yet",
                 "html": "", "not_produced": [], "downloads": {}}
 
-    text = source.read_text(encoding="utf-8", errors="replace")
+    text = _links_from_the_report(source.read_text(encoding="utf-8", errors="replace"),
+                                  report_dir, base)
     # The markdown library lives in the `pdf` extra, not the base
     # install, and a base install still has a report to show. With it,
     # the report is rendered; without it, the same text is shown as it
@@ -110,6 +111,31 @@ def methods_payload(root: Path | str, *, may_read: Any = None) -> dict[str, Any]
         return {"ok": False, "reason": "nothing recorded yet"}
     plain = re.sub(r"\*\*([^*]+)\*\*", r"\1", prose).replace("`", "")
     return {"ok": True, "html": render_markdown(prose)[0], "plain": plain}
+
+
+def _links_from_the_report(text: str, report_dir: Path, base: Path) -> str:
+    """Each relative link as it resolves from report/, where the report is.
+
+    A report written before 1085 links each figure from the study's root,
+    `analysis/rmsd/rmsd.png`, though it sits in report/; every study made
+    with 2.5.8 is one. On the Report page each of those figures failed to
+    load. A link that names nothing from report/ but names a file from the
+    study's root is read as the second, and the report's file is left as it
+    was written.
+    """
+    import re
+    from urllib.parse import unquote
+
+    def resolved(found: "re.Match[str]") -> str:
+        target, rest = found.group(1), found.group(2) or ""
+        if re.match(r"^([a-z][a-z0-9+.-]*:|/|#|\.\./)", target, re.IGNORECASE):
+            return found.group(0)
+        path = unquote(target.split("#")[0].split("?")[0])
+        if not path or (report_dir / path).exists() or not (base / path).is_file():
+            return found.group(0)
+        return f"]({'../' + target}{rest})"
+
+    return re.sub(r'\]\(([^)\s]+)(\s+"[^"]*")?\)', resolved, text)
 
 
 def _generated_line(text: str) -> str:

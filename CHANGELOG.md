@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A report written by 2.5.8 shows its figures
+
+**The Report page loads the figures of a study made with 2.5.8.** The report
+sits in report/ and, until 1085, linked each figure from the study's root,
+`analysis/rmsd/rmsd.png`. 1085 corrected reports written since, but every
+study made with 2.5.8, the release on PyPI, holds the old link, and on the
+Report page each of its figures failed to load (eleven of eleven on one
+study). A link that names nothing from report/ but a file from the study's
+root is now read as the second. The report's file is left as it was
+written.
+
 ### A comparison's figures say what they were plotted from
 
 **The overlays and trends of a study of several runs carry a chip.** An
