@@ -157,6 +157,14 @@ is already recorded, so the paragraph is assembled from them. Nothing is
 invented, and anything the run did not record is named as missing rather than
 filled in with what is usual.
 
+Its **Analysis** part says how every number in the report was determined:
+where averaging started and how that start was detected, how the correlation
+between frames enters each error, when no error is given, and, for a study run
+until it knew, the rule that set its length and how it ended. It is written
+from what each analysis recorded and with the thresholds the estimator
+applies, so a mean recorded by an earlier release is not described as this
+one's. A study extended in pieces is given the production of all of them.
+
 It then reports **convergence**, which is a statement about how much
 independent information the trajectory holds. A frame is not an observation:
 consecutive frames are nearly the same structure, so the number of independent

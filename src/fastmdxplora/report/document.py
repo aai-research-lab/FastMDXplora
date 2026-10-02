@@ -256,6 +256,32 @@ def _summary_section(phase_context: PhaseContext, project_root: Path) -> str:
     return "## Summary\n\n" + " ".join(said)
 
 
+def _recorded_means(project_root: Path) -> dict[str, dict[str, Any]]:
+    """Each analysis's mean record, by name, as the analysis wrote it."""
+    means: dict[str, dict[str, Any]] = {}
+    for path in sorted((project_root / "analysis").glob("*/options.json")):
+        document = _load_json_safely(path)
+        found = document.get("findings") if isinstance(document, dict) else None
+        record = found.get("mean") if isinstance(found, dict) else None
+        if isinstance(record, dict):
+            means[path.parent.name] = record
+    return means
+
+
+def _stopping_record_of(project_root: Path) -> dict[str, Any] | None:
+    """The record of the rule this study ran under: its own, or, for one of a
+    campaign's runs, the campaign's where it names this run."""
+    own = _load_json_safely(project_root / "stopping.json")
+    if isinstance(own, dict):
+        return own
+    if project_root.parent.name != "runs":
+        return None
+    campaign = _load_json_safely(project_root.parent.parent / "stopping.json")
+    if isinstance(campaign, dict) and project_root.name in (campaign.get("runs") or []):
+        return campaign
+    return None
+
+
 def _methods_section(project_root: Path, phase_context: PhaseContext,
                      orchestrator: Any = None) -> str:
     from fastmdxplora.simulation.pipeline import setup_records_of
@@ -293,7 +319,8 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
         project_root, setup, sim,
         system_name=(setup.get("input") or {}).get("system"),
         versions=tools, made_with=made_with, tools_recorded=recorded,
-        extended=extended,
+        extended=extended, means=_recorded_means(project_root),
+        stopping=_stopping_record_of(project_root),
     )
     if prose:
         lines.append(prose)

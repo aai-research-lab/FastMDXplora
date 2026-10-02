@@ -56,6 +56,27 @@ the checkpoint of the one before", and the list of settings says it is the
 first piece's. `fastmdxplora.simulation.resume.extended_production` gives the
 total and the count.
 
+### The methods say how each mean was determined
+
+**The report's methods paragraph gains an Analysis part**, written from what
+each analysis recorded: which quantities were averaged, that averaging began
+after an equilibration period detected automatically (the latest start keeping
+90% of the most independent samples, after Chodera 2016), how the correlation
+between frames enters each error (the statistical inefficiency, summed over
+Geyer's initial positive sequence and corrected for the sample mean), the
+whole-run rule after a discard, the thresholds below which no error is given,
+how many frames were discarded, a start shared with replicas, and which means
+carry no error. The thresholds are read from the module that applies them, and
+records written by an earlier estimator are said as such rather than described
+as this one's. The methods said how the system was prepared and simulated and
+nothing about the analysis behind every number.
+
+**A study run until it knew says its rule there too**: what had to be
+determined and how well, the ceiling, the replicas and how they were judged
+(Student's t at each error's own degrees of freedom; Cochran's Q for their
+agreement; 50 independent samples for a run judged alone), and how it ended.
+One of a campaign's runs reads the campaign's record where it is named in it.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

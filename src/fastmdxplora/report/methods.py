@@ -265,6 +265,8 @@ def methods_paragraphs(
     made_with: list[tuple[str, list[str]]] | None = None,
     tools_recorded: bool = True,
     extended: tuple[float, int] | None = None,
+    means: dict[str, dict[str, Any]] | None = None,
+    stopping: dict[str, Any] | None = None,
 ) -> str:
     """The methods text, as prose rather than a list of settings.
 
@@ -277,6 +279,12 @@ def methods_paragraphs(
     many (:func:`fastmdxplora.simulation.resume.extended_production`): the
     simulation record is the first piece's, and a methods section reading
     it alone gives that piece's length for the whole study.
+
+    ``means`` are the analyses' mean records by name (``findings.mean`` in
+    each ``analysis/<name>/options.json``) and ``stopping`` the record of a
+    study run until it knew (``stopping.json``); from them the Analysis
+    paragraph says how each mean and error was determined, and why the
+    production is as long as it is.
     """
     from fastmdxplora.simulation.ensembles import NPT, recorded_ensemble
 
@@ -648,6 +656,11 @@ def methods_paragraphs(
         )
         parts.append("**Simulation protocol.** " + " ".join(protocol))
 
+    # ---- analysis -----------------------------------------------------
+    analysis = _analysis_paragraph(means or {}, stopping)
+    if analysis:
+        parts.append("**Analysis.** " + analysis)
+
     # ---- software -----------------------------------------------------
     if versions or made_with is not None:
         # FastMDXplora did the work -- setup, simulation and analysis -- and
@@ -683,3 +696,156 @@ def methods_paragraphs(
         )
 
     return "\n\n".join(parts)
+
+
+def _listed(names: list[str]) -> str:
+    names = [f"`{name}`" for name in names]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _estimator_sentences(means: dict[str, dict[str, Any]]) -> list[str]:
+    """How the means and their errors were determined.
+
+    Said from the records rather than from the release writing the report:
+    a record carrying its degrees of freedom was written by the estimator
+    described here, and one without them by an earlier one, whose details
+    differ. The constants are read from the module that applies them, so
+    this cannot describe a threshold the estimator no longer uses.
+    """
+    from fastmdxplora.statistics import (EQUILIBRATION_TOLERANCE,
+                                         MINIMUM_EFFECTIVE_SAMPLES, RESOLVED_SAMPLES,
+                                         WHOLE_RUN_UNLESS_GAIN)
+
+    names = sorted(means)
+    said = ((f"Each per-frame quantity ({_listed(names)})" if len(names) > 1
+             else f"The per-frame quantity {_listed(names)}")
+            + " was averaged over the frames after an equilibration period detected "
+            "automatically")
+    if not all("degrees_of_freedom" in record for record in means.values()):
+        return [said + " (Chodera, J. Chem. Theory Comput. 2016, 12, 1799), with a "
+                "standard error from the statistical inefficiency of the frames kept. "
+                "These means were recorded by an earlier release than the estimator "
+                "the current documentation describes, whose details differ; analysing "
+                "the study again records them by the current one."]
+    gain = {2.0: "doubled", 3.0: "tripled"}.get(
+        float(WHOLE_RUN_UNLESS_GAIN), f"multiplied by {WHOLE_RUN_UNLESS_GAIN:g}")
+    return [
+        said + ", as the latest start that keeps at least "
+        f"{100 * (1 - EQUILIBRATION_TOLERANCE):g}% of the most statistically independent "
+        "samples any start keeps (after Chodera, J. Chem. Theory Comput. 2016, 12, "
+        "1799).",
+        "Standard errors account for the correlation between frames through the "
+        "statistical inefficiency, the number of frames per independent sample, "
+        "estimated from the autocorrelation function summed over Geyer's initial "
+        "positive sequence (Stat. Sci. 1992, 7, 473) and corrected for the bias of an "
+        "autocorrelation taken about the sample mean.",
+        "Where frames were discarded, the error is that of the whole run scaled to "
+        f"the frames kept, unless the discard at least {gain} the independent samples.",
+        "An error is given only where the frames averaged span at least "
+        f"{RESOLVED_SAMPLES:g} times their own statistical inefficiency and hold at "
+        f"least {MINIMUM_EFFECTIVE_SAMPLES:g} independent samples.",
+    ]
+
+
+def _discard_sentence(means: dict[str, dict[str, Any]]) -> str:
+    """How much was discarded, over what."""
+    def whole(value: Any) -> int | None:
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+    discards = [whole(r.get("discard")) for r in means.values()]
+    frames = {whole(r.get("n_frames")) for r in means.values()}
+    if None in discards or len(frames) != 1 or None in frames:
+        return ""
+    n = frames.pop()
+    low, high = min(discards), max(discards)
+    if high == 0:
+        return f"No equilibration period was detected in the {n:,} frames analysed."
+    if low == high:
+        return (f"The first {low:,} of the {n:,} frames analysed were discarded as "
+                "equilibration" + (" in each." if len(discards) > 1 else "."))
+    return (f"The equilibration periods discarded ran from {low:,} to {high:,} of the "
+            f"{n:,} frames analysed.")
+
+
+def _stopping_sentences(stopping: dict[str, Any], units: dict[str, str]) -> list[str]:
+    """Why the production is as long as it is, for a study run until it knew."""
+    from fastmdxplora.simulation.stopping import (AGREE_WITHIN, JUDGED_ALONE, ONE_ERROR,
+                                                  StopTarget)
+
+    rounds = [r for r in stopping.get("rounds") or [] if isinstance(r, dict)]
+    try:
+        targets = [StopTarget(**t) for t in stopping.get("targets") or []]
+    except TypeError:
+        return []
+    if not targets or not rounds:
+        return []
+    runs = stopping.get("runs") or []
+    replicas = len(runs) > 1
+    ceiling = stopping.get("max_duration_ns")
+    asked = "; ".join(t.said(units.get(t.analysis, "")) for t in targets)
+    said = [
+        "The production length was not fixed in advance. The study ran in rounds, each "
+        "extended by what its analyses said was still needed, until "
+        + asked + (" was" if len(targets) == 1 else " were") + " determined"
+        + (f" in {len(runs)} replicas that agree within their errors" if replicas else "")
+        + (f", with at most {ceiling:g} ns of production" + (" per run" if replicas else "")
+           if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool) else "")
+        + ".",
+        "Each error was judged widened by Student's t at its own degrees of freedom, so "
+        "that it holds the true mean as often as one standard error of a normal mean "
+        f"does ({100 * (2 * ONE_ERROR - 1):.1f}% of the time)"
+        + ("; the replicas were pooled weighted by their errors, judged on the larger "
+           "of their combined error and the spread of their means, and only once those "
+           "means agreed within their errors (Cochran's Q over its degrees of freedom "
+           f"at most {AGREE_WITHIN:g})." if replicas else
+           f"; a single run's error was accepted only once it rested on "
+           f"{JUDGED_ALONE:g} independent samples, and one run cannot show a state it "
+           "never left."),
+    ]
+    last = rounds[-1]
+    produced = last.get("production_ns")
+    at = (f", at {produced:g} ns of production" + (" per run" if replicas else "")
+          if isinstance(produced, (int, float)) else "")
+    count = f"{len(rounds)} round" + ("s" if len(rounds) != 1 else "")
+    outcome = stopping.get("outcome")
+    said.append({
+        "met": f"It stopped after {count}{at}, with each determined as asked.",
+        "ceiling": f"It stopped at the ceiling after {count}{at}, before each was "
+                   "determined as asked.",
+        "stopped": f"It stopped after {count}{at}, when an extension did not complete.",
+    }.get(outcome, f"It was still running when this was written, after {count}{at}."))
+    return said
+
+
+def _analysis_paragraph(means: dict[str, dict[str, Any]],
+                        stopping: dict[str, Any] | None) -> str:
+    """How each mean and its error were determined, and, for a study run
+    until it knew, why it ran as long as it did. Empty where nothing
+    recorded a mean and the study ran to a fixed length."""
+    means = {name: record for name, record in means.items()
+             if isinstance(record, dict) and record.get("mean") is not None}
+    said: list[str] = []
+    if means:
+        said += _estimator_sentences(means)
+        discard = _discard_sentence(means)
+        if discard:
+            said.append(discard)
+        shared = sorted({record["start_shared_with_replicas"] for record in means.values()
+                         if isinstance(record.get("start_shared_with_replicas"), int)})
+        if shared:
+            said.append(
+                "As one of a set of replicas started from one structure, "
+                + ("each quantity was" if len(means) > 1 else "it was")
+                + " averaged from no earlier than frame "
+                + " or ".join(f"{frame:,}" for frame in shared)
+                + ", the start detected on the replicas' frame-by-frame average, where the "
+                "relaxation they share shows through less noise than in one run.")
+        withheld = sorted(name for name, record in means.items()
+                          if record.get("not_a_measurement"))
+        if withheld:
+            said.append(f"No error is given for {_listed(withheld)}; the report says why"
+                        + (" for each." if len(withheld) > 1 else "."))
+    if isinstance(stopping, dict):
+        units = {name: str(record.get("unit") or "") for name, record in means.items()}
+        said += _stopping_sentences(stopping, units)
+    return " ".join(said)
