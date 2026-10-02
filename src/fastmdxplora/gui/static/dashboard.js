@@ -876,8 +876,14 @@
       status.elapsed_wall_time_s != null ? fmtDuration(status.elapsed_wall_time_s) : "—"
     );
     setText("live-eta-cell", computeETA(status));
-    setText("live-checkpoint-cell", status.current_checkpoint_path || "—");
-    setText("live-lastupdate-cell", formatTimestamp(status.last_update_timestamp));
+    // Where the checkpoint is, from the study, and when the record was last
+    // written, to the minute: the absolute path and the full date and time
+    // were cut off in their cells. Both are kept whole in the cell's title.
+    const checkpoint = status.current_checkpoint_path || "";
+    setText("live-checkpoint-cell", checkpoint ? inTheStudy(checkpoint) : "\u2014");
+    setTitle("live-checkpoint-cell", checkpoint);
+    setText("live-lastupdate-cell", formatWhen(status.last_update_timestamp));
+    setTitle("live-lastupdate-cell", formatTimestamp(status.last_update_timestamp));
     setText("live-card-step", valueOrDash(status.current_step));
   }
 
@@ -1735,10 +1741,53 @@
     return ["ok", "complete", "completed", "success"].includes(String(value || "").toLowerCase());
   }
 
+  /* A path inside the open study, from the study; any other as it is. The
+   * run may have written it through another name for the same folder (on a
+   * Mac, /var is /private/var), so the study's own folder name is looked for
+   * too. */
+  function inTheStudy(path) {
+    const root = String(state.appState?.active_run || "").replace(/[\\/]+$/, "");
+    const text = String(path).replace(/\\/g, "/");
+    if (!root) return text;
+    const whole = root.replace(/\\/g, "/");
+    if (text.startsWith(whole + "/")) return text.slice(whole.length + 1);
+    const name = whole.split("/").pop();
+    const at = name ? text.lastIndexOf("/" + name + "/") : -1;
+    return at >= 0 ? text.slice(at + name.length + 2) : text;
+  }
+
+  function setTitle(id, title) {
+    const element = byId(id);
+    if (!element) return;
+    if (title) element.title = title; else element.removeAttribute("title");
+  }
+
+  /* A moment as short as it can be read: the time today, the day and time
+   * this year, the date otherwise. */
+  function formatWhen(value) {
+    if (!value) return "\u2014";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    const now = new Date();
+    const time = {hour: "2-digit", minute: "2-digit", hour12: !uses24Hours()};
+    if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString([], time);
+    if (date.getFullYear() === now.getFullYear()) {
+      return date.toLocaleString([], {day: "numeric", month: "short", ...time});
+    }
+    return date.toLocaleDateString([], {day: "numeric", month: "short", year: "numeric"});
+  }
+
   function formatTimestamp(value) {
     if (!value) return "—";
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  }
+
+  /* Settings' Time choice, which the log's times and the last update now
+   * follow as the sidebar's refresh time did: they were 24-hour whatever
+   * was chosen. */
+  function uses24Hours() {
+    return byId("setting-time-format")?.value !== "12h";
   }
 
   function formatEventTime(value) {
@@ -1746,7 +1795,7 @@
     const date = new Date(value);
     return Number.isNaN(date.getTime())
       ? String(value)
-      : date.toLocaleTimeString([], {hour12: false});
+      : date.toLocaleTimeString([], {hour12: !uses24Hours()});
   }
 
   /* A simulated time to the femtosecond it can resolve and no further:

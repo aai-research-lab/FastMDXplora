@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Overview gives the checkpoint and the last update briefly
+
+**The health card's checkpoint and last update read whole.** The checkpoint
+was given by its absolute path and the last update as a full date and time,
+and both were cut off in their cells. The checkpoint is now given from the
+study (`simulation/checkpoint.chk`), found by the study's folder name too
+where the run wrote it through another name for the same folder, as /var
+and /private/var on a Mac; the last update reads as the time today, the day
+and time this year, or the date, and with the log's times now follows the
+Time setting, which only the sidebar's refresh time did. Each is in full in
+its cell's title.
+
 ### The Viewer reads a finished study as finished
 
 **A finished study's frame is its last, and the controls for a run that is
