@@ -545,6 +545,22 @@ explicitly pending while that lifecycle is verified. GitHub documents an app-
 owned OAuth token route with use_logged_in_user=False; no existing credentials
 were read or copied during these checks.
 
+Copilot login follow-up: a second native probe created a restricted session on
+the default Copilot route, without a synthetic BYOK provider or model request.
+GitHub.com interactive sign-in is available; the account remains unauthenticated
+and the initialized tool catalog remains empty. The new SDK-independent login
+controller accepts only a deliberate Connect request, verifies GitHub.com browser
+URLs, bounds the flow and cancels unfinished requests. It refuses plaintext
+credential consent, arbitrary input/broker steps and unverified terminal account
+identities. Twenty focused checks passed, including cancellation during a blocked
+advance RPC and timeout cleanup. This controller is preparatory: the production
+SDK child-process bridge, native storage verification, model entitlement and
+end-to-end account consent/inference are still unfinished. Copilot remains disabled.
+
+Package follow-up: the wheel built at 841ae217d contains the current 127-code
+Markdown error reference byte-for-byte, residue pin/compare controls, the provider
+dropdown and Gemini bridge. This verifies packaging, not user-account inference.
+
 Integrated checks: 338 passed with one skipped across Agent human controls,
 bookmarks/import-export, native clips, audit comparisons and provenance,
 streaming cancellation, browser scripts and private/public dashboard routes.
