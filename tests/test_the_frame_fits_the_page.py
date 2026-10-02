@@ -176,6 +176,29 @@ class TestTheViewer:
         page.context.close()
         assert tag != "LIVE"
 
+    def test_a_finished_study_has_no_live_controls(self, browser, studies) -> None:
+        # Following the run, "Now" and "Pause Updates" were offered beside a
+        # finished study's last frame, which read "LATEST" and its age in
+        # minutes: "age 5311m" for one three days old.
+        page = _open(browser, studies["finished"], where="#viewer")
+        page.wait_for_function(
+            "() => document.getElementById('overlay-tag').textContent !== 'offline'",
+            timeout=60000)
+        tag = page.locator("#overlay-tag").text_content()
+        age = page.locator("#overlay-age").is_visible()
+        follow = page.locator("label:has(#traj-follow)").is_visible()
+        live = page.locator('[aria-label="Live structure"]').is_visible()
+        page.context.close()
+        assert tag in ("LAST FRAME", "STATIC", "PLAYBACK")
+        assert not age and not follow and not live
+
+    def test_a_running_study_has_them(self, browser, studies) -> None:
+        page = _open(browser, studies["running"], where="#viewer")
+        page.wait_for_selector("label:has(#traj-follow)", state="visible", timeout=60000)
+        live = page.locator('[aria-label="Live structure"]').is_visible()
+        page.context.close()
+        assert live
+
 
 class TestTheControls:
 

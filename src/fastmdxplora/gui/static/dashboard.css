@@ -1359,6 +1359,7 @@ button {
 .figure-provenance-rows dd { margin: 0; overflow-wrap: anywhere; }
 .figure-provenance-how, .figure-provenance-note { margin: 6px 0; }
 .figure-provenance-runs { margin: 0 0 8px; padding-left: 18px; }
+.chip-toggle.is-unavailable { opacity: 0.42; cursor: not-allowed; }
 .figure-provenance-runs li { margin: 2px 0; overflow-wrap: anywhere; }
 .figure-provenance-widths { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 6px; }
 .figure-provenance-widths .file-action.is-chosen { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }

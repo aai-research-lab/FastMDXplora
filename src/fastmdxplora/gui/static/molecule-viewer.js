@@ -270,6 +270,7 @@
     STATE.structureInfo = info || {};
     const ligandNames = Array.isArray(info?.ligand_resnames) ? info.ligand_resnames : [];
     if (!STATE.ligandResname && ligandNames.length) STATE.ligandResname = ligandNames[0];
+    offerTheLigandsControls();
 
     const available = !!(info?.structure_available || info?.valid);
     if (!available) {
@@ -627,8 +628,18 @@
     if (!index?.live_frame_updated_at) return "—";
     const time = new Date(index.live_frame_updated_at).getTime();
     if (!Number.isFinite(time)) return "—";
-    const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
-    return seconds < 60 ? `${seconds}s` : `${Math.round(seconds / 60)}m`;
+    return howLongAgo(Math.max(0, Math.round((Date.now() - time) / 1000)));
+  }
+
+  /* An age as a person reads one. Only minutes were counted, so a frame
+   * three days old read "age 5311m". */
+  function howLongAgo(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 48) return `${hours}h ${minutes % 60}m`;
+    return `${Math.floor(hours / 24)}d ${hours % 24}h`;
   }
 
   /* ------------------------------------------------------------------ */
@@ -891,6 +902,26 @@
     if (STATE.miniViewer && miniModel && miniTarget && isVisible(miniTarget)) {
       styleViewer(STATE.miniViewer, miniModel, true);
     }
+  }
+
+  /* Centring on the ligand or its pocket, and showing either, did nothing
+   * on a structure with no ligand, and said nothing either. They are offered
+   * where there is a ligand, and say why not where there is none. */
+  function offerTheLigandsControls() {
+    const none = !ligandResnames().length;
+    const why = "This structure has no ligand";
+    document.querySelectorAll('[data-cam="center-ligand"], [data-cam="center-pocket"]')
+      .forEach((button) => {
+        button.disabled = none;
+        if (none) button.title = why; else button.removeAttribute("title");
+      });
+    document.querySelectorAll('[data-vis="ligand"], [data-vis="pocket"]').forEach((box) => {
+      box.disabled = none;
+      const label = box.closest("label");
+      if (!label) return;
+      label.classList.toggle("is-unavailable", none);
+      if (none) label.title = why; else label.removeAttribute("title");
+    });
   }
 
   function ligandResnames() {
@@ -1556,6 +1587,14 @@
   function onStatusUpdated(status) {
     STATE.runStatus = String(status?.status || "").toLowerCase();
     const running = STATE.runStatus === "running";
+    // Following the run and taking its newest structure mean something only
+    // while it writes them: a finished study offered "Now" and "Pause
+    // Updates" beside its last frame. Kept while paused, so there is a way
+    // to resume.
+    const writing = running || STATE.runStatus === "starting";
+    document.querySelectorAll("[data-while-running]").forEach((control) => {
+      control.hidden = !writing && STATE.liveUpdates !== false;
+    });
     // The preview's caption says which frame it is: the newest while the
     // run writes them, and the last once it has stopped.
     const note = document.getElementById("mini-preview-note");
@@ -2009,8 +2048,13 @@
     const running = STATE.runStatus === "running" || STATE.runStatus === "starting";
     const shown = live && (!STATE.runStatus || running);
     overlay.setAttribute("data-live", shown ? "true" : "false");
+    // The last frame of a run that has ended is that, not the latest of
+    // one still writing; and how long ago it was written is the run's age,
+    // which says nothing about the frame once nothing more will come.
+    const ended = live && !shown;
     setText("overlay-tag", shown ? "LIVE"
-      : (STATE.mode === "playback" ? "PLAYBACK" : (live ? "LATEST" : "STATIC")));
+      : (STATE.mode === "playback" ? "PLAYBACK" : (ended ? "LAST FRAME" : "STATIC")));
+    if (ended) setText("overlay-age", "");
     if (info?.stage != null) setText("overlay-stage", info.stage);
     // A live frame is named by the step it was written at, which is what
     // the engine records; a frame of the trajectory by its place in it. Both
@@ -2018,7 +2062,7 @@
     // and the step number as the two updates arrived.
     if (info?.step != null) setText("overlay-frame", `step ${Number(info.step).toLocaleString()}`);
     if (info?.frame != null) setText("overlay-frame", `frame ${info.frame}`);
-    if (info?.age != null) setText("overlay-age", `age ${info.age}`);
+    if (info?.age != null && !ended) setText("overlay-age", `age ${info.age}`);
     if (info?.simtime != null) setText("overlay-simtime", `${Number(info.simtime).toFixed(3)} ns`);
     tidyOverlay();
   }

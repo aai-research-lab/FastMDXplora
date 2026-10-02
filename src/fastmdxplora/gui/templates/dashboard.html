@@ -726,7 +726,7 @@
                     </select>
                   </label>
                   <label class="chip-toggle micro" title="Start again from the first frame at the end"><input type="checkbox" id="traj-loop">Loop</label>
-                  <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it"><input type="checkbox" id="traj-follow" checked>Follow</label>
+                  <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it" data-while-running hidden><input type="checkbox" id="traj-follow" checked>Follow</label>
                 </div>
                 <!-- The view: one row of icons, grouped, each named in its
                      tooltip; then how the molecule is drawn, as two lists
@@ -748,7 +748,7 @@
                     <button class="chip-btn" type="button" data-cam="center-ligand">Ligand</button>
                     <button class="chip-btn" type="button" data-cam="center-pocket">Pocket</button>
                   </div>
-                  <div class="icon-group text-group" role="group" aria-label="Live structure">
+                  <div class="icon-group text-group" role="group" aria-label="Live structure" data-while-running hidden>
                     <span class="control-label">Live</span>
                     <button class="ctl-btn chip-btn" type="button" data-action="live-toggle" title="Show the structure the run is writing now">Now</button>
                     <button class="ctl-btn chip-btn" type="button" data-action="pause-toggle" title="Stop or resume taking the run's newest structure">Pause Updates</button>

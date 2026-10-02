@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Viewer reads a finished study as finished
+
+**A finished study's frame is its last, and the controls for a run that is
+writing are not offered.** Its overlay read "LATEST" with the run's age in
+minutes ("age 5311m" for one three days old), and Follow, "Now" and "Pause
+Updates" stood beside it, doing nothing. It now reads "LAST FRAME" with no
+age; Follow and the live controls show while a run writes and while paused,
+so there is a way to resume; and an age reads in seconds, minutes, hours or
+days. Centring on the ligand or its pocket, and showing either, did nothing
+on a structure with no ligand and said nothing: they are disabled there,
+with the reason as their title.
+
 ### A report written by 2.5.8 shows its figures
 
 **The Report page loads the figures of a study made with 2.5.8.** The report
