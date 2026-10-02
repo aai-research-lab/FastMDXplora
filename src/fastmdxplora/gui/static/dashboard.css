@@ -3895,3 +3895,10 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 /* A clicked residue's states, for a new study (molecule-viewer.js). */
 .residue-states { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .residue-state-choices { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* The methods paragraphs on the Overview: read as prose, at the width a
+   paragraph is read at. */
+.methods-text { max-width: 860px; line-height: 1.6; color: var(--text-secondary); }
+.methods-text p { margin: 0 0 10px; }
+.methods-text p:last-child { margin-bottom: 0; }
+.methods-text strong { color: var(--text-primary); }

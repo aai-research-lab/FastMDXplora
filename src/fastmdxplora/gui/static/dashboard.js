@@ -78,6 +78,15 @@
     state.pages = $$('.page')
       .map((element) => element.getAttribute("data-page"))
       .filter(Boolean);
+    // The methods are there to be pasted into a manuscript.
+    const methodsCopy = document.getElementById("overview-methods-copy");
+    if (methodsCopy) {
+      methodsCopy.addEventListener("click", async () => {
+        const copied = await copyText(methodsPlain);
+        methodsCopy.textContent = copied ? "Copied" : "Select and copy";
+        setTimeout(() => { methodsCopy.textContent = "Copy"; }, 2000);
+      });
+    }
     // The BibTeX entry is there to be taken, so make taking it one click.
     const citeCopy = document.getElementById("cite-copy");
     if (citeCopy) {
@@ -881,6 +890,7 @@
     renderTopBar(state.status, state.health);
     renderStageTimeline(state.status);
     renderReportPanels(payload);
+    renderMethods(payload);
     renderAnalysisSections(payload);
     renderAnalysis(payload);
     renderFiles(payload);
@@ -1140,6 +1150,36 @@
         </tr>`).join("");
     }
     if (statCard) statCard.hidden = stats.length === 0;
+  }
+
+  /* The methods paragraphs, asked for again only when what they are written
+   * from may have changed: another study, a phase that moved, an analysis
+   * that finished, a study that grew. The results arrive far more often. */
+  let methodsKey = "";
+  let methodsPlain = "";
+
+  async function renderMethods(payload) {
+    const card = byId("overview-methods-card");
+    const host = byId("overview-methods-text");
+    if (!card || !host) return;
+    const time = (payload.summary || []).find((row) => row.label === "Simulation time");
+    const key = JSON.stringify([payload.output_dir || "", payload.phase_rows || [],
+      (payload.analyses || []).length, time ? time.value : ""]);
+    if (key === methodsKey) return;
+    methodsKey = key;
+    let said;
+    try {
+      said = await fetchJSON("/api/methods");
+    } catch (error) {
+      methodsKey = "";
+      return;
+    }
+    if (key !== methodsKey) return;  // another study was opened meanwhile
+    methodsPlain = said && said.ok ? String(said.plain || "") : "";
+    // Rendered on the server by the report's own renderer, which keeps
+    // raw markup as text.
+    host.innerHTML = methodsPlain ? String(said.html || "") : "";
+    card.hidden = !methodsPlain;
   }
 
   function renderAnalysis(payload) {

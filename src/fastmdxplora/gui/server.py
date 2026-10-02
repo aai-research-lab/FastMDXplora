@@ -138,7 +138,7 @@ POSTS_ANSWERED_BEYOND_LOOPBACK = frozenset({"/api/config"})
 GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/", "/index", "/results", "/live",
     "/api/app-state", "/api/explore/state", "/api/schema",
-    "/api/status", "/api/metrics", "/api/events", "/api/report",
+    "/api/status", "/api/metrics", "/api/events", "/api/report", "/api/methods",
     "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
@@ -653,6 +653,11 @@ def make_handler(
                 from fastmdxplora.gui.report_page import report_payload
 
                 self._send_json(report_payload(root))
+                return
+            if path == "/api/methods":
+                from fastmdxplora.gui.report_page import methods_payload
+
+                self._send_json(methods_payload(root))
                 return
             if path == "/api/artifacts" or path == "/api/files":
                 self._send_json({"artifacts": _artifact_records(root)})

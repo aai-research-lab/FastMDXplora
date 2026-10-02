@@ -255,6 +255,14 @@ what the piece now running adds and how long that takes at the speed the study
 has run, and lists every round and what was decided on it. The card reads the
 study's record and nothing else, so it says what the report says.
 
+**The methods, to paste into a manuscript.** Once a phase has run, the
+Overview carries the study's methods paragraphs as the report gives them:
+preparation, protocol, how each mean and its error were determined, any rule
+the study ran until, an AI model's part, and the software. They are
+written from the records as they stand, so they are there before the report
+is and follow an extension. **Copy** takes them as plain text, without the
+Markdown. `GET /api/methods` gives the same.
+
 The page is told when the study changes. The server looks at the study's files
 twice a second and sends one event over `GET /api/stream` when any of them, or
 the state of the run, is different, and the page then asks for what it shows;

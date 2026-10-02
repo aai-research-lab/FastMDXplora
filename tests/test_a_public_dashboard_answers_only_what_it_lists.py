@@ -260,6 +260,8 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # from the study's records and two checked selections; it runs
             # nothing.
             "/api/measure-over-frames",
+            # The methods paragraphs, as the report gives them.
+            "/api/methods",
             # What a study run until it knows has judged: the same means
             # the Analysis page shows, round by round.
             "/api/stopping",

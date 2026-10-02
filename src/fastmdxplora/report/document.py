@@ -296,27 +296,25 @@ def _stopping_record_of(project_root: Path) -> dict[str, Any] | None:
     return None
 
 
-def _methods_section(project_root: Path, phase_context: PhaseContext,
-                     orchestrator: Any = None) -> str:
+def methods_prose(project_root: Path, orchestrator: Any = None) -> str:
+    """The methods paragraphs of a study, as its report gives them and the
+    GUI shows them to copy.
+
+    The paragraph a journal asks for, before the list of every setting. The
+    list is what the software knows; this is what a reader needs, and they
+    are not the same document. Written against the checklists published by
+    JCIM (Soares et al. 2023) and Communications Biology (2023), from values
+    already recorded -- nothing here is invented, and anything missing is
+    named rather than filled in with what is usual.
+    """
+    from fastmdxplora.report.methods import methods_paragraphs
     from fastmdxplora.simulation.pipeline import setup_records_of
+    from fastmdxplora.simulation.resume import extended_production
 
     prepared_in = setup_records_of(project_root)
     setup = (_load_json_safely(prepared_in / "setup_parameters.json") or {}
              if prepared_in is not None else {})
     sim = _load_json_safely(project_root / "simulation" / "simulation_parameters.json") or {}
-    setup_params = setup.get("parameters", {})
-    sim_params = sim.get("parameters", {})
-
-    lines = ["## Methods", ""]
-
-    # The paragraph a journal asks for, before the list of every setting. The
-    # list is what the software knows; this is what a reader needs, and they
-    # are not the same document. Written against the checklists published by
-    # JCIM (Soares et al. 2023) and Communications Biology (2023), from values
-    # already recorded -- nothing here is invented, and anything missing is
-    # named rather than filled in with what is usual.
-    from fastmdxplora.report.methods import methods_paragraphs
-
     # The whole manifests, not just their `parameters`: the system is under
     # `input`, and the force field the run resolved to sits beside them. The
     # first version passed `parameters` alone and produced a methods section
@@ -325,20 +323,34 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
         from types import SimpleNamespace
 
         orchestrator = SimpleNamespace(output_dir=project_root, results=[])
-    from fastmdxplora.simulation.resume import extended_production
-
     made_with, tools, recorded = _recorded_software(orchestrator)
-    extended = extended_production(project_root)
     study_manifest = _load_json_safely(project_root / "manifest.json")
-    prose = methods_paragraphs(
+    return methods_paragraphs(
         project_root, setup, sim,
         system_name=(setup.get("input") or {}).get("system"),
         versions=tools, made_with=made_with, tools_recorded=recorded,
-        extended=extended, means=_recorded_means(project_root),
+        extended=extended_production(project_root), means=_recorded_means(project_root),
         stopping=_stopping_record_of(project_root),
         written=study_manifest.get("agent") if isinstance(study_manifest, dict) else None,
         conversations=_conversations_kept(project_root),
     )
+
+
+def _methods_section(project_root: Path, phase_context: PhaseContext,
+                     orchestrator: Any = None) -> str:
+    from fastmdxplora.simulation.pipeline import setup_records_of
+    from fastmdxplora.simulation.resume import extended_production
+
+    prepared_in = setup_records_of(project_root)
+    setup = (_load_json_safely(prepared_in / "setup_parameters.json") or {}
+             if prepared_in is not None else {})
+    sim = _load_json_safely(project_root / "simulation" / "simulation_parameters.json") or {}
+    setup_params = setup.get("parameters", {})
+    sim_params = sim.get("parameters", {})
+    extended = extended_production(project_root)
+
+    lines = ["## Methods", ""]
+    prose = methods_prose(project_root, orchestrator)
     if prose:
         lines.append(prose)
         lines.append("")

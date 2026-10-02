@@ -89,6 +89,18 @@ they say anything). The manifest recorded all of this and the report said none
 of it. A study a person wrote says nothing here, and an AI model named without
 a mode is said as exactly that.
 
+### The methods are on the Overview, to copy
+
+**The study's methods paragraphs are now a card on the Overview**, as the
+report gives them and written from the records as they stand, so they are
+there before the report is made and follow an extension or a new analysis.
+**Copy** takes them as plain text, without the Markdown, for a manuscript. The
+page asks for them again only when what they rest on may have changed (another
+study, a phase, an analysis, the production). `GET /api/methods` gives the
+paragraphs as HTML and as plain text, and is answered beyond loopback like
+`/api/report`. `fastmdxplora.report.document.methods_prose` is the one place
+the report and the page take them from.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

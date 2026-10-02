@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-__all__ = ["report_payload"]
+__all__ = ["methods_payload", "report_payload"]
 
 
 def report_payload(root: Path | str) -> dict[str, Any]:
@@ -81,6 +81,31 @@ def report_payload(root: Path | str) -> dict[str, Any]:
         "rendered": rendered,
         "figure_provenance": provenance,
     }
+
+
+def methods_payload(root: Path | str) -> dict[str, Any]:
+    """The study's methods paragraphs, to read and to copy into a
+    manuscript: as the report gives them, written from the records as they
+    stand, so they are there before the report is and follow an extension.
+
+    ``html`` is for the page; ``plain`` is for the clipboard, without the
+    Markdown, since a manuscript is not Markdown.
+    """
+    import re
+
+    base = Path(root)
+    if (base / "batch_manifest.json").is_file():
+        return {"ok": False, "reason": "a study of several runs: each run's report "
+                                       "gives its own methods"}
+    if not any((base / name).exists() for name in ("manifest.json", "simulation", "setup")):
+        return {"ok": False, "reason": "nothing has run yet"}
+    from fastmdxplora.report.document import methods_prose
+
+    prose = methods_prose(base)
+    if not prose:
+        return {"ok": False, "reason": "nothing recorded yet"}
+    plain = re.sub(r"\*\*([^*]+)\*\*", r"\1", prose).replace("`", "")
+    return {"ok": True, "html": render_markdown(prose)[0], "plain": plain}
 
 
 def _generated_line(text: str) -> str:
