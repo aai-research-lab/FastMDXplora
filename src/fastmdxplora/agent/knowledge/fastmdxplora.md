@@ -48,6 +48,12 @@ provider failures may be unfamiliar. Preserve the error text, say when a cause i
 uncertain, distinguish a likely cause from evidence, and request the smallest
 relevant diagnostic. Never claim knowledge of every possible external failure.
 
+Subscription-provider failures have their own registered error families. A
+refused/expired session, a provider-reported usage limit, and an unclassified
+connection failure are distinct. None means the user has a missing API key.
+Use the sanitized provider diagnostic, preserve the selected account, and never
+switch to another account or API billing to work around a refusal or quota.
+
 ## Graphs and analysis
 
 Explain the supplied metric, axis units and selection. RMSD depends on alignment

@@ -36,6 +36,18 @@ def test_installed_knowledge_includes_every_registered_error_and_disclosure():
     assert "External/unclassified" in knowledge
 
 
+@pytest.mark.parametrize("code", ["environment.provider.connection_failed", "environment.provider.usage_limit"])
+def test_agent_preserves_subscription_failure_code_without_api_fallback(tmp_path, monkeypatch, code):
+    from types import SimpleNamespace
+    from fastmdxplora.agent.openai_plan import ConnectionError
+    class Connections:
+        def completion(self):
+            raise ConnectionError("Sanitized fixture provider failure", code=code)
+    monkeypatch.setattr("fastmdxplora.gui.provider_connections.service_for", lambda runtime: Connections())
+    answer = propose_endpoint({"request": "Explain the study"}, SimpleNamespace())
+    assert not answer["ok"] and answer["code"] == code
+
+
 def test_explanation_receives_packaged_reference(model):
     prompts, _ = model
     result = propose_endpoint({"request": "Explain this warning"})

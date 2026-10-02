@@ -1,11 +1,27 @@
 import io
 import json
 import time
+import urllib.error
 
 import pytest
 
 from fastmdxplora.agent import openai_plan as plan
 from fastmdxplora.agent.oauth_transactions import AuthorizationGrant
+
+
+@pytest.mark.parametrize("status,code", [(401, "environment.provider.session_refused"),
+                                       (403, "environment.provider.session_refused"),
+                                       (429, "environment.provider.usage_limit"),
+                                       (503, "environment.provider.connection_failed")])
+def test_provider_http_failures_preserve_the_correct_error_family(monkeypatch, status, code):
+    class Opener:
+        def open(self, request, **kwargs):
+            raise urllib.error.HTTPError(request.full_url, status, "fixture", {}, None)
+    monkeypatch.setattr(plan.urllib.request, "build_opener", lambda *args: Opener())
+    with pytest.raises(plan.ConnectionError) as caught:
+        plan.request_json("https://api.openai.com/v1/models")
+    assert caught.value.code == code
+    assert caught.value.code != "environment.credentials.absent"
 
 
 @pytest.fixture

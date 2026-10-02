@@ -336,6 +336,18 @@ CODES: tuple[Code, ...] = (
          "No API key for the chosen provider, in the environment or stored.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("provider", "environment_variable")),
+    Code("environment.provider.connection_failed",
+         "The selected subscription provider request could not be completed. "
+         "Use its sanitized diagnostic; this does not imply a missing API key.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True),
+    Code("environment.provider.session_refused",
+         "The selected provider session expired or access was refused. "
+         "Reconnect or check the account's permitted access.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("environment.provider.usage_limit",
+         "The selected provider reported a usage or rate limit. "
+         "Check that account's allowance; do not switch accounts or billing automatically.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
     Code("environment.calibration.absent",
          "This machine has not been measured, so there is no basis for a "
          "duration estimate.",

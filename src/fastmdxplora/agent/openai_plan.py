@@ -25,6 +25,10 @@ MAX_BYTES = 8_000_000
 class ConnectionError(RuntimeError):
     """Sanitized connection failure, safe to return through the dashboard."""
 
+    def __init__(self, message, *, code="environment.provider.connection_failed"):
+        super().__init__(message)
+        self.code = code
+
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -49,7 +53,10 @@ def _open(request, *, timeout=30):
             message = "The provider refused access or reached its usage limit. Check the selected account and plan usage."
         else:
             message = "The provider request failed. Retry later or reconnect through the dashboard."
-        raise ConnectionError(message) from None
+        code = ("environment.provider.session_refused" if exc.code in {401, 403}
+                else "environment.provider.usage_limit" if exc.code == 429
+                else "environment.provider.connection_failed")
+        raise ConnectionError(message, code=code) from None
     except urllib.error.URLError as exc:
         if isinstance(exc.reason, ssl.SSLCertVerificationError):
             raise ConnectionError("The provider's TLS certificate could not be verified. Check the computer clock and trusted certificate setup; sign-in remains disabled until verification succeeds.") from None

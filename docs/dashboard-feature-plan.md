@@ -528,6 +528,23 @@ subscription OAuth. OpenAI's expired presented certificate still prevents live
 verification; TLS verification is never disabled. Browser disconnects now signal
 cancellation to buffered provider processes through streaming heartbeats.
 
+Provider error follow-up: subscription failures now preserve registered codes
+for refused sessions, usage/rate limits, or an unclassified connection failure.
+They are no longer all labelled missing API keys. The packaged reference was
+regenerated and covers all 127 current codes. Fifty provider/Agent tests passed,
+including HTTP 401/403/429/503 classification and no API-billing fallback.
+
+Copilot compatibility follow-up: official SDK 1.0.16 was installed in a separate
+tools folder without changing the scientific venv. Its pinned native CLI 1.0.90
+was installed separately from npm after the SDK's GitHub release download ended
+with RemoteDisconnected. A native SDK probe verified protocol v3 startup,
+no automatic login, and an initialized empty tool catalog. This proves the
+restricted native transport, not completed OAuth, model entitlement or inference.
+The production account/login lifecycle remains unfinished; the dropdown stays
+explicitly pending while that lifecycle is verified. GitHub documents an app-
+owned OAuth token route with use_logged_in_user=False; no existing credentials
+were read or copied during these checks.
+
 Integrated checks: 338 passed with one skipped across Agent human controls,
 bookmarks/import-export, native clips, audit comparisons and provenance,
 streaming cancellation, browser scripts and private/public dashboard routes.

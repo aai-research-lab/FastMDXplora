@@ -30,6 +30,9 @@ External/unclassified errors require their actual diagnostic; do not invent a ca
 - `agent.tool.refused` (structural; disclosure=field_only; retryable=false): A tool the Agent asked for declined what it was asked: a file it does not read, a place outside the workspace, or arguments it cannot use.
 - `environment.model.unset` (environmental; disclosure=action; retryable=false): No model has been chosen, so there is nothing to ask.
 - `environment.credentials.absent` (environmental; disclosure=action; retryable=false): No API key for the chosen provider, in the environment or stored.
+- `environment.provider.connection_failed` (environmental; disclosure=nothing; retryable=true): The selected subscription provider request could not be completed. Use its sanitized diagnostic; this does not imply a missing API key.
+- `environment.provider.session_refused` (environmental; disclosure=nothing; retryable=false): The selected provider session expired or access was refused. Reconnect or check the account's permitted access.
+- `environment.provider.usage_limit` (environmental; disclosure=nothing; retryable=false): The selected provider reported a usage or rate limit. Check that account's allowance; do not switch accounts or billing automatically.
 - `environment.calibration.absent` (environmental; disclosure=action; retryable=false): This machine has not been measured, so there is no basis for a duration estimate.
 - `environment.calibration.inconsistent` (environmental; disclosure=action; retryable=false): Runs on this machine disagree about what a particle-step costs by more than the cost model's assumption allows.
 - `environment.calibration.stale` (environmental; disclosure=action; retryable=false): The stored measurement was taken on different hardware or under different settings than the study asks for.

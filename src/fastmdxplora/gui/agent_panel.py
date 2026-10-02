@@ -152,7 +152,7 @@ def propose_endpoint(payload: dict[str, Any],
         complete = ((connections.completion(cancelled=cancelled) if cancelled is not None
                      else connections.completion()) if connections else None) or completion_for()
     except (ConnectionError, VaultError) as exc:
-        return {"ok": False, "error": str(exc), "code": "environment.credentials.absent"}
+        return {"ok": False, "error": str(exc), "code": getattr(exc, "code", "environment.provider.connection_failed")}
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
@@ -201,7 +201,7 @@ def propose_endpoint(payload: dict[str, Any],
             run_status=run_context, attachments=attachments or None,
             tools=tools)
     except (ConnectionError, VaultError) as exc:
-        return {"ok": False, "error": str(exc), "code": "environment.credentials.absent"}
+        return {"ok": False, "error": str(exc), "code": getattr(exc, "code", "environment.provider.connection_failed")}
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code,
