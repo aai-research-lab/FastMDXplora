@@ -585,7 +585,7 @@
                   <a href="#" class="ghost-link" data-view-link="viewer">Open the viewer</a>
                 </div>
                 <div class="preview-frame" id="mini-preview-frame">
-                <div id="mini-preview-canvas" class="mini-preview-canvas" aria-label="Molecular preview"></div>
+                <div id="mini-preview-canvas" class="mini-preview-canvas" role="img" aria-label="Molecular preview"></div>
                 <div class="preview-empty" id="mini-preview-empty">
                   Waiting for a structure file…
                 </div>
@@ -687,7 +687,7 @@
           <div class="viewer-layout">
             <div class="viewer-canvas-wrap">
               <div class="viewer-canvas-frame" id="viewer-canvas-frame">
-                <div id="viewer-canvas" class="viewer-canvas" aria-label="Molecular viewer canvas"></div>
+                <div id="viewer-canvas" class="viewer-canvas" role="img" aria-label="The molecule in 3D"></div>
                 <div class="viewer-empty" id="viewer-empty">
                   <div class="empty-title">Waiting for structure</div>
                   <div class="empty-detail muted">The 3D viewer will initialize when a topology or prepared PDB becomes available.</div>
@@ -805,14 +805,14 @@
             </div>
 
             <aside class="info-panel" aria-label="Molecular information panel">
-              <div class="info-tabs" role="tablist">
-                <button class="info-tab active" type="button" data-tab="structure">Structure</button>
-                <button class="info-tab" type="button" data-tab="simulation">Simulation</button>
-                <button class="info-tab" type="button" data-tab="selection">Selection</button>
-                <button class="info-tab" type="button" data-tab="ligand">Ligand</button>
+              <div class="info-tabs" role="tablist" aria-label="Molecular information">
+                <button class="info-tab active" type="button" role="tab" id="info-tab-structure" aria-controls="info-pane-structure" aria-selected="true" tabindex="0" data-tab="structure">Structure</button>
+                <button class="info-tab" type="button" role="tab" id="info-tab-simulation" aria-controls="info-pane-simulation" aria-selected="false" tabindex="-1" data-tab="simulation">Simulation</button>
+                <button class="info-tab" type="button" role="tab" id="info-tab-selection" aria-controls="info-pane-selection" aria-selected="false" tabindex="-1" data-tab="selection">Selection</button>
+                <button class="info-tab" type="button" role="tab" id="info-tab-ligand" aria-controls="info-pane-ligand" aria-selected="false" tabindex="-1" data-tab="ligand">Ligand</button>
               </div>
               <div class="info-content">
-                <div class="info-pane active" data-tab="structure">
+                <div role="tabpanel" id="info-pane-structure" aria-labelledby="info-tab-structure" class="info-pane active" data-tab="structure">
                   <table class="kv-table mono">
                     <tbody id="structure-tab-tbody">
                       <tr><th>Protein chains</th><td>—</td></tr>
@@ -824,7 +824,7 @@
                     </tbody>
                   </table>
                 </div>
-                <div class="info-pane" data-tab="simulation" hidden>
+                <div role="tabpanel" id="info-pane-simulation" aria-labelledby="info-tab-simulation" class="info-pane" data-tab="simulation" hidden>
                   <table class="kv-table mono">
                     <tbody id="simulation-tab-tbody">
                       <tr><th>Force field</th><td>—</td></tr>
@@ -838,7 +838,7 @@
                     </tbody>
                   </table>
                 </div>
-                <div class="info-pane" data-tab="selection" hidden>
+                <div role="tabpanel" id="info-pane-selection" aria-labelledby="info-tab-selection" class="info-pane" data-tab="selection" hidden>
                   <p class="muted small">Click an atom or residue in the viewer to populate this panel.</p>
                   <table class="kv-table mono">
                     <tbody id="selection-tab-tbody">
@@ -854,7 +854,7 @@
                   <!-- What the measuring tool measured (molecule-viewer.js). -->
                   <div class="measure-said" id="measure-said" hidden></div>
                 </div>
-                <div class="info-pane" data-tab="ligand" hidden>
+                <div role="tabpanel" id="info-pane-ligand" aria-labelledby="info-tab-ligand" class="info-pane" data-tab="ligand" hidden>
                   <table class="kv-table mono">
                     <tbody id="ligand-tab-tbody">
                       <tr><th>Ligand</th><td>—</td></tr>

@@ -219,16 +219,34 @@
     byId("mini-preview-frame")?.addEventListener("click", () => navigate("viewer"));
   }
 
+  /* The information beside the viewer is a set of tabs, as a screen reader
+   * is told it is: the chosen tab selected and the only one in the Tab
+   * order, the arrow keys, Home and End moving between them. */
   function wireInfoTabs() {
-    $$('.info-tab').forEach((tab) => {
-      tab.addEventListener("click", () => {
-        const name = tab.getAttribute("data-tab");
-        $$('.info-tab').forEach((item) => item.classList.toggle("active", item === tab));
-        $$('.info-pane').forEach((pane) => {
-          const active = pane.getAttribute("data-tab") === name;
-          pane.hidden = !active;
-          pane.classList.toggle("active", active);
-        });
+    const tabs = $$('.info-tab');
+    function choose(tab, focus) {
+      const name = tab.getAttribute("data-tab");
+      tabs.forEach((item) => {
+        const chosen = item === tab;
+        item.classList.toggle("active", chosen);
+        item.setAttribute("aria-selected", String(chosen));
+        item.tabIndex = chosen ? 0 : -1;
+      });
+      $$('.info-pane').forEach((pane) => {
+        const active = pane.getAttribute("data-tab") === name;
+        pane.hidden = !active;
+        pane.classList.toggle("active", active);
+      });
+      if (focus) tab.focus();
+    }
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => choose(tab, false));
+      tab.addEventListener("keydown", (event) => {
+        const to = {ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0,
+          End: tabs.length - 1}[event.key];
+        if (to === undefined) return;
+        event.preventDefault();
+        choose(tabs[(to + tabs.length) % tabs.length], true);
       });
     });
   }

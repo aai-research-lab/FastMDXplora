@@ -34,7 +34,7 @@
       line: token("--accent-cyan", "#63e6ff"),
       mean: token("--accent-orange", "#ffb86b"),
       grid: token("--border-subtle", "rgba(255,255,255,0.07)"),
-      axis: token("--text-muted", "#777780"),
+      axis: token("--text-muted", "#85858f"),
       text: token("--text-secondary", "#b5b5bb"),
       shade: token("--background-soft", "#151518"),
     };

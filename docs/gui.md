@@ -101,6 +101,13 @@ FastMDXplora running that study is never adopted.
 Three schemes, from the settings popup: Graphite, Ink and Paper. Green done,
 amber qualified and red refused mean the same in all three.
 
+Every page, in every scheme, is held to WCAG 2.1 AA's contrast: 4.5 to 1 for
+text, 3 to 1 for large text, measured against what is behind it by a test
+that opens every page. The information beside the viewer is a set of tabs a screen reader is
+told of, moved between with the arrow keys, Home and End; the viewer's
+icons are named, with their keys, and the preview and the viewer are named
+pictures.
+
 ---
 
 ## Designing a study

@@ -137,6 +137,21 @@ view is rendered once at that resolution and put back as it was. It was saved
 as the canvas stood, about 900 pixels across on a laptop, a third of what a
 journal asks for.
 
+### The GUI meets WCAG 2.1 AA where an audit found it did not
+
+**An accessibility audit of every page in every scheme** (axe-core 4.13, its
+WCAG 2.0, 2.1 and 2.2 A and AA rules) found three things, now fixed, and it
+finds nothing on the GUI now. The muted text of every scheme (the sidebar's
+headings, the stages, labels, the viewer's keys) read at 3.6 to 4.5 to 1 on its
+own grounds, under the 4.5 the standard asks of text: each scheme's
+`--text-muted` is darker or lighter to at least 4.7 to 1 on all of its grounds,
+and the browser test that measures every text in every scheme now holds text
+to 4.5 to 1 and large text to 3 (it held everything to 3). The information
+beside the viewer was a tab list of plain buttons: its tabs are tabs now, with
+the chosen one selected, each with its panel, moved between with the arrow
+keys, Home and End. The preview and the viewer are named pictures (`role="img"`);
+their names were on elements a screen reader does not name.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

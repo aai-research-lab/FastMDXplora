@@ -26,7 +26,8 @@
     /* Text */
     --text-primary: #f5f5f7;
     --text-secondary: #b5b5bb;
-    --text-muted: #777780;
+    /* At least 4.5:1 on every ground of its scheme (WCAG AA for text). */
+    --text-muted: #85858f;
 
     /* Accents */
     --accent-white: #ffffff;
@@ -114,7 +115,7 @@ body[data-theme="ink"] {
     --border-primary: rgba(255, 255, 255, 0.14);
     --text-primary: #ededed;
     --text-secondary: #a3a3a3;
-    --text-muted: #6b6b6b;
+    --text-muted: #838383;
     --accent-cyan: #e8e8e8;
 }
 :root[data-theme="paper"],
@@ -127,7 +128,7 @@ body[data-theme="paper"] {
     --border-primary: rgba(0, 0, 0, 0.14);
     --text-primary: #141413;
     --text-secondary: #4a4a48;
-    --text-muted: #7a7a76;
+    --text-muted: #696965;
     --accent-white: #141413;
     --accent-cyan: #2b6cb0;
     --shadow-color: rgba(0, 0, 0, 0.14);

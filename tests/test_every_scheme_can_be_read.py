@@ -8,10 +8,12 @@ black, and the charts drew their axes in the dark scheme's grey whatever the
 scheme. Nothing looked, because every browser test ran in Graphite.
 
 Here each page is opened in each scheme and every piece of visible text is
-measured against what is behind it, by the WCAG formula. Three to one is
-the floor for large text and well below what body text should have, so
-anything under it is unreadable rather than merely faint. A control that
-cannot be used is dimmed on purpose and is not measured.
+measured against what is behind it, by the WCAG formula, and held to WCAG
+AA: 4.5 to 1 for text, 3 to 1 for large text (24 px, or 18.66 px bold). The
+floor was 3 to 1 for all of it, which passed the muted labels of every
+scheme at 3.6 to 4.5 to 1 on their own grounds; an accessibility audit of
+every page (axe-core 4.13) found them. A control that cannot be used is
+dimmed on purpose and is not measured.
 """
 
 from __future__ import annotations
@@ -90,7 +92,9 @@ UNREADABLE = r"""
     fg = over({...fg, a: fg.a * op}, bg);
     const L1 = lum(fg), L2 = lum(bg);
     const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
-    if (ratio < 3) bad.push({text: t.textContent.trim().slice(0, 40), ratio: Math.round(ratio * 100) / 100, cls: el.className && String(el.className).slice(0, 50), id: el.id, tag: el.tagName});
+    const size = parseFloat(cs.fontSize);
+    const large = size >= 24 || (size >= 18.66 && +cs.fontWeight >= 700);
+    if (ratio < (large ? 3 : 4.5)) bad.push({text: t.textContent.trim().slice(0, 40), ratio: Math.round(ratio * 100) / 100, cls: el.className && String(el.className).slice(0, 50), id: el.id, tag: el.tagName});
   }
   return bad;
 }
