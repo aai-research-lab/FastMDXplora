@@ -560,6 +560,7 @@ def fix_pdb_with_pdbfixer(
     replace_nonstandard: bool = True,
     residue_states: dict[str, str] | None = None,
     complex_pdb: str | None = None,
+    seed: int | None = None,
 ) -> list[str]:
     """Strict PDBFixer wrapper: raises on failure.
 
@@ -591,6 +592,11 @@ def fix_pdb_with_pdbfixer(
     complex_pdb : path-like, optional
         Where to write the repaired structure with those components still
         in it, hydrogens added, for their pKa.
+    seed : int, optional
+        Seeds the dynamics PDBFixer runs when an atom it built is left within
+        0.13 nm of another, so a repair can be repeated. Unseeded, those
+        dynamics drew their own random numbers, and one `setup.random_seed`
+        could give two structures.
 
     Raises
     ------
@@ -719,7 +725,7 @@ def fix_pdb_with_pdbfixer(
             fixer.replaceNonstandardResidues()
 
     fixer.findMissingAtoms()
-    fixer.addMissingAtoms()
+    fixer.addMissingAtoms(seed=seed)
     if complex_pdb is not None:
         _write_complex(fixer, Path(complex_pdb), ph)
     _delete_residues(fixer, [residue for residue in fixer.topology.residues()

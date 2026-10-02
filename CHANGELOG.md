@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A repair that builds missing residues is seeded
+
+**`setup.random_seed` now seeds PDBFixer as well.** Where an atom it builds
+is left within 0.13 nm of another, PDBFixer separates them with short
+dynamics from an integrator it seeds only when asked, and setup never asked:
+a structure with a gap could be prepared two ways from one seed (a loop
+built beside a ligand ended 0.7 to 2.7 Angstrom from it over six repairs).
+The same seed now gives the same structure there too.
+
 ### A structure is repaired once, with its ligands in place
 
 **A titratable ligand's structure is no longer repaired twice.** Its pKa was

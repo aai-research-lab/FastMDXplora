@@ -600,6 +600,7 @@ def _repair_arguments(params: dict, input_pdb) -> dict[str, Any]:
         "mutations": tuple(params.get("mutations") or ()),
         "mutation_chain": params.get("mutation_chain"),
         "residue_states": params.get("residue_states"),
+        "seed": params.get("_random_seed"),
     }
 
 
