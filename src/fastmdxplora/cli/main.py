@@ -1130,7 +1130,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "The assistant starts this command itself and talks to it over "
             "standard input and output; it is not run by hand. Its "
             "ask_agent tool writes a study as the FastMDXplora Agent does, "
-            "with the model `fastmdx agent set` chose; a study runs only "
+            "with the model `fastmdx agent model` chose; a study runs only "
             "from a config the validator accepted and whose plan was checked, "
             "with your go-ahead where your client can ask for it, and its own "
             "approval of the call where it cannot."
@@ -1154,7 +1154,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "config goes through the same validation as one written by "
             "hand, so a refusal here is the refusal you would have got "
             "anyway -- the agent cannot ask for something the software "
-            "will not do. Run `fastmdx agent set` once to choose a model; "
+            "will not do. Run `fastmdx agent model` once to choose a model; "
             "nothing else in FastMDXplora needs one."
         ),
         formatter_class=_PercentSafeHelp,
@@ -1164,9 +1164,9 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="?",
         metavar="REQUEST",
         help=(
-            "What the study should do, in plain language. The word `set` "
-            "chooses a model instead. With neither, prints what is "
-            "currently set."
+            "What the study should do, in plain language. The word `model` "
+            "shows the model in use and chooses one instead. With neither, "
+            "opens the agent panel."
         ),
     )
     ag.add_argument(
@@ -2700,8 +2700,13 @@ def _run_agent(args: Any) -> int:
 
     request = args.request
 
-    if request == "set":
+    if request == "model":
         return _choose_model()
+    if request == "set":
+        # The old name chose a model too. It stops rather than writes a
+        # study from the word "set", and says where the choosing went.
+        print("`fastmdx agent set` is now `fastmdx agent model`.")
+        return 2
 
     if args.request_file:
         try:
@@ -2856,9 +2861,17 @@ def _run_staged(args: Any, config: dict) -> int:
 
 
 def _choose_model() -> int:
-    """`fastmdx agent set` -- pick a provider and, optionally, store a key."""
-    from fastmdxplora.agent import PROVIDERS, ModelChoice, save_choice
+    """`fastmdx agent model` -- pick a provider and, optionally, store a key."""
+    from fastmdxplora.agent import (
+        PROVIDERS, ModelChoice, describe_choice, load_choice, save_choice,
+    )
 
+    # What is in use first, so a look at the choice is not a change to it:
+    # nothing is saved unless a model is picked below.
+    if load_choice() is None:
+        print("No model chosen yet.\n")
+    else:
+        print("In use: " + describe_choice() + "\n")
     names = list(PROVIDERS)
     print("Model:")
     for index, name in enumerate(names, 1):

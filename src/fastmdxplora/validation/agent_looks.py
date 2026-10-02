@@ -23,7 +23,7 @@ how many looked with the tool the question calls for. Nothing here decides
 whether the difference is large enough to claim: the counts are reported
 as counted.
 
-Run it with a model chosen (`fastmdx agent set`), on a machine that can
+Run it with a model chosen (`fastmdx agent model`), on a machine that can
 fetch from the PDB::
 
     python -m fastmdxplora.validation.agent_looks --repeats 3 --out agent_looks.json

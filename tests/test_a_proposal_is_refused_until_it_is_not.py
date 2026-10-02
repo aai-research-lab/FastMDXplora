@@ -267,7 +267,7 @@ class TestTheBoundaryHolds(unittest.TestCase):
 
         This began as a ban on the strings `api_key` and `anthropic`
         anywhere in `agent/`, which was right while the agent only ever
-        took a caller-supplied function. `fastmdx agent set` changed that:
+        took a caller-supplied function. Choosing a model changed that:
         somebody has to hold a key, and `models.py` is where.
 
         The property worth keeping is narrower. `propose_config` and its

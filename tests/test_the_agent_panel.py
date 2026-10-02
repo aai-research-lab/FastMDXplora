@@ -765,7 +765,7 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
             "* the page itself, as \"Ready. Drafting with <model>.\" -- a status line", ""))
 
     def test_the_gui_never_tells_you_to_run_a_command(self):
-        """A GUI that says "run `fastmdx agent set`" has given up.
+        """A GUI that says "run `fastmdx agent model`" has given up.
 
         The refusals are written for a terminal, which is right there. This
         surface has a Settings button, so it says that instead.

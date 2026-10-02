@@ -475,7 +475,7 @@ See [The FastMDXplora API](api.md).
 ## From a sentence
 
 ```bash
-fastmdx agent set                                      # choose a model, once
+fastmdx agent model                                    # choose a model, once
 fastmdx agent "T4 lysozyme L99A with benzene bound, 100 ns at 310 K" \
   -o lysozyme.yml
 fastmdx explore --config lysozyme.yml

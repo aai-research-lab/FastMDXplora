@@ -73,7 +73,7 @@ tell you so, in as many words. It is for checking the machinery works.
 ## Or describe it in a sentence
 
 ```bash
-fastmdx agent set                              # choose a model, once
+fastmdx agent model                            # choose a model, once
 fastmdx agent "simulate Trp-cage for 50 ns" -o trpcage.yml
 fastmdx explore --config trpcage.yml
 ```

@@ -372,7 +372,7 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
         complete = ctx.complete_for()
     except StudyError as exc:
         raise ToolError(f"{refusal_of(exc).message}\nThe Agent writes with a model you choose "
-                        "once, in a terminal: `fastmdx agent set`. Every other tool here "
+                        "once, in a terminal: `fastmdx agent model`. Every other tool here "
                         "works without one.") from None
     current = None
     if args.get("config"):
@@ -999,7 +999,7 @@ TOOLS: tuple[Tool, ...] = (
          "accepted by the validator before it is returned, saved in the workspace with "
          "its plan and plan_id; it also answers questions and asks when the request is "
          "short of something only the person can say. Nothing is run. Uses the model "
-         "chosen with `fastmdx agent set`.",
+         "chosen with `fastmdx agent model`.",
          {"request": {"type": "string", "description": (
              "What the study should do or what to ask, in the person's words.")},
           "config": {"type": "string", "description": (

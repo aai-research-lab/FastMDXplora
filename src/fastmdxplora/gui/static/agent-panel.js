@@ -43,7 +43,7 @@
 
   /* Refusals written for the command line, said the way this surface can
    * act on. `environment.model.unset` tells a terminal user to run
-   * `fastmdx agent set`; there is a Settings button here instead. */
+   * `fastmdx agent model`; there is a Settings button here instead. */
   var IN_THE_GUI = {
     "environment.model.unset":
       "No model set yet. Open Settings and choose one.",

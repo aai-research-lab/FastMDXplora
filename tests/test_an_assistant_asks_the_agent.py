@@ -142,7 +142,7 @@ def test_without_a_model_it_says_how_to_choose_one(workspace):
     assert result["isError"]
     assert result["content"][0]["text"] == (
         "No model is chosen for the Agent.\nThe Agent writes with a model you choose once, "
-        "in a terminal: `fastmdx agent set`. Every other tool here works without one.")
+        "in a terminal: `fastmdx agent model`. Every other tool here works without one.")
     wire.close()
 
 

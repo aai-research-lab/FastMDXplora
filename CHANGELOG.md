@@ -17,6 +17,14 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### `fastmdx agent model` chooses the Agent's model
+
+**`fastmdx agent model`** says which model is in use and where its key is read
+from, then chooses one, as `fastmdx agent set` did. The old name now stops
+with one line naming the new one, rather than choosing a model or being taken
+as a request for a study. Every message that told you to run it says the new
+name.
+
 ### The Agent reads each mean as the report gives it
 
 What the Agent is told a study found now gives each mean as the report and the
@@ -55,7 +63,7 @@ offers neither.
 ### An assistant asks the FastMDXplora Agent
 
 `fastmdx mcp` offers **`ask_agent`**: the Agent as the GUI has it, with the
-model `fastmdx agent set` chose, the software's own tools to look with, and the
+model `fastmdx agent model` chose, the software's own tools to look with, and the
 validator as the judge. A study it writes comes back accepted, recorded as the
 Agent's (`agent: assisted` and the model), saved as a new file headed by what
 was asked, with its plan and `plan_id`; a question, an answer or an

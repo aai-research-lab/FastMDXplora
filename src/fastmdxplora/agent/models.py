@@ -207,7 +207,7 @@ def _key_for(choice: ModelChoice, path: Path | None = None) -> str:
         return stored
     raise StudyError(
         f"No API key for {PROVIDERS[choice.provider]['label']}. Set "
-        f"{env_name} in the environment, or run `fastmdx agent set` and "
+        f"{env_name} in the environment, or run `fastmdx agent model` and "
         "give one when asked. The key is never written into a study, so it "
         "has to come from one of those two places.",
         code="environment.credentials.absent",
@@ -289,7 +289,7 @@ def completion_for(choice: ModelChoice | None = None, *,
     settled = choice or load_choice(path)
     if settled is None:
         raise StudyError(
-            "No model has been chosen. Run `fastmdx agent set` to pick one. "
+            "No model has been chosen. Run `fastmdx agent model` to pick one. "
             "Nothing in FastMDXplora needs a model unless you ask for the "
             "agent, so this only comes up when you do.",
             code="environment.model.unset",
@@ -395,10 +395,10 @@ def _streamed(response: Any, on_text: Callable[[str], None], url: str) -> str:
 
 
 def describe_choice(path: Path | None = None) -> str:
-    """One line about what is set, for `fastmdx agent set` with no answer."""
+    """What is set, for `fastmdx agent model` and the agent panel."""
     settled = load_choice(path)
     if settled is None:
-        return "No model chosen. Run `fastmdx agent set` to pick one."
+        return "No model chosen. Run `fastmdx agent model` to pick one."
     env_name = str(PROVIDERS[settled.provider]["env"])
     where = ("the environment" if os.environ.get(env_name)
              else "the stored file" if _has_stored_key(path) else "nowhere")

@@ -115,7 +115,7 @@ class TestWhereTheKeyLives(unittest.TestCase):
             refusal = refusal_of(caught.exception)
             self.assertEqual(refusal.code, "environment.credentials.absent")
             self.assertIn("OPENAI_API_KEY", refusal.message)
-            self.assertIn("fastmdx agent set", refusal.message)
+            self.assertIn("fastmdx agent model", refusal.message)
         finally:
             if before is not None:
                 os.environ["OPENAI_API_KEY"] = before
@@ -267,6 +267,53 @@ class TestTheCommand(unittest.TestCase):
         written = self.root / "study.yml"
         self.run_command(["agent", "x", "-o", str(written)], reply=VALID)
         validate_config(yaml.safe_load(written.read_text(encoding="utf-8")))
+
+
+class TestChoosingTheModel(unittest.TestCase):
+    """`fastmdx agent model` shows what is in use, then chooses."""
+
+    # The same isolated config folder and runner, without running the
+    # command's own tests a second time as a subclass would.
+    setUp = TestTheCommand.setUp
+    tearDown = TestTheCommand.tearDown
+    run_command = TestTheCommand.run_command
+
+    def choose(self, argv, answers):
+        import builtins
+
+        given = iter(answers)
+        original = builtins.input
+        builtins.input = lambda prompt="": next(given)
+        try:
+            return self.run_command(argv)
+        finally:
+            builtins.input = original
+
+    def test_model_chooses_and_saves(self):
+        code, out = self.choose(["agent", "model"],
+                                ["1", "claude-sonnet-4-6", "sk-x"])
+        self.assertEqual(code, 0)
+        self.assertIn("No model chosen yet.", out)
+        chosen = load_choice()
+        self.assertEqual((chosen.provider, chosen.model),
+                         ("anthropic", "claude-sonnet-4-6"))
+        self.assertNotIn("sk-x", out)
+
+    def test_model_shows_what_is_in_use_before_asking(self):
+        save_choice(ModelChoice("openai", "gpt-5"), key="sk-x")
+        code, out = self.choose(["agent", "model"], [""])
+        # Nothing picked leaves the choice as it was.
+        self.assertEqual(code, 1)
+        self.assertLess(out.index("In use: OpenAI, gpt-5"), out.index("Model:"))
+        self.assertEqual(load_choice().model, "gpt-5")
+
+    def test_the_old_name_stops_and_names_the_new_one(self):
+        # Not taken as a request either: no model is called, nothing saved.
+        code, out = self.choose(["agent", "set"], [])
+        self.assertEqual(code, 2)
+        self.assertEqual(out.strip().splitlines()[-1],
+                         "`fastmdx agent set` is now `fastmdx agent model`.")
+        self.assertIsNone(load_choice())
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -63,7 +63,7 @@ class App:
     """The tools, offered over the protocol.
 
     ``complete_for`` gives the model the Agent writes with (the person's
-    own, as `fastmdx agent set` chose it); ``runs`` false leaves out every
+    own, as `fastmdx agent model` chose it); ``runs`` false leaves out every
     tool that starts or stops work.
     """
 

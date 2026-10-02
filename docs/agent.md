@@ -74,7 +74,9 @@ is the `agent:` setting, which is **provenance, not permission**. Including
 Nothing in FastMDXplora needs a model. The Agent does, and it asks once.
 
 ```
-$ fastmdx agent set
+$ fastmdx agent model
+  No model chosen yet.
+
   Model:
     [1] Anthropic
     [2] OpenAI
@@ -332,7 +334,7 @@ fastmdx agent "..." --phases setup,simulation,analysis --attempts 5
 ### From the CLI
 
 ```bash
-fastmdx agent set                              # choose a model, once
+fastmdx agent model                            # choose a model, once
 fastmdx agent "simulate 1UBQ for 50 ns"        # a sentence
 fastmdx agent -f request.txt -o study.yml      # from a file, written to a file
 fastmdx agent "..." --autonomous --budget-hours 12

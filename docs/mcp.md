@@ -49,7 +49,7 @@ Clients that add a server from the command line take the same command:
 `fastmdx mcp --workspace /Users/you/studies`.
 
 For `ask_agent`, choose the Agent's model once, in a terminal, with
-`fastmdx agent set` (see [Connecting a model](agent.md#connecting-a-model)).
+`fastmdx agent model` (see [Connecting a model](agent.md#connecting-a-model)).
 Every other tool works without one.
 
 ## What the assistant can do
