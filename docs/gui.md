@@ -42,7 +42,7 @@ you. Nothing is uploaded anywhere.
 | | |
 |---|---|
 | **All studies** | Every study under the workspace (or a folder you choose), as cards: the structure, the kind of study, where it stands, when it began, the means it recorded with their errors, and a figure it plotted. Search narrows them; **Open** makes one the study on screen; two chosen are **compared**: the settings in which they differ, defaults filled in as `fastmdx diff` says them, and the means both recorded, a difference marked resolved only past twice their combined standard error |
-| **Agent** | [The FastMDXplora Agent](agent.md): a conversation that writes, edits, runs and reads a study |
+| **Agent** | [The FastMDXplora Agent](agent.md): an explanation-first conversation that reads evidence and suggests human-reviewed drafts |
 | **Config** | The [Config](config.md) builder: four questions, the phases as tiles. Above them, **Start from an example**: a protein in water, a protein and its ligand, a membrane protein, a study run until a quantity is determined, and a free energy along a distance, each a complete Config (the [worked examples](examples.md)) loaded into the form to change |
 | **Overview** | Study Overview. A live run: health first, then what the sidebar has no room for: the live charts, the structure as it is written, and once there are results, the recorded numbers |
 | **Viewer** | The molecule in 3D, live while running and played back afterwards; follows the run by default. **Measure** (the ruler, or M): two atoms clicked give their distance, three the angle, four the dihedral, shown in the structure and listed in the Selection tab, following the frames; two atoms can be measured over every frame with the command it gives. A clicked histidine, aspartate, glutamate or lysine offers its protonation states: choosing one opens the Config page with this study's Config and that residue set in `setup.residue_states`, found as setup builds the structure |
@@ -290,6 +290,43 @@ screen, and only one of them means something is wrong.
 
 ## Reading the results
 
+### Context-aware Agent and research bookmarks
+
+**Ask about this view** docks the existing Agent conversation beside the current
+page. The Agent receives the page, selected analysis and graph range, clicked
+atom/residue, displayed trajectory frame, or focused builder setting. Select an
+analysis by clicking its card or opening a cited figure. Click an atom to include
+its selection; hovering alone does not select it. The context line shows what
+will be included. Model access uses the existing Agent settings.
+
+The server reads the selected analysis from the study and checks a clicked
+selection against the analysis topology. The interface hints are distinguished
+from recorded evidence. An angle, a cropped plot, or one frame is not a
+convergence assessment. Existing config validation and run controls also apply
+to requests made from the dock.
+
+**Research bookmarks** saves a title and note with the current page and selected
+analysis, graph range, trajectory frame, camera angle, and clicked selection.
+On interactive series, the **View range** controls crop the displayed data.
+The reported mean and uncertainty continue to describe the full analysis;
+cropping does not perform a new statistical calculation.
+
+Bookmarks persist in `.research/bookmarks.json` inside the loaded study.
+**Restore** opens the saved page and restores its graph or viewer state;
+unavailable structures, atoms or frames are reported. **Edit note** preserves
+the saved view. Frame restoration also checks the trajectory/playback signature
+and refuses a stale frame mapping after the trajectory or sampling changes.
+**Export JSON** downloads the study's bookmarks for reporting
+or archiving. The export is a view record, not a copy of the trajectory: keep
+the original study files to revisit its evidence. Bookmarks require a loaded
+study and are separate from the static report dashboard.
+
+The bookmark API (`GET` and `POST /api/research/bookmarks`) follows the local
+dashboard's control restrictions and is not exposed by public viewing mode.
+Saving requires the currently loaded study path, so a browser with stale study
+state cannot silently write notes into another study. The hidden store is
+excluded from artifact listings; use explicit JSON export to share notes.
+
 Point the GUI at a finished run and it opens on it:
 
 ```bash
@@ -531,3 +568,29 @@ The report phase writes a **static** `dashboard.html` into the run directory.
 It opens in a browser tab with no server running, and travels inside
 `project_bundle.zip`. It is the thing to send somebody. `fastmdx gui` is the
 live interface, and they are not the same file.
+
+### Agent knowledge and human decisions
+
+The dashboard Agent uses packaged `agent/knowledge/fastmdxplora.md` reference
+material and a complete error catalog generated from the installed refusal
+registry. It reads actual study diagnostics separately. Unfamiliar external
+errors remain diagnostic evidence; a model must state uncertainty rather than
+invent a remedy or a chemical state. Registered disclosure rules still apply.
+
+The dashboard supports explanations and assisted drafts. Autonomous/unvalidated
+Agent modes and the legacy `/api/agent/run` route are refused. A model reply does
+not change the builder: **Add to draft** is an explicit human action, followed by
+review and the builder's ordinary run controls. Provider login is independent of
+permission to execute. Existing command-line workflows are not changed by this
+GUI restriction.
+
+**Click selection → Protein residue** highlights a clicked protein residue for
+context; **Atom / measurement** retains atom selection and measurement behavior.
+**Explain selected residue** prepares a question in the sidebar; press Send when
+ready. Explanations use recorded per-residue data and preparation evidence,
+without claiming a mechanism from a single frame. Ambiguous chain/insertion/
+alternate-location mappings withhold per-residue analysis values.
+
+Disable **Agent sidebar enabled** in Settings to hide the sidebar action and
+cancel an in-flight reply. This preference persists on this browser. The
+standalone Agent page remains available for an explicit conversation.

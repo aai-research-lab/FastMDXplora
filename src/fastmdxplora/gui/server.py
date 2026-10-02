@@ -503,6 +503,11 @@ def make_handler(
 
                 self._send_json(read_conversation(app_runtime))
                 return
+            if path == "/api/research/bookmarks":
+                from fastmdxplora.gui.research import bookmarks_endpoint
+
+                self._send_json(bookmarks_endpoint(app_runtime))
+                return
             if path == "/api/file-text":
                 # A run's own text file, for the Files tab's preview.
                 # Confined to the run root, over the same list of types
@@ -812,6 +817,13 @@ def make_handler(
                 self._refuse_beyond_loopback()
                 return
             payload = self._read_json_body()
+            if path == "/api/research/bookmarks":
+                from fastmdxplora.gui.research import bookmarks_endpoint
+
+                self._send_json(bookmarks_endpoint(
+                    app_runtime, payload or {},
+                    path_for=hosting.inside if hosting is not None else None))
+                return
             if path == "/api/run":
                 # Runs what the config describes rather than what a form was
                 # wired for, which is how an analysis of an existing

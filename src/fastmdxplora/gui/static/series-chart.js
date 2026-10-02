@@ -19,6 +19,17 @@
   var HEIGHT = 260;
   var MARGIN = { top: 16, right: 28, bottom: 38, left: 64 };
   var cache = {};
+  var ranges = {};
+
+  function setRange(name, range) {
+    if (range && range.length === 2 && range.every(Number.isFinite) && range[0] < range[1]) ranges[name] = range.slice();
+    else delete ranges[name];
+    document.querySelectorAll(".series-chart[data-analysis]").forEach(function (chart) {
+      if (chart.dataset.analysis === name) load(name).then(function (data) {
+        if (data && data.ok) draw(chart, data);
+      });
+    });
+  }
   var playback = null;
 
   function token(name, fallback) {
@@ -111,6 +122,42 @@
 
   function draw(host, data) {
     host.innerHTML = "";
+    var original = data;
+    var name = host.dataset.analysis;
+    var range = ranges[name];
+    var controls = document.createElement("div"); controls.className = "series-range";
+    var label = document.createElement("span"); label.textContent = "View range (" + data.x_label + ")";
+    controls.appendChild(label);
+    var inputs = [0, 1].map(function (index) {
+      var input = document.createElement("input"); input.type = "number"; input.step = "any";
+      input.setAttribute("aria-label", index ? "Range end" : "Range start");
+      input.value = range ? range[index] : data.x[index ? data.x.length - 1 : 0];
+      controls.appendChild(input); return input;
+    });
+    var apply = document.createElement("button"); apply.type = "button"; apply.className = "ghost-btn"; apply.textContent = "Apply";
+    apply.onclick = function () {
+      var selected = inputs.map(function (input) { return Number(input.value); });
+      if (selected[0] < selected[1]) {
+        ranges[name] = selected; draw(host, original);
+        window.dispatchEvent(new CustomEvent("dashboard:research-analysis", {detail: {analysis: name}}));
+      }
+    };
+    controls.appendChild(apply);
+    var reset = document.createElement("button"); reset.type = "button"; reset.className = "ghost-btn"; reset.textContent = "Reset";
+    reset.onclick = function () { delete ranges[name]; draw(host, original); };
+    controls.appendChild(reset); host.appendChild(controls);
+    if (range) {
+      var indices = data.x.map(function (x, i) { return x >= range[0] && x <= range[1] ? i : -1; }).filter(function (i) { return i >= 0; });
+      if (indices.length < 2) {
+        host.appendChild(document.createTextNode("Fewer than two points in this range. Reset or widen it.")); return;
+      }
+      data = Object.assign({}, data);
+      ["x", "y", "frames", "labels"].forEach(function (key) {
+        if (Array.isArray(original[key])) data[key] = indices.map(function (i) { return original[key][i]; });
+      });
+      var note = document.createElement("div"); note.className = "muted small";
+      note.textContent = "View cropped. Mean and uncertainty still describe the full analysis."; host.appendChild(note);
+    }
     var width = Math.max(260, Math.round(host.clientWidth || 440));
     var c = colours();
     var plot = {
@@ -177,7 +224,7 @@
         x: px(v), y: plot.bottom + 15, fill: c.axis, "font-size": 10, "text-anchor": "middle",
       }, svg);
       label.textContent = data.kind === "residue"
-        ? (data.labels[Math.round(v) - 1] || "") : xText(v);
+        ? (data.labels[xs.indexOf(v)] || "") : xText(v);
     });
     el("line", { x1: plot.left, x2: plot.right, y1: plot.bottom, y2: plot.bottom, stroke: c.axis }, svg);
     var xTitle = el("text", {
@@ -207,7 +254,7 @@
 
     // The mean over the frames kept, with its error where there is one.
     if (mean && mean.value != null) {
-      var from = px(mean.from_x != null ? mean.from_x : xLow);
+      var from = Math.max(plot.left, Math.min(plot.right, px(mean.from_x != null ? mean.from_x : xLow)));
       if (mean.error != null) {
         el("rect", {
           x: from, y: py(mean.value + mean.error), width: plot.right - from,
@@ -401,7 +448,9 @@
     });
   });
   /* A new run, or new results, may have new numbers. */
-  window.addEventListener("dashboard:run-changed", function () { cache = {}; playback = null; });
+  window.addEventListener("dashboard:run-changed", function () { cache = {}; playback = null; ranges = {}; });
 
-  window.FastMDXSeries = { hydrate: hydrate, ticks: ticks, forget: function () { cache = {}; playback = null; } };
+  window.FastMDXSeries = { hydrate: hydrate, ticks: ticks, setRange: setRange,
+    getRange: function (name) { return ranges[name] ? ranges[name].slice() : null; },
+    forget: function () { cache = {}; playback = null; ranges = {}; } };
 }());

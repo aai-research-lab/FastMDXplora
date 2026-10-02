@@ -166,7 +166,7 @@ class TestProposing(unittest.TestCase):
         self.assertEqual(refusals[0]["code"], "config.option.unknown")
         self.assertIn("pH", refusals[0]["message"])
 
-    def test_unvalidated_is_accepted_here_too(self):
+    def test_unvalidated_is_refused_in_the_dashboard(self):
         # Same answer as the CLI gives. A mode that behaved differently in
         # one door than the other would be two pieces of software wearing
         # one name.
@@ -180,8 +180,8 @@ class TestProposing(unittest.TestCase):
                                        "agent": "unvalidated"})
         finally:
             agent.completion_for = original
-        self.assertTrue(answer["ok"])
-        self.assertEqual(answer["config"]["agent"], "unvalidated")
+        self.assertFalse(answer["ok"])
+        self.assertEqual(answer["code"], "config.option.not_permitted")
 
     def test_with_no_model_chosen_it_says_what_to_do(self):
         os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(Path(tempfile.mkdtemp()))
@@ -275,8 +275,9 @@ class TestThePageCarriesIt(unittest.TestCase):
                 for mode in ("assisted", "autonomous", "unvalidated"):
                     with self.subTest(mode=mode):
                         answer = propose_endpoint({"request": "x", "agent": mode}, runtime)
-                        self.assertTrue(answer["ok"])
-                        self.assertEqual(answer["config"]["agent"], mode)
+                        self.assertEqual(answer["ok"], mode == "assisted")
+                        if mode == "assisted":
+                            self.assertEqual(answer["config"]["agent"], mode)
         finally:
             agent.completion_for = original
         self.assertEqual(started, [], "proposing started a run")
@@ -286,7 +287,7 @@ class TestThePageCarriesIt(unittest.TestCase):
         self.assertNotIn("run it", options)
         for mode in ("assisted", "autonomous", "unvalidated"):
             with self.subTest(mode=mode):
-                self.assertIn(f'value="{mode}"', options)
+                self.assertEqual(f'value="{mode}"' in options, mode == "assisted")
 
     def test_the_panel_says_a_run_is_started_by_hand(self):
         """Removing the false promise leaves the reader needing the true
@@ -306,7 +307,7 @@ class TestThePageCarriesIt(unittest.TestCase):
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
         notes = script[script.index("MODE_NOTES"):script.index("KEY_HELP")]
-        self.assertIn("Nothing runs until you say so", notes)
+        self.assertIn("The Agent cannot run simulations", notes)
         self.assertIn("ceiling is", notes)
         self.assertIn("stamped", notes)
 
@@ -610,13 +611,12 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
         self.assertFalse(answer["ok"])
         self.assertIsNone(runtime.started)
 
-    def test_autonomous_without_a_budget_is_refused(self):
-        # The same reason the CLI refuses: it runs without being shown to
-        # anybody, so a ceiling is the only thing left that can stop it.
-        answer, runtime = self.start(
-            {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]}})
-        self.assertEqual(answer["code"], "environment.budget.absent")
-        self.assertIsNone(runtime.started, "it started anyway")
+    def test_autonomous_without_a_budget_is_refused_does_not_authorize_an_agent_launch(self):
+        for mode in ("assisted", "autonomous", "unvalidated"):
+            answer, runtime = self.start({"config": {"agent": mode, "systems": [{"system": "1UAO"}]}, "budget_hours": 40})
+            self.assertFalse(answer["ok"])
+            self.assertEqual(answer["code"], "config.option.not_permitted")
+            self.assertIsNone(runtime.started)
 
     def test_a_budget_of_zero_is_not_a_budget(self):
         # For autonomous, where one is required.
@@ -628,53 +628,33 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
                 self.assertFalse(answer["ok"])
                 self.assertIsNone(runtime.started)
 
-    def test_autonomous_with_a_budget_runs_and_carries_it(self):
-        # On the config, so it reaches resolved_config.yml and the
-        # manifest rather than living only in the request that started it.
-        answer, runtime = self.start(
-            {"config": {"agent": "autonomous", "systems": [{"system": "1UAO"}]},
-             "budget_hours": 40})
-        self.assertTrue(answer["ok"])
-        self.assertEqual(runtime.started["budget_hours"], 40.0)
+    def test_autonomous_with_a_budget_runs_and_carries_it_does_not_authorize_an_agent_launch(self):
+        for mode in ("assisted", "autonomous", "unvalidated"):
+            answer, runtime = self.start({"config": {"agent": mode, "systems": [{"system": "1UAO"}]}, "budget_hours": 40})
+            self.assertFalse(answer["ok"])
+            self.assertEqual(answer["code"], "config.option.not_permitted")
+            self.assertIsNone(runtime.started)
 
-    def test_only_autonomous_requires_one(self):
-        """A budget stands in for a human, so the mode with nobody watching
-        must have one. The others have something else standing between them
-        and a bad study: `assisted` has the person reading the config,
-        `unvalidated` has the mark on every figure -- its risk is an
-        unchecked method rather than an unbounded spend.
-        """
-        for mode in ("assisted", "unvalidated"):
-            with self.subTest(mode=mode):
-                answer, runtime = self.start(
-                    {"config": {"agent": mode, "systems": [{"system": "1UAO"}]}})
-                self.assertTrue(answer["ok"])
-                self.assertIsNotNone(runtime.started)
+    def test_only_autonomous_requires_one_does_not_authorize_an_agent_launch(self):
+        for mode in ("assisted", "autonomous", "unvalidated"):
+            answer, runtime = self.start({"config": {"agent": mode, "systems": [{"system": "1UAO"}]}, "budget_hours": 40})
+            self.assertFalse(answer["ok"])
+            self.assertEqual(answer["code"], "config.option.not_permitted")
+            self.assertIsNone(runtime.started)
 
-    def test_but_every_mode_may_have_one(self):
-        """Offered everywhere, demanded in one place.
+    def test_but_every_mode_may_have_one_does_not_authorize_an_agent_launch(self):
+        for mode in ("assisted", "autonomous", "unvalidated"):
+            answer, runtime = self.start({"config": {"agent": mode, "systems": [{"system": "1UAO"}]}, "budget_hours": 40})
+            self.assertFalse(answer["ok"])
+            self.assertEqual(answer["code"], "config.option.not_permitted")
+            self.assertIsNone(runtime.started)
 
-        The first version hid the field outside `autonomous`, which drew
-        the line on the wrong axis: a ceiling is never the wrong thing to
-        have on a study that will run for days, and somebody who reads a
-        config carefully and then leaves it running overnight wants one as
-        much as anybody.
-        """
-        for mode in ("assisted", "unvalidated", "autonomous"):
-            with self.subTest(mode=mode):
-                answer, runtime = self.start(
-                    {"config": {"agent": mode, "systems": [{"system": "1UAO"}]},
-                     "budget_hours": 40})
-                self.assertTrue(answer["ok"])
-                self.assertEqual(
-                    runtime.started["budget_hours"], 40.0)
-
-    def test_a_budget_is_not_invented_where_none_was_given(self):
-        # Absent means absent. A default ceiling would be a number nobody
-        # chose deciding when somebody's study stops.
-        answer, runtime = self.start(
-            {"config": {"agent": "assisted", "systems": [{"system": "1UAO"}]}})
-        self.assertNotIn("budget_hours", runtime.started)
+    def test_a_budget_is_not_invented_where_none_was_given_does_not_authorize_an_agent_launch(self):
+        for mode in ("assisted", "autonomous", "unvalidated"):
+            answer, runtime = self.start({"config": {"agent": mode, "systems": [{"system": "1UAO"}]}, "budget_hours": 40})
+            self.assertFalse(answer["ok"])
+            self.assertEqual(answer["code"], "config.option.not_permitted")
+            self.assertIsNone(runtime.started)
 
     def test_the_run_endpoint_needs_the_machine_s_trust(self):
         # It starts work on this machine, so it belongs with the endpoints
@@ -785,62 +765,9 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # people get wrong.
         self.assertIn("not the same thing", help_text)
 
-    def test_the_actions_are_the_ones_asked_for(self):
-        # The builder's own set, under the Agent: there is no need to go
-        # to the builder from the Agent unless you want to change the
-        # config, and that is a link, not the way out.
-        panel = self.panel()
-        # The send control is an arrow inside the box with a title, as every
-        # assistant places it, rather than a labelled button beside it.
-        self.assertIn('id="agent-propose"', panel)
-        self.assertIn('title="Send (Enter). Shift+Enter for a new line."', panel)
-        for action in ("Show the config", "Download config",
-                       "Copy the command", "Download a script", "Run here",
-                       "Write every setting"):
-            with self.subTest(action=action):
-                self.assertIn(action, panel)
-        self.assertIn('id="agent-load"', panel)
-        # "Draft" is not a word this page uses.
-        self.assertNotIn("draft", panel.lower())
 
-    def test_the_actions_are_the_builders_own(self):
-        """One derivation, two doors.
 
-        The file, the command and the script come from the builder's
-        exported actions, reading the builder's state -- which the panel
-        loads silently from the config it just wrote. So what the Agent
-        hands over is exactly what the builder would, rather than a
-        second rendering that could drift. The first version wrote the
-        YAML from the browser without a round trip; that matched the
-        screen but not the builder.
-        """
-        script = self.script()
-        self.assertIn('post("/api/load-config", { config: data.config })', script)
-        for action in ("download", "copyCommand", "downloadScript"):
-            with self.subTest(action=action):
-                self.assertIn(f'viaBuilder("{action}")', script)
-        self.assertIn("window.FastMDXRun.fetchConfig()", script)
-        import pathlib
 
-        import fastmdxplora.gui as gui
-
-        builder = (pathlib.Path(gui.__file__).parent / "static"
-                   / "run-builder.js").read_text(encoding="utf-8")
-        self.assertIn("fetchConfig, download, copyCommand, downloadScript,", builder)
-
-    def test_run_here_still_goes_through_the_agents_door(self):
-        # It checks the budget an autonomous run needs and records the
-        # mode, which the builder's start does not.
-        script = self.script()
-        run = script[script.index("runBtn.onclick = function () {"):]
-        run = run[:run.index("};", run.index("post("))]
-        self.assertIn('post("/api/agent/run"', run)
-
-    def test_opening_the_builder_is_a_link_not_the_way_out(self):
-        panel = self.panel()
-        load = panel[panel.index('id="agent-load"') - 40:panel.index('id="agent-load"') + 80]
-        self.assertIn("<a href=", load)
-        self.assertIn("to change it first", panel)
 
     def test_the_dialog_is_not_a_file_picker(self):
         # It borrows the shape and not the class: there is exactly one file
@@ -1608,12 +1535,6 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         self.assertIn("var request = pending ? pending + \"\\n\" + typed : typed;", script)
         self.assertIn("pending = request;", script)
 
-    def test_run_here_runs_once(self):
-        # A second press started it again into the same folder and was
-        # refused for the folder being occupied -- the right refusal for
-        # the wrong reason.
-        script = self.script()
-        self.assertIn('runBtn.textContent = "Running";', script)
 
     def test_the_servers_default_output_is_timestamped(self):
         # A study started with no output folder gets the same timestamped
@@ -1658,13 +1579,12 @@ class TestRunHereActuallyRuns(unittest.TestCase):
     def test_the_written_config_carries_the_study(self):
         from pathlib import Path
 
-        from fastmdxplora.gui.agent_panel import run_endpoint
 
-        answer = run_endpoint({"config": {
+        answer = self.runtime().launch_from_config(None, config={
             "systems": [{"system": "1UAO"}],
             "simulation": {"duration_ns": 2},
             "agent": "assisted", "agent_model": "anthropic/x",
-        }}, self.runtime())
+        })
         self.assertTrue(answer["ok"], answer.get("error"))
         written = Path(answer["config_path"]).read_text(encoding="utf-8")
         self.assertIn("systems:", written)
@@ -1675,20 +1595,17 @@ class TestRunHereActuallyRuns(unittest.TestCase):
     def test_the_budget_reaches_the_file_as_a_number(self):
         from pathlib import Path
 
-        from fastmdxplora.gui.agent_panel import run_endpoint
 
-        answer = run_endpoint({"config": {
-            "systems": [{"system": "1UAO"}], "agent": "autonomous",
-        }, "budget_hours": "40"}, self.runtime())
+        answer = self.runtime().launch_from_config(None, config={
+            "systems": [{"system": "1UAO"}], "agent": "assisted",
+            "budget_hours": 40.0})
         self.assertTrue(answer["ok"], answer.get("error"))
         written = Path(answer["config_path"]).read_text(encoding="utf-8")
         self.assertIn("budget_hours: 40", written)
 
     def test_the_default_output_is_timestamped(self):
-        from fastmdxplora.gui.agent_panel import run_endpoint
 
-        answer = run_endpoint({"config": {"systems": [{"system": "1UAO"}]}},
-                              self.runtime())
+        answer = self.runtime().launch_from_config(None, config={"systems": [{"system": "1UAO"}]})
         self.assertTrue(answer["ok"])
         import pathlib
 
@@ -1871,10 +1788,8 @@ class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
         with mock.patch("fastmdxplora.gui.config_builder.state_from_config",
                         side_effect=AssertionError("went through form state")):
             answer = agent_panel.run_endpoint({"config": config}, runtime)
-        self.assertTrue(answer["ok"])
-        (state,), kwargs = runtime.launch_from_config.call_args
-        self.assertIsNone(state)
-        self.assertEqual(kwargs["config"]["simulation"], {"duration_ns": 2.0})
+        self.assertFalse(answer["ok"])
+        runtime.launch_from_config.assert_not_called()
 
     def test_build_config_reads_one_shape(self):
         # The both-shapes patch is gone: the browser's flat shape is the
@@ -1891,18 +1806,17 @@ class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from fastmdxplora.gui.agent_panel import run_endpoint
         from fastmdxplora.gui.exploration import DashboardRuntime
 
         root = Path(tempfile.mkdtemp())
         runtime = DashboardRuntime(root / "w", root / "e")
-        answer = run_endpoint({"config": {
+        answer = runtime.launch_from_config(None, config={
             "systems": [{"system": "1UAO"}],
             "simulation": {"duration_ns": 5, "setup_from": "/runs/first"},
             "setup": {"solvent_padding_nm": 1.5},
             "exclude": ["setup"],
             "agent": "assisted", "agent_model": "anthropic/x",
-        }}, runtime)
+        })
         self.assertTrue(answer["ok"], answer.get("error"))
         written = Path(answer["config_path"]).read_text(encoding="utf-8")
         for line in ("duration_ns: 5", "setup_from: /runs/first",
@@ -2465,12 +2379,7 @@ class TestConversationsBelongToStudies(unittest.TestCase):
                   / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn('post("/api/agent/conversation/open", { id: c.id, study: g.study })', script)
         self.assertIn("if (o.loaded_study && !g.loaded) {", script)
-        self.assertIn('study: started.output, id: convId, from_study: fromStudy', script)
-        # Saved before the launch, so the move carries the last exchange.
-        run = script[script.index("runBtn.onclick = function () {"):]
-        run = run[:run.index("\n  }\n", run.index("started.error"))]
-        self.assertLess(run.index("persist().then("), run.index('post("/api/agent/run"'))
-        self.assertIn("This conversation now belongs to the new study.", script)
+        self.assertNotIn('post("/api/agent/run"', script)
 
 
 

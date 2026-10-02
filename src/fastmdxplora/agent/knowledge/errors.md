@@ -1,0 +1,129 @@
+# Registered FastMDXplora errors
+
+Generated from fastmdxplora.refusals.CODES. All entries are included.
+External/unclassified errors require their actual diagnostic; do not invent a cause.
+
+- `config.file.missing` (structural; disclosure=action; retryable=false): The named config file does not exist.
+- `config.file.unparseable` (structural; disclosure=action; retryable=false): The file is not valid YAML.
+- `config.file.not_a_mapping` (structural; disclosure=action; retryable=false): The file parsed, and its top level is not a mapping.
+- `config.option.unknown` (structural; disclosure=permitted_values; retryable=false): A key the schema does not declare.
+- `config.option.wrong_type` (structural; disclosure=field_only; retryable=false): A declared key carrying a value of the wrong type.
+- `config.option.out_of_range` (structural; disclosure=field_only; retryable=false): A numeric setting outside what the quantity can be.
+- `config.option.not_permitted` (structural; disclosure=permitted_values; retryable=false): A declared key carrying a value outside its declared choices.
+- `config.option.conflicting` (structural; disclosure=field_only; retryable=false): Two settings given that cannot both apply.
+- `config.option.missing_companion` (structural; disclosure=field_only; retryable=false): A setting that requires another, given without it.
+- `config.option.inapplicable` (structural; disclosure=field_only; retryable=false): A setting that has no meaning in the context it was given in.
+- `config.phase.unknown` (structural; disclosure=permitted_values; retryable=false): An include/exclude list naming a phase that does not exist.
+- `config.untranslatable` (structural; disclosure=field_only; retryable=false): A decided setting the target language cannot express.
+- `environment.backend.missing` (environmental; disclosure=action; retryable=false): An optional chemistry backend the requested phase needs.
+- `environment.backend.defective` (environmental; disclosure=action; retryable=false): An optional backend is installed and returning wrong answers, so the analysis cannot be run on this platform.
+- `environment.service.unreachable` (environmental; disclosure=nothing; retryable=true): An external service did not answer.
+- `environment.service.unusable_response` (environmental; disclosure=nothing; retryable=true): An external service answered with something unreadable.
+- `environment.service.machine_unreachable` (environmental; disclosure=nothing; retryable=true): A machine did not answer over SSH.
+- `environment.service.machine_unreadable` (environmental; disclosure=nothing; retryable=true): A machine answered an inspection with something that could not be read.
+- `environment.path.not_found` (environmental; disclosure=action; retryable=false): A file the study names is not on disk.
+- `environment.path.exists` (environmental; disclosure=action; retryable=false): Writing here would overwrite something.
+- `environment.budget.absent` (insufficient; disclosure=field_only; retryable=false): An unattended run was asked for with no ceiling on what it may spend.
+- `environment.budget.exhausted` (environmental; disclosure=field_only; retryable=false): Starting this job would take the campaign past the allowance it was given.
+- `simulation.stopping.no_replicas` (structural; disclosure=field_only; retryable=false): A stopping rule that requires runs started independently, in a study of one run.
+- `simulation.run.abandoned` (semantic; disclosure=nothing; retryable=false): A segment that never ran, because an earlier one settled the question it was part of.
+- `agent.tool.refused` (structural; disclosure=field_only; retryable=false): A tool the Agent asked for declined what it was asked: a file it does not read, a place outside the workspace, or arguments it cannot use.
+- `environment.model.unset` (environmental; disclosure=action; retryable=false): No model has been chosen, so there is nothing to ask.
+- `environment.credentials.absent` (environmental; disclosure=action; retryable=false): No API key for the chosen provider, in the environment or stored.
+- `environment.calibration.absent` (environmental; disclosure=action; retryable=false): This machine has not been measured, so there is no basis for a duration estimate.
+- `environment.calibration.inconsistent` (environmental; disclosure=action; retryable=false): Runs on this machine disagree about what a particle-step costs by more than the cost model's assumption allows.
+- `environment.calibration.stale` (environmental; disclosure=action; retryable=false): The stored measurement was taken on different hardware or under different settings than the study asks for.
+- `environment.platform.unavailable` (environmental; disclosure=action; retryable=false): The requested compute platform did not load or did not run.
+- `setup.input.unrecognised` (structural; disclosure=field_only; retryable=false): A system input that is neither a path, a PDB identifier, nor a sequence.
+- `setup.structure.implausible_extent` (semantic; disclosure=nothing; retryable=false): The prepared structure spans further than its residue count can account for, which usually means periodic images were not rejoined.
+- `setup.estimate.unavailable` (insufficient; disclosure=nothing; retryable=false): What setup will build cannot be worked out without building it.
+- `setup.structure.undetermined` (semantic; disclosure=nothing; retryable=false): The deposited entry does not determine what should be simulated.
+- `setup.prepared.mismatch` (semantic; disclosure=action; retryable=false): A shared prepared system was built with other setup settings than the study now asks for.
+- `setup.prepared.unverifiable` (semantic; disclosure=action; retryable=false): A shared prepared system records neither what it was prepared from nor its setup, so whether it is the one the study asks for cannot be checked.
+- `setup.structure.assembly_ambiguous` (semantic; disclosure=action; retryable=false): The structure's biological assemblies hold different things, so which is simulated has to be named.
+- `setup.structure.too_large` (semantic; disclosure=action; retryable=false): A structure larger than the PDB format can hold, which setup works in.
+- `setup.structure.unreadable` (semantic; disclosure=action; retryable=false): An mmCIF file with no atoms mmCIF can name.
+- `setup.structure.chain_unknown` (structural; disclosure=permitted_values; retryable=false): A chain was named that the structure does not hold.
+- `setup.structure.mutation_unparseable` (structural; disclosure=field_only; retryable=false): A mutation was written in neither accepted form.
+- `setup.structure.mutation_mismatch` (semantic; disclosure=nothing; retryable=false): The original residue named by a mutation is not at that position.
+- `setup.structure.residue_state_unparseable` (structural; disclosure=field_only; retryable=false): A residue given a protonation state was not named as chain and number.
+- `setup.structure.residue_state_not_permitted` (structural; disclosure=permitted_values; retryable=false): A protonation state was asked for that the residue cannot take.
+- `setup.structure.residue_state_unmatched` (semantic; disclosure=nothing; retryable=false): A residue given a protonation state is not in the structure.
+- `setup.chemistry.unavailable` (environmental; disclosure=nothing; retryable=false): The chemistry needed to parameterize a component was not obtained.
+- `setup.chemistry.uninterpretable` (environmental; disclosure=nothing; retryable=false): Chemistry was obtained and could not be read.
+- `setup.chemistry.atom_count_mismatch` (semantic; disclosure=nothing; retryable=false): The retrieved chemistry has a different heavy-atom count than the structure.
+- `setup.chemistry.protonation_undetermined` (semantic; disclosure=nothing; retryable=false): The component's protonation at the study's pH is not determined.
+- `setup.chemistry.charge_undetermined` (semantic; disclosure=nothing; retryable=false): The component's net charge was not determined.
+- `setup.chemistry.charge_contradicted` (semantic; disclosure=field_only; retryable=false): The stated net charge disagrees with the supplied file.
+- `setup.ligand.format_unsupported` (structural; disclosure=permitted_values; retryable=false): The ligand file's extension is not one that can be read.
+- `setup.ligand.unreadable` (semantic; disclosure=nothing; retryable=false): The ligand file could not be parsed as a molecule.
+- `setup.ligand.multiple_molecules` (structural; disclosure=field_only; retryable=false): The ligand file holds more than one molecule.
+- `setup.ligand.pose_unavailable` (semantic; disclosure=field_only; retryable=false): The pose policy asked for a source that does not hold one.
+- `setup.ligand.clash` (semantic; disclosure=field_only; retryable=false): The ligand pose overlaps the protein beyond the threshold.
+- `setup.environment.charges_unavailable` (environmental; disclosure=action; retryable=false): A ligand takes AM1-BCC charges and nothing in the environment can compute them.
+- `setup.forcefield.unknown` (structural; disclosure=permitted_values; retryable=false): A force field name outside the registry.
+- `setup.forcefield.incompatible` (semantic; disclosure=field_only; retryable=false): The chosen force field cannot describe what the study contains.
+- `setup.membrane.orientation_unchecked` (semantic; disclosure=field_only; retryable=false): A bilayer was asked for and the protein's orientation relative to the membrane normal has not been established.
+- `setup.membrane.no_belt` (semantic; disclosure=field_only; retryable=false): A bilayer was asked for and the structure has no surface a bilayer would hold: its best-fitting hydrophobic slab buries too little apolar surface for a membrane protein.
+- `setup.membrane.lipid_unparameterized` (structural; disclosure=field_only; retryable=false): The force field files given do not describe the chosen lipid.
+- `simulation.cone.unmeasured` (semantic; disclosure=field_only; retryable=false): A window's angular wall was never determined, so there is nothing to restrain the angle against.
+- `simulation.cone.too_narrow` (semantic; disclosure=field_only; retryable=false): The path fits only in a cone that leaves the ligand too little room to be a bulk state.
+- `simulation.cone.windows_outside` (semantic; disclosure=field_only; retryable=false): Windows that would start outside the cone they are to run under.
+- `simulation.cv.unknown` (structural; disclosure=permitted_values; retryable=false): A collective variable outside the registry.
+- `simulation.cv.missing_companion` (structural; disclosure=field_only; retryable=false): A collective variable given without a setting it requires.
+- `simulation.cv.inapplicable_setting` (structural; disclosure=field_only; retryable=false): A setting given to a collective variable that has no use for it.
+- `simulation.cv.selection_empty` (semantic; disclosure=field_only; retryable=false): A selection inside a collective variable matched no atoms.
+- `simulation.cv.selection_arity` (semantic; disclosure=field_only; retryable=false): A selection matched a number of atoms the variable cannot use.
+- `simulation.cv.unbounded` (semantic; disclosure=field_only; retryable=false): A variable that would leave the ligand in bulk, given without a wall or a funnel to bound it.
+- `simulation.bias.parameter_missing` (structural; disclosure=field_only; retryable=false): A biasing method given without a parameter it requires.
+- `simulation.bias.dimension_mismatch` (structural; disclosure=field_only; retryable=false): The dimensionality of a biased run and what was asked of it disagree.
+- `simulation.bias.no_deposit` (insufficient; disclosure=nothing; retryable=false): A biased run deposited nothing, so it did not bias anything.
+- `simulation.restraint.selection_arity` (semantic; disclosure=field_only; retryable=false): A restraint selection matched a number of atoms the restraint cannot use.
+- `simulation.windows.too_few` (structural; disclosure=field_only; retryable=false): Fewer windows than the method needs.
+- `simulation.windows.no_sampling` (insufficient; disclosure=field_only; retryable=false): Windows that produced no usable sampling, so there is no free energy to report.
+- `simulation.seed.unusable` (semantic; disclosure=field_only; retryable=false): A seeded window's starting state is not one a run can begin from.
+- `simulation.reference.unusable` (semantic; disclosure=field_only; retryable=false): A reference structure was given and does not support the analysis.
+- `simulation.run.stopped` (environmental; disclosure=nothing; retryable=true): The run was asked to stop by a signal and stopped where it can be carried on.
+- `simulation.resume.checkpoint_truncated` (semantic; disclosure=field_only; retryable=false): A checkpoint that is not the whole file that was written.
+- `simulation.resume.unsealed` (semantic; disclosure=action; retryable=false): A segment that did not finish: its checkpoints were written along the way and none at the end.
+- `simulation.resume.checkpoint_rejected` (semantic; disclosure=nothing; retryable=false): A checkpoint that does not belong to this system, platform or precision.
+- `simulation.resume.bias_not_carried` (semantic; disclosure=nothing; retryable=false): The run deposits bias that a checkpoint does not restore, so it cannot be split into segments.
+- `simulation.resume.time_dependent_bias` (semantic; disclosure=nothing; retryable=false): The run's restraint is placed by step number, so a resumed piece would pull from an anchor the system is not at.
+- `simulation.resume.would_reequilibrate` (semantic; disclosure=action; retryable=false): A checkpoint from production was to be minimised or equilibrated again, which throws away its velocities and makes the continuation a new run from a snapshot rather than the same trajectory.
+- `simulation.resume.interval_differs` (semantic; disclosure=action; retryable=false): Segments written at different frame spacings, so a joined trajectory would change the time a frame represents partway.
+- `simulation.resume.segment_named_twice` (semantic; disclosure=action; retryable=false): Two segment folders of one study read as the same segment number, so which of them the join takes would be decided by listing order.
+- `simulation.resume.timestep_differs` (semantic; disclosure=action; retryable=false): A checkpoint was to be continued with a different timestep from the one that wrote it; the integrator state it carries is for the other.
+- `simulation.run.unstable` (semantic; disclosure=nothing; retryable=false): The integration produced a non-finite state.
+- `analysis.unknown` (structural; disclosure=permitted_values; retryable=false): An analysis outside the registry.
+- `analysis.option.not_permitted` (structural; disclosure=permitted_values; retryable=false): An analysis option outside its declared choices.
+- `analysis.option.wrong_type` (structural; disclosure=field_only; retryable=false): An analysis option carrying a value of the wrong type.
+- `analysis.option.inapplicable` (structural; disclosure=field_only; retryable=false): An option given to an analysis that has no use for it.
+- `analysis.option.missing_companion` (structural; disclosure=field_only; retryable=false): An analysis given without a setting it requires.
+- `analysis.selection.empty` (semantic; disclosure=field_only; retryable=false): A selection matched no atoms in this trajectory.
+- `analysis.option.out_of_range` (structural; disclosure=field_only; retryable=false): A frame index or slice past the end of the trajectory.
+- `analysis.selection.arity` (semantic; disclosure=field_only; retryable=false): A selection matched a number of atoms the analysis cannot use.
+- `analysis.trajectory.unreadable` (environmental; disclosure=action; retryable=false): The trajectory or topology could not be loaded.
+- `analysis.system.inapplicable` (semantic; disclosure=nothing; retryable=false): The analysis does not apply to this system.
+- `analysis.data.absent` (semantic; disclosure=field_only; retryable=false): What the analysis reads was not produced by this study.
+- `analysis.data.not_this_system` (semantic; disclosure=action; retryable=false): The prepared system found where a run's record points is not the one the run simulated.
+- `analysis.sampling.too_few_frames` (insufficient; disclosure=field_only; retryable=false): Fewer frames than the computation requires.
+- `analysis.sampling.too_few_residues` (insufficient; disclosure=field_only; retryable=false): Fewer residues matched than the computation requires.
+- `analysis.sampling.no_variance` (insufficient; disclosure=nothing; retryable=false): The quantity does not vary over the trajectory, so there is nothing to decompose.
+- `analysis.sampling.too_few_independent` (insufficient; disclosure=field_only; retryable=false): The trajectory holds too few independent samples to support the claim that was asked for.
+- `analysis.sampling.correlation_unresolved` (insufficient; disclosure=field_only; retryable=false): The run is not long against its own correlation time, so the independent-sample count is an upper bound.
+- `analysis.sampling.drifting` (insufficient; disclosure=field_only; retryable=false): The segment means move in order across the run, so it had not equilibrated at the scale of the whole run.
+- `analysis.sampling.not_equilibrated` (insufficient; disclosure=nothing; retryable=false): No equilibrated region was detected, so there is nothing to average over.
+- `batch.sweep.invalid` (structural; disclosure=field_only; retryable=false): A parameter sweep that does not describe a set of runs.
+- `batch.members.not_replicas` (structural; disclosure=field_only; retryable=false): Members compared as replicas of one study that differ by more than a seed or an ensemble's model.
+- `batch.sweep.empty` (structural; disclosure=field_only; retryable=false): A sweep whose cross-product holds no runs.
+- `report.region.invalid` (structural; disclosure=field_only; retryable=false): A requested report region does not describe a residue range this study holds.
+- `report.format.unavailable` (environmental; disclosure=action; retryable=false): A report format was asked for that this environment cannot write.
+- `remote.machine.unknown` (structural; disclosure=permitted_values; retryable=false): A machine was named that has no record on this computer.
+- `remote.machine.not_ready` (environmental; disclosure=action; retryable=false): A machine holds no installation of this computer's code that loads what a study needs.
+- `remote.machine.unusable_name` (structural; disclosure=field_only; retryable=false): A machine name that cannot be passed to ssh as a destination safely.
+- `remote.install.unconfirmed` (structural; disclosure=action; retryable=false): An install that nobody confirmed.
+- `remote.input.not_available` (environmental; disclosure=action; retryable=false): A study needs something fetched from the internet by a machine that cannot reach it.
+- `remote.job.unknown` (structural; disclosure=permitted_values; retryable=false): A job was named that this computer did not send.
+- `remote.job.unfinished` (structural; disclosure=action; retryable=false): A job's results were asked for while it is still waiting or running.
+- `remote.job.unusable_name` (structural; disclosure=field_only; retryable=false): A job name that cannot be a folder name on both computers.
+- `unclassified` (semantic; disclosure=nothing; retryable=false): A refusal that has not been given a code yet.

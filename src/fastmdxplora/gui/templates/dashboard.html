@@ -81,9 +81,7 @@
           <label class="builder-field">
             <span class="builder-label">Mode</span>
             <select id="agent-mode">
-              <option value="assisted">Assisted — you approve it</option>
-              <option value="autonomous">Autonomous — runs unattended</option>
-              <option value="unvalidated">Unvalidated — outside the schema</option>
+              <option value="assisted">Explain and draft — human decisions</option>
             </select>
             <p class="builder-card-note" id="agent-mode-note"></p>
           </label>
@@ -114,6 +112,7 @@
     <div class="settings-divider"></div>
     <div class="settings-section">Agent</div>
     <div class="settings-row"><span>Engine</span><span class="mono settings-value" id="settings-engine">none</span></div>
+    <div class="settings-row"><label for="research-agent-enabled">Agent sidebar enabled</label><input id="research-agent-enabled" type="checkbox" checked></div>
     <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
     <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, mode, ceiling</span></a>
     <div class="settings-divider"></div>
@@ -745,6 +744,9 @@
                   </div>
                 </div>
                 <div class="control-row display-tools">
+                  <label class="select-field">Click selection
+                    <select id="viewer-click-mode"><option value="residue">Protein residue</option><option value="atom">Atom / measurement</option></select>
+                  </label>
                   <label class="select-field">Representation
                     <select id="viewer-rep" aria-label="Representation">
                       <option value="cartoon" selected>Cartoon</option>
@@ -841,6 +843,8 @@
                   </table>
                   <!-- The clicked atom as a selection a Config can use. -->
                   <div class="selection-strings" id="selection-strings" hidden></div>
+                  <button id="research-explain-residue" class="ctl-btn" type="button" disabled>Explain selected residue</button>
+                  <p class="muted small">A click selects evidence for explanation. It does not change the structure.</p>
                   <!-- What the measuring tool measured (molecule-viewer.js). -->
                   <div class="measure-said" id="measure-said" hidden></div>
                 </div>
@@ -1076,7 +1080,7 @@
                 </div>
                 <div class="agent-run-fix" data-role="fix" id="agent-run-fix" hidden></div>
                 <p class="builder-card-note">
-                  <a href="#run" data-role="load" id="agent-load">Open in the builder</a> to change it first.
+                  <a href="#run" data-role="load" id="agent-load">Add to draft</a> to review and change it. Nothing runs automatically.
                 </p>
               </div>
             </div>
@@ -1220,10 +1224,31 @@
   </div>
 
   <!-- Live region for screen readers -->
+  <div class="research-tools" aria-label="Research tools">
+    <button id="research-agent-toggle" class="ctl-btn" type="button" aria-expanded="false">Ask about this view</button>
+    <button id="research-bookmarks-toggle" class="ctl-btn" type="button">Research bookmarks</button>
+  </div>
+  <aside id="research-agent-dock" class="research-agent-dock" aria-label="Context-aware Agent" hidden>
+    <div class="research-dock-head"><span id="research-context"></span>
+      <button id="research-agent-close" class="ghost-btn" type="button">Close</button></div>
+  </aside>
+  <aside id="research-bookmarks" class="research-bookmarks-panel card" aria-label="Research bookmarks" hidden>
+    <div class="card-header"><h2 class="card-title">Research bookmarks</h2>
+      <button id="research-bookmarks-close" class="ghost-btn" type="button">Close</button></div>
+    <p class="muted small">Save this page, graph range, trajectory frame, camera angle and clicked residue with a research note.</p>
+    <label class="builder-field">Title<input id="research-title" maxlength="160" placeholder="Evidence to revisit"></label>
+    <label class="builder-field">Note<textarea id="research-note" rows="3" maxlength="8000" placeholder="Observation, question, or reporting note"></textarea></label>
+    <div class="control-row"><button id="research-save" class="primary-btn" type="button" disabled>Save bookmark</button>
+      <button id="research-cancel-edit" class="ghost-btn" type="button">Clear</button>
+      <button id="research-export" class="ghost-btn" type="button" disabled>Export JSON</button></div>
+    <p id="research-status" class="muted small" role="status">Load a study to save bookmarks.</p>
+    <div id="research-list"></div>
+  </aside>
   <div class="sr-only" aria-live="polite" id="sr-live"></div>
 
   <script src="/static/3Dmol-min.js"></script>
   <script src="/static/agent-panel.js"></script>
+  <script src="/static/research.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>
     <script src="/static/dashboard.js"></script>

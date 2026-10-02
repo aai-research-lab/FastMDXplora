@@ -43,7 +43,7 @@ def _provider(events: list[str], *, pause: float = 0.0):
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
                     time.sleep(pause)
-            except (BrokenPipeError, ConnectionResetError):
+            except ConnectionError:
                 asked[-1]["stopped"] = True
 
         def log_message(self, *args):

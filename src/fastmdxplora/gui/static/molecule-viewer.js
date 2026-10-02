@@ -121,6 +121,10 @@
     // Requests started for the previous run are not safe to apply after this
     // reset; each async path captures and checks this generation.
     STATE.viewerGeneration += 1;
+    STATE.researchSelection = null;
+    STATE.focusResidue = null;
+    const explainButton = document.getElementById("research-explain-residue");
+    if (explainButton) explainButton.disabled = true;
     STATE.playbackLoadPromise = null;
     pausePlayback();
     STATE.liveUpdates = true;
@@ -1305,7 +1309,9 @@
     const residue = STATE.focusResidue;
     if (!residue) return null;
     const selection = {resi: residue.resi};
-    if (residue.chain) selection.chain = residue.chain;
+    selection.chain = residue.chain || "";
+    if (residue.icode) selection.icode = residue.icode;
+    if (residue.resname) selection.resn = residue.resname;
     return selection;
   }
 
@@ -1448,6 +1454,7 @@
     setText("traj-current", String(index));
     setText("traj-total", String(STATE.playbackFrames));
     const time = STATE.playbackFrameTimes[index];
+    window.dispatchEvent(new CustomEvent("dashboard:research-frame", {detail: {frame: index}}));
     setText("traj-simtime", time != null ? Number(time).toFixed(3) : "—");
     setOverlay(false, {stage: "playback", frame: index, simtime: time});
   }
@@ -1541,7 +1548,18 @@
 
   function onClickAtom(atom) {
     if (!atom) return;
+    const residueMode = document.getElementById("viewer-click-mode")?.value === "residue" && !STATE.measuring;
+    if (residueMode && !AMINO_ACIDS.includes(atom.resn)) return;
+    STATE.researchSelection = {chain: atom.chain || "", resseq: Number(atom.resi),
+      resname: atom.resn || "", atom: residueMode ? "" : atom.atom || atom.name || "",
+      icode: atom.icode || "", altloc: atom.altLoc || ""};
+    if (residueMode) {
+      STATE.focusResidue = {resi: atom.resi, chain: atom.chain || "", icode: atom.icode || "", resname: atom.resn};
+      restyleViewers();
+    }
+    window.dispatchEvent(new CustomEvent("dashboard:research-selection", {detail: STATE.researchSelection}));
     updateSelectionPanel(atom);
+    if (!STATE.measuring) document.querySelector('.info-tab[data-tab="selection"]')?.click();
     void showSelectionFor(atom);
     if (STATE.measuring) addPick(atom);
   }
@@ -2094,5 +2112,36 @@
     resize: resizeViewers,
     measurements,
     pick: addPick,
+    select: onClickAtom,
+    async restoreResearchView(view) {
+      pausePlayback();
+      stopFollowing();
+      const generation = STATE.viewerGeneration;
+      if (view.frame != null) {
+        await loadPlayback(await ensurePlaybackPayload());
+        if (generation !== STATE.viewerGeneration) return "The study changed during restore.";
+        if (view.playback_signature && view.playback_signature !== STATE.playbackSignature) return "The trajectory or playback sampling changed; the saved frame cannot be restored reliably.";
+        if (!STATE.playbackLoaded || view.frame >= STATE.playbackFrames) return "The saved frame is unavailable in this study.";
+        await setPlaybackFrame(view.frame);
+      }
+      // Loading the structure may still be in flight after navigating here.
+      for (let attempt = 0; attempt < 40 && !STATE.model; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        if (generation !== STATE.viewerGeneration) return "The study changed during restore.";
+      }
+      if (!STATE.viewer || !STATE.model) return "The saved structure is unavailable.";
+      STATE.researchSelection = view.selection || null;
+      if (view.selection) {
+        const atom = STATE.model.selectedAtoms({chain: view.selection.chain,
+          resi: view.selection.resseq, resn: view.selection.resname, atom: view.selection.atom})[0];
+        if (!atom) return "The saved residue or atom is unavailable in this structure.";
+        onClickAtom(atom);
+        STATE.researchSelection = view.selection;
+        STATE.focusResidue = {resi: view.selection.resseq, chain: view.selection.chain || null};
+        restyleViewers();
+      }
+      if (view.camera) { STATE.viewer.setView(view.camera); STATE.viewer.render(); }
+      return "Bookmark restored.";
+    },
   };
 }());

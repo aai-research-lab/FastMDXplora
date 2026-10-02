@@ -175,12 +175,8 @@ class TestTheAgentAndTheRuntime:
         monkeypatch.setattr(agent_mod, "completion_for", lambda *a, **k: (
             lambda prompt: "DO: rerun windows 2 at 6000"))
         answer = propose_endpoint({"request": "rerun window 2 at 6000"}, _runtime(study))
-        assert answer["action"] == "rerun windows" and answer["confirm"] is True
-        assert answer["fix"]["request"] == {"windows": [2], "force_constant": 6000.0,
-                                            "duration_ns": None}
-        # The stand-in windows name no length, so they run the runner's default.
-        assert answer["fix"]["price_said"].startswith(
-            "2 ns of production and 1.5 ns of equilibration")
+        assert "action" not in answer
+        assert "cannot execute" in answer["answer"]
 
     def test_a_window_it_does_not_have_is_said(self, study, monkeypatch):
         import fastmdxplora.agent as agent_mod
@@ -189,7 +185,7 @@ class TestTheAgentAndTheRuntime:
         monkeypatch.setattr(agent_mod, "completion_for", lambda *a, **k: (
             lambda prompt: "DO: rerun windows 12 at 6000"))
         answer = propose_endpoint({"request": "window 12 again"}, _runtime(study))
-        assert answer["fix"] is None and "no window 12" in answer["refused"]
+        assert "action" not in answer and "cannot execute" in answer["answer"]
 
     def test_the_runtime_runs_the_study_record_command(self, study):
         runtime = _runtime(study)
@@ -236,7 +232,7 @@ def test_the_route_runs_it(study) -> None:
     assert "--simulate-duration-ns" in spawn.call_args.args[0]
 
 
-def test_the_agent_asks_then_runs_them(study, monkeypatch) -> None:
+def test_the_agent_explains_instead_of_running_them(study, monkeypatch) -> None:
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
 
@@ -263,19 +259,15 @@ def test_the_agent_asks_then_runs_them(study, monkeypatch) -> None:
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.fill("#agent-request", "rerun window 2 at 6000")
             page.keyboard.press("Enter")
-            page.wait_for_selector("#agent-thread .agent-attempt:has-text('Say yes')")
-            asked = page.locator("#agent-thread .agent-attempt").last.text_content()
+            page.wait_for_selector("#agent-thread .agent-answer:has-text('cannot execute')")
+            asked = page.locator("#agent-thread .agent-answer").last.text_content()
             assert ran == []
             page.fill("#agent-request", "yes")
             page.keyboard.press("Enter")
-            page.wait_for_selector("#agent-thread .agent-attempt:has-text('Started')",
-                                   state="attached")
+            page.wait_for_function("document.querySelectorAll('#agent-thread .agent-answer').length >= 2")
             browser.close()
     finally:
         session.server.shutdown()
-    assert asked.startswith("Run window 2 again, held at 6000 kJ/mol/nm^2, keeping every "
-                            "other window, and recombine the free energy? It costs 2 ns of "
-                            "production and 1.5 ns of equilibration")
-    assert asked.endswith("Say yes.")
-    assert ran == [{"windows": [2], "force_constant": 6000.0, "duration_ns": None}]
+    assert "cannot execute" in asked
+    assert ran == []
     assert errors == []

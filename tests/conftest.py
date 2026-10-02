@@ -113,13 +113,20 @@ def _no_run_outlives_the_test_that_started_it(monkeypatch):
         if process.poll() is not None:
             continue
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            if os.name == "nt":
+                process.terminate()
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
             process.wait(timeout=10)
         except ProcessLookupError:
             continue
         except Exception:  # noqa: BLE001 - it must not outlive the suite either way
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                if os.name == "nt":
+                    process.kill()
+                else:
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
             except ProcessLookupError:
                 pass
 

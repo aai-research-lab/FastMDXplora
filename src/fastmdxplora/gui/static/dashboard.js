@@ -114,6 +114,10 @@
     if (!state.pages.includes(page)) page = "overview";
     state.activePage = page;
     $$('.page').forEach((element) => {
+      if (element.closest("#research-agent-dock") && !byId("research-agent-dock").hidden) {
+        element.hidden = false;
+        return;
+      }
       const hidden = element.getAttribute("data-page") !== page;
       element.hidden = hidden;
     });
@@ -852,7 +856,7 @@
     if (!list) return;
     const items = (Array.isArray(events) ? events : []).slice(-50).reverse();
     list.innerHTML = items.length ? items.map((event) => `
-      <li data-level="${escapeAttr(event.level || "info")}">
+      <li data-level="${escapeAttr(event.level || "info")}" data-research-warning="${escapeAttr(event.timestamp || "")}" tabindex="0" title="Select this diagnostic for Agent context">
         <span class="level-badge">${escapeHTML(event.level || "info")}</span>
         <span class="event-message">${escapeHTML(event.message || "")}</span>
         <span class="event-time">${escapeHTML(formatEventTime(event.timestamp))}</span>
@@ -1757,6 +1761,7 @@
 
   function showAnalysis(name) {
     navigate("analysis");
+    emit("research-analysis", {analysis: String(name || "")});
     const wanted = String(name || "");
     const started = Date.now();
     let timer = null;

@@ -23,7 +23,7 @@
    * it and a bad study. That is the only thing a reader needs at the
    * moment of choosing. */
   var MODE_NOTES = {
-    assisted: "Drafted and shown to you. Nothing runs until you say so.",
+    assisted: "Explains and suggests drafts. Add a suggestion to the builder and review it there. The Agent cannot run simulations.",
     autonomous: "Runs without being shown to you first, so a ceiling is " +
                 "required: it is the only thing left that can stop it.",
     unvalidated: "Works outside the schema, so nothing checks the method. " +
@@ -333,6 +333,8 @@
     });
   }
 
+  window.FastMDXAgent = {cancelReply: function () { if (writing) writing.abort(); }};
+
   /* ---- The conversation ---------------------------------------------- */
 
   /* When the Agent asked a question, the next message answers it. The
@@ -622,6 +624,7 @@
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
       current_config: currentConfig,
+      view_context: window.FastMDXResearch ? window.FastMDXResearch.capture() : null,
       attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })
     }, box).then(function (data) {
       box.innerHTML = "";
@@ -835,6 +838,10 @@
   }
 
   function act(action, where, box, r, confirmFirst, fix, refused) {
+    if (["run", "stop", "run the fix", "rerun windows"].includes(action)) {
+      note(box, "The Agent only explains and drafts. Review actions using the dashboard controls.");
+      return;
+    }
     if (action === "rerun windows") {
       /* The windows and values the person named, checked by the server
        * against the study; asked with the price, or said why not. */
@@ -1055,40 +1062,27 @@
      * builder's actions read that state, so the file, the command and
      * the script are exactly what the builder would produce. One
      * derivation, two doors. */
-    var loaded = post("/api/load-config", { config: data.config }).then(function (m) {
-      if (!m || !m.ok) {
-        noteEl.textContent = (m && m.error) || "Could not prepare the config for the builder.";
-        return false;
-      }
-      var run = window.FastMDXRun;
-      if (!run || !run.applyLoadedState) return false;
-      // Waits for the builder's schema where the reply arrived first.
-      return Promise.resolve(run.applyLoadedState(m.state, {})).then(function () {
-        return true;
+    var loaded = null;
+    function loadDraft() {
+      if (loaded) return loaded;
+      loaded = post("/api/load-config", {config: data.config}).then(function (m) {
+        if (!m || !m.ok) {
+          noteEl.textContent = (m && m.error) || "Could not prepare the draft.";
+          return false;
+        }
+        var run = window.FastMDXRun;
+        if (!run || !run.applyLoadedState) return false;
+        return Promise.resolve(run.applyLoadedState(m.state, {})).then(function () {
+          noteEl.textContent = "Added to a draft. Review it in the builder; nothing has run.";
+          return true;
+        });
       });
-    });
-
-    /* What the proposal would build and how long it would take here, added
-     * to its plan once the builder holds it: the cost read before the run,
-     * not learned from setup's log. A moment after the reply, because a
-     * structure named by its identifier is fetched to be inspected. */
-    loaded.then(function (ok) {
-      var run = window.FastMDXRun;
-      if (!ok || !run || !run.previewCost) return;
-      var wants = (data.config && data.config.include_phase) || null;
-      if (wants && wants.indexOf("setup") < 0) return;
-      run.previewCost().then(function (cost) {
-        if (!cost) return;
-        addPlanLines(r.part("plan"), [
-          { label: "System", value: cost.size },
-          { label: "Time here", value: cost.time },
-        ]);
-      });
-    });
+      return loaded;
+    }
 
     function viaBuilder(action) {
       return function () {
-        loaded.then(function (ok) {
+        loadDraft().then(function (ok) {
           if (!ok) return;
           var full = el("run-full-config");
           if (full) full.checked = fullBox.checked;
@@ -1113,7 +1107,7 @@
         scrollToEnd();
         return;
       }
-      loaded.then(function (ok) {
+      loadDraft().then(function (ok) {
         if (!ok) return;
         var full = el("run-full-config");
         if (full) full.checked = true;
@@ -1137,47 +1131,10 @@
     r.part("script").onclick = viaBuilder("downloadScript");
     r.part("load").onclick = function (e) {
       e.preventDefault();
-      loaded.then(function (ok) { if (ok) window.location.hash = "#run"; });
+      loadDraft().then(function (ok) { if (ok) window.location.hash = "#run"; });
     };
-    runBtn.onclick = function () {
-      runBtn.disabled = true;
-      /* The thread is saved before the launch, and the launch is told
-       * which conversation to move and where it is now. The launch
-       * switches the loaded study before the move runs, so "the current
-       * conversation" is the new study's -- none -- and the first version
-       * moved nothing; the next save then started a fresh thread in the
-       * new study from whatever the browser held, minus a race. */
-      var fromStudy = convStudy;
-      persist().then(function () {
-        return post("/api/agent/run", {
-          config: data.config,
-          budget_hours: el("agent-budget").value
-        });
-      }).then(function (started) {
-        if (started.ok) {
-          /* Started once. A second press started it again into the same
-           * folder and was refused for the folder being occupied. The
-           * button says what happened and stays put. */
-          runBtn.textContent = "Running";
-          note(box, "Started. Watch it in the sidebar and the Overview.", true);
-          /* The conversation that launched a study belongs with it. Without
-           * this the thread would vanish from view the moment the page
-           * switched to the new study's empty list. */
-          if (started.output) {
-            post("/api/agent/conversation/attach", {
-              study: started.output, id: convId, from_study: fromStudy
-            }).then(function (m) {
-              if (m && m.ok && m.id) { convId = m.id; convStudy = m.study || started.output; }
-              if (m && m.moved) note(box, "This conversation now belongs to the new study.", true);
-            }).catch(function () {});
-          }
-        } else {
-          runBtn.disabled = false;
-          noteEl.textContent = started.error;
-          runFix(r.part("fix"), started, data);
-        }
-      });
-    };
+    runBtn.hidden = true;
+    runBtn.onclick = null;
   }
 
   /* A refused run with what would fix it (remedies.py): the fix, and the

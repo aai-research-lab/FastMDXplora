@@ -365,7 +365,7 @@ class TestOnlyTheRunsResultsLeaveTheMachine:
     def test_the_runs_own_files_are_still_served(self, runtime) -> None:
         figure = runtime.active_root / "analysis" / "rmsd" / "rmsd.dat"
         figure.parent.mkdir(parents=True)
-        figure.write_text("0 0.1\n", encoding="utf-8")
+        figure.write_bytes(b"0 0.1\n")
         with _serving(runtime, allow_control=False) as url:
             served = _ask(url + "/artifacts/analysis/rmsd/rmsd.dat")
             previewed = _ask(url + "/api/file-text?path=analysis/rmsd/rmsd.dat")

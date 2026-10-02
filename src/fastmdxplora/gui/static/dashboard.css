@@ -3057,6 +3057,35 @@ html[data-page="viewer"] .page-shell { max-width: none; }
     margin-bottom: calc(var(--agent-foot) - var(--shell-pad-bottom, 64px));
 }
 .page[data-page="agent"] .page-header { flex: none; }
+.research-tools { position: fixed; bottom: 14px; right: 24px; z-index: 35; display: flex; gap: 8px; }
+.research-agent-dock { position: fixed; right: 0; top: 0; bottom: 60px; width: 420px;
+    z-index: 34; background: var(--background-primary); border-left: 1px solid var(--border-primary);
+    padding: 14px; display: flex; flex-direction: column; }
+.research-agent-dock[hidden], .research-bookmarks-panel[hidden] { display: none; }
+.research-dock-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+#research-context { font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+.research-agent-dock .page[data-page="agent"] { flex: 1; width: 100%; height: auto; margin: 0; padding: 8px 0 0; }
+.research-agent-dock .agent-start { margin: 12px 0; }
+.research-agent-dock .agent-start { max-height: 48%; overflow-y: auto; }
+.research-agent-dock .agent-composer { flex: none; }
+.research-agent-dock .agent-starters { flex-wrap: wrap; }
+.research-agent-dock .page-header { display: none; }
+.research-agent-open .side-panel, .research-agent-open .side-expand { visibility: hidden; }
+body.research-agent-open .app-shell { grid-template-columns: var(--sidebar-width) var(--handle-width) minmax(0, 1fr) 0 420px; }
+body.research-agent-open.sidebar-collapsed .app-shell { grid-template-columns: 0 0 minmax(0, 1fr) 0 420px; }
+.research-bookmarks-panel { position: fixed; right: 24px; bottom: 64px; width: min(440px, calc(100vw - 32px));
+    max-height: calc(100vh - 96px); overflow-y: auto; z-index: 36; padding: 18px;
+    background: var(--background-primary); box-shadow: 0 8px 32px #0006; }
+.research-bookmark { padding: 14px 0; border-top: 1px solid var(--border-primary); overflow-wrap: anywhere; }
+.research-bookmark p { white-space: pre-wrap; }
+.research-bookmark button { margin-right: 8px; }
+.series-range { display: flex; gap: 8px; align-items: center; font-size: var(--text-xs); margin-bottom: 6px; }
+.series-range input { width: 90px; }
+@media (max-width: 900px) {
+    .research-agent-dock { width: min(420px, 100vw); }
+    body.research-agent-open .app-shell { grid-template-columns: var(--sidebar-width) var(--handle-width) minmax(0, 1fr) 0 0; }
+    .research-tools { right: 8px; }
+}
 .agent-thread {
     flex: 1; min-height: 0; overflow-y: auto;
     display: flex; flex-direction: column; gap: 18px;

@@ -742,6 +742,7 @@
       renderSettings();
       updateSummary();
     });
+    input.dataset.researchField = phase + "." + field.name;
     wrap.appendChild(input);
     if (refusedHere) wrap.appendChild(refusalNote(phase, field));
 
