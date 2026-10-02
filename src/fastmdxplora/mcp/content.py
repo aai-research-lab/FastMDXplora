@@ -86,6 +86,8 @@ own API key. What it writes is judged by the same validator.
 - Do not start, stop or continue a study the person has not agreed to.
 - Do not state a system's size, a run's time, or a residue's state from
   memory: look with `preview_setup` or `inspect_structure`.
+- Do not write a study's methods from what is usual: quote
+  `methods_of_study`, and leave a gap it names as a gap.
 """
 
 

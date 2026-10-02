@@ -282,7 +282,7 @@ def _conversations_kept(project_root: Path) -> int:
     return kept
 
 
-def _stopping_record_of(project_root: Path) -> dict[str, Any] | None:
+def _stopping_record_of(project_root: Path, may_read: Any = None) -> dict[str, Any] | None:
     """The record of the rule this study ran under: its own, or, for one of a
     campaign's runs, the campaign's where it names this run."""
     own = _load_json_safely(project_root / "stopping.json")
@@ -290,15 +290,26 @@ def _stopping_record_of(project_root: Path) -> dict[str, Any] | None:
         return own
     if project_root.parent.name != "runs":
         return None
+    if may_read is not None and not may_read(project_root.parent.parent):
+        return None
     campaign = _load_json_safely(project_root.parent.parent / "stopping.json")
     if isinstance(campaign, dict) and project_root.name in (campaign.get("runs") or []):
         return campaign
     return None
 
 
-def methods_prose(project_root: Path, orchestrator: Any = None) -> str:
+def methods_prose(project_root: Path, orchestrator: Any = None, *,
+                  may_read: Any = None) -> str:
     """The methods paragraphs of a study, as its report gives them and the
     GUI shows them to copy.
+
+    ``may_read(path)`` holds what is read outside the study to a rule (an
+    AI app's workspace, a hosted GUI's): the folder a system was prepared
+    in when the study names another's (`simulation.setup_from`), and a
+    campaign's record of its rule. A preparation outside it is refused with
+    a ``PermissionError`` rather than left out, since a methods text without
+    its preparation would say it was not recorded (``OutsideWorkspace``, a
+    ``PermissionError``).
 
     The paragraph a journal asks for, before the list of every setting. The
     list is what the software knows; this is what a reader needs, and they
@@ -312,6 +323,11 @@ def methods_prose(project_root: Path, orchestrator: Any = None) -> str:
     from fastmdxplora.simulation.resume import extended_production
 
     prepared_in = setup_records_of(project_root)
+    if prepared_in is not None and may_read is not None and not may_read(prepared_in):
+        from fastmdxplora.refusals import OutsideWorkspace
+
+        raise OutsideWorkspace(f"its system was prepared in {prepared_in}, which is outside "
+                               "what may be read here", path=str(prepared_in))
     setup = (_load_json_safely(prepared_in / "setup_parameters.json") or {}
              if prepared_in is not None else {})
     sim = _load_json_safely(project_root / "simulation" / "simulation_parameters.json") or {}
@@ -330,7 +346,7 @@ def methods_prose(project_root: Path, orchestrator: Any = None) -> str:
         system_name=(setup.get("input") or {}).get("system"),
         versions=tools, made_with=made_with, tools_recorded=recorded,
         extended=extended_production(project_root), means=_recorded_means(project_root),
-        stopping=_stopping_record_of(project_root),
+        stopping=_stopping_record_of(project_root, may_read),
         written=study_manifest.get("agent") if isinstance(study_manifest, dict) else None,
         conversations=_conversations_kept(project_root),
     )

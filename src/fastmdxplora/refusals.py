@@ -72,6 +72,7 @@ __all__ = [
     "MissingResultError",
     "MissingPathError",
     "OutputExistsError",
+    "OutsideWorkspace",
     "BackendUnavailable",
     "BackendDefect",
     "UnstableRun",
@@ -344,6 +345,10 @@ CODES: tuple[Code, ...] = (
     Code("environment.workspace.run_starting",
          "Another study is being started in this workspace at this moment.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.workspace.outside",
+         "A record a study names lies outside the workspace this is held to (an AI "
+         "app's, or a hosted GUI's), so it is not read.",
+         Kind.ENVIRONMENTAL, Disclosure.FIELD_ONLY),
     Code("environment.model.unset",
          "No AI model has been chosen, so there is nothing to ask.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
@@ -1046,6 +1051,14 @@ class OutputExistsError(CodedError, FileExistsError):
     """
 
     default_code = "environment.path.exists"
+
+
+class OutsideWorkspace(CodedError, PermissionError):
+    """A record a study names lies outside the workspace a reader is held
+    to, so it is not read. Still a ``PermissionError``, which is what it
+    is to a caller that does not know the codes."""
+
+    default_code = "environment.workspace.outside"
 
 
 class MissingPathError(CodedError, FileNotFoundError):

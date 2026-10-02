@@ -657,7 +657,9 @@ def make_handler(
             if path == "/api/methods":
                 from fastmdxplora.gui.report_page import methods_payload
 
-                self._send_json(methods_payload(root))
+                self._send_json(methods_payload(
+                    root, may_read=(None if hosting is None
+                                    else lambda path: hosting.inside(str(path)) is not None)))
                 return
             if path == "/api/artifacts" or path == "/api/files":
                 self._send_json({"artifacts": _artifact_records(root)})

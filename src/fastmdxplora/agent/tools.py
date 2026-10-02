@@ -511,6 +511,36 @@ def _read_study(box: Toolbox, asked: dict[str, Any]) -> str:
     return "\n\n".join(parts)
 
 
+def _methods_of_study(box: Toolbox, asked: dict[str, Any]) -> str:
+    """A study's methods paragraphs, as its report gives them."""
+    from fastmdxplora.gui.browse import is_study
+    from fastmdxplora.report.document import methods_prose
+
+    given = str(asked.get("study") or "").strip()
+    if not given:
+        raise _Refused("Name the study as `study`: its folder, as given to --output.")
+    named = box.path_for(given) if box.path_for is not None else given
+    if named is None:
+        raise _Refused(f"{given} is outside the workspace.")
+    folder = Path(named).expanduser()
+    if not folder.is_dir() or not is_study(folder):
+        raise _Refused(f"{given} is not a study folder (one holding a manifest, a "
+                       "resolved config, or simulation, analysis or report).")
+    if (folder / "batch_manifest.json").is_file():
+        raise _Refused(f"{given} is a study of several runs; each run's report gives its "
+                       "own methods. Name one of its runs.")
+    may_read = (None if box.path_for is None
+                else lambda path: box.path_for(str(path)) is not None)
+    try:
+        prose = methods_prose(folder, may_read=may_read)
+    except PermissionError as exc:
+        raise _Refused(f"{given}: {exc}.") from None
+    if not prose:
+        return f"{given} has recorded nothing a methods section could say yet."
+    return (f"The methods of {given}, as its report gives them; quote them as they are "
+            f"(a gap they name was not recorded):\n\n{prose}")
+
+
 def _config_asked(asked: dict[str, Any]) -> dict[str, Any]:
     config = asked.get("config", asked)
     if isinstance(config, str):
@@ -551,6 +581,13 @@ _TOOLS: dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]] = {
         "analyses found (means, errors, units), the checks it was held to, how "
         "long it ran and why, and what would fix it if it stopped.",
         _read_study),
+    "methods_of_study": (
+        "`study` (a study's folder).",
+        "that study's methods paragraphs as its report gives them, written from "
+        "what it recorded: preparation, protocol, how each mean and its error "
+        "were determined, any rule it ran until, an AI model's part, the software. "
+        "Look here before you write or answer about a methods section.",
+        _methods_of_study),
     "check_selection": (
         "`system` and `expression` (an MDTraj selection).",
         "how many atoms and which residues the selection matches in that "

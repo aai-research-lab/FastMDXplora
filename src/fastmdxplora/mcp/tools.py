@@ -735,6 +735,24 @@ def _read_study(ctx: Context, args: dict[str, Any]) -> str:
     return f"The study at {ctx.workspace.shown(folder)}\n" + study_record(folder)
 
 
+def _methods_of_study(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.report.document import methods_prose
+
+    folder = _study(ctx, args["study"])
+    shown = ctx.workspace.shown(folder)
+    if (folder / "batch_manifest.json").is_file():
+        raise ToolError(f"{shown} is a study of several runs; each run's report gives its "
+                        "own methods. Name one of its runs (list_studies names them).")
+    try:
+        prose = methods_prose(folder, may_read=lambda path: ctx.workspace.inside(
+            str(path)) is not None)
+    except PermissionError as exc:
+        raise ToolError(f"{shown}: {exc}.") from None
+    if not prose:
+        return f"{shown} has recorded nothing a methods section could say yet."
+    return f"The methods of {shown}, as its report gives them:\n\n{prose}"
+
+
 def _compare_studies(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.gui.workspace import studies_compared
 
@@ -1094,6 +1112,12 @@ TOOLS: tuple[Tool, ...] = (
          "what it recorded: its config, what its analyses found with errors and units, "
          "the checks it was held to, why it stopped and what would fix it.",
          {"study": _STUDY}, ("study",), _READS, _read_study),
+    Tool("methods_of_study", "The methods of a study",
+         "A study's methods paragraphs as its report gives them, written from what it "
+         "recorded: its preparation and protocol, how each mean and its error were "
+         "determined, any rule it ran until, an AI model's part, and the software. "
+         "Quote them as they are; a gap they name was not recorded.",
+         {"study": _STUDY}, ("study",), _READS, _methods_of_study),
     Tool("compare_studies", "Compare two studies",
          "The settings two studies differ in, and the means each recorded, each "
          "difference marked resolved only where it is more than twice its combined "

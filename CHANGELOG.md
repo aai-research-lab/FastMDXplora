@@ -101,6 +101,19 @@ paragraphs as HTML and as plain text, and is answered beyond loopback like
 `/api/report`. `fastmdxplora.report.document.methods_prose` is the one place
 the report and the page take them from.
 
+### The Agent and an AI app quote a study's methods
+
+**`methods_of_study`, a tool for the Agent and for an AI app (`fastmdx
+mcp`)**, gives a study's methods paragraphs as its report gives them, so an AI
+model asked how a study was set up or analysed, or for a methods section,
+quotes what was recorded rather than writing what is usual; the AI app's guide
+says not to. A study of several runs is refused with a pointer to its
+runs. What is read outside the study is held to the same rule as the rest of
+the tools: a system prepared in a folder outside an AI app's workspace, or a
+hosted GUI's, is refused rather than read (refusal code
+`environment.workspace.outside`), and the GUI's `GET /api/methods` is held to a
+hosted workspace too.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

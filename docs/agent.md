@@ -517,6 +517,7 @@ four times per reply:
 | `check_config` | Whether the validator accepts a Config, and if not, why and what would fix it; if so, the plan you will read, defaults marked |
 | `check_selection` | How many atoms, and which residues, an MDTraj selection matches in a structure, as `fastmdx select` says |
 | `read_study` | Another study's record, not the one on screen: its Config, what its analyses found, the checks it was held to, how long it ran and why, and what would fix it |
+| `methods_of_study` | A study's methods paragraphs as its report gives them, written from what it recorded, to quote when asked how it was set up, simulated or analysed, or for a methods section |
 
 It is told to look rather than guess: to preview before stating a size or a
 time, to inspect a structure before choosing its chains, ligand or a residue's

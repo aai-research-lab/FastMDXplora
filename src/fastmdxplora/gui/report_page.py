@@ -83,13 +83,14 @@ def report_payload(root: Path | str) -> dict[str, Any]:
     }
 
 
-def methods_payload(root: Path | str) -> dict[str, Any]:
+def methods_payload(root: Path | str, *, may_read: Any = None) -> dict[str, Any]:
     """The study's methods paragraphs, to read and to copy into a
     manuscript: as the report gives them, written from the records as they
     stand, so they are there before the report is and follow an extension.
 
     ``html`` is for the page; ``plain`` is for the clipboard, without the
-    Markdown, since a manuscript is not Markdown.
+    Markdown, since a manuscript is not Markdown. ``may_read`` is a hosted
+    GUI's rule for what is read outside the study.
     """
     import re
 
@@ -101,7 +102,10 @@ def methods_payload(root: Path | str) -> dict[str, Any]:
         return {"ok": False, "reason": "nothing has run yet"}
     from fastmdxplora.report.document import methods_prose
 
-    prose = methods_prose(base)
+    try:
+        prose = methods_prose(base, may_read=may_read)
+    except PermissionError as exc:
+        return {"ok": False, "reason": str(exc)}
     if not prose:
         return {"ok": False, "reason": "nothing recorded yet"}
     plain = re.sub(r"\*\*([^*]+)\*\*", r"\1", prose).replace("`", "")
