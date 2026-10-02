@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A misspelled key's fix renames it
+
+**The fix for an unknown key now says "Rename `simulation.temprature_K` to
+`temperature_K`"**, or, with no near spelling, lists the keys that block takes.
+It said "Set `simulation.temprature_K` to one of: agent, barostat_frequency,
+...", asking for the misspelled key's value to be a key name, in the console,
+to the Agent, to an AI app and in `fastmdx resume --json`.
+
 ### A study's resolved config keeps each system's id
 
 **`resolved_config.yml` now carries the `id` the study gave each system.** A

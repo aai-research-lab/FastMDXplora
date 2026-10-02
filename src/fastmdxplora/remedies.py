@@ -198,6 +198,17 @@ class Remedy:
 # ---------------------------------------------------------------------------
 # One refusal
 # ---------------------------------------------------------------------------
+#: Refusals of a key rather than of a value: their permitted list is of keys.
+_KEY_NOT_KNOWN = frozenset({"config.option.unknown"})
+
+
+def _whose_keys(found: Refusal) -> str:
+    context = found.details.get("context")
+    if isinstance(context, str) and re.fullmatch(r"[a-z_]+", context):
+        return f"`{context}` settings"
+    return "top-level keys" if context == "top-level" else "keys allowed there"
+
+
 def remedy_for(refusal: Refusal | dict[str, Any] | None, *,
                study: str | Path | None = None, where: str = "the study") -> Remedy:
     """What would fix one refusal, within what the registry lets be said.
@@ -227,7 +238,15 @@ def remedy_for(refusal: Refusal | dict[str, Any] | None, *,
         permitted = found.permitted
         near = found.details.get("suggestion")
         suggestion = near if permitted and near in permitted else None
-        if permitted and settings:
+        if found.code in _KEY_NOT_KNOWN and settings:
+            # The refusal is of the key, so its fix renames the key; the
+            # permitted list is of keys. "Set `simulation.temprature_K` to
+            # one of: agent, barostat_frequency, ..." asked for a key's
+            # value to be a key name.
+            fix = (f"Rename `{settings[0]}` to `{near}`." if near and near in (permitted or ())
+                   else f"Use one of the {_whose_keys(found)}: "
+                        f"{', '.join(map(str, permitted or ()))}.")
+        elif permitted and settings:
             fix = f"Set `{settings[0]}` to one of: {', '.join(map(str, permitted))}."
         elif permitted:
             fix = f"Use one of: {', '.join(map(str, permitted))}."
