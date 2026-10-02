@@ -1049,6 +1049,7 @@
 
   function wireKeys() {
     document.addEventListener("keydown", (event) => {
+      if (STATE.clipExporting) return;
       if (document.documentElement.dataset.page !== "viewer") return;
       if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
       const target = event.target;
@@ -1200,6 +1201,7 @@
   /* Playback                                                            */
   /* ------------------------------------------------------------------ */
   function onPlaybackReady(payload) {
+    if (STATE.clipExporting) return;
     const signature = payload?.source_signature || payload?.compiled_at || null;
     const changed = !!(STATE.playbackSignature && signature && STATE.playbackSignature !== signature);
     const previousPayload = STATE.playbackPayload;
@@ -2137,6 +2139,48 @@
     measurements,
     pick: addPick,
     select: onClickAtom,
+    async clipSession(options) {
+      if (STATE.clipExporting) throw new Error("A clip export is already active.");
+      const original = window.FastMDXResearch.capture(), generation = STATE.viewerGeneration;
+      pausePlayback(); stopFollowing(); setSpinning(STATE.viewer, false);
+      if (!(await loadPlayback(await ensurePlaybackPayload()))) throw new Error("Saved trajectory playback is unavailable.");
+      if (generation !== STATE.viewerGeneration) throw new Error("The study changed before export.");
+      STATE.clipExporting = true;
+      const viewer = STATE.viewer, camera = captureView(viewer), labels = [];
+      const check = () => { if (generation !== STATE.viewerGeneration || !STATE.clipExporting) throw new Error("The study changed during export."); };
+      return {
+        signature: STATE.playbackSignature, count: STATE.playbackFrames, payload: STATE.playbackPayload, camera: camera,
+        async render(frame, angle) {
+          check(); labels.splice(0).forEach((label) => viewer.removeLabel(label));
+          await setPlaybackFrame(frame); check();
+          viewer.setView(camera); if (angle) viewer.rotate(angle, "y");
+          if (options.residues || options.atoms) {
+            let selection = {resn: AMINO_ACIDS};
+            if (options.scope === "selected") {
+              const picked = original.selection;
+              if (!picked) throw new Error("Select a residue or atom before exporting its labels.");
+              selection = {chain: picked.chain || "", resi: picked.resseq, resn: picked.resname};
+              if (picked.atom) selection.atom = picked.atom;
+            }
+            const atoms = STATE.model.selectedAtoms(selection), seen = new Set(), marked = [];
+            for (const atom of atoms) {
+              const key = [atom.chain, atom.resi, atom.icode || "", atom.resn].join(":");
+              if (options.atoms) marked.push([atom, atom.atom]);
+              if (options.residues && !seen.has(key)) { seen.add(key); marked.push([atom, `${atom.resn} ${atom.chain || "_"}:${atom.resi}${atom.icode || ""}`]); }
+            }
+            if (marked.length > 200) throw new Error("More than 200 labels would obscure the clip. Choose selected-residue scope or fewer label types.");
+            marked.forEach(([atom, text]) => labels.push(viewer.addLabel(text, {position:{x:atom.x,y:atom.y,z:atom.z}, fontSize:12, backgroundColor:"white", fontColor:"black", backgroundOpacity:0.8})));
+          }
+          viewer.render(); await new Promise((resolve) => requestAnimationFrame(resolve)); check();
+          return viewer.pngURI();
+        },
+        async restore() {
+          labels.splice(0).forEach((label) => { try { viewer.removeLabel(label); } catch (_) {} });
+          STATE.clipExporting = false;
+          if (generation === STATE.viewerGeneration) await window.FastMDXMoleculeViewer.restoreResearchView(original);
+        },
+      };
+    },
     async restoreResearchView(view) {
       pausePlayback();
       stopFollowing();

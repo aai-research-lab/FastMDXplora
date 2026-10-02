@@ -459,3 +459,26 @@ checks passed. Nine new/updated package resources were compared byte-for-byte
 against the built wheel. Scientific preparation/simulation/analysis modules are
 unchanged; verification uses completed studies and fixtures without a new MD run.
 Provider connections, clip export and preparation audit remain future milestones.
+
+### Verified milestone M4 — trajectory clip export
+
+Viewer exports GIF, MP4 or both together from 2–120 saved browser frames, with
+first/last/stride, presentation fps, deterministic camera rotation, and checkbox
+controls for residue names, atom names, source frame number and recorded time.
+Selected-residue/atom or protein label scope is bounded to 200 labels. MP4 uses
+ffmpeg/libx264; GIF uses Pillow and records its actual centisecond timing.
+Exports are saved under unique study-local exports/clips directories with source
+checksums, browser/source frame mapping, physical timestamps, camera path, labels,
+display state and encoder metadata. Scientific coordinates are never interpolated
+or written. Source changes during export refuse the result. Cancel/failure
+cleans uploads and restores the previous viewer state; polling and keyboard
+input cannot overwrite the scene while frames are being captured.
+
+Validation: 55 clip/viewer/public-dashboard checks passed with one skipped; an
+additional browser cancellation test passed. Both MP4 and GIF decode; a real
+browser exported a rotating residue-labeled clip and restored the original
+structure view. Trajectory/topology checksums stayed unchanged. Live acceptance
+on the completed 1L2Y study saved both formats together without a new MD run.
+Ruff F/B and JavaScript syntax/diff checks passed. Provider connections and
+preparation provenance/audit remain in progress; this independently complete
+visualization milestone does not claim the full framework is finished.

@@ -3928,3 +3928,10 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 #research-tags { display:flex; flex-wrap:wrap; gap:0.5rem 1rem; border:1px solid var(--border); margin:0.75rem 0; }
 .research-bookmarks-panel > label { display:flex; align-items:flex-start; gap:0.5rem; margin:0.5rem 0; }
 .research-bookmarks-panel > label input[type="checkbox"] { flex-shrink:0; margin-top:0.2rem; }
+#clip-export-dialog { width:min(900px, 92vw); max-height:85vh; overflow:auto; color:var(--text-primary); background:var(--background-elevated); border:1px solid var(--border-primary); padding:1.5rem; }
+#clip-export-dialog::backdrop { background:rgba(0,0,0,0.55); }
+#clip-export-dialog .control-row { display:flex; flex-wrap:wrap; gap:1rem; margin:1rem 0; }
+#clip-export-dialog .control-row > label { display:flex; flex-direction:column; gap:0.35rem; flex:1; min-width:140px; }
+#clip-export-dialog fieldset { display:flex; flex-wrap:wrap; gap:1rem; padding:1rem; border:1px solid var(--border-primary); }
+#clip-export-dialog fieldset label { display:flex; align-items:center; gap:0.35rem; }
+#clip-export-dialog input[type="number"], #clip-export-dialog select { font:inherit; color:var(--text-primary); background:var(--background-primary); border:1px solid var(--border-primary); border-radius:6px; padding:0.5rem; }

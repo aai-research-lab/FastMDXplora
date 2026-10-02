@@ -864,6 +864,12 @@ def make_handler(
                 self._send_json(preview_import(app_runtime, raw))
                 return
             payload = self._read_json_body()
+            if path == "/api/research/clips":
+                from fastmdxplora.gui.clips import clip_endpoint
+
+                self._send_json(clip_endpoint(app_runtime, payload or {},
+                    path_for=hosting.inside if hosting is not None else None))
+                return
             if path == "/api/research/bookmarks/import":
                 from fastmdxplora.gui.research_bundle import apply_import
 
