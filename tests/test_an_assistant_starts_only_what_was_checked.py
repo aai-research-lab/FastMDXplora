@@ -48,16 +48,17 @@ def spawned(monkeypatch):
     commands: list[dict] = []
 
     def spawn(self, command, output_dir, dashboard_url):
+        # The process only: the workspace's lock and list of runs are held
+        # as for a real start.
         commands.append({"command": command, "output": output_dir})
         return {"launched": True, "output": str(output_dir), "pid": 4242, "command": command}
 
-    monkeypatch.setattr(DashboardRuntime, "_spawn", spawn)
+    monkeypatch.setattr(DashboardRuntime, "_spawn_now", spawn)
     monkeypatch.setattr("fastmdxplora.mcp.tools._cannot_run_here", lambda config: None)
     monkeypatch.setattr("fastmdxplora.gui.exploration.exploration_environment_error",
                         lambda config: None)
     # Nothing ran, so nothing records itself: not waited for.
     monkeypatch.setattr("fastmdxplora.mcp.tools.RECORDED_WITHIN_S", 0.0)
-    monkeypatch.setattr("fastmdxplora.mcp.tools._STARTED", {})
     return commands
 
 
@@ -117,8 +118,8 @@ class TestWhatRuns:
         try:
             refused = start(wire, workspace)
             assert refused["isError"]
-            assert refused["content"][0]["text"].startswith("busy is running here. One study "
-                                                            "runs at a time")
+            assert refused["content"][0]["text"].startswith(
+                "busy is running in this workspace. One study runs here at a time")
         finally:
             sleeper.kill()
             sleeper.wait()
@@ -276,7 +277,8 @@ class TestWhereAndWhen:
         sleeper = _sleeper(busy)
         try:
             refused = start(wire, workspace)
-            assert refused["content"][0]["text"].startswith("runs/reference is running here.")
+            assert refused["content"][0]["text"].startswith(
+                "runs/reference is running in this workspace.")
         finally:
             sleeper.kill()
             sleeper.wait()
@@ -284,19 +286,20 @@ class TestWhereAndWhen:
 
     def test_a_run_this_server_started_counts_before_it_records_itself(
             self, wire, workspace, monkeypatch):
-        # Named by its folder on its command line, as a run is.
-        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)",
-                                    str(workspace / "ghg_run")])
+        sleepers = []
 
         def spawn(self, command, output_dir, dashboard_url):
-            return {"launched": True, "output": str(output_dir), "pid": sleeper.pid,
+            # Carrying the run's command on its command line, as a run does,
+            # and never recording itself.
+            sleepers.append(subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(60)", *command[1:]]))
+            return {"launched": True, "output": str(output_dir), "pid": sleepers[-1].pid,
                     "command": command}
 
-        monkeypatch.setattr(DashboardRuntime, "_spawn", spawn)
+        monkeypatch.setattr(DashboardRuntime, "_spawn_now", spawn)
         monkeypatch.setattr("fastmdxplora.mcp.tools._cannot_run_here", lambda config: None)
         monkeypatch.setattr("fastmdxplora.gui.exploration.exploration_environment_error",
                             lambda config: None)
-        monkeypatch.setattr("fastmdxplora.mcp.tools._STARTED", {})
         monkeypatch.setattr("fastmdxplora.mcp.tools.RECORDED_WITHIN_S", 0.0)
         try:
             assert text_of(wire.request("tools/call", {"name": "start_study", "arguments": {
@@ -305,10 +308,12 @@ class TestWhereAndWhen:
             (workspace / "other.yml").write_text(STUDY.replace("ghg_run", "other_run"))
             second = wire.request("tools/call", {"name": "start_study", "arguments": {
                 "config": "other.yml", "plan_id": plan_id_of(workspace / "other.yml")}})
-            assert second["result"]["content"][0]["text"].startswith("ghg_run is running here.")
+            assert second["result"]["content"][0]["text"].startswith(
+                "ghg_run (started by an assistant) is running in this workspace.")
         finally:
-            sleeper.kill()
-            sleeper.wait()
+            for sleeper in sleepers:
+                sleeper.kill()
+                sleeper.wait()
 
     def test_a_run_that_ended_while_the_person_was_asked_is_not_signalled(self, wire, workspace):
         study = _study(workspace / "busy", duration=10, means={},
@@ -335,7 +340,7 @@ def test_a_run_that_ends_as_it_starts_says_why(wire, workspace, spawned, monkeyp
         return {"launched": True, "output": str(output_dir), "pid": gone.pid,
                 "command": command}
 
-    monkeypatch.setattr(DashboardRuntime, "_spawn", spawn)
+    monkeypatch.setattr(DashboardRuntime, "_spawn_now", spawn)
     monkeypatch.setattr("fastmdxplora.mcp.tools.RECORDED_WITHIN_S", 10.0)
     result = start(wire, workspace)
     assert result["isError"]
@@ -344,19 +349,23 @@ def test_a_run_that_ends_as_it_starts_says_why(wire, workspace, spawned, monkeyp
         "Setting up\nImportError: no openmm")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the holder takes a POSIX lock")
 def test_a_second_server_starting_at_the_same_moment_waits_its_turn(wire, workspace, spawned):
-    holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    from tests.test_the_gui_and_an_assistant_start_one_at_a_time import _free, _holding
+
+    held: list = []
     try:
-        (workspace / ".fastmdxplora-starting").write_text(str(holder.pid))
+        _holding(workspace, held)
         busy = start(wire, workspace)
         assert busy["isError"] and busy["content"][0]["text"].startswith(
             "Another study is being started in this workspace right now.")
     finally:
-        holder.kill()
-        holder.wait()
-    # Left by a process that has gone: taken over.
+        for holder in held:
+            holder.kill()
+            holder.wait()
+    # Its holder gone, so is its lock.
     assert start(wire, workspace)["content"][0]["text"].startswith("Started ghg_run")
-    assert not (workspace / ".fastmdxplora-starting").exists()
+    assert _free(workspace)
 
 
 def test_what_stops_a_start_before_it_is_asked_is_said(wire, workspace, spawned, monkeypatch):
@@ -387,7 +396,9 @@ def test_a_launch_the_runtime_refuses_is_said(wire, workspace, spawned, monkeypa
                         lambda self, state, config=None: {"ok": False, "error": "No GPU here."})
     result = start(wire, workspace)
     assert result["isError"] and result["content"][0]["text"] == "No GPU here."
-    assert not (workspace / ".fastmdxplora-starting").exists()
+    from tests.test_the_gui_and_an_assistant_start_one_at_a_time import _free
+
+    assert _free(workspace)
 
 
 def test_a_record_that_cannot_be_read_is_no_run(wire, workspace):

@@ -526,6 +526,9 @@ class DashboardRuntime:
     #: Set when the GUI is served to someone else (`fastmdx gui --hosted`):
     #: then every folder a run is written to must be inside its workspace.
     hosting: Any = None
+    #: Who a run started here is said to be started by, to another starter
+    #: that finds it going (`fastmdxplora.runs_here`).
+    started_by: str = "from the GUI"
 
     def __post_init__(self) -> None:
         self.workspace_root = self.workspace_root.expanduser().resolve()
@@ -838,8 +841,55 @@ class DashboardRuntime:
 
         Shared, because there is more than one way to describe a run but only
         one way to run it. Assumes the caller holds the lock and has already
-        refused a second concurrent run.
+        refused a second concurrent run of its own. Runs started by anyone
+        else in the workspace (another window, an assistant) are refused
+        here, under the workspace's starting lock, by the rule an assistant
+        is held to (`fastmdxplora.runs_here`).
         """
+        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.runs_here import StartRefused, record_start, starting_in
+
+        folders = self._rule_folders()
+        try:
+            with starting_in(*folders):
+                refused = self._others_running()
+                if refused is not None:
+                    return refused
+                started = self._spawn_now(command, output_dir, dashboard_url)
+                for folder in folders:
+                    record_start(folder, output_dir, started["pid"], command,
+                                 by=self.started_by)
+                return started
+        except StartRefused as exc:
+            found = refusal_of(exc)
+            return {"ok": False, "error": found.message, "code": found.code}
+
+    def _rule_folders(self) -> list[Path]:
+        """Where the one-study-at-a-time rule is kept for this window: the
+        folder it was started in and the folder it puts new studies in, so
+        an assistant given either as its workspace keeps it with this
+        window. Never the home folder or a folder above it, which an
+        assistant is never given and which are not to be written in."""
+        home = Path.home().expanduser().resolve()
+        return [folder for folder in dict.fromkeys((self.workspace_root, self.exploration_root))
+                if folder != home and folder not in home.parents]
+
+    def _others_running(self) -> dict[str, Any] | None:
+        """The refusal for a start while a study started elsewhere (another
+        window, an assistant) runs in this window's folders, or None. Asked
+        before anything is written for a run, and again under the lock."""
+        from fastmdxplora.runs_here import running_in, said_going
+
+        folders = self._rule_folders()
+        going = sorted({run for folder in folders for run in running_in(folder, walk=False)})
+        if not going:
+            return None
+        return {"ok": False, "error": said_going(folders, going),
+                "code": "environment.workspace.run_going"}
+
+    def _spawn_now(self, command: list[str], output_dir: Path,
+                   dashboard_url: str | None) -> dict[str, Any]:
+        """The process itself, started and held."""
         log_path = output_dir / "exploration.log"
         env = os.environ.copy()
         env["FASTMDX_DASHBOARD_ACTIVE"] = "1"
@@ -926,6 +976,9 @@ class DashboardRuntime:
                     "ok": False,
                     "error": "A FastMDXplora workflow is already running.",
                 }
+            refused = self._others_running()
+            if refused is not None:
+                return refused
 
             # A results folder may be a name or a path. Browsing to one puts
             # an absolute path in the box, and running that through the slug
@@ -1124,6 +1177,9 @@ class DashboardRuntime:
                     "ok": False,
                     "error": "A FastMDXplora workflow is already running.",
                 }
+            refused = self._others_running()
+            if refused is not None:
+                return refused
 
             checked = check_config_file(config_path)
             if not checked["ok"]:
@@ -1336,6 +1392,9 @@ class DashboardRuntime:
             if self.process is not None and self.process.poll() is None:
                 return {"ok": False,
                         "error": "A FastMDXplora workflow is already running."}
+            refused = self._others_running()
+            if refused is not None:
+                return refused
             study = study_of(self.active_root)
             if study is None or not study.is_dir():
                 return {"ok": False, "error": "No study is open."}
@@ -1373,6 +1432,9 @@ class DashboardRuntime:
             if self.process is not None and self.process.poll() is None:
                 return {"ok": False,
                         "error": "A FastMDXplora workflow is already running."}
+            refused = self._others_running()
+            if refused is not None:
+                return refused
             study = study_of(self.active_root)
             if study is None or not study.is_dir():
                 return {"ok": False, "error": "No study is open."}

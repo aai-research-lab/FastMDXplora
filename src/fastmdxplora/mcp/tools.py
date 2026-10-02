@@ -831,49 +831,13 @@ class _Inside:
         return self._place.shown(path)
 
 
-#: Held from the check that nothing is running to the start, so two calls
-#: at once cannot both find the machine free.
-_STARTING = threading.Lock()
-
-#: The runs this server started, by folder and process: a run is known
-#: here before it has written its own record, which takes a few seconds.
-_STARTED: dict[Path, int] = {}
-
-#: How deep the workspace is searched for runs' records.
-_DEEPEST = 6
-
-
 def _running_here(ctx: Context) -> list[str]:
-    """The studies running in the workspace, found by the record each run
-    keeps while it runs, wherever the study is, and the runs this server
-    started (each only while its process is still that run)."""
-    import json
+    """The studies running in the workspace: those started there from the
+    GUI or by an assistant, and any found by the record each run keeps
+    while it runs, wherever the study is (`fastmdxplora.runs_here`)."""
+    from fastmdxplora.runs_here import running_in
 
-    from fastmdxplora.gui.exploration import _identify_run
-    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
-
-    going: set[Path] = set()
-    for folder, pid in list(_STARTED.items()):
-        if _identify_run(pid, folder, None) is False:
-            _STARTED.pop(folder, None)  # ended; its number may be another's now
-        else:
-            going.add(folder)
-    root = ctx.workspace.root
-    for here, folders, files in os.walk(root, followlinks=False):
-        depth = len(Path(here).relative_to(root).parts)
-        folders[:] = [] if depth >= _DEEPEST else [f for f in folders
-                                                   if not f.startswith(".")]
-        if RUN_PROCESS_FILE not in files:
-            continue
-        try:
-            record = json.loads((Path(here) / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        pid = record.get("pid") if isinstance(record, dict) else None
-        if isinstance(pid, int) and pid > 0 and not record_is_from_elsewhere(record) \
-                and _identify_run(pid, Path(here), record.get("argv")) is not False:
-            going.add(Path(here))
-    return sorted(ctx.workspace.shown(folder) for folder in going)
+    return [ctx.workspace.shown(folder) for folder, _ in running_in(ctx.workspace.root)]
 
 
 def _time_here(ctx: Context, config: dict[str, Any]) -> str | None:
@@ -888,11 +852,13 @@ def _time_here(ctx: Context, config: dict[str, Any]) -> str | None:
 
 
 def _none_running(ctx: Context) -> None:
-    going = _running_here(ctx)
+    from fastmdxplora.runs_here import running_in, said_going
+
+    going = running_in(ctx.workspace.root)
     if going:
-        raise ToolError(f"{', '.join(going)} is running here. One study runs at a time, so "
-                        "each has the machine to itself and its timings mean what they "
-                        "say; stop_study stops one.")
+        raise ToolError(said_going(ctx.workspace.root, going,
+                                   then="stop_study stops it, once the person agrees."),
+                        code="environment.workspace.run_going")
 
 
 def _unused(ctx: Context, folder: Path) -> None:
@@ -905,6 +871,7 @@ def _unused(ctx: Context, folder: Path) -> None:
 
 def _start_study(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.runs_here import StartRefused, starting_in
 
     given = args["config"]
     if not _is_a_path(given):
@@ -956,22 +923,29 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
     if agreed is False:
         return "Not started: the person did not go ahead."
 
-    with _STARTING, _starting_in(ctx.workspace):
-        # Asked again now: the person may have taken minutes to answer.
-        if ctx.call is not None and ctx.call.cancelled:
-            return "Not started: the call was cancelled."
-        _none_running(ctx)
-        if continuing is None:
-            _unused(ctx, where)
-        runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
-                                   exploration_root=ctx.workspace.root,
-                                   hosting=_Inside(ctx.workspace))
-        started = runtime.launch_from_config(None, config=config)
-        if not started.get("ok"):
-            raise ToolError(str(started.get("error") or "It could not be started."))
-        folder, pid = Path(started["output"]).resolve(), int(started["pid"])
-        _STARTED[folder] = pid
-        _recorded(ctx, folder, pid)
+    # The workspace's starting lock, which the GUI's Run holds too: held
+    # from the check that nothing is running to the start, so no two
+    # starters, here or in a window, both find the workspace free.
+    try:
+        with starting_in(ctx.workspace.root):
+            # Asked again now: the person may have taken minutes to answer.
+            if ctx.call is not None and ctx.call.cancelled:
+                return "Not started: the call was cancelled."
+            _none_running(ctx)
+            if continuing is None:
+                _unused(ctx, where)
+            runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
+                                       exploration_root=ctx.workspace.root,
+                                       hosting=_Inside(ctx.workspace),
+                                       started_by="by an assistant")
+            started = runtime.launch_from_config(None, config=config)
+    except StartRefused as exc:
+        raise ToolError(str(exc), code=exc.code) from None
+    if not started.get("ok"):
+        raise ToolError(str(started.get("error") or "It could not be started."),
+                        code=str(started.get("code") or ToolError.default_code))
+    folder, pid = Path(started["output"]).resolve(), int(started["pid"])
+    _recorded(ctx, folder, pid)
     return (f"Started {shown} (process {pid}). It runs on its own: closing "
             "the assistant does not stop it. read_study says how far it has got; "
             "stop_study stops it. Its log is "
@@ -983,44 +957,6 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
 #: continuation, in the folder of the run going): a run that ends before
 #: then failed to start, and is said to have.
 RECORDED_WITHIN_S = 20.0
-
-#: Held in the workspace while a study is being started, so a second server
-#: (another assistant, another window) cannot start one at the same moment.
-_STARTING_FILE = ".fastmdxplora-starting"
-
-
-class _starting_in:
-    """The workspace's starting lock: a file made only if it is not there,
-    naming the process holding it; one left by a process that has gone is
-    taken over."""
-
-    def __init__(self, workspace: Workspace) -> None:
-        self.path = workspace.root / _STARTING_FILE
-
-    def __enter__(self) -> _starting_in:
-        from fastmdxplora.gui.exploration import _process_alive
-
-        for _ in range(2):
-            try:
-                handle = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-            except FileExistsError:
-                try:
-                    holder = int(self.path.read_text(encoding="utf-8").strip() or 0)
-                except (OSError, ValueError):
-                    holder = 0
-                if holder > 0 and holder != os.getpid() and _process_alive(holder):
-                    raise ToolError("Another study is being started in this workspace "
-                                    "right now. Try again in a minute.") from None
-                self.path.unlink(missing_ok=True)
-                continue
-            with os.fdopen(handle, "w", encoding="utf-8") as out:
-                out.write(str(os.getpid()))
-            return self
-        raise ToolError("The workspace's starting lock could not be taken.")
-
-    def __exit__(self, *exc: Any) -> None:
-        self.path.unlink(missing_ok=True)
-
 
 def _recorded(ctx: Context, folder: Path, pid: int) -> None:
     """Wait for the run to record itself; a run that ends first failed to
@@ -1045,7 +981,6 @@ def _recorded(ctx: Context, folder: Path, pid: int) -> None:
         if not _process_alive(pid):
             if recorded():
                 return
-            _STARTED.pop(folder, None)
             try:
                 lines = (folder / "exploration.log").read_text(
                     encoding="utf-8", errors="replace").strip().splitlines()

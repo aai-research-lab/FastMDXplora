@@ -143,8 +143,20 @@ the gate; most clients ask before a tool that is not read-only runs. The run is
 started as the GUI starts it, writes its log beside its results, and goes on
 after the assistant closes; the GUI shows it, and `read_study` says how far it
 has got. A start is said once the run is going: one that ends as it starts says
-so, with the end of its log. Two assistants on one workspace take turns to
-start. `stop_study` asks the same way before it stops one.
+so, with the end of its log. `stop_study` asks the same way before it stops one.
+
+The GUI keeps the same rule. Every start, from the GUI's **Run** or an
+assistant's `start_study`, holds the workspace's starting lock
+(`.fastmdxplora-starting`, a lock the operating system holds for the process,
+so none is left behind by one that crashed) from its check to the start, and
+adds the run to the workspace's list of runs started there
+(`.fastmdxplora-runs.json`). So neither starts while the other's study runs,
+and two never start at the same moment. A refusal names the study running and
+who started it. The GUI keeps the rule in the folder it was started in and in
+the folder it puts new studies in (never your home folder): give the assistant
+either as `--workspace` and the two take turns. An assistant also finds a run
+started by hand in its workspace, by the record the run keeps; the GUI goes by
+the list.
 
 ## The protocol
 

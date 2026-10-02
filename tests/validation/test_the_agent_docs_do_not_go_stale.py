@@ -78,7 +78,10 @@ class TestTheGuiDocsMatchTheFrame:
     def test_a_run_outlives_the_server_and_the_docs_say_so(self):
         from fastmdxplora.gui import exploration
 
-        assert "start_new_session=True" in inspect.getsource(exploration.DashboardRuntime._spawn)
+        # The process itself is started in `_spawn_now`; `_spawn` holds the
+        # workspace's one-study-at-a-time rule around it.
+        assert "start_new_session=True" in inspect.getsource(
+            exploration.DashboardRuntime._spawn_now)
         assert "The run outlives the server" in GUI
         assert hasattr(exploration.DashboardRuntime, "_adopt_if_running")
         assert "adopts" in GUI and "Stop reaches it" in GUI

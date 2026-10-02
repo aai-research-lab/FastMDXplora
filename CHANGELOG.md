@@ -17,6 +17,23 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
+### The GUI and an assistant start one study at a time between them
+
+The GUI's **Run** now keeps the rule an assistant's `start_study` keeps: one
+study runs in a workspace at a time, so each has the machine to itself and its
+timings mean what they say. Both take the workspace's starting lock from the
+check to the start, and both add the run to the workspace's list of runs
+started there (`.fastmdxplora-runs.json`), so a window does not start a study
+while an assistant's runs, or the reverse, and two never start at the same
+moment. The GUI keeps the rule in the folder it was started in and the folder
+it puts new studies in (never the home folder), so an assistant given either
+takes turns with it. The lock is the operating system's, held for the process,
+so one that crashed leaves none behind. A refusal names the study running and
+who started it, before anything is written for the new run
+(`environment.workspace.run_going`, `environment.workspace.run_starting`). A
+run counts while its process still carries its command; a folder that cannot
+hold the lock starts as before.
+
 ### `fastmdx agent model` chooses the Agent's model
 
 **`fastmdx agent model`** says which model is in use and where its key is read

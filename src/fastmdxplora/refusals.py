@@ -338,6 +338,12 @@ CODES: tuple[Code, ...] = (
          "The assistant's app did not lend its own model to the Agent: the person "
          "declined, or what came back was not a reply to what was asked.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.workspace.run_going",
+         "Another study is running in this workspace; one runs there at a time.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.workspace.run_starting",
+         "Another study is being started in this workspace at this moment.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.model.unset",
          "No model has been chosen, so there is nothing to ask.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
