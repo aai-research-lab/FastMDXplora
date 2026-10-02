@@ -51,6 +51,7 @@ from fastmdxplora.simulation.ensembles import NPT, resolve_ensemble
 
 __all__ = [
     "Segment",
+    "extended_production",
     "Segmentability",
     "plan_segments",
     "segmentability",
@@ -623,6 +624,27 @@ def last_segment(study: str | Path) -> Path:
 
     pieces = survey_segments(study)
     return max(pieces, key=lambda piece: piece.index).directory if pieces else Path(study)
+
+
+def extended_production(study: str | Path) -> tuple[float, int] | None:
+    """Production across an extended study's pieces, and how many pieces
+    ran; None for a study that ran in one.
+
+    An extension writes its own folder inside the study (``segment-001``
+    onward) and leaves the study's own ``simulation_parameters.json`` as
+    the first piece wrote it. Read from there alone, a study extended from
+    10 ns to 40 ns said "Production dynamics were run for 10 ns" in its
+    methods while its analyses averaged 40.
+    """
+    from fastmdxplora.analysis.joining import survey_segments
+
+    try:
+        ran = [piece for piece in survey_segments(study) if piece.trajectory is not None]
+    except OSError:
+        return None
+    if len(ran) < 2:
+        return None
+    return production_done_ns(study), len(ran)
 
 
 def production_done_ns(study: str | Path) -> float:

@@ -42,6 +42,20 @@ figure's legend and the GUI's table of a study's runs.
 0.042)`, not `0.2813 ± 0.042`: it is the width of the reweighted distribution,
 not the mean's error, and a `±` after a mean is read as its error.
 
+### An extended study is said at the length it ran
+
+**The methods, the list of settings, the GUI's summary, the dashboard and a
+study's card now give an extended study's production across all its pieces.**
+An extension writes its own `segment-NNN` folder inside the study and leaves
+the study's own simulation record as the first piece wrote it, so a study run
+until it knew, extended from 10 ns to 40 ns, said "Production dynamics were
+run for 10 ns" beside analyses that averaged all 40, and its card (which an
+AI app's `list_studies` reads) gave the last piece's length. The methods
+now say "run for 40 ns in the NPT ensemble, in 4 pieces, each continuing from
+the checkpoint of the one before", and the list of settings says it is the
+first piece's. `fastmdxplora.simulation.resume.extended_production` gives the
+total and the count.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

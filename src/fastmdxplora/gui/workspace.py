@@ -102,7 +102,14 @@ def card_of(folder: Path | str) -> dict[str, Any]:
         "thumbnail": bool(thumbnail_of(base)),
     }
     simulation = (config or {}).get("simulation") if isinstance(config, dict) else None
-    if isinstance(simulation, dict) and simulation.get("duration_ns") is not None:
+    from fastmdxplora.simulation.resume import extended_production
+
+    # An extended study's config carries its last piece's length after the
+    # join, so its pieces are what say how long it ran.
+    extended = extended_production(base) if not isinstance(batch, dict) else None
+    if extended:
+        card["production_ns"], card["pieces"] = round(extended[0], 6), extended[1]
+    elif isinstance(simulation, dict) and simulation.get("duration_ns") is not None:
         card["production_ns"] = simulation.get("duration_ns")
     forcefield = ((config or {}).get("setup") or {}).get("forcefield") \
         if isinstance(config, dict) else None

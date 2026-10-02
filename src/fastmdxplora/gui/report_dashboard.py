@@ -377,8 +377,16 @@ def _summary_cards(
 
     phase_context = load_phase_context(project_root)
     if phase_context.simulation_present:
+        from fastmdxplora.simulation.resume import extended_production
+
         sim_params = sim_manifest.get("parameters", {})
-        if isinstance(sim_params, dict):
+        extended = extended_production(project_root)
+        if extended:
+            # The pieces' production, not the first piece's.
+            cards.append(DashboardCard("Simulation time",
+                                       f"{_format_number(extended[0])} ns",
+                                       f"production in {extended[1]} pieces"))
+        elif isinstance(sim_params, dict):
             duration = sim_params.get("duration_ns")
             if duration is not None:
                 cards.append(

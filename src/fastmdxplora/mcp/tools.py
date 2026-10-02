@@ -674,7 +674,8 @@ def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
         said = [str(card.get("system") or "no system"), str(card.get("kind") or "study"),
                 str(card.get("state") or "")]
         if card.get("production_ns") is not None:
-            said.append(f"{card['production_ns']} ns production")
+            said.append(f"{card['production_ns']} ns production"
+                        + (f" in {card['pieces']} pieces" if card.get("pieces") else ""))
         if card.get("forcefield"):
             said.append(str(card["forcefield"]))
         if card.get("when"):

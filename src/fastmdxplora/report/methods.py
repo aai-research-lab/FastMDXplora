@@ -264,6 +264,7 @@ def methods_paragraphs(
     versions: dict[str, str] | None = None,
     made_with: list[tuple[str, list[str]]] | None = None,
     tools_recorded: bool = True,
+    extended: tuple[float, int] | None = None,
 ) -> str:
     """The methods text, as prose rather than a list of settings.
 
@@ -271,6 +272,11 @@ def methods_paragraphs(
     reader needs, and they are not the same document. The list is still
     written elsewhere in the report -- this is the part somebody pastes into a
     manuscript.
+
+    ``extended`` is the production of a study extended in pieces and how
+    many (:func:`fastmdxplora.simulation.resume.extended_production`): the
+    simulation record is the first piece's, and a methods section reading
+    it alone gives that piece's length for the whole study.
     """
     from fastmdxplora.simulation.ensembles import NPT, recorded_ensemble
 
@@ -577,7 +583,15 @@ def methods_paragraphs(
             stages.append(f"{_steps_to_ns(npt, timestep)} in the NPT ensemble")
         if stages:
             protocol.append("Equilibration comprised " + " followed by ".join(stages) + ".")
-        if production:
+        if production and extended:
+            total, pieces = extended
+            length = f"{total:.3g} ns" if total >= 1 else f"{total * 1000:.3g} ps"
+            protocol.append(
+                f"Production dynamics were run for {length} in the "
+                f"{production_ensemble.upper()} ensemble, in {pieces} pieces, "
+                "each continuing from the checkpoint of the one before."
+            )
+        elif production:
             protocol.append(
                 f"Production dynamics were run for "
                 f"{_steps_to_ns(production, timestep)} in the "

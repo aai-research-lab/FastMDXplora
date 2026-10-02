@@ -285,11 +285,15 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
         from types import SimpleNamespace
 
         orchestrator = SimpleNamespace(output_dir=project_root, results=[])
+    from fastmdxplora.simulation.resume import extended_production
+
     made_with, tools, recorded = _recorded_software(orchestrator)
+    extended = extended_production(project_root)
     prose = methods_paragraphs(
         project_root, setup, sim,
         system_name=(setup.get("input") or {}).get("system"),
         versions=tools, made_with=made_with, tools_recorded=recorded,
+        extended=extended,
     )
     if prose:
         lines.append(prose)
@@ -343,6 +347,16 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
             "the following parameters:" if production == 0 else
             "Production MD was performed with the following simulation parameters:"
         )
+        if extended and production != 0:
+            # The list is the first piece's record; the study is its pieces.
+            lines.append("")
+            more = extended[1] - 1
+            lines.append(
+                f"These are the first piece's. {more} more piece"
+                + ("s" if more != 1 else "")
+                + f" extended the study, each from the checkpoint of the one "
+                f"before, to {extended[0]:.3g} ns of production in all; each "
+                "piece's own record is in its `segment-NNN/simulation` folder.")
         lines.append("")
         for k, v in _resolve_derived(dict(sim_params), record=sim).items():
             lines.append(f"- **{_md_text(k)}**: `{_code_text(v)}`")

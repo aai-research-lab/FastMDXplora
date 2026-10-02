@@ -1805,7 +1805,12 @@ def _results_payload(root: Path) -> dict[str, Any]:
     ]
     reports.sort(key=lambda record: _report_order(record["path"]))
     dashboard = by_path.get("report/dashboard.html")
-    summary = _summary_records(root, manifest, analysis_manifest, sim_manifest)
+    from fastmdxplora.simulation.resume import extended_production
+
+    # An extended study's length is its pieces', not its first piece's.
+    extended = extended_production(root)
+    summary = _summary_records(root, manifest, analysis_manifest, sim_manifest,
+                               extended=extended)
     setup_manifest = _load_json(_setup_of(root) / "setup_parameters.json")
     system = _system_info(root, manifest, analysis_manifest, sim_manifest)
     return {
@@ -1817,7 +1822,8 @@ def _results_payload(root: Path) -> dict[str, Any]:
         "summary": summary,
         "system": system,
         "setup": _setup_details(setup_manifest),
-        "simulation": _simulation_details(sim_manifest, read_status(root)),
+        "simulation": _simulation_details(sim_manifest, read_status(root),
+                                          extended=extended),
         "phases": _phase_records(manifest),
         "analyses": _analysis_records(analysis_manifest, artifacts, plots),
         "dashboard": dashboard,
@@ -1993,6 +1999,8 @@ def _summary_records(
     manifest: dict[str, Any],
     analysis_manifest: dict[str, Any],
     sim_manifest: dict[str, Any],
+    *,
+    extended: tuple[float, int] | None = None,
 ) -> list[dict[str, str]]:
     phase_statuses = [
         str(item.get("status") or "unknown").lower()
@@ -2018,13 +2026,16 @@ def _summary_records(
     )
     atoms = analysis_manifest.get("n_atoms")
     sim_time = sim_manifest.get("duration_ns_actual")
+    if extended:
+        # The pieces' production, not the first piece's record of its own.
+        sim_time = f"{extended[0]:g}"
     live_status = read_status(root)
     temperature = _first_present(
         live_status.get("target_temperature_K"),
         _last_metric_value(root, "temperature"),
     )
     latest = _first_present(live_status.get("status"), status)
-    return [
+    records = [
         {"label": "Project status", "value": status},
         {"label": "Latest status", "value": str(latest or "—")},
         {"label": "Frames", "value": _display_value(frames)},
@@ -2038,6 +2049,9 @@ def _summary_records(
             "value": f"{temperature} K" if temperature not in (None, "") else "—",
         },
     ]
+    if extended:
+        records[4]["value"] += f" in {extended[1]} pieces"
+    return records
 
 
 def _last_metric_value(root: Path, field: str) -> str | None:
@@ -2357,6 +2371,8 @@ def _setup_details(setup_manifest: dict[str, Any]) -> dict[str, Any]:
 def _simulation_details(
     sim_manifest: dict[str, Any],
     live_status: dict[str, Any],
+    *,
+    extended: tuple[float, int] | None = None,
 ) -> dict[str, Any]:
     params = sim_manifest.get("parameters")
     if not isinstance(params, dict):
@@ -2385,10 +2401,11 @@ def _simulation_details(
             params.get("pressure_bar"),
             params.get("pressure_atm"),
         ),
-        "duration_ns_actual": _first_present(
+        "duration_ns_actual": (extended[0] if extended else _first_present(
             sim_manifest.get("duration_ns_actual"),
             params.get("duration_ns"),
-        ),
+        )),
+        "pieces": extended[1] if extended else 1,
         "n_production_frames": _first_present(
             sim_manifest.get("n_production_frames"),
             live_status.get("current_frame_count"),
