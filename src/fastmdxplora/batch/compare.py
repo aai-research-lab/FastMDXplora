@@ -36,6 +36,7 @@ import numpy as np
 from fastmdxplora.analysis.plotting import new_figure, save_figure
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.batch.aggregate import SEED_AXES, member_directory, read_member_findings
+from fastmdxplora.statistics import with_its_error
 from fastmdxplora.analysis.plotting import closes_what_it_opens as _closes_what_it_opens
 
 logger = get_logger("compare")
@@ -521,9 +522,7 @@ def _write_markdown(
             if mean is None:
                 cells.append("")
                 continue
-            cell = f"{mean['mean']:.4g}"
-            if mean["error"] is not None:
-                cell += f" ± {mean['error']:.2g}"
+            cell = with_its_error(mean["mean"], mean["error"])
             if not mean["recorded"]:
                 cell += " (all frames)"
                 whole = True
@@ -587,13 +586,17 @@ def _trend_takeaway(
     if e_lo is None or e_hi is None:
         return (f"{where} goes from {y_lo:.3g} to {y_hi:.3g}{unit_str}; no standard error "
                 "was recorded to judge the change by.")
-    bound = 2.0 * float(np.hypot(e_lo, e_hi))
-    ends = f"{y_lo:.3g} ± {e_lo:.2g} to {y_hi:.3g} ± {e_hi:.2g}{unit_str}"
+    combined = float(np.hypot(e_lo, e_hi))
+    bound = 2.0 * combined
+    ends = f"{with_its_error(y_lo, e_lo)} to {with_its_error(y_hi, e_hi)}{unit_str}"
+    # The change with its own error, to the place that error allows: to two
+    # figures alone it read "a change of 0.1 nm" beside ends given to six.
+    by = f"{with_its_error(abs(change), combined)}{unit_str}"
     if abs(change) > bound:
         direction = "increases" if change > 0 else "decreases"
-        return (f"{where} {direction} from {ends}, a change of {abs(change):.2g}{unit_str}, "
+        return (f"{where} {direction} from {ends}, a change of {by}, "
                 "more than twice its error.")
-    return (f"{where} goes from {ends}: the change, {abs(change):.2g}{unit_str}, is within "
+    return (f"{where} goes from {ends}: the change, {by}, is within "
             "twice its error, so these runs do not tell the two ends apart.")
 
 

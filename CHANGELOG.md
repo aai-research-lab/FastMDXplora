@@ -26,6 +26,22 @@ name"), the messages that say none is chosen, the Agent's instructions, the
 schema's help for `agent` and `agent_model`, and the docs. A water model, a
 model of an NMR ensemble and the cost model keep their names.
 
+### A mean reads the same on every page
+
+**The report, the slides, the campaign's comparison and the stopping rule's
+table now give a mean to the place its error allows**, as the GUI and the Agent
+already did: the error to two figures and the mean to the same decimal place.
+The report gave `0.112 ± 0.00201` beside the GUI's `0.1120 ± 0.0020` for one
+record, and an energy of -123,456.7 ± 12 kJ/mol as `-1.235e+05 ± 12`, coarser
+than its own error. The report's line now carries the mean's unit, and the
+campaign's trend sentence gives the change with its error. One function,
+`fastmdxplora.statistics.with_its_error`, says them all, including the
+figure's legend and the GUI's table of a study's runs.
+
+**A reweighted mean's spread is said as a standard deviation**, `0.2813 (s.d.
+0.042)`, not `0.2813 ± 0.042`: it is the width of the reweighted distribution,
+not the mean's error, and a `±` after a mean is read as its error.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study

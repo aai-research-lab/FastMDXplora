@@ -68,11 +68,17 @@ def _number(value: Any, digits: int = 4) -> str:
 
 
 def _with_spread(mean: Any, spread: Any) -> str:
+    """A mean and the standard deviation of what it averages, said as one.
+
+    Not as ``mean ± spread``: a ``±`` after a mean is read as its error, and
+    this spread is the width of the reweighted distribution, which does not
+    shrink with sampling. No error on a reweighted mean is computed here.
+    """
     text = _number(mean)
     spread_text = _number(spread, 2)
     if text == "—" or spread_text == "—":
         return text
-    return f"{text} ± {spread_text}"
+    return f"{text} (s.d. {spread_text})"
 
 
 def reweighted_line(record: dict[str, Any] | None, analysis: str) -> str | None:
@@ -173,7 +179,8 @@ def reweighted_section(project_root: Path,
     if isinstance(ess, (int, float)) and ess < THIN_EFFECTIVE_FRAMES:
         caution = (
             " These averages therefore rest on very few independent frames, "
-            "and the spreads beside them are correspondingly wide.")
+            "and they and the standard deviations beside them are "
+            "correspondingly uncertain.")
     lines.append(
         f"The weights carry {_number(ess, 3)} effective frames of {frames}."
         + caution)

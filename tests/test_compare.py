@@ -518,7 +518,9 @@ class TestTheMeansAreTheRecordedOnes:
     def test_the_table_gives_each_mean_after_equilibration_with_its_error(self, tmp_path):
         root = _batch_of(tmp_path, {300: 0.20, 350: 0.30})
         md = (build_comparison_report(root) / "comparison_report.md").read_text()
-        assert "0.2 ±" in md and "0.3 ±" in md
+        # Each to the place its error allows, as every page gives a mean.
+        assert "| 0.200040 ± 0.000053 |" in md and "| 0.300012 ± 0.000055 |" in md
+        assert "a change of 0.099972 ± 0.000076 nm" in md
         assert "(all frames)" not in md
         assert "after equilibration, with its standard" in md
 

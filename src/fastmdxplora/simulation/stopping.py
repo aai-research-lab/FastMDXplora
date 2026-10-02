@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.statistics import with_its_error
 
 __all__ = ["StopTarget", "check_stopping", "judge", "rule_said", "run_until_known",
            "stopping_section", "targets_of"]
@@ -514,7 +515,7 @@ def judge(runs: list[Path], targets: list[StopTarget], production_ns: float) -> 
                 more = production_ns * kept * (JUDGED_ALONE / max(alone, 1e-9) - 1.0)
             verdicts.append(Verdict(
                 target.analysis, met,
-                f"{target.analysis} {means[0]:.4g} ± {errors[0]:.2g}"
+                f"{target.analysis} {with_its_error(means[0], errors[0])}"
                 + (f" {unit}" if unit else "")
                 + (f", within the ±{allowed:.2g} asked but resting on {alone:.0f} "
                    f"independent samples, and one run is judged alone on "
@@ -561,7 +562,7 @@ def _judge_replicas(target: StopTarget, runs: list[Path], means: list[float],
     met = error <= allowed
     return Verdict(
         target.analysis, met,
-        f"{target.analysis} {pooled:.4g} ± {error:.2g}{u} across {len(runs)} replicas "
+        f"{target.analysis} {with_its_error(pooled, error)}{u} across {len(runs)} replicas "
         f"that agree" + (", within" if met else ", outside") + f" the ±{allowed:.2g} asked",
         value=pooled, error=error, allowed=allowed, unit=unit,
         more_ns=None if met else _more_for(error, allowed, production_ns, kept),
@@ -791,7 +792,7 @@ def stopping_section(root: str | Path) -> list[str]:
             if v.get("value") is None or v.get("error") is None:
                 cells.append("not yet determined")
                 continue
-            cell = f"{v['value']:.4g} ± {v['error']:.2g} (±{v['allowed']:.2g} asked)"
+            cell = f"{with_its_error(v['value'], v['error'])} (±{v['allowed']:.2g} asked)"
             if v.get("agree") is False:
                 cell += ", replicas disagree"
             cells.append(cell)

@@ -459,11 +459,12 @@ def _findings_bullets(project_root: Path) -> list[str]:
     if not assessed:
         return []
 
+    from fastmdxplora.statistics import with_its_error
+
     bullets: list[str] = []
     for record in assessed["observables"].values():
         error = record["standard_error"]
-        value = (f"{record['mean']:.4g} ± {error:.3g}" if error is not None
-                 else f"{record['mean']:.4g}")
+        value = with_its_error(record["mean"], error)
         note = {True: "", False: " (still drifting)",
                 None: " (too short to say if equilibrated)"}[record.get("equilibrated", record.get("settled"))]
         bullets.append(

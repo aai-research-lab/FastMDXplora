@@ -657,7 +657,8 @@ def _results_summary(root: Any) -> str:
     import json
     import math
 
-    from fastmdxplora.gui.report_dashboard import _with_its_error, unit_of
+    from fastmdxplora.gui.report_dashboard import unit_of
+    from fastmdxplora.statistics import with_its_error
     from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
 
     rows: list[str] = []
@@ -701,13 +702,10 @@ def _results_summary(root: Any) -> str:
             # figures each, an energy of -123,456.7 +/- 12 read -1.235e+05,
             # coarser than its own error, and differed from what the person
             # read beside it.
-            if isinstance(mean, (int, float)) and has_error and se > 0:
-                piece = f"{label}mean {_with_its_error(mean, se)}"
+            if isinstance(mean, (int, float)):
+                piece = f"{label}mean {with_its_error(mean, se if has_error else None)}"
             else:
-                piece = (f"{label}mean {mean:.4g}" if isinstance(mean, (int, float))
-                         else f"{label}mean {mean}")
-                if has_error:
-                    piece += f" \u00b1 {se:.2g}"
+                piece = f"{label}mean {mean}"
             if unit:
                 piece += f" {unit}"
             if has_error:

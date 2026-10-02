@@ -37,6 +37,7 @@ the average, discard too much and there is nothing left to average.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,6 +60,7 @@ __all__ = [
     "summarise",
     "mean_record",
     "shared_start",
+    "with_its_error",
 ]
 
 #: Below this many independent samples, a mean and its error describe the
@@ -981,3 +983,25 @@ def heterogeneity_ratio(means: np.ndarray, weights: np.ndarray) -> float:
     pooled = float((weights * means).sum() / weights.sum())
     q = float((weights * (means - pooled) ** 2).sum())
     return q / (means.size - 1)
+
+
+def with_its_error(value: float, error: float | None, *, sign: bool = False) -> str:
+    """A value and its standard error as every page gives them: the error to
+    two figures and the value to the same decimal place, so neither says
+    more than the other. With no error, four significant figures; with an
+    error of zero, that zero.
+
+    One function for the report, the slides, the campaign's tables, the GUI
+    and the Agent. The report printed ``0.112 ± 0.00201`` where the GUI
+    beside it printed ``0.1120 ± 0.0020``: the same record, two numbers a
+    reader has to reconcile, and the first gives the error three figures it
+    does not have.
+    """
+    if error is None or not math.isfinite(error) or error < 0:
+        said = f"{value:.4g}"
+    elif error == 0:
+        said = f"{value:.4g} \u00b1 0"
+    else:
+        places = max(0, 1 - math.floor(math.log10(error)))
+        said = f"{value:,.{places}f} \u00b1 {error:,.{places}f}"
+    return f"+{said}" if sign and not said.startswith("-") else said

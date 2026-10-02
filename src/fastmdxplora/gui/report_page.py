@@ -159,6 +159,7 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     short to measure stood among them as though it were a result."""
     from fastmdxplora.batch.aggregate import read_member_findings
     from fastmdxplora.gui.report_dashboard import _format_metric_value, unit_of
+    from fastmdxplora.statistics import with_its_error
 
     axes: list[str] = sorted({axis for r in runs for axis in (r.get("values") or {})})
     short = {axis: axis.split(".")[-1] for axis in axes}
@@ -197,9 +198,9 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
                 cells.append("")
                 continue
             error = record.get("standard_error")
-            cell = _format_metric_value(record["mean"])
-            if isinstance(error, (int, float)) and not isinstance(error, bool):
-                cell += f" ± {_format_metric_value(error)}"
+            cell = (with_its_error(record["mean"], error)
+                    if isinstance(error, (int, float)) and not isinstance(error, bool)
+                    else _format_metric_value(record["mean"]))
             if record.get("not_a_measurement"):
                 cell += " \\*"
                 qualified = True

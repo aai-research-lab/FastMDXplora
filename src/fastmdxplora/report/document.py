@@ -753,10 +753,13 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     # produced it, and no number.
     measured = findings.get("mean")
     if isinstance(measured, dict) and measured.get("mean") is not None:
+        from fastmdxplora.statistics import with_its_error
+
         error = measured.get("standard_error")
-        value = (f"{measured['mean']:.4g} ± {error:.3g}"
-                 if isinstance(error, (int, float)) and error == error
-                 else f"{measured['mean']:.4g}")
+        error = error if isinstance(error, (int, float)) and error > 0 else None
+        value = with_its_error(measured["mean"], error)
+        if measured.get("unit"):
+            value += f" {measured['unit']}"
         independent = measured.get("effective_samples")
         said = f"Mean over the equilibrated part of the run: {value}"
         if isinstance(independent, (int, float)):

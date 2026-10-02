@@ -2552,7 +2552,9 @@ class TestTheResultsCarryTheMeasurement:
         }})
         said = " ".join(notes)
 
-        assert "0.01208 ± 0.00292" in said
+        # The error to two figures, the mean to the same place: as the GUI
+        # beside the report gives it.
+        assert "0.0121 ± 0.0029" in said
         assert "8 independent samples" in said
         assert "discarding 40 frames" in said
 

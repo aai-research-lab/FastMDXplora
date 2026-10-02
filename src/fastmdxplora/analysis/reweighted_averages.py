@@ -857,8 +857,8 @@ def reweight_results(
         warnings.append(
             f"The weights concentrate into {weights.effective_sample_size:.0f} "
             f"effective frames of {n_frames}. These reweighted averages rest "
-            "on that many, and the spreads beside them are correspondingly "
-            "wide; a longer run is what fixes it.")
+            "on that many, and they and the standard deviations beside them "
+            "are correspondingly uncertain; a longer run is what fixes it.")
     if not weights.converged:
         warnings.append(
             "The bias had not converged when the run ended, so these averages "

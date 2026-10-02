@@ -811,10 +811,11 @@ def _finite(value: object) -> bool:
 
 
 def _with_its_error(mean: float, error: float) -> str:
-    """A mean to the precision its error allows: the error to two figures,
-    the mean to the same decimal place."""
-    places = max(0, 1 - math.floor(math.log10(error)))
-    return f"{mean:,.{places}f} \u00b1 {error:,.{places}f}"
+    """A mean to the precision its error allows
+    (:func:`fastmdxplora.statistics.with_its_error`)."""
+    from fastmdxplora.statistics import with_its_error
+
+    return with_its_error(mean, error)
 
 
 def _summarise_data_file(data_path: Path, kind: str) -> str:

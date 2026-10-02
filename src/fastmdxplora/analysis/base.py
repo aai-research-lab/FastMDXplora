@@ -644,8 +644,10 @@ class Analysis(ABC):
         unit = self._mean_unit()
         counted = self._independent_samples(record.get("effective_samples"))
         if has_error:
-            head = (f"mean after equilibration {mean:.4g} ± "
-                    f"{record['standard_error']:.2g}{unit}")
+            from fastmdxplora.statistics import with_its_error
+
+            head = (f"mean after equilibration "
+                    f"{with_its_error(mean, record['standard_error'])}{unit}")
             if counted is None:
                 return head
             return f"{head}\n({counted})"

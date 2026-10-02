@@ -14,7 +14,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import math
 import os
 import re
 from dataclasses import dataclass
@@ -321,19 +320,11 @@ def studies_here(workspace: Workspace) -> tuple[list[dict[str, Any]], bool]:
 
 
 def with_error(value: float, error: float | None, *, sign: bool = False) -> str:
-    """A value and its standard error as the report gives them: the error to
-    two figures and the value to the same decimal place, so neither says
-    more than the other. With no error, four significant figures; with an
-    error of zero, that zero."""
-    from fastmdxplora.gui.report_dashboard import _with_its_error
+    """A value and its standard error as the report gives them
+    (:func:`fastmdxplora.statistics.with_its_error`)."""
+    from fastmdxplora.statistics import with_its_error
 
-    if error is None or not math.isfinite(error) or error < 0:
-        said = f"{value:.4g}"
-    elif error == 0:
-        said = f"{value:.4g} ± 0"
-    else:
-        said = _with_its_error(value, error)
-    return f"+{said}" if sign and not said.startswith("-") else said
+    return with_its_error(value, error, sign=sign)
 
 
 def _mean(side: dict[str, Any] | None) -> str:

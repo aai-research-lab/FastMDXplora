@@ -218,7 +218,7 @@ class TestJudging:
         _mean(tmp_path, "rmsd", 0.2, 0.008)
         [verdict] = judge([tmp_path], [StopTarget("rmsd", standard_error=0.01)], 2.0)
         assert verdict.met and verdict.more_ns is None
-        assert "0.2 ± 0.008 nm, within the ±0.01 asked" in verdict.said
+        assert "0.2000 ± 0.0080 nm, within the ±0.01 asked" in verdict.said
 
     def test_one_run_short_of_it_asks_for_what_the_error_needs(self, tmp_path):
         # Twice the error allowed wants four times the kept frames: three
