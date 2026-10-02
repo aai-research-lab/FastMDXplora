@@ -104,9 +104,15 @@ Imports require a preview and human confirmation. Incompatible sources cannot
 be silently restored; imported legacy notes do not establish molecular identity.
 Restoring a setting focuses its field without applying a scientific value.
 
-Trajectory clips and the preparation-audit panel are planned dashboard additions
-until their controls and recorded outputs are available. Do not claim that an
-export or audit exists without verifying it. Clips must use saved frames and
-never resimulate/interpolate coordinates. Audit explanations must cite recorded
-preparation evidence. Provider connection availability must be verified; account
-login does not authorize scientific execution.
+Trajectory clips use saved frames without resimulation or coordinate interpolation.
+Their metadata records source frames/times, camera path and display labels.
+The optional preparation audit compares saved stages and records future setup
+operations in setup/preparation_audit.json with immutable setup/audit snapshots.
+Historical studies may expose inventory differences and saved choices without
+operation provenance. Derived source rows and grouped water/ion differences are
+not recorded operations. A partial/incomplete audit is not a successful preparation.
+Use the supplied verified stage atom inventory for audit selections; do not reuse
+the main trajectory's residue numbering without checking correspondence.
+Do not claim an export or event exists without verifying its saved evidence.
+Provider connection availability must be verified; account login does not
+authorize scientific execution.

@@ -501,6 +501,30 @@
             </div>
           </div>
 
+          <details id="preparation-audit-panel" class="card">
+            <summary class="card-header"><h2 class="card-title">Preparation audit (optional)</h2></summary>
+            <div class="card-body">
+              <p id="preparation-audit-status" role="status">Expand to inspect saved preparation evidence.</p>
+              <p id="preparation-audit-notice" class="muted small"></p>
+              <div id="preparation-stage-strip" class="preparation-stage-strip" aria-label="Saved preparation stages"></div>
+              <div class="control-row">
+                <label>Before stage<select id="preparation-before" aria-label="Before stage"></select></label>
+                <label>After stage<select id="preparation-after" aria-label="After stage"></select></label>
+                <label><input id="preparation-linked" type="checkbox" checked> Link camera rotation and zoom</label>
+                <label><input id="preparation-overlay" type="checkbox"> Display aligned overlay</label>
+              </div>
+              <p id="preparation-alignment" class="muted small"></p>
+              <div class="preparation-viewers">
+                <div><h3 id="preparation-before-title">Before</h3><div id="preparation-before-canvas" class="preparation-canvas" aria-label="Before preparation structure"></div></div>
+                <div><h3 id="preparation-after-title">After</h3><div id="preparation-after-canvas" class="preparation-canvas" aria-label="After preparation structure"></div></div>
+              </div>
+              <div id="preparation-inventory" aria-label="Atom inventories by saved stage"></div>
+              <label>Recorded operation or observed change<select id="preparation-event" aria-label="Preparation change"></select></label>
+              <p id="preparation-evidence" class="muted small"></p>
+              <pre id="preparation-details" class="preparation-details"></pre>
+              <div class="control-row"><button id="preparation-ask" class="ghost-btn" type="button" disabled>Ask Agent about this change</button><button id="preparation-bookmark" class="ghost-btn" type="button" data-research-bookmark="" disabled>Bookmark this preparation change</button></div>
+            </div>
+          </details>
           <!-- No run: one sentence and the way to start one. The sidebar
                already says "No active study"; this says what to do. -->
           <div class="card" id="live-absent" hidden>
@@ -1307,5 +1331,6 @@
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/clip-export.js"></script>
+  <script src="/static/preparation-audit.js"></script>
 </body>
 </html>

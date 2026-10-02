@@ -111,6 +111,23 @@ def source_for(root: Path, view: dict, *, verify_view: bool = True) -> dict:
         add("resolved_settings_yaml", root / "resolved_config.yaml")
     if view.get("audit_event"):
         add("preparation_audit", root / "setup/preparation_audit.json")
+        add("preparation_choices", root / "setup/setup_parameters.json")
+        from fastmdxplora.gui.preparation_audit import audit_payload
+
+        audit = audit_payload(root)
+        display = view.get("audit_display") or {}
+        for key in ("before", "after"):
+            displayed = audit["sources"].get(display.get(key), {})
+            if displayed.get("path"):
+                add("display_preparation_" + key, root / displayed["path"])
+        source = audit["sources"].get(view.get("audit_source"), {})
+        if source.get("path"):
+            add("preparation_structure", root / source["path"])
+        event = next((row for row in audit["changes"] if row.get("id") == view["audit_event"]), {})
+        for key in ("before", "after"):
+            source = audit["sources"].get(event.get(key), {})
+            if source.get("path"):
+                add("preparation_" + key, root / source["path"])
     if not evidence:
         add("study_manifest", root / "manifest.json")
     return {"version": 1, "evidence": evidence}

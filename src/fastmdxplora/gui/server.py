@@ -508,6 +508,18 @@ def make_handler(
 
                 self._send_json(bookmarks_endpoint(app_runtime))
                 return
+            if path == "/api/research/preparation-audit":
+                from fastmdxplora.gui.preparation_audit import audit_payload, comparison_payload
+
+                if not getattr(app_runtime, "active_root", None) or getattr(app_runtime, "data_stale", False) or not is_study(root):
+                    self._send_json({"ok": False, "error": "Load a current study to inspect its preparation evidence."})
+                    return
+                query = parse_qs(parsed.query)
+                if query.get("before") and query.get("after"):
+                    self._send_json(comparison_payload(root, query["before"][0], query["after"][0]))
+                else:
+                    self._send_json(audit_payload(root))
+                return
             if path == "/api/research/bookmarks/image":
                 from fastmdxplora.gui.research import screenshot_endpoint
 

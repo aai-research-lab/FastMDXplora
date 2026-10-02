@@ -5,7 +5,7 @@
   let analysis = null, field = null, figure = null, study = null, rows = [], editing = null;
   let docked = false, origin = null, loadedStudy = null;
   let refreshGeneration = 0;
-  let warning = null, auditEvent = null;
+  let warning = null, auditEvent = null, auditSource = null, auditSelection = null;
   let importPreview = null, shownCount = 20;
   let tags = ["Simulation settings", "Graph", "Figure", "Trajectory frame", "Structure", "Preparation", "Observation"];
   let enabled = localStorage.getItem("fastmdx-agent-sidebar-enabled") !== "false";
@@ -17,7 +17,13 @@
     const view = {page: page || "overview"};
     if (state.appState?.active_run) view.study = state.appState.active_run;
     if (warning) view.warning = warning;
-    if (auditEvent) view.audit_event = auditEvent;
+    if (page === "overview" && auditEvent) {
+      view.audit_event = auditEvent;
+      if (auditSource) view.audit_source = auditSource;
+      if (auditSelection) view.audit_selection = auditSelection;
+      const display = window.FastMDXPreparationAudit?.capture();
+      if (display) view.audit_display = display;
+    }
     if (["analysis", "report"].includes(page) && analysis) {
       view.analysis = analysis;
       const range = window.FastMDXSeries?.getRange(analysis);
@@ -139,9 +145,10 @@
     } else {
       let target;
       if (view.figure) target = document.querySelector('.analysis-card[data-research-figure="' + CSS.escape(view.figure) + '"]');
+      if (view.audit_event) target = el("preparation-audit-panel");
       if (!target && view.analysis) target = document.querySelector('.page[data-page="' + view.page + '"] .analysis-card[data-analysis="' + CSS.escape(view.analysis) + '"]');
       else if (view.page === "run" && view.field) target = document.querySelector('[data-research-field="' + CSS.escape(view.field) + '"]')?.closest(".builder-field");
-      else if (["overview", "report"].includes(view.page)) target = document.querySelector('.page[data-page="' + view.page + '"] .card');
+      else if (!target && ["overview", "report"].includes(view.page)) target = document.querySelector('.page[data-page="' + view.page + '"] .card');
       if (!target || !window.html2canvas) throw new Error("No screenshot is available for this view. The bookmark can still be saved.");
       source = await window.html2canvas(target, {logging: false, allowTaint: false,
         useCORS: false, scale: Math.min(1, 1280 / Math.max(target.offsetWidth, target.offsetHeight)),
@@ -250,7 +257,10 @@
       figure = view.figure;
       document.querySelector('.analysis-card[data-research-figure="' + CSS.escape(view.figure) + '"]')?.scrollIntoView({block: "center"});
     }
-    if (view.page === "viewer") {
+    if (view.audit_event) {
+      await window.FastMDXPreparationAudit?.restore(view.audit_event, view.audit_source, view.audit_selection, view.audit_display);
+      status("Preparation bookmark restored.");
+    } else if (view.page === "viewer") {
       status("Restoring viewer…");
       const result = await molecule()?.restoreResearchView(view);
       status(result || "The viewer is unavailable.");
@@ -462,5 +472,5 @@
     el("agent-request").focus();
   }
   window.FastMDXResearch = {capture: capture, restore: restore, describe: describe, ask: ask, enabled: () => enabled,
-    selectAudit: (id) => { auditEvent = id; warning = null; updateContext(); }};
+    selectAudit: (id, source, selection) => { auditEvent = id; auditSource = source || null; auditSelection = selection || null; warning = null; updateContext(); }};
 })();

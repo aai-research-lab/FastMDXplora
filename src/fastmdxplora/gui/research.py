@@ -28,7 +28,7 @@ def clean_view(value: Any) -> dict[str, Any]:
     page = value.get("page")
     view: dict[str, Any] = {"page": page if isinstance(page, str) and page in _PAGES
                             else "overview"}
-    for name in ("analysis", "field", "audit_event"):
+    for name in ("analysis", "field", "audit_event", "audit_source"):
         text = value.get(name)
         if isinstance(text, str) and re.fullmatch(r"[\w.-]{1,100}", text):
             view[name] = text
@@ -63,17 +63,36 @@ def clean_view(value: Any) -> dict[str, Any]:
                         and math.isfinite(n) and abs(n) < 1e12 for n in numbers)):
             if name != "range" or numbers[0] < numbers[1]:
                 view[name] = numbers
-    selection = value.get("selection")
-    if isinstance(selection, dict):
+    for name in ("selection", "audit_selection"):
+        selection = value.get(name)
+        if isinstance(selection, dict):
+            kept = {}
+            for key in ("chain", "resname", "atom", "icode", "altloc"):
+                text = selection.get(key, "")
+                if isinstance(text, str) and len(text) <= 20:
+                    kept[key] = text
+            number = selection.get("resseq")
+            if isinstance(number, int) and not isinstance(number, bool) and abs(number) < 1_000_000:
+                kept["resseq"] = number
+                view[name] = kept
+    audit_display = value.get("audit_display")
+    if isinstance(audit_display, dict):
         kept = {}
-        for key in ("chain", "resname", "atom", "icode", "altloc"):
-            text = selection.get(key, "")
-            if isinstance(text, str) and len(text) <= 20:
+        for key in ("before", "after"):
+            text = audit_display.get(key)
+            if isinstance(text, str) and re.fullmatch(r"[\w.-]{1,100}", text):
                 kept[key] = text
-        number = selection.get("resseq")
-        if isinstance(number, int) and not isinstance(number, bool) and abs(number) < 1_000_000:
-            kept["resseq"] = number
-            view["selection"] = kept
+        for key in ("overlay", "linked"):
+            if isinstance(audit_display.get(key), bool):
+                kept[key] = audit_display[key]
+        for key in ("before_camera", "after_camera"):
+            numbers = audit_display.get(key)
+            if (isinstance(numbers, list) and len(numbers) == 8
+                    and all(isinstance(n, (int, float)) and not isinstance(n, bool)
+                            and math.isfinite(n) and abs(n) < 1e12 for n in numbers)):
+                kept[key] = numbers
+        if kept:
+            view["audit_display"] = kept
     display = value.get("display")
     if isinstance(display, dict):
         kept_display: dict[str, Any] = {}
@@ -163,9 +182,18 @@ def context_for(root: Any, value: Any) -> str:
             else:
                 lines.append("The displayed frame's source mapping could not be verified; do not infer its physical time.")
         if view.get("audit_event"):
-            audit = _read_record(Path(root), "setup/preparation_audit.json")
-            event = next((e for e in audit.get("events", []) if isinstance(e, dict) and e.get("id") == view["audit_event"]), None)
-            lines.append("Preparation event read from this study: " + json.dumps(event or {"available": False}))
+            from fastmdxplora.gui.preparation_audit import audit_payload
+
+            audit = audit_payload(Path(root))
+            event = next((e for e in audit.get("changes", []) if isinstance(e, dict) and e.get("id") == view["audit_event"]), None)
+            lines.append("Preparation evidence read from this study: " + json.dumps({
+                "event": event or {"available": False}, "recorded_operations": audit.get("recorded"),
+                "status": audit.get("status"), "notice": audit.get("notice")}, default=str))
+            if view.get("audit_source") and view.get("audit_selection"):
+                from fastmdxplora.gui.preparation_audit import selection_evidence
+
+                lines.append("Selection checked against the saved preparation stage: " + json.dumps(
+                    selection_evidence(Path(root), view["audit_source"], view["audit_selection"])))
     if view.get("field"):
         from fastmdxplora.config.schema import all_schemas
 

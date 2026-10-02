@@ -501,3 +501,21 @@ comparison differed slightly in hydrogen coordinates; preservation verification
 is limited to the explicit Reference backend, not a general GPU determinism
 claim. Existing setup suites passed after repairing an incompatible local OpenMM
 binary with the same 8.5.2 Python 3.11 wheel. No production MD was launched.
+
+### Verified milestone M6 — optional preparation comparison
+
+The overview has a collapsed preparation audit with saved-stage inventories,
+side-by-side viewers, linked rotation/zoom and an optional display-only alignment.
+Exact heavy-atom correspondence is required; duplicate identities, missing or
+changed snapshots, unsupported formats and collinear fits refuse overlays.
+Water/ion differences are grouped for readability. Clicking atoms supplies
+server-verified saved-stage context to the explanation Agent. Bookmarks preserve
+stage pair, camera views, overlay and selected atom with source fingerprints.
+A historical inventory difference is explicitly distinct from a recorded event.
+
+Validation: six audit checks passed, including browser comparison/overlay and
+Agent selection restoration, checksum/path guards, read-only coordinates and
+bookmark invalidation when a displayed stage changes. The 31 audit/bookmark
+checks passed before the last inventory grouping; 44 Agent/public-route checks
+passed with one skipped after grouping. Real 1L2Y saved-stage comparison was
+inspected in the dashboard without launching a new simulation.
