@@ -785,7 +785,8 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
         default=None,
         metavar="FRAMES",
         help="Maximum number of frames the molecular viewer will load for "
-             "trajectory playback (default 200).",
+             "trajectory playback (default 200; a system over 5,000 atoms "
+             "is sent fewer, a million atoms times frames at most).",
     )
     dash.add_argument(
         "--dashboard-open-browser",

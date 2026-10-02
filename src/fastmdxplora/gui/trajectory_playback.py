@@ -32,6 +32,22 @@ _HEADER_LIKE_RECORDS = frozenset({
 })
 
 
+#: The most atoms times frames the browser is sent. A playback is a
+#: multi-model PDB of about 81 bytes an atom, which the viewer parses whole:
+#: 200 frames of a 50,000-atom membrane system, solvent stripped and lipids
+#: kept, was some 800 MB, more than a browser tab holds. A million is a
+#: protein of 5,000 atoms at 200 frames, about 80 MB; a larger system is
+#: sent fewer frames, evenly spaced as before, never fewer than two.
+BROWSER_ATOM_FRAMES = 1_000_000
+
+
+def frames_for(n_atoms: int, cap: int) -> int:
+    """How many frames of a system this size the browser is sent."""
+    if n_atoms <= 0:
+        return cap
+    return max(2, min(cap, BROWSER_ATOM_FRAMES // n_atoms))
+
+
 def PlaybackUnavailable(reason: str) -> dict[str, Any]:
     return {
         "playback_available": False,
@@ -199,7 +215,14 @@ def _generate_from_history(
     max_browser_frames: int,
     source_signature: str,
 ) -> dict[str, Any]:
-    selected = _even_sample(records, max_browser_frames)
+    # Thinned for the system's size, read from the newest snapshot.
+    try:
+        newest = (sim_dir / str(records[-1].get("path") or "")).read_text(
+            encoding="utf-8", errors="ignore")
+        n_atoms = sum(1 for line in _pdb_atom_lines(newest) if not line.startswith("TER"))
+    except (OSError, IndexError):
+        n_atoms = 0
+    selected = _even_sample(records, frames_for(n_atoms, max_browser_frames))
     blocks: list[str] = []
     used: list[dict[str, Any]] = []
     for record in selected:
@@ -260,6 +283,9 @@ def _generate_from_dcd(
             display_atoms = None
         if display_atoms is not None and len(display_atoms) == 0:
             display_atoms = None
+        max_browser_frames = frames_for(
+            len(display_atoms) if display_atoms is not None
+            else int(getattr(topology_traj, "n_atoms", 0) or 0), max_browser_frames)
 
         # Stream the DCD in bounded chunks.  Loading the complete production
         # trajectory before downsampling can exhaust memory on realistic runs.

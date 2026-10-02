@@ -152,6 +152,18 @@ the chosen one selected, each with its panel, moved between with the arrow
 keys, Home and End. The preview and the viewer are named pictures (`role="img"`);
 their names were on elements a screen reader does not name.
 
+### A large system plays in the browser
+
+**Playback sends a large system fewer frames rather than more bytes.** The
+viewer parses its playback, a multi-model PDB of about 81 bytes an atom, whole,
+and the frames were capped at 200 whatever the system's size: a 50,000-atom
+membrane system, solvent stripped and lipids kept, was some 800 MB, more than a
+browser tab holds. Frames are now bounded by atoms times frames, a million at
+most (`trajectory_playback.BROWSER_ATOM_FRAMES`): a protein of 5,000 atoms
+still plays 200 frames, the membrane system 20, evenly spaced over the whole
+run and never fewer than two, from a finished trajectory and from the live
+snapshots alike. `--dashboard-max-playback-frames` says so.
+
 ### The GUI and an AI app start one study at a time between them
 
 The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study
