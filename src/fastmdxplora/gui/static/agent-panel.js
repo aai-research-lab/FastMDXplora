@@ -256,6 +256,9 @@
     engineChosen = !!current;
     syncStart();
   }
+  window.addEventListener("agent:connection-changed", function(event) {
+    engineIsSet(event.detail && event.detail.current);
+  });
 
   /* What can be asked, shown while the thread is empty: the study's own
    * questions when one is open, and studies to start. A suggestion fills
@@ -279,7 +282,7 @@
     }
   }
 
-  function openSettings() { el("agent-settings").hidden = false; }
+  function openSettings() { el("agent-settings").hidden = false; window.dispatchEvent(new CustomEvent("agent:settings-open")); }
   function closeSettings() { el("agent-settings").hidden = true; }
 
   function loadEngine() {
@@ -300,6 +303,7 @@
       }
       showProvider(select.value, data.current && data.current.model);
       engineIsSet(data.current);
+      window.dispatchEvent(new CustomEvent("agent:engine-loaded"));
     });
   }
 
@@ -1452,5 +1456,6 @@
 
   /* For the settings popup: "Agent settings…" should open this dialog,
    * not merely land on the Agent page. */
-  window.FastMDXAgent = { openSettings: openSettings, closeSettings: closeSettings };
+  window.FastMDXAgent.openSettings = openSettings;
+  window.FastMDXAgent.closeSettings = closeSettings;
 })();

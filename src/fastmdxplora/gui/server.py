@@ -906,6 +906,11 @@ def make_handler(
                     )
                 )
                 return
+            if path == "/api/agent/connections":
+                from fastmdxplora.gui.provider_connections import connections_endpoint
+
+                self._send_json(connections_endpoint(app_runtime, payload or {}))
+                return
             if path == "/api/agent/model":
                 # Reading and setting which model to ask. The key is
                 # accepted here and stored by `save_choice`, which puts it
@@ -913,7 +918,10 @@ def make_handler(
                 # in a config, and never logged.
                 from fastmdxplora.gui.agent_panel import model_endpoint
 
-                self._send_json(model_endpoint(payload or {}))
+                answer = model_endpoint(payload or {})
+                if answer.get("ok") and (payload or {}).get("provider") and hasattr(app_runtime, "_provider_connections"):
+                    app_runtime._provider_connections.select_api()
+                self._send_json(answer)
                 return
             if path == "/api/agent/run":
                 # Starting a study, so it needs the machine's trust -- which
@@ -1332,8 +1340,21 @@ def make_handler(
             the reply stopping: the next write fails, and the model's
             request is closed with it."""
             from fastmdxplora.gui.agent_panel import propose_endpoint
+            import queue
+
+            cancelled = threading.Event()
+            events = queue.Queue(maxsize=64)
 
             def emit(event: dict[str, Any]) -> None:
+                while not cancelled.is_set():
+                    try:
+                        events.put(event, timeout=0.1)
+                        return
+                    except queue.Full:
+                        pass
+                raise ConnectionResetError("The page stopped reading the reply")
+
+            def write(event: dict[str, Any]) -> None:
                 self.wfile.write((json.dumps(event, default=str) + "\n").encode("utf-8"))
                 self.wfile.flush()
 
@@ -1343,22 +1364,41 @@ def make_handler(
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
             self.close_connection = True
-            try:
-                answer = propose_endpoint(
-                    payload, app_runtime,
-                    path_for=hosting.inside if hosting is not None else None, emit=emit)
-                emit({"type": "done", "answer": answer})
-            except (BrokenPipeError, ConnectionResetError):
-                logger.debug("the page stopped reading the Agent's reply")
-            except Exception as exc:  # noqa: BLE001 - said in the stream, which has begun
-                from fastmdxplora.refusals import refusal_of
 
-                found = refusal_of(exc)
+            def work():
                 try:
-                    emit({"type": "done", "answer": {"ok": False, "error": found.message,
-                                                     "code": found.code}})
+                    answer = propose_endpoint(
+                        payload, app_runtime,
+                        path_for=hosting.inside if hosting is not None else None,
+                        emit=emit, cancelled=cancelled)
+                    emit({"type": "done", "answer": answer})
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+                except Exception as exc:  # noqa: BLE001 -- sanitized stream refusal
+                    from fastmdxplora.refusals import refusal_of
+
+                    found = refusal_of(exc)
+                    try:
+                        emit({"type": "done", "answer": {"ok": False, "error": found.message,
+                                                         "code": found.code}})
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+            threading.Thread(target=work, daemon=True).start()
+            try:
+                while not cancelled.is_set():
+                    try:
+                        event = events.get(timeout=2)
+                    except queue.Empty:
+                        event = {"type": "heartbeat"}
+                    if getattr(self.server, "closing", False):
+                        break
+                    write(event)
+                    if event.get("type") == "done":
+                        break
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                logger.debug("the page stopped reading the Agent's reply")
+            finally:
+                cancelled.set()
 
         def _send_html(self, html_text: str) -> None:
             body = html_text.encode("utf-8")

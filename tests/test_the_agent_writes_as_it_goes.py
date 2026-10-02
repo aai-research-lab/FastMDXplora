@@ -200,6 +200,42 @@ def test_the_route_streams_and_ends_with_the_answer(tmp_path, monkeypatch) -> No
     assert failed[-1]["type"] == "done" and failed[-1]["answer"]["ok"] is False
 
 
+def test_browser_disconnect_cancels_a_buffered_client(tmp_path, monkeypatch):
+    import socket
+    import struct
+    from urllib.parse import urlsplit
+    from fastmdxplora.gui import agent_panel
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    entered, stopped = threading.Event(), threading.Event()
+    def buffered(payload, runtime, *, path_for, emit, cancelled):
+        entered.set()
+        try:
+            assert cancelled.wait(12), "Disconnected browser did not cancel the client"
+        finally:
+            stopped.set()
+        raise RuntimeError("cancelled fixture")
+    monkeypatch.setattr(agent_panel, "propose_endpoint", buffered)
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+    session = start_dashboard_session(output=str(tmp_path), host="127.0.0.1", port=0)
+    parsed = urlsplit(session.url)
+    connection = socket.create_connection((parsed.hostname, parsed.port), timeout=5)
+    try:
+        body = b'{"request":"fixture"}'
+        headers = (f"POST /api/agent/propose-stream HTTP/1.1\r\nHost: {parsed.netloc}\r\n"
+                   f"Origin: {session.url.rstrip('/')}\r\nContent-Type: application/json\r\n"
+                   f"Content-Length: {len(body)}\r\n\r\n").encode()
+        connection.sendall(headers + body)
+        assert entered.wait(5)
+        connection.recv(4096)
+        connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("hh" if __import__('os').name == 'nt' else "ii", 1, 0))
+        connection.close()
+        assert stopped.wait(8)
+    finally:
+        connection.close()
+        session.server.shutdown()
+
+
 def test_the_page_shows_it_and_stops_it(tmp_path, monkeypatch) -> None:
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright

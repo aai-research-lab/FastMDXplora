@@ -104,7 +104,7 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 def propose_endpoint(payload: dict[str, Any],
                      runtime: Any = None, *,
                      path_for: Any = None,
-                     emit: Any = None) -> dict[str, Any]:
+                     emit: Any = None, cancelled: Any = None) -> dict[str, Any]:
     """A sentence in, a config out, or the refusal that stopped it.
 
     The attempts come back whole rather than as a count. They are the only
@@ -124,6 +124,8 @@ def propose_endpoint(payload: dict[str, Any],
     from fastmdxplora.agent import completion_for, propose_config
     from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
     from fastmdxplora.refusals import StudyError, refusal_of
+    from fastmdxplora.agent.openai_plan import ConnectionError
+    from fastmdxplora.agent.credential_vault import VaultError
 
     request = str(payload.get("request") or "").strip()
     if not request:
@@ -144,7 +146,13 @@ def propose_endpoint(payload: dict[str, Any],
             return {"ok": False, "error": "The study changed. Select the view again before asking the Agent."}
     phases = payload.get("phases") or ["setup", "simulation"]
     try:
-        complete = completion_for()
+        from fastmdxplora.gui.provider_connections import service_for
+
+        connections = service_for(runtime) if runtime is not None else None
+        complete = ((connections.completion(cancelled=cancelled) if cancelled is not None
+                     else connections.completion()) if connections else None) or completion_for()
+    except (ConnectionError, VaultError) as exc:
+        return {"ok": False, "error": str(exc), "code": "environment.credentials.absent"}
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code}
@@ -181,6 +189,7 @@ def propose_endpoint(payload: dict[str, Any],
     run_context = dashboard_knowledge() + "\n\nCurrent study evidence:\n" + (run_context or "No active study.")
     if view_context:
         run_context = (run_context or "") + "\n\n" + view_context
+    model_record = getattr(complete, "model_record", None)
     if emit is not None:
         complete = _written_as_it_goes(complete, emit)
         _say_each_look(tools, emit)
@@ -191,11 +200,13 @@ def propose_endpoint(payload: dict[str, Any],
             history=history or None, current_config=current,
             run_status=run_context, attachments=attachments or None,
             tools=tools)
+    except (ConnectionError, VaultError) as exc:
+        return {"ok": False, "error": str(exc), "code": "environment.credentials.absent"}
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code,
                 "looks": [look.as_record() for look in tools.looks]}
-    answer = _proposal_answer(proposal, payload, runtime, request, mode)
+    answer = _proposal_answer(proposal, payload, runtime, request, mode, model_record=model_record)
     answer["looks"] = [look.as_record() for look in proposal.looks]
     return answer
 
@@ -225,7 +236,7 @@ def _say_each_look(tools: Any, emit: Any) -> None:
 
 
 def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
-                     request: str, mode: str) -> dict[str, Any]:
+                     request: str, mode: str, *, model_record: Any = None) -> dict[str, Any]:
     """What the browser is sent for a proposal, by what kind it is."""
     import yaml
 
@@ -304,7 +315,9 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
     from fastmdxplora.agent import load_choice
 
     chosen = load_choice()
-    if chosen is not None:
+    if model_record:
+        config["agent_model"] = f"{model_record['provider']}/{model_record['model']}"
+    elif chosen is not None:
         config["agent_model"] = f"{chosen.provider}/{chosen.model}"
     from fastmdxplora.gui.plan import plan_of
 

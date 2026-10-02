@@ -48,6 +48,34 @@
         <button id="agent-settings-close" class="ghost-btn">Close</button>
       </div>
       <div class="agent-dialog-body">
+        <section id="agent-connections" aria-label="Subscription connections">
+          <details id="agent-oauth-picker">
+            <summary>OAuth connections</summary>
+            <p class="builder-card-note">Choose a provider and sign in through its browser login. Then choose a model available to your connected account.</p>
+            <label class="builder-field"><span class="builder-label">Subscription provider</span>
+              <select id="agent-subscription-provider" aria-describedby="agent-subscription-help">
+                <option value="" selected disabled>Choose a provider</option>
+                <option value="openai-chatgpt">OpenAI · ChatGPT / Codex</option>
+                <option value="claude">Anthropic · Claude</option>
+                <option value="kimi">Kimi Code</option>
+                <option value="gemini">Google · Gemini</option>
+                <option value="copilot" disabled>GitHub Copilot · integration pending</option>
+              </select>
+            </label>
+            <p id="agent-subscription-help" class="builder-card-note">Your existing app logins are not copied. Subscription failures do not switch to API billing.</p>
+            <button id="agent-subscription-connect" type="button" class="primary-btn" disabled>Connect provider</button>
+            <p class="builder-card-note">Explanations send the selected study context to your chosen provider. The Agent cannot run simulations or apply scientific settings.</p>
+          </details>
+          <button id="agent-connect-cancel" type="button" class="ghost-btn" hidden>Cancel sign-in</button>
+          <a id="agent-connect-browser" target="_blank" rel="noopener noreferrer" hidden>Open provider sign-in</a>
+          <p id="agent-connection-status" class="builder-card-note" role="status"></p>
+          <label class="builder-field"><span class="builder-label">Connected account</span><select id="agent-connected-account"></select></label>
+          <label class="builder-field"><span class="builder-label">Subscription model</span><select id="agent-connected-model"></select></label>
+          <button id="agent-connected-use" type="button" class="primary-btn" disabled>Use this account and model</button>
+          <button id="agent-connected-reconnect" type="button" class="ghost-btn" disabled>Reconnect selected account</button>
+          <button id="agent-connected-disconnect" type="button" class="ghost-btn" disabled>Disconnect selected account</button>
+        </section>
+        <h3>API key or local server</h3>
         <div class="builder-grid builder-grid-2">
           <label class="builder-field">
             <span class="builder-label">Provider</span>
@@ -1317,6 +1345,7 @@
   <script src="/static/3Dmol-min.js"></script>
   <script src="/static/html2canvas.min.js"></script>
   <script src="/static/agent-panel.js"></script>
+  <script src="/static/provider-connections.js"></script>
   <script src="/static/research.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>

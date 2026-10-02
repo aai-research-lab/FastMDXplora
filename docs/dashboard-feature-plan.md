@@ -460,6 +460,72 @@ against the built wheel. Scientific preparation/simulation/analysis modules are
 unchanged; verification uses completed studies and fixtures without a new MD run.
 Provider connections, clip export and preparation audit remain future milestones.
 
+### Milestone M3 — provider connections in progress
+
+User revoked the milestone stop on 2026-10-02. Continue through M3 connections,
+M4 clips, M5/M6 preparation provenance and audit, and M7 final verification.
+Publish each verified milestone; keep the full goal active until completion.
+Do not treat a partial authentication helper as the completed M3 milestone.
+
+Implemented single-use OpenAI authorization transactions, a private loopback
+listener, signature/issuer/audience/nonce/expiry validation, renewable session
+transport and tool-free Responses streaming. Windows storage uses current-user
+DPAPI; macOS/Linux require a native OS keyring with no plaintext fallback.
+Dashboard Settings now offers browser sign-in, cancellation, connected-account
+and model selection, and disconnect/revocation. Subscription failure never
+selects an API-key fallback. Account/model changes invalidate stale replies;
+draft provenance records the actual selected subscription model.
+
+Validation so far: 55 service/transport/identity/Agent-boundary tests passed;
+seven connection-service tests, including a fixture-provider browser sign-in,
+passed after dashboard integration. Signature tests initially exposed a missing
+cffi binary in the local venv; reinstalling its Python 3.11 wheel fixed imports
+and all signed-token tests passed. No actual account credentials were used.
+
+Live OpenAI discovery currently fails TLS validation because the presented
+certificate is expired. Certificate verification remains enabled; real sign-in
+cannot be claimed verified until this environment issue is resolved.
+Claude now uses an isolated official-client profile, personal Pro/Max account
+checks, safe mode, disabled hooks/MCP/slash commands and an empty tool list.
+Managed host policies are refused because they outrank client flags. Kimi uses
+an isolated official-client profile for device OAuth and an explicitly bound
+tools-empty agent file for inference. Its default REST sessions were found to
+enable 25 tools, so they are never used for dashboard explanations. A native
+Kimi inference test against a synthetic local endpoint verified zero tools.
+Device sign-in URLs, account metadata, model selection and logout are wired to
+Settings. Credentials remain with the official clients outside study data;
+their Windows/Linux storage is not represented as DPAPI encryption.
+
+Latest adapter validation: 125 provider, Agent-boundary, cancellation and script
+checks passed, including native Kimi and Gemini zero-tool inference fixtures and
+a fixture-provider browser OAuth flow. Gemini uses the verified official CLI
+0.62.0 core content generator with no agent session, tools, hooks or MCP. Its
+separate profile uses the official encrypted file storage, with native-keychain
+fallback explicitly refused. Only existing Code Assist enrollment and returned
+account models are used; there is no Cloud-project selection, new enrollment,
+API-key fallback or automatic credit overage. Removing the local Gemini login
+does not confirm revocation of Google's grant. OAuth connections expands to one
+provider dropdown for ChatGPT/Codex, Claude, Kimi and Gemini, and one contextual
+Connect button. Connected-account models are selected after login. Copilot is
+explicitly labelled integration pending. Actual subscription-account consent/inference
+remains unverified; the user must perform normal provider sign-in.
+
+Copilot remains unfinished: its installed official client can use a global
+keychain or another client's authentication even with a separate home. A
+verified isolated OAuth/SDK route is required before adding a working login
+button. This is an explicit compatibility limitation, not a claim of universal
+subscription OAuth. OpenAI's expired presented certificate still prevents live
+verification; TLS verification is never disabled. Browser disconnects now signal
+cancellation to buffered provider processes through streaming heartbeats.
+
+Integrated checks: 338 passed with one skipped across Agent human controls,
+bookmarks/import-export, native clips, audit comparisons and provenance,
+streaming cancellation, browser scripts and private/public dashboard routes.
+After the dropdown change, 32 connection/browser and script checks passed.
+The built wheel contains the native Gemini bridge and provider UI resources.
+The real 1L2Y dashboard was refreshed and the provider selector inspected; no
+actual provider login or new production simulation was initiated.
+
 ### Verified milestone M4 — trajectory clip export
 
 Viewer exports GIF, MP4 or both together from 2–120 saved browser frames, with

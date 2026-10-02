@@ -77,7 +77,12 @@ dependencies = [
 # client and no HTTP stack is required here. The extra exists so that
 # `fastmdxplora[agent]` is a documented thing to install rather than a
 # folder people find, and so it has somewhere to grow.
-agent = []
+agent = [
+    # Subscription sign-in verifies OIDC signatures and uses native OS keyrings.
+    # Neither dependency changes preparation, simulation or analysis behavior.
+    "PyJWT[crypto]>=2.8,<3",
+    "keyring>=25,<26",
+]
 
 # Rendering the report as a PDF. WeasyPrint needs Pango and Cairo as system
 # libraries on PyPI; the conda-forge package brings its own, which is why the
@@ -212,6 +217,7 @@ fastmdxplora = [
     # methods' settings reach an editor and a type checker.
     "py.typed",
     "agent/knowledge/*.md",
+    "agent/*.mjs",
     "gui/static/*",
     "gui/static/**/*",
     "gui/templates/*.html",
