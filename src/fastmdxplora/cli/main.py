@@ -1120,32 +1120,32 @@ def _build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--json", action="store_true",
                         help="Print the outcome as one line of JSON, for a program to read.")
 
-    # ---------- mcp: the same, for an assistant -----------------------------
+    # ---------- mcp: the same, for an AI app --------------------------------
     mc = sub.add_parser(
         "mcp",
-        help="Serve FastMDXplora to an assistant over the Model Context Protocol.",
+        help="Serve FastMDXplora to an AI app over the Model Context Protocol.",
         description=(
-            "Let an assistant (a chat app or a code editor that speaks MCP) "
-            "design, check, run and read studies in one workspace folder. "
-            "The assistant starts this command itself and talks to it over "
-            "standard input and output; it is not run by hand. The "
-            "assistant writes a study's config and the validator judges it; "
-            "the optional ask_agent tool has the FastMDXplora Agent write it "
-            "instead, with the assistant's own model where the assistant lends "
-            "it, and otherwise the model `fastmdx agent model` chose, on your "
-            "own API key. A study runs only "
-            "from a config the validator accepted and whose plan was checked, "
-            "with your go-ahead where your client can ask for it, and its own "
-            "approval of the call where it cannot."
+            "Let an AI app that speaks MCP (an AI chat app, an AI coding tool, "
+            "an AI agent your lab builds) design, check, run and read studies in one "
+            "workspace folder. The AI app starts this command itself and talks "
+            "to it over standard input and output; it is not run by hand. The "
+            "AI app's model writes a study's config and the validator judges "
+            "it; the optional ask_agent tool has the FastMDXplora Agent write "
+            "it instead, with the AI app's model where the AI app lends it, "
+            "and otherwise the AI model `fastmdx agent model` chose, on your "
+            "own API key. A study runs only from a config the validator "
+            "accepted and whose plan was checked, with your go-ahead where "
+            "your AI app can ask for it, and its own approval of the call "
+            "where it cannot."
         ),
     )
     mc.add_argument("--workspace", default=None, metavar="DIR",
-                    help="The one folder the assistant's tools read and write: "
+                    help="The one folder the AI app's tools read and write: "
                          "studies are written here, and nothing outside it is "
                          "opened. Default: the current directory.")
     mc.add_argument("--read-only", action="store_true",
                     help="Offer no tool that starts or stops a study: the "
-                         "assistant can still write and check configs, and "
+                         "AI app can still write and check configs, and "
                          "read studies, but runs nothing.")
 
     # ---------- agent: write a study from a sentence ------------------------
@@ -2640,7 +2640,7 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
-    """`fastmdx mcp`: serve an assistant on standard input and output."""
+    """`fastmdx mcp`: serve an AI app on standard input and output."""
     from fastmdxplora.mcp import serve_stdio
     from fastmdxplora.refusals import StudyError
 

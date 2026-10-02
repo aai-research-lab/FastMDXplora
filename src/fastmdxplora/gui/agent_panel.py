@@ -1083,7 +1083,7 @@ def clear_conversation(runtime: Any) -> dict[str, Any]:
 # The Agent reads what the run status hands it and nothing else, by
 # design. When a person wants it to see a file -- a log, a manifest, a
 # config from another study -- they attach it to a message, as one does
-# in any assistant, and it goes with that message as context. Per
+# in any AI app, and it goes with that message as context. Per
 # message, explicit, and recorded: the transcript keeps the file's name,
 # path, size and digest, so the conversation stays a scientific record of
 # what was looked at, without copying the bytes into it.

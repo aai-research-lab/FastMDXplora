@@ -1,4 +1,4 @@
-"""An assistant starts a study only from a checked file, with the person's go-ahead.
+"""An AI app starts a study only from a checked file, with the person's go-ahead.
 
 A study can hold a machine's GPU for days, and the model asking to start it
 can be wrong or be told what to ask by a file it read. So `start_study` runs
@@ -24,7 +24,7 @@ from fastmdxplora.mcp import App, Workspace
 from fastmdxplora.mcp.tools import plan_id_of
 from fastmdxplora.orchestrator import RUN_PROCESS_FILE
 from tests._mcp_wire import Wire, text_of
-from tests.test_an_assistant_reads_and_checks_studies import _structure, _study
+from tests.test_an_ai_app_reads_and_checks_studies import _structure, _study
 
 STUDY = "systems:\n  - system: ghg.pdb\nsimulation:\n  duration_ns: 5\noutput: ghg_run\n"
 ELICIT = {"elicitation": {"form": {}}}
@@ -309,7 +309,7 @@ class TestWhereAndWhen:
             second = wire.request("tools/call", {"name": "start_study", "arguments": {
                 "config": "other.yml", "plan_id": plan_id_of(workspace / "other.yml")}})
             assert second["result"]["content"][0]["text"].startswith(
-                "ghg_run (started by an assistant) is running in this workspace.")
+                "ghg_run (started by an AI app) is running in this workspace.")
         finally:
             for sleeper in sleepers:
                 sleeper.kill()
@@ -351,7 +351,7 @@ def test_a_run_that_ends_as_it_starts_says_why(wire, workspace, spawned, monkeyp
 
 @pytest.mark.skipif(os.name == "nt", reason="the holder takes a POSIX lock")
 def test_a_second_server_starting_at_the_same_moment_waits_its_turn(wire, workspace, spawned):
-    from tests.test_the_gui_and_an_assistant_start_one_at_a_time import _free, _holding
+    from tests.test_the_gui_and_an_ai_app_start_one_at_a_time import _free, _holding
 
     held: list = []
     try:
@@ -396,7 +396,7 @@ def test_a_launch_the_runtime_refuses_is_said(wire, workspace, spawned, monkeypa
                         lambda self, state, config=None: {"ok": False, "error": "No GPU here."})
     result = start(wire, workspace)
     assert result["isError"] and result["content"][0]["text"] == "No GPU here."
-    from tests.test_the_gui_and_an_assistant_start_one_at_a_time import _free
+    from tests.test_the_gui_and_an_ai_app_start_one_at_a_time import _free
 
     assert _free(workspace)
 

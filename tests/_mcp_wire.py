@@ -1,6 +1,6 @@
 """A client at the other end of an MCP server in this process, for the tests.
 
-It writes requests as an assistant would and reads what comes back, keeping
+It writes requests as an AI app would and reads what comes back, keeping
 the notifications and the questions the server asks on the way, and can
 answer those questions.
 """

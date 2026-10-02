@@ -1,9 +1,9 @@
-"""The tools an assistant can call.
+"""The tools an AI app can call.
 
 Each says what the software found, in the software's words, as the Agent's
 own tools do; none judges chemistry or convergence of its own. A tool that
 cannot do what it was asked says why, and what would fix it, as a tool
-result marked as an error, so the model can put it right.
+result marked as an error, so the AI model can put it right.
 
 Studies, configs and structures are read and written inside the workspace
 only (:mod:`fastmdxplora.mcp.workspace`).
@@ -35,15 +35,15 @@ _STUDY = {"type": "string", "description": "A study's folder in the workspace."}
 
 
 class ToolError(CodedError, Exception):
-    """What a tool could not do, said to the model so it can put it right."""
+    """What a tool could not do, said to the AI model so it can put it right."""
 
-    default_code = "assistant.tool.refused"
+    default_code = "mcp.tool.refused"
 
 
 @dataclass
 class Context:
     """What the tools reach: the workspace, the call being served, the
-    person's model for the Agent, and whether studies may be run."""
+    person's AI model for the Agent, and whether studies may be run."""
 
     workspace: Workspace
     call: Any = None
@@ -359,15 +359,15 @@ _IN_THE_WINDOW = ("open viewer", "open overview", "open report", "open builder",
                   "show config", "download config")
 
 
-#: As much as the Agent's own model is given to write a reply in.
+#: As much as the Agent's AI model is given to write a reply in.
 AGENT_MAX_TOKENS = 4000
 
 
 def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
-    """The FastMDXplora Agent, as in the GUI: a model, the software's tools
-    to look with, and the validator as the judge. The model is the app's
-    own where it lends it, so nothing is paid twice; else the person's,
-    on their own key."""
+    """The FastMDXplora Agent, as in the GUI: an AI model, the software's
+    tools to look with, and the validator as the judge. The AI model is the
+    AI app's own where it lends it, so nothing is paid twice; else the
+    person's, on their own key."""
     from fastmdxplora.agent import propose_config
     from fastmdxplora.agent.tools import Look, Toolbox
     from fastmdxplora.mcp.protocol import NotLent
@@ -387,15 +387,15 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
             replied.append(model)
             return text
     elif ctx.complete_for is None:
-        raise ToolError("The Agent has no model here.")
+        raise ToolError("The Agent has no AI model here.")
     else:
         try:
             complete = ctx.complete_for()
         except StudyError as exc:
-            raise ToolError(f"{refusal_of(exc).message}\nThis app does not lend its own "
-                            "model, so the Agent writes with one you choose once, in a "
-                            "terminal: `fastmdx agent model`. Every other tool here works "
-                            "without one.") from None
+            raise ToolError(f"{refusal_of(exc).message}\nThis AI app does not lend its "
+                            "model, so the Agent writes with an AI model you choose once, "
+                            "in a terminal: `fastmdx agent model`. Every other tool here "
+                            "works without one.") from None
     def keep(key: str, make: Callable[[], Any]) -> Any:
         # Lent in rounds, each round works the prompts out again: from what
         # the first round read, so a running study's record or a look that
@@ -447,8 +447,8 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
     except StudyError as exc:
         raise ToolError(refusal_of(exc).message) from None
     except NotLent as exc:
-        raise ToolError(f"{exc} Nothing was written. Ask again to have the app lend it; "
-                        "your own API key is not used in its place.") from None
+        raise ToolError(f"{exc} Nothing was written. Ask again to have the AI app lend "
+                        "it; your own API key is not used in its place.") from None
     recorded, said_whose = _whose(ctx, lent, replied)
 
     checked = [f"  - {look.tool}{'' if look.ok else ' (refused)'}: "
@@ -489,22 +489,22 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
 
 
 def _whose(ctx: Context, lent: bool, replied: list[str]) -> tuple[str | None, str]:
-    """Which model the Agent wrote with, as a study records it
+    """Which AI model the Agent wrote with, as a study records it
     (``agent_model``), and as it is said to the person."""
     from fastmdxplora.agent import load_choice
 
     if lent:
         models = list(dict.fromkeys(replied))
-        app = (ctx.call.client_name if ctx.call is not None else None) or "the app"
+        app = (ctx.call.client_name if ctx.call is not None else None) or "the AI app"
         named = ", ".join(models) or "none"
         return (", ".join(f"{app}/{m}" for m in models) or None,
-                f"Written with {app}'s own model ({named}), lent through the protocol: "
-                "your own API key was not used.")
+                f"Written with {app}'s model ({named}), lent through the protocol: your "
+                "own API key was not used.")
     chosen = load_choice()
     if chosen is None:
-        return None, "Written with the model chosen with `fastmdx agent model`."
+        return None, "Written with the AI model chosen with `fastmdx agent model`."
     return (f"{chosen.provider}/{chosen.model}",
-            f"Written with your model ({chosen.provider}/{chosen.model}), chosen with "
+            f"Written with your AI model ({chosen.provider}/{chosen.model}), chosen with "
             "`fastmdx agent model`, on your own API key.")
 
 
@@ -517,8 +517,8 @@ def _proposed(ctx: Context, args: dict[str, Any], proposal: Any, corrected: list
 
     config = dict(proposal.config)
     _confined(ctx, config)
-    # Whose study this is, as `fastmdx agent` records it: a model wrote it,
-    # and which one, as the app named it where it lent its own.
+    # Whose study this is, as `fastmdx agent` records it: an AI model wrote
+    # it, and which one, as the AI app named it where it lent its own.
     config["agent"] = "assisted"
     if recorded is not None:
         config["agent_model"] = recorded
@@ -632,7 +632,7 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
     elif by_hand:
         whose = "Recorded as the person's own."
     else:
-        whose = ("Recorded as written with an assistant (agent: assisted"
+        whose = ("Recorded as written in an AI app (agent: assisted"
                  + (f", in {config['agent_model']}" if config.get("agent_model") else "")
                  + ").")
     return "\n".join([f"Saved to {ctx.workspace.shown(target)}; accepted by the validator. "
@@ -642,12 +642,12 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
 
 def _as_assisted(text: str, config: dict[str, Any],
                  app: str | None) -> tuple[str, dict[str, Any]]:
-    """A config an assistant wrote, recorded as one: ``agent: assisted``
-    where it says nothing of how it was written, as the Agent's own are,
-    and in ``agent_model`` the app it was written in, where the config
-    names no model and the app named itself (the app does not say which
-    model it runs, so none is claimed). A study with no ``agent`` says a
-    person wrote it, which a model's draft is not. Added as lines above
+    """A config an AI app's model wrote, recorded as one: ``agent:
+    assisted`` where it says nothing of how it was written, as the Agent's
+    own are, and in ``agent_model`` the AI app it was written in, where the
+    config names no AI model and the AI app named itself (the AI app does
+    not say which model it runs, so none is claimed). A study with no
+    ``agent`` says a person wrote it, which an AI model's draft is not. Added as lines above
     the rest, so the comments and order written stay as written; where
     that would not read back as the same settings, the whole is written
     out again."""
@@ -657,7 +657,7 @@ def _as_assisted(text: str, config: dict[str, Any],
         return text, config
     said: dict[str, Any] = {"agent": "assisted"}
     if app and not config.get("agent_model"):
-        said["agent_model"] = f"{app} (its own model, which the app does not name)"
+        said["agent_model"] = f"{app} (its own AI model, which the AI app does not name)"
     marked = {**config, **said}
     added = yaml.safe_dump(said, sort_keys=False) + text
     try:
@@ -723,9 +723,9 @@ _SAID_HERE = (
 
 
 def study_record(root: Path, *, for_the_agent: bool = False) -> str:
-    """Everything a study recorded that a model can read: where it stands,
-    its config, what its analyses found, its checks, why it stopped and
-    what would fix it. The Agent's own reading of a run; for an assistant,
+    """Everything a study recorded that an AI model can read: where it
+    stands, its config, what its analyses found, its checks, why it stopped
+    and what would fix it. The Agent's own reading of a run; for an AI app,
     its words for the GUI's Agent said as they apply here."""
     from fastmdxplora.gui.agent_panel import _run_status
     from fastmdxplora.gui.workspace import card_of
@@ -780,7 +780,7 @@ def _compare_studies(ctx: Context, args: dict[str, Any]) -> str:
 
 
 def _why_not(row: dict[str, Any]) -> str:
-    """Why two means were not compared, so a model does not compare them."""
+    """Why two means were not compared, so an AI model does not compare them."""
     for side, name in ((row.get("first"), "the first"), (row.get("second"), "the second")):
         if not side or side.get("mean") is None:
             return f"{name} recorded no mean"
@@ -805,7 +805,7 @@ _GO_AHEAD = {"type": "object", "required": ["go"], "properties": {"go": {
 
 def _went_ahead(ctx: Context, key: str, message: str, bound_to: str) -> bool | None:
     """True where the person agreed, False where they did not, None where
-    the client cannot ask (its own approval of the call is then the gate)."""
+    the AI app cannot ask (its own approval of the call is then the gate)."""
     if ctx.call is None:
         return None
     answer = ctx.call.confirm(key, message, _GO_AHEAD, bound_to=bound_to)
@@ -832,7 +832,7 @@ class _Inside:
 
 def _running_here(ctx: Context) -> list[str]:
     """The studies running in the workspace: those started there from the
-    GUI or by an assistant, and any found by the record each run keeps
+    GUI or by an AI app, and any found by the record each run keeps
     while it runs, wherever the study is (`fastmdxplora.runs_here`)."""
     from fastmdxplora.runs_here import running_in
 
@@ -936,7 +936,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
             runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
                                        exploration_root=ctx.workspace.root,
                                        hosting=_Inside(ctx.workspace),
-                                       started_by="by an assistant")
+                                       started_by="by an AI app")
             started = runtime.launch_from_config(None, config=config)
     except StartRefused as exc:
         raise ToolError(str(exc), code=exc.code) from None
@@ -946,7 +946,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
     folder, pid = Path(started["output"]).resolve(), int(started["pid"])
     _recorded(ctx, folder, pid)
     return (f"Started {shown} (process {pid}). It runs on its own: closing "
-            "the assistant does not stop it. read_study says how far it has got; "
+            "the AI app does not stop it. read_study says how far it has got; "
             "stop_study stops it. Its log is "
             f"{ctx.workspace.shown(folder / 'exploration.log')}.")
 
@@ -1023,7 +1023,7 @@ def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
     _AdoptedProcess(pid, folder).terminate()
     # As the GUI's Stop: time to reach the next frame and checkpoint, then
     # an end that cannot be ignored. Watched from a process of its own, so
-    # an assistant closed in the meantime does not take the watching with it.
+    # an AI app closed in the meantime does not take the watching with it.
     try:
         see_it_stops(pid, folder, record.get("argv"), stop_grace_seconds() + 10)
     except OSError as exc:
@@ -1034,14 +1034,14 @@ def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
             "checkpoint there; read_study says when it has, and gives the config that "
             "continues it. One that has not stopped "
             f"{stop_grace_seconds() + 10:g} s from now is ended, whether or not this "
-            "assistant is still open.")
+            "AI app is still open.")
 
 
 _LOOKS = {"readOnlyHint": True, "openWorldHint": True}
 _READS = {"readOnlyHint": True, "openWorldHint": False}
 
 #: In the order they are listed, which is the order to reach for them; the
-#: Agent last, as it is optional and calls a model of the person's own.
+#: Agent last, as it is optional and calls an AI model of the person's own.
 TOOLS: tuple[Tool, ...] = (
     Tool("inspect_structure", "Inspect a structure",
          "What a structure holds: its chains, protein residues, ligands, ions and "
@@ -1067,7 +1067,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("save_study", "Save a study config",
          "Write a config into the workspace as a new file, once the validator accepts it. "
          "A file is never written over: a changed study is saved under a new name. A "
-         "config you wrote is recorded as written with an assistant (agent: assisted).",
+         "config you wrote is recorded as written in an AI app (agent: assisted).",
          {"name": {"type": "string", "description": "The file's name, such as ubq_300K."},
           "config": {"type": "string", "description": "The config, as YAML."},
           "by_hand": {"type": "boolean", "description": (
@@ -1079,9 +1079,9 @@ TOOLS: tuple[Tool, ...] = (
     Tool("start_study", "Start a study",
          "Run a checked config on this machine, in the workspace, once the person has "
          "agreed to its plan. Needs the plan_id check_study gave for the file as it is "
-         "now. Where the client can ask, the person is asked here too. Results go to the "
+         "now. Where the AI app can ask, the person is asked here too. Results go to the "
          "config's `output`, or a folder named after the file beside it, never one in "
-         "use. The run goes on after the assistant closes; one study runs at a time.",
+         "use. The run goes on after the AI app closes; one study runs at a time.",
          {"config": {"type": "string", "description": "A config file in the workspace."},
           "plan_id": {"type": "string", "description": "From check_study, for this file."}},
          ("config", "plan_id"),
@@ -1109,15 +1109,15 @@ TOOLS: tuple[Tool, ...] = (
          {"first": _STUDY, "second": _STUDY}, ("first", "second"), _READS, _compare_studies),
     Tool("ask_agent", "Ask the FastMDXplora Agent (optional; may use your API key)",
          "Optional: only when the person asks for FastMDXplora's own Agent. It writes "
-         "with this app's own model where the app lends it (the app may ask the person "
-         "first); otherwise with a second model, the one the person chose with `fastmdx "
-         "agent model`, on their own API key, each call paid for on top of this "
+         "with this AI app's model where the AI app lends it (the AI app may ask the "
+         "person first); otherwise with a second AI model, the one the person chose with "
+         "`fastmdx agent model`, on their own API key, each call paid for on top of this "
          "conversation. Without it, write the config yourself and give it to "
          "check_study; the validator judges it either way. The Agent writes or changes a "
          "study from a description, or answers about one; a study it writes is accepted "
          "by the validator before it is returned, saved in the workspace with its plan "
-         "and plan_id, and recorded as its model's; the answer says which model wrote "
-         "and whose. Nothing is run.",
+         "and plan_id, and recorded as its AI model's; the answer says which AI model "
+         "wrote and whose. Nothing is run.",
          {"request": {"type": "string", "description": (
              "What the study should do or what to ask, in the person's words.")},
           "config": {"type": "string", "description": (

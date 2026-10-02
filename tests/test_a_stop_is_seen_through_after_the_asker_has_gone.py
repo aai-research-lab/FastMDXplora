@@ -1,8 +1,8 @@
 """A run asked to stop does stop, whether or not what asked is still there.
 
-An assistant's `stop_study` asks a run to stop, gives it time to reach its
+An AI app's `stop_study` asks a run to stop, gives it time to reach its
 next frame and write a checkpoint, and ends it if it has not. That last part
-ran in a thread of the assistant's server, so an assistant closed in the
+ran in a thread of the AI app's server, so an AI app closed in the
 meantime took it along and a run that ignored the request went on. It runs
 in a process of its own now (`fastmdxplora.stop_after`). The runs here are
 sleepers that ignore the request, carrying a run's command on their command
@@ -26,7 +26,7 @@ from fastmdxplora.mcp import App, Workspace
 from fastmdxplora.orchestrator import RUN_PROCESS_FILE
 from fastmdxplora.stop_after import main, see_it_stops, watch
 from tests._mcp_wire import Wire
-from tests.test_an_assistant_reads_and_checks_studies import _study
+from tests.test_an_ai_app_reads_and_checks_studies import _study
 
 #: Asked to stop, it goes on; its child, in its group, too.
 STUBBORN = ("import signal, subprocess, sys, time\n"
@@ -133,7 +133,7 @@ def test_stop_study_leaves_the_watching_to_a_process_of_its_own(study, monkeypat
         assert not said["isError"]
         assert said["content"][0]["text"].endswith(
             "One that has not stopped 10 s from now is ended, whether or not this "
-            "assistant is still open.")
+            "AI app is still open.")
         assert started == [(process.pid, study.resolve(), None, 10.0)]
         # Nothing in this process waits on it.
         assert not [t for t in threading.enumerate() if t.name == "fastmdx-mcp-stop"]

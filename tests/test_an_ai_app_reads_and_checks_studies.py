@@ -1,4 +1,4 @@
-"""An assistant reads and checks studies through `fastmdx mcp`.
+"""An AI app reads and checks studies through `fastmdx mcp`.
 
 The tools say what the software finds, in its words: what a structure
 holds, what a selection matches, whether the validator accepts a config and
@@ -154,13 +154,13 @@ class TestChecking:
         text = "# 5 ns is enough to see whether the histidine flips\nsystems:\n  - system: ghg.pdb\n"
         said = call(wire, "save_study", name="ghg run/2", config=text)["content"][0]["text"]
         assert said.startswith("Saved to ghg_run_2.yml; accepted by the validator. Recorded "
-                               "as written with an assistant (agent: assisted, in test (its "
-                               "own model, which the app does not name)). Nothing has been "
-                               "run.")
-        # Marked as an assistant's, in the app that named itself, and no model
-        # claimed that the app did not name; the comment and the order kept.
-        written = ("agent: assisted\nagent_model: test (its own model, which the app does "
-                   "not name)\n" + text)
+                               "as written in an AI app (agent: assisted, in test (its "
+                               "own AI model, which the AI app does not name)). Nothing has "
+                               "been run.")
+        # Marked as an AI app's, in the AI app that named itself, and no AI model
+        # claimed that the AI app did not name; the comment and the order kept.
+        written = ("agent: assisted\nagent_model: test (its own AI model, which the AI app "
+                   "does not name)\n" + text)
         assert (workspace / "ghg_run_2.yml").read_text() == written
         again = call(wire, "save_study", name="ghg_run_2.yml", config="systems: []\n")
         assert again["isError"]
@@ -188,7 +188,7 @@ class TestChecking:
         call(wire, "save_study", name="flow", config="{systems: [{system: ghg.pdb}]}")
         saved = yaml.safe_load((workspace / "flow.yml").read_text())
         assert saved == {"agent": "assisted", "systems": [{"system": "ghg.pdb"}],
-                         "agent_model": "test (its own model, which the app does not name)"}
+                         "agent_model": "test (its own AI model, which the AI app does not name)"}
 
     def test_a_model_the_config_names_is_kept(self, wire, workspace):
         text = "agent_model: someone/some-model\nsystems:\n  - system: ghg.pdb\n"
@@ -375,7 +375,7 @@ def test_a_read_only_server_says_how_a_checked_file_is_run(workspace):
 
 def test_the_records_words_for_the_gui_agent_are_said_as_they_apply_here(monkeypatch, tmp_path):
     """The record tells the GUI's Agent to `DO: run the fix` and to answer
-    with a config; an assistant is told what those mean here. The record is
+    with a config; an AI app is told what those mean here. The record is
     made by its own code, with a study that can be continued, has a fix and
     has a withheld mean standing in for one that ran."""
     from types import SimpleNamespace

@@ -1,10 +1,10 @@
 """Which studies a workspace has running, and starting them one at a time.
 
-The GUI's Run and an assistant's ``start_study`` (``fastmdx mcp``) start a
+The GUI's Run and an AI app's ``start_study`` (``fastmdx mcp``) start a
 study the same way, and keep the same rule about when they may: one study
 runs in a workspace at a time, so each has the machine to itself and its
 timings mean what they say. Two things in the workspace make the rule hold
-between them, and between two windows or two assistants:
+between them, and between two windows or two AI apps:
 
 - **a starting lock** (:data:`STARTING_FILE`), held from the check that
   nothing is running to the start itself, so two starters cannot both find
@@ -44,14 +44,14 @@ __all__ = ["STARTING_FILE", "RUNS_FILE", "StartRefused", "starting_in", "running
 #: Held in the workspace while a study is being started.
 STARTING_FILE = ".fastmdxplora-starting"
 
-#: The runs started in the workspace, by the GUI or an assistant.
+#: The runs started in the workspace, by the GUI or an AI app.
 RUNS_FILE = ".fastmdxplora-runs.json"
 
 #: How deep a workspace is searched for runs' own records, where it is.
 DEEPEST = 6
 
 #: In this process, the lock is held by one thread at a time, and a
-#: thread already holding it for a folder may enter again (an assistant's
+#: thread already holding it for a folder may enter again (an AI app's
 #: start holds it around the runtime's own).
 _HELD = threading.RLock()
 _held_here: dict[Path, int] = {}
@@ -160,7 +160,7 @@ def _started_here(root: Path) -> list[dict[str, Any]]:
 
 def running_in(workspace: Path, *, walk: bool = True) -> list[tuple[Path, str]]:
     """The studies running in the workspace, each with who started it:
-    those started there by the GUI or an assistant, and, with ``walk``,
+    those started there by the GUI or an AI app, and, with ``walk``,
     every run found by the record it keeps while it runs, down to
     :data:`DEEPEST` folders (a run started by hand included)."""
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE

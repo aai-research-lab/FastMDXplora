@@ -2,8 +2,8 @@
 
 A run asked to stop is given time to reach its next frame and write a
 checkpoint there, so it can be carried on; one that has not stopped by then
-is ended. An assistant's ``stop_study`` asked and then watched from a thread
-of its server, so an assistant closed in the meantime took the watching with
+is ended. An AI app's ``stop_study`` asked and then watched from a thread
+of its server, so an AI app closed in the meantime took the watching with
 it and a run that ignored the request went on. The watching is done here
 instead, in a process started on its own, which outlives whatever asked:
 
@@ -12,7 +12,7 @@ instead, in a process started on its own, which outlives whatever asked:
 The run is identified again before it is ended, by its process and its
 command line, so a process number the system has given to something else
 since is never signalled. Where the run leads a session of its own, as a run
-started from the GUI or by an assistant does, what is left of its group is
+started from the GUI or by an AI app does, what is left of its group is
 ended with it, as the GUI's Stop does: a parallel study's workers are not
 left running a study nobody can see. A run started by hand in a terminal
 belongs to the terminal's session, and its group may hold the person's own

@@ -1,8 +1,8 @@
-"""The GUI's Run and an assistant's start_study keep one rule between them.
+"""The GUI's Run and an AI app's start_study keep one rule between them.
 
 One study runs in a workspace at a time, so each has the machine to itself
-and its timings mean what they say. The assistant held to that and the GUI
-did not know of it: a window could start a study while an assistant's ran,
+and its timings mean what they say. The AI app held to that and the GUI
+did not know of it: a window could start a study while an AI app's ran,
 or both could start at the same moment. Both now take the workspace's
 starting lock and read the workspace's list of runs started there
 (`fastmdxplora.runs_here`). Processes here are sleepers carrying a run's
@@ -32,7 +32,7 @@ from fastmdxplora.runs_here import (
     starting_in,
 )
 from tests._mcp_wire import Wire
-from tests.test_an_assistant_reads_and_checks_studies import _structure
+from tests.test_an_ai_app_reads_and_checks_studies import _structure
 
 STUDY = "systems:\n  - system: ghg.pdb\nsimulation:\n  duration_ns: 5\noutput: ghg_run\n"
 
@@ -93,18 +93,18 @@ def _start(wire, workspace, name="ghg.yml"):
         "config": name, "plan_id": plan_id_of(workspace / name)}})["result"]
 
 
-def test_the_gui_does_not_start_while_an_assistant_s_study_runs(workspace, spawns):
+def test_the_gui_does_not_start_while_an_ai_app_s_study_runs(workspace, spawns):
     wire = Wire(App(Workspace.at(workspace)).server())
     assert not _start(wire, workspace)["isError"]
     wire.close()
     refused = _gui(workspace)._spawn(_command(workspace / "mine"), workspace / "mine", None)
     assert refused["ok"] is False and refused["code"] == "environment.workspace.run_going"
     assert refused["error"].startswith(
-        "ghg_run (started by an assistant) is running in this workspace. One study runs "
+        "ghg_run (started by an AI app) is running in this workspace. One study runs "
         "here at a time")
 
 
-def test_an_assistant_does_not_start_while_the_gui_s_study_runs(workspace, spawns):
+def test_an_ai_app_does_not_start_while_the_gui_s_study_runs(workspace, spawns):
     (workspace / "mine").mkdir()
     started = _gui(workspace)._spawn(_command(workspace / "mine"), workspace / "mine", None)
     assert started["launched"] is True
@@ -129,7 +129,7 @@ def test_a_run_that_has_ended_is_dropped_and_does_not_count(workspace, sleepers)
     now = _sleeping_as(_command(workspace / "new"), sleepers)
     with starting_in(workspace):
         record_start(workspace, workspace / "new", now.pid, _command(workspace / "new"),
-                     by="by an assistant")
+                     by="by an AI app")
     listed = json.loads((workspace / RUNS_FILE).read_text())["runs"]
     assert [run["folder"] for run in listed] == [str(workspace / "new")]
 
@@ -194,7 +194,7 @@ def test_one_process_s_starters_take_turns(workspace):
 
     def first():
         with starting_in(workspace):
-            # Entered again by the thread holding it, as an assistant's start
+            # Entered again by the thread holding it, as an AI app's start
             # holds it around the runtime's own.
             with starting_in(workspace):
                 order.append("first")
@@ -220,10 +220,10 @@ def test_one_process_s_starters_take_turns(workspace):
     assert _free(workspace)
 
 
-def test_the_gui_and_an_assistant_share_the_folder_the_gui_was_started_in(
+def test_the_gui_and_an_ai_app_share_the_folder_the_gui_was_started_in(
         tmp_path, workspace, spawns):
     """As `fastmdx gui` builds its runtime in a folder: started there, new
-    studies put in the folder above. An assistant given the folder it was
+    studies put in the folder above. An AI app given the folder it was
     started in keeps the rule with it."""
     gui = DashboardRuntime(workspace_root=workspace, exploration_root=workspace.parent)
     (tmp_path / "mine").mkdir()
@@ -235,9 +235,9 @@ def test_the_gui_and_an_assistant_share_the_folder_the_gui_was_started_in(
         in refused["content"][0]["text"]
 
 
-def test_the_gui_and_an_assistant_share_the_folder_new_studies_go_in(
+def test_the_gui_and_an_ai_app_share_the_folder_new_studies_go_in(
         workspace, spawns):
-    """Started in a folder inside the assistant's workspace, as from a
+    """Started in a folder inside the AI app's workspace, as from a
     checkout of the software there: new studies go in the workspace."""
     started_in = workspace / "checkout"
     started_in.mkdir()
@@ -247,7 +247,7 @@ def test_the_gui_and_an_assistant_share_the_folder_new_studies_go_in(
     gui = DashboardRuntime(workspace_root=started_in, exploration_root=workspace)
     refused = gui._spawn(_command(workspace / "mine"), workspace / "mine", None)
     assert refused["ok"] is False
-    assert refused["error"].startswith("ghg_run (started by an assistant) is running")
+    assert refused["error"].startswith("ghg_run (started by an AI app) is running")
 
 
 def test_a_refused_start_writes_nothing_for_the_run(workspace, spawns):

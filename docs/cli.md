@@ -27,7 +27,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx report` | Write up an existing run |
 | `fastmdx agent` | Write a Config from a sentence — [the Agent](agent.md) |
 | `fastmdx gui` | Serve [the GUI](gui.md) |
-| `fastmdx mcp` | Serve FastMDXplora to an assistant: [FastMDXplora in an assistant](mcp.md) |
+| `fastmdx mcp` | Serve FastMDXplora to an AI app: [FastMDXplora from your AI app](mcp.md) |
 | `fastmdx init-config` | Write a commented Config template |
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx diff` | The settings two studies or Configs differ in |
@@ -402,16 +402,17 @@ fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete
 ## `mcp`
 
 ```bash
-fastmdx mcp --workspace ~/studies               # started by an assistant, not by hand
+fastmdx mcp --workspace ~/studies               # started by an AI app, not by hand
 fastmdx mcp --workspace ~/studies --read-only   # it may check and read, not run
 ```
 
-Serves FastMDXplora to an assistant that speaks the Model Context Protocol, on
-standard input and output: the tools that look and check, so the assistant
-writes a study and the validator judges it, starting and stopping a checked
-study with your go-ahead, and, if you ask for it, the Agent (`ask_agent`, on
-your own API key), all inside the one workspace folder. The assistant starts it from its own settings. See
-[FastMDXplora in an assistant](mcp.md).
+Serves FastMDXplora to an AI app that speaks the Model Context Protocol, on
+standard input and output: the tools that look and check, so the AI app's
+model writes a study and the validator judges it, starting and stopping a
+checked study with your go-ahead, and, if you ask for it, the Agent
+(`ask_agent`, with the AI app's model where the AI app lends it, else on your
+own API key), all inside the one workspace folder. The AI app starts it from
+its own settings. See [FastMDXplora from your AI app](mcp.md).
 
 ---
 

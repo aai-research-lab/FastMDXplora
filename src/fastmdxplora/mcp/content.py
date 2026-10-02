@@ -1,11 +1,11 @@
-"""What an assistant can read, and what the person can ask it to do.
+"""What an AI app can read, and what the person can ask it to do.
 
 Resources are for reading: two guides (how to work with studies here, and
 the config language) and each study in the workspace, as its record.
-Prompts are for the person to choose, as a slash command in most clients:
+Prompts are for the person to choose, as a slash command in most AI apps:
 each starts a piece of work the way FastMDXplora would do it, with the
-validator as the judge of what the assistant writes and nothing run without
-the person's word.
+validator as the judge of what the AI app's model writes and nothing run
+without the person's word.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ recorded beside the results.
 2. **Have the validator judge it.** `check_study` with the YAML. A refusal
    names its code, its reason and what would fix it: fix that and check
    again. Once it is accepted, `save_study` writes it as a new file,
-   recorded as written with an assistant.
+   recorded as written in an AI app.
 3. **Show the plan.** `check_study` on the file gives the plan the person
    should read, defaults marked, whether this machine can run it, and its
    `plan_id`.
@@ -59,9 +59,9 @@ recorded beside the results.
    and the config that continues it).
 
 `ask_agent` is optional; use it only when the person asks for it. It is
-FastMDXplora's own Agent, writing with this app's model where the app lends
-it, and otherwise with a second model the person chose, on their own API
-key. What it writes is judged by the same validator.
+FastMDXplora's own Agent, writing with this AI app's model where the AI app
+lends it, and otherwise with a second AI model the person chose, on their
+own API key. What it writes is judged by the same validator.
 
 ## What the software's words mean
 

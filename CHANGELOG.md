@@ -17,16 +17,16 @@ initials, from `X-FastMDX-Account-Name`, which the proxy adds to each request,
 so a name changed at the service shows on the next page load. `--account-url`
 is now the first item of the menu that opens there, not a link of its own.
 
-### The GUI and an assistant start one study at a time between them
+### The GUI and an AI app start one study at a time between them
 
-The GUI's **Run** now keeps the rule an assistant's `start_study` keeps: one
-study runs in a workspace at a time, so each has the machine to itself and its
+The GUI's **Run** now keeps the rule an AI app's `start_study` keeps: one study
+runs in a workspace at a time, so each has the machine to itself and its
 timings mean what they say. Both take the workspace's starting lock from the
 check to the start, and both add the run to the workspace's list of runs
 started there (`.fastmdxplora-runs.json`), so a window does not start a study
-while an assistant's runs, or the reverse, and two never start at the same
+while an AI app's runs, or the reverse, and two never start at the same
 moment. The GUI keeps the rule in the folder it was started in and the folder
-it puts new studies in (never the home folder), so an assistant given either
+it puts new studies in (never the home folder), so an AI app given either
 takes turns with it. The lock is the operating system's, held for the process,
 so one that crashed leaves none behind. A refusal names the study running and
 who started it, before anything is written for the new run
@@ -34,13 +34,13 @@ who started it, before anything is written for the new run
 run counts while its process still carries its command; a folder that cannot
 hold the lock starts as before.
 
-### `fastmdx agent model` chooses the Agent's model
+### `fastmdx agent model` chooses the Agent's AI model
 
-**`fastmdx agent model`** says which model is in use and where its key is read
-from, then chooses one, as `fastmdx agent set` did. The old name now stops
-with one line naming the new one, rather than choosing a model or being taken
-as a request for a study. Every message that told you to run it says the new
-name.
+**`fastmdx agent model`** says which AI model is in use and where its key is
+read from, then chooses one, as `fastmdx agent set` did. The old name now
+stops with one line naming the new one, rather than choosing an AI model or
+being taken as a request for a study. Every message that told you to run it
+says the new name.
 
 ### The Agent reads each mean as the report gives it
 
@@ -48,22 +48,22 @@ What the Agent is told a study found now gives each mean as the report and the
 citations under its answer do: the standard error to two figures and the mean
 to the same decimal place. To four figures each, an energy of -123,456.7 ± 12
 kJ/mol read -1.235e+05, coarser than its own error, and a mean the person read
-as 0.1120 ± 0.0020 nm the model read as 0.112 ± 0.002.
+as 0.1120 ± 0.0020 nm the AI model read as 0.112 ± 0.002.
 
-### An assistant reads the guides and each study, and offers four prompts
+### An AI app reads the guides and each study, and offers four prompts
 
 `fastmdx mcp` serves two guides as resources, **working with studies** (the
 order of work, and what a mean, "not determined", "resolved" and a refusal
 mean) and **the config language** (every setting, with what it does and its
 default), and each study in the workspace as its record
-(`fastmdxplora://study/<folder>`). Its prompts, offered by most clients as
+(`fastmdxplora://study/<folder>`). Its prompts, offered by most AI apps as
 slash commands, start a piece of work the way FastMDXplora does it: **design a
 study**, **explain what a study found**, **why did a study stop?** and
-**continue a study**, each with the assistant writing, the validator judging
-and nothing run without your word; one about a study carries its record, and
-continuing starts from the config that record gives.
+**continue a study**, each with the AI app's model writing, the validator
+judging and nothing run without your word; one about a study carries its
+record, and continuing starts from the config that record gives.
 
-### An assistant starts a study only from a checked file, with your go-ahead
+### An AI app starts a study only from a checked file, with your go-ahead
 
 `fastmdx mcp` offers **`start_study`** and **`stop_study`**. A study starts
 only from a config file in the workspace, only while its `plan_id` is the one
@@ -73,59 +73,58 @@ other study is running there (found by each run's own record, wherever it is),
 and never into a folder already used: the config's `output`, or a folder named
 after the file beside it. A continuation runs in the study it continues. A
 start is said once the run is going, and one that ends as it starts says so
-with the end of its log. Where the client can put a form in front of you, you
+with the end of its log. Where the AI app can put a form in front of you, you
 are asked with the plan, the results folder and the time this machine is known
 to take, and only a ticked **Go ahead** starts it (or stops one). The run is
-started as the GUI starts it and goes on after the assistant closes.
+started as the GUI starts it and goes on after the AI app closes.
 `stop_study` stops only a run it can identify as the study's, at its next frame
 with a checkpoint there; one that has not stopped when the GUI's Stop would end
 it is ended, with what is left of its process group, by a watcher in a process
-of its own (`fastmdxplora.stop_after`), so an assistant closed in the meantime
+of its own (`fastmdxplora.stop_after`), so an AI app closed in the meantime
 does not leave it going. A cancelled call starts and stops nothing.
 **`fastmdx mcp --read-only`** offers neither.
 
-### An assistant can ask the FastMDXplora Agent, when you ask for it
+### An AI app can ask the FastMDXplora Agent, when you ask for it
 
-`fastmdx mcp` offers **`ask_agent`**, optional and listed last: the assistant
-writes a study itself and the validator judges it, and is told to use the Agent
-only when you ask for it. It writes with the app's own model where the app
-lends it (sampling, in both eras of the protocol), so nothing is paid twice;
-otherwise with the model `fastmdx agent model` chose, on your own API key. A
-declined loan writes nothing and never falls back to your key. Lent, what the
-Agent sends a model (its instructions and the config language, with the
-request) goes to the app, which may show it to you first; a call answered in
-rounds works each round from what the first one read, so a running study's
-record does not move under it. It is the Agent
-as the GUI has it, with the software's own tools to look with and the
-validator as the judge. A study it writes comes back accepted, recorded as the
-Agent's (`agent: assisted`, and in `agent_model` the model that wrote it, as
-the app named it), saved as a new file headed by what
-was asked, with its plan and `plan_id`; a question, an answer or an
-instruction comes back as itself, and nothing is run. It can change a config
-(`config`), read a study's record first (`study`), and say what it looked at;
-a client that asked for progress is told each look as it is taken.
+`fastmdx mcp` offers **`ask_agent`**, optional and listed last: the AI app's
+model writes a study itself and the validator judges it, and the AI app is told
+to use the Agent only when you ask for it. The Agent writes with the AI app's
+model where the AI app lends it (sampling, in both eras of the protocol), so
+nothing is paid twice; otherwise with the AI model `fastmdx agent model` chose,
+on your own API key. A declined loan writes nothing and never falls back to
+your key (`mcp.ai_model.not_lent`). Lent, what the Agent sends an AI model (its
+instructions and the config language, with the request) goes to the AI app,
+which may show it to you first; a call answered in rounds works each round from
+what the first one read, so a running study's record does not move under it.
+It is the Agent as the GUI has it, with the software's own tools to look with
+and the validator as the judge. A study it writes comes back accepted, recorded
+as the Agent's (`agent: assisted`, and in `agent_model` the AI model that wrote
+it, as the AI app named it), saved as a new file headed by what was asked, with
+its plan and `plan_id`; a question, an answer or an instruction comes back as
+itself, and nothing is run. It can change a config (`config`), read a study's
+record first (`study`), and say what it looked at; an AI app that asked for
+progress is told each look as it is taken.
 
-### An assistant can check and read studies: `fastmdx mcp`
+### An AI app can check and read studies: `fastmdx mcp`
 
-**`fastmdx mcp --workspace DIR`** serves FastMDXplora to an assistant that
-speaks the Model Context Protocol (a chat app or a code editor), on standard
-input and output, in both eras of the protocol: per-request versions
-(2026-07-28) and the `initialize` handshake (2025-11-25 back to 2024-11-05).
-Its tools say what the software finds, in its words: `inspect_structure`,
-`check_selection`, `preview_setup`, `check_study` (the validator's verdict,
-the plan with defaults marked, whether this machine can run it, and a
-`plan_id` for the exact file), `save_study` (a new file, never written over,
-only once accepted, and recorded as written with an assistant, `agent:
-assisted` with the app it was written in, unless it says otherwise or you
-wrote it), `list_studies`, `read_study` and `compare_studies` (a
-difference marked resolved only past twice its combined standard error, each
-mean given to the decimal place of its error). Every path is read inside the
-workspace, every file a config names included, and standard input and output
-carry the protocol alone.
-How to give an assistant the command, and what it can and cannot do: see
-[FastMDXplora in an assistant](docs/mcp.md). The test suite drives the server
-with the protocol's own client library in both eras (`mcp` joins the `[test]`
-extra for that).
+**`fastmdx mcp --workspace DIR`** serves FastMDXplora to an AI app that speaks
+the Model Context Protocol (an AI chat app, an AI coding tool, or an AI agent
+your lab builds), on standard input and output, in both eras of the protocol:
+per-request versions (2026-07-28) and the `initialize` handshake (2025-11-25
+back to 2024-11-05). Its tools say what the software finds, in its words:
+`inspect_structure`, `check_selection`, `preview_setup`, `check_study` (the
+validator's verdict, the plan with defaults marked, whether this machine can
+run it, and a `plan_id` for the exact file), `save_study` (a new file, never
+written over, only once accepted, and recorded as written in an AI app,
+`agent: assisted` with the AI app's name, unless it says otherwise or you wrote
+it), `list_studies`, `read_study` and `compare_studies` (a difference marked
+resolved only past twice its combined standard error, each mean given to the
+decimal place of its error). Every path is read inside the workspace, every
+file a config names included, and standard input and output carry the protocol
+alone. A tool's refusal is coded `mcp.tool.refused`. How to give an AI app the
+command, and what it can and cannot do: see [FastMDXplora from your AI
+app](docs/mcp.md). The test suite drives the server with the protocol's own
+client library in both eras (`mcp` joins the `[test]` extra for that).
 
 ### The Agent takes tools from outside
 

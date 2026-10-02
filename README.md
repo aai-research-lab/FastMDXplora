@@ -116,10 +116,10 @@ It gets no special treatment. What it writes goes through exactly the same
 validator, by the same code, with the same refusals, as a config typed by hand
 — and a proposal that did not validate carries no config at all.
 
-An assistant that speaks the Model Context Protocol reaches the same checks
-with `fastmdx mcp`: it writes a study and the same validator judges it, it reads
-and compares studies, and it starts one only from a checked file, with your
-go-ahead.
+An AI app that speaks the Model Context Protocol reaches the same checks with
+`fastmdx mcp`: the AI app's model writes a study and the same validator judges
+it, it reads and compares studies, and it starts one only from a checked file,
+with your go-ahead.
 
 ## The manifest is the result
 
@@ -143,7 +143,7 @@ decide numbers. A run directory is readable by somebody who was not there.
 [CLI](https://fastmdxplora.readthedocs.io/en/latest/cli.html) ·
 [API](https://fastmdxplora.readthedocs.io/en/latest/api.html) ·
 [Agent](https://fastmdxplora.readthedocs.io/en/latest/agent.html) ·
-[In an assistant](https://fastmdxplora.readthedocs.io/en/latest/mcp.html)
+[From your AI app](https://fastmdxplora.readthedocs.io/en/latest/mcp.html)
 
 **Going further** — [Restraints, membranes, enhanced sampling](https://fastmdxplora.readthedocs.io/en/latest/studies.html) ·
 [Production and GPUs](https://fastmdxplora.readthedocs.io/en/latest/production.html) ·

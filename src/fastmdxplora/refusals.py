@@ -329,13 +329,13 @@ CODES: tuple[Code, ...] = (
          "A tool the Agent asked for declined what it was asked: a file it does "
          "not read, a place outside the workspace, or arguments it cannot use.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
-    Code("assistant.tool.refused",
-         "A tool an assistant called declined what it was asked: a path outside "
+    Code("mcp.tool.refused",
+         "A tool an AI app called declined what it was asked: a path outside "
          "the workspace, a config that is not a file, a study already running, or "
          "arguments it cannot use.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
-    Code("assistant.model.not_lent",
-         "The assistant's app did not lend its own model to the Agent: the person "
+    Code("mcp.ai_model.not_lent",
+         "The AI app did not lend its model to the Agent: the person "
          "declined, or what came back was not a reply to what was asked.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.workspace.run_going",

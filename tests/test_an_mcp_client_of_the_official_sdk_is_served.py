@@ -2,10 +2,10 @@
 
 The server is written without the MCP SDK, so what it says it speaks is
 checked against the SDK's client where that is installed: `fastmdx mcp` is
-started as a subprocess, as an assistant starts it, and driven once as a
+started as a subprocess, as an AI app starts it, and driven once as a
 modern client (it probes `server/discover`) and once as a legacy one (it
 opens with `initialize`), the person being asked before a study starts in
-each, and the app's own model lent to the Agent in each. Skipped where the
+each, and the AI app's model lent to the Agent in each. Skipped where the
 SDK is not installed; it is not a dependency.
 """
 
@@ -17,7 +17,7 @@ import sys
 import pytest
 
 from fastmdxplora.gui.exploration import exploration_environment_error
-from tests.test_an_assistant_reads_and_checks_studies import _structure, _study
+from tests.test_an_ai_app_reads_and_checks_studies import _structure, _study
 
 pytest.importorskip("mcp.client.stdio", reason="the MCP SDK is not installed")
 
@@ -89,7 +89,7 @@ async def _drive(workspace, mode: str) -> dict:
 def test_the_sdk_client_is_served(workspace, mode, version):
     seen = asyncio.run(_drive(workspace, mode))
     assert seen["version"] == version and seen["name"] == "fastmdxplora"
-    # The assistant writes and the validator judges; the Agent, optional, comes last.
+    # The AI app writes and the validator judges; the Agent, optional, comes last.
     assert seen["tools"][0] == "inspect_structure" and seen["tools"][-1] == "ask_agent"
     assert "start_study" in seen["tools"]
     if exploration_environment_error({"systems": [{"system": "ghg.pdb"}]}):
@@ -106,11 +106,11 @@ def test_the_sdk_client_is_served(workspace, mode, version):
     assert seen["prompts"][0] == "design_a_study"
     assert seen["resources"][-1] == "fastmdxplora://study/ubq"
     assert seen["guide"].startswith("# Working with FastMDXplora studies")
-    # The Agent wrote with the app's model, asked once, and no key of the person's.
+    # The Agent wrote with the AI app's model, asked once, and no key of the person's.
     assert len(seen["lent"]) == 1 and "Five nanoseconds of ghg.pdb" in seen["lent"][0]
     assert seen["agent"][0] is False
-    assert "own model (sdk-model), lent through the protocol" in seen["agent"][1]
-    # Named as the app names itself, not as "the app".
-    assert seen["agent"][1].count("Written with the app's own model") == 0
+    assert "'s model (sdk-model), lent through the protocol" in seen["agent"][1]
+    # Named as the AI app names itself, not as "the AI app".
+    assert seen["agent"][1].count("Written with the AI app's model") == 0
     # Nothing was run, so nothing was written.
     assert sorted(p.name for p in workspace.iterdir()) == ["ghg.pdb", "ghg.yml", "ubq"]

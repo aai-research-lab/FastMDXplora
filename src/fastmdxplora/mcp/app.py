@@ -1,4 +1,4 @@
-"""What FastMDXplora offers an assistant, and the server offering it."""
+"""What FastMDXplora offers an AI app, and the server offering it."""
 
 from __future__ import annotations
 
@@ -51,9 +51,9 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
         "- check_study before anything runs: its plan is what the person should read.",
         "- The resource fastmdxplora://guide/working-with-studies says what the "
         "software's words mean (a mean, 'not determined', 'resolved', a refusal).",
-        "- ask_agent is optional: FastMDXplora's own Agent. It writes with this app's "
-        "model where the app lends it, and otherwise with a second model on the person's "
-        "own API key. Use it only when the person asks for the Agent.",
+        "- ask_agent is optional: FastMDXplora's own Agent. It writes with this AI app's "
+        "model where the AI app lends it, and otherwise with a second AI model on the "
+        "person's own API key. Use it only when the person asks for the Agent.",
     ]
     if runs:
         lines.append("- start_study only when the person has agreed to that plan: a study "
@@ -67,7 +67,7 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
 class App:
     """The tools, offered over the protocol.
 
-    ``complete_for`` gives the model the Agent writes with (the person's
+    ``complete_for`` gives the AI model the Agent writes with (the person's
     own, as `fastmdx agent model` chose it); ``runs`` false leaves out every
     tool that starts or stops work.
     """
@@ -126,7 +126,7 @@ class App:
             said, failed = str(exc), True
         except (InputRequired, Cancelled):
             raise  # the person is asked first, or nobody is waiting any more
-        except Exception as exc:  # noqa: BLE001 - said to the model, not a dead call
+        except Exception as exc:  # noqa: BLE001 - said to the AI model, not a dead call
             from fastmdxplora.refusals import refusal_of
 
             logger.debug("tool %s failed", name, exc_info=True)

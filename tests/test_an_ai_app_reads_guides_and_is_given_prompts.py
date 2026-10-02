@@ -1,8 +1,8 @@
-"""What an assistant can read from `fastmdx mcp`, and what the person can ask it.
+"""What an AI app can read from `fastmdx mcp`, and what the person can ask it.
 
 Two guides (how to work with studies here, and the config language) and
 each study's record are resources; four prompts start a piece of work the
-way FastMDXplora does it, the assistant writing and the validator judging,
+way FastMDXplora does it, the AI app writing and the validator judging,
 a study's record going with the prompt that is about one.
 """
 
@@ -13,7 +13,7 @@ import pytest
 from fastmdxplora.gui.workspace import RESOLVED_AT
 from fastmdxplora.mcp import App, Workspace
 from tests._mcp_wire import Wire
-from tests.test_an_assistant_reads_and_checks_studies import _study
+from tests.test_an_ai_app_reads_and_checks_studies import _study
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ class TestResources:
             "uri": "fastmdxplora://guide/config-language"})["result"]["contents"][0]["text"]
         assert "duration_ns" in language and "resume_from" in language
         assert "1. **Write the study as a config.**" in text
-        assert "`ask_agent` is optional" in text and "own API\nkey" in text
+        assert "`ask_agent` is optional" in text and "on their\nown API key" in text
 
     def test_a_study_is_read_as_its_record(self, wire):
         result = wire.request("resources/read", {
@@ -115,7 +115,7 @@ class TestPrompts:
         assert "check_study until the validator accepts it" in text
         assert "do not start anything until I say so" in text
         # The Agent is the person's to ask for, on their own key: no prompt
-        # sends the assistant to it.
+        # sends the AI app to it.
         prompts = wire.request("prompts/list")["result"]["prompts"]
         for prompt in prompts:
             args = {a["name"]: "project/ubq 10ns" if a["name"] == "study" else "5 ns"

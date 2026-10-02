@@ -1,14 +1,15 @@
-"""FastMDXplora for assistants, over the Model Context Protocol.
+"""FastMDXplora for AI apps, over the Model Context Protocol.
 
-``fastmdx mcp`` lets an assistant (a chat app, a code editor) design, check,
-run and read studies on this machine, inside one workspace folder. The
-assistant writes a study's config and the validator judges it, as it judges
-one written by hand; the tools say what the software finds. ``ask_agent``,
-the FastMDXplora Agent as the GUI has it, is there for a person who asks
-for it: it writes with the app's own model where the app lends it, and
-otherwise with the person's, on their own key. Nothing bypasses the checks: a
-study runs only from a config the validator accepted, whose plan was
-checked, with the person's go-ahead.
+``fastmdx mcp`` lets an AI app (an AI chat app, an AI coding tool, an AI
+agent a lab builds) design, check, run and read studies on this machine,
+inside one workspace folder. The AI app's model writes a study's config and
+the validator judges it, as it judges one written by hand; the tools say
+what the software finds. ``ask_agent``, the FastMDXplora Agent as the GUI
+has it, is there for a person who asks for it: it writes with the AI app's
+model where the AI app lends it, and otherwise with the person's own AI
+model, on their own key. Nothing bypasses the checks: a study runs only from
+a config the validator accepted, whose plan was checked, with the person's
+go-ahead.
 
 See ``docs/mcp.md``.
 """
@@ -25,7 +26,7 @@ __all__ = ["App", "Workspace", "serve_stdio"]
 
 
 def serve_stdio(workspace: str | os.PathLike[str], *, runs: bool = True) -> int:
-    """Serve on this process's standard streams until the client closes them.
+    """Serve on this process's standard streams until the AI app closes them.
 
     Standard output carries the protocol and nothing else, so it is taken
     for the protocol first and everything else that would print there (a

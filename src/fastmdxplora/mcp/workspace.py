@@ -1,6 +1,6 @@
-"""The one folder an assistant's tools may use.
+"""The one folder an AI app's tools may use.
 
-A model calling tools can be talked into reading what it should not by text
+An AI model calling tools can be talked into reading what it should not by text
 it was shown elsewhere, so the tools here reach one folder and nothing
 outside it: the studies are written there, the structures and configs read
 from there, and a path that leaves it, by ``..`` or by a link, is refused.
@@ -41,7 +41,7 @@ class Workspace:
         except (RuntimeError, OSError):  # no home folder to be told of
             home = None
         if root == home:
-            # An app may start the server in the home folder; the whole of it
+            # An AI app may start the server in the home folder; the whole of it
             # is not a folder of studies.
             raise StudyError(
                 "The workspace cannot be your home folder itself; give the folder "

@@ -273,8 +273,8 @@ change a scientific simulation.
 
 One run at a time. Starting a second returns *"A FastMDXplora workflow is
 already running."* The rule holds beyond this window too: a study started in
-the same workspace by another window or by an assistant
-([FastMDXplora in an assistant](mcp.md)) is found from the workspace's list of
+the same workspace by another window or by an AI app
+([FastMDXplora from your AI app](mcp.md)) is found from the workspace's list of
 runs, and the refusal names it and who started it. The rule is kept in the
 folder the GUI was started in and the folder it puts new studies in, never
 your home folder.

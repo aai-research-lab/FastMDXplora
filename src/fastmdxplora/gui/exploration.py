@@ -842,8 +842,8 @@ class DashboardRuntime:
         Shared, because there is more than one way to describe a run but only
         one way to run it. Assumes the caller holds the lock and has already
         refused a second concurrent run of its own. Runs started by anyone
-        else in the workspace (another window, an assistant) are refused
-        here, under the workspace's starting lock, by the rule an assistant
+        else in the workspace (another window, an AI app) are refused
+        here, under the workspace's starting lock, by the rule an AI app
         is held to (`fastmdxplora.runs_here`).
         """
         from fastmdxplora.refusals import refusal_of
@@ -867,16 +867,16 @@ class DashboardRuntime:
     def _rule_folders(self) -> list[Path]:
         """Where the one-study-at-a-time rule is kept for this window: the
         folder it was started in and the folder it puts new studies in, so
-        an assistant given either as its workspace keeps it with this
+        an AI app given either as its workspace keeps it with this
         window. Never the home folder or a folder above it, which an
-        assistant is never given and which are not to be written in."""
+        AI app is never given and which are not to be written in."""
         home = Path.home().expanduser().resolve()
         return [folder for folder in dict.fromkeys((self.workspace_root, self.exploration_root))
                 if folder != home and folder not in home.parents]
 
     def _others_running(self) -> dict[str, Any] | None:
         """The refusal for a start while a study started elsewhere (another
-        window, an assistant) runs in this window's folders, or None. Asked
+        window, an AI app) runs in this window's folders, or None. Asked
         before anything is written for a run, and again under the lock."""
         from fastmdxplora.runs_here import running_in, said_going
 

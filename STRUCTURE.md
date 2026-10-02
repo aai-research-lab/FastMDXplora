@@ -22,7 +22,7 @@ FastMDXplora/
 │       │                          #   analyze/report/gui/info/init-config/remote/mcp)
 │       ├── mcp/
 │       │   ├── protocol.py        # The Model Context Protocol over stdio, both eras
-│       │   ├── app.py             # What `fastmdx mcp` offers an assistant
+│       │   ├── app.py             # What `fastmdx mcp` offers an AI app
 │       │   ├── content.py         # Its guides, study records and prompts
 │       │   ├── tools.py           # Its tools: look, check, save, run, read; the Agent
 │       │   └── workspace.py       # The one folder the tools may use

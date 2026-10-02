@@ -1,4 +1,4 @@
-"""The protocol an assistant speaks to `fastmdx mcp`, both eras of it.
+"""The protocol an AI app speaks to `fastmdx mcp`, both eras of it.
 
 The 2026-07-28 revision carries the version and the client's capabilities
 on every request and has no session; the revisions before it open with

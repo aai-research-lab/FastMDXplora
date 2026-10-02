@@ -477,7 +477,7 @@
       { label: "Copy", run: function () { copyText(text); } },
       { label: "Edit", title: "Edit this message in place and send it again",
         run: function () {
-          /* In place, as every assistant a person has used does it: the
+          /* In place, as every AI app a person has used does it: the
            * bubble becomes editable, Enter sends, Escape puts it back.
            * Copying the text down into the composer was a detour. */
           if (body.isContentEditable) return;

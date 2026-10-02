@@ -1,9 +1,9 @@
-"""An assistant asks the FastMDXplora Agent, when the person asks for it.
+"""An AI app asks the FastMDXplora Agent, when the person asks for it.
 
-The assistant writes a study itself and the validator judges it; that is
+The AI app writes a study itself and the validator judges it; that is
 the default. `ask_agent` is optional and offered last, since it calls a
 second model on the person's own key. It is the Agent as the GUI has it:
-the person's own model, the
+the person's own AI model, the
 software's tools to look with, the validator as the judge. A study it
 writes comes back accepted, recorded as the Agent's, saved as a new file
 with its plan and plan_id; a question, an answer or an instruction comes
@@ -20,7 +20,7 @@ from fastmdxplora.mcp import App, Workspace
 from fastmdxplora.mcp.tools import plan_id_of
 from fastmdxplora.refusals import StudyError
 from tests._mcp_wire import Wire
-from tests.test_an_assistant_reads_and_checks_studies import _structure, _study
+from tests.test_an_ai_app_reads_and_checks_studies import _structure, _study
 
 STUDY = "systems:\n  - system: ghg.pdb\nsimulation:\n  duration_ns: 5\n"
 
@@ -63,7 +63,7 @@ def test_the_agent_is_offered_last_as_optional_and_says_who_pays(workspace):
     assert agent["title"] == "Ask the FastMDXplora Agent (optional; may use your API key)"
     assert agent["description"].startswith("Optional: only when the person asks for "
                                             "FastMDXplora's own Agent.")
-    assert "this app's own model where the app lends it" in agent["description"]
+    assert "this AI app's model where the AI app lends it" in agent["description"]
     assert "paid for on top of this conversation" in agent["description"]
     said = wire.request("server/discover")["result"]["instructions"]
     assert "give it to check_study. The validator is the judge" in said
@@ -113,7 +113,7 @@ def test_a_question_an_answer_and_an_instruction_come_back_as_themselves(workspa
                   "SAY: Density tells you whether the box has reached its pressure.",
                   "DO: run", "DO: open viewer")
     wire = _wire(workspace, model)
-    whose = "\n\nWritten with the model chosen with `fastmdx agent model`."
+    whose = "\n\nWritten with the AI model chosen with `fastmdx agent model`."
     assert ask(wire, request="Simulate my protein")["content"][0]["text"] == (
         "The Agent asks: Which structure: a PDB identifier or a file?\n"
         "Answer it in a new request, with what it asks for." + whose)
@@ -162,9 +162,9 @@ def test_without_a_model_it_says_how_to_choose_one(workspace):
     result = ask(wire, request="Five nanoseconds of ghg.pdb")
     assert result["isError"]
     assert result["content"][0]["text"] == (
-        "No model is chosen for the Agent.\nThis app does not lend its own model, so the "
-        "Agent writes with one you choose once, in a terminal: `fastmdx agent model`. "
-        "Every other tool here works without one.")
+        "No model is chosen for the Agent.\nThis AI app does not lend its model, so the "
+        "Agent writes with an AI model you choose once, in a terminal: `fastmdx agent "
+        "model`. Every other tool here works without one.")
     wire.close()
 
 
@@ -191,10 +191,10 @@ def test_a_read_only_server_says_where_a_study_is_run(workspace):
 
 
 # ---------------------------------------------------------------------------
-# The app's own model, lent (sampling), so nothing is paid twice
+# The AI app's model, lent (sampling), so nothing is paid twice
 # ---------------------------------------------------------------------------
 def _no_key():
-    raise AssertionError("the person's own key was used where the app lent its model")
+    raise AssertionError("the person's own key was used where the AI app lent its model")
 
 
 def _lent(text, model="lent-model"):
@@ -223,7 +223,7 @@ def test_a_legacy_app_lends_its_model_and_the_study_records_it(workspace):
     params = asked[0]["params"]
     assert params["maxTokens"] == 4000 and params["messages"][0]["role"] == "user"
     assert "Five nanoseconds of ghg.pdb" in params["messages"][0]["content"]["text"]
-    assert ("Written with test's own model (lent-model), lent through the protocol: your "
+    assert ("Written with test's model (lent-model), lent through the protocol: your "
             "own API key was not used.") in said
     config = yaml.safe_load(next(workspace.glob("fastmdxplora_*.yml")).read_text())
     assert (config["agent"], config["agent_model"]) == ("assisted", "test/lent-model")
@@ -238,8 +238,8 @@ def test_a_legacy_app_that_declines_writes_nothing_and_no_key_is_used(workspace)
         answer=lambda message: {})["result"]
     assert result["isError"]
     assert result["content"][0]["text"] == (
-        "The app did not lend its model for this. Nothing was written. Ask again to have "
-        "the app lend it; your own API key is not used in its place.")
+        "The AI app did not lend its model for this. Nothing was written. Ask again to "
+        "have the AI app lend it; your own API key is not used in its place.")
     assert list(workspace.glob("*.yml")) == []
     wire.close()
 
@@ -274,7 +274,7 @@ def test_a_modern_app_lends_its_model_a_round_at_a_time(workspace):
                          second["requestState"])
     assert done["resultType"] == "complete" and not done["isError"]
     said = done["content"][0]["text"]
-    assert "Written with test's own model (lent-model, other-model)" in said
+    assert "Written with test's model (lent-model, other-model)" in said
     config = yaml.safe_load(next(workspace.glob("fastmdxplora_*.yml")).read_text())
     assert config["agent_model"] == "test/lent-model, test/other-model"
     wire.close()
@@ -315,7 +315,7 @@ def test_a_modern_app_that_gives_no_reply_writes_nothing(workspace):
     declined = _modern_round(wire, arguments, {"fastmdx-sample-0": {"action": "decline"}},
                              first["requestState"])
     assert declined["isError"]
-    assert declined["content"][0]["text"].startswith("The app did not lend its model for this.")
+    assert declined["content"][0]["text"].startswith("The AI app did not lend its model for this.")
     assert list(workspace.glob("*.yml")) == []
     wire.close()
 
@@ -326,7 +326,7 @@ def test_without_lending_the_person_s_own_key_is_used_and_said(workspace, monkey
     save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="sk-x")
     wire = _wire(workspace, Model(STUDY))
     said = ask(wire, request="Five nanoseconds of ghg.pdb")["content"][0]["text"]
-    assert ("Written with your model (anthropic/claude-sonnet-4-6), chosen with "
+    assert ("Written with your AI model (anthropic/claude-sonnet-4-6), chosen with "
             "`fastmdx agent model`, on your own API key.") in said
     config = yaml.safe_load(next(workspace.glob("fastmdxplora_*.yml")).read_text())
     assert config["agent_model"] == "anthropic/claude-sonnet-4-6"

@@ -1,10 +1,10 @@
 """The Model Context Protocol, over a pair of byte streams.
 
-An assistant (a chat app, a code editor) reaches FastMDXplora by starting
-``fastmdx mcp`` and writing JSON-RPC to it, one message per line. This module
-is the protocol only: framing, versions, errors, asking the person a
-question in the middle of a call, and progress. What is offered lives in
-:mod:`fastmdxplora.mcp.app`.
+An AI app (an AI chat app, an AI coding tool, an AI agent a lab builds)
+reaches FastMDXplora by starting ``fastmdx mcp`` and writing JSON-RPC to it,
+one message per line. This module is the protocol only: framing, versions,
+errors, asking the person a question in the middle of a call, and progress.
+What is offered lives in :mod:`fastmdxplora.mcp.app`.
 
 No SDK is used. The GUI's server is the standard library's, the conda-forge
 package is the canonical install, and the protocol a stdio server needs is
@@ -105,10 +105,10 @@ class Cancelled(Exception):
 
 
 class NotLent(CodedError, Exception):
-    """The client did not lend its model: the person declined, or it
+    """The AI app did not lend its model: the person declined, or it
     answered with something that is not a reply."""
 
-    default_code = "assistant.model.not_lent"
+    default_code = "mcp.ai_model.not_lent"
 
 
 class InputRequired(Exception):
@@ -196,7 +196,7 @@ class Call:
         return not asked or isinstance(asked.get("form"), dict)
 
     def can_sample(self) -> bool:
-        """Whether the client lends its own model (sampling)."""
+        """Whether the AI app lends its own AI model (sampling)."""
         return isinstance(self.capabilities.get("sampling"), dict)
 
     def sample(self, prompt: str, *, bound_to: str, max_tokens: int) -> tuple[str, str]:
@@ -218,7 +218,7 @@ class Call:
                 raise Cancelled(self.method)
             reply = _sampled(answered)
             if reply is None:
-                raise NotLent("The app did not lend its model for this.")
+                raise NotLent("The AI app did not lend its model for this.")
             return reply
         self._rounds(bound_to)
         replies = self._replies if self._replies is not None else []
@@ -269,7 +269,7 @@ class Call:
                           "expired, or was used before.")
         reply = _sampled(answers.get(carried.get("key")) if isinstance(answers, dict) else None)
         if reply is None:
-            raise NotLent("The app did not lend its model for this.")
+            raise NotLent("The AI app did not lend its model for this.")
         kept = carried.get("kept")
         return ([*carried["replies"], [str(carried.get("asked")), *reply]],
                 dict(kept) if isinstance(kept, dict) else {})
@@ -668,4 +668,4 @@ def _sampled(result: Any) -> tuple[str, str] | None:
         return None
     model = result.get("model")
     return "".join(texts), (model.strip() if isinstance(model, str) and model.strip()
-                            else "a model the app did not name")
+                            else "an AI model the AI app did not name")

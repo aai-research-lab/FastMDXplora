@@ -181,11 +181,13 @@ TOP_LEVEL = PhaseSchema(
               "Default: ./fastmdxplora_<system>_study_<UTC-timestamp>.",
               example="./my_study"),
         Field("agent_model", str, None,
-              "Which model wrote this study, as provider/model. Written by "
-              "`fastmdx agent`, and by the Agent an assistant asks, which "
-              "writes app/model where the assistant's app lent its own; "
-              "absent when a person wrote the config. "
-              "Recorded because `agent: assisted` says a model was "
+              "Which AI model wrote this study, as provider/model. Written by "
+              "`fastmdx agent`; by the Agent an AI app asks, which writes the "
+              "AI app's name and its model where the AI app lent it; and by "
+              "an AI app's `save_study`, which writes the AI app's name where "
+              "the AI app does not name its model. Absent when a person wrote "
+              "the config. "
+              "Recorded because `agent: assisted` says an AI model was "
               "involved and not which one, and six months on that is the "
               "difference between a record and a note. Pin a dated version "
               "rather than an alias if it matters: an alias moves when a "
