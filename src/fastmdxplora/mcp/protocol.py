@@ -58,6 +58,7 @@ LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 _KEY = "io.modelcontextprotocol/"
 _VERSION = _KEY + "protocolVersion"
 _CAPABILITIES = _KEY + "clientCapabilities"
+_CLIENT_INFO = _KEY + "clientInfo"
 _SERVER_INFO = _KEY + "serverInfo"
 
 PARSE_ERROR = -32700
@@ -136,6 +137,19 @@ class Call:
     capabilities: dict[str, Any]
     _server: Server = field(repr=False)
     _steps: int = 0
+
+    @property
+    def client_name(self) -> str | None:
+        """The client's own name for itself, where it gave one."""
+        if self.era == "modern":
+            meta = self.params.get("_meta")
+            info = meta.get(_CLIENT_INFO) if isinstance(meta, dict) else None
+        else:
+            info = self._server.legacy_client
+        name = info.get("name") if isinstance(info, dict) else None
+        if not isinstance(name, str) or not name.strip():
+            return None
+        return name.strip()
 
     @property
     def progress_token(self) -> Any:
@@ -226,6 +240,7 @@ class Server:
         self._write_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._legacy: tuple[str, dict[str, Any]] | None = None
+        self.legacy_client: dict[str, Any] | None = None
         self._in_flight: set[Any] = set()
         self._cancelled: set[Any] = set()
         self._asks: dict[str, tuple[Future[dict[str, Any]], Any]] = {}
@@ -436,6 +451,8 @@ class Server:
         version = asked if asked in LEGACY_VERSIONS else LEGACY_VERSIONS[0]
         capabilities = params.get("capabilities")
         self._legacy = (version, capabilities if isinstance(capabilities, dict) else {})
+        client = params.get("clientInfo")
+        self.legacy_client = client if isinstance(client, dict) else None
         return {"protocolVersion": version, "capabilities": self.capabilities,
                 "serverInfo": self.info, "instructions": self.instructions}
 

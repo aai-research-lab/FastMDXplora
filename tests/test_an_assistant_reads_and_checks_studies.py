@@ -153,15 +153,47 @@ class TestChecking:
     def test_a_saved_config_is_new_accepted_and_never_written_over(self, wire, workspace):
         text = "# 5 ns is enough to see whether the histidine flips\nsystems:\n  - system: ghg.pdb\n"
         said = call(wire, "save_study", name="ghg run/2", config=text)["content"][0]["text"]
-        assert said.startswith("Saved to ghg_run_2.yml; accepted by the validator. Nothing "
-                               "has been run.")
-        assert (workspace / "ghg_run_2.yml").read_text() == text
+        assert said.startswith("Saved to ghg_run_2.yml; accepted by the validator. Recorded "
+                               "as written with an assistant (agent: assisted, in test (its "
+                               "own model, which the app does not name)). Nothing has been "
+                               "run.")
+        # Marked as an assistant's, in the app that named itself, and no model
+        # claimed that the app did not name; the comment and the order kept.
+        written = ("agent: assisted\nagent_model: test (its own model, which the app does "
+                   "not name)\n" + text)
+        assert (workspace / "ghg_run_2.yml").read_text() == written
         again = call(wire, "save_study", name="ghg_run_2.yml", config="systems: []\n")
         assert again["isError"]
-        assert (workspace / "ghg_run_2.yml").read_text() == text
+        assert (workspace / "ghg_run_2.yml").read_text() == written
         twice = call(wire, "save_study", name="ghg_run_2", config=text)
         assert "is never written over" in twice["content"][0]["text"]
         assert call(wire, "save_study", name="x", config="ghg.yml")["isError"]
+
+
+    def test_a_config_the_person_wrote_is_recorded_as_theirs(self, wire, workspace):
+        text = "systems:\n  - system: ghg.pdb\n"
+        said = call(wire, "save_study", name="mine", config=text, by_hand=True)
+        assert "Recorded as the person's own." in said["content"][0]["text"]
+        assert (workspace / "mine.yml").read_text() == text
+
+    def test_a_config_that_says_how_it_was_written_is_left_saying_it(self, wire, workspace):
+        text = "agent: autonomous\nbudget_hours: 2\nsystems:\n  - system: ghg.pdb\n"
+        said = call(wire, "save_study", name="theirs", config=text)["content"][0]["text"]
+        assert "Recorded as it says it was written (agent: autonomous)." in said
+        assert (workspace / "theirs.yml").read_text() == text
+
+    def test_a_config_in_flow_style_is_marked_too(self, wire, workspace):
+        import yaml
+
+        call(wire, "save_study", name="flow", config="{systems: [{system: ghg.pdb}]}")
+        saved = yaml.safe_load((workspace / "flow.yml").read_text())
+        assert saved == {"agent": "assisted", "systems": [{"system": "ghg.pdb"}],
+                         "agent_model": "test (its own model, which the app does not name)"}
+
+    def test_a_model_the_config_names_is_kept(self, wire, workspace):
+        text = "agent_model: someone/some-model\nsystems:\n  - system: ghg.pdb\n"
+        call(wire, "save_study", name="named", config=text)
+        assert (workspace / "named.yml").read_text() == "agent: assisted\n" + text
 
 
 class TestLooking:

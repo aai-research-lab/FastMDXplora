@@ -407,9 +407,10 @@ fastmdx mcp --workspace ~/studies --read-only   # it may check and read, not run
 ```
 
 Serves FastMDXplora to an assistant that speaks the Model Context Protocol, on
-standard input and output: the Agent (`ask_agent`), the tools that look and
-check, and starting and stopping a checked study with your go-ahead, all inside
-the one workspace folder. The assistant starts it from its own settings. See
+standard input and output: the tools that look and check, so the assistant
+writes a study and the validator judges it, starting and stopping a checked
+study with your go-ahead, and, if you ask for it, the Agent (`ask_agent`, on
+your own API key), all inside the one workspace folder. The assistant starts it from its own settings. See
 [FastMDXplora in an assistant](mcp.md).
 
 ---

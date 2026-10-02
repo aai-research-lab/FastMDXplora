@@ -371,6 +371,17 @@ def test_what_stops_a_start_before_it_is_asked_is_said(wire, workspace, spawned,
     assert spawned == []
 
 
+
+def test_a_config_saying_it_runs_unseen_is_not_run_where_it_is_shown(wire, workspace,
+                                                                      spawned):
+    (workspace / "unseen.yml").write_text("agent: autonomous\nbudget_hours: 2\n" + STUDY)
+    refused = wire.request("tools/call", {"name": "start_study", "arguments": {
+        "config": "unseen.yml", "plan_id": plan_id_of(workspace / "unseen.yml")}})["result"]
+    assert refused["isError"]
+    assert refused["content"][0]["text"].startswith(
+        "unseen.yml says `agent: autonomous`: that it runs without being shown to anyone.")
+    assert spawned == []
+
 def test_a_launch_the_runtime_refuses_is_said(wire, workspace, spawned, monkeypatch):
     monkeypatch.setattr(DashboardRuntime, "launch_from_config",
                         lambda self, state, config=None: {"ok": False, "error": "No GPU here."})

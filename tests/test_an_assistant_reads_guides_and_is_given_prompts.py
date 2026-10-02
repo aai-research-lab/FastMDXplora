@@ -1,9 +1,9 @@
 """What an assistant can read from `fastmdx mcp`, and what the person can ask it.
 
-Two guides (how to work with studies here, and the config language as the
-Agent is shown it) and each study's record are resources; four prompts start
-a piece of work the way FastMDXplora does it, a study's record going with
-the prompt that is about one.
+Two guides (how to work with studies here, and the config language) and
+each study's record are resources; four prompts start a piece of work the
+way FastMDXplora does it, the assistant writing and the validator judging,
+a study's record going with the prompt that is about one.
 """
 
 from __future__ import annotations
@@ -56,6 +56,8 @@ class TestResources:
         language = wire.request("resources/read", {
             "uri": "fastmdxplora://guide/config-language"})["result"]["contents"][0]["text"]
         assert "duration_ns" in language and "resume_from" in language
+        assert "1. **Write the study as a config.**" in text
+        assert "`ask_agent` is optional" in text and "own API key" in text
 
     def test_a_study_is_read_as_its_record(self, wire):
         result = wire.request("resources/read", {
@@ -103,13 +105,23 @@ class TestPrompts:
             {"name": "structure", "description": "A PDB identifier or a structure file, "
                                                  "if you have one.", "required": False}]
 
-    def test_designing_puts_the_agent_first_and_nothing_runs_unasked(self, wire):
+    def test_designing_has_the_validator_judge_and_nothing_runs_unasked(self, wire):
         result = wire.request("prompts/get", {"name": "design_a_study", "arguments": {
             "goal": "Does the loop open at 310 K?", "structure": "1UBQ"}})["result"]
         text = result["messages"][0]["content"]["text"]
         assert text.startswith("I want a molecular dynamics study with FastMDXplora. Does "
-                               "the loop open at 310 K?\nThe structure: 1UBQ.\n\nUse ask_agent")
+                               "the loop open at 310 K?\nThe structure: 1UBQ.\n\nWrite it as "
+                               "a FastMDXplora config")
+        assert "check_study until the validator accepts it" in text
         assert "do not start anything until I say so" in text
+        # The Agent is the person's to ask for, on their own key: no prompt
+        # sends the assistant to it.
+        prompts = wire.request("prompts/list")["result"]["prompts"]
+        for prompt in prompts:
+            args = {a["name"]: "project/ubq 10ns" if a["name"] == "study" else "5 ns"
+                    for a in prompt["arguments"]}
+            said = wire.request("prompts/get", {"name": prompt["name"], "arguments": args})
+            assert "ask_agent" not in said["result"]["messages"][0]["content"]["text"]
         bare = wire.request("prompts/get", {"name": "design_a_study", "arguments": {
             "goal": "Fold chignolin."}})["result"]["messages"][0]["content"]["text"]
         assert "The structure" not in bare

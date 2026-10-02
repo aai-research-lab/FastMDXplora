@@ -7,10 +7,11 @@ studies on your machine. You talk to the assistant; the assistant starts
 
 Two things hold however the assistant is asked:
 
-- **The FastMDXplora Agent stays in the loop.** `ask_agent` writes a study as
-  the Agent does in the GUI: with the model you chose for it, looking with the
-  software's own tools, and with the validator as the judge. The assistant is
-  told to use it first rather than write a study from what it remembers.
+- **The assistant writes, the validator judges.** The assistant writes a
+  study's config in the config language and gives it to `check_study`; the
+  validator accepts it or refuses it with what would fix it, exactly as it does
+  a config typed by hand. Nothing it has not accepted is saved or run, and a
+  config the assistant wrote is recorded as written with one (`agent: assisted`).
 - **Nothing bypasses the checks.** A study runs only from a config file the
   validator accepted, whose plan was checked as the file now is, with your
   go-ahead.
@@ -48,9 +49,8 @@ settings. Most clients take a configuration file of this shape:
 Clients that add a server from the command line take the same command:
 `fastmdx mcp --workspace /Users/you/studies`.
 
-For `ask_agent`, choose the Agent's model once, in a terminal, with
-`fastmdx agent model` (see [Connecting a model](agent.md#connecting-a-model)).
-Every other tool works without one.
+No model of your own is needed: the assistant's model does the writing. The
+one tool that calls another is `ask_agent` (below).
 
 ## What the assistant can do
 
@@ -58,17 +58,17 @@ Every other tool works without one.
 
 | Tool | What the software says |
 |---|---|
-| `ask_agent` | The Agent's answer to a request: a study it wrote and the validator accepted, saved as a new file with its plan and `plan_id`; or its question, its answer, or the instruction it read. Can change a config (`config`) or read a study's record first (`study`). Runs nothing. |
 | `inspect_structure` | The chains, residues, ligands, ions and water a structure holds, the residues whose protonation state a study may set, any side chain by a structural metal |
 | `check_selection` | How many atoms, and which residues, an MDTraj selection matches |
 | `preview_setup` | What setup will build (particles, box, solute, water, ions) and how long the study takes on this machine, where it has been timed |
 | `check_study` | Whether the validator accepts a config, and if not why and what would fix it; if so the plan, defaults marked, whether this machine can run it, and its `plan_id` |
-| `save_study` | A config written as a new file, once the validator accepts it, with its plan and `plan_id`; a file is never written over |
+| `save_study` | A config written as a new file, once the validator accepts it, with its plan and `plan_id`; a file is never written over. Recorded as written with an assistant (`agent: assisted`, and in `agent_model` the app, as it names itself; it does not name its model) unless the config says otherwise, or `by_hand` says you wrote it |
 | `start_study` | A checked config run on this machine (below) |
 | `stop_study` | A running study stopped at its next frame, with a checkpoint there |
 | `list_studies` | The studies in the workspace, newest first, with their state and the means they recorded; and the config files not yet run |
 | `read_study` | Where a study stands (its step and time left while it runs) and what it recorded: its config, what its analyses found with errors and units, the checks, why it stopped and what would fix it |
 | `compare_studies` | The settings two studies differ in, and the means each recorded, a difference marked resolved only past twice its combined standard error, and one that cannot be judged (no error, or a mean not determined) said to be not assessed |
+| `ask_agent` | Optional: the FastMDXplora Agent's answer, for when you ask for the Agent (below) |
 
 A mean is given with its standard error, to the decimal place of the error's
 second significant figure. A tool that cannot do what it was asked says why,
@@ -77,22 +77,36 @@ and what would fix it, as an error the assistant can act on.
 ### Prompts
 
 Most clients offer these as slash commands. Each starts a piece of work the way
-FastMDXplora does it, with the Agent in the loop and nothing run without your
-word:
+FastMDXplora does it, the assistant writing and the validator judging, and
+nothing run without your word:
 
 | Prompt | |
 |---|---|
-| **Design a study** | The Agent writes it from what you want to learn; you see the plan before anything runs |
+| **Design a study** | The assistant writes it from what you want to learn, checked until the validator accepts it; you see the plan before anything runs |
 | **Explain what a study found** | Each number from the study's own record, with its error and unit |
 | **Why did a study stop?** | The reason and the fix, its command and its cost, from the record |
-| **Continue a study** | More production, extended in place and analysed as one study |
+| **Continue a study** | More production, from the config the study's record gives, extended in place and analysed as one study |
 
 ### What it can read
 
 Two guides: **working with studies** (the order of work, and what a mean, "not
-determined", "resolved" and a refusal mean) and **the config language** as the
-Agent is shown it. And each study in the workspace, as its record, which most
+determined", "resolved" and a refusal mean) and **the config language**, every
+setting a config can carry with what it does and its default. And each study in the workspace, as its record, which most
 clients let you attach to a message.
+
+### The FastMDXplora Agent, if you ask for it
+
+`ask_agent` is the Agent as the GUI has it: it looks with the software's own
+tools, a study it writes is accepted by the validator before it comes back,
+saved as a new file with its plan and `plan_id` and recorded as its model's,
+and it answers questions or asks you what only you can say. It runs nothing.
+
+It is optional, offered last, and the assistant is told to use it only when you
+ask for the Agent, because it is a second model: the one you chose once, in a
+terminal, with `fastmdx agent model` (see
+[Connecting a model](agent.md#connecting-a-model)), called on your own API key.
+Each call is paid for on top of the assistant's own. What it writes is judged
+by the same validator as what the assistant writes.
 
 ## Starting a study
 
@@ -100,6 +114,8 @@ clients let you attach to a message.
 
 - while its `plan_id` is the one `check_study` gave for the file as it is now;
   a changed file is checked again, and its plan shown again;
+- when the config does not say `agent: autonomous` (that it runs without being
+  shown to anyone), since here its plan is shown first;
 - when no other study is running in the workspace, so each has the machine to
   itself and its timings mean what they say;
 - into a results folder not already used: the config's `output`, or, without
@@ -139,8 +155,8 @@ protocol's own client library in both eras.
 
 ## See also
 
-- **[The FastMDXplora Agent](agent.md)**: what `ask_agent` is, and how a package
-  can give it tools of its own
+- **[The FastMDXplora Agent](agent.md)**: the Agent `ask_agent` asks, and how a
+  package can give it tools of its own
 - **[The FastMDXplora Config](config.md)**: what it writes
 - **[FastMDXplora refusals](refusals.md)**: what a refusal says, and its fix
 - **[Production runs and GPUs](production.md)**: when a study stops early

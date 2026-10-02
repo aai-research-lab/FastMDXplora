@@ -1,11 +1,11 @@
 """What an assistant can read, and what the person can ask it to do.
 
 Resources are for reading: two guides (how to work with studies here, and
-the config language as the Agent is shown it) and each study in the
-workspace, as its record. Prompts are for the person to choose, as a slash
-command in most clients: each starts a piece of work the way FastMDXplora
-would do it, with the Agent in the loop and nothing run without the
-person's word.
+the config language) and each study in the workspace, as its record.
+Prompts are for the person to choose, as a slash command in most clients:
+each starts a piece of work the way FastMDXplora would do it, with the
+validator as the judge of what the assistant writes and nothing run without
+the person's word.
 """
 
 from __future__ import annotations
@@ -36,19 +36,31 @@ recorded beside the results.
 
 ## The order of work
 
-1. **Write the study with the Agent.** `ask_agent` with the person's own words.
-   The Agent is FastMDXplora's: it looks with the software's tools before it
-   answers, a study it writes is accepted by the validator before it is
-   returned, and it is saved as a new file with its plan. When it asks a
-   question, put the question to the person; do not answer it yourself.
-2. **Show the plan.** `check_study` on the file gives the plan the person
-   should read, defaults marked, and whether this machine can run it.
-3. **Run it only on the person's word.** `start_study` with the `plan_id`
-   `check_study` gave; a changed file needs checking again. A server started
-   read-only offers no `start_study`: the person runs the file with
+1. **Write the study as a config.** The config language
+   (`fastmdxplora://guide/config-language`) lists every setting, what it
+   does and its default; a key not listed there is refused. Look before
+   choosing: `inspect_structure` for chains, ligands and residue states,
+   `check_selection` for a selection, `preview_setup` for a size or a time.
+   Ask the person what only they can say (the system, what the study is
+   for, its conditions where they matter); do not choose those for them.
+2. **Have the validator judge it.** `check_study` with the YAML. A refusal
+   names its code, its reason and what would fix it: fix that and check
+   again. Once it is accepted, `save_study` writes it as a new file,
+   recorded as written with an assistant.
+3. **Show the plan.** `check_study` on the file gives the plan the person
+   should read, defaults marked, whether this machine can run it, and its
+   `plan_id`.
+4. **Run it only on the person's word.** `start_study` with that `plan_id`;
+   a changed file needs checking again. A server started read-only offers
+   no `start_study`: the person runs the file with
    `fastmdx explore --config FILE` or from the GUI.
-4. **Read what it found.** `read_study` while it runs (step, time left,
-   health) and after (what each analysis found, the checks, why it stopped).
+5. **Read what it found.** `read_study` while it runs (step, time left,
+   health) and after (what each analysis found, the checks, why it stopped,
+   and the config that continues it).
+
+`ask_agent` is optional. It is FastMDXplora's own Agent, a second model
+the person chose and pays for on their own API key; use it only when the
+person asks for it. What it writes is judged by the same validator.
 
 ## What the software's words mean
 
@@ -68,8 +80,8 @@ recorded beside the results.
 
 ## What not to do
 
-- Do not write a study's settings from your own knowledge when the Agent
-  can write them: it is checked, you are not.
+- Do not save, run or call ready a config the validator has not accepted,
+  and do not work around a refusal.
 - Do not start, stop or continue a study the person has not agreed to.
 - Do not state a system's size, a run's time, or a residue's state from
   memory: look with `preview_setup` or `inspect_structure`.
@@ -80,7 +92,7 @@ def _guide_config() -> str:
     from fastmdxplora.config.describe import describe_schema
 
     return ("# The FastMDXplora config language\n\nEvery setting a study config can "
-            "carry, as the Agent is shown it. A key not listed here is refused.\n\n"
+            "carry, with what it does and its default. A key not listed here is refused.\n\n"
             + describe_schema(verbose=True))
 
 
@@ -169,13 +181,16 @@ class Prompt:
 
 PROMPTS: tuple[Prompt, ...] = (
     Prompt("design_a_study", "Design a study",
-           "Have the FastMDXplora Agent write a study from what you want to learn, and "
-           "see its plan before anything runs.",
+           "Write a study from what you want to learn, judged by FastMDXplora's "
+           "validator, and see its plan before anything runs.",
            (("goal", "What the study is for, in your words.", True),
             ("structure", "A PDB identifier or a structure file, if you have one.", False)),
            "I want a molecular dynamics study with FastMDXplora. {goal}{structure}\n\n"
-           "Use ask_agent with my words. If the Agent asks something, ask me. Then show me "
-           "the plan from check_study, with what the Agent checked, and do not start "
+           "Write it as a FastMDXplora config, from the config language guide, looking "
+           "with inspect_structure and preview_setup where a choice depends on the "
+           "structure or the size. Give it to check_study until the validator accepts it, "
+           "and ask me anything only I can say. Then save it with save_study, show me the "
+           "plan from check_study on the file and what you looked at, and do not start "
            "anything until I say so."),
     Prompt("explain_a_study", "Explain what a study found",
            "What a study found, from its own record, each number with its error and unit.",
@@ -197,8 +212,11 @@ PROMPTS: tuple[Prompt, ...] = (
            (("study", "The study's folder in the workspace.", True),
             ("more", "How much more production, such as 50 ns.", True)),
            "Continue the FastMDXplora study {study} by {more} of production, as one study "
-           "extended in place. Use ask_agent with study={study} to write the continuation, "
-           "show me its plan from check_study, and start it only when I say so.",
+           "extended in place. Its record below gives the config that does it: use that "
+           "config with `extra_ns` set to {more} in nanoseconds in place of `duration_ns`. "
+           "If the record says it cannot be continued, tell me why instead. Check it with "
+           "check_study, save it with save_study, show me its plan, and start it only when "
+           "I say so.",
            study="study"),
 )
 

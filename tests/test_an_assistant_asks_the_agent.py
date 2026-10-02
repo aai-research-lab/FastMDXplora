@@ -1,6 +1,9 @@
-"""An assistant asks the FastMDXplora Agent, rather than writing a study itself.
+"""An assistant asks the FastMDXplora Agent, when the person asks for it.
 
-`ask_agent` is the Agent as the GUI has it: the person's own model, the
+The assistant writes a study itself and the validator judges it; that is
+the default. `ask_agent` is optional and offered last, since it calls a
+second model on the person's own key. It is the Agent as the GUI has it:
+the person's own model, the
 software's tools to look with, the validator as the judge. A study it
 writes comes back accepted, recorded as the Agent's, saved as a new file
 with its plan and plan_id; a question, an answer or an instruction comes
@@ -50,6 +53,21 @@ def _wire(workspace, model):
 def ask(wire, **arguments):
     return wire.request("tools/call", {"name": "ask_agent", "arguments": arguments,
                                        "_meta": {"progressToken": "t"}})["result"]
+
+
+def test_the_agent_is_offered_last_as_optional_and_says_who_pays(workspace):
+    wire = _wire(workspace, Model())
+    tools = wire.request("tools/list")["result"]["tools"]
+    agent = tools[-1]
+    assert agent["name"] == "ask_agent"
+    assert agent["title"] == "Ask the FastMDXplora Agent (optional, your API key)"
+    assert agent["description"].startswith("Optional: only when the person asks for "
+                                            "FastMDXplora's own Agent.")
+    assert "paid for on top of this conversation" in agent["description"]
+    said = wire.request("server/discover")["result"]["instructions"]
+    assert "give it to check_study. The validator is the judge" in said
+    assert "ask_agent is optional" in said and "first" not in said
+    wire.close()
 
 
 def test_a_study_comes_back_accepted_saved_and_planned(workspace):

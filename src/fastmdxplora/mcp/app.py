@@ -36,10 +36,12 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
     lines = [
         "FastMDXplora designs, checks, runs and reads molecular dynamics studies on this "
         f"machine, in the workspace {workspace.root}.",
-        "- To write or change a study from a description, or to ask about one, use "
-        "ask_agent first. It is FastMDXplora's own Agent: it looks with the software's "
-        "tools, says what it checked, and a study it writes is accepted by the "
-        "validator before you see it.",
+        "- Write a study as a config in the FastMDXplora config language (the resource "
+        "fastmdxplora://guide/config-language lists every setting) and give it to "
+        "check_study. The validator is the judge: a refusal says why and what would fix "
+        "it. Fix that and check again; nothing it has not accepted is saved or run.",
+        "- Ask the person what only they can say (the system, what the study is for, its "
+        "conditions where they matter); do not choose those for them.",
         "- What a tool says is the software's own finding. Quote its numbers with their "
         "errors and units as given; never overrule a refusal or a check with a number "
         "or judgement of your own.",
@@ -49,6 +51,8 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
         "- check_study before anything runs: its plan is what the person should read.",
         "- The resource fastmdxplora://guide/working-with-studies says what the "
         "software's words mean (a mean, 'not determined', 'resolved', a refusal).",
+        "- ask_agent is optional: FastMDXplora's own Agent, a second model called on "
+        "the person's own API key. Use it only when the person asks for the Agent.",
     ]
     if runs:
         lines.append("- start_study only when the person has agreed to that plan: a study "

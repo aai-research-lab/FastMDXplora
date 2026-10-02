@@ -2,11 +2,12 @@
 
 ``fastmdx mcp`` lets an assistant (a chat app, a code editor) design, check,
 run and read studies on this machine, inside one workspace folder. The
-FastMDXplora Agent stays in the loop: ``ask_agent`` writes a study as the
-Agent does in the GUI, with the software's own tools and the validator,
-and the lower-level tools beside it say what the software finds. Nothing
-bypasses the checks: a study runs only from a config the validator
-accepted, whose plan was checked, with the person's go-ahead.
+assistant writes a study's config and the validator judges it, as it judges
+one written by hand; the tools say what the software finds. ``ask_agent``,
+the FastMDXplora Agent as the GUI has it, is there for a person who asks
+for it, and calls a model of their own. Nothing bypasses the checks: a
+study runs only from a config the validator accepted, whose plan was
+checked, with the person's go-ahead.
 
 See ``docs/mcp.md``.
 """

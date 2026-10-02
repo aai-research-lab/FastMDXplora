@@ -549,6 +549,11 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
     if f"{stem}.yml".lower() in _MARKERS:
         raise ToolError(f"{stem}.yml is the name a study gives its own config, and would "
                         "make the workspace look like a study. Give another name.")
+    by_hand = bool(args.get("by_hand"))
+    said_how = config.get("agent")
+    if not by_hand:
+        app = ctx.call.client_name if ctx.call is not None else None
+        text, config = _as_assisted(text, config, app)
     target = ctx.workspace.root / f"{stem}.yml"
     try:
         with target.open("x", encoding="utf-8") as out:
@@ -556,9 +561,45 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
     except FileExistsError:
         raise ToolError(f"{target.name} is in the workspace already, and is never written "
                         "over. Give a new name.") from None
+    if said_how is not None:
+        whose = f"Recorded as it says it was written (agent: {said_how})."
+    elif by_hand:
+        whose = "Recorded as the person's own."
+    else:
+        whose = ("Recorded as written with an assistant (agent: assisted"
+                 + (f", in {config['agent_model']}" if config.get("agent_model") else "")
+                 + ").")
     return "\n".join([f"Saved to {ctx.workspace.shown(target)}; accepted by the validator. "
-                      "Nothing has been run.", "The plan:", *_plan_lines(config), "",
+                      f"{whose} Nothing has been run.", "The plan:", *_plan_lines(config), "",
                       _plan_id_line(ctx, target)])
+
+
+def _as_assisted(text: str, config: dict[str, Any],
+                 app: str | None) -> tuple[str, dict[str, Any]]:
+    """A config an assistant wrote, recorded as one: ``agent: assisted``
+    where it says nothing of how it was written, as the Agent's own are,
+    and in ``agent_model`` the app it was written in, where the config
+    names no model and the app named itself (the app does not say which
+    model it runs, so none is claimed). A study with no ``agent`` says a
+    person wrote it, which a model's draft is not. Added as lines above
+    the rest, so the comments and order written stay as written; where
+    that would not read back as the same settings, the whole is written
+    out again."""
+    import yaml
+
+    if "agent" in config:
+        return text, config
+    said: dict[str, Any] = {"agent": "assisted"}
+    if app and not config.get("agent_model"):
+        said["agent_model"] = f"{app} (its own model, which the app does not name)"
+    marked = {**config, **said}
+    added = yaml.safe_dump(said, sort_keys=False) + text
+    try:
+        if yaml.safe_load(added) == marked:
+            return added, marked
+    except yaml.YAMLError:
+        pass
+    return yaml.safe_dump({**said, **config}, sort_keys=False), marked
 
 
 #: The names a study gives files of its own, which mark a folder as a study.
@@ -811,6 +852,14 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
                         f"plan_id is {now} now. check_study it again and show the person "
                         "that plan.")
     continuing = _accepted(ctx, config)
+    if config.get("agent") == "autonomous":
+        # Its record would say it ran without being shown to anyone, and
+        # here it is shown before it runs.
+        raise ToolError(f"{ctx.workspace.shown(file)} says `agent: autonomous`: that it runs "
+                        "without being shown to anyone. Here its plan is shown before it "
+                        "runs, so its record would be wrong. Save it with `agent: assisted` "
+                        "to run it here, or run it unseen with `fastmdx explore --config "
+                        f"{ctx.workspace.shown(file)}`.")
     lacking = _cannot_run_here(config)
     if lacking:
         raise ToolError(f"This machine cannot run it yet: {lacking}")
@@ -984,39 +1033,16 @@ def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
 
     threading.Thread(target=make_sure, name="fastmdx-mcp-stop", daemon=True).start()
     return (f"Asked {shown} to stop. A run in production stops at its next frame with a "
-            "checkpoint there; read_study says when it has. `fastmdx resume` carries it "
-            "on, or ask_agent to continue it.")
+            "checkpoint there; read_study says when it has, and gives the config that "
+            "continues it.")
 
 
 _LOOKS = {"readOnlyHint": True, "openWorldHint": True}
 _READS = {"readOnlyHint": True, "openWorldHint": False}
 
-#: In the order they are listed, which is the order to reach for them.
+#: In the order they are listed, which is the order to reach for them; the
+#: Agent last, as it is optional and calls a model of the person's own.
 TOOLS: tuple[Tool, ...] = (
-    Tool("ask_agent", "Ask the FastMDXplora Agent",
-         "Write or change a study from a description, or ask about one. The Agent looks "
-         "with the software's own tools before it answers, and a study it writes is "
-         "accepted by the validator before it is returned, saved in the workspace with "
-         "its plan and plan_id; it also answers questions and asks when the request is "
-         "short of something only the person can say. Nothing is run. Uses the model "
-         "chosen with `fastmdx agent model`.",
-         {"request": {"type": "string", "description": (
-             "What the study should do or what to ask, in the person's words.")},
-          "config": {"type": "string", "description": (
-              "The study config being changed, if any: a file in the workspace or the "
-              "YAML. The Agent returns the whole config with the change.")},
-          "study": {"type": "string", "description": (
-              "A study folder the request is about, if any: its record (where it stands, "
-              "what it found, why it stopped) is given to the Agent.")},
-          "phases": {"type": "array", "items": {"type": "string", "enum": [
-              "setup", "simulation", "analysis", "report"]}, "description": (
-              "The phases whose settings the Agent is told about. Default: setup and "
-              "simulation; add analysis or report to have it set those.")},
-          "save": {"type": "boolean", "description": (
-              "Save an accepted study as a new file (default true).")}},
-         ("request",),
-         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
-          "openWorldHint": True}, _ask_agent),
     Tool("inspect_structure", "Inspect a structure",
          "What a structure holds: its chains, protein residues, ligands, ions and "
          "water, the residues whose protonation state a study may set, any side chain "
@@ -1040,9 +1066,13 @@ TOOLS: tuple[Tool, ...] = (
          {"config": _CONFIG}, ("config",), _READS, _check_study),
     Tool("save_study", "Save a study config",
          "Write a config into the workspace as a new file, once the validator accepts it. "
-         "A file is never written over: a changed study is saved under a new name.",
+         "A file is never written over: a changed study is saved under a new name. A "
+         "config you wrote is recorded as written with an assistant (agent: assisted).",
          {"name": {"type": "string", "description": "The file's name, such as ubq_300K."},
-          "config": {"type": "string", "description": "The config, as YAML."}},
+          "config": {"type": "string", "description": "The config, as YAML."},
+          "by_hand": {"type": "boolean", "description": (
+              "True only when the person wrote this config themselves and asked only for "
+              "it to be saved: it is then recorded as theirs. Default false.")}},
          ("name", "config"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
           "openWorldHint": False}, _save_study),
@@ -1077,4 +1107,30 @@ TOOLS: tuple[Tool, ...] = (
          "difference marked resolved only where it is more than twice its combined "
          "standard error.",
          {"first": _STUDY, "second": _STUDY}, ("first", "second"), _READS, _compare_studies),
+    Tool("ask_agent", "Ask the FastMDXplora Agent (optional, your API key)",
+         "Optional: only when the person asks for FastMDXplora's own Agent. It is a "
+         "second model, the one the person chose with `fastmdx agent model`, called on "
+         "their own API key: each call is paid for on top of this conversation. Without "
+         "it, write the config yourself and give it to check_study; the validator "
+         "judges it either way. The Agent writes or changes a study from a description, "
+         "or answers about one; a study it writes is accepted by the validator before it "
+         "is returned, saved in the workspace with its plan and plan_id, and recorded as "
+         "its model's. Nothing is run.",
+         {"request": {"type": "string", "description": (
+             "What the study should do or what to ask, in the person's words.")},
+          "config": {"type": "string", "description": (
+              "The study config being changed, if any: a file in the workspace or the "
+              "YAML. The Agent returns the whole config with the change.")},
+          "study": {"type": "string", "description": (
+              "A study folder the request is about, if any: its record (where it stands, "
+              "what it found, why it stopped) is given to the Agent.")},
+          "phases": {"type": "array", "items": {"type": "string", "enum": [
+              "setup", "simulation", "analysis", "report"]}, "description": (
+              "The phases whose settings the Agent is told about. Default: setup and "
+              "simulation; add analysis or report to have it set those.")},
+          "save": {"type": "boolean", "description": (
+              "Save an accepted study as a new file (default true).")}},
+         ("request",),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
+          "openWorldHint": True}, _ask_agent),
 )

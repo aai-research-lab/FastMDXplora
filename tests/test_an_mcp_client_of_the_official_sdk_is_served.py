@@ -75,7 +75,9 @@ async def _drive(workspace, mode: str) -> dict:
 def test_the_sdk_client_is_served(workspace, mode, version):
     seen = asyncio.run(_drive(workspace, mode))
     assert seen["version"] == version and seen["name"] == "fastmdxplora"
-    assert seen["tools"][0] == "ask_agent" and "start_study" in seen["tools"]
+    # The assistant writes and the validator judges; the Agent, optional, comes last.
+    assert seen["tools"][0] == "inspect_structure" and seen["tools"][-1] == "ask_agent"
+    assert "start_study" in seen["tools"]
     if exploration_environment_error({"systems": [{"system": "ghg.pdb"}]}):
         # Without what a run needs, it is refused before anybody is asked.
         assert seen["started"][0] is True

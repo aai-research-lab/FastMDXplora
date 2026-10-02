@@ -37,12 +37,14 @@ as 0.1120 ± 0.0020 nm the model read as 0.112 ± 0.002.
 
 `fastmdx mcp` serves two guides as resources, **working with studies** (the
 order of work, and what a mean, "not determined", "resolved" and a refusal
-mean) and **the config language** as the Agent is shown it, and each study in
-the workspace as its record (`fastmdxplora://study/<folder>`). Its prompts,
-offered by most clients as slash commands, start a piece of work the way
-FastMDXplora does it: **design a study**, **explain what a study found**,
-**why did a study stop?** and **continue a study**, each with the Agent in the
-loop and nothing run without your word; one about a study carries its record.
+mean) and **the config language** (every setting, with what it does and its
+default), and each study in the workspace as its record
+(`fastmdxplora://study/<folder>`). Its prompts, offered by most clients as
+slash commands, start a piece of work the way FastMDXplora does it: **design a
+study**, **explain what a study found**, **why did a study stop?** and
+**continue a study**, each with the assistant writing, the validator judging
+and nothing run without your word; one about a study carries its record, and
+continuing starts from the config that record gives.
 
 ### An assistant starts a study only from a checked file, with your go-ahead
 
@@ -60,9 +62,12 @@ only a run it can identify as the study's, at its next frame with a checkpoint
 there. A cancelled call starts and stops nothing. **`fastmdx mcp --read-only`**
 offers neither.
 
-### An assistant asks the FastMDXplora Agent
+### An assistant can ask the FastMDXplora Agent, when you ask for it
 
-`fastmdx mcp` offers **`ask_agent`**: the Agent as the GUI has it, with the
+`fastmdx mcp` offers **`ask_agent`**, optional and listed last: the assistant
+writes a study itself and the validator judges it, and is told to use the Agent
+only when you ask for it, as it is a second model called on your own API key.
+It is the Agent as the GUI has it, with the
 model `fastmdx agent model` chose, the software's own tools to look with, and the
 validator as the judge. A study it writes comes back accepted, recorded as the
 Agent's (`agent: assisted` and the model), saved as a new file headed by what
@@ -81,7 +86,9 @@ Its tools say what the software finds, in its words: `inspect_structure`,
 `check_selection`, `preview_setup`, `check_study` (the validator's verdict,
 the plan with defaults marked, whether this machine can run it, and a
 `plan_id` for the exact file), `save_study` (a new file, never written over,
-only once accepted), `list_studies`, `read_study` and `compare_studies` (a
+only once accepted, and recorded as written with an assistant, `agent:
+assisted` with the app it was written in, unless it says otherwise or you
+wrote it), `list_studies`, `read_study` and `compare_studies` (a
 difference marked resolved only past twice its combined standard error, each
 mean given to the decimal place of its error). Every path is read inside the
 workspace, every file a config names included, and standard input and output
