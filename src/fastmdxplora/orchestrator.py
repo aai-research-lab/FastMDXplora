@@ -309,6 +309,7 @@ class FastMDXplora:
         include: list[str] | None = None,
         exclude: list[str] | None = None,
         _expanded_from_a_validated_study: bool = False,
+        _system_id: str | None = None,
     ) -> None:
         include, exclude = _phase_selection(
             include_phase, exclude_phase, include, exclude)
@@ -332,6 +333,10 @@ class FastMDXplora:
         self._config_path: str | None = (
             str(config) if config is not None else None
         )
+        # The `id` the study gave this system, which the batch layer knows
+        # and its resolved config is written with. Without it every run's
+        # resolved_config.yml said `id: s1`, whatever the study called it.
+        self._system_id = str(_system_id) if _system_id else None
         self._config_data: dict[str, Any] | None = config_data
         self._deferred_output_dir = output_dir
         self._deferred_verbose = verbose
@@ -1551,6 +1556,7 @@ class FastMDXplora:
 
         resolved = {
             "system": self.system,
+            "system_id": getattr(self, "_system_id", None),
             "output": str(self.output_dir),
             "verbose": self.verbose,
             "explain": bool(getattr(get_presenter(), "explain", True)),

@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A study's resolved config keeps each system's id
+
+**`resolved_config.yml` now carries the `id` the study gave each system.** A
+study that said `id: trpcage` was planned as "System: trpcage" and recorded as
+`id: s1` in the config `read_study` shows as the one the run used, and each run
+of a study of several systems was recorded the same way: the batch layer knew
+the id and built each run without it.
+
 ### The config-language guide says how to name a structure
 
 **`systems` and `sweep` are described in the guide** an AI app reads
