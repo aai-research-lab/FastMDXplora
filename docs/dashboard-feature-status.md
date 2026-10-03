@@ -403,3 +403,20 @@ The walkthrough exposed a stale "Load a study" notice beside loaded bookmarks.
 Rendering loaded records now clears that obsolete notice while preserving other
 status/error messages. The browser save/reload/restore/export/import regression
 passes with an assertion that the obsolete notice is absent after loading.
+
+### Actual-study portable bundle download and import verified
+
+The in-app browser successfully downloaded `research-bookmarks.zip` through a
+visible native attachment link. ZIP inspection found `bookmarks.json` and the
+saved screenshot, with no CRC errors. Normal file-chooser import preview reported
+one matching ID and one compatible view; Keep both imported one record. The
+study store contains two distinct IDs, both retaining screenshots. All 306
+existing scientific/report file hashes remain unchanged.
+
+Exports now retain a visible native download link instead of a detached blob
+link, with a manual retry instruction when automatic downloading does not start.
+The link is hidden when records/filters rerender so an obsolete selection cannot
+remain advertised. The 49-check research suite initially passed 48 checks and
+exposed the import-link invalidation gap; after fixing that gap, the affected
+browser save/reload/restore/export/import check passes again. Actual-study bundle
+download/import is now verified; remaining walkthrough steps are still open.

@@ -316,12 +316,17 @@ def test_browser_docks_agent_saves_restores_and_exports(served, study, tmp_path)
             page.locator("#research-export-bundle").click()
         bundle = tmp_path / "research.zip"
         download.value.save_as(bundle)
+        assert page.locator("#research-export-download").is_visible()
+        assert page.locator("#research-export-download").get_attribute("href").startswith(
+            "/api/research/bookmarks/export?images=1"
+        )
         page.locator("#research-import-file").set_input_files(bundle)
         page.locator("#research-import-preview").wait_for(state="visible")
         assert "1 matching IDs" in page.locator("#research-import-summary").inner_text()
         assert page.locator(".research-bookmark").count() == 1
         page.locator("#research-import-apply").click()
         page.wait_for_function("document.querySelectorAll('.research-bookmark').length === 2")
+        assert page.locator("#research-export-download").is_hidden()
         page.locator("#research-bookmarks-close").click()
         page.locator("#research-agent-toggle").click()
         page.screenshot(path=str(tmp_path / "research-dashboard.png"))

@@ -133,6 +133,7 @@
     const response = await fetch("/api/research/bookmarks");
     const data = await response.json();
     if (generation !== refreshGeneration) return;
+    el("research-export-download").hidden = true;
     study = data.study || null;
     rows = data.bookmarks || [];
     tags = data.tags || tags;
@@ -236,6 +237,7 @@
     return value;
   }
   function render() {
+    el("research-export-download").hidden = true;
     const host = el("research-list"); host.replaceChildren();
     el("research-save").disabled = !study;
     el("research-export").disabled = !rows.length;
@@ -482,6 +484,7 @@
     });
     async function exportFile(images) {
       status("Preparing bookmark export…");
+      el("research-export-download").hidden = true;
       try {
         let query = "images=" + (images ? "1" : "0");
         if (el("research-export-filtered").checked) {
@@ -493,9 +496,12 @@
         }
         const response = await fetch("/api/research/bookmarks/export?" + query);
         if (!response.ok) { const data = await response.json(); status(data.error); return; }
-        const blob = await response.blob(), url = URL.createObjectURL(blob), link = document.createElement("a");
-        link.href = url; link.download = "research-bookmarks." + (images ? "zip" : "json"); link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000); status("Bookmark export ready.");
+        // Native attachment URLs also work in embedded browsers that block blob downloads.
+        const link = el("research-export-download");
+        link.href = "/api/research/bookmarks/export?" + query;
+        link.download = "research-bookmarks." + (images ? "zip" : "json");
+        link.hidden = false; link.click();
+        status("Bookmark export ready. Use Download bookmark export if it did not start automatically.");
       } catch (_) { status("Could not export bookmarks. Saved bookmarks remain unchanged."); }
     }
     el("research-export").addEventListener("click", () => exportFile(false));
