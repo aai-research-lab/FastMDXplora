@@ -300,7 +300,7 @@ _READERS = {
 # ---------------------------------------------------------------------------
 
 #: Where each kind of structure the viewer shows is read from.
-SOURCES = ("structure", "live", "playback")
+SOURCES = ("structure", "live", "playback", "frames")
 
 METHOD = ("DSSP (Kabsch and Sander, 1983), as MDTraj computes it and the study's "
           "secondary structure analysis reports it: helix, strand or coil.")
@@ -315,7 +315,8 @@ def secondary_structure(root: str | Path, of: str = "structure") -> dict[str, An
     its frames, or why there is none.
 
     ``of`` is the structure (as `/structure/topology.pdb` sends it, solvent
-    stripped), the live frame, or the playback. The answer names the
+    stripped), the live frame, the playback, or the binary frames
+    (`gui/trajectory_frames.py`), read from their DCD. The answer names the
     residues as :func:`residue_runs` does and gives one string of codes for
     each frame, ``H``, ``E`` or ``C`` for each residue in that order."""
     if of not in SOURCES:
@@ -328,12 +329,20 @@ def secondary_structure(root: str | Path, of: str = "structure") -> dict[str, An
     try:
         stat = path.stat()
         key: tuple[Any, ...] = (of, str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+        if of == "frames":
+            frames = base / "simulation" / "frames.dcd"
+            key += (frames.stat().st_mtime_ns, frames.stat().st_size)
     except OSError:
         key = (of, str(path), hash(text))
     with _LOCK:
         if key in _CACHE:
             return _CACHE[key]
-        said = _dssp(text, *(_trajectory_frames(base) if of == "playback" else (None, None)))
+        if of == "frames":
+            said = _dssp(text, _frames_coordinates(base))
+            said["signature"] = _frames_signature(base)
+        else:
+            said = _dssp(text, *(_trajectory_frames(base) if of == "playback"
+                                 else (None, None)))
         said["of"] = of
         _CACHE[key] = said
         while len(_CACHE) > _CACHE_SIZE:
@@ -341,8 +350,37 @@ def secondary_structure(root: str | Path, of: str = "structure") -> dict[str, An
         return said
 
 
+def _frames_coordinates(base: Path) -> Any:
+    """The binary frames' coordinates, in nm, as the viewer is sent them."""
+    try:
+        import mdtraj as md
+
+        from fastmdxplora.utils.native_output import suppress_native_output
+
+        with suppress_native_output():
+            with md.formats.DCDTrajectoryFile(str(base / "simulation" / "frames.dcd")) as handle:
+                xyz = handle.read()[0]
+        return xyz / 10.0
+    except Exception:  # noqa: BLE001 - said by the caller as no coordinates
+        return None
+
+
+def _frames_signature(base: Path) -> str | None:
+    try:
+        index = json.loads((base / "simulation" / "frames_index.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return index.get("signature") if isinstance(index, dict) else None
+
+
 def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:
     simulation = base / "simulation"
+    if of == "frames":
+        path = simulation / "frames_topology.pdb"
+        try:
+            return path, path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return path, None
     if of in ("live", "playback"):
         path = simulation / ("live_frame.pdb" if of == "live" else "playback.pdb")
         try:
@@ -504,7 +542,9 @@ def _dssp(text: str, coordinates: Any = None, topology: Any = None) -> dict[str,
                 "reason": "Its frames do not all have the same atoms."}
     runs = residue_runs(first)
     if topology is None or not _same_residues(topology, runs, len(first)):
-        coordinates = None
+        if topology is not None:
+            # Read with a topology that is not this file's: not these atoms.
+            coordinates = None
         try:
             with tempfile.TemporaryDirectory() as folder:
                 one = Path(folder) / "model.pdb"
@@ -519,8 +559,14 @@ def _dssp(text: str, coordinates: Any = None, topology: Any = None) -> dict[str,
     protein = [residue for residue in topology.residues if residue.is_protein]
     if not protein:
         return {"available": False, "reason": "It has no protein."}
-    if coordinates is not None and coordinates.shape == (len(models), len(first), 3):
+    if coordinates is not None and coordinates.ndim == 3 \
+            and coordinates.shape[1:] == (len(first), 3) \
+            and (coordinates.shape[0] == len(models) or len(models) == 1):
+        # The coordinates given are the frames: the trajectory's own, for the
+        # playback, or the binary frames, whose topology is one model.
         xyz = coordinates
+        if len(models) == 1:
+            models = [first] * coordinates.shape[0]
     else:
         try:
             xyz = np.array([[(float(line[30:38]), float(line[38:46]), float(line[46:54]))

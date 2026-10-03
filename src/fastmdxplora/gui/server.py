@@ -144,10 +144,11 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/playback-info", "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
+    "/api/frames-info",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
-    "/structure/playback.pdb",
+    "/structure/playback.pdb", "/structure/frames.dcd", "/structure/frames-topology.pdb",
 })
 GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/")
 
@@ -780,6 +781,15 @@ def make_handler(
                     force=force,
                 ))
                 return
+            if path == "/api/frames-info":
+                # The trajectory as binary frames: a topology and a DCD.
+                from fastmdxplora.gui.trajectory_frames import frames_info
+
+                sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
+                self._send_json(frames_info(
+                    root, simulation_time_ns_total=sim_manifest.get("duration_ns_actual"),
+                    force=allow_control and "force=1" in parsed.query))
+                return
             if path == "/api/open-output":
                 if hosting is not None:
                     # A file manager would open on the server, not in front
@@ -808,6 +818,9 @@ def make_handler(
                 return
             if path == "/structure/playback.pdb":
                 self._send_playback(root)
+                return
+            if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
+                self._send_frames(root, path.rsplit("/", 1)[1])
                 return
             if path.startswith("/static/"):
                 self._send_static_asset(path.removeprefix("/static/"))
@@ -1436,6 +1449,27 @@ def make_handler(
                 return
             self.send_response(200)
             self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_frames(self, root: Path, name: str) -> None:
+            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
+                                                            frames_info)
+
+            target = root / "simulation" / (FRAMES_FILE if name.endswith(".dcd")
+                                            else FRAMES_TOPOLOGY)
+            if not target.is_file():
+                frames_info(root)
+            try:
+                data = target.read_bytes()
+            except OSError:
+                self.send_error(404, "Frames not available")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream" if name.endswith(".dcd")
+                             else "chemical/x-pdb; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()

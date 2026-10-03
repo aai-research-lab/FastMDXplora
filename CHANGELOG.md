@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The trajectory can be sent to the browser as binary frames
+
+**`GET /api/frames-info`, `/structure/frames-topology.pdb` and
+`/structure/frames.dcd` give the trajectory as a topology and binary frames.**
+The playback is a multi-model PDB, about 81 bytes an atom a frame, capped at a
+million atoms times frames, so a 116,000-atom system was sent eight frames. As
+binary, 12 bytes an atom, under ten million atoms times frames, it is sent 85
+and a 5,000-atom protein 2,000. The frames are the playback's, chosen and made
+whole the same way, and the topology is the source's own lines for the atoms
+shown, so insertion codes and a ligand's bonds are kept. Their DSSP is
+`/api/secondary-structure?of=frames`. This is what the Viewer is to be
+rendered from once it moves to Mol\*; the playback is unchanged.
+
 ### The trajectory is played with its molecules whole
 
 **The Viewer's playback is now made whole as the analyses read the

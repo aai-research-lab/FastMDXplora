@@ -264,6 +264,8 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # structures it was sent: read from what the study wrote, and
             # DSSP computed on request, which a viewer's page load costs too.
             "/api/residue-values", "/api/secondary-structure",
+            # The trajectory as binary frames, as the playback is sent.
+            "/api/frames-info",
             # The methods paragraphs, as the report gives them.
             "/api/methods",
             # What a study run until it knows has judged: the same means
@@ -274,7 +276,8 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/stream",
             "/analysis-figures-svg.zip",
             "/structure/topology.pdb", "/structure/live-frame.pdb",
-            "/structure/playback.pdb",
+            "/structure/playback.pdb", "/structure/frames.dcd",
+            "/structure/frames-topology.pdb",
         })
         assert GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK == ("/static/", "/artifacts/")
 

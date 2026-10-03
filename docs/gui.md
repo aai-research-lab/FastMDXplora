@@ -518,8 +518,9 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/artifacts`, `/api/files` | Artifact records for the Report page |
 | `GET /api/structure-info`, `/api/ligands` | Atom, residue, chain and ligand counts |
 | `GET /api/playback-info`, `/api/live-frame-index`, `/api/live-coordinates` | The viewer's frames |
+| `GET /api/frames-info`, `/structure/frames-topology.pdb`, `/structure/frames.dcd` | The trajectory as binary frames: the source's own topology lines for the atoms shown (solvent stripped), and a DCD of evenly spaced frames, made whole and centred on the protein, under ten million atoms times frames and at most 2,000 frames; `?of=frames` gives their DSSP |
 | `GET /api/residue-values` | Each per-residue result the analyses wrote, as `[chain, number, insertion code, value]`, with its unit, range and a sentence saying what it is |
-| `GET /api/secondary-structure?of=structure\|live\|playback` | DSSP for each residue of what the viewer was sent, one string of `H`, `E` and `C` per frame, or why there is none |
+| `GET /api/secondary-structure?of=structure\|live\|playback\|frames` | DSSP for each residue of what the viewer was sent, one string of `H`, `E` and `C` per frame, or why there is none |
 | `GET /api/protein-preview` | The cached preview image |
 | `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart plotted from them; `&run=ID` for one run of a study of several |
 | `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read |
