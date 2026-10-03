@@ -476,3 +476,25 @@ molecular pixels above the captions. An attempted same-task redraw did not solve
 the actual failure and was removed. Earlier blank exports remain historical
 artifacts and are not accepted as visual passes. Final labeled rotating Both
 acceptance after this camera fix remains to be checked on the actual study.
+## Current-revision rotating media acceptance
+
+On 2026-10-02, the dashboard was reloaded with revision `5f613f5` and the
+completed 1L2Y study exported browser frames 0, 3 and 6 in both GIF and MP4.
+The export used 640 × 480 pixels, 60 degrees of camera rotation, protein residue
+labels and a study-title overlay. The saved metadata identifies source frames
+0, 90 and 181 and physical times 0.0005, 0.0455 and 0.091 ns.
+
+Artifact `exports/clips/c93390a953db4de28f5c616e57b04895` contains a 70,109-byte
+GIF, a 21,809-byte MP4 and `view.json`. Decoding verified three GIF frames and
+640 × 480 GIF/MP4 dimensions. The first and last GIF frames were visually
+inspected: the molecular cartoon, residue labels, title and frame/time captions
+are visible, and the final view has the requested rotation. This supersedes the
+earlier empty-scene media acceptance failure; it does not certify full-solvent
+motion or change the scientific trajectory.
+
+The current code passed all 25 tests in `test_clip_exports.py`,
+`test_playback_physical_time.py` and `test_research_workflow.py` in 121.83 seconds.
+Two Pillow deprecation warnings remain. Provider scope is unchanged: the user
+has OpenAI only; other providers require independently available accounts for
+live verification and remain explicitly unverified.
+
