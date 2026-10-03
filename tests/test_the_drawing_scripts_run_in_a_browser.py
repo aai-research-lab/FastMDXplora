@@ -69,6 +69,10 @@ def _write_study(root: Path) -> Path:
     solute = whole.atom_slice(topology.select("not water"))
     moving = (np.repeat(solute.xyz, FRAMES, axis=0)
               + np.linspace(0.0, 0.3, FRAMES)[:, None, None])
+    # The ligand moves in its pocket as well, 0.3 nm along z over the run:
+    # the playback is centred on the protein, as the analyses read it, so
+    # the drift of the whole is not seen.
+    moving[:, solute.topology.select("resname LIG"), 2] += np.linspace(0.0, 0.3, FRAMES)[:, None]
     trajectory = md.Trajectory(moving, solute.topology,
                                unitcell_lengths=np.full((FRAMES, 3), 5.0),
                                unitcell_angles=np.full((FRAMES, 3), 90.0))
@@ -183,11 +187,12 @@ def test_every_style_and_ligand_control_runs(page) -> None:
 
 
 def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
-    first_x = page.evaluate(f"() => {VIEWER}.model.selectedAtoms({{resn: 'LIG'}})[0].x")
     page.click('.ctl-btn[data-action="next-frame"]')
     page.wait_for_function(f"() => {VIEWER}.playbackLoaded", timeout=60000)
     page.wait_for_function("() => document.getElementById('traj-slider').value === '1'",
                            timeout=60000)
+    first_z = page.evaluate(
+        f"() => {VIEWER}.viewer.getModel().selectedAtoms({{resn: 'LIG'}})[0].z")
     assert page.evaluate(f"() => {VIEWER}.playbackFrames") == FRAMES
     # Stepping a frame is choosing one: following the run stops, or the first
     # press lands on the newest frame and "next" goes nowhere.
@@ -197,10 +202,10 @@ def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
     page.wait_for_function("() => document.getElementById('traj-current').textContent === '10'",
                            timeout=60000)
     moved = page.evaluate(
-        f"() => {VIEWER}.viewer.getModel().selectedAtoms({{resn: 'LIG'}})[0].x") - first_x
-    # Every atom moves 0.3 nm along each axis over the run; frame 10 of 20 is
-    # 10/19 of the way, and 3Dmol works in angstroms.
-    assert moved == pytest.approx(3.0 * 10 / (FRAMES - 1), abs=0.05)
+        f"() => {VIEWER}.viewer.getModel().selectedAtoms({{resn: 'LIG'}})[0].z") - first_z
+    # The ligand moves 0.3 nm along z from the protein over the run; frames
+    # 1 to 10 of 20 are 9/19 of it, and 3Dmol works in angstroms.
+    assert moved == pytest.approx(3.0 * 9 / (FRAMES - 1), abs=0.05)
     page.click('.ctl-btn[data-action="prev-frame"]')
     page.wait_for_function("() => document.getElementById('traj-current').textContent === '9'",
                            timeout=60000)

@@ -293,6 +293,7 @@ def _generate_from_dcd(
         if display_atoms is not None and hasattr(topology_traj, "atom_slice"):
             display_topology = topology_traj.atom_slice(display_atoms).topology
         selected_traj = None
+        selected_box = None
         selected_indices: list[int] = []
         total_seen = 0
         if not hasattr(md, "iterload"):
@@ -317,20 +318,34 @@ def _generate_from_dcd(
                 if chunk_count == 0:
                     continue
                 chunk_indices = list(range(total_seen, total_seen + chunk_count))
+                # The box goes with the frames kept: without it nothing can
+                # be imaged, and the playback showed molecules as the engine
+                # wrapped them.
+                lengths = getattr(chunk, "unitcell_lengths", None)
+                angles = getattr(chunk, "unitcell_angles", None)
                 if selected_traj is None:
                     combined_xyz = chunk.xyz
                     combined_time = chunk.time
+                    combined_box = None if lengths is None else (lengths, angles)
                     combined_indices = chunk_indices
                 else:
                     combined_xyz = np.concatenate((selected_traj.xyz, chunk.xyz), axis=0)
                     combined_time = np.concatenate((selected_traj.time, chunk.time), axis=0)
+                    combined_box = None if lengths is None or selected_box is None else (
+                        np.concatenate((selected_box[0], lengths), axis=0),
+                        np.concatenate((selected_box[1], angles), axis=0))
                     combined_indices = selected_indices + chunk_indices
                 keep = _even_indices(len(combined_indices), max_browser_frames)
                 selected_indices = [combined_indices[index] for index in keep]
+                selected_box = None if combined_box is None else (
+                    combined_box[0][keep], combined_box[1][keep])
+                boxed = {} if selected_box is None else {
+                    "unitcell_lengths": selected_box[0], "unitcell_angles": selected_box[1]}
                 selected_traj = md.Trajectory(
                     combined_xyz[keep],
                     display_topology,
                     time=combined_time[keep],
+                    **boxed,
                 )
                 total_seen += chunk_count
 
@@ -340,7 +355,16 @@ def _generate_from_dcd(
     if n_total < 2:
         return PlaybackUnavailable("not-enough-trajectory-frames")
     frame_indices = selected_indices
-    browser_traj = selected_traj
+    # Made whole and put together as the analyses read them
+    # (analysis/loading.py): a chain split across a face of the box, or a
+    # ligand in a periodic copy a box length from its protein, was played as
+    # the engine wrote it, the molecule jumping across the box between
+    # frames, and drawn where no analysis measured it.
+    from fastmdxplora.analysis.loading import _made_whole
+
+    browser_traj = (_made_whole(selected_traj)
+                    if getattr(selected_traj, "unitcell_vectors", None) is not None
+                    else selected_traj)
     companion_pdb.parent.mkdir(parents=True, exist_ok=True)
     tmp = companion_pdb.with_suffix(".pdb.tmp")
     browser_traj.save_pdb(str(tmp))

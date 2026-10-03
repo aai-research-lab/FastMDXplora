@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The trajectory is played with its molecules whole
+
+**The Viewer's playback is now made whole as the analyses read the
+trajectory.** It was the trajectory as the engine wrote it, solvent stripped
+and nothing else: a chain split across a face of the box was drawn in two
+pieces, and a ligand stored in a periodic copy was drawn a box length from its
+protein and jumped back between frames. The analyses make molecules whole and
+put each beside the protein before they measure anything; the playback, and
+the DSSP the cartoon is drawn from, now do the same, so the Viewer shows what
+was measured. A trajectory without a box is played as before.
+
 ### The Viewer colours the protein by the study's results, and its cartoon is DSSP
 
 **Coloured by now offers each per-residue result the study's analyses wrote.**

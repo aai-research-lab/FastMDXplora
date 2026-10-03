@@ -406,13 +406,27 @@ def _trajectory_frames(base: Path) -> tuple[Any, Any]:
         with suppress_native_output():
             whole = md.load_topology(str(topology))
             shown = whole.select("not water")
-            read = []
+            read, lengths, angles = [], [], []
             with md.formats.DCDTrajectoryFile(str(trajectory)) as handle:
                 for frame in frames:
                     handle.seek(frame)
-                    xyz = handle.read(1, atom_indices=shown)[0]
+                    xyz, length, angle = handle.read(1, atom_indices=shown)
                     read.append(xyz[0])
-        return np.asarray(read, dtype=np.float32) / 10.0, whole.subset(shown)
+                    lengths.append(None if length is None else length[0])
+                    angles.append(None if angle is None else angle[0])
+        topology_shown = whole.subset(shown)
+        boxed = all(length is not None and np.all(np.asarray(length) > 0) for length in lengths)
+        coordinates = md.Trajectory(
+            np.asarray(read, dtype=np.float32) / 10.0, topology_shown,
+            unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
+            unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None)
+        if boxed:
+            # Whole, as the playback and the analyses have them: DSSP of a
+            # chain split across the box is DSSP of two pieces.
+            from fastmdxplora.analysis.loading import _made_whole
+
+            coordinates = _made_whole(coordinates)
+        return coordinates.xyz, topology_shown
     except Exception:  # noqa: BLE001 - the playback's own coordinates stand in
         return None, None
 
