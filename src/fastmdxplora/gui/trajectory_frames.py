@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -30,8 +31,8 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["BINARY_ATOM_FRAMES", "FRAMES_FILE", "FRAMES_TOPOLOGY", "frames_info",
-           "frames_for_binary"]
+__all__ = ["BINARY_ATOM_FRAMES", "FRAMES_FILE", "FRAMES_TOPOLOGY", "SUPERPOSED_ON",
+           "frames_info", "frames_for_binary", "superposed_frames", "superposed_name"]
 
 FRAMES_FILE = "frames.dcd"
 FRAMES_TOPOLOGY = "frames_topology.pdb"
@@ -244,6 +245,93 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
             "frame_indices": [record.get("frame_index") for record in used],
             "frame_times_ns": [record.get("simulation_time_ns") for record in used],
             "made_whole": False}
+
+
+#: What the frames can be superposed on, and how a pocket is chosen.
+SUPERPOSED_ON = ("backbone", "pocket")
+_LIGAND_NAME = re.compile(r"^[A-Za-z0-9]{1,4}$")
+
+
+def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any
+                    ) -> tuple[str | None, float | None, str | None]:
+    """The file the frames superposed so are written to, made from the
+    request's words alone (never a path), with the cutoff read; or why
+    there is none."""
+    if on not in SUPERPOSED_ON:
+        return None, None, f"Frames are superposed on {' or '.join(SUPERPOSED_ON)}."
+    if on == "backbone":
+        return "frames_superposed_backbone.dcd", None, None
+    if not ligand or not _LIGAND_NAME.match(ligand):
+        return None, None, "A pocket is the ligand's: no ligand was named."
+    try:
+        cutoff = float(cutoff_angstrom)
+    except (TypeError, ValueError):
+        cutoff = float("nan")
+    if not 1.0 <= cutoff <= 20.0:
+        return None, None, "The pocket's cutoff is 1 to 20 \u00c5."
+    return f"frames_superposed_pocket_{ligand.upper()}_{cutoff:.2f}.dcd", cutoff, None
+
+
+def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = None,
+                      cutoff_angstrom: float = 5.0) -> dict[str, Any]:
+    """The frames the viewer plays, each turned and moved onto the first.
+
+    ``on`` is ``"backbone"`` (N, CA, C and O of the protein) or ``"pocket"``
+    (the same atoms of each protein residue with a heavy atom within
+    ``cutoff_angstrom`` of the ligand's heavy atoms in the first frame), by
+    MDTraj's least-squares fit. Written once beside the frames, and again
+    when they are. Returns ``{"ok": True, "file", "said", "atoms"}``, or why
+    there is none.
+    """
+    import mdtraj as md
+
+    out = Path(output_dir)
+    simulation = out / "simulation"
+    name, cutoff, reason = superposed_name(on, ligand, cutoff_angstrom)
+    if name is None:
+        return {"ok": False, "reason": reason}
+    frames_file, topology_file = simulation / FRAMES_FILE, simulation / FRAMES_TOPOLOGY
+    target = simulation / name
+    with _LOCKS_GUARD:
+        lock = _LOCKS.setdefault(str(out.resolve()), threading.RLock())
+    with lock:
+        if not (frames_file.is_file() and topology_file.is_file()):
+            return {"ok": False, "reason": "There are no frames to superpose yet."}
+        from fastmdxplora.utils.native_output import suppress_native_output
+
+        with suppress_native_output():
+            frames = md.load_dcd(str(frames_file), top=str(topology_file))
+        topology = frames.topology
+        backbone = topology.select("protein and backbone")
+        if on == "backbone":
+            atoms = backbone
+            said = f"the protein's backbone ({len(atoms):,} atoms)"
+        else:
+            heavy = topology.select(f"resname {ligand.upper()} and not element H")
+            if len(heavy) == 0:
+                return {"ok": False, "reason": f"There is no {ligand.upper()} in the frames."}
+            protein = topology.select("protein and not element H")
+            near = md.compute_neighbors(frames[0], cutoff / 10.0, heavy,
+                                        haystack_indices=protein)[0]
+            residues = sorted({topology.atom(int(i)).residue.index for i in near})
+            chosen = set(residues)
+            atoms = np.array([i for i in backbone if topology.atom(int(i)).residue.index
+                              in chosen], dtype=int)
+            said = (f"the backbone of the {len(residues)} residues within {cutoff:g} \u00c5 "
+                    f"of {ligand.upper()} in the first frame ({len(atoms):,} atoms)")
+        if len(atoms) < 3:
+            return {"ok": False, "reason": (
+                "The frames have no protein backbone to superpose on." if on == "backbone"
+                else f"No protein residue is within {cutoff:g} \u00c5 of {ligand.upper()} in "
+                     "the first frame.")}
+        fresh = target.is_file() and target.stat().st_mtime_ns >= frames_file.stat().st_mtime_ns
+        if not fresh:
+            frames.superpose(frames, frame=0, atom_indices=atoms)
+            # Each frame is turned as well as moved: its box is not the
+            # first frame's, so none is written.
+            frames.unitcell_vectors = None
+            _write_dcd(frames, target)
+    return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms))}
 
 
 def _write_topology(source: Path, kept: Any, target: Path) -> None:

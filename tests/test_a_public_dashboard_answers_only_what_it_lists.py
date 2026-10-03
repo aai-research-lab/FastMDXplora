@@ -264,8 +264,10 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # structures it was sent: read from what the study wrote, and
             # DSSP computed on request, which a viewer's page load costs too.
             "/api/residue-values", "/api/secondary-structure",
-            # The trajectory as binary frames, which the viewer plays.
-            "/api/frames-info",
+            # The trajectory as binary frames, which the viewer plays, and
+            # the same frames superposed: computed from them on request, as
+            # the frames are.
+            "/api/frames-info", "/api/frames-superposed",
             # The methods paragraphs, as the report gives them.
             "/api/methods",
             # What a study run until it knows has judged: the same means

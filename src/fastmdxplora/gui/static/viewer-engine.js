@@ -119,8 +119,8 @@
    * frame arriving while the frames load, or a click while the last pick
    * is still being rendered, each replaced the other's half-built scene. The
    * engine's own calls to itself are not queued, so none waits on itself. */
-  const QUEUED = new Set(["loadFrames", "loadStructure", "setCoordinates", "showScene",
-    "clear", "build", "setScene", "showBox", "setFrame", "setRepresentation", "setColour",
+  const QUEUED = new Set(["loadFrames", "setFramesCoordinates", "loadStructure",
+    "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame", "setRepresentation", "setColour",
     "setSecondaryStructure", "redraw", "measure", "showPicks", "clearMeasurements",
     "showContacts", "loadEnvironment", "renderEnvironment", "moveEnvironment",
     "removeEnvironment", "picture"]);
@@ -176,8 +176,10 @@
       const topology = await builders.data.download({url: absolute(topologyUrl), isBinary: false});
       const model = await builders.structure.createModel(
         await builders.structure.parseTrajectory(topology, "pdb"));
-      const coordinates = await plugin.dataFormats.get("dcd").parse(plugin,
-        await builders.data.download({url: absolute(coordinatesUrl), isBinary: true}));
+      const download = await builders.data.download({url: absolute(coordinatesUrl),
+        isBinary: true});
+      const coordinates = await plugin.dataFormats.get("dcd").parse(plugin, download);
+      this.framesRef = download.ref;
       const trajectory = await plugin.build().toRoot()
         .apply(this.lib.plugin.StateTransforms.Model.TrajectoryFromModelAndCoordinates,
           {modelRef: model.ref, coordinatesRef: coordinates.ref},
@@ -187,6 +189,29 @@
         {representationPreset: "empty", showUnitcell: false});
       await this.build();
       return {frames: this.frameCount(), atoms: this.atomCount()};
+    }
+
+    /** The frames shown read from other coordinates of the same atoms (the
+     * frames superposed, or not): the frame shown, the representations,
+     * the measurements and the camera are kept. False where no frames are
+     * shown or these are not their atoms'. */
+    async setFramesCoordinates(coordinatesUrl) {
+      const cells = this.plugin.state.data.cells;
+      if (!this.framesRef || !cells.has(this.framesRef)) return false;
+      const frames = this.frameCount();
+      const atoms = this.atomCount();
+      const frame = this.frame();
+      try {
+        await this.plugin.build().to(this.framesRef)
+          .update((old) => ({...old, url: absolute(coordinatesUrl)})).commit();
+      } catch (error) {
+        console.debug("frames not read again", error);
+        return false;
+      }
+      if (this.frameCount() !== frames || this.atomCount() !== atoms) return false;
+      if (this.frame() !== frame) await this.setFrame(frame);
+      await this.followThePocket();
+      return true;
     }
 
     /** One structure, as PDB text or a URL. With ``coordinates``, the
@@ -317,6 +342,7 @@
 
     async clear() {
       this.coordinatesRef = null;
+      this.framesRef = null;
       await this.plugin.clear();
     }
 

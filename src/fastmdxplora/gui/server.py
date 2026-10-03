@@ -143,7 +143,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
-    "/api/frames-info",
+    "/api/frames-info", "/api/frames-superposed",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb", "/structure/live-frame.dcd",
@@ -811,7 +811,10 @@ def make_handler(
                 self._send_live_coordinates(root)
                 return
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
-                self._send_frames(root, path.rsplit("/", 1)[1])
+                self._send_frames(root, path.rsplit("/", 1)[1], parse_qs(parsed.query))
+                return
+            if path == "/api/frames-superposed":
+                self._send_json(_frames_superposed_payload(root, parse_qs(parsed.query)))
                 return
             if path.startswith("/static/"):
                 self._send_static_asset(path.removeprefix("/static/"))
@@ -1442,14 +1445,32 @@ def make_handler(
             self.end_headers()
             self.wfile.write(data)
 
-        def _send_frames(self, root: Path, name: str) -> None:
+        def _send_frames(self, root: Path, name: str,
+                         query: dict[str, list[str]] | None = None) -> None:
             from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
-                                                            frames_info)
+                                                            frames_info, superposed_frames,
+                                                            superposed_name)
 
             target = root / "simulation" / (FRAMES_FILE if name.endswith(".dcd")
                                             else FRAMES_TOPOLOGY)
             if not target.is_file():
                 frames_info(root, most_frames=cfg.max_browser_frames)
+            on = ((query or {}).get("superposed") or [""])[0]
+            if on and name.endswith(".dcd"):
+                # The frames superposed, by a name made from the request's
+                # words, written if they are not yet.
+                one = lambda key: ((query or {}).get(key) or [""])[0]  # noqa: E731
+                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0)
+                if file is None:
+                    self.send_error(404, reason)
+                    return
+                if not (root / "simulation" / file).is_file():
+                    said = superposed_frames(root, on, ligand=one("ligand"),
+                                             cutoff_angstrom=one("cutoff") or 5.0)
+                    if not said.get("ok"):
+                        self.send_error(404, said.get("reason"))
+                        return
+                target = root / "simulation" / file
             try:
                 data = target.read_bytes()
             except OSError:
@@ -2052,6 +2073,29 @@ def _ligands_payload(
         "include_cofactors": config.include_cofactors,
         "valid": True,
     }
+
+
+def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[str, Any]:
+    """The frames superposed as asked, written if they are not yet, and the
+    address the viewer loads them from."""
+    from urllib.parse import urlencode
+
+    from fastmdxplora.gui.trajectory_frames import superposed_frames
+
+    def one(key: str) -> str:
+        return (query.get(key) or [""])[0]
+
+    on, ligand, cutoff = one("on"), one("ligand"), one("cutoff") or "5"
+    said = superposed_frames(root, on, ligand=ligand or None, cutoff_angstrom=cutoff)
+    if not said.get("ok"):
+        return said
+    # Asked for again under a new address once written again.
+    version = (root / "simulation" / said["file"]).stat().st_mtime_ns
+    asked = {"superposed": on, "v": version}
+    if on == "pocket":
+        asked.update(ligand=ligand, cutoff=cutoff)
+    return {"ok": True, "said": said["said"], "atoms": said["atoms"],
+            "url": "/structure/frames.dcd?" + urlencode(asked)}
 
 
 def _live_coordinates_payload(root: Path) -> dict[str, Any]:

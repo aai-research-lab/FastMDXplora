@@ -734,6 +734,13 @@
                     </select>
                   </label>
                   <label class="chip-toggle micro" title="Start again from the first frame at the end"><input type="checkbox" id="traj-loop">Loop</label>
+                  <label class="chip-toggle micro" id="traj-superpose-label" title="Each frame turned and moved to fit the first: on the protein's backbone, or on the backbone of the ligand's pocket">Superposed
+                    <select id="traj-superpose">
+                      <option value="none" selected>no</option>
+                      <option value="backbone">on the backbone</option>
+                      <option value="pocket">on the pocket</option>
+                    </select>
+                  </label>
                   <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it" data-while-running hidden><input type="checkbox" id="traj-follow" checked>Follow</label>
                 </div>
                 <!-- One of the study's series over time, the frame shown

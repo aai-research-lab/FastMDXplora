@@ -65,6 +65,11 @@
     },
     ligandResname: null,
     pocketCutoff: 5,
+    // The frames as played: "none", or superposed on "backbone" or
+    // "pocket", and the address of the frames so.
+    superposed: "none",
+    superposedUrl: null,
+    framesCoordinatesUrl: null,
     pocketSurface: false,
     pocketOnly: false,
     isolateLigand: false,
@@ -152,6 +157,8 @@
     STATE.environmentPdb = null;
     STATE.environmentUrl = null;
     STATE.playbackSignature = null;
+    STATE.superposedUrl = null;
+    STATE.framesCoordinatesUrl = null;
     STATE.playbackLoaded = false;
     STATE.framesRendered = false;
     STATE.playbackFrames = 0;
@@ -664,6 +671,8 @@
   function offerTheLigandsControls() {
     const none = !ligandResnames().length;
     const why = "This structure has no ligand";
+    const pocket = document.querySelector('#traj-superpose option[value="pocket"]');
+    if (pocket) pocket.disabled = none;
     document.querySelectorAll('[data-cam="center-ligand"], [data-cam="center-pocket"]')
       .forEach((button) => {
         button.disabled = none;
@@ -991,6 +1000,8 @@
       STATE.pocketCutoff = clamp(Number(event.target.value), 3, 15, 5);
       sayTheCutoffInNanometres();
       void restyleViewers();
+      // A pocket superposed on is the pocket at this cutoff.
+      if (STATE.superposed === "pocket") void superpose("pocket");
     });
   }
 
@@ -1388,6 +1399,9 @@
         const loaded = await engine.loadFrames(topology, coordinates);
         if (!isViewerGenerationCurrent(generation)) return false;
         if (!loaded.frames) throw new Error("the viewer made no frames of the trajectory");
+        // Frames written again are superposed again, as they were asked.
+        STATE.superposedUrl = null;
+        STATE.framesCoordinatesUrl = coordinates;
         STATE.playbackFrames = loaded.frames;
         STATE.model = {atoms: loaded.atoms, frames: loaded.frames, of: "frames"};
         STATE.residueLookups = new Map();
@@ -1410,6 +1424,7 @@
         if (!isViewerGenerationCurrent(generation)) return false;
         // Loaded once a frame is shown, with its cartoon and its preview.
         STATE.playbackLoaded = true;
+        if (STATE.superposed !== "none") await superpose(STATE.superposed);
         sayTheColours();
         updatePlaybackButtons();
         return true;
@@ -1427,6 +1442,57 @@
     return loadPromise;
   }
 
+  /** The frames played superposed on the first, on the protein's backbone
+   * or on the backbone of the ligand's pocket, or as written ("none"). The
+   * server fits them (`/api/frames-superposed`); the Viewer and the preview
+   * then read them in place of the frames shown, at the same frame. */
+  async function superpose(on) {
+    const generation = STATE.viewerGeneration;
+    const select = document.getElementById("traj-superpose");
+    const label = document.getElementById("traj-superpose-label");
+    const previous = STATE.superposed;
+    STATE.superposed = on;
+    if (!STATE.framesCoordinatesUrl || !STATE.framesRendered || !STATE.engine) return;
+    let url = STATE.framesCoordinatesUrl;
+    let said = "as written";
+    if (on !== "none") {
+      const query = new URLSearchParams({on});
+      if (on === "pocket") {
+        query.set("ligand", STATE.ligandResname || ligandResnames()[0] || "");
+        query.set("cutoff", String(STATE.pocketCutoff));
+      }
+      let answer = null;
+      try {
+        answer = await (await fetch(`/api/frames-superposed?${query}`, {cache: "no-store"})).json();
+      } catch (error) {
+        answer = {ok: false, reason: "The server did not answer."};
+      }
+      if (!isViewerGenerationCurrent(generation) || STATE.superposed !== on) return;
+      if (!answer || !answer.ok) {
+        STATE.superposed = previous === on ? "none" : previous;
+        if (select) select.value = STATE.superposed;
+        announce(`The frames could not be superposed: ${(answer && answer.reason) || "no reason given"}`);
+        return;
+      }
+      url = answer.url;
+      said = `superposed on ${answer.said}`;
+    }
+    const moved = await STATE.engine.setFramesCoordinates(url);
+    if (!isViewerGenerationCurrent(generation) || STATE.superposed !== on) return;
+    if (!moved) {
+      announce("The frames could not be read again; they are shown as they were.");
+      return;
+    }
+    STATE.superposedUrl = on === "none" ? null : url;
+    if (STATE.miniEngine && STATE.miniModel?.of === "frames") {
+      await STATE.miniEngine.setFramesCoordinates(url);
+    }
+    if (select) select.value = on;
+    if (label) label.setAttribute("data-said", said);
+    announce(on === "none" ? "The frames are shown as they were written."
+      : `Each frame is ${said}, fitted to the first frame.`);
+  }
+
   /** The preview plays the same frames, where it is shown. */
   async function loadMiniFrames() {
     const preview = document.getElementById("mini-preview-canvas");
@@ -1435,7 +1501,7 @@
     if (!engine) return;
     applyLook(engine, true);
     const [topology, coordinates] = framesUrls(STATE.playbackPayload);
-    const loaded = await engine.loadFrames(topology, coordinates);
+    const loaded = await engine.loadFrames(topology, STATE.superposedUrl || coordinates);
     STATE.miniModel = {atoms: loaded.atoms, frames: loaded.frames, of: "frames"};
     document.getElementById("mini-preview-frame")?.setAttribute("data-ready", "true");
     await giveTheSecondaryStructure(engine, "frames", STATE.playbackSignature, true, null);
@@ -1517,6 +1583,9 @@
     });
     document.getElementById("traj-loop")?.addEventListener("change", (event) => {
       STATE.playbackLoop = !!event.target.checked;
+    });
+    document.getElementById("traj-superpose")?.addEventListener("change", (event) => {
+      void superpose(event.target.value);
     });
   }
 

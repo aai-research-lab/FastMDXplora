@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The frames superposed
+
+**The frames played can be fitted to the first, on the protein's backbone
+or on the ligand's pocket.** They were played as written, made whole and
+centred, so a protein that tumbled tumbled on the screen, and how a ligand
+sat in its pocket had to be judged through the turning of both.
+**Superposed**, beside the transport, fits each frame by MDTraj's least
+squares on the protein's backbone, or on the backbone of the residues within
+the pocket cutoff of the ligand in the first frame, and the Viewer reads
+the frames so in place of those shown: at the same frame, the
+measurements kept. The fitted frames are written once beside the frames
+(`GET /api/frames-superposed`), and again when the frames are.
+
 ### A series under the frames played
 
 **One of the study's series over time is plotted under the Viewer's
