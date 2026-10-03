@@ -282,8 +282,13 @@
     }
   }
 
-  function openSettings() { el("agent-settings").hidden = false; window.dispatchEvent(new CustomEvent("agent:settings-open")); }
-  function closeSettings() { el("agent-settings").hidden = true; }
+  function openSettings() {
+    var dialog = el("agent-settings");
+    if (!dialog.open) dialog.showModal();
+    el("agent-settings-close").focus();
+    window.dispatchEvent(new CustomEvent("agent:settings-open"));
+  }
+  function closeSettings() { el("agent-settings").close(); }
 
   function loadEngine() {
     return post("/api/agent/model", {}).then(function (data) {
@@ -1366,6 +1371,15 @@
     el("agent-save-model").addEventListener("click", saveEngine);
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
+    el("agent-settings").addEventListener("keydown", function (event) {
+      if (event.key !== "Tab") return;
+      var controls = Array.from(this.querySelectorAll("button,input,select,textarea,a[href],[tabindex]"))
+        .filter(function (node) { return !node.disabled && node.tabIndex >= 0 && node.checkVisibility({checkVisibilityCSS:true}); });
+      if (!controls.length) return;
+      var first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
     el("agent-propose").addEventListener("click", function () {
       if (writing) writing.abort();
       else draft();

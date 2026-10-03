@@ -37,9 +37,8 @@
   <!-- The Agent's settings dialog. At body level so it opens from any
        page: inside the Agent section it inherited that section's
        `hidden` everywhere else. -->
-  <div id="agent-settings" class="agent-dialog" hidden>
-    <div class="agent-dialog-panel" role="dialog" aria-modal="true"
-         aria-label="Agent settings">
+  <dialog id="agent-settings" class="agent-dialog" aria-label="Agent settings">
+    <div class="agent-dialog-panel">
       <div class="agent-dialog-head">
         <div>
           <div class="builder-label">Agent settings</div>
@@ -130,7 +129,7 @@
         <button id="agent-save-model" class="primary-btn">Save</button>
       </div>
     </div>
-  </div>
+  </dialog>
   <div class="settings-popup" id="settings-popup" hidden role="dialog" aria-label="Settings">
     <!--__FASTMDX_ACCOUNT_ITEM__-->
     <div class="settings-section">Appearance</div>

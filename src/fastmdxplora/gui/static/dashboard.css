@@ -2533,8 +2533,16 @@ body.state-ready .loading-screen {
     place-items: center;
     z-index: 60;
     padding: 24px;
+    margin: 0;
+    border: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    color: var(--text-primary);
 }
-.agent-dialog[hidden] { display: none; }
+.agent-dialog:not([open]) { display: none; }
+.agent-dialog::backdrop { background: transparent; }
 .agent-dialog-panel {
     background: var(--background-elevated);
     border: 1px solid var(--border-primary);

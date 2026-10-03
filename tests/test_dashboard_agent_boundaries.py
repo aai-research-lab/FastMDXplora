@@ -234,6 +234,44 @@ def test_research_controls_follow_double_text_size_without_losing_actions(tmp_pa
         server.server_close()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_agent_settings_native_dialog_keyboard_and_scaled_layout(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    _write_study(tmp_path)
+    server, url = start_test_server(tmp_path)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 390, "height": 900})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#agent")
+            page.add_style_tag(content="html {font-size: 200% !important;}")
+            page.locator("#agent-settings-open").click()
+            dialog = page.locator("#agent-settings")
+            assert dialog.evaluate("el => el.matches(':modal')")
+            assert page.locator("#agent-settings-close").evaluate("el => el === document.activeElement")
+            page.keyboard.press("Shift+Tab")
+            assert dialog.evaluate("el => el.contains(document.activeElement)")
+            for _ in range(12):
+                page.keyboard.press("Tab")
+                assert dialog.evaluate("el => el.contains(document.activeElement)")
+            outside = dialog.evaluate("""dialog => Array.from(dialog.querySelectorAll('button,input,select,textarea'))
+                .filter(el => el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}))
+                .filter(el => {const r=el.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
+                .map(el => el.id)""")
+            assert not outside, outside
+            page.keyboard.press("Escape")
+            assert dialog.is_hidden()
+            assert page.locator("#agent-settings-open").evaluate("el => el === document.activeElement")
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("mode", ["autonomous", "unvalidated", "unexpected"])
 def test_dashboard_cannot_select_unreviewed_modes(model, mode):
     prompts, _ = model

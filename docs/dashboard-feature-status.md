@@ -247,3 +247,17 @@ clip dialog at doubled root text in Graphite, Ink and Paper at 390 px: visible
 buttons, inputs, selects and label groups stay within viewport bounds and Close
 remains operable. These checks do not certify every other modal, native browser
 zoom behavior or whole-dashboard contrast.
+
+Agent settings now uses a native modal dialog. It opens with Close focused,
+cycles Tab/Shift+Tab through enabled visible controls, closes with Escape and
+returns focus through native dialog behavior. Provider polling cleanup listens
+to the dialog close event, covering both Close and Escape. Three browser cases
+passed these interactions and visible-control bounds at 390 px with doubled
+root text in Graphite, Ink and Paper. This replaces the earlier overlay's
+unimplemented modal semantics; provider authentication and scientific execution
+routes are unchanged.
+
+Dialog regression receipt: the combined run passed all 36 current Agent-boundary
+checks and 173 of 174 Agent-panel checks; the sole failure expected the removed
+overlay markup. After updating that assertion to native closed-dialog semantics,
+all 174 Agent-panel checks passed. Three focused theme/keyboard cases also passed.

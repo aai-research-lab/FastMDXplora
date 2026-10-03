@@ -734,8 +734,9 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         panel = self.panel()
         self.assertIn('id="agent-settings-open"', panel)
         settings = self.dialog()
-        self.assertIn('role="dialog"', settings)
-        self.assertIn("hidden", settings[:80])
+        self.assertIn('aria-label="Agent settings"', settings)
+        self.assertIn('<dialog id="agent-settings"', self.page())
+        self.assertNotIn(" open", settings[:80])
 
     def test_no_status_line_about_the_engine_on_the_page(self):
         # "Ready. Drafting with <model>." was a status line about an engine

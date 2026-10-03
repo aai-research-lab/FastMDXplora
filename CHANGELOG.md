@@ -51,6 +51,11 @@ tokens. Chart-header actions, viewer selectors and Agent footer actions wrap
 instead of clipping at enlarged text sizes on narrow screens. Scientific report
 styling and recorded plot data remain unchanged.
 
+Agent settings uses a native modal dialog with initial focus, keyboard cycling,
+Escape closing and focus return. Connection polling stops on every dialog close,
+including Escape. The account/model controls remain usable at enlarged text size
+on narrow screens.
+
 ### A hosted GUI shows its service's name and the person signed in
 
 **`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the

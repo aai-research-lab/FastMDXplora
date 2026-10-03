@@ -173,7 +173,7 @@
     el("agent-connected-disconnect").addEventListener("click", function() { post({action:"disconnect", account:el("agent-connected-account").value}).then(refresh).catch(function(error){status(error.message);}); });
     window.addEventListener("agent:settings-open", refresh);
     window.addEventListener("agent:engine-loaded", refresh);
-    el("agent-settings-close").addEventListener("click", function(){clearTimeout(timer); timer=null;});
+    el("agent-settings").addEventListener("close", function(){clearTimeout(timer); timer=null;});
     refresh();
   });
 })();
