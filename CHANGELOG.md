@@ -7,6 +7,31 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Viewer colours the protein by the study's results, and its cartoon is DSSP
+
+**Coloured by now offers each per-residue result the study's analyses wrote.**
+RMSF, mean SASA, contact with the ligand, the N-H order parameter S², and the
+RMSF the deposited B-factors imply were plots against residue number; they are
+now colourings of the protein, read from the analyses' own files so the
+colours say what the report says. Blue is the low end of a result's range and
+red the high end (for S², the mobile end), RMSF and the RMSF from B-factors
+share one scale from zero, a bar over the canvas gives the range and the saved
+picture carries it, and the Selection tab gives a residue's value in each.
+A residue with no value is grey, and so is one the structure shown cannot tell
+from another: the playback is written without insertion codes, and 184 and
+184A of trypsin would otherwise both be given one residue's value.
+
+**The cartoon is DSSP, for the structure, the live frame and every frame
+played.** No file the viewer is sent has HELIX or SHEET records, so 3Dmol
+shaped the cartoon from its own estimate (an N-O distance under 3.2 Å), which
+is not DSSP and could disagree with the study's secondary structure plot about
+the same frame. DSSP is now computed as the `ss` analysis computes it, for the
+playback from the trajectory's own coordinates, and on a two-chain test system
+it matches the analysis for every residue of every frame. The Structure tab
+says which the cartoon is; where DSSP cannot be had, or was computed from a
+newer file than the one drawn, the viewer's estimate stays and the tab says
+why.
+
 ### A per-residue SASA averages each chain apart
 
 **Run per residue, SASA's average beside the per-frame table is now taken

@@ -91,6 +91,13 @@
     measuring: false,
     picks: [],
     measureDrawn: {shapes: [], labels: []},
+    // The study's per-residue results the protein can be coloured by, and
+    // DSSP for the structures shown (gui/by_residue.py).
+    residueValues: null,
+    residueValuesAsked: 0,
+    residueLookups: null,
+    secondaryStructure: null,
+    secondaryStructures: null,
   };
 
   document.addEventListener("DOMContentLoaded", init);
@@ -146,6 +153,13 @@
     STATE.miniModel = null;
     STATE.miniPlaybackModel = null;
     STATE.spinning = false;
+    STATE.residueValues = null;
+    STATE.residueValuesAsked = 0;
+    STATE.residueLookups = null;
+    STATE.secondaryStructure = null;
+    STATE.secondaryStructures = null;
+    offerResultColours();
+    sayTheSecondaryStructure();
     STATE.visibility = {
       protein: true,
       ligand: true,
@@ -237,6 +251,7 @@
   }
 
   function onViewerPageOpened() {
+    void askForResidueValues();
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const viewer = ensureMainViewer();
       if (viewer && STATE.currentPdb && STATE.mode !== "playback") {
@@ -271,6 +286,7 @@
     const ligandNames = Array.isArray(info?.ligand_resnames) ? info.ligand_resnames : [];
     if (!STATE.ligandResname && ligandNames.length) STATE.ligandResname = ligandNames[0];
     offerTheLigandsControls();
+    void askForResidueValues();
 
     const available = !!(info?.structure_available || info?.valid);
     if (!available) {
@@ -452,6 +468,8 @@
       showViewerMessage("3Dmol could not parse this structure.", String(error));
       return;
     }
+    const of = pdbText === STATE.structurePdb ? "structure" : "live";
+    const version = of === "structure" ? STATE.structureUrl : STATE.liveFrameIndex;
     if (opts.main) {
       STATE.model = model;
       // Made clickable here, not once at viewer creation. 3Dmol sets the
@@ -483,6 +501,8 @@
     }
     resizeViewer(viewer);
     safeCall(viewer, "render");
+    void giveTheSecondaryStructure(viewer, model, of, version, !opts.main, pdbText);
+    if (opts.main) sayTheColours();
     // 3Dmol can calculate its canvas size one animation frame after a hidden
     // page becomes visible.  Re-center/render once more for the first model so
     // the mini viewer never remains black during a running simulation.
@@ -526,6 +546,9 @@
       if (previousView) restoreView(viewer, previousView);
       else if (opts.center !== false) safeCall(viewer, "zoomTo");
       resizeViewer(viewer);
+      void giveTheSecondaryStructure(viewer, model, "playback", STATE.playbackSignature,
+        !opts.main, pdbText);
+      if (opts.main) sayTheColours();
       return model;
     } catch (error) {
       console.warn("3Dmol playback parsing failed", error);
@@ -666,7 +689,7 @@
     if (STATE.isolateLigand && ligandNames.length) {
       addStyle(viewer, ligandSelection, ligandStyle());
     } else if (STATE.pocketOnly && ligandNames.length) {
-      addStyle(viewer, pocketSelection, proteinStyle());
+      addStyle(viewer, pocketSelection, proteinStyle(model));
       if (STATE.visibility.ligand) addStyle(viewer, ligandSelection, ligandStyle());
     } else {
       if (STATE.visibility.protein) {
@@ -679,7 +702,7 @@
             line: {color: COLORS.silver, linewidth: 1.0, opacity: 0.55},
           });
         } else {
-          addStyle(viewer, proteinSelection, proteinStyle());
+          addStyle(viewer, proteinSelection, proteinStyle(model));
         }
       }
       if (!mini && STATE.visibility.pocket && ligandNames.length) {
@@ -730,7 +753,8 @@
       try { viewer.setStyle({elem: "H"}, {}); } catch (error) { console.debug(error); }
     }
     if (!mini && STATE.representation === "surface" && STATE.visibility.protein) {
-      addSurface(viewer, proteinSelection, {opacity: 0.78, color: "#d8d8dd"});
+      addSurface(viewer, proteinSelection,
+        Object.assign({opacity: 0.78}, resultColouring(model) || {color: "#d8d8dd"}));
     }
     if (!mini && STATE.pocketSurface && ligandNames.length) {
       addSurface(viewer, pocketSelection, {opacity: 0.55, color: COLORS.violet});
@@ -821,8 +845,8 @@
     return aminoSelection;
   }
 
-  function proteinStyle() {
-    const color = proteinColor();
+  function proteinStyle(model) {
+    const color = proteinColor(model);
     switch (STATE.representation) {
       case "backbone": return {cartoon: Object.assign({style: "trace", thickness: 0.3}, color)};
       case "sticks": return {stick: Object.assign({radius: 0.13}, color)};
@@ -837,7 +861,10 @@
     }
   }
 
-  function proteinColor() {
+  function proteinColor(model) {
+    if (STATE.colorMode.startsWith(RESULT_PREFIX)) {
+      return resultColouring(model) || {color: "spectrum"};
+    }
     if (STATE.colorMode === "monochrome") return {color: COLORS.white};
     if (STATE.colorMode === "spectrum") return {color: "spectrum"};
     const schemes = {
@@ -902,6 +929,7 @@
     if (STATE.miniViewer && miniModel && miniTarget && isVisible(miniTarget)) {
       styleViewer(STATE.miniViewer, miniModel, true);
     }
+    sayTheColours();
   }
 
   /* Centring on the ligand or its pocket, and showing either, did nothing
@@ -930,6 +958,354 @@
       : [];
     if (STATE.ligandResname && !names.includes(STATE.ligandResname)) names.unshift(STATE.ligandResname);
     return names;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The study's results by residue, and its secondary structure          */
+  /* ------------------------------------------------------------------ */
+  /* Each per-residue result the analyses wrote (gui/by_residue.py) is a
+   * colouring of the protein: blue at the low end of its range, white in
+   * the middle, red at the high end, as B-factors are coloured, with the
+   * values on a bar over the canvas and each residue's value where the
+   * pointer is. A residue with no value is grey. */
+  const RESULT_PREFIX = "result:";
+  const RESULT_STOPS = [[44, 123, 182], [247, 247, 247], [215, 25, 28]];
+  const NO_VALUE = "#5c5c66";
+
+  async function askForResidueValues() {
+    const generation = STATE.viewerGeneration;
+    if (Date.now() - (STATE.residueValuesAsked || 0) < 5000) return;
+    STATE.residueValuesAsked = Date.now();
+    try {
+      const response = await fetch("/api/residue-values", {cache: "no-store"});
+      if (!response.ok || !isViewerGenerationCurrent(generation)) return;
+      const said = await response.json();
+      if (!isViewerGenerationCurrent(generation)) return;
+      STATE.residueValues = Array.isArray(said?.properties) ? said.properties : [];
+    } catch (error) {
+      console.debug("per-residue results unavailable", error);
+      return;
+    }
+    STATE.residueLookups = new Map();
+    offerResultColours();
+    if (STATE.colorMode.startsWith(RESULT_PREFIX)) restyleViewers();
+  }
+
+  /* The results are offered in the "Coloured by" list where there are any,
+   * under a heading of their own; a result that is gone falls back to the
+   * spectrum. */
+  function offerResultColours() {
+    const select = document.getElementById("viewer-color");
+    if (!select) return;
+    let group = document.getElementById("viewer-color-results");
+    const properties = STATE.residueValues || [];
+    if (!properties.length) {
+      group?.remove();
+    } else {
+      if (!group) {
+        group = document.createElement("optgroup");
+        group.id = "viewer-color-results";
+        group.label = "From this study's analyses";
+        select.appendChild(group);
+      }
+      const counts = {};
+      properties.forEach((property) => { counts[property.label] = (counts[property.label] || 0) + 1; });
+      group.replaceChildren(...properties.map((property) => {
+        const option = document.createElement("option");
+        option.value = RESULT_PREFIX + property.key;
+        option.textContent = counts[property.label] > 1
+          ? `${property.label} (${property.source})` : property.label;
+        option.title = property.about || "";
+        return option;
+      }));
+    }
+    if (STATE.colorMode.startsWith(RESULT_PREFIX) && !activeResult()) {
+      STATE.colorMode = "spectrum";
+    }
+    select.value = STATE.colorMode;
+    sayTheColours();
+  }
+
+  function activeResult() {
+    if (!STATE.colorMode.startsWith(RESULT_PREFIX)) return null;
+    const key = STATE.colorMode.slice(RESULT_PREFIX.length);
+    return (STATE.residueValues || []).find((property) => property.key === key) || null;
+  }
+
+  function residueKey(chain, resi, icode) {
+    return `${chain == null ? "" : String(chain).trim()}|${resi}|${String(icode || "").trim()}`;
+  }
+
+  /* A property's values by residue, and the residues of the model it cannot
+   * name one to one: a number that two residues of the protein share (two
+   * chains where the study named none, or insertion codes lost on the way)
+   * is grey rather than given to both. */
+  function lookupFor(property, model) {
+    if (!STATE.residueLookups) STATE.residueLookups = new Map();
+    const cached = STATE.residueLookups.get(property.key);
+    if (cached && cached.model === model) return cached;
+    const chained = property.values.some((row) => row[0] != null);
+    const values = new Map(property.values.map(
+      (row) => [residueKey(chained ? row[0] : "", row[1], row[2]), Number(row[3])]));
+    const residues = new Map();
+    let atoms = [];
+    try { atoms = model.selectedAtoms(resolveProteinSelection(model)); } catch (error) { atoms = []; }
+    // Residues as gui/by_residue.py's residue_runs finds them: a new one
+    // wherever the chain, number, code or name changes, or an atom's name
+    // comes round again.
+    let previous = null;
+    let names = new Set();
+    let count = 0;
+    atoms.forEach((atom) => {
+      const run = `${String(atom.chain || "").trim()}|${atom.resi}|${String(atom.icode || "").trim()}|${atom.resn}`;
+      if (run === previous && !names.has(atom.atom)) {
+        names.add(atom.atom);
+        return;
+      }
+      previous = run;
+      names = new Set([atom.atom]);
+      count += 1;
+      const key = residueKey(chained ? atom.chain : "", atom.resi, atom.icode);
+      const seen = residues.get(key) || new Set();
+      seen.add(count);
+      residues.set(key, seen);
+    });
+    const shared = new Set([...residues].filter(([, runs]) => runs.size > 1).map(([key]) => key));
+    let named = 0;
+    let unnamed = 0;
+    residues.forEach((runs, key) => {
+      const count = runs.size;
+      if (shared.has(key) || (!values.has(key) && property.absent == null)) unnamed += count;
+      else named += count;
+    });
+    const lookup = {model, chained, values, shared, named, unnamed};
+    STATE.residueLookups.set(property.key, lookup);
+    return lookup;
+  }
+
+  function valueOfResidue(property, lookup, atom) {
+    const key = residueKey(lookup.chained ? atom.chain : "", atom.resi, atom.icode);
+    if (lookup.shared.has(key)) return null;
+    if (lookup.values.has(key)) return lookup.values.get(key);
+    return property.absent == null ? null : Number(property.absent);
+  }
+
+  function resultColour(property, value) {
+    if (value == null || !Number.isFinite(value)) return NO_VALUE;
+    const span = Number(property.high) - Number(property.low);
+    let t = span > 0 ? (value - Number(property.low)) / span : 0;
+    t = Math.max(0, Math.min(1, t));
+    if (property.reverse) t = 1 - t;
+    const scaled = t * (RESULT_STOPS.length - 1);
+    const lower = Math.min(RESULT_STOPS.length - 2, Math.floor(scaled));
+    const within = scaled - lower;
+    const mixed = RESULT_STOPS[lower].map((channel, index) =>
+      Math.round(channel + within * (RESULT_STOPS[lower + 1][index] - channel)));
+    return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  function resultColouring(model) {
+    const property = activeResult();
+    if (!property || !model) return null;
+    const lookup = lookupFor(property, model);
+    return {colorfunc: (atom) => resultColour(property, valueOfResidue(property, lookup, atom))};
+  }
+
+  function formatValue(value) {
+    if (!Number.isFinite(value)) return "\u2014";
+    const magnitude = Math.abs(value);
+    if (magnitude !== 0 && (magnitude < 0.01 || magnitude >= 10000)) return value.toExponential(2);
+    return Number(value.toPrecision(3)).toString();
+  }
+
+  function legendTitle(property) {
+    return property.unit ? `${property.label} (${property.unit})` : property.label;
+  }
+
+  /* The bar over the canvas and the sentence under the controls: what the
+   * colours are, their range, and how many residues have none. */
+  function sayTheColours() {
+    const legend = document.getElementById("viewer-legend");
+    const said = document.getElementById("viewer-colour-said");
+    const property = activeResult();
+    if (!property || !STATE.model) {
+      if (legend) legend.hidden = true;
+      if (said) { said.hidden = true; said.textContent = ""; }
+      return;
+    }
+    const lookup = lookupFor(property, STATE.model);
+    const low = formatValue(Number(property.low));
+    const high = formatValue(Number(property.high));
+    const stops = property.reverse ? RESULT_STOPS.slice().reverse() : RESULT_STOPS;
+    if (legend) {
+      legend.hidden = false;
+      legend.title = property.about || "";
+      legend.querySelector(".legend-title").textContent = legendTitle(property);
+      legend.querySelector(".legend-bar").style.background =
+        `linear-gradient(to right, ${stops.map((stop) => `rgb(${stop.join(",")})`).join(", ")})`;
+      legend.querySelector(".legend-low").textContent = low;
+      legend.querySelector(".legend-high").textContent = high;
+      const none = legend.querySelector(".legend-none");
+      none.hidden = !lookup.unnamed;
+      none.textContent = lookup.named ? `No value: ${lookup.unnamed}` : "No residue shown has a value";
+    }
+    if (said) {
+      said.hidden = false;
+      const of = lookup.named + lookup.unnamed;
+      said.textContent = `${property.about} From ${property.source}; `
+        + `${lookup.named} of the ${of} residues shown have a value.`;
+    }
+  }
+
+  /* Secondary structure: DSSP for the structure, the live frame or each
+   * frame of the playback, from the file the viewer was sent. 3Dmol's own
+   * estimate stands wherever it cannot be had, and the Structure tab says
+   * which the cartoon is. */
+  async function giveTheSecondaryStructure(viewer, model, of, version, mini, text) {
+    if (!viewer || !model) return;
+    const generation = STATE.viewerGeneration;
+    const tag = `${of}|${version == null ? "" : version}`;
+    if (!STATE.secondaryStructures) STATE.secondaryStructures = new Map();
+    let said = STATE.secondaryStructures.get(tag);
+    if (!said) {
+      try {
+        const response = await fetch(
+          `/api/secondary-structure?of=${encodeURIComponent(of)}&v=${encodeURIComponent(version == null ? "" : version)}`,
+          {cache: "no-store"});
+        said = response.ok ? await response.json() : {available: false, reason: `HTTP ${response.status}`};
+      } catch (error) {
+        said = {available: false, reason: String(error)};
+      }
+      if (!isViewerGenerationCurrent(generation)) return;
+      if (said.available) {
+        STATE.secondaryStructures.set(tag, said);
+        while (STATE.secondaryStructures.size > 4) {
+          STATE.secondaryStructures.delete(STATE.secondaryStructures.keys().next().value);
+        }
+      }
+    }
+    const current = mini
+      ? (model === STATE.miniModel || model === STATE.miniPlaybackModel)
+      : model === STATE.model;
+    if (!current) return;
+    // A live frame and a playback are rewritten as the run goes on: DSSP of
+    // a newer file than the one drawn is not DSSP of what is drawn.
+    const same = of === "structure" || !text || said.fingerprint === fingerprintOf(text);
+    const assigned = said.available && same ? assignSecondaryStructure(model, said) : null;
+    const applied = !!assigned;
+    if (!mini) {
+      STATE.secondaryStructure = {of, applied, frames: said.n_frames || 0,
+        reason: applied ? null : (said.reason || "the frames it was computed for are not the ones shown")};
+      sayTheSecondaryStructure();
+    }
+    // Drawn again only where DSSP says something the estimate did not:
+    // each drawing of the canvas is the slow part of a page load.
+    if (assigned && assigned.changed) styleViewer(viewer, model, !!mini);
+  }
+
+  /* The coordinates of each model's first atom, as gui/by_residue.py
+   * takes them: enough to tell two versions of a rewritten file apart. */
+  function fingerprintOf(text) {
+    const parts = [];
+    const atom = /^(?:ATOM  |HETATM).{24}(.{24})/gm;
+    const model = /^MODEL/gm;
+    const firstAtomFrom = (index) => {
+      atom.lastIndex = index;
+      const found = atom.exec(text);
+      if (found) parts.push(found[1]);
+      return found;
+    };
+    let found = model.exec(text);
+    if (!found) {
+      firstAtomFrom(0);
+      return parts.join("");
+    }
+    while (found) {
+      if (!firstAtomFrom(found.index)) break;
+      model.lastIndex = found.index + 5;
+      found = model.exec(text);
+    }
+    return parts.join("");
+  }
+
+  function framesOf(model) {
+    if (Array.isArray(model.frames) && model.frames.length) return model.frames;
+    try { return [model.selectedAtoms({})]; } catch (error) { return []; }
+  }
+
+  const SS_CODES = {H: "h", E: "s", C: "c"};
+
+  /* Each frame's atoms get DSSP's assignment for their residue, matched by
+   * chain, number, insertion code, name and which occurrence of those it
+   * is, as the server read them from the same file. */
+  function assignSecondaryStructure(model, said) {
+    const frames = framesOf(model);
+    if (!frames.length || frames.length !== said.frames.length) return false;
+    const index = new Map(said.residues.map(
+      (row, position) => [`${row[0]}|${row[1]}|${row[2]}|${row[3]}#${row[4]}`, position]));
+    let changed = false;
+    frames.forEach((atoms, frame) => {
+      const codes = said.frames[frame];
+      const runs = [];
+      const seen = new Map();
+      let previous = null;
+      let names = new Set();
+      atoms.forEach((atom) => {
+        const key = `${String(atom.chain || "").trim()}|${atom.resi}|${String(atom.icode || "").trim()}|${atom.resn}`;
+        if (key !== previous || names.has(atom.atom)) {
+          const occurrence = seen.get(key) || 0;
+          seen.set(key, occurrence + 1);
+          const position = index.get(`${key}#${occurrence}`);
+          runs.push({chain: String(atom.chain || "").trim(), atoms: [],
+            code: position == null ? null : (SS_CODES[codes[position]] || "c")});
+          previous = key;
+          names = new Set();
+        }
+        names.add(atom.atom);
+        runs[runs.length - 1].atoms.push(atom);
+      });
+      runs.forEach((run, position) => {
+        if (run.code == null) return;
+        const before = runs[position - 1];
+        const after = runs[position + 1];
+        const begins = !(before && before.code === run.code && before.chain === run.chain);
+        const ends = !(after && after.code === run.code && after.chain === run.chain);
+        run.atoms.forEach((atom) => {
+          const before = `${atom.ss}|${!!atom.ssbegin}|${!!atom.ssend}`;
+          atom.ss = run.code;
+          delete atom.ssbegin;
+          delete atom.ssend;
+          if (run.code !== "c") {
+            if (begins) atom.ssbegin = true;
+            if (ends) atom.ssend = true;
+          }
+          if (!changed && before !== `${atom.ss}|${!!atom.ssbegin}|${!!atom.ssend}`) changed = true;
+        });
+      });
+    });
+    return {changed};
+  }
+
+  function sayTheSecondaryStructure() {
+    const line = document.getElementById("viewer-ss-said");
+    if (!line) return;
+    const said = STATE.secondaryStructure;
+    if (!said) { line.textContent = ""; return; }
+    if (said.applied) {
+      const where = said.of === "playback"
+        ? `each of the ${said.frames} frames played`
+        : (said.of === "live" ? "the frame shown" : "the structure shown");
+      line.textContent = `Secondary structure: DSSP, computed for ${where}, as the study's `
+        + "secondary structure analysis computes it.";
+    } else {
+      line.textContent = "Secondary structure: the viewer's own estimate from backbone N-O "
+        + `distances, not DSSP (${said.reason}).`;
+    }
+  }
+
+  function secondaryStructureOf(atom) {
+    const name = {h: "Helix", s: "Strand"}[atom?.ss] || "Coil";
+    return STATE.secondaryStructure?.applied ? `${name} (DSSP)` : `${name} (viewer's estimate)`;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1239,12 +1615,80 @@
       }
     }
     if (!uri) return;
+    // Coloured by a result, the picture carries its colour bar: without it
+    // the colours say nothing on a slide or in a figure.
+    const property = activeResult();
+    if (property) {
+      withTheLegend(uri, property).then(saveThePicture, () => saveThePicture(uri));
+    } else {
+      saveThePicture(uri);
+    }
+  }
+
+  function saveThePicture(uri) {
     const anchor = document.createElement("a");
     anchor.href = uri;
     anchor.download = "fastmdxplora-molecular-viewer.png";
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
+  }
+
+  /* The picture with the colour bar drawn in its lower left corner, sized
+   * to the picture as the bar on screen is sized to the canvas. */
+  function withTheLegend(uri, property) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onerror = reject;
+      image.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const context = canvas.getContext("2d");
+          context.drawImage(image, 0, 0);
+          const scale = Math.max(1, canvas.width / 900);
+          const pad = 10 * scale;
+          const width = 200 * scale;
+          const lookup = STATE.model ? lookupFor(property, STATE.model) : null;
+          const none = lookup && lookup.unnamed
+            ? (lookup.named ? `No value: ${lookup.unnamed}` : "No residue shown has a value") : "";
+          const height = (none ? 74 : 56) * scale;
+          const left = 14 * scale;
+          const top = canvas.height - 14 * scale - height;
+          context.fillStyle = "rgba(5, 5, 5, 0.82)";
+          context.fillRect(left, top, width, height);
+          context.fillStyle = "#f5f5f7";
+          context.textBaseline = "top";
+          context.font = `600 ${12 * scale}px sans-serif`;
+          context.fillText(legendTitle(property), left + pad, top + pad, width - 2 * pad);
+          const bar = context.createLinearGradient(left + pad, 0, left + width - pad, 0);
+          const stops = property.reverse ? RESULT_STOPS.slice().reverse() : RESULT_STOPS;
+          stops.forEach((stop, index) => bar.addColorStop(index / (stops.length - 1), `rgb(${stop.join(",")})`));
+          context.fillStyle = bar;
+          context.fillRect(left + pad, top + pad + 18 * scale, width - 2 * pad, 10 * scale);
+          context.fillStyle = "#c4c4ca";
+          context.font = `${11 * scale}px monospace`;
+          const ends = top + pad + 31 * scale;
+          context.textAlign = "left";
+          context.fillText(formatValue(Number(property.low)), left + pad, ends);
+          context.textAlign = "right";
+          context.fillText(formatValue(Number(property.high)), left + width - pad, ends);
+          if (none) {
+            context.textAlign = "left";
+            context.fillStyle = NO_VALUE;
+            context.fillRect(left + pad, ends + 17 * scale, 10 * scale, 10 * scale);
+            context.fillStyle = "#c4c4ca";
+            context.font = `${11 * scale}px sans-serif`;
+            context.fillText(none, left + pad + 16 * scale, ends + 16 * scale);
+          }
+          resolve(canvas.toDataURL("image/png"));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      image.src = uri;
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -2027,7 +2471,29 @@
       <tr><th>Chain</th><td>${escapeHTML(atom.chain || "—")}</td></tr>
       <tr><th>Atom</th><td>${escapeHTML(atom.atom || atom.name || "—")}</td></tr>
       <tr><th>Element</th><td>${escapeHTML(atom.elem || atom.element || "—")}</td></tr>
-      <tr><th>Coordinates</th><td>${coordinate(atom.x)}, ${coordinate(atom.y)}, ${coordinate(atom.z)}</td></tr>`;
+      <tr><th>Coordinates</th><td>${coordinate(atom.x)}, ${coordinate(atom.y)}, ${coordinate(atom.z)}</td></tr>`
+      + residueRows(atom);
+  }
+
+  /* For an atom of the protein: its residue's secondary structure in this
+   * frame, and its value in each of the study's per-residue results. */
+  function residueRows(atom) {
+    const model = STATE.model;
+    if (!model || !inTheProtein(atom, model)) return "";
+    let rows = `<tr><th>Secondary structure</th><td>${escapeHTML(secondaryStructureOf(atom))}</td></tr>`;
+    (STATE.residueValues || []).forEach((property) => {
+      const value = valueOfResidue(property, lookupFor(property, model), atom);
+      const said = value == null ? "\u2014"
+        : `${formatValue(value)}${property.unit ? ` ${property.unit}` : ""}`;
+      rows += `<tr><th>${escapeHTML(property.label)}</th><td>${escapeHTML(said)}</td></tr>`;
+    });
+    return rows;
+  }
+
+  function inTheProtein(atom, model) {
+    const selection = resolveProteinSelection(model);
+    if (Array.isArray(selection.resn)) return selection.resn.includes(atom.resn);
+    return !atom.hetflag;
   }
 
   /* A field of the overlay with nothing to say is not shown: a structure
@@ -2178,5 +2644,12 @@
     resize: resizeViewers,
     measurements,
     pick: addPick,
+    // What the colours and the cartoon are made from, for the tests.
+    byResidue: {
+      colourOf: (atom) => resultColouring(STATE.model)?.colorfunc(atom) ?? null,
+      describe: updateSelectionPanel,
+      giveTheSecondaryStructure,
+      fingerprintOf,
+    },
   };
 }());

@@ -928,6 +928,45 @@ button {
 }
 .viewer-overlay[data-live="true"] .overlay-tag { color: var(--accent-cyan); }
 
+/* The colour bar of a per-residue result, on the canvas: dark in every
+   scheme, as the overlay is. */
+.viewer-legend {
+    position: absolute;
+    left: 14px;
+    bottom: 14px;
+    width: 200px;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, #f5f5f7 16%, transparent);
+    border-radius: 10px;
+    background: rgba(5, 5, 5, 0.82);
+    color: #c4c4ca;
+    font-size: var(--text-2xs);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+.viewer-legend[hidden] { display: none; }
+.viewer-legend .legend-title { color: #f5f5f7; font-weight: 600; margin-bottom: 6px; }
+.viewer-legend .legend-bar { height: 10px; border-radius: 3px; }
+.viewer-legend .legend-ends {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+}
+.viewer-legend .legend-none { margin-top: 5px; }
+.viewer-legend .legend-none::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 2px;
+    background: #5c5c66;
+    vertical-align: -1px;
+}
+.viewer-colour-said { margin: 0; max-width: 72ch; }
+.viewer-ss-said { margin: 8px 0 0; }
+
 /* Viewer controls */
 .viewer-controls {
     display: flex;

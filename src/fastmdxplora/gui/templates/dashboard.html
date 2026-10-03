@@ -688,6 +688,14 @@
             <div class="viewer-canvas-wrap">
               <div class="viewer-canvas-frame" id="viewer-canvas-frame">
                 <div id="viewer-canvas" class="viewer-canvas" role="img" aria-label="The molecule in 3D"></div>
+                <!-- What the colours are, when they are one of the study's
+                     per-residue results (molecule-viewer.js). -->
+                <div class="viewer-legend" id="viewer-legend" hidden>
+                  <div class="legend-title"></div>
+                  <div class="legend-bar" aria-hidden="true"></div>
+                  <div class="legend-ends"><span class="legend-low"></span><span class="legend-high"></span></div>
+                  <div class="legend-none" hidden></div>
+                </div>
                 <div class="viewer-empty" id="viewer-empty">
                   <div class="empty-title">Waiting for structure</div>
                   <div class="empty-detail muted">The 3D viewer will initialize when a topology or prepared PDB becomes available.</div>
@@ -786,6 +794,7 @@
                     <label class="chip-toggle"><input type="checkbox" data-vis="box">Periodic box</label>
                   </div>
                 </div>
+                <p class="viewer-colour-said muted small" id="viewer-colour-said" hidden></p>
                 <div class="control-row" id="ligand-tools" hidden>
                   <div class="control-group" role="group" aria-label="Ligand tools">
                     <span class="control-label">Ligand tools</span>
@@ -823,6 +832,7 @@
                       <tr><th>Ions</th><td>—</td></tr>
                     </tbody>
                   </table>
+                  <p class="muted small viewer-ss-said" id="viewer-ss-said"></p>
                 </div>
                 <div role="tabpanel" id="info-pane-simulation" aria-labelledby="info-tab-simulation" class="info-pane" data-tab="simulation" hidden>
                   <table class="kv-table mono">

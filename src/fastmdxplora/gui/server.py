@@ -143,7 +143,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/playback-info", "/api/series", "/api/runs-compared", "/api/selection",
-    "/api/measure-over-frames",
+    "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
@@ -711,6 +711,20 @@ def make_handler(
                 query = parse_qs(parsed.query)
                 self._send_json(over_frames(root, (query.get("a") or [""])[0],
                                             (query.get("b") or [""])[0]))
+                return
+            if path == "/api/residue-values":
+                # The per-residue results the viewer colours the structure by.
+                from fastmdxplora.gui.by_residue import values_by_residue
+
+                self._send_json(values_by_residue(root))
+                return
+            if path == "/api/secondary-structure":
+                # DSSP for the structure, live frame or playback the viewer
+                # was sent, so its cartoon is the study's assignment.
+                from fastmdxplora.gui.by_residue import secondary_structure
+
+                of = (parse_qs(parsed.query).get("of") or ["structure"])[0]
+                self._send_json(secondary_structure(root, of))
                 return
             if path == "/api/stopping":
                 from fastmdxplora.gui.stopping_view import stopping_payload

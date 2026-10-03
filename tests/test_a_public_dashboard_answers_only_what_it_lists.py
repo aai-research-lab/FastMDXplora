@@ -260,6 +260,10 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # from the study's records and two checked selections; it runs
             # nothing.
             "/api/measure-over-frames",
+            # The per-residue results the viewer colours by, and DSSP of the
+            # structures it was sent: read from what the study wrote, and
+            # DSSP computed on request, which a viewer's page load costs too.
+            "/api/residue-values", "/api/secondary-structure",
             # The methods paragraphs, as the report gives them.
             "/api/methods",
             # What a study run until it knows has judged: the same means
