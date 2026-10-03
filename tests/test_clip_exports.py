@@ -98,7 +98,9 @@ def test_wrong_upload_identity_cannot_cancel_another_export(runtime):
 
 
 @pytest.mark.parametrize("options", [{"frames": [1, 0]}, {"frames": [0, 500]}, {"fps": True},
-                                     {"labels": {"execute": True}}, {"rotation": float("nan")}])
+                                     {"labels": {"execute": True}}, {"rotation": float("nan")},
+                                     {"dimensions": [1920, 1080]}, {"dimensions": [True, 480]},
+                                     {"captions": {"caption": "x" * 241}}, {"captions": {"caption": "two\nlines"}}])
 def test_invalid_export_options_are_refused(runtime, options):
     assert not start(runtime, **options)["ok"]
 
@@ -111,6 +113,17 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page)
     page.locator("#clip-rotation").fill("60")
     page.locator("#clip-residues").check()
     page.locator("#clip-label-scope").select_option("protein")
+    page.locator("#clip-resolution").select_option("640x480")
+    page.locator("#clip-study-label").check()
+    page.locator("#clip-study-title").fill("Test study")
+    page.locator("#clip-caption-label").check()
+    page.locator("#clip-caption").fill("Saved molecular frames")
+    page.locator("#clip-preview").click()
+    page.wait_for_function("document.querySelector('#clip-status').textContent.includes('Preview ready')", timeout=60000)
+    assert page.locator("#clip-preview-first").is_visible()
+    assert page.locator("#clip-preview-last").is_visible()
+    assert "640 × 480" in page.locator("#clip-estimate").inner_text()
+    assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
     page.locator("#clip-export-start").click()
     page.wait_for_function("document.querySelector('#clip-status').textContent.includes('metadata saved')", timeout=60000)
     link = page.locator("#clip-download").get_attribute("href")
@@ -118,6 +131,11 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page)
     assert response.ok
     with Image.open(io.BytesIO(response.body())) as image:
         assert image.n_frames == 3
+        assert image.size == (640, 480)
+    metadata_link = page.locator("#clip-metadata").get_attribute("href")
+    metadata = page.request.get(page.url.split("/#")[0] + metadata_link).json()
+    assert metadata["dimensions"] == metadata["render_size"] == [640, 480]
+    assert metadata["captions"] == {"study": "Test study", "caption": "Saved molecular frames"}
     assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
     assert not page.evaluate("document.querySelector('.viewer-layout').inert")
     assert not page.errors

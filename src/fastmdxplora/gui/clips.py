@@ -70,8 +70,18 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
                 if not source["evidence"].get("playback_coordinates"):
                     raise ValueError("Saved playback coordinates are unavailable.")
                 labels = payload.get("labels", {})
-                if not isinstance(labels, dict) or any(type(v) is not bool for v in labels.values()) or set(labels) - {"residues", "atoms", "frame", "time"}:
+                if not isinstance(labels, dict) or any(type(v) is not bool for v in labels.values()) or set(labels) - {"residues", "atoms", "frame", "time", "study", "caption"}:
                     raise ValueError("Choose valid label checkboxes.")
+                dimensions = payload.get("dimensions")
+                if dimensions is not None and (not isinstance(dimensions, list) or len(dimensions) != 2
+                        or any(type(value) is not int for value in dimensions)
+                        or tuple(dimensions) not in {(640, 480), (960, 720), (1280, 960)}):
+                    raise ValueError("Choose a supported clip resolution.")
+                captions = payload.get("captions", {})
+                if (not isinstance(captions, dict) or set(captions) - {"study", "caption"}
+                        or any(not isinstance(value, str) or len(value) > (160 if key == "study" else 240)
+                               or any(ord(char) < 32 for char in value) for key, value in captions.items())):
+                    raise ValueError("Use a title up to 160 characters and a single-line caption up to 240 characters.")
                 rotation = payload.get("rotation", 0)
                 if type(rotation) not in {int, float} or not -360 <= rotation <= 360:
                     raise ValueError("Camera rotation must be within −360 to 360 degrees.")
@@ -84,7 +94,7 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
                     "signature": index["source_signature"],
                     "source_frames": [index.get("frame_indices", [])[i] for i in frames],
                     "times_ns": [index.get("frame_times_ns", [])[i] if i < len(index.get("frame_times_ns", [])) else None for i in frames],
-                    "labels": labels}
+                    "labels": labels, "dimensions": dimensions, "captions": captions}
                 runtime._clip_upload = session
                 return {"ok": True, "id": session["id"]}
             if not session or payload.get("id") != session["id"] or session["root"] != root:
@@ -108,6 +118,8 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
                     raise ValueError("Clip frames must be PNG, up to 1280 × 960.")
                 if session.get("size", image.size) != image.size:
                     raise ValueError("All frames must have the same dimensions.")
+                if session["dimensions"] and tuple(session["dimensions"]) != image.size:
+                    raise ValueError("Rendered frame dimensions do not match the selected resolution.")
                 session["size"] = image.size
                 image.convert("RGB").save(folder / f"{session['count']:04d}.png")
                 session["count"] += 1
@@ -148,7 +160,8 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
             destination.mkdir(parents=True, exist_ok=False)
             for fmt in formats:
                 shutil.copyfile(folder / ("trajectory." + fmt), destination / ("trajectory." + fmt))
-            record = {key: session[key] for key in ("format", "fps", "frames", "source_frames", "times_ns", "signature", "source", "view", "labels", "rotation", "label_scope")}
+            record = {key: session[key] for key in ("format", "fps", "frames", "source_frames", "times_ns", "signature", "source", "view", "labels", "rotation", "label_scope", "dimensions", "captions")}
+            record["render_size"] = list(session["size"])
             record["encoders"] = encoders
             record["environment_overlay"] = "Solvent, ions and unit-cell overlays displayed by the browser may be static reference geometry. This clip does not represent their full trajectory dynamics."
             record["camera_path"] = {"axis": "y", "total_degrees": session["rotation"],

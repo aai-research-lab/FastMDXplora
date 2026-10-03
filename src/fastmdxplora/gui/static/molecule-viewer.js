@@ -2174,6 +2174,9 @@
         async render(frame, angle) {
           check(); labels.splice(0).forEach((label) => viewer.removeLabel(label));
           await setPlaybackFrame(frame); check();
+          if (options.dimensions) {
+            viewer.setWidth(options.dimensions[0]); viewer.setHeight(options.dimensions[1]);
+          }
           viewer.setView(camera); if (angle) viewer.rotate(angle, "y");
           if (options.residues || options.atoms) {
             let selection = {resn: AMINO_ACIDS};
@@ -2181,6 +2184,7 @@
               const picked = original.selection;
               if (!picked) throw new Error("Select a residue or atom before exporting its labels.");
               selection = {chain: picked.chain || "", resi: picked.resseq, resn: picked.resname};
+              if (picked.icode !== undefined) selection.icode = picked.icode;
               if (picked.atom) selection.atom = picked.atom;
             }
             const atoms = STATE.model.selectedAtoms(selection), seen = new Set(), marked = [];
@@ -2198,6 +2202,7 @@
         async restore() {
           labels.splice(0).forEach((label) => { try { viewer.removeLabel(label); } catch (_) {} });
           STATE.clipExporting = false;
+          viewer.resize();
           if (generation === STATE.viewerGeneration) await window.FastMDXMoleculeViewer.restoreResearchView(original);
         },
       };

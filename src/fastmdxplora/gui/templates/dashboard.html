@@ -1306,14 +1306,19 @@
       <label>Format<select id="clip-format"><option value="gif">GIF</option><option value="mp4">MP4 (requires ffmpeg)</option><option value="both">GIF and MP4 (requires ffmpeg)</option></select></label>
       <label>Frames per second<input id="clip-fps" type="number" min="1" max="30" value="10"></label>
       <label>Camera rotation (degrees)<input id="clip-rotation" type="number" min="-360" max="360" value="0"></label>
+      <label>Resolution<select id="clip-resolution"><option value="640x480">640 × 480</option><option value="960x720" selected>960 × 720</option><option value="1280x960">1280 × 960</option></select></label>
     </div>
     <fieldset><legend>Include in export</legend>
       <label><input id="clip-residues" type="checkbox"> Residue names and numbers</label>
       <label><input id="clip-atoms" type="checkbox"> Atom names</label>
       <label><input id="clip-frame" type="checkbox" checked> Source frame number</label>
       <label><input id="clip-time" type="checkbox" checked> Simulation time (when recorded)</label>
+      <label><input id="clip-study-label" type="checkbox"> Study title</label>
+      <label><input id="clip-caption-label" type="checkbox"> Custom caption</label>
       <label>Label scope<select id="clip-label-scope"><option value="selected">Selected residue / atom</option><option value="protein">Protein (up to 200 labels)</option></select></label>
     </fieldset>
+    <div class="control-row"><label>Study title<input id="clip-study-title" maxlength="160" placeholder="Title shown only when its checkbox is selected"></label><label>Custom caption<input id="clip-caption" maxlength="240" placeholder="A presentation caption, not a scientific measurement"></label></div>
+    <section class="clip-preview-panel" aria-label="Clip preview"><button id="clip-preview" class="ghost-btn" type="button">Preview first and last frames</button><p id="clip-estimate" class="muted small" role="status"></p><div class="clip-preview-images"><figure><img id="clip-preview-first" alt="First selected clip frame" hidden><figcaption>First selected frame</figcaption></figure><figure><img id="clip-preview-last" alt="Last selected frame with final camera rotation" hidden><figcaption>Last selected frame and final rotation</figcaption></figure></div></section>
     <p class="muted small">Choose 2–120 frames. Exports and source/view metadata are saved together in this study's exports/clips folder.</p>
     <p class="muted small">Water, ion and unit-cell overlays may be static reference geometry. This clip reflects the browser playback, not full solvent dynamics.</p>
     <p id="clip-status" role="status"></p>
