@@ -4039,3 +4039,15 @@ body[data-theme="paper"] { --text-muted: #61616b; }
 @media (prefers-reduced-motion: reduce) {
     .research-agent-dock, .research-bookmarks-panel, .agent-context-review { scroll-behavior: auto; transition: none; }
 }
+
+/* Editable controls need a visible edge; panel decoration stays restrained. */
+body { --control-border: #707078; }
+body[data-theme="paper"] { --control-border: #85857e; }
+body input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
+body textarea, body select,
+#agent-request, #clip-export-dialog input, #clip-export-dialog select,
+#preparation-audit-panel select { border-color: var(--control-border); }
+body input::placeholder, body textarea::placeholder { color: var(--text-muted); opacity: 1; }
+body input:focus-visible, body textarea:focus-visible, body select:focus-visible {
+    outline: var(--focus-ring); outline-offset: 2px;
+}

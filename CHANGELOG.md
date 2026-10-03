@@ -56,6 +56,11 @@ Escape closing and focus return. Connection polling stops on every dialog close,
 including Escape. The account/model controls remain usable at enlarged text size
 on narrow screens.
 
+Editable dashboard fields now have distinct boundaries and consistent readable
+placeholder colors, with visible keyboard focus. Theme palette and primary-action
+contrast checks cover all three appearance choices; decorative panel borders
+retain their restrained styling.
+
 ### A hosted GUI shows its service's name and the person signed in
 
 **`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the

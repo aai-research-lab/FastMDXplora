@@ -261,3 +261,24 @@ Dialog regression receipt: the combined run passed all 36 current Agent-boundary
 checks and 173 of 174 Agent-panel checks; the sole failure expected the removed
 overlay markup. After updating that assertion to native closed-dialog semantics,
 all 174 Agent-panel checks passed. Three focused theme/keyboard cases also passed.
+
+### Theme contrast and editable-field boundaries
+
+Browser-computed palette checks pass in Graphite, Ink and Paper: primary,
+secondary and muted text plus cyan/orange/red/green status colors each meet
+4.5:1 against primary, secondary and elevated surfaces. Primary-action text
+meets 4.5:1 at both gradient endpoint colors. These are token/surface checks;
+they do not certify every translucent composition, chart annotation or custom
+component state.
+
+Editable inputs, textareas and selects now use a separate visible control-border
+token rather than decorative panel borders. Placeholder colors follow the muted
+text token with full opacity, and keyboard focus retains an explicit outline.
+Computed borders of Agent provider/model/key/budget controls pass 3:1 against
+all three main surfaces in every theme. Source reports, scientific labels,
+units, data, configuration defaults and provider routes are unchanged.
+
+Contrast increment regression: all 69 Agent-boundary, clip and draft-review
+checks passed, including the new three-theme palette/boundary checks. Six
+report-rendering/dashboard checks also passed. Full rendered-state contrast and
+final whole-framework acceptance remain open; these receipts do not replace them.

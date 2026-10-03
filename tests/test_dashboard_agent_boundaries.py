@@ -272,6 +272,53 @@ def test_agent_settings_native_dialog_keyboard_and_scaled_layout(tmp_path, theme
         server.server_close()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_dashboard_text_palette_and_primary_actions_have_readable_contrast(tmp_path, theme):
+    import re
+
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    def rgb(value):
+        if value.startswith("#"):
+            return [int(value[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+        return [float(number) / 255 for number in re.findall(r"[\d.]+", value)[:3]]
+
+    def contrast(one, two):
+        def light(color):
+            values = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in rgb(color)]
+            return sum(value * weight for value, weight in zip(values, (0.2126, 0.7152, 0.0722)))
+        first, second = sorted((light(one), light(two)))
+        return (second + 0.05) / (first + 0.05)
+
+    _write_study(tmp_path)
+    server, url = start_test_server(tmp_path)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#agent")
+            page.wait_for_function("document.body.dataset.theme === " + json.dumps(theme))
+            tokens = page.evaluate("""() => {const style=getComputedStyle(document.body); const names=['text-primary','text-secondary','text-muted','background-primary','background-secondary','background-elevated','accent-cyan','accent-blue','accent-orange','accent-red','accent-green','on-accent']; return Object.fromEntries(names.map(name=>[name,style.getPropertyValue('--'+name).trim()]));}""")
+            for foreground in ("text-primary", "text-secondary", "text-muted", "accent-cyan", "accent-orange", "accent-red", "accent-green"):
+                for background in ("background-primary", "background-secondary", "background-elevated"):
+                    assert contrast(tokens[foreground], tokens[background]) >= 4.5, (theme, foreground, background)
+            for accent in ("accent-cyan", "accent-blue"):
+                assert contrast(tokens["on-accent"], tokens[accent]) >= 4.5, (theme, accent)
+            page.locator("#agent-settings-open").click()
+            for name in ("agent-provider", "agent-model", "agent-key", "agent-budget"):
+                colors = page.locator("#" + name).evaluate("el => {const style=getComputedStyle(el); return {border:style.borderTopColor,background:style.backgroundColor,placeholder:getComputedStyle(el,'::placeholder').color};}")
+                for background in ("background-primary", "background-secondary", "background-elevated"):
+                    assert contrast(colors["border"], tokens[background]) >= 3, (theme, name, background)
+            page.keyboard.press("Escape")
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("mode", ["autonomous", "unvalidated", "unexpected"])
 def test_dashboard_cannot_select_unreviewed_modes(model, mode):
     prompts, _ = model
