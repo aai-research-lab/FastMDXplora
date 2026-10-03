@@ -420,3 +420,20 @@ remain advertised. The 49-check research suite initially passed 48 checks and
 exposed the import-link invalidation gap; after fixing that gap, the affected
 browser save/reload/restore/export/import check passes again. Actual-study bundle
 download/import is now verified; remaining walkthrough steps are still open.
+
+### Actual-study clip export and discovered time-label discrepancy
+
+The completed 1L2Y study exported a three-frame GIF and MP4 at 640 by 480 with
+60-degree camera rotation, protein residue labels, source-frame labels, title
+and caption. Preview completed, GIF decoded with three frames, and ffmpeg decoded
+MP4 without errors. Downloaded MP4 matches the saved artifact's SHA-256. Closing
+the dialog returns to the visible molecular viewer. The sidecar records source
+frames 0, 30, 60, selected captions and label options. All 306 existing scientific
+and report files retain their hashes.
+
+Physical-time acceptance remains open: the existing playback reports 0, 0.03,
+0.06 ns for those samples and a full range approaching 2 ns, while the recorded
+production duration is 1 ns and resolved sampling is 250 steps at 2 fs. Playback
+currently trusts MDTraj time values. The discrepancy requires source/provenance
+reconciliation; media decoding does not prove these time labels correct. No
+scientific data or settings were changed to conceal it.
