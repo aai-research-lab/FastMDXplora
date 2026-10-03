@@ -282,3 +282,12 @@ Contrast increment regression: all 69 Agent-boundary, clip and draft-review
 checks passed, including the new three-theme palette/boundary checks. Six
 report-rendering/dashboard checks also passed. Full rendered-state contrast and
 final whole-framework acceptance remain open; these receipts do not replace them.
+
+Bookmark capture scope is now visible before saving. It identifies the current
+page/graph/range/setting/residue/frame, camera, pinned comparison, figure, warning
+and preparation event where present. Editing without a new screenshot explicitly
+retains the saved view; selecting a screenshot explicitly switches to the current
+research view. Clear/save/study changes update the summary. All 49 research-view
+and bundle checks passed. The browser flow checks scope transitions, restart,
+search/filter, graph-range restoration, JSON/bundle export and import; its final
+rerun also passed after figure/warning and study-change summary refinements.

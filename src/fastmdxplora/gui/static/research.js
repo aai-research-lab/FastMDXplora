@@ -68,6 +68,19 @@
     el("research-context").textContent = "Context: " + describe(view);
     const summary = el("agent-context-summary");
     if (summary) summary.textContent = el("agent-use-context").checked ? describe(view) : "Current view excluded";
+    updateCaptureScope();
+  }
+  function updateCaptureScope() {
+    const retained = editing && !el("research-screenshot").checked;
+    const view = retained ? editing.view : capture();
+    el("research-capture-scope").textContent = (retained ? "Editing saved view: " : "Capture current view: ") +
+      describe(view || {}) + (view?.comparison_selection ? " · pinned comparison residue" : "") +
+      (view?.audit_event ? " · preparation event " + view.audit_event : "") +
+      (view?.figure ? " · figure " + view.figure.split("/").pop() : "") +
+      (view?.warning ? " · selected warning" : "") +
+      (view?.camera ? " · camera angle" : "") +
+      (el("research-screenshot").checked ? ". A screenshot will capture the current research view." :
+        retained ? ". Saved selection is retained; taking a new screenshot replaces it with the current view." : ". Screenshot is off.");
   }
   function messageContext() {
     ++contextGeneration;
@@ -87,6 +100,7 @@
     const panel = el("research-bookmarks");
     if (open && panel.hidden) bookmarkOrigin = document.activeElement;
     panel.hidden = !open;
+    if (open) updateCaptureScope();
     el("research-bookmarks-toggle").setAttribute("aria-expanded", String(open));
     if (!open && returnFocus) {
       const target = bookmarkOrigin?.isConnected ? bookmarkOrigin : el("research-bookmarks-toggle");
@@ -265,6 +279,7 @@
       button("Edit note", () => {
         editing = row; el("research-title").value = row.title;
         el("research-screenshot").checked = false; el("research-remove-screenshot").checked = false;
+        updateCaptureScope();
         renderTags(row.tags || []);
         el("research-note").value = row.note; el("research-save").textContent = "Update note";
       }, card);
@@ -349,6 +364,7 @@
         editing = null; el("research-title").value = ""; el("research-note").value = "";
         renderTags([]);
         el("research-save").textContent = "Save bookmark";
+        updateContext();
         refresh().catch(() => status("Could not load bookmarks."));
       }
     });
@@ -428,6 +444,7 @@
       }
     });
     el("research-bookmarks-close").addEventListener("click", () => setBookmarks(false, true));
+    el("research-screenshot").addEventListener("change", updateCaptureScope);
     el("research-save").addEventListener("click", async () => {
       const captureImage = el("research-screenshot").checked;
       const view = editing && !captureImage ? editing.view : capture();
@@ -451,6 +468,7 @@
         el("research-title").value = ""; el("research-note").value = ""; status(screenshotError ? "Bookmark saved without screenshot. " + screenshotError : "Bookmark saved.");
         el("research-screenshot").checked = false; el("research-remove-screenshot").checked = false;
         renderTags([]);
+        updateCaptureScope();
       }
       el("research-save").disabled = !study;
     });
@@ -459,6 +477,7 @@
       el("research-title").value = ""; el("research-note").value = "";
       renderTags([]);
       el("research-screenshot").checked = false; el("research-remove-screenshot").checked = false;
+      updateCaptureScope();
     });
     async function exportFile(images) {
       status("Preparing bookmark export…");

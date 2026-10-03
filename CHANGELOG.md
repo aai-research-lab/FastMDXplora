@@ -61,6 +61,10 @@ placeholder colors, with visible keyboard focus. Theme palette and primary-actio
 contrast checks cover all three appearance choices; decorative panel borders
 retain their restrained styling.
 
+Bookmarks display their capture scope before saving. When editing, the drawer
+explains whether it retains the saved selection or replaces it with the current
+view while taking a new screenshot.
+
 ### A hosted GUI shows its service's name and the person signed in
 
 **`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the
