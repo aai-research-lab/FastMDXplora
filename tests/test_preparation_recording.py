@@ -204,3 +204,69 @@ def test_membrane_patch_observation_preserves_topology_positions_and_system(tmp_
     assert not disabled.root.exists()
     assert 0 < audit.bytes <= MAX_TOTAL
     print(f"POPC observer receipt: {len(atoms)} atoms; {audit.bytes} snapshot bytes; {elapsed:.3f} seconds")
+
+
+@pytest.mark.timeout(1200)
+def test_full_membrane_preparation_preserves_outputs_with_audit_on_or_off(tmp_path, monkeypatch):
+    """Exercise real bilayer packing, its relaxation and final parameterization."""
+    openmm = pytest.importorskip("openmm")
+    pytest.importorskip("pdbfixer")
+    np = pytest.importorskip("numpy")
+    from openmm.app import modeller
+    from pdbfixer import PDBFixer
+
+    from tests._the_phase import a_real_setup
+
+    # Controls belong to this comparison harness only. OpenMM's membrane
+    # relaxation otherwise draws its own seed, independently of setup's seed.
+    # Keep its actual algorithm/step count and give both observations the same
+    # seeded, single-thread deterministic CPU execution.
+    initialize = PDBFixer.__init__
+    original_integrator = modeller.LangevinIntegrator
+    original_context = modeller.Context
+    original_membrane = modeller.Modeller.addMembrane
+    cpu = openmm.Platform.getPlatformByName("CPU")
+
+    def fixer_on_reference(self, *args, **kwargs):
+        initialize(self, *args, **kwargs)
+        self.platform = openmm.Platform.getPlatformByName("Reference")
+
+    def seeded_integrator(*args, **kwargs):
+        integrator = original_integrator(*args, **kwargs)
+        integrator.setRandomNumberSeed(314159)
+        return integrator
+
+    def deterministic_context(system, integrator, *args, **kwargs):
+        if args and args[0].getName() == "CPU":
+            return original_context(system, integrator, cpu,
+                                    {"Threads": "1", "DeterministicForces": "true"})
+        return original_context(system, integrator, *args, **kwargs)
+
+    def cpu_membrane(self, *args, **kwargs):
+        return original_membrane(self, *args, **{**kwargs, "platform": cpu})
+
+    monkeypatch.setattr(PDBFixer, "__init__", fixer_on_reference)
+    monkeypatch.setattr(modeller, "LangevinIntegrator", seeded_integrator)
+    monkeypatch.setattr(modeller, "Context", deterministic_context)
+    monkeypatch.setattr(modeller.Modeller, "addMembrane", cpu_membrane)
+    roots = []
+    for name, enabled in (("off", "0"), ("on", "1")):
+        root = tmp_path / name
+        root.mkdir()
+        monkeypatch.setenv("FASTMDXPLORA_PREPARATION_AUDIT", enabled)
+        a_real_setup(root, random_seed=314159, membrane="POPC",
+                     membrane_orientation_checked=True,
+                     force_field=["amber14-all.xml", "amber14/tip3p.xml"])
+        roots.append(root / "setup")
+    for name in ("input.pdb", "prepared.pdb", "topology.pdb", "system.xml"):
+        assert (roots[0] / name).read_bytes() == (roots[1] / name).read_bytes(), name
+    states = [openmm.XmlSerializer.deserialize((root / "state.xml").read_text())
+              for root in roots]
+    for getter in ("getPositions", "getPeriodicBoxVectors"):
+        arrays = [getattr(state, getter)(asNumpy=True)._value for state in states]
+        np.testing.assert_allclose(arrays[0], arrays[1], rtol=0, atol=1e-10)
+    assert not (roots[0] / "preparation_audit.json").exists()
+    audit = json.loads((roots[1] / "preparation_audit.json").read_text())
+    assert audit["status"] == "complete" and not audit["warnings"]
+    operations = {event["operation"] for event in audit["events"]}
+    assert {"membrane_placement", "membrane_solvent_ions", "system_parameterization"} <= operations

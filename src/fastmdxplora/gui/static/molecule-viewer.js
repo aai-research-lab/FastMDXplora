@@ -509,6 +509,7 @@
     if (!viewer || !pdbText) return null;
     const opts = options || {};
     const previousView = opts.main && STATE.preservingCamera ? captureView(viewer) : null;
+    const previousCenter = opts.rebaseCamera ? proteinCenter(STATE.model) : null;
     stopViewerMotion(viewer);
     safeCall(viewer, "removeAllModels");
     safeCall(viewer, "removeAllSurfaces");
@@ -533,7 +534,16 @@
         document.getElementById("mini-preview-frame")?.setAttribute("data-ready", "true");
         styleViewer(viewer, model, true);
       }
-      if (previousView) restoreView(viewer, previousView);
+      if (previousView) {
+        // Static/live and trajectory coordinates can use different origins.
+        // Preserve protein-relative pan, zoom and rotation by moving the camera
+        // only; never translate the saved atoms or recenter each playback frame.
+        const nextCenter = opts.rebaseCamera ? proteinCenter(model) : null;
+        if (previousCenter && nextCenter) for (let axis = 0; axis < 3; axis++) {
+          previousView[axis] += previousCenter[axis] - nextCenter[axis];
+        }
+        restoreView(viewer, previousView);
+      }
       else if (opts.center !== false) safeCall(viewer, "zoomTo");
       resizeViewer(viewer);
       return model;
@@ -1289,8 +1299,11 @@
         STATE.playbackSignature = signature;
         STATE.playbackFrames = Number(available.n_frames_browser || 0);
         STATE.playbackFrameTimes = Array.isArray(available.frame_times_ns) ? available.frame_times_ns : [];
+        const changingOrigin = STATE.mode !== "playback";
         STATE.mode = "playback";
-        const model = installPlaybackPdb(viewer, pdb, {main: true, center: false});
+        const model = installPlaybackPdb(viewer, pdb, {
+          main: true, center: false, rebaseCamera: changingOrigin,
+        });
         if (!model) throw new Error("3Dmol did not create a playback model");
 
         const mini = ensureMiniViewer();
@@ -2086,6 +2099,12 @@
     }
   }
 
+  function proteinCenter(model) {
+    const atoms = model?.selectedAtoms({resn: AMINO_ACIDS}) || [];
+    return atoms.length ? ["x", "y", "z"].map(
+      (axis) => atoms.reduce((sum, atom) => sum + atom[axis], 0) / atoms.length) : null;
+  }
+
   function restoreView(viewer, view) {
     try { viewer.setView(view); } catch (error) { console.debug(error); }
   }
@@ -2163,23 +2182,11 @@
     async clipSession(options) {
       if (STATE.clipExporting) throw new Error("A clip export is already active.");
       const original = window.FastMDXResearch.capture(), generation = STATE.viewerGeneration;
-      const originalAtoms = STATE.model?.selectedAtoms({resn: AMINO_ACIDS}) || [];
-      const centerOf = (atoms) => atoms.length ? ["x","y","z"].map(
-        (axis) => atoms.reduce((sum, atom) => sum + atom[axis], 0) / atoms.length) : null;
-      const originalCenter = centerOf(originalAtoms);
       pausePlayback(); stopFollowing(); setSpinning(STATE.viewer, false);
       if (!(await loadPlayback(await ensurePlaybackPayload()))) throw new Error("Saved trajectory playback is unavailable.");
       if (generation !== STATE.viewerGeneration) throw new Error("The study changed before export.");
       STATE.clipExporting = true;
       const viewer = STATE.viewer, camera = captureView(viewer), labels = [];
-      // Static/live snapshots may have a different origin from the saved trajectory.
-      // Keep pan relative to the protein, orientation and zoom without moving any atom.
-      if (original.frame == null && originalCenter && camera) {
-        const playbackCenter = centerOf(STATE.model.selectedAtoms({resn: AMINO_ACIDS}));
-        if (playbackCenter) for (let axis=0; axis<3; axis++) {
-          camera[axis] += originalCenter[axis] - playbackCenter[axis];
-        }
-      }
       const check = () => { if (generation !== STATE.viewerGeneration || !STATE.clipExporting) throw new Error("The study changed during export."); };
       return {
         signature: STATE.playbackSignature, count: STATE.playbackFrames, payload: STATE.playbackPayload, camera: camera,

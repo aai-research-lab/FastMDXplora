@@ -265,6 +265,15 @@ def test_clip_preview_maps_a_different_structure_origin_and_restores_camera(tmp_
             assert restored.get("frame") == original.get("frame")
             assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
             assert not page.errors
+            page.locator("#clip-export-cancel").click()
+            page.get_by_role("button", name="Next frame", exact=True).click()
+            page.wait_for_function("FastMDXMoleculeViewer.STATE.mode === 'playback'")
+            transitioned = page.evaluate("FastMDXResearch.capture()")
+            assert transitioned["camera"][3:] == pytest.approx(original["camera"][3:])
+            scene_png = page.locator("#viewer-canvas").screenshot()
+            with Image.open(io.BytesIO(scene_png)) as image:
+                colors = list(image.convert("RGB").getdata())
+                assert sum(max(pixel) - min(pixel) > 30 for pixel in colors) > 20
         assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources} == before
     finally:
         session.server.shutdown()

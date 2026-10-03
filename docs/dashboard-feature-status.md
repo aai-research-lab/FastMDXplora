@@ -73,7 +73,7 @@ These changes are not a published upstream release.
 | M2 — bookmarks | Implemented; representative acceptance verified | Persistence, tags/search, screenshots, portability, view restore and stale/import guards tested. Include it in the final broad browser/release pass. |
 | M3 — providers | Implemented; live verification partial | OpenAI browser consent and real explanation inference succeeded, including the requested GPT-6 models. Claude, Kimi and Gemini have restricted adapters and synthetic/native transport tests, but their real account login, entitlement, model enumeration, inference and expiry/disconnect acceptance remain pending. |
 | M4 — clips | Implemented; representative acceptance verified | Resolution presets re-render the molecular view at selected dimensions; study title/custom caption join residue/atom/frame/time overlays. First/last previews share the export renderer and show source mapping, physical time, playback duration and approximate upload size. Server dimensions/text bounds, decoded media, cancellation and restoration checks pass. Final integration remains M7. |
-| M5 — provenance | Implemented; preservation verification limited | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on OpenMM Reference. Aggregate system snapshots do not record every individual solvent/ion operation. Broader backend/platform and fixture preservation checks remain open. |
+| M5 — provenance | Implemented; controlled full POPC preparation verified | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on Reference and full POPC packing/relaxation under deterministic CPU test controls. Aggregate system snapshots do not record every individual solvent/ion operation. OpenFF and broader backend/platform/fixture checks remain open. |
 | M6 — audit visuals | Implemented; representative acceptance verified | Stage strip, separate protein/recorded-ligand/water/ion/other bars, affected-residue category track, decision table, side-by-side/overlay and Agent/bookmark links. Recorded stages and observed identity differences are distinct; ambiguous mappings are unselectable and raw evidence remains expandable. Eight final audit checks pass; broader integration remains M7. |
 | M8 — aesthetics and interactions | Foundation and text scaling implemented; full review pending | Toolbar/composer separation, consistent Agent typography, drawer focus return and relative text sizing. All ten sections pass wide/narrow shell checks and 200% root-text control-bounds checks in all three themes. Full expanded-state visual, contrast and keyboard/focus acceptance remains open. |
 | M7 — integrated release validation | Partial; not complete | Targeted integrated suites, browser checks and earlier wheel receipts exist. Final expanded-scope acceptance, latest-wheel verification, remaining provider tests and broader scientific/browser coverage are not all complete. |
@@ -531,3 +531,37 @@ optional frame values. No production code or scientific behavior changed in
 this acceptance increment. Full membrane/OpenFF preservation, CPU baseline
 failures, complete visual-state review and unavailable provider account gates
 remain open.
+
+## Full membrane preservation and normal-playback correction, 2026-10-03
+
+A real full POPC preparation with recording disabled/enabled passed in 110.90
+seconds. This exercises PDBFixer, hydrogen preparation, membrane placement,
+actual OpenMM bilayer packing and relaxation, solvation/ionization and final
+system serialization. Input/prepared/topology PDBs and system XML were identical;
+positions and box vectors agreed at absolute tolerance `1e-10`. The enabled audit
+was complete without warnings and included membrane placement, membrane
+solvent/ions and system-parameterization events. The disabled run wrote no audit.
+
+The comparison harness fixes the membrane relaxation integrator seed and uses
+single-thread deterministic CPU forces; PDBFixer hydrogen minimization uses
+Reference. These test-only controls isolate observation from independent
+backend/stochastic differences without changing production defaults, steps or
+algorithms. This verifies the full small-peptide/AMBER14/POPC case, not every
+lipid, protein, backend or OpenFF ligand route. OpenFF and the separately failed
+CPU repeatability baseline remain unresolved.
+
+The previously installed wheel exported visible GIF/MP4 files from a copied
+completed 1L2Y study, but normal frame stepping exposed a blank molecular scene
+and a blank viewer-bookmark screenshot. That screenshot is a failed acceptance
+artifact. The static/live camera origin was retained when loading the trajectory
+with a different origin. The camera translation is now corrected centrally on
+entry to playback, retaining protein-relative pan, orientation and zoom without
+moving atoms or recentering each frame. Clip export uses the same transition
+and no longer applies a second correction. Three clip/translated-origin browser
+checks passed in 48.79 seconds, including normal frame stepping, visible scene,
+camera restoration and unchanged scientific source hashes. A new installed-wheel
+check is required after this production UI correction; the earlier wheel does
+not prove that it is fixed in an installed distribution.
+
+The broader real-browser viewer/integrated research workflow and JavaScript
+parse suites passed all 28 tests in 104.04 seconds after the correction.
