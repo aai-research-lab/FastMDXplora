@@ -5,6 +5,11 @@ the [original framework](dashboard-feature-plan.md), code inspection and the
 running completed-study dashboard. This is a completion plan, not a claim that
 the remaining features or redesign have been implemented.
 
+The [2026-10-03 execution checkpoint and next goal prompt](dashboard-next-goal.md)
+now identify the implemented features, remaining acceptance work and exact next
+sequence. They retain all milestone requirements below and distinguish local
+OpenAI release acceptance from unverified external provider/backend gates.
+
 ## Outcome and scope
 
 Finish every outstanding requirement, make the dashboard visually coherent, and

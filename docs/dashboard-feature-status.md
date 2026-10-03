@@ -5,9 +5,41 @@ with implementation and verification revisions identified in the receipts below.
 This is the current status; the framework's milestone receipts are historical.
 
 **The complete framework is not finished.** All five feature areas have working
-implementations, but several specified controls and release acceptance gates
+implementations, but final visual, integration and release acceptance gates
 remain open. A milestone commit records a tested increment, not completion of
 every requirement in the expanded framework.
+
+### Current checkpoint — 2026-10-03
+
+Production revision `8d7adc52108cfb2594a24158b4b8405e8e0f5818` is pushed to
+`princeote/context-aware-agent`. The source checkout was clean when inspected;
+the remote branch tip was independently checked with `git ls-remote`. Git describes
+this as `v2.5.8-204-g8d7adc5`; the development wheel's version is
+`2.5.9.dev204+g8d7adc521`. This is the user's v2.5.8-based feature branch, not an
+upstream release or an integration of current main.
+
+The latest clip/bookmark increment has 53 passing targeted checks. The earlier
+209-check combined pass covers production/test revision 1276612, not all latest
+code. The preparation-recording suite at 8d7adc5 has now completed with **9 passed,
+1 skipped in 290.97 s**; Windows OpenFF is the skipped dependency gate. The separate
+installed Ubuntu OpenFF receipt and its environment limitations remain below.
+
+The latest wheel SHA256 is
+`16259485d0578afb16edadfd89d5ef3b12538d6565b3933ecf4f2be7b8e7d950`.
+Its isolated installation verifies all 127 registered error references and
+required assets. Native acceptance of this latest presentation revision remains
+open: the browser review encountered a connection-refused error document during
+restart, although the server was subsequently confirmed listening on port 8784.
+Listening and installed resources alone do not prove native acceptance.
+
+A further harmless message in the user's dashboard on port 8783 returned
+"Hello." with ChatGPT / GPT-6 Luna / max selected. The old missing-key error
+remains historical transcript text, not the outcome of this successful request.
+No API key was entered, and no configuration or simulation was requested.
+
+The [revised execution checkpoint and next goal prompt](dashboard-next-goal.md)
+separate the remaining local release work from unavailable provider/backend
+acceptance. They retain every original M0–M8 requirement.
 
 The [completion and aesthetics plan](dashboard-completion-plan.md) now defines
 how to close these gaps. M8 has an implemented visual foundation; the full
