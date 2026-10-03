@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A test of the Viewer waits for what decides it
+
+**The test that a finished study has no live controls waits for the study's
+status, not for its frame.** It waited for the overlay's tag to change, and
+on a loaded machine the frame took longer than its minute (a full suite here
+on two cores); the controls follow the status, which arrives first.
+
 ### A cited figure is not scrolled away by the conversation
 
 **A figure opened from an answer stays in view.** The Agent's page scrolls

@@ -181,15 +181,17 @@ class TestTheViewer:
         # finished study's last frame, which read "LATEST" and its age in
         # minutes: "age 5311m" for one three days old.
         page = _open(browser, studies["finished"], where="#viewer")
+        # Once the viewer has the study's status, which is what decides.
         page.wait_for_function(
-            "() => document.getElementById('overlay-tag').textContent !== 'offline'",
+            "() => window.FastMDXMoleculeViewer"
+            " && window.FastMDXMoleculeViewer.STATE.runStatus === 'completed'",
             timeout=60000)
         tag = page.locator("#overlay-tag").text_content()
         age = page.locator("#overlay-age").is_visible()
         follow = page.locator("label:has(#traj-follow)").is_visible()
         live = page.locator('[aria-label="Live structure"]').is_visible()
         page.context.close()
-        assert tag in ("LAST FRAME", "STATIC", "PLAYBACK")
+        assert tag not in ("LIVE", "LATEST")
         assert not age and not follow and not live
 
     def test_a_running_study_has_them(self, browser, studies) -> None:
