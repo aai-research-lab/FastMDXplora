@@ -3996,6 +3996,19 @@ body[data-theme="paper"] { --text-muted: #61616b; }
 .research-dock-head { min-height: 44px; padding-bottom: 12px; border-bottom: 1px solid var(--border-primary); }
 .research-bookmarks-panel { top: 16px; bottom: 16px; max-height: none; padding: 24px; border-radius: 12px; }
 .research-bookmarks-panel .card-header { position: sticky; top: -24px; background: var(--background-primary); padding: 16px 0; z-index: 1; }
+.research-bookmarks-panel .builder-field { flex-direction: column; align-items: stretch; }
+#research-title, #research-note, #research-search {
+    box-sizing: border-box; width: 100%; min-width: 0;
+    font: inherit; color: var(--text-primary); background: var(--background-primary);
+    border: 1px solid var(--border-primary); border-radius: 6px; padding: 0.5rem;
+}
+#research-note { min-height: 6rem; resize: vertical; }
+#research-title::placeholder, #research-note::placeholder, #research-search::placeholder {
+    color: var(--text-muted); opacity: 1;
+}
+#research-title:focus-visible, #research-note:focus-visible, #research-search:focus-visible {
+    outline: var(--focus-ring); outline-offset: 2px;
+}
 .agent-context-review { margin-bottom: 12px; border: 1px solid var(--border-primary); border-radius: 8px; padding: 10px 12px; background: var(--background-secondary); }
 .agent-context-review summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-primary); }
 #agent-context-summary { display: block; margin: 4px 0 0 16px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }

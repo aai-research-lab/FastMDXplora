@@ -721,3 +721,24 @@ verify behavior and layout within their explicit scope, not real-account expiry,
 account switching or other subscription providers. Ruff with the existing E501
 exception and diff whitespace checks passed. Remaining integrated acceptance
 and native visual inspection gates are still tracked in M7/M8.
+
+### Native Paper review and bookmark field usability correction
+
+Native review of the installed completed 1L2Y study at 1280 x 720 showed a
+visible molecular cartoon, legible playback controls, readable RMSD axes/range
+controls and contextual actions, and a coherent export dialog with its fixed
+action area. Historical RMSF ambiguity was disclosed instead of mapped to a
+false residue. The review found an actual bookmark-panel usability gap: title,
+note and search fields retained narrow browser-default sizes within a wider
+panel. Dashboard-only CSS now stretches these fields to the available width,
+uses theme text/background/border tokens, enlarges the vertically resizable note
+area and supplies clear keyboard focus and placeholder styles. No scientific
+values, state serialization or report styles changed.
+
+The populated/missing-image/import-preview, whole-dashboard bookmark shell and
+200% text-size regression selection passed (9 passed in 71.19 s) across all
+three themes. Native screenshots captured the pre-correction field issue;
+post-correction installed rendering and the final wheel remain to be verified.
+A `7e9f439` wheel built successfully using isolated build dependencies; an
+initial no-build-isolation attempt failed because this venv lacked bdist_wheel.
+That earlier wheel precedes this CSS correction and is not the final artifact.
