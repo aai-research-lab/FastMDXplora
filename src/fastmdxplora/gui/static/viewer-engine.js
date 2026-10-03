@@ -673,7 +673,8 @@
         return [Object.assign({type, typeParams: {sizeFactor: this.representation === "sticks"
           ? 0.18 : 0.3, ignoreHydrogens}}, colour)];
       }
-      return [Object.assign({type, typeParams: type === "line" ? {ignoreHydrogens} : {}}, colour)];
+      return [Object.assign({type, typeParams: type === "line" || type === "spacefill"
+        ? {ignoreHydrogens} : {}}, colour)];
     }
 
     colourProps() {

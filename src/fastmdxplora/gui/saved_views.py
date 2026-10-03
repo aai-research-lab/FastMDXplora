@@ -26,6 +26,8 @@ MOST_VIEWS = 50
 
 _NAME = re.compile(r"^[^\x00-\x1f\x7f]{1,60}$")
 _WORD = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+# A colouring is a word, or one of the study's results ("result:rmsf").
+_COLOURING = re.compile(r"^(result:)?[A-Za-z0-9_-]{1,40}$")
 _SHOWN = ("protein", "ligand", "pocket", "water", "ions", "hydrogens", "box")
 _LOCK = threading.Lock()
 
@@ -113,8 +115,8 @@ def _checked(view: Any) -> dict[str, Any] | None:
     frame = view.get("frame")
     if isinstance(frame, int) and not isinstance(frame, bool) and 0 <= frame < 10_000_000:
         clean["frame"] = frame
-    for key in ("representation", "colour"):
-        if isinstance(view.get(key), str) and _WORD.match(view[key]):
+    for key, word in (("representation", _WORD), ("colour", _COLOURING)):
+        if isinstance(view.get(key), str) and word.match(view[key]):
             clean[key] = view[key]
     shown = view.get("shown")
     if isinstance(shown, dict):

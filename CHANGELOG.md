@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Spheres, and a result's colouring kept in a view
+
+**The Viewer's representations include Spheres** (Mol\*'s spacefill, without
+hydrogens unless they are shown), which the engine had and the list did not.
+**A view saved while the molecule is coloured by one of the study's results
+keeps that colouring**: its name, `result:rmsf` and the like, was not a word
+the views accepted, so the view was saved without it.
+
 ### The lab's name and copyright
 
 The README, the documentation and the GUI's Cite page give the copyright as

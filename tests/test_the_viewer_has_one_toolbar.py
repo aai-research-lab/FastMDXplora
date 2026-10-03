@@ -60,7 +60,7 @@ class TestTheMarkup:
     def test_drawn_and_coloured_are_lists(self):
         controls = _viewer_controls()
         assert "data-rep=" not in controls and 'data-color="' not in controls
-        assert re.findall(r'<select id="viewer-rep"[\s\S]*?</select>', controls)[0].count("<option") == 6
+        assert re.findall(r'<select id="viewer-rep"[\s\S]*?</select>', controls)[0].count("<option") == 7
         assert re.findall(r'<select id="viewer-color"[\s\S]*?</select>', controls)[0].count("<option") == 6
 
 

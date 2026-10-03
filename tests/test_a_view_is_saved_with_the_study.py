@@ -61,6 +61,15 @@ def test_values_out_of_range_are_left_out(tmp_path):
     assert views_of(tmp_path)["views"] == [{"name": "v", "camera": CAMERA, "shown": {}}]
 
 
+def test_a_result_colouring_is_kept(tmp_path):
+    """The colouring by one of the study's results is named "result:<key>",
+    which a view did not keep."""
+    save_view(tmp_path, "v", {"camera": CAMERA, "colour": "result:rmsf"})
+    save_view(tmp_path, "w", {"camera": CAMERA, "colour": "result:rm sf"})
+    kept = {view["name"]: view.get("colour") for view in views_of(tmp_path)["views"]}
+    assert kept == {"v": "result:rmsf", "w": None}
+
+
 def test_a_study_keeps_so_many(tmp_path):
     for i in range(MOST_VIEWS):
         assert save_view(tmp_path, f"v{i}", {"camera": CAMERA})["ok"]
