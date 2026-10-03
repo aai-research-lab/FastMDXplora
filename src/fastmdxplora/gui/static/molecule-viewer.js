@@ -668,6 +668,7 @@
       // The atoms picked to measure, rendered so the person sees what they picked.
       picks: mini ? null : STATE.picks.map((pick) => pick.index),
       selected: mini || !STATE.selection ? null : STATE.selection.atoms,
+      selections: mini ? null : (window.FastMDXSelections?.forScene() || null),
     };
   }
 
@@ -1889,7 +1890,19 @@
       return;
     }
     // Its residue selected, as in the sequence, and the atom clicked named.
-    window.FastMDXSequence?.atomClicked(atom, modifiers);
+    if (!window.FastMDXSequence?.atomClicked(atom, modifiers) && STATE.engine) {
+      // A residue the sequence does not list (a ligand, a water, an ion).
+      const residue = {chain: atom.chain || "", resi: atom.resi, icode: atom.icode || "",
+                       resn: atom.resn || ""};
+      const own = STATE.engine.atomsOfResidues([[residue.chain, residue.resi, residue.icode,
+                                                 residue.resn]]);
+      const adding = modifiers && (modifiers.shift || modifiers.control || modifiers.meta);
+      const atoms = adding && STATE.selection
+        ? [...new Set([...STATE.selection.atoms, ...own])].sort((a, b) => a - b) : own;
+      selectAtoms(atoms, {residues: adding && STATE.selection
+        ? [...STATE.selection.residues, residue] : [residue]});
+      window.FastMDXSequence?.markAtoms(atoms);
+    }
     updateSelectionPanel(atom);
     void showSelectionFor(atom);
   }
@@ -1900,8 +1913,29 @@
   /* Residues selected in the sequence or clicked in the structure: marked
    * in the structure (Mol*'s selection), and one residue named as a click
    * names it, with its selection as the analyses read it. */
+  /** Atoms selected otherwise: by a selection typed or named, or a residue
+   * the sequence does not list. */
+  function selectAtoms(atoms, options) {
+    STATE.selection = atoms.length ? {residues: options?.residues || [], atoms,
+      expression: options?.expression || null} : null;
+    STATE.engine?.showSelected(atoms).catch((error) => console.debug("selection not marked", error));
+    window.dispatchEvent(new CustomEvent("dashboard:selection-changed"));
+  }
+
+  /** What the Viewer renders, named so that atoms found in it are known to
+   * be its own: the model, its atoms, and the file they came from. */
+  function modelSignature() {
+    const model = STATE.model;
+    if (!model) return "";
+    const source = model.of === "frames" ? STATE.playbackSignature
+      : (model.of === "structure" ? `${STATE.structureUrl}|${needsFullTopology()}`
+        : STATE.liveFrameIndex);
+    return `${model.of}|${model.atoms}|${source}`;
+  }
+
   function selectResidues(residues, atoms, options) {
     STATE.selection = residues.length ? {residues, atoms} : null;
+    window.dispatchEvent(new CustomEvent("dashboard:selection-changed"));
     const engine = STATE.engine;
     if (engine) {
       engine.showSelected(atoms).catch((error) => console.debug("selection not marked", error));
@@ -2444,6 +2478,10 @@
     measurements,
     pick: addPick,
     selectResidues,
+    selectAtoms,
+    modelSignature,
+    needsFullTopology,
+    restyle: restyleViewers,
     // The atoms a selection names, as the engine reads them, for the tests.
     atoms: (selection) => (STATE.engine ? STATE.engine.find(selection || {}) : []),
     // What the colours and the cartoon are made from, for the tests.

@@ -274,6 +274,10 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",
+            # The atoms a typed selection names in what the Viewer renders,
+            # and the selections named with the study; naming one is a POST,
+            # answered on loopback only.
+            "/api/viewer-atoms", "/api/viewer-selections",
             # The methods paragraphs, as the report gives them.
             "/api/methods",
             # What a study run until it knows has judged: the same means

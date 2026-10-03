@@ -852,6 +852,23 @@
                   </div>
                   <p class="viewer-colour-said muted small" id="viewer-colour-said" hidden></p>
               </details>
+              <!-- Selections: typed in MDTraj's language, or made in the
+                   sequence and the structure, then named, coloured, shown
+                   or hidden, represented and labelled (viewer-selections.js). -->
+              <details class="side-section" id="side-selections" open>
+                <summary>Selections</summary>
+                <form class="sel-type" id="sel-form" autocomplete="off">
+                  <label class="sr-only" for="sel-expression">Select atoms by an MDTraj selection</label>
+                  <input type="text" id="sel-expression" class="mono" spellcheck="false" maxlength="500" placeholder="resSeq 10 to 25 and backbone" title="MDTraj's selection language, as a Config writes it: resSeq, chainid, resname, name, protein, backbone, water ...">
+                  <button type="submit" class="chip-btn">Select</button>
+                </form>
+                <p class="muted small sel-said" id="sel-said" role="status"></p>
+                <div class="sel-naming">
+                  <input type="text" id="sel-name" maxlength="40" aria-label="Name for the selection" placeholder="sele1">
+                  <button type="button" class="chip-btn" id="sel-keep" disabled title="Name the residues or atoms selected, and keep them with the study">Name it</button>
+                </div>
+                <ul class="sel-list" id="sel-list" aria-label="Selections named"></ul>
+              </details>
               <details class="side-section" id="side-ligand" open>
                 <summary>Ligand</summary>
                   <div class="control-row" id="ligand-tools" hidden>
@@ -1337,6 +1354,7 @@
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/viewer-sequence.js"></script>
+  <script src="/static/viewer-selections.js"></script>
   <script src="/static/frame-series.js"></script>
   <script src="/static/frame-interactions.js"></script>
   <script src="/static/viewer-views.js"></script>

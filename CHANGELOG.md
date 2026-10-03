@@ -7,6 +7,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Selections, named and shown
+
+**The Viewer selects, names, colours, hides, represents and labels atoms,
+as PyMOL does, and keeps the selections with the study.** A selection typed
+in MDTraj's language, the one a Config writes, is read by MDTraj in the
+very structure the Viewer renders, so its atoms are those shown, by their
+place in that file. What is selected, typed or in the sequence or clicked in
+the structure (a ligand too), is named and listed in the panel: each with
+its colour, painted over every representation of its atoms, an eye that
+hides them wherever they are rendered, a representation of its own (sticks,
+spheres, lines, a surface or a cartoon), labels for its residues, and
+buttons to select it again, centre on it and forget it. The selections are
+kept in the study (`viewer_selections.json`) and found again in whatever the
+Viewer renders, the structure with its solvent or without, or the frames:
+residues by their chains, numbers and names, and a typed selection by MDTraj
+reading it again.
+
 ### The sequence above the molecule
 
 **The Viewer shows the sequence of each chain above the molecule, numbered

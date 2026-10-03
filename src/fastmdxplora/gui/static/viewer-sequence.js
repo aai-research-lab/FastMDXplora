@@ -307,7 +307,8 @@
   }
 
   function clear() {
-    if (!state.selected.size) return;
+    var v = viewer();
+    if (!state.selected.size && !(v && v.STATE && v.STATE.selection)) return;
     state.selected.clear();
     state.anchor = null;
     tell(true);
@@ -503,6 +504,19 @@
     return true;
   }
 
+  /** The residues holding any of these atoms marked as selected, the page
+   * having selected the atoms itself. */
+  function markAtoms(atoms, said) {
+    state.selected.clear();
+    (atoms || []).forEach(function (index) {
+      var k = residueOfAtom(index);
+      if (k != null) state.selected.add(k);
+    });
+    state.anchor = null;
+    mark();
+    say(said);
+  }
+
   function atomHovered(atom) {
     var k = atom ? residueOfAtom(atom.index) : null;
     if (state.hovered === k) return;
@@ -537,7 +551,7 @@
   else wire();
 
   window.FastMDXSequence = {
-    state: state, refresh: refresh, clear: clear, atomClicked: atomClicked,
+    state: state, refresh: refresh, clear: clear, atomClicked: atomClicked, markAtoms: markAtoms,
     atomHovered: atomHovered, codeOf: codeOf,
     /** Select residues by their positions in the lines, for the tests. */
     select: function (ks) {

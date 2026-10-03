@@ -30,6 +30,25 @@
   /* The residues selected: thin sticks, the sequence's green. */
   const SELECTED = [{type: "ball-and-stick", typeParams: {sizeFactor: 0.2, ignoreHydrogens: true},
     color: "uniform", colorParams: {value: 0x3ddc84}}];
+  /* A selection's own representation, as the page names it. */
+  function selectionRepresentation(name, ignoreHydrogens) {
+    switch (name) {
+      case "sticks": return {type: "ball-and-stick",
+        typeParams: {sizeFactor: 0.3, sizeAspectRatio: 0.73, ignoreHydrogens},
+        color: "element-symbol"};
+      case "spheres": return {type: "spacefill", typeParams: {ignoreHydrogens},
+        color: "element-symbol"};
+      case "lines": return {type: "line", typeParams: {ignoreHydrogens}, color: "element-symbol"};
+      case "surface": return {type: "molecular-surface", typeParams: {alpha: 0.7},
+        color: "element-symbol"};
+      case "cartoon": return {type: "cartoon", color: "chain-id"};
+      default: return null;
+    }
+  }
+  /* Each residue of a selection named, beside it. */
+  const SELECTION_LABEL = {type: "label", typeParams: {level: "residue", textSize: 1.1,
+    background: true, backgroundColor: 0x1f2328, backgroundOpacity: 0.7, backgroundMargin: 0.15,
+    offsetZ: 4}, color: "uniform", colorParams: {value: 0xffffff}};
   /* Terminal caps, as ligand_detection.py names them. */
   const CAPS = ["ACE", "NME", "NHE", "NH2", "FOR", "NMA"];
 
@@ -471,6 +490,16 @@
             offsetZ: 6},
           color: "uniform", colorParams: {value: 0x050505}}]);
       }
+      // The selections named: each its own representation and labels, as
+      // it asks; its colour and whether it is hidden are painted below.
+      const named = s.mini || !Array.isArray(s.selections) ? [] : s.selections;
+      for (let i = 0; i < named.length; i += 1) {
+        const one = named[i];
+        if (!one.shown || !Array.isArray(one.atoms) || !one.atoms.length) continue;
+        const shape = selectionRepresentation(one.representation, ignoreHydrogens);
+        if (shape) await add(`selection-${i}`, one.atoms, [shape]);
+        if (one.labelled) await add(`selection-${i}-labels`, one.atoms, [SELECTION_LABEL]);
+      }
       if (Array.isArray(s.selected) && s.selected.length && !s.mini) {
         this.components.selected = await add("selected", s.selected, SELECTED);
       }
@@ -483,6 +512,7 @@
           textSize: 0.7, offsetZ: 1.5}, color: "uniform", colorParams: {value: 0xffffff}}]);
       }
       await this.showBox(!!show.box && !s.mini);
+      await this.paintSelections(named);
       this.rendered = rendered;
       if (view) this.restoreCamera(view);
       else this.fit();
@@ -549,6 +579,59 @@
     }
 
     /** Atoms by their indices as a selection Mol* keeps across frames. */
+    /** The selections' colours over every representation that shows their
+     * atoms, and the hidden ones made wholly transparent there: Mol*'s
+     * overpaint and transparency, layer on layer in the selections' order,
+     * so a later selection's colour is the one seen where two overlap. The
+     * page's own marks (the atoms picked, the selection, labels) are left
+     * as they are. */
+    async paintSelections(selections) {
+      const list = (selections || []).filter((one) => Array.isArray(one.atoms) && one.atoms.length);
+      const colours = list.filter((one) => one.shown && one.colour != null)
+        .map((one) => ({bundle: this.bundleOf(one.atoms), color: one.colour, clear: false}));
+      const hidden = list.filter((one) => !one.shown)
+        .map((one) => ({bundle: this.bundleOf(one.atoms), value: 1}));
+      if (!colours.length && !hidden.length) return;
+      const T = this.lib.plugin.StateTransforms.Representation;
+      const structures = this.plugin.managers.structure.hierarchy.current.structures;
+      const main = structures.find((one) => one.cell.transform.ref === this.mainRef);
+      if (!main) return;
+      const update = this.plugin.build();
+      for (const component of main.components) {
+        const key = String(component.key || "");
+        if (/fastmdx-(picks|selected|focus|labels|interaction)|-labels$/.test(key)) continue;
+        for (const representation of component.representations) {
+          const ref = representation.cell.transform.ref;
+          if (colours.length) {
+            update.to(ref).apply(T.OverpaintStructureRepresentation3DFromBundle,
+              {layers: colours}, {tags: "fastmdx-paint"});
+          }
+          if (hidden.length) {
+            update.to(ref).apply(T.TransparencyStructureRepresentation3DFromBundle,
+              {layers: hidden}, {tags: "fastmdx-paint"});
+          }
+        }
+      }
+      await update.commit();
+    }
+
+    /** The atoms of these residues, each named [chain, number, insertion
+     * code, name], in the structure shown. */
+    atomsOfResidues(residues) {
+      const wanted = new Set((residues || []).map((r) => `${r[0]}|${r[1]}|${r[2]}|${r[3]}`));
+      if (!wanted.size) return [];
+      const SP = this.lib.structure.StructureProperties;
+      const found = [];
+      this.forEachAtom((location) => {
+        const key = `${String(SP.chain.auth_asym_id(location)).trim()}|`
+          + `${SP.residue.auth_seq_id(location)}|`
+          + `${String(SP.residue.pdbx_PDB_ins_code(location) || "").trim()}|`
+          + `${SP.atom.auth_comp_id(location)}`;
+        if (wanted.has(key)) found.push(location.element);
+      });
+      return found;
+    }
+
     bundleOf(indices) {
       return this.lib.structure.StructureElement.Bundle.fromLoci(this.lociOf(indices));
     }

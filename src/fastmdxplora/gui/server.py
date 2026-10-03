@@ -144,7 +144,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
-    "/api/views",
+    "/api/views", "/api/viewer-atoms", "/api/viewer-selections",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb", "/structure/live-frame.dcd",
@@ -819,6 +819,21 @@ def make_handler(
 
                 self._send_json(views_of(root))
                 return
+            if path == "/api/viewer-atoms":
+                # The atoms a typed selection names in what the Viewer renders.
+                from fastmdxplora.gui.viewer_selections import atoms_selected
+
+                query = parse_qs(parsed.query)
+                one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+                pdb, key = _viewer_structure(root, one("of"),
+                                             with_solvent=one("solvent").lower() in {"1", "true"})
+                self._send_json(atoms_selected(pdb, one("expression"), key=key))
+                return
+            if path == "/api/viewer-selections":
+                from fastmdxplora.gui.viewer_selections import selections_of
+
+                self._send_json(selections_of(root))
+                return
             if path == "/api/interactions-over-frames":
                 from fastmdxplora.gui.interactions_over_frames import interactions_over_frames
 
@@ -851,6 +866,20 @@ def make_handler(
                 self._refuse_beyond_loopback()
                 return
             payload = self._read_json_body()
+            if path == "/api/viewer-selections":
+                # A selection of the Viewer named in the study, or forgotten.
+                from fastmdxplora.gui.viewer_selections import delete_selection, save_selection
+
+                study = app_runtime.data_root()
+                if not is_study(study):
+                    self._send_json({"ok": False, "reason": "No study is open to save it in."})
+                    return
+                if payload.get("action") == "delete":
+                    self._send_json(delete_selection(study, payload.get("name")))
+                else:
+                    self._send_json(save_selection(study, payload.get("name"),
+                                                   payload.get("selection")))
+                return
             if path == "/api/views":
                 # A view of the Viewer saved with the study, or forgotten.
                 from fastmdxplora.gui.saved_views import delete_view, save_view
@@ -1409,10 +1438,8 @@ def make_handler(
             # the prepared solute kept the file small but omitted the ligand,
             # which is put back only when the system is built, so a ligand run
             # drew a bare protein and said nothing about the absence.
-            target = find_system(root)
-            if target is None or not target.is_file():
-                target = find_structure(root)
-            if target is None or not target.is_file():
+            target = _structure_file(root)
+            if target is None:
                 self.send_error(404, "Structure not found")
                 return
             # Water and ions on request only. The viewer's Water and Ions
@@ -1971,6 +1998,38 @@ def _display_structure_cached(path_string: str, _mtime_ns: int, _size: int) -> b
     # unusual file rather than a solvent box. Send it as written rather than
     # sending nothing.
     return filtered.encode("utf-8") if filtered.strip() else target.read_bytes()
+
+
+def _structure_file(root: Path) -> Path | None:
+    """The structure the Viewer is sent: the system simulated, else the
+    structure the study started from."""
+    target = find_system(root)
+    if target is None or not target.is_file():
+        target = find_structure(root)
+    return target if target is not None and target.is_file() else None
+
+
+def _viewer_structure(root: Path, of: str, *, with_solvent: bool
+                      ) -> tuple[bytes | None, tuple[str, int, int]]:
+    """A structure the Viewer renders, as it was sent, and what names that
+    version of it: ``of`` is "frames" (the frames' topology), "live" (the
+    live frame) or the structure, with its solvent or without."""
+    if of == "frames":
+        target: Path | None = root / "simulation" / "frames_topology.pdb"
+    elif of == "live":
+        target = root / "simulation" / "live_frame.pdb"
+    else:
+        target = _structure_file(root)
+    if target is None:
+        return None, ("", 0, 0)
+    try:
+        stat = target.stat()
+        data = (target.read_bytes() if of in ("frames", "live") or with_solvent
+                else _display_structure_bytes(target))
+    except OSError:
+        return None, ("", 0, 0)
+    key = (f"{target.resolve()}|{of}|{with_solvent}", int(stat.st_mtime_ns), int(stat.st_size))
+    return data, key
 
 
 def _display_structure_bytes(target: Path) -> bytes:
