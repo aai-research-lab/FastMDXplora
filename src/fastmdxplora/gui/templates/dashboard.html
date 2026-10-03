@@ -79,7 +79,9 @@
           <button id="agent-connected-reconnect" type="button" class="ghost-btn" disabled>Reconnect selected account</button>
           <button id="agent-connected-disconnect" type="button" class="ghost-btn" disabled>Disconnect selected account</button>
         </section>
+        <section aria-label="API key or local server">
         <h3>API key or local server</h3>
+        <p class="builder-card-note">Use this section only to switch to an API key or local server. For Codex subscription access, use the account and model button above.</p>
         <div class="builder-grid builder-grid-2">
           <label class="builder-field">
             <span class="builder-label">Provider</span>
@@ -124,9 +126,8 @@
             <p class="builder-card-note" id="agent-budget-note"></p>
           </label>
         </div>
-      </div>
-      <div class="agent-dialog-foot">
-        <button id="agent-save-model" class="primary-btn">Save</button>
+        <button id="agent-save-model" type="button" class="primary-btn">Use API key or local server</button>
+        </section>
       </div>
     </div>
   </dialog>

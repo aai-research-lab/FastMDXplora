@@ -879,3 +879,24 @@ harness while retaining its actual residue and viewer assertions. Scientific
 values and source structures were not changed. Ruff and diff checks pass.
 These additional changes postdate the 7405f99 wheel; their installed acceptance
 requires the next build. M7/M8 and the full framework remain open.
+
+### Connected subscription overridden by ambiguous Save, 2026-10-03
+
+The user's live Agent showed a missing API-key error despite a connected
+ChatGPT account. Settings showed Anthropic as the active engine while retaining
+the ChatGPT account/model controls. Selecting "Use this account and model"
+restored GPT-6 Luna with the user's displayed max reasoning choice. A native
+message then completed successfully. The model appropriately did not claim
+to independently verify authentication; the selected route is application state.
+No new key or credential was entered or copied, and no simulation was run.
+
+The generic global Save action previously selected the API route. It is now
+explicitly labelled "Use API key or local server" and placed in that section,
+with guidance to apply Codex choices using the subscription button. The error
+message explains the selected API route and the subscription alternative.
+Seven targeted checks pass in 19.69 s, including subscription apply with
+reasoning in three themes, no API write on apply/Close, dialog keyboard layout
+and missing-key guidance. Ruff passes for the updated boundary tests. Eight
+pre-existing import-order/module-placement findings in test_the_agent_panel.py
+were also reproduced from HEAD; no unrelated reformatting was made.
+Installed acceptance of these new settings labels remains pending.

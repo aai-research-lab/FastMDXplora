@@ -313,6 +313,66 @@ def test_settings_engine_tracks_selected_subscription_and_refreshes_on_open(tmp_
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_subscription_apply_does_not_save_api_route(tmp_path, monkeypatch, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "isolated-settings"))
+    server, url = start_test_server(_write_study(tmp_path / "study"))
+    state = {"ok": True, "selection": "api", "active": "fixture", "status": "idle",
+             "accounts": [{"id": "fixture", "provider": "openai-chatgpt", "label": "Test account",
+                           "model": "gpt-6-luna", "reasoning": "default", "connected": True}]}
+    selected = []
+    api_writes = []
+
+    def connection(route):
+        payload = route.request.post_data_json
+        if payload["action"] == "models":
+            route.fulfill(json={"ok": True, "models": [{"id": "gpt-6-luna", "label": "GPT-6 Luna",
+                                                      "reasoning_levels": ["low", "medium", "high"]}]})
+            return
+        if payload["action"] == "select":
+            selected.append(payload)
+            state["selection"] = "subscription"
+            state["accounts"][0]["reasoning"] = payload["reasoning"]
+        route.fulfill(json=state)
+
+    def api(route):
+        payload = route.request.post_data_json
+        if payload.get("provider"):
+            api_writes.append(payload)
+        route.fulfill(json={"ok": True, "current": None, "providers": []})
+
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.route("**/api/agent/connections", connection)
+            page.route("**/api/agent/model", api)
+            page.goto(url + "/#agent")
+            page.locator("#agent-settings-open").click()
+            apply_subscription = page.get_by_role("button", name="Use this account and model", exact=True)
+            playwright.expect(apply_subscription).to_be_enabled()
+            page.locator("#agent-reasoning").press("End")
+            apply_subscription.click()
+            playwright.expect(page.locator("#agent-model-current")).to_contain_text("ChatGPT subscription")
+            assert selected[-1]["reasoning"] == "high"
+            assert not api_writes
+            api_section = page.get_by_role("region", name="API key or local server", exact=True)
+            playwright.expect(api_section.get_by_role("button", name="Use API key or local server", exact=True)).to_be_visible()
+            assert page.get_by_role("button", name="Save", exact=True).count() == 0
+            page.get_by_role("button", name="Close", exact=True).click()
+            assert state["selection"] == "subscription"
+            assert not api_writes
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
 def test_column_and_file_splitters_resize_with_keyboard_and_keep_sources(tmp_path, monkeypatch, theme):
     import hashlib
     playwright = pytest.importorskip("playwright.sync_api")

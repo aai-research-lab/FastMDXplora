@@ -997,7 +997,7 @@ class TestTheModelsComeFromTheProvider(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn("API key required. Open Settings and paste one.",
+        self.assertIn("The selected API model has no key. Open Settings and use your connected subscription account and model, or configure an API key or local server.",
                       script)
 
 

@@ -9,6 +9,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+Agent settings replaces the ambiguous global Save button with an explicit
+"Use API key or local server" action inside that section. Subscription model
+and reasoning choices use their own account button. Missing API credentials
+now explains how to choose an existing subscription instead of requiring a key.
+
 Settings now shows the selected subscription model and reasoning level, including
 reconnect status, and refreshes when opened. Dashboard column and file-list
 splitters support keyboard resizing with visible focus and persisted sizes.

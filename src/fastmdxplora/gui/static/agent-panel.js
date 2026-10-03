@@ -48,7 +48,7 @@
     "environment.model.unset":
       "No model set yet. Open Settings and choose one.",
     "environment.credentials.absent":
-      "API key required. Open Settings and paste one."
+      "The selected API model has no key. Open Settings and use your connected subscription account and model, or configure an API key or local server."
   };
 
   function el(id) { return document.getElementById(id); }
@@ -1263,6 +1263,8 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    // The running server may still cache an older HTML shell after a UI update.
+    el("agent-save-model").textContent = "Use API key or local server";
     restore();
     /* Start fresh: the thread on screen is already saved and stays in
      * the list. Nothing is lost, so nothing is confirmed. */
