@@ -70,15 +70,9 @@
       var saved=accounts.filter(function(row){return row.id === selected;})[0];
       el("agent-connected-check").hidden = !saved || saved.provider !== "openai-chatgpt";
       if (saved && saved.provider === "openai-chatgpt") {
-        var missing = [];
-        [{id:"gpt-6.1-sol", label:"GPT-6.1 Sol"}, {id:"gpt-6-sol", label:"GPT-6 Sol"}, {id:"gpt-6-luna", label:"GPT-6 Luna"}].forEach(function(row) {
-          if ((data.models || []).some(function(available){return available.id === row.id;})) return;
-          var option = document.createElement("option"); option.value = row.id;
-          option.textContent = row.label + " — not listed; check access"; option.disabled = true;
-          el("agent-connected-model").appendChild(option); missing.push(row.label);
-        });
-        el("agent-connected-model-help").textContent = missing.length
-          ? "Not listed: " + missing.join(", ") + ". Check model access sends a short test to each model through your subscription."
+        var unchecked = modelRows.filter(function(row){return row.access_status === "unchecked";}).map(function(row){return row.label;});
+        el("agent-connected-model-help").textContent = unchecked.length
+          ? "Access not checked recently: " + unchecked.join(", ") + ". Applying an unchecked choice sends a short subscription test first; a failed test keeps your current model."
           : "Models available to your connected ChatGPT account.";
         var order = ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"];
         Array.from(el("agent-connected-model").options).sort(function(a,b){
@@ -86,8 +80,7 @@
           return (left<0 ? order.length : left) - (right<0 ? order.length : right);
         }).forEach(function(option){el("agent-connected-model").appendChild(option);});
       }
-      // Keep the saved choice visible even when its access receipt has expired.
-      // A disabled choice cannot be applied until the user verifies access.
+      // Keep the saved choice and its reasoning controls when a check expires.
       if(saved && Array.from(el("agent-connected-model").options).some(function(option){return option.value === saved.model;})) el("agent-connected-model").value=saved.model;
       el("agent-connected-use").disabled = !el("agent-connected-model").value || el("agent-connected-model").selectedOptions[0].disabled;
       loadReasoning();
@@ -166,7 +159,7 @@
     el("agent-reasoning").addEventListener("input", reasoningChanged);
     el("agent-connected-refresh").addEventListener("click", loadModels);
     el("agent-connected-check").addEventListener("click", function() {
-      el("agent-connected-check").disabled = true; status("Checking the three GPT-6 models through your subscription…");
+      el("agent-connected-check").disabled = true; status("Checking Astra, Sol 6.1, Sol 6 and Luna 6 through your subscription…");
       post({action:"check-model-access", account:el("agent-connected-account").value}).then(function(data) {
         status("Verified: " + (data.verified.join(", ") || "none") + (data.unavailable.length ? ". Not verified: " + data.unavailable.join(", ") : ""));
         return loadModels();

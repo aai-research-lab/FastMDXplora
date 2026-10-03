@@ -8,13 +8,21 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-from fastmdxplora.agent.credential_vault import CredentialVault, VaultError
-from fastmdxplora.agent.oauth_transactions import AuthorizationAttempt, AuthorizationError
 from fastmdxplora.agent import openai_plan
+from fastmdxplora.agent.claude_plan import ClaudePlan, unmanaged_host
+from fastmdxplora.agent.claude_plan import executable as claude_executable
+from fastmdxplora.agent.credential_vault import CredentialVault, VaultError
+from fastmdxplora.agent.gemini_plan import GeminiPlan
+from fastmdxplora.agent.gemini_plan import executable as gemini_executable
+from fastmdxplora.agent.kimi_plan import KimiPlan
+from fastmdxplora.agent.kimi_plan import executable as kimi_executable
+from fastmdxplora.agent.oauth_transactions import AuthorizationAttempt, AuthorizationError
 from fastmdxplora.agent.reasoning import decorate, validate
-from fastmdxplora.agent.claude_plan import ClaudePlan, executable as claude_executable, unmanaged_host
-from fastmdxplora.agent.kimi_plan import KimiPlan, executable as kimi_executable
-from fastmdxplora.agent.gemini_plan import GeminiPlan, executable as gemini_executable
+
+OPENAI_PUBLISHED = {
+    "gpt-6-astra": "GPT-6 Astra", "gpt-6.1-sol": "GPT-6.1 Sol",
+    "gpt-6-sol": "GPT-6 Sol", "gpt-6-luna": "GPT-6 Luna",
+}
 
 
 class ProviderConnections:
@@ -282,18 +290,18 @@ class ProviderConnections:
 
     def _openai_models(self, account):
         choices = self.catalog(account["access_token"])
-        for model, checked_at in account.get("verified_models", {}).items():
-            if (model in {"gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"}
-                    and time.time() - checked_at < 3600
-                    and model not in {row["id"] for row in choices}):
-                labels = {"gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6-sol": "GPT-6 Sol", "gpt-6-luna": "GPT-6 Luna"}
-                choices.append({"id": model, "label": labels[model] + " (access verified)"})
+        listed = {row["id"] for row in choices}
+        for model, label in OPENAI_PUBLISHED.items():
+            if model not in listed:
+                checked_at = account.get("verified_models", {}).get(model, 0)
+                choices.append({"id": model, "label": label,
+                                "access_status": "verified" if time.time() - checked_at < 3600 else "unchecked"})
         return choices
 
     def check_model_access(self, account_id):
         """Explicit, tool-free inference checks for the requested published models."""
         verified, unavailable = [], []
-        for model in ("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"):
+        for model in OPENAI_PUBLISHED:
             with self.vault.locked():
                 record = self.vault.read()
                 account = self._account(record, account_id)
@@ -328,6 +336,12 @@ class ProviderConnections:
                 raise openai_plan.ConnectionError("Choose a model from the selected account's current catalog.")
             row = next(row for row in decorate(account.get("provider", "openai-chatgpt"), choices) if row["id"] == model)
             validate(reasoning, row["reasoning_levels"])
+            if account.get("provider", "openai-chatgpt") == "openai-chatgpt" and row.get("access_status") == "unchecked":
+                # A missing catalog entry is not an entitlement denial. Check
+                # this published choice before changing the saved selection.
+                openai_plan.complete(account["access_token"], model,
+                                     "Reply exactly: Model access verified.", reasoning=reasoning)
+                account.setdefault("verified_models", {})[model] = time.time()
             account["model"] = model
             account["reasoning"] = reasoning
             account.setdefault("reasoning_by_model", {})[model] = reasoning

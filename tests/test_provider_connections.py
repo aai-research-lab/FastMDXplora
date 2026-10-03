@@ -54,7 +54,7 @@ def test_local_callback_stores_verified_account_but_requires_explicit_selection(
 
 def test_account_models_are_verified_and_arbitrary_selection_is_refused(service):
     account_id = finish_sign_in(service)
-    assert service.model_list(account_id)["models"][0]["id"] == "fixture-model"
+    assert "fixture-model" in {row["id"] for row in service.model_list(account_id)["models"]}
     with pytest.raises(ConnectionError, match="catalog"):
         service.select(account_id, "invented-model")
     assert service.snapshot()["active"] is None
@@ -83,7 +83,7 @@ def test_reasoning_is_saved_per_model_and_passed_to_inference(service, monkeypat
 def test_published_models_require_completed_account_inference(service, monkeypatch):
     account_id = finish_sign_in(service)
     observed = []
-    def complete(token, model, prompt):
+    def complete(token, model, prompt, **kwargs):
         observed.append(model)
         assert token == "fixture-access"
         assert prompt == "Reply exactly: Model access verified."
@@ -92,18 +92,20 @@ def test_published_models_require_completed_account_inference(service, monkeypat
         return "Model access verified."
     monkeypatch.setattr("fastmdxplora.agent.openai_plan.complete", complete)
     result = service.check_model_access(account_id)
-    assert result["verified"] == ["gpt-6.1-sol", "gpt-6-sol"]
+    assert result["verified"] == ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol"]
     assert result["unavailable"] == ["gpt-6-luna"]
-    assert observed == ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]
+    assert observed == ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]
     service.select(account_id, "gpt-6.1-sol")
-    with pytest.raises(ConnectionError, match="catalog"):
+    with pytest.raises(ConnectionError, match="refused"):
         service.select(account_id, "gpt-6-luna")
+    assert service.snapshot()["accounts"][0]["model"] == "gpt-6.1-sol"
     with service.vault.locked():
         record = service.vault.read()
         record["accounts"][0]["verified_models"]["gpt-6.1-sol"] = time.time() - 3601
         service.vault.write(record)
-    with pytest.raises(ConnectionError, match="catalog"):
-        service.select(account_id, "gpt-6.1-sol")
+    service.select(account_id, "gpt-6.1-sol", "high")
+    assert observed[-1] == "gpt-6.1-sol"
+    assert service.snapshot()["accounts"][0]["reasoning"] == "high"
 
 
 def test_denied_callback_closes_attempt_but_wrong_state_preserves_it(service):
@@ -366,9 +368,10 @@ def test_dashboard_browser_sign_in_selects_subscription_without_api_key(service,
             page.wait_for_function("document.querySelector('#agent-connected-account').options.length === 2")
             account_id = service.snapshot()["accounts"][0]["id"]
             page.locator("#agent-connected-account").select_option(account_id)
-            page.wait_for_function("document.querySelector('#agent-connected-model').value === 'fixture-model'")
+            page.locator('#agent-connected-model option[value="fixture-model"]').wait_for(state="attached")
+            page.locator("#agent-connected-model").select_option("fixture-model")
             for model in ("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"):
-                assert page.locator(f'#agent-connected-model option[value="{model}"]').evaluate("option => option.disabled")
+                assert not page.locator(f'#agent-connected-model option[value="{model}"]').evaluate("option => option.disabled")
             service.catalog = lambda token: [{"id": "fixture-model", "label": "Fixture model"},
                                             {"id": "gpt-6.1-sol", "label": "GPT-6.1 Sol"},
                                             {"id": "gpt-6-sol", "label": "GPT-6 Sol"},
@@ -377,6 +380,7 @@ def test_dashboard_browser_sign_in_selects_subscription_without_api_key(service,
             page.wait_for_function("(() => {const option = document.querySelector('#agent-connected-model option[value=\"gpt-6.1-sol\"]'); return option && !option.disabled;})()")
             for model in ("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"):
                 assert not page.locator(f'#agent-connected-model option[value="{model}"]').evaluate("option => option.disabled")
+            page.locator("#agent-connected-model").select_option("fixture-model")
             page.locator("#agent-connected-use").click()
             page.wait_for_function("document.querySelector('#agent-model-current').textContent.includes('ChatGPT subscription')")
             assert service.snapshot()["selection"] == "subscription"
@@ -386,8 +390,13 @@ def test_dashboard_browser_sign_in_selects_subscription_without_api_key(service,
             page.wait_for_function("document.querySelector('#agent-model-current').textContent.includes('gpt-6-luna')")
             service.catalog = lambda token: [{"id": "fixture-model", "label": "Fixture model"}]
             page.locator("#agent-connected-refresh").click()
-            page.wait_for_function("document.querySelector('#agent-connected-model').value === 'gpt-6-luna' && document.querySelector('#agent-connected-use').disabled")
-            assert "not listed; check access" in page.locator('#agent-connected-model option:checked').inner_text()
+            page.wait_for_function("document.querySelector('#agent-connected-model').value === 'gpt-6-luna' && !document.querySelector('#agent-connected-use').disabled")
+            assert page.locator('#agent-connected-model option:checked').inner_text() == "GPT-6 Luna"
+            assert page.locator("#agent-reasoning").is_enabled()
+            page.locator("#agent-reasoning").press("Home")
+            for _ in range(3):
+                page.locator("#agent-reasoning").press("ArrowRight")
+            assert page.locator("#agent-reasoning-value").inner_text().lower() == "medium"
             assert service.snapshot()["accounts"][0]["model"] == "gpt-6-luna"
             assert not errors
             browser.close()

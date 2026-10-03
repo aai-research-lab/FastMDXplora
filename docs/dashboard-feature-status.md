@@ -757,3 +757,41 @@ The review server/tab remain available for the next integrated/native checks;
 they use the disposable copy, not the original user study. The pending/failure,
 import and draft matrices provide automated evidence; the native review remains
 partial for other themes/pages/states, and does not prove all dropdown popups.
+
+### Published Codex choices and reasoning controls
+
+The model selector now keeps Astra, Sol 6.1, Sol 6 and Luna 6 available even
+when the subscription catalog omits them or a short access receipt expires.
+Model names stay plain, ordered Astra → Sol 6.1 → Sol 6 → Luna 6 → the rest.
+Verification status is shown separately in help/status text. Applying an
+unchecked published choice performs a tool-free subscription probe before
+changing the saved selection; a failed probe preserves the current model.
+Arbitrary uncatalogued model IDs still fail. The access-check action now probes
+all four models, including Astra. Keeping the rows also keeps documented
+reasoning metadata available, fixing the disabled Luna slider after receipt
+expiry. A changed slider remains pending until the user applies the model.
+
+The updated provider/reasoning selection passed 19 tests in 14.05 s, including
+failed-probe selection preservation, rechecking an expired choice, all four
+model access probes and enabled keyboard-adjustable Luna reasoning in the real
+browser. Existing import ordering was normalized; Ruff with E501 exception and
+diff checks passed. OpenAI Astra/Sol 6.1 model documentation was rechecked on
+2026-10-03; the supported effort values remain model-specific.
+
+A consolidated run started at `35168e0` finished with 168 passed / 1 skipped in
+656.56 s across research views/bundles, clips, audit/provenance, human-review and
+Agent/provider controls. The skip was the missing Windows OpenFF backend, with
+its installed Ubuntu comparison already verified separately. Model-control code
+changed during this broader run, so that run is a baseline consolidated receipt;
+the separate updated 19-test provider/reasoning run covers the later change.
+Do not label the overlapping run an exact-final-revision full release PASS.
+
+Live installed-dashboard access probes succeeded for Sol 6.1, Sol 6 and Luna 6.
+Astra completed a medium-effort reply using the required SAY protocol; its first
+plain connection-test reply failed config/protocol validation and remains an
+explicit diagnostic. Sol 6.1 at high effort completed a normal RMSD explanation,
+retaining recorded uncertainty and distinguishing 1 ns production from 2.5 ns
+including equilibration. A contrived Sol 6.1 connection echo also failed protocol
+validation; successful inference and normal explanation are distinct receipts.
+These live results use the pre-change installed package; the revised dropdown's
+installed/native acceptance remains pending its rebuilt wheel.

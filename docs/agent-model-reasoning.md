@@ -1,7 +1,12 @@
 # Subscription model selection and reasoning
 
-Provider documentation checked on 2026-10-02. Account catalogs determine model
-availability; a public model announcement does not establish subscription access.
+OpenAI Astra/Sol 6.1 documentation rechecked on 2026-10-03. A model missing from
+the account catalog is not treated as an entitlement denial. The four published
+GPT-6 choices remain selectable with their documented reasoning controls; applying
+an unverified or expired choice performs a short subscription inference check
+before saving it. Failure preserves the current selected model. Verification
+status appears in help/status text, not as a disabled dropdown label. A public
+model announcement alone does not establish subscription access.
 Refresh available models after a provider/client update. Unknown capabilities keep
 the provider default instead of sending invented effort values.
 
@@ -13,7 +18,7 @@ model and reasoning; changing either invalidates an in-flight response.
 
 | Provider | Model catalog | Actual request control |
 | --- | --- | --- |
-| ChatGPT/Codex | Public subscription catalog plus explicitly verified GPT-6 access | Responses `reasoning.effort` |
+| ChatGPT/Codex | Subscription catalog plus published GPT-6 choices checked before applying an unverified selection | Responses `reasoning.effort` |
 | Claude | Official client's tool-free initialize response, without an inference turn | Explicit `--model` and `--effort`, validated against native model metadata |
 | Kimi | Managed Kimi Code subscription model catalog | Validated `KIMI_MODEL_THINKING_EFFORT`, or documented thinking toggle when supported |
 | Gemini | Connected account's Code Assist quota model catalog | GenerateContent `thinkingConfig.thinkingLevel` for supported Gemini 3 models; `thinkingBudget` for Gemini 2.5 |
