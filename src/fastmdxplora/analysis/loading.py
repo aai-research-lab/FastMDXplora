@@ -153,8 +153,12 @@ def image_whole(trajectory: md.Trajectory, *, inplace: bool) -> md.Trajectory:
         anchors = trajectory.topology.guess_anchor_molecules()
     except ValueError:
         molecules = trajectory.topology.find_molecules()
-        anchors = [max(molecules, key=len)] if molecules else None
-    return trajectory.image_molecules(inplace=inplace, anchor_molecules=anchors)
+        anchors = [max(molecules, key=len)] if molecules else []
+    from fastmdxplora.analysis.imaging import image_trajectory
+
+    result = trajectory if inplace else trajectory[:]
+    image_trajectory(result, anchors)
+    return result
 
 
 def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
@@ -181,6 +185,12 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
     builds by default, hence the exact search. Where there is no
     macromolecule, every solute molecule anchors, as before.
 
+    The imaging is MDTraj's, computed over every frame at once
+    (:mod:`fastmdxplora.analysis.imaging`): MDTraj compared every atom of
+    one chain with every atom of the other to place a dimer, about a
+    quarter of a second a frame for 1AKE, and the same coordinates now take
+    a few milliseconds.
+
     Failure is not fatal: a topology without bonds cannot be made whole, and
     an analysis of what was loaded beats refusing to load it. The reason is
     logged rather than swallowed, so a silently unimaged run can be
@@ -197,8 +207,10 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
                   if not all(a.residue.is_water for a in m)]
         # Older MDTraj raises from ``is_nucleic``; _is_polymer answers anyway.
         large = [m for m in solute if any(_is_polymer(a.residue) for a in m)]
-        anchors = large or solute
-        trajectory.image_molecules(inplace=True, anchor_molecules=anchors or None)
+        anchors = large or solute or topology.guess_anchor_molecules()
+        from fastmdxplora.analysis.imaging import image_trajectory
+
+        image_trajectory(trajectory, anchors, [m for m in molecules if m not in anchors])
     except Exception as exc:  # MDTraj raises a variety of types
         logger.warning(
             "Could not image molecules across the periodic boundary (%s); "

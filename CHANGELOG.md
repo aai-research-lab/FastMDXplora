@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Molecules are made whole in seconds
+
+**Making a trajectory's molecules whole across the periodic boundary, which
+every analysis and the Viewer's frames do first, is now 8 to 40 times
+faster, and gives the same coordinates to the bit.** MDTraj placed a second
+chain by comparing every atom of it with every atom of the first, frame by
+frame: 200 frames of 1AKE solvated (116,601 atoms, two chains of 3,341) took
+53 s, and the 6,690 atoms the Viewer shows took 51 s. The same imaging is now
+done for all frames together, the bonds walked a level at a time and the
+closest contact between chains found with a k-d tree: 6.7 s and 1.3 s. The
+coordinates are MDTraj's bit for bit in a cube, a rhombic dodecahedron and a
+truncated octahedron, for one to eight chains with a ligand, ions and water,
+each atom first thrown into a random periodic copy
+(`fastmdxplora.analysis.imaging`). More than 32 anchored molecules are still
+placed by MDTraj, and a topology without bonds is still left as stored.
+
 ### The PDB playback is gone
 
 **`/api/playback-info`, `/structure/playback.pdb` and the multi-model PDB they
@@ -27,7 +43,7 @@ system now render with Mol\*, through the viewer's engine, and 3Dmol is
 gone.** The trajectory is played from the binary frames: a solvated
 116,601-atom system, its 6,690 atoms of protein and ions shown, is sent all
 200 of its frames as 16 MB, where the playback sent 149 as about 80 MB of
-text. Once written, which for this system is about a minute of making 200
+text. Once written, which for this system takes a few seconds of making 200
 frames whole, once for the trajectory, they are loaded and shown in under
 three seconds, and each frame costs Mol\* 15 to 20 ms before it is rendered.
 Every control is kept: the representations, colourings and the study's
