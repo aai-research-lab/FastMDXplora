@@ -41,8 +41,31 @@ def topology_the_analyses_read(root: Path | str) -> Path | None:
     return None
 
 
+def _frames_atom(base: Path, topology: Any, where: Path, index: Any) -> Any:
+    """The atom of the analyses' topology that atom ``index`` of the frames
+    the viewer plays is, where the frames were written from that topology
+    (``gui/trajectory_frames.py`` records which, and which of its atoms);
+    else ``None``."""
+    try:
+        position = int(str(index).strip())
+        said = json.loads((base / "simulation" / "frames_index.json").read_text(encoding="utf-8"))
+    except (TypeError, ValueError, OSError):
+        return None
+    source, shown = said.get("source_topology"), said.get("shown")
+    if not said.get("available") or not isinstance(source, str) or shown not in ("not water",
+                                                                                "all"):
+        return None
+    if Path(source if Path(source).is_absolute() else base / source).resolve() \
+            != where.resolve():
+        return None
+    atoms = topology.select(shown)
+    if not 0 <= position < len(atoms):
+        return None
+    return topology.atom(int(atoms[position]))
+
+
 def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
-                  atom: str) -> dict[str, Any]:
+                  atom: str, frames_atom: Any = None) -> dict[str, Any]:
     """The selections for a residue and one of its atoms, each checked.
 
     ``chain`` is the chain's letter as the viewer shows it, ``resseq`` the
@@ -50,6 +73,13 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
     atom's. The chain is written as MDTraj's index, since that is what its
     selection language takes, and is found by letter and confirmed by the
     residue's name; where the letter does not find it, by number and name.
+
+    ``frames_atom`` is the atom's index in the frames the viewer plays,
+    where it is playing them: those are the topology's own atoms, so the
+    atom is known exactly, and a chain letter two chains share, or a number
+    two residues of one chain share (an insertion code), no longer stands
+    in the way. The residue is then selected by ``resid`` where its number
+    and name alone would select another as well.
     """
     try:
         number = int(str(resseq).strip())
@@ -69,8 +99,15 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
     except Exception as exc:  # noqa: BLE001 - the panel says why
         return {"ok": False, "reason": f"could not read {where.name}: {exc}"}
 
-    matches = [residue for residue in topology.residues
-               if residue.resSeq == number and residue.name.upper() == resname]
+    known = _frames_atom(Path(root), topology, where, frames_atom) \
+        if frames_atom not in (None, "") else None
+    if known is not None and (known.residue.resSeq != number
+                              or known.residue.name.upper() != resname
+                              or (atom and known.name != atom)):
+        known = None        # frames written before the topology changed
+    matches = [known.residue] if known is not None else [
+        residue for residue in topology.residues
+        if residue.resSeq == number and residue.name.upper() == resname]
     if not matches:
         water = resname in ("HOH", "WAT", "SOL", "TIP3", "T3P", "SPC")
         return {"ok": False, "against": where.name,
@@ -94,6 +131,10 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
         # Another residue shares the number (a ligand numbered 1 beside the
         # protein's first residue): the name tells them apart.
         residue += f" and resname {resname}"
+    if known is not None and \
+            {topology.atom(i).residue.index for i in topology.select(residue)} != {wanted.index}:
+        # Nor the name: its place in the topology, counted from 0, is exact.
+        residue = f"resid {wanted.index}"
     answer: dict[str, Any] = {"ok": True, "against": where.name,
                               "residue": {"selection": residue,
                                           "atoms": int(len(topology.select(residue)))}}

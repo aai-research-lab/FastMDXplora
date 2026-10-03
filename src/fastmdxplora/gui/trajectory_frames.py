@@ -173,8 +173,10 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
     topology_path: Path = source["topology"]
     with suppress_native_output():
         whole = md.load_topology(str(topology_path))
-        shown = whole.select("not water")
+        kept = "not water"
+        shown = whole.select(kept)
         if len(shown) == 0:
+            kept = "all"
             shown = np.arange(whole.n_atoms)
         topology = whole.subset(shown)
         with md.formats.DCDTrajectoryFile(str(source["trajectory"])) as handle:
@@ -199,10 +201,16 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
         frames = _made_whole(frames)
     _write_topology(topology_path, shown, simulation / FRAMES_TOPOLOGY)
     _write_dcd(frames, simulation / FRAMES_FILE)
+    # Which atoms of which topology the frames are, so an atom clicked in
+    # them is named in that topology exactly (gui/selection.py).
+    try:
+        source_topology = str(topology_path.resolve().relative_to(simulation.parent.resolve()))
+    except ValueError:
+        source_topology = str(topology_path.resolve())
     return {"available": True, "reason": None, "n_atoms": int(len(shown)),
             "n_frames_total": int(total), "n_frames_browser": len(indices),
             "frame_indices": indices, "frame_times_ns": _times(indices, total, total_ns),
-            "made_whole": bool(boxed)}
+            "made_whole": bool(boxed), "source_topology": source_topology, "shown": kept}
 
 
 def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) -> dict[str, Any]:

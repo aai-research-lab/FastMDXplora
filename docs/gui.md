@@ -523,7 +523,7 @@ knowing if you want to drive it from a script. Requests are capped at 1 MB.
 | `GET /api/secondary-structure?of=structure\|live\|frames` | DSSP for each residue of what the viewer was sent, one string of `H`, `E` and `C` per frame, or why there is none |
 | `GET /api/protein-preview` | The cached preview image |
 | `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart plotted from them; `&run=ID` for one run of a study of several |
-| `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read |
+| `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read; `&frames_atom=N`, the atom's index in the frames played, names it exactly where they were written from that topology (a chain letter two chains share, or a residue number two residues share, by `resid`) |
 | `GET /api/studies?path=`, `/api/studies-compared?a=&b=`, `/api/study-thumbnail?path=` | The studies under a folder as cards, two compared, and a card's figure; loopback only, as browsing folders is, and inside the workspace when hosted |
 | `GET /api/residue-states?chain=A&resseq=57&resname=HIS` | A clicked residue's protonation states and this study's Config to start a new study from, the residue named as setup builds the structure |
 | `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom |

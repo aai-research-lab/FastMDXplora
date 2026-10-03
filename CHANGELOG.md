@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A clicked atom of the frames is named exactly
+
+**An atom clicked in the frames being played is sent to the server by its
+index among them, and its selection is that atom's.** It went by its chain's
+letter and its residue's number: where two chains share a letter the server
+could not say which and gave no selection, and where two residues of one
+chain share a number (184 and 184A) it gave a selection of both. The frames
+are the atoms of the topology the analyses read, in its order, and record
+which (`source_topology`, `shown` in `frames_index.json`), so the chain is
+named by its index and the residue, where its number and name would select
+another as well, by `resid`. An index that is not the atom named, or frames
+of another topology, are not used, and the residue is found as before.
+
 ### A live frame moves the atoms shown
 
 **While a study runs, each new frame moves the atoms the Viewer and the

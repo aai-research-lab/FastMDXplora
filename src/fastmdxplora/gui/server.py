@@ -696,7 +696,8 @@ def make_handler(
                     return (query.get(key) or [""])[0]
 
                 self._send_json(selection_for(root, chain=one("chain"), resseq=one("resseq"),
-                                              resname=one("resname"), atom=one("atom")))
+                                              resname=one("resname"), atom=one("atom"),
+                                              frames_atom=one("frames_atom") or None))
                 return
             if path == "/api/residue-states":
                 # A clicked residue's states, for a new study of the same

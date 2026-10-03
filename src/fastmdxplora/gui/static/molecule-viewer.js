@@ -1866,11 +1866,20 @@
     clear.addEventListener("click", clearPicks);
   }
 
+  /* An atom of the frames played is an atom of the topology they were
+   * written from, by its index there: the server then knows it exactly,
+   * rather than by its chain's letter and its residue's number. */
+  function framesAtom(atom) {
+    return STATE.model?.of === "frames" && Number.isInteger(atom?.index)
+      ? {frames_atom: String(atom.index)} : {};
+  }
+
   async function selectionOfPick(pick) {
     if (pick.asked) return;
     pick.asked = true;
     const query = new URLSearchParams({chain: pick.chain, resseq: String(pick.resi ?? ""),
-                                       resname: pick.resn, atom: pick.atom});
+                                       resname: pick.resn, atom: pick.atom,
+                                       ...framesAtom(pick)});
     try {
       const answer = await (await fetch(`/api/selection?${query}`)).json();
       pick.selection = answer && answer.ok && answer.atom ? answer.atom.selection : null;
@@ -1927,6 +1936,7 @@
     const query = new URLSearchParams({
       chain: atom.chain || "", resseq: String(atom.resi ?? ""),
       resname: atom.resn || "", atom: atom.atom || atom.name || "",
+      ...framesAtom(atom),
     });
     let answer = null;
     try {
