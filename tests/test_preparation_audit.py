@@ -217,14 +217,25 @@ def test_browser_restores_audit_selection_without_modifying_structures(tmp_path,
             np.testing.assert_allclose(restored["before_camera"], saved["before_camera"], atol=1e-6)
             np.testing.assert_allclose(restored["after_camera"], saved["after_camera"], atol=1e-6)
             page.locator("#research-agent-close").click()
-            page.set_viewport_size({"width": 390, "height": 900})
-            page.add_style_tag(content="html {font-size: 200% !important;}")
-            outside = page.locator("#preparation-audit-panel").evaluate("""panel =>
-                Array.from(panel.querySelectorAll('button,input,select'))
-                .filter(el => el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}) && !el.closest('table'))
-                .filter(el => {const r=el.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
-                .map(el => el.id || el.textContent.slice(0,50))""")
-            assert not outside, outside
+            page.locator("#preparation-details").locator("..").locator("summary").click()
+            for zoom in (100, 200):
+                page.add_style_tag(content=f"html {{font-size: {zoom}% !important;}}")
+                for width in (1440, 1280, 1024, 768, 390):
+                    page.set_viewport_size({"width": width, "height": 900})
+                    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                    outside = page.locator("#preparation-audit-panel").evaluate("""panel =>
+                        Array.from(panel.querySelectorAll('button,input,select'))
+                        .filter(el => el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}) && !el.closest('table'))
+                        .filter(el => {const r=el.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
+                        .map(el => el.id || el.textContent.slice(0,50))""")
+                    assert not outside, (theme, zoom, width, outside)
+                    assert page.locator("#preparation-details").is_visible()
+                    current = page.evaluate("FastMDXPreparationAudit.capture()")
+                    for name in ("before_camera", "after_camera"):
+                        np.testing.assert_allclose(current[name], saved[name], atol=1e-6)
+                    assert current["overlay"] and current["linked"]
+                    assert current["before"] == saved["before"]
+                    assert current["after"] == saved["after"]
             assert not errors
             browser.close()
     finally:

@@ -40,6 +40,7 @@ def test_installed_knowledge_includes_every_registered_error_and_disclosure():
 @pytest.mark.parametrize("code", ["environment.provider.connection_failed", "environment.provider.usage_limit"])
 def test_agent_preserves_subscription_failure_code_without_api_fallback(tmp_path, monkeypatch, code):
     from types import SimpleNamespace
+
     from fastmdxplora.agent.openai_plan import ConnectionError
     class Connections:
         def completion(self):
@@ -115,7 +116,8 @@ def test_reply_from_a_changed_study_is_refused(tmp_path, monkeypatch):
     assert "answer" not in answer
 
 
-def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monkeypatch, model):
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monkeypatch, model, theme):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server
     from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
@@ -126,6 +128,7 @@ def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monke
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             page.locator("#agent-context-review summary").click()
             page.locator("#agent-use-context").uncheck()
@@ -148,6 +151,20 @@ def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monke
             page.locator("#agent-context-review summary").click()
             box = page.locator("#agent-request").bounding_box()
             assert box["width"] > 0 and box["x"] + box["width"] <= 391
+            page.locator("#agent-context-review summary").click()
+            for zoom in (100, 200):
+                page.add_style_tag(content=f"html {{font-size: {zoom}% !important;}}")
+                for width in (1440, 1280, 1024, 768, 390):
+                    page.set_viewport_size({"width": width, "height": 900})
+                    outside = page.locator('.page[data-page="agent"]').evaluate("""panel =>
+                        Array.from(panel.querySelectorAll('button,input,select,textarea,summary'))
+                        .filter(el => el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}))
+                        .filter(el => {const r=el.getBoundingClientRect(); return r.width > 0 && (r.x < -1 || r.right > innerWidth+1);})
+                        .map(el => el.id || el.textContent.slice(0,50))""")
+                    assert not outside, (theme, zoom, width, outside)
+                    assert page.locator("#agent-context-evidence").is_visible()
+                    assert "Evidence used by the last message" in page.locator("#agent-context-evidence").inner_text()
+                    assert not page.locator("#agent-use-context").is_checked()
             browser.close()
     finally:
         server.shutdown()
@@ -492,6 +509,7 @@ def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_pat
             page.locator("#draft-review-accept").click()
             page.wait_for_function("document.getElementById('run-note').textContent.includes('Test intercepted')")
             from types import SimpleNamespace
+
             from fastmdxplora.gui.draft_review import verify_run_review
             assert runs and verify_run_review(runs[0], SimpleNamespace(active_root=root)) is None
             # Preference persists and closes the sidebar without navigation.
@@ -568,10 +586,11 @@ def test_protein_residue_clicks_highlight_and_prepare_a_question(tmp_path, monke
 
 def test_graph_residue_selection_can_be_pinned_and_compared_without_inference(tmp_path, monkeypatch):
     playwright = pytest.importorskip("playwright.sync_api")
-    from fastmdxplora.gui.server import start_test_server
-    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
-    from tests.test_an_analysis_is_drawn_from_its_numbers import _analysis
     import hashlib
+
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _analysis
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
 
     monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "isolated-settings"))
     root = _write_study(tmp_path / "study")

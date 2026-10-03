@@ -595,3 +595,24 @@ interaction also restored the observed 3033-water-atom inventory event and
 clearly identified missing causal provenance; it did not reconstruct a chemical
 cause. This is completed-study viewer/bookmark/media/restart acceptance on Windows,
 not an installed live-provider inference or chemistry-extra certification.
+
+## Expanded audit and context layout acceptance, 2026-10-03
+
+The preparation-audit browser regression now exercises all five planned widths
+(1440, 1280, 1024, 768 and 390 pixels) at 100% and 200% text size in Graphite,
+Ink and Paper. The comparison, aligned overlay, selected source/stages and raw
+event disclosure remain expanded. All ordinary audit controls stay within the
+viewport; both camera arrays, linked/overlay choices and selected stages remain
+unchanged across resizing. The source structures retain identical bytes. All
+three theme cases passed in 59.92 seconds.
+
+The context-inspector/opt-out browser check now uses the same 30 theme/width/text
+combinations. The expanded outbound evidence receipt and composer controls stay
+visible and within the viewport; view-context opt-out remains off. Each case
+also verifies that the outgoing request actually excludes selected-view context
+and retains the last-message evidence receipt. All three cases passed in 9.78
+seconds. Provider replies here are controlled test replies, not live inference.
+
+These checks extend expanded-state acceptance for two specific surfaces. They
+do not replace visual inspection of populated/error/loading/import/draft states
+or native open dropdown menus, and M8 remains open for those remaining states.
