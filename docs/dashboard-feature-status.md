@@ -1,7 +1,7 @@
 # Dashboard feature changes and milestone status
 
 Reviewed on 2026-10-02 against the [full implementation framework](dashboard-feature-plan.md),
-with implementation through `d0e041f`.
+with implementation and verification revisions identified in the receipts below.
 This is the current status; the framework's milestone receipts are historical.
 
 **The complete framework is not finished.** All five feature areas have working
@@ -75,7 +75,7 @@ These changes are not a published upstream release.
 | M4 — clips | Implemented; representative acceptance verified | Resolution presets re-render the molecular view at selected dimensions; study title/custom caption join residue/atom/frame/time overlays. First/last previews share the export renderer and show source mapping, physical time, playback duration and approximate upload size. Server dimensions/text bounds, decoded media, cancellation and restoration checks pass. Final integration remains M7. |
 | M5 — provenance | Implemented; preservation verification limited | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on OpenMM Reference. Aggregate system snapshots do not record every individual solvent/ion operation. Broader backend/platform and fixture preservation checks remain open. |
 | M6 — audit visuals | Implemented; representative acceptance verified | Stage strip, separate protein/recorded-ligand/water/ion/other bars, affected-residue category track, decision table, side-by-side/overlay and Agent/bookmark links. Recorded stages and observed identity differences are distinct; ambiguous mappings are unselectable and raw evidence remains expandable. Eight final audit checks pass; broader integration remains M7. |
-| M8 — aesthetics and interactions | Foundation implemented; full review pending | Research toolbar no longer overlaps the composer; Agent typography, evidence cards and drawer spacing improved. Wide/narrow layout checks pass. Full surface/theme, contrast and keyboard/focus acceptance remains open. |
+| M8 — aesthetics and interactions | Foundation and text scaling implemented; full review pending | Toolbar/composer separation, consistent Agent typography, drawer focus return and relative text sizing. All ten sections pass wide/narrow shell checks and 200% root-text control-bounds checks in all three themes. Full expanded-state visual, contrast and keyboard/focus acceptance remains open. |
 | M7 — integrated release validation | Partial; not complete | Targeted integrated suites, browser checks and earlier wheel receipts exist. Final expanded-scope acceptance, latest-wheel verification, remaining provider tests and broader scientific/browser coverage are not all complete. |
 
 ## Verification and scientific limits
@@ -223,3 +223,27 @@ placeholder contrast of at least 4.5:1 and field bounds at 1280 and 390 px. This
 checks those fields, not every dashboard element. The local completed-study GUI
 was restarted to serve the latest template, draft review and export options;
 bookmark opening/closing and focus return were also verified in the live preview.
+
+### Relative text sizing and scaled-control acceptance
+
+Dashboard text tokens now use `rem` and the HTML root respects the browser's
+default text size. Context evidence and draft-review cells use the same tokens.
+The shared report stylesheet was not changed. A stronger browser check exposed
+off-screen Overview chart reset, viewer center/representation controls and Agent
+settings at 200% root text on a phone-width viewport. Card actions now wrap,
+viewer labels stack on narrow screens, and Agent footer actions wrap.
+
+All three theme cases passed across ten sections at 1280 and 390 px with the root
+text size explicitly doubled. The test verifies that toolbar text actually
+doubles, visible ordinary controls remain within viewport bounds, and bookmarks
+remain operable with focus return. Hidden collapsed panels and locally scrolling
+tables are excluded from the ordinary-control bounds check. This is browser
+layout evidence for enlarged UI text, not a completed native browser zoom,
+expanded-dialog or scientific figure visual acceptance gate.
+
+Current typography regression receipt: 67 Agent-boundary, clip, draft-review and
+drawing-script checks passed. Three additional cases passed for the expanded
+clip dialog at doubled root text in Graphite, Ink and Paper at 390 px: visible
+buttons, inputs, selects and label groups stay within viewport bounds and Close
+remains operable. These checks do not certify every other modal, native browser
+zoom behavior or whole-dashboard contrast.

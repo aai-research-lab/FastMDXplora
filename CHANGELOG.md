@@ -46,6 +46,11 @@ remain unavailable from the combined OpenMM operation. Research drawers restore
 keyboard focus on Close/Escape and expose expanded state; optional preparation
 disclosure is compact and component inventories use aligned five-column cards.
 
+Dashboard typography now respects larger browser text through relative size
+tokens. Chart-header actions, viewer selectors and Agent footer actions wrap
+instead of clipping at enlarged text sizes on narrow screens. Scientific report
+styling and recorded plot data remain unchanged.
+
 ### A hosted GUI shows its service's name and the person signed in
 
 **`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the

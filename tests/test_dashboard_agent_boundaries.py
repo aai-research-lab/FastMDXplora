@@ -193,6 +193,47 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
         server.server_close()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_research_controls_follow_double_text_size_without_losing_actions(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    _write_study(tmp_path)
+    server, url = start_test_server(tmp_path)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 390, "height": 900})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#agent")
+            base = page.locator("#research-bookmarks-toggle").evaluate("el => parseFloat(getComputedStyle(el).fontSize)")
+            page.add_style_tag(content="html {font-size: 200% !important;}")
+            scaled = page.locator("#research-bookmarks-toggle").evaluate("el => parseFloat(getComputedStyle(el).fontSize)")
+            assert scaled == pytest.approx(base * 2)
+            page.locator("#research-bookmarks-toggle").click()
+            page.locator("#research-title").fill("A long research title at double text size")
+            page.locator("#research-bookmarks-close").click()
+            assert page.locator("#research-bookmarks-toggle").evaluate("el => el === document.activeElement")
+            for name in ("research-bookmarks-toggle", "research-agent-toggle", "agent-request", "agent-propose"):
+                bounds = page.locator("#" + name).bounding_box()
+                assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 391, name
+            for width in (1280, 390):
+                page.set_viewport_size({"width": width, "height": 900})
+                for view in ("studies", "overview", "viewer", "analysis", "report", "files", "agent", "run", "settings", "cite"):
+                    page.goto(url + "/#" + view)
+                    page.add_style_tag(content="html {font-size: 200% !important;}")
+                    outside = page.evaluate("""() => Array.from(document.querySelectorAll('button,input:not([type=hidden]),select,textarea'))
+                        .filter(el => el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}) && !el.closest('table,.table-wrap'))
+                        .filter(el => {const r=el.getBoundingClientRect(); return r.width > 0 && (r.x < -1 || r.right > innerWidth+1);})
+                        .map(el => el.id || el.textContent.slice(0,60))""")
+                    assert not outside, (theme, width, view, outside)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("mode", ["autonomous", "unvalidated", "unexpected"])
 def test_dashboard_cannot_select_unreviewed_modes(model, mode):
     prompts, _ = model

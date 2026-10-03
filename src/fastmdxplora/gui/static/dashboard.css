@@ -438,12 +438,20 @@ button {
 }
 .card-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 14px;
     gap: 14px;
 }
-.card-header-actions { display: flex; gap: 10px; }
+.card-header-actions { display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; max-width: 100%; }
+.card-header-actions > * { max-width: 100%; }
+.viewer-controls .text-group { flex-wrap: wrap; max-width: 100%; }
+.viewer-controls .select-field { min-width: 0; max-width: 100%; flex: 1 1 160px; }
+.viewer-controls .select-field select { width: 100%; min-width: 0; max-width: 100%; }
+@media (max-width: 800px) {
+    .viewer-controls .select-field { flex-direction: column; align-items: stretch; }
+}
 .card-title {
     font-size: var(--text-md);
     font-weight: 600;
@@ -3344,7 +3352,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 
 /* The Agent's footer: small links under the composer, at the right. */
 .agent-footer {
-    display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+    display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px;
     padding: 6px 4px 0; font-size: var(--text-xs); color: var(--text-muted);
 }
 .agent-footer-link {
@@ -3957,9 +3965,12 @@ html body select optgroup {
 }
 
 /* Research workspace foundation. Dashboard-only: report tokens are unchanged. */
+html { font-size: 100%; }
 body {
     --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px;
-    --text-sm: 14px; --text-md: 15px; --text-xs: 13px;
+    --text-2xs: 0.6875rem; --text-xs: 0.8125rem; --text-sm: 0.875rem;
+    --text-md: 0.9375rem; --text-lg: 1rem; --text-xl: 1.25rem;
+    --text-2xl: 1.5rem; --text-3xl: 1.6875rem;
 }
 body:not([data-theme="paper"]) { --text-muted: #a0a0aa; }
 body[data-theme="paper"] { --text-muted: #61616b; }
@@ -3981,7 +3992,7 @@ body[data-theme="paper"] { --text-muted: #61616b; }
 .agent-context-review summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-primary); }
 #agent-context-summary { display: block; margin: 4px 0 0 16px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
 .agent-context-review .checkbox-row { margin-top: 12px; min-height: 32px; }
-.agent-context-evidence { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font: 13px/1.6 var(--font-mono); background: var(--background-primary); padding: 12px; border-radius: 6px; }
+.agent-context-evidence { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font: var(--text-xs)/1.6 var(--font-mono); background: var(--background-primary); padding: 12px; border-radius: 6px; }
 .draft-review-dialog { width: min(960px, calc(100vw - 32px)); max-height: 90dvh; overflow: auto; color: var(--text-primary); background: var(--background-elevated); border: 1px solid var(--border-primary); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-modal); }
 .draft-review-dialog::backdrop { background: #0009; }
 .draft-review-table { overflow-x: auto; max-height: 40dvh; margin: 16px 0; }
@@ -3989,7 +4000,7 @@ body[data-theme="paper"] { --text-muted: #61616b; }
 .draft-review-table th, .draft-review-table td { padding: 12px; vertical-align: top; border-bottom: 1px solid var(--border-primary); overflow-wrap: anywhere; }
 .draft-review-table tbody th { width: 50%; font-weight: normal; }
 .draft-review-table th p { font-size: var(--text-xs); color: var(--text-secondary); margin: 6px 0; }
-.draft-review-table td { font: 13px/1.6 var(--font-mono); }
+.draft-review-table td { font: var(--text-xs)/1.6 var(--font-mono); }
 #draft-review-yaml { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
 .draft-review-footer { position: sticky; bottom: -24px; background: var(--background-elevated); border-top: 1px solid var(--border-primary); padding: 16px 0; display: flex; justify-content: flex-end; gap: 12px; }
 .clip-preview-panel { margin: 16px 0; padding: 16px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--background-secondary); }

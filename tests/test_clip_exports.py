@@ -187,3 +187,22 @@ def test_browser_cancel_restores_view_and_does_not_save_clip(clip_page):
     assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
     assert not page.evaluate("document.querySelector('.viewer-layout').inert")
     assert not page.errors
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_clip_dialog_controls_fit_with_double_text(clip_page, theme):
+    page = clip_page
+    page.locator("#settings-open").click()
+    page.locator(f'.seg-btn[data-theme="{theme}"]').click()
+    page.locator("#settings-open").click()
+    page.set_viewport_size({"width": 390, "height": 900})
+    page.add_style_tag(content="html {font-size: 200% !important;}")
+    page.locator("#clip-export-open").click()
+    outside = page.locator("#clip-export-dialog").evaluate("""dialog =>
+        Array.from(dialog.querySelectorAll('button,input,select,textarea,fieldset label'))
+        .filter(el => el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}))
+        .filter(el => {const r=el.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
+        .map(el => el.id || el.textContent.slice(0,60))""")
+    assert not outside, outside
+    page.locator("#clip-export-cancel").click()
+    assert page.locator("#clip-export-dialog").is_hidden()
