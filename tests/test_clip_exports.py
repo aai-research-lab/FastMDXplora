@@ -11,10 +11,12 @@ from PIL import Image
 
 from fastmdxplora.gui.clips import clip_endpoint
 from fastmdxplora.gui.trajectory_playback import playback_info
-from tests.test_the_drawing_scripts_run_in_a_browser import _write_study, dashboard  # noqa: F401
+from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+from tests.test_the_drawing_scripts_run_in_a_browser import dashboard as _dashboard
 from tests.test_the_drawing_scripts_run_in_a_browser import page as _page
 
 clip_page = _page
+dashboard = _dashboard
 
 
 @pytest.fixture
