@@ -942,3 +942,25 @@ viewer-script initialization, then passed unchanged in isolation in 16.36 s.
 The failed combined run remains a failed gate; it is not replaced by a claim
 that isolated passing proves the whole release. A fresh combined run without
 concurrent native rendering is underway. M7/M8 and broader acceptance remain open.
+
+### Combined regression and remaining presentation controls
+
+The unchanged combined run at production/test revision 1276612 passes all 209
+checks in 453.01 s with five Pillow deprecation warnings. Commit 5b254b9 only
+added evidence documentation during the run. The preceding initialization
+timeout remains in the record; the successful rerun does not establish its cause.
+
+Comparison with the completion plan identified two remaining presentation gaps.
+The clip dialog now groups Frames, Camera, Labels and Output, retaining all IDs,
+options, bounds and rendering behavior. Guidance explains overlapping protein-wide
+labels and the existing 200-label limit. Bookmark cards display saved/updated
+times from their recorded timestamps, an explicit unavailable-date state,
+screenshot placeholders, and per-card source-check status. The initial status
+does not imply that sources were already verified; verification occurs on Restore.
+These changes do not rewrite bookmark timestamps, source structures or exports.
+All 53 clip and research-view tests pass in 146.49 s, including decoded media,
+viewer restoration, three-theme layout/text contrast, populated/import/error
+states and the integrated bookmark browser flow. Diff checks pass. The scientific
+setup, backend, phase and analysis modules are unchanged since b103dd8, whose
+protein/POPC/OpenFF preservation scope and limitations remain documented above.
+The new presentation increment still requires installed/native acceptance.

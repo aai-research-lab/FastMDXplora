@@ -9,6 +9,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+Clip export groups controls into Frames, Camera, Labels and Output, with guidance
+for crowded protein-wide labels. Bookmark cards show saved/updated dates,
+screenshot placeholders and source-check status; restoration checks remain
+explicit and do not modify study data.
+
 Agent settings replaces the ambiguous global Save button with an explicit
 "Use API key or local server" action inside that section. Subscription model
 and reasoning choices use their own account button. Missing API credentials

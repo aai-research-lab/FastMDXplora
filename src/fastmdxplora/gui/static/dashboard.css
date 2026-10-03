@@ -4041,6 +4041,9 @@ body[data-theme="paper"] { --text-muted: #61616b; }
 #draft-review-yaml { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
 .draft-review-footer { position: sticky; bottom: -24px; background: var(--background-elevated); border-top: 1px solid var(--border-primary); padding: 16px 0; display: flex; justify-content: flex-end; gap: 12px; }
 .clip-preview-panel { margin: 16px 0; padding: 16px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--background-secondary); }
+#clip-export-dialog .clip-section { padding: 16px 0; border-top: 1px solid var(--border-primary); min-width: 0; }
+#clip-export-dialog .clip-section h3 { margin: 0 0 12px; font-size: var(--text-lg); color: var(--text-primary); }
+#clip-export-dialog .clip-section .control-row { margin-bottom: 0; }
 .clip-preview-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .clip-preview-images figure { margin: 0; }
 .clip-preview-images img { width: 100%; height: auto; border-radius: 6px; }

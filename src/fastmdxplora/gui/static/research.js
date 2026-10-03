@@ -260,7 +260,20 @@
         row.view?.field_value != null ? "Saved draft value: " + String(row.view.field_value) : null,
         (row.tags || []).join(" · ")].filter(Boolean).join(" — ");
       const note = document.createElement("p"); note.textContent = row.note;
-      card.append(title, meta, note);
+      const saved = document.createElement("div"); saved.className = "muted small research-saved-date";
+      const date = typeof row.updated_at === "string" ? new Date(row.updated_at) : null;
+      if (date && Number.isFinite(date.getTime())) {
+        const time = document.createElement("time"); time.dateTime = row.updated_at;
+        time.textContent = date.toLocaleString();
+        saved.append(row.updated_at === row.created_at ? "Saved " : "Updated ", time);
+      } else saved.textContent = "Saved date unavailable.";
+      const sourceStatus = document.createElement("p"); sourceStatus.className = "muted small research-source-status";
+      sourceStatus.textContent = "Saved sources are checked when you choose Restore.";
+      card.append(title, meta, saved, note, sourceStatus);
+      if (!row.screenshot) {
+        const placeholder = document.createElement("p"); placeholder.className = "muted small";
+        placeholder.textContent = "No screenshot saved."; card.append(placeholder);
+      }
       if (row.screenshot) {
         const image = document.createElement("img"); image.alt = "Saved research view: " + row.title;
         image.className = "research-screenshot"; card.append(image);
@@ -275,7 +288,8 @@
         try {
           const response = await fetch("/api/research/bookmarks/restore?id=" + encodeURIComponent(row.id));
           const data = await response.json();
-          if (!data.ok) { status(data.error); return; }
+          if (!data.ok) { sourceStatus.textContent = data.error; status(data.error); return; }
+          sourceStatus.textContent = "Saved sources matched this study when checked.";
           await restore(data.view);
         } catch (_) { status("Could not verify the saved source. Your note and screenshot remain available."); }
       }, card);
