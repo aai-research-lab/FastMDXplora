@@ -291,3 +291,23 @@ research view. Clear/save/study changes update the summary. All 49 research-view
 and bundle checks passed. The browser flow checks scope transitions, restart,
 search/filter, graph-range restoration, JSON/bundle export and import; its final
 rerun also passed after figure/warning and study-change summary refinements.
+
+### Latest installed-package receipt
+
+Feature revision `f55ffa05fb6eaa74b7a561564eba3c1eeb7f3cc5` built as
+`fastmdxplora-2.5.9.dev171+gf55ffa05f-py3-none-any.whl`, SHA-256
+`6f345839bca2a6a66aff80be63140e8910af06377a628bc450bc32752902ff14`.
+Installed without dependencies into a fresh temporary target, imported with
+isolated Python outside the checkout, and served from that installed package.
+Knowledge Markdown and runtime error registry match; the Gemini bridge resource
+is present. Latest HTML/static markers for modal settings, capture scope, draft
+review and field contrast passed. New preparation observer and draft-review
+modules import from the installed package.
+
+A headless browser against the installed server at 390 px passed settings modal
+opening, Shift+Tab containment, Escape close/focus return and bookmark scope/close,
+with no JavaScript errors. All 19 provider/reasoning regression checks passed in
+the source checkout. No live provider inference or scientific preparation was
+performed for this packaging check. Existing venv dependencies supplied the
+runtime; clean-machine extras installation, complete integrated study workflow
+and unavailable live-provider/scientific gates remain open.
