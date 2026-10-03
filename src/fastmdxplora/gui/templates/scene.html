@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>__SCENE_TITLE__</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; flex-direction: column;
+      background: var(--background-primary); color: var(--text-primary);
+      font-family: var(--font-stack); font-size: var(--text-md);
+    }
+    .scene-bar {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px;
+      padding: 10px 16px; border-bottom: 1px solid var(--border-primary);
+    }
+    .scene-bar h1 { font-size: var(--text-lg, 18px); margin: 0; }
+    .scene-bar a { color: var(--accent-cyan); }
+    .scene-said { color: var(--text-muted); font-size: var(--text-xs); flex: 1 1 100%; margin: 0; }
+    .scene-canvas { position: relative; flex: 1 1 auto; min-height: 320px; }
+  </style>
+</head>
+<body data-scene="__SCENE_NAME__">
+  <header class="scene-bar">
+    <h1 id="scene-title">__SCENE_TITLE__</h1>
+    <a href="__SCENE_ARCHIVE__" download>Download the scene (.mvsx)</a>
+    <span class="scene-said">A MolViewSpec scene: it opens as it is shown here in any viewer built on Mol*, such as molstar.org.</span>
+    <p class="scene-said" id="scene-said" role="status"></p>
+  </header>
+  <main class="scene-canvas" id="scene-canvas" role="img" aria-label="The scene in 3D"></main>
+  <script src="/static/molstar/molstar.js?v=5.12.0"></script>
+  <script src="/static/viewer-engine.js"></script>
+  <script src="/static/scene-view.js"></script>
+</body>
+</html>

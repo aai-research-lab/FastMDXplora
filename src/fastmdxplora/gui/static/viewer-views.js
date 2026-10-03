@@ -59,6 +59,36 @@
     }).catch(function () { return { ok: false, reason: "The server did not answer." }; });
   }
 
+  /** The scenes written with the study, newest first, in their list. */
+  function loadScenes(chosen) {
+    return fetch("/api/scenes", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .catch(function () { return { scenes: [] }; })
+      .then(function (said) {
+        var found = said && Array.isArray(said.scenes) ? said.scenes : [];
+        scenes = found.length;
+        var select = byId("viewer-scenes");
+        if (!select) return;
+        // The one chosen while the list was asked for stays chosen.
+        chosen = chosen || select.value;
+        select.replaceChildren();
+        var none = document.createElement("option");
+        none.value = "";
+        none.textContent = found.length ? "Scenes written" : "No scenes written";
+        select.appendChild(none);
+        found.forEach(function (scene) {
+          var option = document.createElement("option");
+          option.value = scene.name;
+          option.textContent = scene.name;
+          select.appendChild(option);
+        });
+        select.value = chosen && found.some(function (s) { return s.name === chosen; })
+          ? chosen : "";
+        var open = byId("viewer-scene-open");
+        if (open) open.disabled = !select.value;
+      });
+  }
+
   // What the name being typed is for: a view, or a scene file.
   var namingFor = "view";
   var scenes = 0;
@@ -102,8 +132,8 @@
           say("The scene was not written: " + ((said && said.reason) || "no reason given"));
           return;
         }
-        scenes += 1;
         naming(false);
+        loadScenes(said.name);
         var link = document.createElement("a");
         link.href = "/artifacts/scenes/" + encodeURIComponent(said.name) + ".mvsx?download=1";
         link.download = said.name + ".mvsx";
@@ -178,13 +208,33 @@
         say("Forgot the view " + name + ".");
       });
     });
-    window.addEventListener("dashboard:viewer-page-opened", function () { load(select.value); });
-    window.addEventListener("dashboard:run-changed", function () { views = []; list(); load(); });
+    var scenesList = byId("viewer-scenes");
+    if (scenesList) {
+      scenesList.addEventListener("change", function () {
+        byId("viewer-scene-open").disabled = !scenesList.value;
+      });
+      byId("viewer-scene-open").addEventListener("click", function () {
+        if (!scenesList.value) return;
+        window.open("/scenes/" + encodeURIComponent(scenesList.value) + "/view", "_blank",
+          "noopener");
+      });
+    }
+    window.addEventListener("dashboard:viewer-page-opened", function () {
+      load(select.value);
+      loadScenes();
+    });
+    window.addEventListener("dashboard:run-changed", function () {
+      views = [];
+      list();
+      load();
+      loadScenes();
+    });
     load();
+    loadScenes();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
   else wire();
 
-  window.FastMDXViewerViews = { load: load, keepScene: keepScene };
+  window.FastMDXViewerViews = { load: load, keepScene: keepScene, loadScenes: loadScenes };
 }());

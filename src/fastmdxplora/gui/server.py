@@ -1404,10 +1404,24 @@ def make_handler(
 
             name, _, member = unquote(rest).partition("/")
             archive = root / SCENES_DIR / f"{name}.mvsx"
-            data = read_scene(root, name, member or "index.mvsj")
+            data = read_scene(root, name, "index.mvsj" if member == "view"
+                              else member or "index.mvsj")
             if data is None or (not allow_control
                                 and not _served_beyond_loopback(root, archive)):
                 self.send_error(404, "Scene not found")
+                return
+            if member == "view":
+                from html import escape
+
+                # The scene on a page of its own, as Mol* shows it.
+                page = (Path(__file__).with_name("templates") / "scene.html").read_text(
+                    encoding="utf-8")
+                self._send_html(page
+                                .replace("__SCENE_TITLE__", escape(name))
+                                .replace("__SCENE_NAME__", escape(name, quote=True))
+                                .replace("__SCENE_ARCHIVE__", escape(
+                                    f"/artifacts/{SCENES_DIR}/{quote(name)}.mvsx?download=1",
+                                    quote=True)))
                 return
             content_type = ("application/json" if member.endswith((".mvsj", ".json"))
                             else "chemical/x-pdb" if member.endswith(".pdb")

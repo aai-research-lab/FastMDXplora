@@ -90,6 +90,11 @@ class Tool:
                 raise ToolError(f"`{name}` is text.")
             if kind == "boolean" and not isinstance(value, bool):
                 raise ToolError(f"`{name}` is true or false.")
+            if kind == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+                raise ToolError(f"`{name}` is a whole number.")
+            allowed_values = self.properties[name].get("enum")
+            if kind == "string" and allowed_values and value not in allowed_values:
+                raise ToolError(f"`{name}` is one of: {', '.join(allowed_values)}.")
             if kind == "array":
                 allowed = self.properties[name].get("items", {}).get("enum")
                 if not isinstance(value, list) or (
@@ -666,6 +671,47 @@ _MARKERS = frozenset({"exploration.yml", "resolved_config.yml"})
 # ---------------------------------------------------------------------------
 # Reading studies
 # ---------------------------------------------------------------------------
+#: The colour a scene's highlighted atoms are given: Okabe-Ito's orange.
+_HIGHLIGHT = "#e69f00"
+
+
+def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.gui.saved_views import views_of
+    from fastmdxplora.gui.viewer_selections import selections_of
+    from fastmdxplora.scenes import SCENES_DIR, write_scene
+
+    folder = _study(ctx, args["study"])
+    view: dict[str, Any] = {}
+    if args.get("view"):
+        saved = views_of(folder)["views"]
+        found = [v for v in saved if v["name"] == args["view"]]
+        if not found:
+            raise ToolError(f"{ctx.workspace.shown(folder)} has no view named {args['view']!r}; "
+                            f"its views: {', '.join(v['name'] for v in saved) or 'none'}.")
+        view = {k: v for k, v in found[0].items() if k != "name"}
+    for key in ("frame", "representation", "colour", "superposed"):
+        if args.get(key) is not None:
+            view[key] = args[key]
+    selections = selections_of(folder)["selections"]
+    if args.get("highlight"):
+        selections.append({"name": "highlight", "kind": "expression",
+                           "expression": args["highlight"], "colour": _HIGHLIGHT, "shown": True,
+                           "representation": "sticks", "labelled": bool(args.get("labels"))})
+    said = write_scene(folder, args["name"], view, selections=selections)
+    if not said.get("ok"):
+        raise ToolError(said.get("reason") or "The scene could not be made.")
+    where = ctx.workspace.shown(Path(said["path"]))
+    lines = [f"Wrote the scene {said['name']} at {where}, "
+             + (f"frame {said['frame']} of the frames the GUI plays."
+                if said.get("frame") is not None else "the study's structure."),
+             "It is MolViewSpec (.mvsx): it opens as written in any viewer built on Mol*, "
+             "in the FastMDXplora GUI (Viewer, Saved views, Scenes) or dropped on "
+             "molstar.org. Tell the person where it is.",
+             f"The study's scenes are in its {SCENES_DIR}/ folder."]
+    lines += [f"- {note}" for note in said.get("notes") or []]
+    return "\n".join(lines)
+
+
 def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
     cards, more = studies_here(ctx.workspace)
     lines = [f"{len(cards)} stud{'y' if len(cards) == 1 else 'ies'} in {ctx.workspace.root}"
@@ -1123,6 +1169,36 @@ TOOLS: tuple[Tool, ...] = (
          "difference marked resolved only where it is more than twice its combined "
          "standard error.",
          {"first": _STUDY, "second": _STUDY}, ("first", "second"), _READS, _compare_studies),
+    Tool("write_scene", "Write a scene of a study",
+         "Write a view of a study as a scene file (MolViewSpec, .mvsx) in its scenes "
+         "folder, for the person to open: the atoms at a frame, the study's secondary "
+         "structure, a representation and colouring, the selections they named in the GUI, "
+         "and atoms to highlight. Use it to show what an answer is about, such as the "
+         "residues that move most coloured by RMSF, or the pocket at a frame. A scene of "
+         "the same name is replaced.",
+         {"study": _STUDY,
+          "name": {"type": "string", "description": (
+              "The scene's name: letters, digits, spaces, dots, dashes, underscores.")},
+          "view": {"type": "string", "description": (
+              "A view the person saved with the study in the GUI, to start from.")},
+          "frame": {"type": "integer", "description": (
+              "A frame of the trajectory as the GUI plays it, from 0.")},
+          "representation": {"type": "string", "enum": [
+              "cartoon", "backbone", "sticks", "ballAndStick", "lines", "surface",
+              "spacefill"], "description": "How the protein is represented."},
+          "colour": {"type": "string", "description": (
+              "chain, spectrum, residue, element, secondary_structure, monochrome, or one "
+              "of the study's per-residue results as result:<analysis>, such as "
+              "result:rmsf.")},
+          "superposed": {"type": "string", "enum": ["none", "backbone", "pocket"],
+                         "description": "Frames fitted to the first, on this."},
+          "highlight": {"type": "string", "description": (
+              "An MDTraj selection to show as orange sticks, such as resSeq 189 to 195.")},
+          "labels": {"type": "boolean", "description": (
+              "Label each highlighted residue (default false).")}},
+         ("study", "name"),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
+          "openWorldHint": False}, _write_scene),
     Tool("ask_agent", "Ask the FastMDXplora Agent (optional; may use your API key)",
          "Optional: only when the person asks for FastMDXplora's own Agent. It writes "
          "with this AI app's model where the AI app lends it (the AI app may ask the "

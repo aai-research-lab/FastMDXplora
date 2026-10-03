@@ -44,7 +44,8 @@ def test_no_explanation_says_it():
                                   "gui/static/dashboard.js", "gui/static/frame-series.js",
                                   "gui/static/frame-interactions.js",
                                   "gui/static/viewer-views.js", "gui/static/viewer-sequence.js",
-                                  "gui/static/viewer-selections.js"])
+                                  "gui/static/viewer-selections.js",
+                                  "gui/static/scene-view.js", "gui/templates/scene.html"])
 def test_no_page_shows_it(page):
     # What is shown is written as a string; names in the code (a function
     # that settles two inputs into one, `Promise.allSettled`) are not shown.

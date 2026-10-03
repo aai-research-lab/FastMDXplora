@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Scenes opened, and written by an AI app
+
+**The scenes written with a study are listed beside its saved views, and
+one opens on a page of its own** (`/scenes/<name>/view`), where the Viewer's
+engine is given the scene and nothing else, so what is shown is what any
+viewer built on Mol\* shows of it, with the scene's notes and its file to
+download. **An AI app writes one through `fastmdx mcp`** (`write_scene`) to
+show the person what an answer is about: a frame, a representation, a
+colouring such as `result:rmsf`, the selections they named and atoms
+highlighted in orange, with their residues labelled where asked; it starts
+from a view the person saved where it names one. The tools' arguments are
+held to their types and their lists of values.
+
 ### Scenes: a view as a MolViewSpec file
 
 **A view of a study is written as a scene file in MolViewSpec, the Mol\*

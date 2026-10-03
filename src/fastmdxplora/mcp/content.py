@@ -57,6 +57,10 @@ recorded beside the results.
 5. **Read what it found.** `read_study` while it runs (step, time left,
    health) and after (what each analysis found, the checks, why it stopped,
    and the config that continues it).
+6. **Show what it found.** `write_scene` writes a view of the study as a
+   scene file the person opens (the GUI, or molstar.org): a frame, a
+   colouring such as `result:rmsf`, the atoms an answer is about
+   highlighted. Say where it was written.
 
 `ask_agent` is optional; use it only when the person asks for it. It is
 FastMDXplora's own Agent, writing with this AI app's model where the AI app
