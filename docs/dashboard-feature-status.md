@@ -347,3 +347,11 @@ retain their SHA-256 hashes; there are no browser page errors. This checks combi
 feature state beyond isolated tests. It uses a test fixture, not the user's
 completed study; it does not call a provider, exercise graph-residue comparison,
 or replace the remaining complete M7 live workflow and scientific gates.
+
+The combined workflow now also passes keyboard selection of two chain-mapped
+RMSF graph residues, pin/compare, inspection of the pinned residue's server
+evidence, and a saved viewer bookmark round trip. After changing the frame and
+clearing the comparison, Restore recovers frame 3, residue 2, pinned residue 1
+and the exact saved camera before Both-format export. Original fixture hashes
+and browser-error checks still pass. No inference is sent by selection/compare;
+live explanation and the user's actual-study workflow remain separate gates.
