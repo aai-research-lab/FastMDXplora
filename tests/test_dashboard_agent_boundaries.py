@@ -461,7 +461,8 @@ def test_chainless_residue_table_requires_globally_unique_identity_and_records_s
     assert "rmsf" not in residue_evidence(tmp_path, selected)
 
 
-def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_path, monkeypatch, model):
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_path, monkeypatch, model, theme):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server
     from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
@@ -475,6 +476,7 @@ def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_pat
         with playwright.sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             page.locator("#agent-request").fill("Suggest a study at pH 6.5")
             loads = []
@@ -488,6 +490,24 @@ def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_pat
             assert not loads
             assert page.locator("#draft-review-accept").is_disabled()
             assert "setup.ph" in page.locator("#draft-review-rows").inner_text()
+            # Review stays usable before human approval in every supported
+            # layout; field differences may scroll locally inside their table.
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                for width in (1440, 1280, 1024, 768, 390):
+                    page.set_viewport_size({"width": width, "height": 1000})
+                    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                    outside = page.locator("#draft-review-dialog").evaluate("""el =>
+                        Array.from(el.querySelectorAll('button,input,select,textarea'))
+                        .filter(node => node.checkVisibility() && !node.closest('table'))
+                        .filter(node => {const r=node.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
+                        .map(node => node.id)""")
+                    assert not outside, (theme, zoom, width, outside)
+                    assert page.locator("#draft-review-accept").is_disabled()
+                    assert "setup.ph" in page.locator("#draft-review-rows").inner_text()
+                    assert not loads
+            page.evaluate("document.documentElement.style.fontSize = '100%'")
+            page.set_viewport_size({"width": 1440, "height": 1000})
             page.locator("#draft-review-confirmed").check()
             page.locator("#draft-review-accept").click()
             page.wait_for_function("FastMDXDashboard.state.activePage === 'run'")

@@ -645,3 +645,32 @@ not called by the comparison; a whole-environment dependency PASS is not claimed
 The separately observed CPU repeatability failures and remaining M7/M8 acceptance
 items remain open. The OpenFF package installation was isolated in the user's
 WSL cache and did not modify Windows Python or the user's study.
+
+### Repeatability attribution and draft-review layout acceptance
+
+The installed `b103dd8` wheel passed both unchanged fixed-seed and drawn-seed
+repeatability checks under Ubuntu/WSL Python 3.11.16 (2 passed in 22.88 s).
+To investigate the earlier Windows failures without changing scientific code,
+revision `51ac6d3c09ce7af54a5aa14a57833079bfacb28f` (the parent before preparation
+provenance was introduced) was archived into an isolated temporary directory.
+The baseline preparation module import was verified to resolve to that archive.
+Using the existing Windows Python 3.11.9 scientific dependencies, its unchanged
+repeatability checks gave 1 failed / 1 passed in 165.81 s. The fixed-seed test
+failed at exact box equality: identical 4,457 atom counts but smallest box
+widths 2.89883901163807 versus 2.898933121250925 nm. The drawn-seed test passed
+on this run. This independently reproduces a preparation repeatability failure
+without audit instrumentation. It does not identify the backend root cause or
+establish deterministic Windows behavior. Scientific code and original numerical
+assertions were left intact; the issue remains a documented baseline limitation.
+
+The expanded human draft-review browser check passed for Graphite, Ink and Paper
+(3 passed in 20.18 s). The populated field-difference dialog was checked at
+1440/1280/1024/768/390 px with 100% and 200% text size: controls stayed within
+the viewport, the pH difference remained present, approval stayed disabled and
+no draft acceptance request was sent before confirmation. The existing test
+then exercised explicit draft acceptance, final-run review cancellation and
+confirmation, exact review-token validation, and persisted sidebar disablement.
+The final run was intercepted by the test so no simulation started. Model
+suggestions were controlled fixtures; this is not a live provider receipt.
+Ruff (existing E501 exception) and `git diff --check` passed. M7/M8 remain open
+for their remaining integrated and visual states.
