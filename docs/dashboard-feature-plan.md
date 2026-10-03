@@ -8,6 +8,10 @@ Claude, Kimi and Gemini; M5/M7 have remaining preservation/release acceptance ga
 Milestone receipts below describe verified increments at their stated revision,
 not completion of all requirements or current verification of the whole branch.
 
+The [completion and aesthetics plan](dashboard-completion-plan.md) defines the
+remaining work and exit checks. It preserves M0–M7 and adds M8 for the visual
+system, responsive layout and accessibility revamp; M8 finishes before final M7.
+
 Working checkout: `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`.
 Branch: `context-aware-agent`, tracking `princeote/context-aware-agent`.
 Keep the existing v2.5.8 branch history; do not integrate upstream main.
@@ -368,6 +372,7 @@ Official references used for provider feasibility:
 | M4: clips | Export dialog, selectable overlays, camera rotation, source freeze, encoders, progress/cancel, save/download | Reproducible render metadata and valid MP4/GIF artifacts |
 | M5: audit recording | Observe existing setup operations, source preservation, versioned events/mapping, performance limits | Actual future-run provenance; old runs remain readable |
 | M6: audit visuals | Expandable panel, stage template, side-by-side/overlay, inventory/residue figures, Agent evidence links | Consistent factual audit with and without a connected model |
+| M8: aesthetics and interactions | Shared visual system, coherent page/tool layouts, responsive drawers/dialogs, readable controls and evidence, keyboard/focus review | All dashboard surfaces and supported themes meet the completion plan's visual/interaction checklist; scientific presentation semantics preserved |
 | M7: integrated validation | Tests below, manual browser review, docs, packaging checks, final diff review | Evidence-backed release checklist and known limitations before any commit/push |
 
 Within each milestone: inspect the relevant existing path → specify the data/UI

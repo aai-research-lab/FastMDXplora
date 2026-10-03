@@ -9,6 +9,11 @@ implementations, but several specified controls and release acceptance gates
 remain open. A milestone commit records a tested increment, not completion of
 every requirement in the expanded framework.
 
+The [completion and aesthetics plan](dashboard-completion-plan.md) now defines
+how to close these gaps. M8 is added as **planned** for design, layout and
+accessibility work; this planning update does not mark any implementation gate
+complete or change the verification receipts below.
+
 Work stays in the GitHub Desktop checkout on `princeote/context-aware-agent`,
 based on the existing v2.5.8 branch history. Upstream main was not integrated.
 These changes are not a published upstream release.
@@ -70,6 +75,7 @@ These changes are not a published upstream release.
 | M4 — clips | Implemented in part; core verified | Saved rotating GIF/MP4 exports decode; labels, source metadata and viewer restoration tested. User-selectable resolution, study/title and custom-caption overlays, and a pre-export source-frame/time preview and estimate remain to implement. Current output size is derived from the viewer and capped, not a resolution selector. |
 | M5 — provenance | Implemented; preservation verification limited | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on OpenMM Reference. Aggregate system snapshots do not record every individual solvent/ion operation. Broader backend/platform and fixture preservation checks remain open. |
 | M6 — audit visuals | Implemented in part; core verified | Stage strip, total inventory bars with component counts, side-by-side/overlay, event detail and Agent/bookmark links tested. Dedicated affected-residue category track, a structured decision table and separate ligand/component series remain to implement; raw event details and aggregate inventory are the current representation. |
+| M8 — aesthetics and interactions | Planned | Shared design system, coherent layouts, responsive panels, all-theme contrast and keyboard/focus acceptance; completed before final M7. |
 | M7 — integrated release validation | Partial; not complete | Targeted integrated suites, browser checks and earlier wheel receipts exist. Final expanded-scope acceptance, latest-wheel verification, remaining provider tests and broader scientific/browser coverage are not all complete. |
 
 ## Verification and scientific limits

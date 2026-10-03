@@ -25,6 +25,11 @@ browser and packaging gates are listed in the
 [current milestone status and change description](docs/dashboard-feature-status.md).
 This branch update does not integrate upstream main or declare a new release.
 
+The [completion and aesthetics plan](docs/dashboard-completion-plan.md) specifies
+the remaining controls and acceptance checks, plus a new M8 design milestone
+covering typography, contrast, layout, responsive panels and keyboard use. This
+is planned work; the redesign and remaining features are not yet implemented.
+
 ### A hosted GUI shows its service's name and the person signed in
 
 **`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the
