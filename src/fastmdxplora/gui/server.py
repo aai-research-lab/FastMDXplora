@@ -144,6 +144,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
+    "/api/views",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb", "/structure/live-frame.dcd",
@@ -813,6 +814,11 @@ def make_handler(
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
                 self._send_frames(root, path.rsplit("/", 1)[1], parse_qs(parsed.query))
                 return
+            if path == "/api/views":
+                from fastmdxplora.gui.saved_views import views_of
+
+                self._send_json(views_of(root))
+                return
             if path == "/api/interactions-over-frames":
                 from fastmdxplora.gui.interactions_over_frames import interactions_over_frames
 
@@ -845,6 +851,19 @@ def make_handler(
                 self._refuse_beyond_loopback()
                 return
             payload = self._read_json_body()
+            if path == "/api/views":
+                # A view of the Viewer saved with the study, or forgotten.
+                from fastmdxplora.gui.saved_views import delete_view, save_view
+
+                study = app_runtime.data_root()
+                if not is_study(study):
+                    self._send_json({"ok": False, "reason": "No study is open to save it in."})
+                    return
+                if payload.get("action") == "delete":
+                    self._send_json(delete_view(study, payload.get("name")))
+                else:
+                    self._send_json(save_view(study, payload.get("name"), payload.get("view")))
+                return
             if path == "/api/run":
                 # Runs what the config describes rather than what a form was
                 # wired for, which is how an analysis of an existing

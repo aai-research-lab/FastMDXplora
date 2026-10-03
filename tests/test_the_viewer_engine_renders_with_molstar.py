@@ -82,11 +82,19 @@ def test_the_frames_are_rendered(page):
     assert page.outside == []
 
 
+#: The secondary structure rendered, chain by chain, once it is what was
+#: asked: Mol* computes a model's after the model changes, and a busy
+#: machine reads it a moment before.
+SHOWN = """(want) => { const s = engine.secondaryStructureShown();
+    return ['A', 'B'].map((c) => s[c] || '').join('') === want; }"""
+
+
 def test_the_cartoon_is_the_study_s_dssp_in_every_frame(page):
     said = _server(page, "/api/secondary-structure?of=frames")
     assert page.evaluate("(said) => engine.setSecondaryStructure(said)", said) is True
     for frame in (0, 5):
         page.evaluate(f"() => engine.setFrame({frame})")
+        page.wait_for_function(SHOWN, arg=said["frames"][frame], timeout=30000)
         shown = page.evaluate("() => engine.secondaryStructureShown()")
         assert shown["A"] + shown["B"] == said["frames"][frame]
     # And it is the study's that is rendered, not Mol*'s: an assignment given is the
@@ -138,6 +146,9 @@ def test_strands_paired_across_chains_are_rendered_as_strands(page):
     own = "".join(page.evaluate("() => engine.secondaryStructureShown()").values())
     assert own.count("E") == 0
     page.evaluate("(said) => engine.setSecondaryStructure(said)", study)
+    page.wait_for_function("(n) => Object.values(engine.secondaryStructureShown()).join('')"
+                           ".split('E').length - 1 === n", arg=study["frames"][0].count("E"),
+                           timeout=30000)
     shown = "".join(page.evaluate("() => engine.secondaryStructureShown()").values())
     assert shown.count("E") == study["frames"][0].count("E")
     page.evaluate("() => engine.loadFrames('/structure/frames-topology.pdb', '/structure/frames.dcd')")

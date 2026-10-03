@@ -123,10 +123,10 @@
    * is still being rendered, each replaced the other's half-built scene. The
    * engine's own calls to itself are not queued, so none waits on itself. */
   const QUEUED = new Set(["loadFrames", "setFramesCoordinates", "loadStructure",
-    "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame", "setRepresentation", "setColour",
-    "setSecondaryStructure", "redraw", "measure", "showPicks", "clearMeasurements",
-    "showContacts", "showInteractions", "loadEnvironment", "renderEnvironment", "moveEnvironment",
-    "removeEnvironment", "picture"]);
+    "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame",
+    "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
+    "showPicks", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
+    "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture"]);
 
   function oneAtATime(engine) {
     let last = Promise.resolve();
@@ -652,7 +652,14 @@
     }
 
     restoreCamera(snapshot) {
-      if (snapshot && this.plugin.canvas3d) this.plugin.canvas3d.camera.setState(snapshot, 0);
+      const canvas = this.plugin.canvas3d;
+      if (!snapshot || !canvas) return;
+      canvas.camera.setState(snapshot, 0);
+      // A reset Mol* has asked for and not yet carried out (a frame can take
+      // a second to render in software) is given this view, or it would
+      // move the camera from it at the next frame.
+      canvas.requestCameraReset({snapshot, durationMs: 0});
+      canvas.requestDraw();
     }
 
     /** Each atom of the structure shown, as a location. */

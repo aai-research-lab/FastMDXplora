@@ -1068,6 +1068,9 @@ button {
 .frame-interactions-note { flex-basis: 100%; margin: 0; }
 .frame-interactions-chart { flex: 1 1 100%; min-width: 260px; }
 .frame-interactions-svg { display: block; cursor: col-resize; touch-action: none; }
+.viewer-views select { max-width: 11rem; }
+.viewer-view-naming { display: inline-flex; align-items: center; gap: 4px; }
+.viewer-view-naming input { width: 9rem; font-size: var(--text-2xs); }
 .icon-group {
     display: inline-flex; align-items: center; gap: 2px; padding: 2px;
     border: 1px solid var(--border-subtle); border-radius: 8px;

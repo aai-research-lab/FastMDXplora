@@ -69,6 +69,8 @@
     // "pocket", and the address of the frames so.
     superposed: "none",
     superposedUrl: null,
+    // A white ground and the highest quality, for a figure.
+    publication: false,
     framesCoordinatesUrl: null,
     pocketSurface: false,
     pocketOnly: false,
@@ -1052,6 +1054,84 @@
     }
     if (action === "screenshot") await takeScreenshot();
     if (action === "measure") toggleMeasuring(button);
+    if (action === "publication") setPublication(!STATE.publication);
+  }
+
+  /** The look a figure is made in: a white ground, and the outlines and
+   * shading of the highest quality, wherever the page is rendered; off,
+   * the ground and quality as set. */
+  function setPublication(on) {
+    STATE.publication = !!on;
+    const engine = STATE.engine;
+    if (engine) {
+      engine.setBackground(on ? 0xffffff : colourNumber(STATE.background));
+      engine.setQuality(on || !engine.softwareRendering() ? "high" : "low");
+    }
+    document.querySelectorAll('[data-action="publication"]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(STATE.publication));
+      button.classList.toggle("active", STATE.publication);
+    });
+  }
+
+  /* A view: the camera, the frame shown and how the molecule is shown, to
+   * be saved with the study (viewer-views.js) and shown again. */
+  function viewNow() {
+    const engine = STATE.engine;
+    const camera = engine ? engine.cameraSnapshot() : null;
+    if (!camera) return null;
+    const view = {
+      camera: {position: Array.from(camera.position), target: Array.from(camera.target),
+        up: Array.from(camera.up), radius: camera.radius, fov: camera.fov, mode: camera.mode},
+      representation: STATE.representation, colour: STATE.colorMode,
+      shown: Object.assign({}, STATE.visibility), superposed: STATE.superposed,
+      pocket_cutoff: STATE.pocketCutoff, publication: !!STATE.publication,
+    };
+    if (STATE.mode === "playback" && STATE.framesRendered) view.frame = engine.frame();
+    return view;
+  }
+
+  async function showView(view) {
+    if (!view || !view.camera) return false;
+    const generation = STATE.viewerGeneration;
+    const rep = document.getElementById("viewer-rep");
+    if (view.representation && rep && [...rep.options].some((o) => o.value === view.representation)) {
+      STATE.representation = view.representation;
+      rep.value = view.representation;
+    }
+    const colour = document.getElementById("viewer-color");
+    if (view.colour && colour && [...colour.options].some((o) => o.value === view.colour)) {
+      STATE.colorMode = view.colour;
+      colour.value = view.colour;
+    }
+    if (Number.isFinite(view.pocket_cutoff)) {
+      STATE.pocketCutoff = clamp(Number(view.pocket_cutoff), 3, 15, 5);
+      const cutoff = document.getElementById("pocket-cutoff");
+      if (cutoff) cutoff.value = String(STATE.pocketCutoff);
+      sayTheCutoffInNanometres();
+    }
+    // The parts shown, through their own boxes: water and ions are fetched
+    // or rendered beside the frames as a click on them would.
+    Object.entries(view.shown || {}).forEach(([which, on]) => {
+      const box = document.querySelector(`.chip-toggle input[data-vis="${which}"]`);
+      if (!box || box.disabled || box.checked === !!on) return;
+      box.checked = !!on;
+      box.dispatchEvent(new Event("change"));
+    });
+    setPublication(!!view.publication);
+    if (Number.isInteger(view.frame) && (await loadPlayback(STATE.playbackPayload))) {
+      stopFollowing();
+      await setPlaybackFrame(view.frame);
+    }
+    if (!isViewerGenerationCurrent(generation)) return false;
+    if (view.superposed && view.superposed !== STATE.superposed) {
+      const select = document.getElementById("traj-superpose");
+      if (select) select.value = view.superposed;
+      await superpose(view.superposed);
+    }
+    await restyleViewers();
+    if (!isViewerGenerationCurrent(generation) || !STATE.engine) return false;
+    STATE.engine.restoreCamera(view.camera);
+    return true;
   }
 
   /* The keys a player has: Space plays and pauses, the arrows step a frame
@@ -1709,7 +1789,8 @@
     STATE.visibility.ions = !!settings.showIons;
     STATE.preservingCamera = settings.preserveCamera !== false;
     STATE.background = settings.background === "charcoal" ? COLORS.charcoal : COLORS.black;
-    if (STATE.engine) STATE.engine.setBackground(colourNumber(STATE.background));
+    // The publication look keeps its white ground until it is turned off.
+    if (STATE.engine && !STATE.publication) STATE.engine.setBackground(colourNumber(STATE.background));
     if (settings.spin && STATE.engine) setSpinning(STATE.engine, true);
     if (STATE.mode === "playback" && needsFullTopology()) void ensurePlaybackEnvironment();
     const cutoff = document.getElementById("pocket-cutoff");
@@ -2255,6 +2336,9 @@
     onStructureUpdated,
     pollLiveFrame,
     loadPlayback,
+    viewNow,
+    showView,
+    setPublication,
     resize: resizeViewers,
     measurements,
     pick: addPick,

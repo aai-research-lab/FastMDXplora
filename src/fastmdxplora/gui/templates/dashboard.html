@@ -777,6 +777,19 @@
                     <button class="icon-btn ctl-btn" type="button" data-action="fullscreen" aria-label="Full screen" title="Full screen (F)"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button>
                     <button class="icon-btn ctl-btn" type="button" data-action="screenshot" aria-label="Save a picture" title="Save the view as a picture, at least 2,400 pixels across"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
                     <button class="icon-btn ctl-btn" type="button" data-action="measure" aria-label="Measure" aria-pressed="false" title="Measure: click two atoms for a distance, three for an angle, four for a dihedral (M)"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
+                    <button class="icon-btn ctl-btn" type="button" data-action="publication" aria-label="Publication look" aria-pressed="false" title="A white ground, outlines and shading, for a figure"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></button>
+                  </div>
+                  <!-- Views saved with the study: the camera, the frame and how
+                       the molecule is shown (viewer-views.js). -->
+                  <div class="icon-group text-group viewer-views" role="group" aria-label="Saved views">
+                    <label class="control-label" for="viewer-views">Views</label>
+                    <select id="viewer-views"><option value="">Saved views</option></select>
+                    <button class="icon-btn" type="button" id="viewer-view-save" aria-label="Save this view" title="Save this view with the study: the camera, the frame and how the molecule is shown"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg></button>
+                    <button class="icon-btn" type="button" id="viewer-view-forget" aria-label="Forget this view" title="Forget the view chosen" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                    <span class="viewer-view-naming" id="viewer-view-naming" hidden>
+                      <input id="viewer-view-name" maxlength="60" aria-label="Name of the view" placeholder="Name">
+                      <button class="chip-btn" type="button" id="viewer-view-keep">Save</button>
+                    </span>
                   </div>
                   <div class="icon-group text-group" role="group" aria-label="Centre on">
                     <span class="control-label">Centre</span>
@@ -1288,5 +1301,6 @@
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/frame-series.js"></script>
   <script src="/static/frame-interactions.js"></script>
+  <script src="/static/viewer-views.js"></script>
 </body>
 </html>

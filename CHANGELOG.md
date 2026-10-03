@@ -7,6 +7,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Views saved with the study, and a publication look
+
+**A view of the Viewer is saved with the study under a name, and shown again
+as it was.** A figure of a trajectory is a camera, a frame and choices of
+how the molecule is shown, made by turning and clicking and lost with the
+page: a second picture of the same view for a revised figure meant making
+it again by eye. **Views**, beside the Viewer's tools, saves the camera, the
+frame, the representation and colouring, the parts shown, the
+superposition, the pocket cutoff and the look in the study
+(`viewer_views.json`, each value checked), and choosing the view sets each
+of them and the camera again. Saving is on loopback only. **The publication
+look** (the page icon) gives a white ground and the outlines and shading of
+the highest quality, wherever the page is rendered, for a figure saved with
+the camera button. A camera set while Mol\* still had a reset of its own to
+carry out (a frame can take a second to render in software) was moved from
+by it; the reset is now given the camera set.
+
 ### What holds the ligand, frame by frame
 
 **The contacts that hold the ligand are shown under the frames played and in

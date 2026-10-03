@@ -271,6 +271,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # What holds the ligand, frame by frame, as the interactions
             # analysis recorded it.
             "/api/interactions-over-frames",
+            # The views saved with the study, to be shown again; saving one
+            # is a POST, answered on loopback only.
+            "/api/views",
             # The methods paragraphs, as the report gives them.
             "/api/methods",
             # What a study run until it knows has judged: the same means
