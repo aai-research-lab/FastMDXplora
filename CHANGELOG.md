@@ -12,6 +12,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 Preparation-audit stage selectors wrap on narrow screens with enlarged text.
 Browser regression coverage verifies saved comparison settings and camera views
 across all three themes without changing source structures.
+Trajectory-export browser checks now cover simultaneous GIF/MP4 downloads,
+decoded output dimensions, artifact byte equality and preserved scientific files.
 
 The Agent composer now offers server-resolved evidence inspection and per-message
 view opt-out. Suggested configurations have an explicit before/after review;

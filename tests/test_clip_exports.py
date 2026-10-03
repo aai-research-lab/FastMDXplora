@@ -105,11 +105,19 @@ def test_invalid_export_options_are_refused(runtime, options):
     assert not start(runtime, **options)["ok"]
 
 
-def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page):
+@pytest.mark.parametrize("format", ["gif", "both"])
+def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page, format, tmp_path, dashboard):
+    if format == "both" and not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
     page = clip_page
+    root = dashboard.runtime.active_root
+    sources = [path for folder in ("setup", "simulation", "analysis")
+               for path in (root / folder).rglob("*") if path.is_file()]
+    original = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
     page.locator("#clip-export-open").click()
     page.wait_for_function("document.querySelector('#clip-status').textContent.includes('saved browser frames available')")
     page.locator("#clip-last").fill("2")
+    page.locator("#clip-format").select_option(format)
     page.locator("#clip-rotation").fill("60")
     page.locator("#clip-residues").check()
     page.locator("#clip-label-scope").select_option("protein")
@@ -129,6 +137,8 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page)
     link = page.locator("#clip-download").get_attribute("href")
     response = page.request.get(page.url.split("/#")[0] + link)
     assert response.ok
+    saved_gif = root / link.split("?", 1)[0].removeprefix("/artifacts/")
+    assert response.body() == saved_gif.read_bytes()
     with Image.open(io.BytesIO(response.body())) as image:
         assert image.n_frames == 3
         assert image.size == (640, 480)
@@ -136,9 +146,28 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page)
     metadata = page.request.get(page.url.split("/#")[0] + metadata_link).json()
     assert metadata["dimensions"] == metadata["render_size"] == [640, 480]
     assert metadata["captions"] == {"study": "Test study", "caption": "Saved molecular frames"}
+    if format == "both":
+        mp4_link = page.locator("#clip-download-mp4").get_attribute("href")
+        assert page.locator("#clip-download-mp4").is_visible()
+        mp4_response = page.request.get(page.url.split("/#")[0] + mp4_link)
+        assert mp4_response.ok
+        saved_mp4 = root / mp4_link.split("?", 1)[0].removeprefix("/artifacts/")
+        assert mp4_response.body() == saved_mp4.read_bytes()
+        encoded = tmp_path / "browser-trajectory.mp4"
+        encoded.write_bytes(mp4_response.body())
+        decoded = subprocess.run(
+            [shutil.which("ffmpeg"), "-nostdin", "-v", "error", "-i", str(encoded),
+             "-f", "image2pipe", "-vcodec", "png", "-frames:v", "1", "-"],
+            capture_output=True, timeout=30,
+        )
+        assert decoded.returncode == 0, decoded.stderr.decode(errors="replace")
+        with Image.open(io.BytesIO(decoded.stdout)) as first_frame:
+            assert first_frame.size == (640, 480)
+        assert len(metadata["source_frames"]) == len(metadata["times_ns"]) == 3
     assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
     assert not page.evaluate("document.querySelector('.viewer-layout').inert")
     assert not page.errors
+    assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources} == original
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])

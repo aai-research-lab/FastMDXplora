@@ -322,3 +322,16 @@ screens. Browser checks report no JavaScript errors and verify unchanged source
 structure bytes. These synthetic UI checks do not establish additional chemical
 validation or native browser zoom behavior. OpenAI is the user's only available
 subscription for live testing; other provider subscription flows remain unverified.
+
+### Browser GIF and MP4 export acceptance
+
+The 23-check clip suite passes. The browser export workflow now covers GIF and
+Both, using actual labeled, rotating saved frames at 640 by 480. The Both case
+downloads MP4 and decodes its first frame with ffmpeg at the selected dimensions;
+GIF contains three frames and provenance contains three source-frame/time entries.
+Two targeted browser cases also pass after adding byte-for-byte comparisons
+between downloads and saved artifacts, plus unchanged SHA-256 checks across setup,
+simulation and analysis fixture files. Preview/export restore structure mode and
+release viewer interaction; browser errors remain absent. This closes a browser
+Both-format gap but does not replace the complete integrated-study gate or prove
+every label's visible placement at every export resolution.
