@@ -22,7 +22,7 @@ def _a_run_being_written(root: pathlib.Path) -> pathlib.Path:
     frames.mkdir(parents=True)
     for n in range(1, 4):
         (frames / f"frame_{n:06d}_production.pdb").write_text("ATOM\n", encoding="utf-8")
-    (root / "simulation" / "playback.pdb.tmp").write_text("half written", encoding="utf-8")
+    (root / "simulation" / ".frames.dcd.4242.1.tmp").write_text("half written", encoding="utf-8")
     (root / "simulation" / "energy.csv").write_text("step,energy\n", encoding="utf-8")
     return frames
 

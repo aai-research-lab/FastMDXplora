@@ -58,10 +58,7 @@ from fastmdxplora.gui.telemetry import (
     read_metrics,
     read_status,
 )
-from fastmdxplora.gui.trajectory_playback import (
-    neighborhood_residues,
-    playback_info,
-)
+from fastmdxplora.gui.trajectory_frames import frames_info
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +239,7 @@ def test_gui_command_parses() -> None:
 
 
 # ---------------------------------------------------------------------------
-# New dashboards: structure_info, ligand_detection, live_frames, trajectory_playback
+# New dashboards: structure_info, ligand_detection, live_frames, trajectory_frames
 # ---------------------------------------------------------------------------
 def test_count_structure_basic_protein(tmp_path: Path) -> None:
     (tmp_path / "topology.pdb").write_text(_tiny_pdb(), encoding="utf-8")
@@ -386,35 +383,18 @@ def test_write_live_frame_handles_missing_directory_safely(tmp_path: Path) -> No
 
 
 def test_playback_returns_unavailable_when_missing(tmp_path: Path) -> None:
-    info = playback_info(tmp_path)
+    info = frames_info(tmp_path)
     assert info["playback_available"] is False
 
 
-def test_playback_generation_failure_is_safe(tmp_path: Path, monkeypatch) -> None:
-    # Force a failure inside the writer.
-    import fastmdxplora.gui.trajectory_playback as mod
-    monkeypatch.setattr(mod, "_import_mdtraj", lambda: None)
+def test_playback_generation_failure_is_safe(tmp_path: Path) -> None:
+    # A trajectory that cannot be read is said, not raised.
     (tmp_path / "simulation").mkdir(parents=True)
     (tmp_path / "simulation" / "topology.pdb").write_text(_tiny_pdb(), encoding="utf-8")
     (tmp_path / "simulation" / "production.dcd").write_bytes(b"\x00\x00")
-    info = playback_info(tmp_path)
+    info = frames_info(tmp_path)
     assert info["playback_available"] is False
-    assert info["reason"] == "mdtraj-not-installed"
-
-
-def test_neighborhood_residues_per_atom_check(tmp_path: Path) -> None:
-    # Atom-wide coordinates in standard PDB column widths so the parser
-    # finds the values in the right slots (cols 31-38, 39-46, 47-54).
-    pdb = "\n".join([
-        "HETATM    1  C1  EPE A 100       4.000   4.000   4.000  1.00 10.00           C",
-        "ATOM      2  N   ALA A   1       4.500   4.500   4.500  1.00  0.00           N",  # near
-        "ATOM      3  N   ALA A   2      30.000  30.000  30.000  1.00  0.00           N",  # far
-        "END",
-    ])
-    (tmp_path / "topology.pdb").write_text(pdb, encoding="utf-8")
-    residues = neighborhood_residues(topology_path=tmp_path / "topology.pdb", ligand_resname="EPE", cutoff_angstrom=5.0)
-    assert ("A", 1) in residues
-    assert ("A", 2) not in residues
+    assert info["reason"].startswith("The frames could not be written")
 
 
 
@@ -453,12 +433,14 @@ def test_live_frame_history_builds_playback(tmp_path: Path) -> None:
     )
     history = read_live_frame_history(sim)
     assert history["count"] == 2
-    info = playback_info(tmp_path, max_browser_frames=20)
+    info = frames_info(tmp_path, most_frames=20)
     assert info["playback_available"] is True
     assert info["source_kind"] == "live-history"
     assert info["n_frames_browser"] == 2
-    text = (sim / "playback.pdb").read_text(encoding="utf-8")
-    assert text.count("MODEL") == 2
+    import mdtraj as md
+
+    sent = md.load_dcd(str(sim / "frames.dcd"), top=str(sim / "frames_topology.pdb"))
+    assert sent.n_frames == 2
 
 
 def test_dashboard_display_pdb_strips_solvent_and_keeps_ligand() -> None:
@@ -598,7 +580,7 @@ def test_dashboard_server_serves_new_routes(tmp_path: Path) -> None:
             "/api/ligands",
             "/api/live-frame-index",
             "/api/live-coordinates",
-            "/api/playback-info",
+            "/api/frames-info",
             "/structure/topology.pdb",
             "/structure/live-frame.pdb",
         ):
@@ -658,12 +640,12 @@ def test_live_frame_endpoint_404_when_missing(tmp_path: Path) -> None:
         server.server_close()
 
 
-def test_playback_info_unavailable_when_no_trajectory(tmp_path: Path) -> None:
+def test_frames_info_unavailable_when_no_trajectory(tmp_path: Path) -> None:
     run = tmp_path / "run"
     run.mkdir()
     server, base_url = start_test_server(run)
     try:
-        payload = json.loads(urlopen(f"{base_url}/api/playback-info", timeout=HTTP_TIMEOUT).read())
+        payload = json.loads(urlopen(f"{base_url}/api/frames-info", timeout=HTTP_TIMEOUT).read())
     finally:
         server.shutdown()
         server.server_close()
@@ -827,7 +809,7 @@ def test_live_json_endpoints_are_no_store(tmp_path: Path) -> None:
         for endpoint in (
             "status", "metrics", "events", "artifacts", "results", "files",
             "protein-preview", "structure-info", "ligands",
-            "live-frame-index", "live-coordinates", "playback-info",
+            "live-frame-index", "live-coordinates", "frames-info",
             "analyses",
         ):
             response = urlopen(f"{base_url}/api/{endpoint}", timeout=HTTP_TIMEOUT)
@@ -1251,7 +1233,7 @@ def test_runtime_does_not_expose_old_telemetry_after_failed_reuse(tmp_path: Path
 def test_dashboard_assets_do_not_pause_playback_for_live_history_appends() -> None:
     """A new rolling live frame is not a replacement trajectory.
 
-    ``/api/playback-info`` changes its signature as the bounded live history
+    ``/api/frames-info`` changes its signature as the bounded live history
     grows. That must not pause an already playing viewer every poll.
     """
     root = Path(__file__).resolve().parents[1]
@@ -4621,7 +4603,8 @@ class TestTheTrajectoryIsReadOnceAndQuietly:
     The noise was the symptom. The cause was the viewer asking for the
     playback payload with ``force=1`` whenever the browser did not already
     hold one -- so every mount and every reload re-streamed the whole
-    trajectory to rebuild a file already sitting beside it.
+    trajectory to rebuild a file already sitting beside it. The frames the
+    viewer is now sent are kept the same way.
     """
 
     def test_the_viewer_asks_for_the_cache_first(self) -> None:
@@ -4640,34 +4623,34 @@ class TestTheTrajectoryIsReadOnceAndQuietly:
     def test_a_second_request_does_not_reopen_the_file(self, tmp_path) -> None:
         """The disk cache is keyed on the trajectory's size and modification
         time, so an unchanged file is read once."""
-        import mdtraj as md
-
-        from fastmdxplora.gui import trajectory_playback as playback
+        from fastmdxplora.gui import trajectory_frames as frames
 
         run = _completed_run_with_trajectory(tmp_path)
-        opens = {"n": 0}
-        real = md.iterload
+        reads = {"n": 0}
+        real = frames._from_trajectory
 
         def counted(*args, **kwargs):
-            opens["n"] += 1
+            reads["n"] += 1
             return real(*args, **kwargs)
 
-        md.iterload = counted
+        frames._from_trajectory = counted
         try:
             for _ in range(4):
-                playback.playback_info(run, max_browser_frames=50, force=False)
+                frames.frames_info(run, most_frames=50, force=False)
         finally:
-            md.iterload = real
+            frames._from_trajectory = real
 
-        assert opens["n"] == 1, (
-            f"the trajectory was opened {opens['n']} times for four requests")
+        assert reads["n"] == 1, (
+            f"the trajectory was read {reads['n']} times for four requests")
 
     def test_the_reader_does_not_write_to_the_terminal(self, tmp_path,
                                                        capfd) -> None:
-        from fastmdxplora.gui import trajectory_playback as playback
+        from fastmdxplora.gui import trajectory_frames as frames
+        from fastmdxplora.gui.by_residue import secondary_structure
 
         run = _completed_run_with_trajectory(tmp_path)
-        playback.playback_info(run, max_browser_frames=50, force=False)
+        frames.frames_info(run, most_frames=50, force=False)
+        secondary_structure(run, "frames")
 
         captured = capfd.readouterr()
         assert "dcdplugin" not in captured.out

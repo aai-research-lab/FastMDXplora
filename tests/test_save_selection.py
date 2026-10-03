@@ -238,16 +238,17 @@ class TestEverythingThatReadsTheTrajectoryAgrees:
             encoding="utf-8"))
         assert manifest["results"]["rmsd"]["status"] == "ok"
 
-    def test_the_playback_prefers_it_too(self, tmp_path):
+    def test_the_viewer_s_frames_prefer_it_too(self, tmp_path):
         # The browser's copy holds the eight atoms that were written.
         import mdtraj as md
 
-        from fastmdxplora.gui.trajectory_playback import playback_info
+        from fastmdxplora.gui.trajectory_frames import frames_info
 
         root = _a_study_that_saved_a_subset(tmp_path)
-        info = playback_info(root)
+        info = frames_info(root)
         assert info["playback_available"], info.get("reason")
-        shown = md.load(str(root / "simulation" / info["companion_pdb"]))
+        shown = md.load_dcd(str(root / "simulation" / info["coordinates"]),
+                            top=str(root / "simulation" / info["topology"]))
         assert shown.n_atoms == 8 and {a.name for a in shown.topology.atoms} == {"CA"}
 
     def test_every_known_reader_prefers_it(self, tmp_path):
@@ -259,7 +260,7 @@ class TestEverythingThatReadsTheTrajectoryAgrees:
         reads its own input. A check with three false positives out of four
         is one that gets deleted rather than fixed, so the readers are
         listed and a new one joins this list. The two above run the analysis
-        phase and the playback; the command line's and the cross-tool
+        phase and the viewer's frames; the command line's and the cross-tool
         benchmark's lookups are asked here, with the subset topology and
         without it.
         """

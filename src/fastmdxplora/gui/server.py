@@ -53,7 +53,6 @@ from fastmdxplora.gui.telemetry import (
     run_phases,
     run_stages,
 )
-from fastmdxplora.gui.trajectory_playback import playback_info
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
 
@@ -142,13 +141,13 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
-    "/api/playback-info", "/api/series", "/api/runs-compared", "/api/selection",
+    "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb",
-    "/structure/playback.pdb", "/structure/frames.dcd", "/structure/frames-topology.pdb",
+    "/structure/frames.dcd", "/structure/frames-topology.pdb",
 })
 GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/")
 
@@ -288,7 +287,10 @@ class DashboardConfig:
     ligand_resname: str | None = None
     include_cofactors: bool = False
     binding_pocket_cutoff_A: float = 5.0
-    max_browser_frames: int = 200
+    #: The most frames of the trajectory the viewer is sent
+    #: (`trajectory_frames.MOST_FRAMES`); fewer where they would pass ten
+    #: million atoms times frames.
+    max_browser_frames: int = 2000
     refresh_seconds: float = 3.0
 
     @property
@@ -720,8 +722,8 @@ def make_handler(
                 self._send_json(values_by_residue(root))
                 return
             if path == "/api/secondary-structure":
-                # DSSP for the structure, live frame or playback the viewer
-                # was sent, so its cartoon is the study's assignment.
+                # DSSP for the structure, live frame or frames the viewer was
+                # sent, so its cartoon is the study's assignment.
                 from fastmdxplora.gui.by_residue import secondary_structure
 
                 of = (parse_qs(parsed.query).get("of") or ["structure"])[0]
@@ -764,30 +766,14 @@ def make_handler(
             if path == "/api/live-coordinates":
                 self._send_json(_live_coordinates_payload(root))
                 return
-            if path == "/api/playback-info":
-                max_frames = cfg.max_browser_frames
-                if "max=" in parsed.query and allow_control:
-                    try:
-                        max_frames = int(parsed.query.split("max=", 1)[1].split("&")[0])
-                    except ValueError:
-                        pass
-                force = allow_control and "force=1" in parsed.query
-                sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
-                duration_ns = sim_manifest.get("duration_ns_actual")
-                self._send_json(playback_info(
-                    root,
-                    max_browser_frames=max_frames,
-                    simulation_time_ns_total=duration_ns,
-                    force=force,
-                ))
-                return
             if path == "/api/frames-info":
                 # The trajectory as binary frames: a topology and a DCD.
                 from fastmdxplora.gui.trajectory_frames import frames_info
 
                 sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
                 self._send_json(frames_info(
-                    root, simulation_time_ns_total=sim_manifest.get("duration_ns_actual"),
+                    root, most_frames=cfg.max_browser_frames,
+                    simulation_time_ns_total=sim_manifest.get("duration_ns_actual"),
                     force=allow_control and "force=1" in parsed.query))
                 return
             if path == "/api/open-output":
@@ -815,9 +801,6 @@ def make_handler(
                 return
             if path == "/structure/live-frame.pdb":
                 self._send_live_frame(root)
-                return
-            if path == "/structure/playback.pdb":
-                self._send_playback(root)
                 return
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
                 self._send_frames(root, path.rsplit("/", 1)[1])
@@ -1432,28 +1415,6 @@ def make_handler(
             self.end_headers()
             self.wfile.write(data)
 
-        def _send_playback(self, root: Path) -> None:
-            sim_dir = root / "simulation"
-            playback_path = sim_dir / "playback.pdb"
-            if not playback_path.is_file():
-                # Auto-generate on demand so the dashboard never needs
-                # to know whether the simulation phase has finished.
-                playback_info(root, max_browser_frames=cfg.max_browser_frames)
-            if not playback_path.is_file():
-                self.send_error(404, "Playback not available")
-                return
-            try:
-                data = playback_path.read_bytes()
-            except OSError:
-                self.send_error(404, "Playback not available")
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
         def _send_frames(self, root: Path, name: str) -> None:
             from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
                                                             frames_info)
@@ -1461,7 +1422,7 @@ def make_handler(
             target = root / "simulation" / (FRAMES_FILE if name.endswith(".dcd")
                                             else FRAMES_TOPOLOGY)
             if not target.is_file():
-                frames_info(root)
+                frames_info(root, most_frames=cfg.max_browser_frames)
             try:
                 data = target.read_bytes()
             except OSError:
@@ -1728,7 +1689,7 @@ def _artifact_records(root: Path) -> list[dict[str, str]]:
     that vanished between the walk and its `stat` raised out of here and
     failed the whole listing -- "dashboard route failed: No such file"
     scattered through a production run, each one a refresh that landed in
-    the gap. The playback beside it already allowed for this. Now each file
+    the gap. Now each file
     is read once, a file gone since the walk is left out, and a `.tmp` is
     never listed: a half-written file is nothing to show or download. One
     reading also keeps `href`, `mtime` and `size` from disagreeing.
@@ -2272,7 +2233,8 @@ _ARTIFACT_LABELS = {
     "simulation/state_minimized.xml": ("State after minimisation", "simulation"),
     "simulation/checkpoint.chk": ("Checkpoint: positions and velocities, for recovery by hand", "simulation"),
     "simulation/energy.csv": ("Energy log written by OpenMM", "simulation"),
-    "simulation/playback.pdb": ("Trajectory prepared for the viewer", "record"),
+    "simulation/frames.dcd": ("Trajectory frames prepared for the viewer", "record"),
+    "simulation/frames_topology.pdb": ("Topology of the frames prepared for the viewer", "record"),
     "simulation/simulation.log": ("Simulation log", "record"),
     "simulation/simulation_parameters.json": ("Settings this simulation used", "record"),
     "analysis/analysis_manifest.json": ("What each analysis produced", "record"),

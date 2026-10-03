@@ -392,7 +392,7 @@ fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete
 | `--dashboard-frame-interval STEPS` | — |
 | `--dashboard-ligand-resname NAME` | auto-detected |
 | `--dashboard-binding-pocket-cutoff-A X` | `5.0` |
-| `--dashboard-max-playback-frames N` | `200`, fewer for a system over 5,000 atoms (a million atoms times frames at most) |
+| `--dashboard-max-playback-frames N` | `2000`, fewer for a system over 5,000 atoms (ten million atoms times frames at most) |
 
 `--dashboard` turns live telemetry on for the simulation whether or not
 `live_telemetry` was set.

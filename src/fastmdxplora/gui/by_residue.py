@@ -17,7 +17,7 @@ strand between chains, so the cartoon could disagree with the study's
 secondary structure plot about the same frame.
 DSSP is computed here, as the `ss` analysis computes it (MDTraj's
 implementation, in its three classes), for the structure, the live frame or
-every frame of the playback, from the file the viewer was sent.
+every frame of the trajectory the viewer was sent.
 
 Each residue is named as the viewer will find it: by chain, number,
 insertion code and name, and by which occurrence of that name it is, so a
@@ -300,7 +300,7 @@ _READERS = {
 # ---------------------------------------------------------------------------
 
 #: Where each kind of structure the viewer shows is read from.
-SOURCES = ("structure", "live", "playback", "frames")
+SOURCES = ("structure", "live", "frames")
 
 METHOD = ("DSSP (Kabsch and Sander, 1983), as MDTraj computes it and the study's "
           "secondary structure analysis reports it: helix, strand or coil.")
@@ -315,8 +315,11 @@ def secondary_structure(root: str | Path, of: str = "structure") -> dict[str, An
     its frames, or why there is none.
 
     ``of`` is the structure (as `/structure/topology.pdb` sends it, solvent
-    stripped), the live frame, the playback, or the binary frames
-    (`gui/trajectory_frames.py`), read from their DCD. The answer names the
+    stripped), the live frame, or the trajectory's frames
+    (`gui/trajectory_frames.py`), read from their DCD, so the coordinates
+    are the ones the analysis read, not three decimals of a PDB: DSSP's
+    hydrogen-bond energy has a threshold, and a bond on it can fall either
+    side when the coordinates are rounded. The answer names the
     residues as :func:`residue_runs` does and gives one string of codes for
     each frame, ``H``, ``E`` or ``C`` for each residue in that order."""
     if of not in SOURCES:
@@ -341,8 +344,7 @@ def secondary_structure(root: str | Path, of: str = "structure") -> dict[str, An
             said = _dssp(text, _frames_coordinates(base))
             said["signature"] = _frames_signature(base)
         else:
-            said = _dssp(text, *(_trajectory_frames(base) if of == "playback"
-                                 else (None, None)))
+            said = _dssp(text)
         said["of"] = of
         _CACHE[key] = said
         while len(_CACHE) > _CACHE_SIZE:
@@ -381,8 +383,8 @@ def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:
             return path, path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return path, None
-    if of in ("live", "playback"):
-        path = simulation / ("live_frame.pdb" if of == "live" else "playback.pdb")
+    if of == "live":
+        path = simulation / "live_frame.pdb"
         try:
             return path, path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -396,77 +398,6 @@ def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:
     if target is None or not target.is_file():
         return base, None
     return target, _display_structure_bytes(target).decode("utf-8", errors="replace")
-
-
-def _trajectory_frames(base: Path) -> tuple[Any, Any]:
-    """The playback's frames as the trajectory holds them, and the topology
-    they were written from; ``(None, None)`` where it did not come from one.
-
-    A playback made from the trajectory is written to PDB, three decimals of
-    an Angstrom, and DSSP's hydrogen-bond energy has a threshold: a bond on
-    it can fall either side when the coordinates are rounded, and the
-    cartoon then disagreed with the secondary structure analysis, which read
-    the trajectory, about that residue in that frame. Read from the
-    trajectory, the coordinates are the ones the analysis read. The topology
-    keeps residues apart that the playback cannot: it is written without
-    insertion codes, and MDTraj reads 184 and 184A from it as one residue."""
-    try:
-        index = json.loads((base / "simulation" / "playback_index.json")
-                           .read_text(encoding="utf-8"))
-        if index.get("source_kind") != "production-dcd":
-            return None, None
-        trajectory = base / str(index["source_signature"]).split(":", 1)[0]
-        frames = [int(frame) for frame in index["frame_indices"]]
-    except (OSError, ValueError, KeyError, TypeError):
-        return None, None
-    # The topology and atoms the playback was written from
-    # (gui/trajectory_playback.py).
-    simulation = base / "simulation"
-    topology = simulation / "trajectory_topology.pdb"
-    if not topology.is_file():
-        topology = simulation / "topology.pdb"
-    if trajectory.parent.name == "joined":
-        try:
-            named = Path(str(json.loads((base / "joined" / "joined.json")
-                                        .read_text(encoding="utf-8")).get("topology") or ""))
-        except (OSError, ValueError):
-            named = Path()
-        if named.is_file():
-            topology = named
-    if not trajectory.is_file() or not topology.is_file():
-        return None, None
-    try:
-        import mdtraj as md
-        import numpy as np
-
-        from fastmdxplora.utils.native_output import suppress_native_output
-
-        with suppress_native_output():
-            whole = md.load_topology(str(topology))
-            shown = whole.select("not water")
-            read, lengths, angles = [], [], []
-            with md.formats.DCDTrajectoryFile(str(trajectory)) as handle:
-                for frame in frames:
-                    handle.seek(frame)
-                    xyz, length, angle = handle.read(1, atom_indices=shown)
-                    read.append(xyz[0])
-                    lengths.append(None if length is None else length[0])
-                    angles.append(None if angle is None else angle[0])
-        topology_shown = whole.subset(shown)
-        boxed = all(length is not None and np.all(np.asarray(length) > 0) for length in lengths)
-        coordinates = md.Trajectory(
-            np.asarray(read, dtype=np.float32) / 10.0, topology_shown,
-            unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
-            unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None)
-        if boxed:
-            # Whole, as the playback and the analyses have them: DSSP of a
-            # chain split across the box is DSSP of two pieces.
-            from fastmdxplora.analysis.loading import _made_whole
-
-            coordinates = _made_whole(coordinates)
-        return coordinates.xyz, topology_shown
-    except Exception:  # noqa: BLE001 - the playback's own coordinates stand in
-        return None, None
 
 
 def residue_runs(lines: list[str]) -> list[tuple[str, int, str, str, int, list[int]]]:
@@ -525,7 +456,7 @@ def _same_residues(topology: Any, runs: list[Any], atoms: int) -> bool:
                for residue, run in zip(topology.residues, runs))
 
 
-def _dssp(text: str, coordinates: Any = None, topology: Any = None) -> dict[str, Any]:
+def _dssp(text: str, coordinates: Any = None) -> dict[str, Any]:
     import tempfile
 
     import mdtraj as md
@@ -541,18 +472,14 @@ def _dssp(text: str, coordinates: Any = None, topology: Any = None) -> dict[str,
         return {"available": False,
                 "reason": "Its frames do not all have the same atoms."}
     runs = residue_runs(first)
-    if topology is None or not _same_residues(topology, runs, len(first)):
-        if topology is not None:
-            # Read with a topology that is not this file's: not these atoms.
-            coordinates = None
-        try:
-            with tempfile.TemporaryDirectory() as folder:
-                one = Path(folder) / "model.pdb"
-                one.write_text("\n".join(first) + "\nEND\n", encoding="utf-8")
-                with suppress_native_output():
-                    topology = md.load_pdb(str(one)).topology
-        except Exception as exc:  # noqa: BLE001 - said, not raised
-            return {"available": False, "reason": f"MDTraj could not read it: {exc}"}
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            one = Path(folder) / "model.pdb"
+            one.write_text("\n".join(first) + "\nEND\n", encoding="utf-8")
+            with suppress_native_output():
+                topology = md.load_pdb(str(one)).topology
+    except Exception as exc:  # noqa: BLE001 - said, not raised
+        return {"available": False, "reason": f"MDTraj could not read it: {exc}"}
     if not _same_residues(topology, runs, len(first)):
         return {"available": False,
                 "reason": "Its residues could not be matched one to one with MDTraj's."}
@@ -562,8 +489,8 @@ def _dssp(text: str, coordinates: Any = None, topology: Any = None) -> dict[str,
     if coordinates is not None and coordinates.ndim == 3 \
             and coordinates.shape[1:] == (len(first), 3) \
             and (coordinates.shape[0] == len(models) or len(models) == 1):
-        # The coordinates given are the frames: the trajectory's own, for the
-        # playback, or the binary frames, whose topology is one model.
+        # The coordinates given are the frames, read from their DCD, whose
+        # topology is one model.
         xyz = coordinates
         if len(models) == 1:
             models = [first] * coordinates.shape[0]

@@ -13,7 +13,7 @@ import pytest
 from fastmdxplora.gui import exploration as launch
 from fastmdxplora.gui import live_frames as frames
 from fastmdxplora.gui import telemetry
-from fastmdxplora.gui import trajectory_playback as playback
+from fastmdxplora.gui import trajectory_frames as binary
 from fastmdxplora.gui.ligand_detection import detect_ligands, filter_pdb_to_ligand
 from fastmdxplora.gui.structure_info import _count_structure_cached, count_structure, ligand_atom_counts
 from fastmdxplora.simulation import runner
@@ -38,149 +38,57 @@ def _launch_payload() -> dict:
     }
 
 
-class _Topology:
-    def __init__(self, selected=(0, 1), fail=False):
-        self.selected, self.fail = selected, fail
-
-    def select(self, _query):
-        if self.fail:
-            raise RuntimeError("selection failed")
-        return list(self.selected)
-
-
-class _BrowserTrajectory:
-    def __init__(self, times=(0.0, 0.0)):
-        self.time = list(times)
-
-    def save_pdb(self, path):
-        Path(path).write_text(_atom() + "\nEND\n", encoding="utf-8")
+def _history(sim: Path, count: int = 2) -> None:
+    for i in range(count):
+        (sim / f"h{i}.pdb").write_text(_atom(seq=i + 1, x=float(i)) + "\nEND\n",
+                                       encoding="utf-8")
+    (sim / "live_frame_history.json").write_text(json.dumps({"frames": [
+        {"path": f"h{i}.pdb", "sequence": i, "frame_index": i,
+         "simulation_time_ns": 0.1 * i} for i in range(count)]}), encoding="utf-8")
 
 
-class _Trajectory:
-    def __init__(self, n_frames=5, times=(0.0, 0.0)):
-        self.n_frames, self.times = n_frames, times
+def test_the_frames_cache_and_fall_back(tmp_path: Path) -> None:
+    md = pytest.importorskip("mdtraj")
+    out, sim = tmp_path / "run", tmp_path / "run" / "simulation"
+    sim.mkdir(parents=True)
+    topology = md.Topology()
+    residue = topology.add_residue("ALA", topology.add_chain())
+    for name in ("N", "CA", "C"):
+        topology.add_atom(name, md.element.carbon, residue)
+    xyz = np.random.default_rng(0).normal(size=(5, 3, 3)).astype(np.float32)
+    md.Trajectory(xyz[:1], topology).save_pdb(str(sim / "topology.pdb"))
+    md.Trajectory(xyz, topology).save_dcd(str(sim / "production.dcd"))
+    (sim / "live_status.json").write_text('{"status":"completed"}', encoding="utf-8")
 
-    def __getitem__(self, _indices):
-        return _BrowserTrajectory(self.times)
+    result = binary.frames_info(out, most_frames=3, simulation_time_ns_total=1.0)
+    assert result["source_kind"] == "production-dcd" and result["frame_times_ns"][-1] == 1.0
+    assert binary.frames_info(out, most_frames=3) == json.loads(
+        (sim / "frames_index.json").read_text())
+    assert binary._even(10, 2) == [0, 9]
+    assert binary._even(3, 5) == [0, 1, 2]
+    assert binary._load_json(tmp_path / "missing.json") == {}
+
+    # A trajectory that cannot be read now is played from the snapshots.
+    _history(sim)
+    (sim / "production.dcd").write_bytes(b"not a trajectory")
+    result = binary.frames_info(out, force=True)
+    assert result["source_kind"] == "live-history" and result["n_frames_browser"] == 2
 
 
-class _MD:
-    def __init__(self, *, n_frames=5, selected=(0, 1), select_fail=False, dcd_fail=False):
-        self.topology = _Topology(selected, select_fail)
-        self.trajectory = _Trajectory(n_frames)
-        self.dcd_fail = dcd_fail
-
-    def load_pdb(self, _path):
-        return SimpleNamespace(topology=self.topology)
-
-    def load_dcd(self, *_args, **_kwargs):
-        if self.dcd_fail:
-            raise RuntimeError("busy dcd")
-        return self.trajectory
-
-
-def test_playback_dcd_cache_fallback_and_helpers(tmp_path: Path, monkeypatch) -> None:
+def test_the_frames_say_why_there_are_none(tmp_path: Path) -> None:
     out, sim = tmp_path / "run", tmp_path / "run" / "simulation"
     sim.mkdir(parents=True)
     (sim / "topology.pdb").write_text(_atom() + "\nEND\n", encoding="utf-8")
-    (sim / "production.dcd").write_bytes(b"dcd")
-    (sim / "live_status.json").write_text('{"status":"completed"}', encoding="utf-8")
-    monkeypatch.setattr(playback, "_import_mdtraj", lambda: _MD())
-
-    result = playback.playback_info(out, max_browser_frames=3, simulation_time_ns_total=1.0)
-    assert result["source_kind"] == "production-dcd" and result["frame_times_ns"][-1] == 1.0
-    assert playback.playback_info(out) == json.loads((sim / "playback_index.json").read_text())
-    assert playback._even_indices(10, 2) == [0, 9]
-    assert playback._even_indices(3, 5) == [0, 1, 2]
-    assert playback._load_index(tmp_path / "missing.json")["reason"] == "invalid-companion"
-
-    # A temporarily unreadable DCD falls back to completed live-history snapshots.
-    for i in range(2):
-        p = sim / f"h{i}.pdb"
-        p.write_text(_atom(seq=i + 1) + "\nEND\n", encoding="utf-8")
+    (sim / "production.dcd").write_bytes(b"not a trajectory")
+    said = binary.frames_info(out)
+    assert said["available"] is False and said["reason"].startswith("The frames could not")
+    # Snapshots that cannot be read are not frames either.
+    (sim / "production.dcd").unlink()
     (sim / "live_frame_history.json").write_text(json.dumps({"frames": [
-        {"path": "h0.pdb", "sequence": 0, "frame_index": 0, "simulation_time_ns": 0.0},
-        {"path": "h1.pdb", "sequence": 1, "frame_index": 1, "simulation_time_ns": 0.1},
-    ]}), encoding="utf-8")
-    monkeypatch.setattr(playback, "_import_mdtraj", lambda: _MD(dcd_fail=True))
-    result = playback.playback_info(out, force=True)
-    assert result["source_kind"] == "live-history"
-
-
-def test_playback_streams_multiple_dcd_chunks(tmp_path: Path, monkeypatch) -> None:
-    topology = tmp_path / "topology.pdb"
-    dcd = tmp_path / "production.dcd"
-    companion_pdb = tmp_path / "playback.pdb"
-    companion_idx = tmp_path / "playback_index.json"
-    topology.write_text(_atom() + "\nEND\n", encoding="utf-8")
-    dcd.write_bytes(b"dcd")
-
-    class Chunk:
-        def __init__(self, start: int) -> None:
-            self.n_frames = 2
-            self.xyz = np.arange(start * 6, (start + 2) * 6, dtype=float).reshape(2, 2, 3)
-            self.time = np.array([float(start), float(start + 1)])
-
-    class ChunkedTrajectory:
-        def __init__(self, xyz, topology, time) -> None:
-            self.xyz = xyz
-            self.topology = topology
-            self.time = time
-            self.n_frames = len(time)
-
-        def save_pdb(self, path) -> None:
-            Path(path).write_text(_atom() + "\nEND\n", encoding="utf-8")
-
-    class ChunkedMD(_MD):
-        Trajectory = ChunkedTrajectory
-
-        def iterload(self, *_args, **_kwargs):
-            yield Chunk(0)
-            yield Chunk(2)
-
-    result = playback._generate_from_dcd(
-        md=ChunkedMD(),
-        topology_path=topology,
-        dcd_path=dcd,
-        companion_pdb=companion_pdb,
-        companion_idx=companion_idx,
-        max_browser_frames=3,
-        simulation_time_ns_total=3.0,
-        source_signature="chunks",
-    )
-
-    assert result["n_frames_total"] == 4
-    assert result["n_frames_browser"] == 3
-    assert result["frame_indices"] == [0, 2, 3]
-    assert companion_pdb.exists()
-
-
-def test_playback_error_branches_and_neighborhood(tmp_path: Path) -> None:
-    topology = tmp_path / "top.pdb"
-    topology.write_text("\n".join([
-        _atom("HETATM", "LIG", seq=9),
-        _atom("ATOM", "ALA", seq=1, x=1),
-        "ATOM bad-coordinate-line",
-        "END",
-    ]), encoding="utf-8")
-    assert playback.neighborhood_residues(topology_path=topology, ligand_resname="LIG") == [("A", 1)]
-    assert playback.neighborhood_residues(topology_path=tmp_path / "none", ligand_resname="LIG") == []
-    assert playback.neighborhood_residues(topology_path=topology, ligand_resname="XXX") == []
-
-    idx = tmp_path / "index.json"
-    pdb = tmp_path / "playback.pdb"
-    one = playback._generate_from_dcd(
-        md=_MD(n_frames=1, selected=(), select_fail=True), topology_path=topology,
-        dcd_path=tmp_path / "x.dcd", companion_pdb=pdb, companion_idx=idx,
-        max_browser_frames=2, simulation_time_ns_total=None, source_signature="x",
-    )
-    assert one["reason"] == "not-enough-trajectory-frames"
-
-    unreadable = playback._generate_from_history(
-        sim_dir=tmp_path, records=[{"path": "missing"}, {"path": "also-missing"}],
-        companion_pdb=pdb, companion_idx=idx, max_browser_frames=2, source_signature="x",
-    )
-    assert unreadable["reason"] == "not-enough-readable-history-frames"
+        {"path": "missing.pdb", "sequence": 0}, {"path": "gone.pdb", "sequence": 1}]}),
+        encoding="utf-8")
+    said = binary.frames_info(out)
+    assert said["reason"] == "Fewer than two of the frames written could be read."
 
 
 def test_runtime_status_and_stop_branches(tmp_path: Path) -> None:
@@ -387,9 +295,9 @@ def test_server_error_and_exploration_routes(tmp_path: Path, monkeypatch) -> Non
             return exc.read()
 
     try:
-        get("/api/playback-info?max=bad")
+        get("/api/frames-info")
         get("/api/open-output")
-        get("/structure/playback.pdb", 404)
+        get("/structure/frames.dcd", 404)
         get("/analysis-figures-svg.zip", 404)
         get("/structure/topology.pdb", 404)
         get("/artifacts/missing.txt", 404)

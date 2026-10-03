@@ -778,10 +778,11 @@ SIMULATION = PhaseSchema(
               "Default binding-pocket cutoff in angstrom for the dashboard "
               "molecular viewer (used by the 'show pocket' tools).",
               example=5.0),
-        Field("dashboard_max_playback_frames", int, 200,
-              "Maximum frames the trajectory-playback panel will load. "
-              "Frames are downsampled evenly from the full DCD.",
-              example=200),
+        Field("dashboard_max_playback_frames", int, 2000,
+              "Maximum frames of the trajectory the molecular viewer is sent, "
+              "evenly spaced over the whole of it; a system over 5,000 atoms "
+              "is sent fewer, ten million atoms times frames at most.",
+              example=2000),
         Field("restrain", str, None,
               "What to hold still during equilibration, as an atom selection "
               "-- 'protein and not element H' is the usual choice. A "

@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The PDB playback is gone
+
+**`/api/playback-info`, `/structure/playback.pdb` and the multi-model PDB they
+sent are removed: the Viewer plays the trajectory's binary frames.** Nothing
+has read the playback since the Viewer moved to Mol\*.
+`--dashboard-max-playback-frames`, and the `dashboard_max_playback_frames`
+setting, now cap the frames: 2,000 by default, fewer where they would pass
+ten million atoms times frames. A trajectory that cannot be read while it is
+written is played from the snapshots the run wrote, as before, and DSSP of
+the frames is `/api/secondary-structure?of=frames`. Each file of the frames
+is written under a name of its own and renamed into place, so two requests
+writing them at once both finish and neither can be read half written.
+
 ### The Viewer renders with Mol\*
 
 **The Viewer, the Overview's preview and the run builder's picture of the
@@ -98,8 +111,9 @@ red the high end (for S², the mobile end), RMSF and the RMSF from B-factors
 share one scale from zero, a bar over the canvas gives the range and the saved
 picture carries it, and the Selection tab gives a residue's value in each.
 A residue with no value is grey, and so is one the structure shown cannot tell
-from another: the playback is written without insertion codes, and 184 and
-184A of trypsin would otherwise both be given one residue's value.
+from another: in a file written without insertion codes, as MDTraj writes
+one, 184 and 184A of trypsin would otherwise both be given one residue's
+value.
 
 **The cartoon is DSSP, for the structure, the live frame and every frame
 played.** No file the viewer is sent has HELIX or SHEET records, so 3Dmol

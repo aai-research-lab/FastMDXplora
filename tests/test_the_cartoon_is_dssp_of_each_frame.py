@@ -73,15 +73,15 @@ def _plotted(study: Path) -> list[str]:
     return ["".join(table.iloc[row, 1:].tolist()) for row in range(len(table))]
 
 
-def test_the_playback_is_what_the_analysis_plotted(study):
-    from fastmdxplora.gui.trajectory_playback import playback_info
+def test_the_frames_are_what_the_analysis_plotted(study):
+    from fastmdxplora.gui.trajectory_frames import frames_info
 
-    assert playback_info(study)["frame_indices"] == list(range(FRAMES))
-    said = secondary_structure(study, "playback")
+    assert frames_info(study)["frame_indices"] == list(range(FRAMES))
+    said = secondary_structure(study, "frames")
     assert said["available"] and said["n_frames"] == FRAMES
-    # Every residue of every frame, read from the trajectory as the analysis
-    # read it: from the playback's rounded coordinates one hydrogen bond on
-    # DSSP's threshold fell the other way in one frame.
+    # Every residue of every frame, read from the frames' binary coordinates
+    # as the analysis read the trajectory: from a PDB's rounded coordinates
+    # one hydrogen bond on DSSP's threshold fell the other way in one frame.
     assert said["frames"] == _plotted(study)
     chain_a = [code for code, residue in zip(said["frames"][0], said["residues"])
                if residue[0] == "A"]
@@ -114,7 +114,7 @@ def test_the_structure_and_the_live_frame_too(study):
 def test_why_there_is_none(tmp_path):
     root = tmp_path / "study"
     (root / "simulation").mkdir(parents=True)
-    assert "no such structure" in secondary_structure(root, "playback")["reason"]
+    assert "no such structure" in secondary_structure(root, "frames")["reason"]
     assert "No structure called" in secondary_structure(root, "elsewhere")["reason"]
     ligand = "".join(
         f"HETATM{n:5d}  C{n}  LIG A   1    {n:8.3f}   0.000   0.000  1.00  0.00           C\n"
@@ -123,8 +123,11 @@ def test_why_there_is_none(tmp_path):
     assert secondary_structure(root, "live")["reason"] == "It has no protein."
     uneven = ("MODEL        1\n" + ligand + "ENDMDL\nMODEL        2\n"
               + ligand.splitlines(keepends=True)[0] + "ENDMDL\nEND\n")
-    (root / "simulation" / "playback.pdb").write_text(uneven, encoding="utf-8")
-    assert "same atoms" in secondary_structure(root, "playback")["reason"]
+    from fastmdxplora.gui import by_residue
+
+    by_residue._CACHE.clear()
+    (root / "simulation" / "live_frame.pdb").write_text(uneven, encoding="utf-8")
+    assert "same atoms" in secondary_structure(root, "live")["reason"]
 
 
 def test_a_residue_is_found_by_its_occurrence_where_its_code_is_lost():
@@ -241,7 +244,7 @@ def test_an_extended_study_is_read_from_its_joined_trajectory(tmp_path):
     topology its record names, and DSSP is read from the same frames."""
     import shutil
 
-    from fastmdxplora.gui.trajectory_playback import playback_info
+    from fastmdxplora.gui.trajectory_frames import frames_info
 
     root = _helical_study(tmp_path / "study", analyse=False)
     (root / "joined").mkdir()
@@ -250,8 +253,8 @@ def test_an_extended_study_is_read_from_its_joined_trajectory(tmp_path):
     shutil.move(str(root / "simulation" / "trajectory_topology.pdb"), str(named))
     (root / "joined" / "joined.json").write_text(json.dumps({"topology": str(named)}),
                                                  encoding="utf-8")
-    assert playback_info(root)["source_signature"].startswith("joined/production.dcd")
-    said = secondary_structure(root, "playback")
+    assert frames_info(root)["source_signature"].startswith("joined/production.dcd")
+    said = secondary_structure(root, "frames")
     trajectory = md.load_dcd(str(root / "joined" / "production.dcd"), top=str(named))
     expected = md.compute_dssp(trajectory, simplified=True)
     assert said["frames"] == ["".join(code for code in row if code != "NA") for row in expected]
@@ -272,7 +275,7 @@ def test_what_cannot_be_read_is_said(tmp_path):
     assert said("REMARK nothing here\nEND\n") == "The structure has no atoms."
     alanine = ("ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\n"
                "ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C\n")
-    # Two residues of one number side by side, as a playback written without
+    # Two residues of one number side by side, as a file written without
     # insertion codes has them: MDTraj reads them as one, and it is said.
     again = ("ATOM      3  N   ALA A   1       3.000   0.000   0.000  1.00  0.00           N\n"
              "ATOM      4  CA  ALA A   1       4.458   0.000   0.000  1.00  0.00           C\n")

@@ -79,7 +79,7 @@ FastMDXplora/
 │       │   ├── exploration.py     # Study builder, config export, run control
 │       │   ├── server.py          # Dependency-free ThreadingHTTPServer (127.0.0.1 only)
 │       │   ├── telemetry.py       # Phase/progress telemetry feed
-│       │   ├── trajectory_playback.py, trajectory_frames.py, live_frames.py   # Frame streaming
+│       │   ├── trajectory_frames.py, live_frames.py   # Frame streaming
 │       │   ├── protein_preview.py, structure_info.py, ligand_detection.py
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css/js,

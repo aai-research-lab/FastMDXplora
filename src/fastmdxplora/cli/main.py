@@ -784,9 +784,9 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
         type=int,
         default=None,
         metavar="FRAMES",
-        help="Maximum number of frames the molecular viewer will load for "
-             "trajectory playback (default 200; a system over 5,000 atoms "
-             "is sent fewer, a million atoms times frames at most).",
+        help="Maximum number of frames of the trajectory the molecular viewer "
+             "is sent (default 2000; a system over 5,000 atoms is sent fewer, "
+             "ten million atoms times frames at most).",
     )
     dash.add_argument(
         "--dashboard-open-browser",
@@ -1663,7 +1663,7 @@ def _start_dashboard_for_command(args: argparse.Namespace, output_dir: Path):
             getattr(args, "dashboard_binding_pocket_cutoff_A", 5.0) or 5.0
         ),
         max_browser_frames=int(
-            getattr(args, "dashboard_max_playback_frames", 200) or 200
+            getattr(args, "dashboard_max_playback_frames", 2000) or 2000
         ),
         refresh_seconds=float(
             getattr(args, "dashboard_refresh_seconds", 3.0) or 3.0

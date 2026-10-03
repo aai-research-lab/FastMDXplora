@@ -5,8 +5,9 @@ nothing else: a chain split across a face of the box was drawn in two
 pieces, and a ligand stored in a periodic copy was drawn a box length from
 its protein, jumping back between frames. The analyses make molecules whole
 and put each beside the protein before they measure anything
-(analysis/loading.py), and the playback now does the same, so the Viewer
-shows what was measured.
+(analysis/loading.py), and the frames the Viewer plays
+(gui/trajectory_frames.py) are made the same way, so it shows what was
+measured.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 import mdtraj as md
 import numpy as np
 
-from fastmdxplora.gui.trajectory_playback import playback_info
+from fastmdxplora.gui.trajectory_frames import frames_info
 
 BOX = 5.0
 
@@ -65,8 +66,9 @@ def _wrapped_study(root: Path) -> Path:
 
 def test_each_frame_is_played_whole(tmp_path):
     root = _wrapped_study(tmp_path / "study")
-    assert playback_info(root)["n_frames_browser"] == 3
-    played = md.load_pdb(str(root / "simulation" / "playback.pdb"))
+    assert frames_info(root)["n_frames_browser"] == 3
+    played = md.load_dcd(str(root / "simulation" / "frames.dcd"),
+                         top=str(root / "simulation" / "frames_topology.pdb"))
     assert played.n_frames == 3
     protein = played.topology.select("protein")
     ligand = played.topology.select("resname LIG")

@@ -334,7 +334,7 @@ Nothing leaves the machine: these are files in the run directory that the
 | `telemetry_interval` | int | `1000` | Minimum step interval between telemetry updates |
 | `dashboard_ligand_resname` | str | auto-detected | Which residue the viewer treats as the ligand |
 | `dashboard_binding_pocket_cutoff_A` | float | `5.0` | How near counts as the pocket |
-| `dashboard_max_playback_frames` | int | `200` | Frames the playback panel will load |
+| `dashboard_max_playback_frames` | int | `2000` | Most frames of the trajectory the viewer is sent (fewer for a system over 5,000 atoms) |
 
 ---
 

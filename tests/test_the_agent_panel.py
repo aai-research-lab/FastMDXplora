@@ -1384,68 +1384,47 @@ class TestWhichPhasesRunIsReadFromTheConfig(unittest.TestCase):
 
 
 class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
-    """Two dashboard polls build the playback at once; one wins the rename.
+    """Two writers of the viewer's frames at once; both finish.
 
     Seen in the browser as "dashboard route failed: No such file or
-    directory: playback.pdb.tmp". The second request's `.tmp` was the one
-    the first had just renamed into place, so its own rename found nothing
-    -- while the destination sat there, complete and correct. An error for
-    a race whose outcome was right.
+    directory: playback.pdb.tmp": two dashboard polls built the playback at
+    once through one temporary name, so the second's rename found the file
+    the first had just renamed into place. Each writer of the frames now
+    writes under a name of its own (gui/trajectory_frames.py), so neither
+    can take the other's file, and the last rename wins whole.
     """
 
-    def test_the_losing_request_yields_when_the_file_is_there(self):
+    def test_each_writer_has_a_name_of_its_own(self):
         import tempfile
+        import threading
         from pathlib import Path
 
-        from fastmdxplora.gui.trajectory_playback import _replace_or_yield
+        from fastmdxplora.gui.trajectory_frames import _temporary, _write_text
 
         root = Path(tempfile.mkdtemp())
-        destination = root / "playback.pdb"
-        destination.write_text("the other request's work")
-        _replace_or_yield(root / "playback.pdb.tmp", destination)
-        self.assertEqual(destination.read_text(),
-                         "the other request's work")
+        target = root / "frames_topology.pdb"
+        names: list[Path] = []
+        errors: list[BaseException] = []
 
-    def test_a_genuine_miss_still_raises(self):
-        # No tmp and no destination is not a race, it is a failure, and
-        # swallowing it would hide the next real bug behind this fix.
-        import tempfile
-        from pathlib import Path
+        def write(text):
+            names.append(_temporary(target))
+            try:
+                for _ in range(50):
+                    _write_text(target, text)
+            except BaseException as error:  # noqa: BLE001 - the test says which
+                errors.append(error)
 
-        from fastmdxplora.gui.trajectory_playback import _replace_or_yield
+        writers = [threading.Thread(target=write, args=(f"writer {n}\n" * 2000,))
+                   for n in range(2)]
+        for writer in writers:
+            writer.start()
+        for writer in writers:
+            writer.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(len(set(names)), 2)
+        self.assertIn(target.read_text(), {f"writer {n}\n" * 2000 for n in range(2)})
+        self.assertEqual(sorted(p.name for p in root.iterdir()), ["frames_topology.pdb"])
 
-        root = Path(tempfile.mkdtemp())
-        with self.assertRaises(FileNotFoundError):
-            _replace_or_yield(root / "x.tmp", root / "x")
-
-    def test_the_companion_pdb_makes_its_directory(self):
-        # `_atomic_text` did; the PDB writer beside it did not, and a
-        # playback built for a run whose simulation/ did not yet exist
-        # failed on the write rather than the rename. Written into a folder
-        # that is not there, from a real DCD.
-        import mdtraj as md
-        import numpy as np
-
-        from fastmdxplora.gui.trajectory_playback import _generate_from_dcd
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            topology = md.Topology()
-            residue = topology.add_residue("ALA", topology.add_chain())
-            for name in ("N", "CA", "C"):
-                topology.add_atom(name, md.element.carbon, residue)
-            xyz = np.random.default_rng(0).normal(size=(6, 3, 3)).astype(np.float32)
-            md.Trajectory(xyz, topology).save_dcd(str(root / "production.dcd"))
-            md.Trajectory(xyz[:1], topology).save_pdb(str(root / "topology.pdb"))
-            companion = root / "not" / "yet" / "there" / "playback.pdb"
-            _generate_from_dcd(md=md, topology_path=root / "topology.pdb",
-                               dcd_path=root / "production.dcd", companion_pdb=companion,
-                               companion_idx=companion.with_suffix(".json"),
-                               max_browser_frames=10, simulation_time_ns_total=None,
-                               source_signature="s")
-            self.assertTrue(companion.is_file())
-            self.assertFalse(companion.with_suffix(".pdb.tmp").exists())
-            self.assertEqual(md.load(str(companion)).n_frames, 6)
 
 class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
     """The header names the author the config records.
