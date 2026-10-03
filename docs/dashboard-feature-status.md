@@ -900,3 +900,45 @@ and missing-key guidance. Ruff passes for the updated boundary tests. Eight
 pre-existing import-order/module-placement findings in test_the_agent_panel.py
 were also reproduced from HEAD; no unrelated reformatting was made.
 Installed acceptance of these new settings labels remains pending.
+
+### Installed 1276612 acceptance and live route recovery
+
+The installed wheel is `fastmdxplora-2.5.9.dev202+g1276612a4-py3-none-any.whl`,
+SHA256 `a13c564d6af35055727a7730c34c3489b2c48d0ec47539951d8306250b5daee7`.
+The clean acceptance venv passes pip check and verifies all 127 packaged error
+references and required UI/bridge assets. Its server restarted outside the
+checkout on port 8784. Native keyboard Home/End sets sidebar widths 180/320.
+The saved bookmark survives restart; ZIP import previews one matching ID,
+Keep both creates distinct bookmark IDs with the same verified screenshot,
+and Restore returns the RMSD range to 0.1–0.2 ns. All 309 study baseline files
+remain unchanged after this flow and the subsequent exports and explanations.
+
+The installed viewer previews and exports two frames at 640 by 480 with all
+six label toggles, protein label scope, a title/caption and 45-degree camera
+rotation. Both GIF and MP4 artifacts are present under clip ID
+`8b00b2f853064fa6aa1383019fc12fa8`; decoding verifies two frames, 10 fps and
+0.20 s MP4 duration. Metadata records browser frames 0/6, source frames 0/181
+and physical times 0.0005/0.091 ns. All-protein atom labels are visibly crowded;
+selected-residue/atom scope remains the more readable option for dense scenes.
+The export observation timed out, but the same tab subsequently reported
+successful saving and both download links; no duplicate export was started.
+Viewer frame 0 is restored. Historical audit inventory and a grouped HOH
+difference prepare an unsent Agent question with missing-cause qualification.
+
+The user subsequently connected accounts in the previously isolated 8784
+settings. That instance also had API selection despite connected ChatGPT rows.
+Applying its displayed GPT-5.6 Luna/medium choice restored subscription use;
+the Agent completed an RMSD-minimum explanation retaining the failed
+correlation-time qualification. Port 8783 separately retains GPT-6 Luna/max
+after reload. Both show the explicit API/local-server action. Port 8783 loaded
+updated UI assets while its Python process remained at the earlier revision;
+port 8784 is a restarted process from this exact installed wheel. No credentials
+were copied between these settings. Earlier missing-key messages remain in
+saved history; the successful new replies are separate receipts.
+
+The frozen 209-check combined feature run at 1276612 completed with 208 passed
+and 1 failure in 459.82 s. The graph-residue comparison test timed out before
+viewer-script initialization, then passed unchanged in isolation in 16.36 s.
+The failed combined run remains a failed gate; it is not replaced by a claim
+that isolated passing proves the whole release. A fresh combined run without
+concurrent native rendering is underway. M7/M8 and broader acceptance remain open.
