@@ -14,8 +14,9 @@ contains all 127 registered-error entries and the current graph, residue,
 bookmark, clip, audit and four-provider resources. The preparation recorder,
 pipeline observation sites and preservation tests are unchanged from verified M5.
 Real subscription-account consent/inference remains a later user test gate;
-OpenAI public authentication discovery currently fails normal TLS verification
-on this computer. These results do not certify live account availability or
+OpenAI public authentication discovery now validates with a transport-specific
+native trust-store context; live account consent/inference is still unverified.
+These results do not certify live account availability or
 complete the remaining provider acceptance gate.
 
 ## 1. Product contract and priorities
@@ -524,9 +525,13 @@ passed after dashboard integration. Signature tests initially exposed a missing
 cffi binary in the local venv; reinstalling its Python 3.11 wheel fixed imports
 and all signed-token tests passed. No actual account credentials were used.
 
-Live OpenAI discovery currently fails TLS validation because the presented
-certificate is expired. Certificate verification remains enabled; real sign-in
-cannot be claimed verified until this environment issue is resolved.
+The initial Python TLS path rejected an expired certificate while Windows native
+HTTPS verified the same discovery URL. A per-transport truststore context now
+validates public discovery and its configured issuer/endpoints. Certificate and
+hostname verification remain required, redirects remain refused and global SSL
+behavior is not patched. Fifty transport/OAuth/connection checks passed after
+the fix. The dependency is in the agent extra; scientific dependencies were not
+changed. Actual account consent/inference is still unverified.
 Claude now uses an isolated official-client profile, personal Pro/Max account
 checks, safe mode, disabled hooks/MCP/slash commands and an empty tool list.
 Managed host policies are refused because they outrank client flags. Kimi uses
@@ -551,8 +556,8 @@ provider dropdown for ChatGPT/Codex, Claude, Kimi and Gemini, and one contextual
 Connect button. Connected-account models are selected after login. Actual subscription-account consent/inference
 remains unverified; the user must perform normal provider sign-in.
 
-OpenAI's expired presented certificate still prevents live
-verification; TLS verification is never disabled. Browser disconnects now signal
+OpenAI public discovery now verifies through native certificate-chain validation;
+TLS verification is never disabled. Browser disconnects now signal
 cancellation to buffered provider processes through streaming heartbeats.
 
 Provider error follow-up: subscription failures now preserve registered codes

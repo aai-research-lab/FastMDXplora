@@ -1,12 +1,37 @@
 import io
 import json
 import time
+import ssl
 import urllib.error
 
 import pytest
 
 from fastmdxplora.agent import openai_plan as plan
 from fastmdxplora.agent.oauth_transactions import AuthorizationGrant
+
+
+def test_provider_tls_context_keeps_verification_and_does_not_patch_global_ssl():
+    original = ssl.SSLContext
+    context = plan._tls_context()
+    assert context.check_hostname is True
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert ssl.SSLContext is original
+    assert ssl.create_default_context().verify_mode == ssl.CERT_REQUIRED
+
+
+def test_transport_supplies_its_verified_context_without_redirect_support(monkeypatch):
+    captured = []
+    class Opener:
+        def open(self, request, **kwargs):
+            return io.BytesIO(b'{"ok":true}')
+    def build(*handlers):
+        captured.extend(handlers)
+        return Opener()
+    monkeypatch.setattr(plan.urllib.request, "build_opener", build)
+    assert plan.request_json("https://api.openai.com/v1/models") == {"ok": True}
+    https = next(handler for handler in captured if isinstance(handler, plan.urllib.request.HTTPSHandler))
+    assert https._context.check_hostname and https._context.verify_mode == ssl.CERT_REQUIRED
+    assert any(isinstance(handler, plan._NoRedirect) for handler in captured)
 
 
 @pytest.mark.parametrize("status,code", [(401, "environment.provider.session_refused"),

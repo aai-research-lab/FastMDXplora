@@ -613,6 +613,16 @@ review and the builder's ordinary run controls. Provider login is independent of
 permission to execute. Existing command-line workflows are not changed by this
 GUI restriction.
 
+Open **Agent settings → OAuth connections**, choose ChatGPT/Codex, Claude,
+Kimi or Gemini, and press **Connect**. Provider-owned login stays separate from
+study files. Install the `agent` extra for OpenAI signature verification,
+protected account storage and native certificate-chain validation. The HTTPS
+transport uses its own verified trust-store context; it never disables hostname
+or certificate checks or patches global SSL behavior. The other providers need
+their supported official clients; the dialog describes those prerequisites.
+Live account consent and subscription inference must be checked with your own
+account before relying on a connection.
+
 **Click selection → Protein residue** highlights a clicked protein residue for
 context; **Atom / measurement** retains atom selection and measurement behavior.
 **Explain selected residue** prepares a question in the sidebar; press Send when

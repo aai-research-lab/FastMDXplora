@@ -35,6 +35,15 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ConnectionError("The provider returned an unexpected redirect. Reconnect using its normal sign-in.")
 
 
+def _tls_context():
+    """Use native certificate-chain validation for this transport only."""
+    try:
+        import truststore
+    except ImportError:
+        return ssl.create_default_context()
+    return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+
 def _open(request, *, timeout=30):
     host = urlsplit(request.full_url)
     try:
@@ -45,7 +54,7 @@ def _open(request, *, timeout=30):
             or host.username or host.password or host.fragment or port not in {None, 443}):
         raise ConnectionError("The provider endpoint is invalid.")
     try:
-        return urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout)
+        return urllib.request.build_opener(_NoRedirect(), urllib.request.HTTPSHandler(context=_tls_context())).open(request, timeout=timeout)
     except urllib.error.HTTPError as exc:
         if exc.code == 401:
             message = "The provider session expired or was refused. Reconnect before sending another request."
