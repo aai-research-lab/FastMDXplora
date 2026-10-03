@@ -4385,6 +4385,28 @@ class TestTheGUICitesTheSoftware:
         assert "Aina" not in template, (
             "the citation is filled by the server, not stored in the page")
 
+    def test_the_copyright_is_the_licence_s_everywhere(self, tmp_path: Path) -> None:
+        """The licence's holders, on the Cite page, in the README and on the
+        documentation's pages, from one statement of it."""
+        from fastmdxplora import __copyright__
+        from fastmdxplora.gui.server import _load_template
+
+        root = Path(__file__).resolve().parents[1]
+        year, holders = __copyright__.split(", ", 1)
+        assert f"Copyright (c) {year} {holders}" in (root / "LICENSE").read_text()
+        assert f"© Copyright {__copyright__}." in (root / "README.md").read_text()
+        assert f'copyright = "{__copyright__}"' in (root / "docs" / "conf.py").read_text()
+        assert "__FASTMDX_COPYRIGHT__" in _load_template()
+        run = tmp_path / "run"
+        TelemetryWriter(run / "simulation").write_status(stage="NVT")
+        server, base_url = start_test_server(run)
+        try:
+            html = urlopen(f"{base_url}/", timeout=HTTP_TIMEOUT).read().decode("utf-8")
+        finally:
+            server.shutdown()
+            server.server_close()
+        assert f"&copy; Copyright {__copyright__}." in html
+
     def test_the_bibtex_is_there_to_be_taken(self) -> None:
         from fastmdxplora.gui.server import _load_template
 

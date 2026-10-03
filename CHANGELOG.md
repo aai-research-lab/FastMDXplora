@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The lab's name and copyright
+
+The README, the documentation and the GUI's Cite page give the copyright as
+the licence does: **© Copyright 2026, Adekunle Aina, Derrick Kwan, and
+FastMDXplora contributors**. The lab is named without its university, in the
+README and the citation file. The README says FastMDXplora is released under
+the MIT License and names Mol\* among the software it is built on.
+
 ### Play plays from the first frame
 
 **The first Play of a finished study plays from the first frame.** The

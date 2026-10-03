@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 
 project = "FastMDXplora"
 author = "Adekunle Aina, Derrick Kwan"
-copyright = "2026, AAI Research Lab"
+copyright = "2026, Adekunle Aina, Derrick Kwan, and FastMDXplora contributors"
 
 try:
     from fastmdxplora import __version__ as release

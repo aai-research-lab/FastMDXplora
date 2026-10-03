@@ -182,18 +182,16 @@ follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## License
 
-FastMDXplora is MIT licensed. See [LICENSE](LICENSE). The graphical
-interface ships the viewer build of [Mol\*](https://molstar.org) (MIT), which
-bundles code under the MIT, Apache-2.0, ISC and 0BSD licences; their texts are
-in [`src/fastmdxplora/gui/static/molstar/`](src/fastmdxplora/gui/static/molstar/),
-and the package's metadata declares all four.
+FastMDXplora is released under the MIT License. See [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-Built in the [AAI Research Lab](https://aai-research-lab.github.io) at
-California State University Dominguez Hills, on MDTraj, OpenMM, PDBFixer,
-OpenFF, RDKit, NumPy, SciPy, scikit-learn and Matplotlib.
+Built in the [AAI Research Lab](https://aai-research-lab.github.io) on MDTraj,
+OpenMM, PDBFixer, OpenFF, RDKit, NumPy, SciPy, scikit-learn, Matplotlib and
+[Mol\*](https://molstar.org).
+
+© Copyright 2026, Adekunle Aina, Derrick Kwan, and FastMDXplora contributors.
 
 </div>

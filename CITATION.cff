@@ -6,10 +6,10 @@ type: software
 authors:
   - family-names: Aina
     given-names: Adekunle
-    affiliation: "AAI Research Lab, California State University Dominguez Hills"
+    affiliation: "AAI Research Lab"
   - family-names: Kwan
     given-names: Derrick
-    affiliation: "AAI Research Lab, California State University Dominguez Hills"
+    affiliation: "AAI Research Lab"
 repository-code: "https://github.com/aai-research-lab/FastMDXplora"
 url: "https://github.com/aai-research-lab/FastMDXplora"
 license: MIT

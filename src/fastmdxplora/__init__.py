@@ -44,6 +44,8 @@ except ImportError:
 
 __author__ = "Adekunle Aina, Derrick Kwan"
 __license__ = "MIT"
+#: The copyright as the licence gives it, for every page that shows one.
+__copyright__ = "2026, Adekunle Aina, Derrick Kwan, and FastMDXplora contributors"
 __expansion__ = "Fully Automated SysTem for Molecular Dynamics eXploration"
 __citation__ = (
     "Aina, A.; Kwan, D. FastMDAnalysis: Software for Automated Analysis of "
@@ -120,6 +122,7 @@ __all__ = [
     "__version__",
     "__author__",
     "__license__",
+    "__copyright__",
     "__expansion__",
     "__citation__",
     "__doi__",
