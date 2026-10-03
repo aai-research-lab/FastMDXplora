@@ -35,7 +35,7 @@ separately from this feature work.
 | M2 | Core implemented/verified | Polish bookmark workflow and complete regression acceptance | M8a; M1/M6 context changes |
 | M3 | Adapters implemented; live tests partial | Provider acceptance matrix, supported-model controls and real account tests | Can proceed alongside other work |
 | M4 | Specified controls implemented | Integrated acceptance of resolution, title/caption, preview/estimate and exports | M8a |
-| M5 | Full controlled POPC preparation preservation verified; broader preservation limited | OpenFF ligand preservation; CPU repeatability remains a separate failed baseline gate | M0; before M6 |
+| M5 | Full controlled POPC and installed-wheel OpenFF peptide/ethanol preservation verified; broader preservation limited | CPU repeatability remains a separate failed baseline gate; wider chemistry/platform scope and auxiliary environment conflicts remain documented | M0; before M6 |
 | M6 | Specified visuals implemented | Final integrated component/residue/decision/overlay acceptance | M5; M8a |
 | M8b | Foundation applied; responsive shell checks pass | Full expanded-state, contrast, text-zoom and visual review | Functional increments |
 | M7 | Partial; Windows core/Agent clean-wheel and completed-study viewer/bookmark/media/restart verified | Remaining installed context/provider/chemistry acceptance, scientific and expanded-state visual gates | All preceding gates |

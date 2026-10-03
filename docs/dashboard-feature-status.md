@@ -73,7 +73,7 @@ These changes are not a published upstream release.
 | M2 — bookmarks | Implemented; representative acceptance verified | Persistence, tags/search, screenshots, portability, view restore and stale/import guards tested. Include it in the final broad browser/release pass. |
 | M3 — providers | Implemented; live verification partial | OpenAI browser consent and real explanation inference succeeded, including the requested GPT-6 models. Claude, Kimi and Gemini have restricted adapters and synthetic/native transport tests, but their real account login, entitlement, model enumeration, inference and expiry/disconnect acceptance remain pending. |
 | M4 — clips | Implemented; representative acceptance verified | Resolution presets re-render the molecular view at selected dimensions; study title/custom caption join residue/atom/frame/time overlays. First/last previews share the export renderer and show source mapping, physical time, playback duration and approximate upload size. Server dimensions/text bounds, decoded media, cancellation and restoration checks pass. Final integration remains M7. |
-| M5 — provenance | Implemented; controlled full POPC preparation verified | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on Reference and full POPC packing/relaxation under deterministic CPU test controls. Aggregate system snapshots do not record every individual solvent/ion operation. OpenFF and broader backend/platform/fixture checks remain open. |
+| M5 — provenance | Implemented; controlled POPC and OpenFF preparation verified | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on Reference, full POPC packing/relaxation under deterministic CPU test controls, and an installed-wheel peptide/ethanol OpenFF preparation. Aggregate system snapshots do not record every individual solvent/ion operation. Broader backend/platform/fixture checks and CPU repeatability baseline remain open. |
 | M6 — audit visuals | Implemented; representative acceptance verified | Stage strip, separate protein/recorded-ligand/water/ion/other bars, affected-residue category track, decision table, side-by-side/overlay and Agent/bookmark links. Recorded stages and observed identity differences are distinct; ambiguous mappings are unselectable and raw evidence remains expandable. Eight final audit checks pass; broader integration remains M7. |
 | M8 — aesthetics and interactions | Foundation and text scaling implemented; full review pending | Toolbar/composer separation, consistent Agent typography, drawer focus return and relative text sizing. All ten sections pass wide/narrow shell checks and 200% root-text control-bounds checks in all three themes. Full expanded-state visual, contrast and keyboard/focus acceptance remains open. |
 | M7 — integrated release validation | Partial; not complete | Targeted integrated suites, browser checks and earlier wheel receipts exist. Final expanded-scope acceptance, latest-wheel verification, remaining provider tests and broader scientific/browser coverage are not all complete. |
@@ -616,3 +616,32 @@ seconds. Provider replies here are controlled test replies, not live inference.
 These checks extend expanded-state acceptance for two specific surfaces. They
 do not replace visual inspection of populated/error/loading/import/draft states
 or native open dropdown menus, and M8 remains open for those remaining states.
+
+### Installed-wheel OpenFF preservation receipt
+
+The isolated Ubuntu/WSL Python 3.11.16 environment installed the corrected
+`b103dd8` wheel outside the source tree, alongside OpenFF Toolkit 0.18.0,
+AmberTools 26.0 and openmmforcefields 0.16.0. The new
+`test_openff_ligand_preparation_preserves_outputs_with_audit_on_or_off` passed
+in 26.42 seconds (one selected test). It runs actual peptide/ethanol preparation
+and ligand parameterization with an available AM1-BCC provider, fixed ligand
+file coordinates and the existing scientific clash check. PDBFixer uses the
+same explicit Reference platform in both comparison runs; no production
+scientific implementation or defaults were changed.
+
+Audit on/off produced byte-identical supplied-input/prepared/topology PDBs and
+System XML, unchanged supplied SDF bytes, and matching state coordinates and
+periodic box vectors at absolute tolerance 1e-10. Recording was absent when
+disabled and complete without recorder warnings when enabled. OpenFF emitted
+upstream deprecation and preset-charge/virtual-site warnings; these are retained
+as test diagnostics, not concealed or converted to recorder failures.
+
+The passing comparison is scoped to this ligand/peptide and installed runtime.
+It does not certify all ligand classes, charge/pose correctness, every platform,
+or all chemistry extras. `pip check` in this conda environment reported missing
+netCDF4/pdb2pqr/requests and NumPy/Biopython constraints in AmberTools auxiliary
+packages (fetkutils, packmol-memgen, proprep, ndfes, edgembar). Those tools were
+not called by the comparison; a whole-environment dependency PASS is not claimed.
+The separately observed CPU repeatability failures and remaining M7/M8 acceptance
+items remain open. The OpenFF package installation was isolated in the user's
+WSL cache and did not modify Windows Python or the user's study.

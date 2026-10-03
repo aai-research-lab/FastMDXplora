@@ -207,6 +207,64 @@ def test_membrane_patch_observation_preserves_topology_positions_and_system(tmp_
 
 
 @pytest.mark.timeout(1200)
+def test_openff_ligand_preparation_preserves_outputs_with_audit_on_or_off(tmp_path, monkeypatch):
+    """Compare real AM1-BCC ligand parameterization, not a mocked generator."""
+    openmm = pytest.importorskip("openmm")
+    pytest.importorskip("openff.toolkit")
+    pytest.importorskip("openmmforcefields")
+    np = pytest.importorskip("numpy")
+    from pdbfixer import PDBFixer
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    from fastmdxplora.setup.ligand import am1bcc_provider
+    from tests._the_phase import a_real_setup
+
+    assert am1bcc_provider() is not None, "This integration gate needs real AM1-BCC support"
+    ligand = Chem.AddHs(Chem.MolFromSmiles("CCO"))
+    assert AllChem.EmbedMolecule(ligand, randomSeed=314159) == 0
+    conformer = ligand.GetConformer()
+    # A fixed, separated file pose avoids a protein clash without disabling
+    # the actual clash check or altering the scientific preparation settings.
+    for index in range(ligand.GetNumAtoms()):
+        point = conformer.GetAtomPosition(index)
+        conformer.SetAtomPosition(index, (point.x + 15, point.y + 15, point.z + 15))
+    ligand.SetProp("_Name", "ETH")
+    supplied = tmp_path / "ethanol.sdf"
+    with Chem.SDWriter(str(supplied)) as writer:
+        writer.write(ligand)
+    original = supplied.read_bytes()
+    initialize = PDBFixer.__init__
+
+    def on_reference(self, *args, **kwargs):
+        initialize(self, *args, **kwargs)
+        self.platform = openmm.Platform.getPlatformByName("Reference")
+
+    monkeypatch.setattr(PDBFixer, "__init__", on_reference)
+    roots = []
+    for name, enabled in (("off", "0"), ("on", "1")):
+        root = tmp_path / name
+        root.mkdir()
+        monkeypatch.setenv("FASTMDXPLORA_PREPARATION_AUDIT", enabled)
+        a_real_setup(root, random_seed=314159, forcefield="amber-openff",
+                     ligand=str(supplied), ligand_name="ETH", ligand_pose="file")
+        roots.append(root / "setup")
+    assert supplied.read_bytes() == original
+    for name in ("input.pdb", "prepared.pdb", "topology.pdb", "system.xml"):
+        assert (roots[0] / name).read_bytes() == (roots[1] / name).read_bytes(), name
+    states = [openmm.XmlSerializer.deserialize((root / "state.xml").read_text())
+              for root in roots]
+    for getter in ("getPositions", "getPeriodicBoxVectors"):
+        arrays = [getattr(state, getter)(asNumpy=True)._value for state in states]
+        np.testing.assert_allclose(arrays[0], arrays[1], rtol=0, atol=1e-10)
+    assert not (roots[0] / "preparation_audit.json").exists()
+    audit = json.loads((roots[1] / "preparation_audit.json").read_text())
+    assert audit["status"] == "complete" and not audit["warnings"]
+    assert {"assembled_solute", "solvent_ions", "system_parameterization"} <= {
+        event["operation"] for event in audit["events"]}
+
+
+@pytest.mark.timeout(1200)
 def test_full_membrane_preparation_preserves_outputs_with_audit_on_or_off(tmp_path, monkeypatch):
     """Exercise real bilayer packing, its relaxation and final parameterization."""
     openmm = pytest.importorskip("openmm")
