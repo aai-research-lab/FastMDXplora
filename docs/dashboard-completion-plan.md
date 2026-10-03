@@ -38,7 +38,7 @@ separately from this feature work.
 | M5 | Full controlled POPC preparation preservation verified; broader preservation limited | OpenFF ligand preservation; CPU repeatability remains a separate failed baseline gate | M0; before M6 |
 | M6 | Specified visuals implemented | Final integrated component/residue/decision/overlay acceptance | M5; M8a |
 | M8b | Foundation applied; responsive shell checks pass | Full expanded-state, contrast, text-zoom and visual review | Functional increments |
-| M7 | Partial; Windows core/Agent clean-wheel gate verified | Installed completed-study workflow, chemistry extras, remaining scientific and expanded-state browser acceptance | All preceding gates |
+| M7 | Partial; Windows core/Agent clean-wheel and completed-study viewer/bookmark/media/restart verified | Remaining installed context/provider/chemistry acceptance, scientific and expanded-state visual gates | All preceding gates |
 
 Track each requirement as `planned`, `implemented`, `verified`, or
 `blocked/deferred with reason`. A milestone becomes complete only when all its

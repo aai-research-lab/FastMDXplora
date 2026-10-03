@@ -565,3 +565,33 @@ not prove that it is fixed in an installed distribution.
 
 The broader real-browser viewer/integrated research workflow and JavaScript
 parse suites passed all 28 tests in 104.04 seconds after the correction.
+
+## Corrected installed completed-study acceptance
+
+Feature revision `b103dd8` built as
+`fastmdxplora-2.5.9.dev189+gb103dd8df-py3-none-any.whl`, SHA-256
+`e76a8060157b5048dac322bba8249370783558dad8cdb4eb1edf8e89163861cf`.
+The earlier wheel was replaced in the fresh isolated Windows environment; its
+previously resolved core/Agent dependencies were retained. `pip check` passed.
+The CLI was restarted outside the checkout against a copy of the completed
+1L2Y study. All 309 copied setup/simulation/analysis/report and root scientific
+records retained their baseline hashes throughout the workflow.
+
+Normal frame stepping now shows the molecular scene. A new frame-1 screenshot
+bookmark contains the visible cartoon (1276 × 980 pixels), unlike the earlier
+failed blank artifact. Changing frame and zoom, then restoring, returned frame 1.
+Filtered bundle export downloaded through the native browser file link; its ZIP
+passed CRC checking and contained one bookmark plus the exact screenshot. The
+import preview reported one matching ID and one compatible view; Keep both
+created a second unique record with the same screenshot. After a full installed
+server restart, both records persisted and restoring the imported record showed
+frame 1 and a visible scene. No JavaScript errors were captured.
+
+Installed GIF/MP4 export `exports/clips/3fd7c0cdd46045f5b9083925d16eb5a0`
+contains two visible 640 × 480 frames with 45-degree final camera rotation.
+GIF/MP4 decoded successfully; metadata records source frames 0 and 60 and
+physical times 0.0005 and 0.0305 ns. The earlier installed historical audit
+interaction also restored the observed 3033-water-atom inventory event and
+clearly identified missing causal provenance; it did not reconstruct a chemical
+cause. This is completed-study viewer/bookmark/media/restart acceptance on Windows,
+not an installed live-provider inference or chemistry-extra certification.
