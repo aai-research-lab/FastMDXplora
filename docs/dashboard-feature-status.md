@@ -174,3 +174,52 @@ research and CSS assets passed resource checks. A test server using that install
 package served the dashboard and all three checked static assets successfully.
 Existing venv dependencies supplied the runtime; this is not a clean-machine
 dependency installation or final whole-framework packaging acceptance.
+
+### Preparation operation coverage and current preservation limits
+
+| Existing operation | Recorded evidence | Remaining limit |
+| --- | --- | --- |
+| Source/model/assembly selection | Supplied input snapshot, resolved input, selected model/chains and requested choices | Historical runs retain only their saved artifacts |
+| Mutation/repair/protonation | PDBFixer stage snapshots, scheduled missing residues/atoms, substitution requests and explicit state choices | Hydrogen counts alone do not establish a chemical state; missing causes stay unspecified |
+| Protein/ligand assembly | `assembled_solute` snapshot; ligand names and force-field files after the existing assembly succeeds | Pose/charge correctness is not certified |
+| Membrane placement | `membrane_placement` snapshot with existing placement record and requested orientation/frame | Observation does not validate that the chosen membrane frame is biologically correct |
+| Solvent/ion/bilayer construction | `solvent_ions` or `membrane_solvent_ions` snapshot after successful combined construction; requested choices and resolved padding/membrane record | OpenMM exposes a combined operation, not individual insertion causes or intermediate retries |
+| System parameterization | `system_parameterization` event with actual particles/constraints/forces and resolved construction parameters | Successful parameterization is not a chemistry certificate |
+| Written final system | `prepared_system` snapshot plus saved manifest decisions | Final snapshot is an aggregate result, not proof of all individual causes |
+
+The extended recorder/audit suite passed 15 checks, including seeded Reference
+audit-on/off equivalence and disabled/failing observer guards. A separate real
+OpenMM POPC/water patch check passed on 32,512 atoms: observation preserved atom
+order/identity, bonds, exact positions/box, System XML, source bytes and Python
+random state. The snapshot was 3,009,688 bytes and took 0.959 s on this host. This
+measures one observation, not full-pipeline overhead or a membrane-building run.
+The existing membrane/ligand logic suite passed; real OpenFF ligand preparation
+is unavailable here because `openff` is not installed. `openmmforcefields` alone
+does not satisfy that dependency.
+
+Two existing CPU repeatability checks failed on small box/coordinate differences
+with recording enabled, and both also failed with recording completely disabled.
+Do not claim deterministic CPU preparation or alter numerical/scientific behavior
+to make this feature suite green. Reference equivalence remains the demonstrated
+full-preparation preservation scope; fresh bilayer construction and real OpenFF
+ligand preparation remain open scientific acceptance gates.
+
+All 56 Agent-boundary/research-view checks passed after the drawer focus fix and
+expanded layout coverage. The three theme cases now cover all ten sections at
+1440, 1280, 1024, 768 and 390 px. Bookmark Close and Escape return focus to their
+opening control; native dialogs retain their own Escape handling. Text zoom,
+complete expanded-state visual inspection and contrast acceptance remain open.
+
+Preparation compatibility receipt: 180 checks passed and two intentionally skipped
+across setup phase/layer, guardrails, membrane placement/measurements and supplied
+ligand/coordinated-ion handling. The skips are absence-of-dependency tests
+(`run only when deps absent`, `graceful-degradation path only`); OpenMM/PDBFixer
+are installed. This does not remove the separately observed CPU repeatability
+failures or replace real OpenFF ligand/full membrane-build equivalence.
+
+Live export-dialog inspection exposed native gray caption/title fields; these now
+share the dialog typography/surfaces. All three new theme cases passed text and
+placeholder contrast of at least 4.5:1 and field bounds at 1280 and 390 px. This
+checks those fields, not every dashboard element. The local completed-study GUI
+was restarted to serve the latest template, draft review and export options;
+bookmark opening/closing and focus return were also verified in the live preview.

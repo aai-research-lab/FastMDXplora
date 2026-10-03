@@ -518,6 +518,7 @@ def prepare_system(
     rigid_water: bool = True,
     hydrogen_mass_amu: float | None = None,
     temperature_K: float = 300.0,
+    _audit: Any = None,
 ) -> dict[str, Path]:
     """Solvate, ionize, parameterize, and serialize an OpenMM system.
 
@@ -744,6 +745,14 @@ def prepare_system(
         logger.info("Building ForceField: %s", force_field)
         ff = omm["ForceField"](*force_field)
 
+    from fastmdxplora.setup.audit import observe_decision, observe_model
+
+    observe_model(_audit, "assembled_solute", modeller,
+                  lambda: {"ligand_names": names if ligands else [],
+                           "force_field_files": list(force_field),
+                           "ligand_forcefield": sm_ff if ligands else None,
+                           "notice": "Assembly result; ligand pose/charge correctness is not certified."})
+
     # ----- 3. Solvate + ionize with Modeller -----
     _refuse_an_implausible_structure(modeller.topology, modeller.positions, unit)
 
@@ -798,6 +807,12 @@ def prepare_system(
         if lipid_parameters:
             membrane_record["lipid_parameters"] = lipid_parameters
         logger.info("Placed for the bilayer: %s.", membrane_record["placed_by"])
+        observe_model(_audit, "membrane_placement", modeller,
+                      lambda: {"resolved": dict(membrane_record),
+                               "requested": {"orient": membrane_orient,
+                                             "orientation_checked": membrane_orientation_checked,
+                                             "frame": membrane_frame,
+                                             "center_z_nm": membrane_center_z_nm}})
 
         if not membrane_orientation_checked and membrane_frame != "opm":
             # Whether the copies agree with each other. One slab holds the
@@ -893,6 +908,18 @@ def prepare_system(
             modeller.topology, modeller.positions)
         if said:
             logger.warning("%s", said)
+
+    observe_model(_audit, "membrane_solvent_ions" if membrane else "solvent_ions", modeller,
+                  lambda: {"requested": {"padding_nm": solvent_padding_nm,
+                                         "box_shape": box_shape,
+                                         "water_model": water_model,
+                                         "positive_ion": ion_positive,
+                                         "negative_ion": ion_negative,
+                                         "ionic_strength_M": ion_concentration_M,
+                                         "neutralize": neutralize},
+                           "resolved_padding_nm": padding_used,
+                           "membrane": membrane_record,
+                           "notice": "Completed combined OpenMM construction; individual solvent/ion insertion causes are unavailable."})
 
     # ----- 4. Parameterize: build the OpenMM System -----
     method_map = {
@@ -993,6 +1020,18 @@ def prepare_system(
         raise _explain_unparameterized(exc, ff, modeller.topology) from exc
 
     # ----- 5. Capture initial State -----
+    observe_decision(_audit, "system_parameterization",
+                     lambda: {"particles": system.getNumParticles(),
+                              "constraints": system.getNumConstraints(),
+                              "forces": system.getNumForces(),
+                              "force_field_files": list(force_field),
+                              "nonbonded_method": method_key,
+                              "nonbonded_cutoff_nm": nonbonded_cutoff_nm,
+                              "switch_distance_nm": resolved_switch_distance_nm,
+                              "constraints_choice": constraints,
+                              "rigid_water": rigid_water,
+                              "hydrogen_mass_amu": hydrogen_mass_amu},
+                     reason="Existing createSystem completed; recorded parameters and counts do not certify chemical validity.")
     # Use a no-op integrator just to obtain a Context for State serialization.
     integrator = omm["openmm"].VerletIntegrator(0.001 * unit.picoseconds)
     context = omm["openmm"].Context(system, integrator)

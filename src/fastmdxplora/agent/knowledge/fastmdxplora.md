@@ -42,6 +42,14 @@ data. Report assembles findings, methods, warnings and artifacts.
 outcomes. `setup/setup_parameters.json` records resolved force fields, assembly,
 heterogen decisions, protonation settings and notes where available.
 `setup/preparation_audit.json` records observed preparation events in newer runs.
+New records can include assembled solute, resolved membrane placement, combined
+solvent/ion construction and successful System parameterization. These events
+observe existing operations; they do not approve choices or certify chemistry.
+OpenMM's combined construction does not expose individual water/ion insertion
+causes. A System particle/constraint count is an observation, not a validation
+of protonation, ligand charge, force-field suitability or membrane orientation.
+Incomplete/limited records retain their warnings; do not fill gaps with inferred
+causes or interpret a historical run as having a newer event journal.
 `analysis/analysis_manifest.json` identifies analysis sources/results. Refer to
 the source actually supplied by the server, not a guessed filename or value.
 

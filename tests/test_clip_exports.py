@@ -141,6 +141,40 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page)
     assert not page.errors
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_clip_dialog_text_fields_are_readable_and_fit(clip_page, theme):
+    import re
+
+    page = clip_page
+    page.locator("#settings-open").click()
+    page.locator(f'.seg-btn[data-theme="{theme}"]').click()
+    page.locator("#settings-open").click()
+
+    def luminance(rgb):
+        channels = [int(value) / 255 for value in re.findall(r"\d+", rgb)[:3]]
+        linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+                  for value in channels]
+        return sum(weight * value for weight, value in zip((0.2126, 0.7152, 0.0722), linear))
+
+    for width in (1280, 390):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.locator("#clip-export-open").click()
+        for name in ("clip-study-title", "clip-caption"):
+            field = page.locator("#" + name)
+            colors = field.evaluate("el => {const s=getComputedStyle(el); return [s.color,s.backgroundColor,getComputedStyle(el,'::placeholder').color];}")
+            ground = luminance(colors[1])
+            for foreground in (colors[0], colors[2]):
+                ink = luminance(foreground)
+                assert (max(ink, ground) + 0.05) / (min(ink, ground) + 0.05) >= 4.5
+            field.fill("Research frame and selected residues")
+            bounds = field.bounding_box()
+            assert bounds["width"] > 100 and bounds["x"] >= 0
+            assert bounds["x"] + bounds["width"] <= width
+        page.locator("#clip-export-cancel").click()
+        assert page.locator("#clip-export-dialog").is_hidden()
+    assert not page.errors
+
+
 def test_browser_cancel_restores_view_and_does_not_save_clip(clip_page):
     page = clip_page
     page.locator("#clip-export-open").click()

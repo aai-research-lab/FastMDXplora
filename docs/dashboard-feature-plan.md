@@ -4,7 +4,7 @@ Status reviewed 2026-10-02: **the full framework is not complete**.
 The current requirement-by-requirement assessment and change description are in
 [Dashboard feature changes and milestone status](dashboard-feature-status.md).
 M1 context and draft review are implemented with representative acceptance;
-M4 and M6 have remaining specified controls; M3 has pending live tests for
+M4 and M6 controls are implemented with representative acceptance; M3 has pending live tests for
 Claude, Kimi and Gemini; M5/M7 have remaining preservation/release acceptance gates.
 Milestone receipts below describe verified increments at their stated revision,
 not completion of all requirements or current verification of the whole branch.

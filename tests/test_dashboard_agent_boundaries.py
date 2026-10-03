@@ -167,9 +167,9 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page()
             page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
-            for width in (1440, 768, 390):
+            for width in (1440, 1280, 1024, 768, 390):
                 page.set_viewport_size({"width": width, "height": 900})
-                for view in ("overview", "analysis", "agent", "run", "settings"):
+                for view in ("studies", "overview", "viewer", "analysis", "report", "files", "agent", "run", "settings", "cite"):
                     page.goto(url + "/#" + view)
                     page.wait_for_function("document.body.dataset.theme === " + json.dumps(theme))
                     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), (theme, width, view)
@@ -181,6 +181,12 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
                 page.locator("#research-bookmarks-close").focus()
                 page.keyboard.press("Enter")
                 assert not panel.is_visible()
+                assert page.locator("#research-bookmarks-toggle").get_attribute("aria-expanded") == "false"
+                assert page.locator("#research-bookmarks-toggle").evaluate("el => el === document.activeElement")
+                page.locator("#research-bookmarks-toggle").click()
+                page.keyboard.press("Escape")
+                assert not panel.is_visible()
+                assert page.locator("#research-bookmarks-toggle").evaluate("el => el === document.activeElement")
             browser.close()
     finally:
         server.shutdown()

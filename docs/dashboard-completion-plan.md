@@ -27,17 +27,17 @@ separately from this feature work.
 
 ## Milestone sequence and completion tracking
 
-| Milestone | Starting state | Remaining deliverable | Dependency |
+| Milestone | Current state | Remaining deliverable | Dependency |
 | --- | --- | --- | --- |
 | M0 | Reconciled | Maintain requirement/evidence map and reconcile newly found gaps | Start |
-| M8a | Planned | Design baseline, shared components, shell and panel layout | M0 |
-| M1 | Core implemented | Context inspector/opt-out, draft diff and exact-review boundary | M8a |
+| M8a | Foundation implemented | Full contrast, text-zoom and expanded-state visual acceptance | M0 |
+| M1 | Specified controls implemented | Final integration of context inspection/opt-out, draft diff and exact-review boundary | M8a |
 | M2 | Core implemented/verified | Polish bookmark workflow and complete regression acceptance | M8a; M1/M6 context changes |
 | M3 | Adapters implemented; live tests partial | Provider acceptance matrix, supported-model controls and real account tests | Can proceed alongside other work |
-| M4 | Core implemented | Resolution, title/caption, preview/estimate and full export acceptance | M8a |
-| M5 | Recorder implemented; preservation limited | Observer coverage reconciliation and broader preservation evidence | M0; before M6 |
-| M6 | Core implemented | Component inventories, affected-residue track and decision table | M5; M8a |
-| M8b | Planned | Apply final visual system to every page and feature state | Functional increments |
+| M4 | Specified controls implemented | Integrated acceptance of resolution, title/caption, preview/estimate and exports | M8a |
+| M5 | Operation coverage mapped; preservation limited | Full membrane-building/OpenFF ligand preservation; CPU repeatability remains a separate failed baseline gate | M0; before M6 |
+| M6 | Specified visuals implemented | Final integrated component/residue/decision/overlay acceptance | M5; M8a |
+| M8b | Foundation applied; responsive shell checks pass | Full expanded-state, contrast, text-zoom and visual review | Functional increments |
 | M7 | Partial | Final integration, installed-wheel, scientific and browser acceptance | All preceding gates |
 
 Track each requirement as `planned`, `implemented`, `verified`, or

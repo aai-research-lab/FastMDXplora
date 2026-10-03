@@ -27,16 +27,24 @@ removed. Codex models are ordered Astra, Sol 6.1, Sol 6, Luna 6, then the remain
 models, with model-specific reasoning controls and readable dark dropdowns.
 
 **The full implementation framework is not complete.** OpenAI sign-in/inference
-has live acceptance; the other providers still need real account tests. Remaining
-context/draft review controls, clip options, audit visuals and final scientific,
-browser and packaging gates are listed in the
+has live acceptance; the other providers still need real account tests. Context
+review, draft diffs, clip preview/options and audit visuals are implemented.
+Remaining scientific, browser and packaging gates are listed in the
 [current milestone status and change description](docs/dashboard-feature-status.md).
 This branch update does not integrate upstream main or declare a new release.
 
 The [completion and aesthetics plan](docs/dashboard-completion-plan.md) specifies
 the remaining controls and acceptance checks, plus a new M8 design milestone
 covering typography, contrast, layout, responsive panels and keyboard use. This
-is planned work; the redesign and remaining features are not yet implemented.
+has an implemented foundation; full visual/accessibility acceptance remains open.
+
+Preparation recording now observes assembled solutes, resolved membrane placement,
+combined solvent/ion construction and successful System parameterization. It
+records bounded snapshots and actual backend decisions without rerunning the
+operation or changing scientific settings. Individual ion/water insertion causes
+remain unavailable from the combined OpenMM operation. Research drawers restore
+keyboard focus on Close/Escape and expose expanded state; optional preparation
+disclosure is compact and component inventories use aligned five-column cards.
 
 ### A hosted GUI shows its service's name and the person signed in
 

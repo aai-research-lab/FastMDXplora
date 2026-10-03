@@ -1429,6 +1429,7 @@ def _run(
             rigid_water=bool(params["rigid_water"]),
             hydrogen_mass_amu=params["hydrogen_mass_amu"],
             temperature_K=float(params["temperature_K"]),
+            _audit=audit,
         )
 
         # Only the files. What preparation returns now includes the system

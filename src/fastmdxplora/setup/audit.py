@@ -281,6 +281,28 @@ class PreparationRecorder:
         return self._safe("recorded_setup_choices", capture)
 
 
+def observe_model(recorder, operation, model, details=None):
+    """Read a completed modeller operation without changing its objects."""
+    if not isinstance(recorder, PreparationRecorder) or not recorder.enabled:
+        return
+    try:
+        observed = details() if callable(details) else details
+        recorder.observe(operation, model.topology, model.positions, dict(observed or {}))
+    except Exception as exc:  # noqa: BLE001 -- observation cannot replace backend failures
+        recorder._warning(operation, exc)
+
+
+def observe_decision(recorder, operation, details, *, reason=None):
+    """Defer diagnostic reads until enabled and guard their failures too."""
+    if not isinstance(recorder, PreparationRecorder) or not recorder.enabled:
+        return
+    try:
+        observed = details() if callable(details) else details
+        recorder.decision(operation, observed, reason=reason)
+    except Exception as exc:  # noqa: BLE001 -- observation cannot replace backend failures
+        recorder._warning(operation, exc)
+
+
 def observe_fixer(recorder, operation, fixer, details=None):
     """Guard even observation setup; a capture must not replace a backend error."""
     if not isinstance(recorder, PreparationRecorder) or not recorder.enabled:

@@ -82,7 +82,18 @@
       "\n\nKnowledge contract: " + receipt.knowledge_version + "\nContext fingerprint: " + receipt.fingerprint :
       receipt.error || "Context is unavailable.";
   }
-  function setDock(open) {
+  let bookmarkOrigin = null;
+  function setBookmarks(open, returnFocus = false) {
+    const panel = el("research-bookmarks");
+    if (open && panel.hidden) bookmarkOrigin = document.activeElement;
+    panel.hidden = !open;
+    el("research-bookmarks-toggle").setAttribute("aria-expanded", String(open));
+    if (!open && returnFocus) {
+      const target = bookmarkOrigin?.isConnected ? bookmarkOrigin : el("research-bookmarks-toggle");
+      target?.focus();
+    }
+  }
+  function setDock(open, returnFocus = false) {
     const page = document.querySelector('[data-page="agent"]');
     const dock = el("research-agent-dock");
     if (!page || !dock) return;
@@ -91,13 +102,14 @@
     document.body.classList.toggle("research-agent-open", open);
     dock.hidden = !open;
     if (open) {
-      el("research-bookmarks").hidden = true;
+      setBookmarks(false);
       dock.appendChild(page);
       page.hidden = false;
       el("agent-request").focus();
     } else {
       el("research-agent-anchor").after(page);
       page.hidden = board()?.state.activePage !== "agent";
+      if (returnFocus) el("research-agent-toggle").focus();
     }
     el("research-agent-toggle").setAttribute("aria-expanded", String(open));
     molecule()?.resize();
@@ -352,7 +364,8 @@
       const bookmark = event.target.closest("[data-research-bookmark]");
       if (bookmark) {
         if (bookmark.dataset.researchBookmark) analysis = bookmark.dataset.researchBookmark;
-        el("research-bookmarks").hidden = false;
+        if (docked) setDock(false);
+        setBookmarks(true);
         refresh().then(suggestTags).catch(() => status("Could not load bookmarks."));
         if (editing) status("Finish editing or press Clear before saving a new view.");
         el("research-title").focus();
@@ -374,7 +387,7 @@
       origin = board()?.state.activePage === "agent" ? origin : board()?.state.activePage;
       setDock(!docked); updateContext();
     });
-    el("research-agent-close").addEventListener("click", () => setDock(false));
+    el("research-agent-close").addEventListener("click", () => setDock(false, true));
     const preference = el("research-agent-enabled");
     preference.checked = enabled;
     el("research-agent-toggle").hidden = !enabled;
@@ -401,19 +414,20 @@
     });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
-        el("research-bookmarks").hidden = true;
-        if (docked) setDock(false);
+        if (document.querySelector("dialog[open]")) return;
+        if (!el("research-bookmarks").hidden) setBookmarks(false, true);
+        if (docked) setDock(false, true);
       }
     });
     el("research-bookmarks-toggle").addEventListener("click", () => {
-      el("research-bookmarks").hidden = !el("research-bookmarks").hidden;
+      setBookmarks(el("research-bookmarks").hidden);
       if (!el("research-bookmarks").hidden) {
         if (docked) setDock(false);
         refresh().then(suggestTags).catch(() => status("Could not load bookmarks."));
         el("research-title").focus();
       }
     });
-    el("research-bookmarks-close").addEventListener("click", () => { el("research-bookmarks").hidden = true; });
+    el("research-bookmarks-close").addEventListener("click", () => setBookmarks(false, true));
     el("research-save").addEventListener("click", async () => {
       const captureImage = el("research-screenshot").checked;
       const view = editing && !captureImage ? editing.view : capture();

@@ -57,6 +57,37 @@ def test_a_repeated_preparation_preserves_prior_snapshots(tmp_path):
     assert (tmp_path / "study" / newer).is_file()
 
 
+def test_disabled_backend_observers_do_not_access_models_or_diagnostics(tmp_path):
+    from fastmdxplora.setup.audit import observe_decision, observe_model
+
+    class Unreadable:
+        @property
+        def topology(self):
+            pytest.fail("disabled observation accessed topology")
+
+    def diagnostic():
+        pytest.fail("disabled observation evaluated diagnostic")
+
+    audit = PreparationRecorder(tmp_path / "setup", enabled=False)
+    observe_model(audit, "solvent_ions", Unreadable(), diagnostic)
+    observe_decision(audit, "system_parameterization", diagnostic)
+    assert not audit.root.exists()
+
+
+def test_backend_diagnostic_failures_are_visible_without_replacing_results(tmp_path):
+    from fastmdxplora.setup.audit import observe_decision, observe_model
+
+    def unavailable():
+        raise RuntimeError("diagnostic failed")
+
+    audit = PreparationRecorder(tmp_path / "setup")
+    observe_model(audit, "solvent_ions", object(), unavailable)
+    observe_decision(audit, "system_parameterization", unavailable)
+    assert audit.record["status"] == "incomplete"
+    assert len(audit.record["warnings"]) == 2
+    assert not audit.record["events"]
+
+
 def test_old_system_file_does_not_certify_new_preparation(tmp_path):
     audit = PreparationRecorder(tmp_path / "setup")
     audit.root.mkdir()
@@ -121,7 +152,55 @@ def test_real_seeded_preparation_has_identical_scientific_outputs_with_audit_on_
         "missing_atom_requests",
         "add_missing_atoms",
         "add_missing_hydrogens",
+        "assembled_solute",
+        "solvent_ions",
+        "system_parameterization",
         "prepared_system",
         "recorded_setup_choices",
     } <= set(operations)
     assert record["backends"]["openmm"] == openmm.__version__
+
+
+def test_membrane_patch_observation_preserves_topology_positions_and_system(tmp_path):
+    import random
+    from pathlib import Path
+    from time import perf_counter
+
+    openmm = pytest.importorskip("openmm")
+    app = pytest.importorskip("openmm.app")
+    np = pytest.importorskip("numpy")
+    from fastmdxplora.setup.audit import MAX_TOTAL, observe_model
+
+    # An actual shipped lipid/water patch and parameterized System, without
+    # constructing another bilayer or advancing a simulation.
+    patch = Path(app.__file__).parent / "data" / "POPC.pdb"
+    original = patch.read_bytes()
+    model = app.PDBFile(str(patch))
+    system = app.ForceField("amber14-all.xml", "amber14/tip3p.xml").createSystem(
+        model.topology, nonbondedMethod=app.PME, constraints=app.HBonds
+    )
+    serialized = openmm.XmlSerializer.serialize(system)
+    atoms = [(atom.index, atom.name, atom.residue.id, atom.residue.name,
+              atom.residue.chain.id) for atom in model.topology.atoms()]
+    bonds = [(one.index, two.index) for one, two in model.topology.bonds()]
+    positions = np.array(model.positions.value_in_unit(openmm.unit.nanometer), copy=True)
+    box = model.topology.getPeriodicBoxVectors()
+    stream = random.getstate()
+    disabled = PreparationRecorder(tmp_path / "off", enabled=False)
+    observe_model(disabled, "membrane_solvent_ions", model)
+    audit = PreparationRecorder(tmp_path / "on")
+    started = perf_counter()
+    observe_model(audit, "membrane_solvent_ions", model, {"fixture": "OpenMM POPC patch"})
+    elapsed = perf_counter() - started
+    assert audit.record["status"] == "recording" and not audit.record["warnings"]
+    assert random.getstate() == stream
+    assert patch.read_bytes() == original
+    assert [(atom.index, atom.name, atom.residue.id, atom.residue.name,
+             atom.residue.chain.id) for atom in model.topology.atoms()] == atoms
+    assert [(one.index, two.index) for one, two in model.topology.bonds()] == bonds
+    np.testing.assert_array_equal(model.positions.value_in_unit(openmm.unit.nanometer), positions)
+    assert model.topology.getPeriodicBoxVectors() == box
+    assert openmm.XmlSerializer.serialize(system) == serialized
+    assert not disabled.root.exists()
+    assert 0 < audit.bytes <= MAX_TOTAL
+    print(f"POPC observer receipt: {len(atoms)} atoms; {audit.bytes} snapshot bytes; {elapsed:.3f} seconds")
