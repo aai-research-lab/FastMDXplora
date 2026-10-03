@@ -292,7 +292,7 @@ and bundle checks passed. The browser flow checks scope transitions, restart,
 search/filter, graph-range restoration, JSON/bundle export and import; its final
 rerun also passed after figure/warning and study-change summary refinements.
 
-### Latest installed-package receipt
+### Earlier installed-package receipt
 
 Feature revision `f55ffa05fb6eaa74b7a561564eba3c1eeb7f3cc5` built as
 `fastmdxplora-2.5.9.dev171+gf55ffa05f-py3-none-any.whl`, SHA-256
@@ -497,3 +497,37 @@ The current code passed all 25 tests in `test_clip_exports.py`,
 Two Pillow deprecation warnings remain. Provider scope is unchanged: the user
 has OpenAI only; other providers require independently available accounts for
 live verification and remain explicitly unverified.
+
+## Clean installed-package and regression acceptance, 2026-10-03
+
+Revision `6a138fc` built with isolated build dependencies as
+`fastmdxplora-2.5.9.dev186+g6a138fca5-py3-none-any.whl`, SHA-256
+`fbf09280a07ec66d54c4c484ca8c8f5751c85409178b752e7e4f04a11ab32dcf`.
+The wheel and its `[agent]` extra were installed with normal dependency
+resolution into a new Python 3.11 virtual environment, without system packages.
+After installation completed, `pip check` reported no broken requirements.
+Isolated imports outside the checkout verified the knowledge Markdown, exact
+error-reference correspondence with all 127 runtime codes, Gemini bridge,
+preparation-audit module and research/clip/viewer/provider/theme assets.
+
+The installed CLI served an empty-study dashboard on loopback port 8783. Browser
+interaction verified settings opening, modal Shift+Tab containment and Escape,
+the bookmark panel's empty state, and black/white bookmark dropdown options.
+No JavaScript errors were captured. The temporary server was stopped after
+testing. This is fresh-environment Windows core/Agent acceptance; it does not
+certify chemistry extras, another OS, provider inference or every installed
+completed-study workflow.
+
+All 115 tests in dashboard coverage, Agent boundaries, research views/bundles,
+preparation audit and reasoning passed in 187.52 seconds. The separately selected
+12 theme/layout/text-zoom/contrast checks passed in 73.63 seconds.
+
+A new browser regression uses static fixture coordinates translated 100 angstroms
+relative to playback. Both preview frames contain molecular color above the
+captions; original camera and structure mode return, and source hashes are
+unchanged. It passed in 14.13 seconds. Its initial test assertion incorrectly
+required an absent static-view `frame` key; the corrected assertion compares
+optional frame values. No production code or scientific behavior changed in
+this acceptance increment. Full membrane/OpenFF preservation, CPU baseline
+failures, complete visual-state review and unavailable provider account gates
+remain open.

@@ -11,7 +11,8 @@ from PIL import Image
 
 from fastmdxplora.gui.clips import clip_endpoint
 from fastmdxplora.gui.trajectory_playback import playback_info
-from tests.test_the_drawing_scripts_run_in_a_browser import _write_study, dashboard, page as _page  # noqa: F401
+from tests.test_the_drawing_scripts_run_in_a_browser import _write_study, dashboard  # noqa: F401
+from tests.test_the_drawing_scripts_run_in_a_browser import page as _page
 
 clip_page = _page
 
@@ -220,6 +221,52 @@ def test_browser_cancel_restores_view_and_does_not_save_clip(clip_page):
     assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
     assert not page.evaluate("document.querySelector('.viewer-layout').inert")
     assert not page.errors
+
+
+def test_clip_preview_maps_a_different_structure_origin_and_restores_camera(tmp_path):
+    """A centred static structure must stay visible when playback uses another origin."""
+    md = pytest.importorskip("mdtraj")
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_the_drawing_scripts_run_in_a_browser import _open
+
+    root = _write_study(tmp_path / "translated-study")
+    topology_path = root / "setup/topology.pdb"
+    structure = md.load(str(topology_path))
+    structure.xyz += 10.0  # Fixture static coordinates are 100 angstroms away.
+    structure.save_pdb(str(topology_path))
+    sources = [path for folder in ("setup", "simulation")
+               for path in (root / folder).rglob("*") if path.is_file()]
+    before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        for page in _open(session, "#viewer"):
+            page.wait_for_function("window.FastMDXMoleculeViewer?.STATE.model", timeout=60000)
+            original = page.evaluate("FastMDXResearch.capture()")
+            page.locator("#clip-export-open").click()
+            page.wait_for_function(
+                "document.querySelector('#clip-status').textContent"
+                ".includes('saved browser frames available')")
+            page.locator("#clip-last").fill("2")
+            page.locator("#clip-resolution").select_option("640x480")
+            page.locator("#clip-preview").click()
+            page.wait_for_function(
+                "document.querySelector('#clip-status').textContent.includes('Preview ready')",
+                timeout=60000)
+            for name in ("clip-preview-first", "clip-preview-last"):
+                data = page.locator("#" + name).get_attribute("src").split(",", 1)[1]
+                with Image.open(io.BytesIO(base64.b64decode(data))) as image:
+                    scene = image.convert("RGB").crop((0, 0, 640, 300))
+                    colors = list(scene.getdata())
+                    assert sum(max(pixel) - min(pixel) > 30 for pixel in colors) > 20
+            restored = page.evaluate("FastMDXResearch.capture()")
+            assert restored["camera"] == pytest.approx(original["camera"])
+            assert restored.get("frame") == original.get("frame")
+            assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
+            assert not page.errors
+        assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources} == before
+    finally:
+        session.server.shutdown()
+        session.server.server_close()
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
