@@ -1,9 +1,9 @@
 """Research evidence is study scoped, persisted, and restored by a real page."""
 from __future__ import annotations
 
-import json
 import base64
 import io
+import json
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from urllib.error import HTTPError
@@ -11,7 +11,12 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from fastmdxplora.gui.research import bookmarks_endpoint, clean_view, context_for, screenshot_endpoint
+from fastmdxplora.gui.research import (
+    bookmarks_endpoint,
+    clean_view,
+    context_for,
+    screenshot_endpoint,
+)
 from fastmdxplora.gui.server import start_test_server
 
 
@@ -250,6 +255,59 @@ def test_import_api_checks_origin_and_size_before_preview(served, study, monkeyp
     assert not (study.active_root / ".research").exists()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_populated_bookmark_and_import_preview_layouts(served, study, tmp_path, theme):
+    sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
+    for index in range(18):
+        result = save(study, title=f"Observation {index}: " + "LongUnbrokenResearchTitle" * 5,
+                    note="A detailed scientific observation with retained uncertainty. " * 12,
+                    tags=["Graph", "Figure"], view={"page": "analysis", "analysis": "rmsd"},
+                    **({"screenshot": png_data()} if index == 17 else {}))
+        assert result["ok"]
+    # Simulate an unavailable saved image inside this disposable study only.
+    for image in (study.active_root / ".research/screenshots").glob("*.png"):
+        image.unlink()
+    missing = next(row for row in result["bookmarks"] if row.get("screenshot"))
+    missing_message = screenshot_endpoint(study, missing["id"])["error"]
+    before = (study.active_root / "analysis/rmsd/rmsd.dat").read_bytes()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+        page.goto(served + "/#analysis")
+        page.locator("#research-bookmarks-toggle").click()
+        page.locator(".research-bookmark").first.wait_for()
+        page.get_by_text(missing_message, exact=True).wait_for()
+        assert page.locator(".research-screenshot").count() == 0
+        with page.expect_download() as download:
+            page.locator("#research-export").click()
+        exported = tmp_path / "populated-bookmarks.json"
+        download.value.save_as(exported)
+        for state in ("populated", "import-preview"):
+            if state == "import-preview":
+                page.locator("#research-import-file").set_input_files(exported)
+                page.locator("#research-import-preview").wait_for(state="visible")
+                assert "18 matching IDs" in page.locator("#research-import-summary").inner_text()
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                for width in (1440, 1280, 1024, 768, 390):
+                    page.set_viewport_size({"width": width, "height": 1000})
+                    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                    outside = page.locator("#research-bookmarks").evaluate("""el =>
+                        Array.from(el.querySelectorAll('button,input,select,textarea'))
+                        .filter(node => node.checkVisibility())
+                        .filter(node => {const r=node.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
+                        .map(node => node.id || node.textContent)""")
+                    assert not outside, (theme, state, zoom, width, outside)
+                    assert page.locator(".research-bookmark").first.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), (theme, state, zoom, width)
+                    assert len(bookmarks_endpoint(study)["bookmarks"]) == 18
+        assert (study.active_root / "analysis/rmsd/rmsd.dat").read_bytes() == before
+        assert not errors
+        browser.close()
+
+
 def test_browser_docks_agent_saves_restores_and_exports(served, study, tmp_path):
     sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
@@ -336,8 +394,8 @@ def test_browser_docks_agent_saves_restores_and_exports(served, study, tmp_path)
 
 def test_viewer_bookmark_restores_frame_camera_and_selection(tmp_path):
     sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
-    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
     from fastmdxplora.gui.live_frames import write_live_frame
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
 
     root = _write_study(tmp_path / "viewer-study")
     write_live_frame(root / "simulation", pdb_text=(root / "setup/topology.pdb").read_text(),

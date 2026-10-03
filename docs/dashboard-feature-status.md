@@ -674,3 +674,25 @@ The final run was intercepted by the test so no simulation started. Model
 suggestions were controlled fixtures; this is not a live provider receipt.
 Ruff (existing E501 exception) and `git diff --check` passed. M7/M8 remain open
 for their remaining integrated and visual states.
+
+### Populated bookmarks, missing images and import-preview layouts
+
+The populated research panel and import-preview browser matrix passed under
+Graphite, Ink and Paper at 1440/1280/1024/768/390 px and 100%/200% text size.
+Each disposable study contained 18 records with long unbroken titles, detailed
+notes and tags. One saved image was deliberately removed from that disposable
+study: the server's actual missing-image message appeared in its card, the note
+was retained, and no broken thumbnail remained. Other records had no screenshot.
+Visible controls stayed inside the viewport and the bookmark card content did
+not overflow horizontally. JSON export and file import reached a preview with
+18 matching IDs; preview/layout interaction did not apply an import or change
+the 18 persisted records. The RMSD source bytes stayed unchanged and no browser
+page errors occurred. The three matrix cases plus the existing screenshot
+persistence/metadata-normalization test passed (4 passed in 16.13 s).
+
+This adds 60 populated-panel/import-state layout combinations, including the
+missing-image fallback. It covers controlled fixture state, not a live provider
+or scientific inference. Ruff with the existing E501 exception and diff whitespace
+checks passed; two existing import-order issues were normalized. M8 still needs
+its remaining loading/error/stale and visual review states, and M7's final
+integrated acceptance remains open.
