@@ -250,8 +250,14 @@ def test_a_click_with_the_mouse_moves_nothing(page):
     page.evaluate("() => engine.setFrame(0)")
     holder = page.locator("#engine-under-test").bounding_box()
     page.evaluate("() => { window.clicks = []; engine.on('click', (atom) => clicks.push(atom)); }")
-    before = page.evaluate("""() => [JSON.stringify(engine.cameraSnapshot()),
-        engine.plugin.state.data.cells.size]""")
+    # Where the camera looks from and at: the depth Mol* clips at is its own
+    # to recompute as it renders.
+    view = """() => { const c = engine.cameraSnapshot();
+        return [JSON.stringify([c.position, c.target, c.up, c.radius]),
+                engine.plugin.state.data.cells.size]; }"""
+    page.evaluate("() => new Promise((done) => requestAnimationFrame(() => "
+                  "requestAnimationFrame(done)))")
+    before = page.evaluate(view)
     for fx in (0.5, 0.45, 0.55, 0.4, 0.6, 0.35, 0.65):
         for fy in (0.5, 0.4, 0.6):
             x, y = holder["x"] + holder["width"] * fx, holder["y"] + holder["height"] * fy
@@ -265,6 +271,5 @@ def test_a_click_with_the_mouse_moves_nothing(page):
             continue
         break
     assert any(page.evaluate("() => clicks")), "no atom was found under the mouse"
-    after = page.evaluate("""() => [JSON.stringify(engine.cameraSnapshot()),
-        engine.plugin.state.data.cells.size]""")
+    after = page.evaluate(view)
     assert after == before

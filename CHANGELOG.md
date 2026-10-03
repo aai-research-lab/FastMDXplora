@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The camera stays where a structure is fitted
+
+**A structure loaded into the Viewer is fitted once, not fitted and then
+moved again a moment later.** The engine sets the camera on the structure at
+once, and Mol\*'s own reset, asked for when the structure was added, was
+carried out at its next frame and moved the camera to a slightly different
+fit of its own: on a busy machine, after the person had started to look.
+That reset is now given the engine's view, so it moves nothing.
+
 ### A clicked atom of the frames is named exactly
 
 **An atom clicked in the frames being played is sent to the server by its

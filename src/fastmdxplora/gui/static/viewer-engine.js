@@ -1238,7 +1238,12 @@
         return;
       }
       const sphere = structure.boundary.sphere;
-      canvas.camera.setState(canvas.camera.getFocus(sphere.center, Math.max(sphere.radius, 1) + 2), 0);
+      const view = canvas.camera.getFocus(sphere.center, Math.max(sphere.radius, 1) + 2);
+      canvas.camera.setState(view, 0);
+      // The reset Mol* asked for itself when the structure was added is
+      // carried out at its next frame, and moved the camera again to a fit
+      // of its own a moment after this one: it is given this one.
+      canvas.requestCameraReset({snapshot: view, durationMs: 0});
       canvas.requestDraw();
     }
 
