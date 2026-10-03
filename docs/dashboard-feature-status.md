@@ -1040,3 +1040,39 @@ navigation. Temporary styles, text size and viewport overrides were removed;
 the original Paper theme was restored. These previews are candidate-CSS evidence,
 not a claim that the new CSS is already in the installed wheel. Full M8 visual
 coverage and the final exact-revision installed release gate remain open.
+
+### Installed enlarged-text build and mobile scrolling acceptance
+
+Wheel `fastmdxplora-2.5.9.dev206+gdbfbf7c94-py3-none-any.whl` was built using
+the declared isolated build dependencies (the source venv lacks a usable wheel
+builder). SHA256:
+`1954d100cc5ef1a5c600812ec0b65b9c4878d418ce83839cd26f099f1926a918`.
+The existing isolated acceptance venv installs it successfully, passes pip check,
+and verifies required assets and all 127 error references. Only the identified
+8784 review server was restarted. The user's 8783 dashboard was preserved.
+
+Native inspection at 200% text / 390 px verifies the new installed popup, wrapping
+of its full development-version string, keyboard access to lower links, and the
+complete playback/frame/time badge inside the canvas. These checks use shipped
+CSS without injected candidate styles. ChatGPT / GPT-5.6 Luna / medium remains
+selected after restart. All 309 baseline study files remain unchanged. Review-only
+text-size and viewport overrides were reset, and Paper remains the selected theme.
+
+Scrolling also revealed that the research toolbar and mobile navigation both
+occupied the sticky top edge. Mobile research actions now stay in normal flow;
+wide layouts retain their sticky toolbar. A source regression reproduced the
+overlap in all themes at ordinary 390 px text before correction. Nine toolbar,
+context-inspector and shell checks pass in 55.52 s. A strengthened three-theme
+check then passes in 18.59 s, verifying actual body scrolling, study identity
+hit-testing at partial scroll, bookmark opening, Escape and focus return at
+100%/200% and 390/768 px. An initial window-scroll probe did not move the actual
+body scroll container and is excluded as scroll evidence. A subsequent wait for
+DOM hiding timed out because the existing loader fades with opacity and disables
+pointer events; waiting for the application's ready state corrected the harness
+without changing loader behavior or dropping the scroll/hit assertions.
+
+A native temporary-style preview corroborates unobscured Paper study identity
+and navigation at 200% / 390 px after scrolling; that preview was removed. The
+mobile-toolbar correction postdates the dbfbf7c installed wheel and needs final
+installed acceptance. Ruff and diff checks pass. Full remaining M8 surface/state
+review, integration and the final frozen release gate remain open.

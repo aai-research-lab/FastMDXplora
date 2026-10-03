@@ -4016,6 +4016,10 @@ body[data-theme="paper"] { --text-muted: #61616b; }
     background: var(--background-primary); border-bottom: 1px solid var(--border-primary);
 }
 .research-tools button { min-height: 40px; font-size: var(--text-sm); }
+@media (max-width: 800px) {
+    /* The study navigation already owns the sticky top edge on mobile. */
+    .research-tools { position: static; }
+}
 .page[data-page="agent"] { height: calc(100dvh - var(--shell-pad-top, 24px) - var(--agent-foot) - 76px); }
 .research-agent-dock { bottom: 0; padding: 16px; box-shadow: var(--shadow-modal); }
 .research-agent-dock .page[data-page="agent"] { height: auto; }

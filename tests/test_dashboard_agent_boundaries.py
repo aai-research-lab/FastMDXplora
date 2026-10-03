@@ -389,6 +389,50 @@ def test_viewer_status_labels_wrap_inside_canvas_with_large_text(tmp_path, theme
         server.server_close()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_mobile_scrolling_keeps_research_actions_clear_of_study_navigation(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    server, url = start_test_server(_write_study(tmp_path / "study"))
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#viewer")
+            page.wait_for_function("document.getElementById('topbar-run-title').textContent !== 'No active study'")
+            page.wait_for_function("document.body.classList.contains('state-ready')")
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                for width in (390, 768):
+                    page.set_viewport_size({"width": width, "height": 844})
+                    page.evaluate("document.body.scrollTop = 600")
+                    assert page.evaluate("document.body.scrollTop > 0"), (theme, zoom, width)
+                    assert page.evaluate("""() => {
+                        const sidebar=document.querySelector('.sidebar').getBoundingClientRect();
+                        const toolbar=document.querySelector('.research-tools').getBoundingClientRect();
+                        return toolbar.bottom <= sidebar.top || toolbar.top >= sidebar.bottom ||
+                            toolbar.right <= sidebar.left || toolbar.left >= sidebar.right;
+                    }"""), (theme, zoom, width)
+                    page.evaluate("document.body.scrollTop = 248")
+                    assert page.locator("#topbar-run-title").evaluate("""el => {
+                        const r=el.getBoundingClientRect();
+                        const hit=document.elementFromPoint(r.x+r.width/2, r.y+r.height/2);
+                        return hit===el || el.contains(hit);
+                    }"""), (theme, zoom, width)
+                    page.evaluate("document.body.scrollTop = 0")
+                    page.locator("#research-bookmarks-toggle").click()
+                    assert page.locator("#research-bookmarks").is_visible()
+                    page.keyboard.press("Escape")
+                    assert page.locator("#research-bookmarks-toggle").evaluate("el => el === document.activeElement")
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("connected", [True, False])
 def test_settings_engine_tracks_selected_subscription_and_refreshes_on_open(tmp_path, monkeypatch, connected):
     playwright = pytest.importorskip("playwright.sync_api")
