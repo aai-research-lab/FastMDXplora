@@ -27,6 +27,9 @@
   /* An atom picked to measure. */
   const PICKED = [{type: "ball-and-stick", typeParams: {sizeFactor: 0.45},
     color: "uniform", colorParams: {value: 0xe69f00}}];
+  /* The residues selected: thin sticks, the sequence's green. */
+  const SELECTED = [{type: "ball-and-stick", typeParams: {sizeFactor: 0.2, ignoreHydrogens: true},
+    color: "uniform", colorParams: {value: 0x3ddc84}}];
   /* Terminal caps, as ligand_detection.py names them. */
   const CAPS = ["ACE", "NME", "NHE", "NH2", "FOR", "NMA"];
 
@@ -125,7 +128,7 @@
   const QUEUED = new Set(["loadFrames", "setFramesCoordinates", "loadStructure",
     "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame",
     "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
-    "showPicks", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
+    "showPicks", "showSelected", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
     "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "setCells"]);
 
   function oneAtATime(engine) {
@@ -156,12 +159,12 @@
       this.secondary = null;
       this.listeners = {click: [], hover: []};
       const SE = this.lib.structure.StructureElement;
-      const emit = (kind) => ({current}) => {
+      const emit = (kind) => ({current, modifiers}) => {
         const loci = current && current.loci;
         // The periodic box's corners are not atoms of the structure.
         const atom = SE.Loci.is(loci) && !SE.Loci.isEmpty(loci) && !this.isTheBox(loci.structure)
           ? this.record(SE.Loci.getFirstLocation(loci)) : null;
-        this.listeners[kind].forEach((listener) => listener(atom));
+        this.listeners[kind].forEach((listener) => listener(atom, modifiers || {}));
       };
       plugin.behaviors.interaction.click.subscribe(emit("click"));
       plugin.behaviors.interaction.hover.subscribe(emit("hover"));
@@ -467,6 +470,9 @@
             // Towards the camera, in front of the ribbon it sits in.
             offsetZ: 6},
           color: "uniform", colorParams: {value: 0x050505}}]);
+      }
+      if (Array.isArray(s.selected) && s.selected.length && !s.mini) {
+        this.components.selected = await add("selected", s.selected, SELECTED);
       }
       if (Array.isArray(s.picks) && s.picks.length && !s.mini) {
         this.components.picks = await add("picks", s.picks, PICKED);
@@ -1122,6 +1128,89 @@
       return found;
     }
 
+    /** The polymer's residues, chain by chain in the order of the atoms:
+     * each with its number, insertion code, name, the first and last of its
+     * atoms (topology indices) and its secondary structure in the frame
+     * shown ("h", "s" or "c"). A chain is one run of residues with the same
+     * chain name. */
+    sequence() {
+      const structure = this.structure();
+      if (!structure) return [];
+      const SP = this.lib.structure.StructureProperties;
+      const location = this.lib.structure.StructureElement.Location.create(structure);
+      const provider = this.plugin.customStructureProperties
+        .get("molstar_computed_secondary_structure");
+      const value = provider ? provider.get(structure).value : null;
+      const chains = [];
+      let chain = null;
+      for (const unit of structure.units) {
+        if (unit.kind !== 0) continue;
+        const h = unit.model.atomicHierarchy;
+        const ss = value && value.get(unit.invariantId);
+        location.unit = unit;
+        let last = -1;
+        let residue = null;
+        for (let i = 0; i < unit.elements.length; i += 1) {
+          const element = unit.elements[i];
+          const index = h.residueAtomSegments.index[element];
+          if (index === last) {
+            if (residue) residue.last = element;
+            continue;
+          }
+          last = index;
+          location.element = element;
+          if (SP.entity.type(location) !== "polymer") {
+            residue = null;
+            continue;
+          }
+          const name = String(SP.chain.auth_asym_id(location)).trim();
+          if (!chain || chain.chain !== name) chains.push(chain = {chain: name, residues: []});
+          const flag = ss ? ss.type[ss.getIndex(index)] : 0;
+          residue = {resi: SP.residue.auth_seq_id(location),
+            icode: String(SP.residue.pdbx_PDB_ins_code(location) || "").trim(),
+            resn: SP.atom.auth_comp_id(location), first: element, last: element,
+            ss: (flag & 0x2) ? "h" : ((flag & 0x4) ? "s" : "c")};
+          chain.residues.push(residue);
+        }
+      }
+      return chains;
+    }
+
+    /** Mol*'s highlight on these atoms, as a hover gives it; none where
+     * there are none. */
+    highlight(indices) {
+      const highlights = this.plugin.managers.interactivity.lociHighlights;
+      if (!indices || !indices.length || !this.structure()) {
+        highlights.clearHighlights();
+        return;
+      }
+      highlights.highlightOnly({loci: this.lociOf(indices)});
+    }
+
+    /** The atoms selected, rendered as sticks in the selection's colour
+     * over whatever else shows them, and nothing else rendered again. Mol*'s
+     * own selection mark is shown only in its selection mode, whose clicks
+     * select by themselves. */
+    async showSelected(indices) {
+      const cell = this.structureCell();
+      if (!cell) return;
+      this.scene = Object.assign({}, this.scene, {selected: (indices || []).slice()});
+      const components = this.components || (this.components = {});
+      if (components.selected) {
+        await this.plugin.build().delete(components.selected.ref).commit();
+        components.selected = null;
+      }
+      if (!indices || !indices.length) return;
+      const component = await this.plugin.builders.structure.tryCreateComponent(cell, {
+        type: {name: "bundle", params: this.bundleOf(indices)}, nullIfEmpty: true,
+        label: "selected"}, "fastmdx-selected");
+      if (!component) return;
+      for (const props of SELECTED) {
+        await this.plugin.builders.structure.representation.addRepresentation(component, props);
+      }
+      components.selected = component;
+    }
+
     /** The secondary structure rendered for the residue of the atom at this
      * index in the frame shown: "h", "s" or "c". */
     secondaryStructureOf(index) {
@@ -1369,9 +1458,9 @@
     }
 
     /** A click on the atom at this index, as Mol* sends one. */
-    click(index) {
+    click(index, modifiers) {
       this.plugin.behaviors.interaction.click.next({current: {loci: this.lociOf([index])},
-        buttons: 0, button: 0, modifiers: {}});
+        buttons: 0, button: 0, modifiers: modifiers || {}});
     }
 
     on(kind, listener) {

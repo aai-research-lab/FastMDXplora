@@ -81,6 +81,8 @@
     preservingCamera: true,
     spinning: false,
     playbackPayload: null,
+    // The residues selected, in the sequence or the structure, and their atoms.
+    selection: null,
     // Incremented on a dashboard run transition so a late response from the
     // previous run cannot repopulate the reset viewer.
     viewerGeneration: 0,
@@ -174,6 +176,7 @@
     STATE.miniModel = null;
     STATE.spinning = false;
     STATE.picks = [];
+    STATE.selection = null;
     STATE.focusResidue = null;
     STATE.focusIndices = null;
     STATE.residueValues = null;
@@ -405,6 +408,8 @@
       } else {
         STATE.model = rendered;
         document.getElementById("viewer-canvas-frame")?.setAttribute("data-ready", "true");
+        // The sequence at once, before the cartoon's DSSP is read.
+        window.dispatchEvent(new CustomEvent("dashboard:viewer-rendered", {detail: {of}}));
         // A result's colours are for the residues now rendered: two that this
         // structure cannot tell apart are given neither's value.
         if (activeResult()) applyLook(engine, false);
@@ -662,6 +667,7 @@
       focus: mini ? null : STATE.focusIndices,
       // The atoms picked to measure, rendered so the person sees what they picked.
       picks: mini ? null : STATE.picks.map((pick) => pick.index),
+      selected: mini || !STATE.selection ? null : STATE.selection.atoms,
     };
   }
 
@@ -922,6 +928,8 @@
       STATE.secondaryStructure = {of, applied, frames: said.n_frames || 0,
         reason: applied ? null : (said.reason || "the frames it was computed for are not the ones shown")};
       sayTheSecondaryStructure();
+      // What is rendered and its cartoon are known: the sequence follows.
+      window.dispatchEvent(new CustomEvent("dashboard:viewer-rendered", {detail: {of}}));
     }
   }
 
@@ -1524,6 +1532,7 @@
         STATE.framesCoordinatesUrl = coordinates;
         STATE.playbackFrames = loaded.frames;
         STATE.model = {atoms: loaded.atoms, frames: loaded.frames, of: "frames"};
+        window.dispatchEvent(new CustomEvent("dashboard:viewer-rendered", {detail: {of: "frames"}}));
         STATE.residueLookups = new Map();
         if (activeResult()) applyLook(engine, false);
         document.getElementById("viewer-canvas-frame")?.setAttribute("data-ready", "true");
@@ -1866,15 +1875,51 @@
   }
 
   function onHoverAtom(atom) {
+    window.FastMDXSequence?.atomHovered(atom);
     if (!atom) return;
     updateSelectionPanel(atom);
   }
 
-  function onClickAtom(atom) {
+  function onClickAtom(atom, modifiers) {
     if (!atom) return;
     updateSelectionPanel(atom);
+    if (STATE.measuring) {
+      void showSelectionFor(atom);
+      void addPick(atom);
+      return;
+    }
+    // Its residue selected, as in the sequence, and the atom clicked named.
+    window.FastMDXSequence?.atomClicked(atom, modifiers);
+    updateSelectionPanel(atom);
     void showSelectionFor(atom);
-    if (STATE.measuring) void addPick(atom);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The selection                                                       */
+  /* ------------------------------------------------------------------ */
+  /* Residues selected in the sequence or clicked in the structure: marked
+   * in the structure (Mol*'s selection), and one residue named as a click
+   * names it, with its selection as the analyses read it. */
+  function selectResidues(residues, atoms, options) {
+    STATE.selection = residues.length ? {residues, atoms} : null;
+    const engine = STATE.engine;
+    if (engine) {
+      engine.showSelected(atoms).catch((error) => console.debug("selection not marked", error));
+    }
+    if (residues.length === 1 && engine) {
+      const residue = residues[0];
+      const atomsOfIt = engine.atoms(atoms);
+      const named = atomsOfIt.find((atom) => atom.atom === "CA") || atomsOfIt[0];
+      if (named) {
+        updateSelectionPanel(named);
+        void showSelectionFor(named);
+      }
+      if (options?.announce) announce(`Selected ${residue.resn} ${residue.resi}${residue.icode || ""}`
+        + (residue.chain ? `, chain ${residue.chain}.` : "."));
+    } else if (options?.announce) {
+      announce(residues.length ? `Selected ${residues.length} residues, ${atoms.length} atoms.`
+        : "Nothing selected.");
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -2398,6 +2443,7 @@
     resize: resizeViewers,
     measurements,
     pick: addPick,
+    selectResidues,
     // The atoms a selection names, as the engine reads them, for the tests.
     atoms: (selection) => (STATE.engine ? STATE.engine.find(selection || {}) : []),
     // What the colours and the cartoon are made from, for the tests.

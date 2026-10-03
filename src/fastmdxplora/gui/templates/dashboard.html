@@ -686,6 +686,20 @@
           </div>
           <div class="viewer-layout">
             <div class="viewer-canvas-wrap">
+              <!-- The sequence, one line a chain, numbered every fifth
+                   residue; a click or a drag selects (viewer-sequence.js). -->
+              <details class="sequence-strip" id="sequence-strip" open hidden>
+                <summary class="seq-head">
+                  <span class="seq-title">Sequence</span>
+                  <span class="seq-key" aria-hidden="true"><span class="seq-key-h">helix</span><span class="seq-key-s">strand</span></span>
+                  <span class="seq-said muted small" id="seq-said"></span>
+                </summary>
+                <div class="seq-scroll" id="seq-scroll"></div>
+                <div class="seq-foot">
+                  <span class="muted small" id="seq-note" hidden></span>
+                  <button type="button" class="file-action micro" id="seq-clear">Clear selection</button>
+                </div>
+              </details>
               <div class="viewer-canvas-frame" id="viewer-canvas-frame">
                 <div id="viewer-canvas" class="viewer-canvas" role="img" aria-label="The molecule in 3D"></div>
                 <!-- What the colours are, when they are one of the study's
@@ -700,13 +714,14 @@
                   <div class="empty-title">Waiting for structure</div>
                   <div class="empty-detail muted">The 3D viewer will initialize when a topology or prepared PDB becomes available.</div>
                 </div>
-              </div>
-              <div class="viewer-overlay" id="viewer-overlay" data-live="false">
-                <span class="overlay-tag" id="overlay-tag">offline</span>
-                <span class="overlay-detail mono" id="overlay-stage">—</span>
-                <span class="overlay-detail mono" id="overlay-frame">frame —</span>
-                <span class="overlay-detail mono" id="overlay-age">age —</span>
-                <span class="overlay-detail mono" id="overlay-simtime">sim time —</span>
+                <!-- On the canvas, so the sequence above it is never covered. -->
+                <div class="viewer-overlay" id="viewer-overlay" data-live="false">
+                  <span class="overlay-tag" id="overlay-tag">offline</span>
+                  <span class="overlay-detail mono" id="overlay-stage">&mdash;</span>
+                  <span class="overlay-detail mono" id="overlay-frame">frame &mdash;</span>
+                  <span class="overlay-detail mono" id="overlay-age">age &mdash;</span>
+                  <span class="overlay-detail mono" id="overlay-simtime">sim time &mdash;</span>
+                </div>
               </div>
 
               <!-- What plays the frames, under them: the transport, a series
@@ -1321,6 +1336,7 @@
   <script src="/static/fixes.js"></script>
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
+  <script src="/static/viewer-sequence.js"></script>
   <script src="/static/frame-series.js"></script>
   <script src="/static/frame-interactions.js"></script>
   <script src="/static/viewer-views.js"></script>

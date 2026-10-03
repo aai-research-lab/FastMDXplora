@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The sequence above the molecule
+
+**The Viewer shows the sequence of each chain above the molecule, numbered
+by the structure's own residue numbers, and selects in it.** Each chain is a
+line of one-letter codes with its number written over every fifth residue
+(5, 10, 15 ...), a gap where numbers are missing, as in a chain numbered
+like chymotrypsin, and a bar under each residue in a helix or a strand in
+the frame shown, which changes as the frames play. A click selects a
+residue, a drag a run of them, Shift extends and Ctrl or Cmd adds or
+removes one; the structure renders the selection as green sticks, and one
+residue selected is named with its selection as the analyses read it. An
+atom clicked in the structure selects its residue in the sequence, a double
+click centres on the selection, and the keyboard does what the mouse does.
+The frame and live-status label moved onto the canvas, where the sequence
+cannot be covered by it.
+
 ### One periodic box, where the water is
 
 **The Viewer's periodic box is one box, the box of the frame shown, and the

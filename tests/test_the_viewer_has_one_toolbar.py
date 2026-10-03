@@ -153,6 +153,11 @@ def test_a_picture_is_saved_for_a_page_and_the_view_is_put_back(page) -> None:
     screen is as it was."""
     import struct
 
+    # Once the canvas has followed its box (the sequence above it is shown
+    # once the molecule is).
+    page.wait_for_function(f"() => {{ const c = {VIEWER}.engine.plugin.canvas3d.webgl.gl.canvas; "
+                           "return c.height === document.getElementById('viewer-canvas')"
+                           ".clientHeight * window.devicePixelRatio; }")
     before = page.evaluate(f"() => {{ const c = {VIEWER}.engine.plugin.canvas3d.webgl.gl.canvas; "
                            "return [c.width, c.height, c.clientWidth, window.devicePixelRatio]; }")
     with page.expect_download() as caught:

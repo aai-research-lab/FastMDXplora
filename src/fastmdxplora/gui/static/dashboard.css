@@ -3521,6 +3521,116 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .side-section .icon-group.text-group { border: none; background: none; padding: 0; }
 .side-section .control-group { width: 100%; }
 .viewer-under .frame-interactions-chart { max-height: 130px; overflow-y: auto; }
+
+/* The sequence above the molecule (viewer-sequence.js): one line a chain,
+   a number over every fifth residue, a bar under each residue in a helix or
+   a strand, the selection marked as the structure marks it. */
+.sequence-strip {
+    --seq-helix: var(--accent-violet);
+    --seq-strand: var(--accent-orange);
+    --seq-selected: color-mix(in srgb, var(--accent-green) 38%, transparent);
+    flex: 0 0 auto;
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    background: var(--background-elevated);
+    padding: 0 10px;
+    min-width: 0;
+}
+.seq-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    cursor: pointer;
+    min-width: 0;
+}
+.seq-title {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+}
+.seq-key { display: inline-flex; gap: 10px; font-size: var(--text-2xs); color: var(--text-muted); }
+.seq-key > span::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 3px;
+    margin-right: 4px;
+    vertical-align: middle;
+    background: var(--seq-helix);
+}
+.seq-key > .seq-key-s::before { background: var(--seq-strand); }
+.seq-said {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.seq-scroll {
+    overflow: auto;
+    max-height: 118px;
+    padding: 0 0 4px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    overscroll-behavior: contain;
+}
+.seq-row {
+    display: flex;
+    align-items: flex-end;
+    width: max-content;
+    min-width: 100%;
+    padding-top: 14px;
+    white-space: nowrap;
+    border-radius: 4px;
+}
+.seq-row:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 1px; }
+.seq-chain {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    flex: 0 0 auto;
+    min-width: 3ch;
+    padding-right: 0.6ch;
+    background: var(--background-elevated);
+    color: var(--text-muted);
+    font-weight: 600;
+    line-height: 18px;
+}
+.seq-res {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1.3ch;
+    text-align: center;
+    line-height: 18px;
+    color: var(--text-secondary);
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    user-select: none;
+}
+.seq-res.ss-h { border-bottom-color: var(--seq-helix); }
+.seq-res.ss-s { border-bottom-color: var(--seq-strand); }
+.seq-res[data-n]::before {
+    content: attr(data-n);
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    padding-left: 2px;
+    border-left: 1px solid var(--text-muted);
+    font-size: var(--text-2xs);
+    line-height: 12px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+.seq-res.hovered { background: color-mix(in srgb, var(--accent-cyan) 22%, transparent); color: var(--text-primary); }
+.seq-res.selected { background: var(--seq-selected); color: var(--text-primary); }
+.seq-res.active { outline: 1px solid var(--accent-cyan); outline-offset: -1px; }
+.seq-gap { flex: 0 0 auto; width: 1.6ch; text-align: center; color: var(--text-muted); line-height: 18px; }
+.seq-gap::before { content: "\2026"; }
+.seq-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-bottom: 6px; }
+.seq-foot .muted { margin-right: auto; }
 @container viewerpage (min-width: 901px) {
     .viewer-layout {
         grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
