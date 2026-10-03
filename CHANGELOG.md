@@ -19,6 +19,8 @@ expires, clearly prompting an access check instead of displaying another model.
 Playback physical-time labels use consistent recorded fixed-step production
 sampling. MDTraj DCD frame ordinals are no longer presented as physical time;
 unsupported or inconsistent timing evidence remains unknown.
+Clip capture maps the camera between static/live and saved-trajectory coordinate
+origins, preserving relative pan, orientation and zoom so the molecule stays visible.
 
 The Agent composer now offers server-resolved evidence inspection and per-message
 view opt-out. Suggested configurations have an explicit before/after review;

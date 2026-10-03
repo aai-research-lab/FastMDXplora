@@ -2163,11 +2163,23 @@
     async clipSession(options) {
       if (STATE.clipExporting) throw new Error("A clip export is already active.");
       const original = window.FastMDXResearch.capture(), generation = STATE.viewerGeneration;
+      const originalAtoms = STATE.model?.selectedAtoms({resn: AMINO_ACIDS}) || [];
+      const centerOf = (atoms) => atoms.length ? ["x","y","z"].map(
+        (axis) => atoms.reduce((sum, atom) => sum + atom[axis], 0) / atoms.length) : null;
+      const originalCenter = centerOf(originalAtoms);
       pausePlayback(); stopFollowing(); setSpinning(STATE.viewer, false);
       if (!(await loadPlayback(await ensurePlaybackPayload()))) throw new Error("Saved trajectory playback is unavailable.");
       if (generation !== STATE.viewerGeneration) throw new Error("The study changed before export.");
       STATE.clipExporting = true;
       const viewer = STATE.viewer, camera = captureView(viewer), labels = [];
+      // Static/live snapshots may have a different origin from the saved trajectory.
+      // Keep pan relative to the protein, orientation and zoom without moving any atom.
+      if (original.frame == null && originalCenter && camera) {
+        const playbackCenter = centerOf(STATE.model.selectedAtoms({resn: AMINO_ACIDS}));
+        if (playbackCenter) for (let axis=0; axis<3; axis++) {
+          camera[axis] += originalCenter[axis] - playbackCenter[axis];
+        }
+      }
       const check = () => { if (generation !== STATE.viewerGeneration || !STATE.clipExporting) throw new Error("The study changed during export."); };
       return {
         signature: STATE.playbackSignature, count: STATE.playbackFrames, payload: STATE.playbackPayload, camera: camera,

@@ -142,6 +142,10 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page,
     with Image.open(io.BytesIO(response.body())) as image:
         assert image.n_frames == 3
         assert image.size == (640, 480)
+        scene = image.convert("RGB").crop((0, 0, 640, 300))
+        colored = sum(1 for red, green, blue in scene.getdata()
+                      if max(red, green, blue) - min(red, green, blue) > 30)
+        assert colored > 20, "Export must contain the colored molecular scene above captions"
     metadata_link = page.locator("#clip-metadata").get_attribute("href")
     metadata = page.request.get(page.url.split("/#")[0] + metadata_link).json()
     assert metadata["dimensions"] == metadata["render_size"] == [640, 480]

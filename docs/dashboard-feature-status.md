@@ -457,3 +457,22 @@ broader run passed all 23 clip checks and failed one old interpolation expectati
 which was corrected to require unknown time without sampling evidence. Lint passes.
 The live preview and re-export with corrected labels still need verification;
 existing clips and scientific artifacts have not been rewritten.
+
+### Live timing verification exposed and corrected a camera-origin failure
+
+Regenerated 1L2Y playback now starts at 0.0005 ns and ends at 1.0 ns; fresh clip
+metadata for source frames 0, 30 and 60 contains 0.0005, 0.0155 and 0.0305 ns.
+Only the derived `simulation/playback_index.json` changed among the 306 earlier
+hashed files; playback coordinates and scientific inputs/results are unchanged.
+
+Visual inspection initially found blank molecular images despite successful
+encoding: preserving the static/live camera position when switching to saved
+coordinates can point away from the molecule because their origins differ.
+Clip capture now adjusts camera translation by the protein-center displacement,
+preserving relative pan, orientation and zoom, without modifying atom coordinates.
+The final actual-study GIF visibly contains the molecular cartoon and source/time
+caption. Two browser export regressions pass with a new assertion for colored
+molecular pixels above the captions. An attempted same-task redraw did not solve
+the actual failure and was removed. Earlier blank exports remain historical
+artifacts and are not accepted as visual passes. Final labeled rotating Both
+acceptance after this camera fix remains to be checked on the actual study.
