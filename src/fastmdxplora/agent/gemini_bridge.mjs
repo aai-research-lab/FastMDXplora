@@ -4,11 +4,25 @@ import {pathToFileURL} from "node:url";
 import {dirname, join, resolve} from "node:path";
 import {randomUUID} from "node:crypto";
 
-export function requestFor(model, prompt) {
+export function reasoningLevels(model) {
+  if(/^gemini-3\.[78]-flash(-preview)?$/.test(model) || /^gemini-3\.1-pro(-preview)?$/.test(model)) return ['low','medium','high'];
+  if(/^gemini-3-pro(-preview)?$/.test(model)) return ['low','high'];
+  if(/^gemini-(3\.[56]-flash|3\.[15]-flash-lite|3-flash)(-preview)?$/.test(model)) return ['minimal','low','medium','high'];
+  if(/^gemini-2\.5-pro(-preview(-\d{2}-\d{2})?)?$/.test(model)) return ['128','1024','4096','8192','16384','32768'];
+  if(/^gemini-2\.5-flash(-lite)?(-preview(-\d{2}-\d{2})?)?$/.test(model)) return ['0','512','1024','4096','8192','16384','24576'];
+  return [];
+}
+export function requestFor(model, prompt, reasoning) {
   if(typeof model!=="string" || !/^gemini-[a-z0-9.-]{1,100}$/.test(model) ||
      typeof prompt!=="string" || Buffer.byteLength(prompt)>1000000) throw new Error("Invalid explanation input.");
-  return {model, contents:[{role:"user",parts:[{text:prompt}]}],
+  const request = {model, contents:[{role:"user",parts:[{text:prompt}]}],
     config:{tools:[],toolConfig:{functionCallingConfig:{mode:"NONE"}},candidateCount:1}};
+  if(reasoning != null && reasoning !== 'default') {
+    if(!reasoningLevels(model).includes(reasoning)) throw new Error('Unsupported model reasoning level.');
+    request.config.thinkingConfig = model.startsWith('gemini-2.5-')
+      ? {thinkingBudget:Number(reasoning)} : {thinkingLevel:reasoning.toUpperCase()};
+  }
+  return request;
 }
 export function validateReply(reply) {
   const candidates=reply?.candidates;
@@ -80,7 +94,7 @@ async function run() {
   if(request.subject!==identity.subject || !models.some(row=>row.id===request.model)) throw new Error("Account or model changed.");
   // generateContent sends no enabledCreditTypes. No automatic credit spending,
   // tools, hooks, MCP, skills, project files or autonomous client session exist.
-  const result=await server.generateContent(requestFor(request.model,request.prompt),randomUUID());
+  const result=await server.generateContent(requestFor(request.model,request.prompt,request.reasoning),randomUUID());
   return {identity,text:validateReply(result),model:request.model};
 }
 if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {

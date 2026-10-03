@@ -73,6 +73,9 @@
           <button type="button" id="agent-connected-refresh">Refresh available models</button>
           <button type="button" id="agent-connected-check">Check GPT-6 model access</button>
           <p id="agent-connected-model-help" class="builder-help"></p>
+          <label class="builder-field"><span class="builder-label">Reasoning effort: <output id="agent-reasoning-value">Provider default</output></span><input id="agent-reasoning" type="range" min="0" max="0" step="1" value="0" disabled></label>
+          <p id="agent-reasoning-help" class="builder-help">Choose a model to see its supported reasoning levels.</p>
+          <p id="agent-reasoning-levels" class="builder-help"></p>
           <button id="agent-connected-use" type="button" class="primary-btn" disabled>Use this account and model</button>
           <button id="agent-connected-reconnect" type="button" class="ghost-btn" disabled>Reconnect selected account</button>
           <button id="agent-connected-disconnect" type="button" class="ghost-btn" disabled>Disconnect selected account</button>

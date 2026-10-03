@@ -1,6 +1,31 @@
 (function () {
   "use strict";
   var timer = null, generation = 0, busy = false, pendingLogin = false, accounts = [], loginPopup = null, openedAuthorization = "";
+  var modelRows = [], reasoningChoices = ["default"];
+  function reasoningChanged() {
+    var value = reasoningChoices[Number(el("agent-reasoning").value)] || "default";
+    el("agent-reasoning-value").textContent = value === "default" ? "Provider default" : value;
+    if (/^\d+$/.test(value)) el("agent-reasoning-value").textContent += " thinking tokens";
+    el("agent-reasoning").setAttribute("aria-valuetext", el("agent-reasoning-value").textContent);
+  }
+  function loadReasoning() {
+    var model = el("agent-connected-model").value;
+    var row = modelRows.filter(function(row){return row.id === model;})[0];
+    var saved = accounts.filter(function(row){return row.id === el("agent-connected-account").value;})[0];
+    reasoningChoices = ["default"].concat(row && row.reasoning_levels || []);
+    el("agent-reasoning-levels").textContent = reasoningChoices.map(function(value){return value === "default" ? "Provider default" : value;}).join(" · ");
+    el("agent-reasoning").max = String(reasoningChoices.length - 1);
+    var previous = saved && saved.reasoning_by_model && saved.reasoning_by_model[model] || (saved && saved.model === model ? saved.reasoning : "default");
+    el("agent-reasoning").value = String(Math.max(0, reasoningChoices.indexOf(previous)));
+    el("agent-reasoning").disabled = reasoningChoices.length === 1;
+    el("agent-reasoning-help").textContent = reasoningChoices.length > 1
+      ? "Faster responses ← → more reasoning. Higher effort can use more subscription quota and take longer; it does not validate scientific conclusions."
+      : "This model keeps its provider default; adjustable reasoning is not reported for this model.";
+    reasoningChanged();
+    if (row && row.reasoning_levels && row.reasoning_levels.length && /^\d+$/.test(row.reasoning_levels[0])) {
+      el("agent-reasoning-help").textContent = "Thinking token budget. Provider default lets the provider choose; higher budgets can take longer and use more quota.";
+    }
+  }
   function providerName(provider) { return provider === "claude" ? "Claude" : provider === "kimi" ? "Kimi" : provider === "gemini" ? "Gemini" : "ChatGPT"; }
   function showKimiAuthorization(value) {
     var url = new URL(value);
@@ -31,6 +56,7 @@
   function loadModels() {
     var selected = el("agent-connected-account").value, current = ++generation;
     el("agent-connected-model").replaceChildren(); el("agent-connected-use").disabled = true;
+    modelRows = []; loadReasoning();
     el("agent-connected-model-help").textContent = "";
     el("agent-connected-refresh").disabled = !selected;
     el("agent-connected-check").disabled = !selected;
@@ -39,7 +65,8 @@
     if (!selected) return Promise.resolve();
     return post({action:"models", account:selected}).then(function(data) {
       if (generation !== current || el("agent-connected-account").value !== selected) return;
-      (data.models || []).forEach(function(row) { var option=document.createElement("option"); option.value=row.id; option.textContent=row.label; el("agent-connected-model").appendChild(option); });
+      modelRows = data.models || [];
+      modelRows.forEach(function(row) { var option=document.createElement("option"); option.value=row.id; option.textContent=row.label; el("agent-connected-model").appendChild(option); });
       var saved=accounts.filter(function(row){return row.id === selected;})[0];
       el("agent-connected-check").hidden = !saved || saved.provider !== "openai-chatgpt";
       if (saved && saved.provider === "openai-chatgpt") {
@@ -53,9 +80,15 @@
         el("agent-connected-model-help").textContent = missing.length
           ? "Not listed: " + missing.join(", ") + ". Check model access sends a short test to each model through your subscription."
           : "Models available to your connected ChatGPT account.";
+        var order = ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"];
+        Array.from(el("agent-connected-model").options).sort(function(a,b){
+          var left=order.indexOf(a.value), right=order.indexOf(b.value);
+          return (left<0 ? order.length : left) - (right<0 ? order.length : right);
+        }).forEach(function(option){el("agent-connected-model").appendChild(option);});
       }
       if(saved && Array.from(el("agent-connected-model").options).some(function(option){return !option.disabled && option.value === saved.model;})) el("agent-connected-model").value=saved.model;
       el("agent-connected-use").disabled = !el("agent-connected-model").value || el("agent-connected-model").selectedOptions[0].disabled;
+      loadReasoning();
     }).catch(function(error) { if (generation === current) status(error.message); });
   }
   function refresh() {
@@ -86,7 +119,7 @@
       if (data.selection === "subscription") {
         var active=(data.accounts || []).filter(function(row) {return row.id === data.active;})[0];
         window.dispatchEvent(new CustomEvent("agent:connection-changed", {detail:{current:active && active.connected ? {model:active.model} : null}}));
-        el("agent-model-current").textContent=active ? providerName(active.provider) + " subscription · " + active.label + " · " + active.model : "Select a connected subscription account.";
+        el("agent-model-current").textContent=active ? providerName(active.provider) + " subscription · " + active.label + " · " + active.model + " · reasoning: " + (active.reasoning || "default") : "Select a connected subscription account.";
       }
       clearTimeout(timer); timer=pending ? setTimeout(refresh, 2000) : null;
     }).catch(function(error) { status(error.message); clearTimeout(timer); timer=null; });
@@ -126,7 +159,9 @@
     });
     el("agent-connect-cancel").addEventListener("click", function() { post({action:"cancel"}).then(refresh).catch(function(error){status(error.message);}); });
     el("agent-connected-account").addEventListener("change", loadModels);
-    el("agent-connected-use").addEventListener("click", function() { post({action:"select", account:el("agent-connected-account").value, model:el("agent-connected-model").value}).then(refresh).catch(function(error){status(error.message);}); });
+    el("agent-connected-use").addEventListener("click", function() { post({action:"select", account:el("agent-connected-account").value, model:el("agent-connected-model").value, reasoning:reasoningChoices[Number(el("agent-reasoning").value)] || "default"}).then(refresh).catch(function(error){status(error.message);}); });
+    el("agent-connected-model").addEventListener("change", loadReasoning);
+    el("agent-reasoning").addEventListener("input", reasoningChanged);
     el("agent-connected-refresh").addEventListener("click", loadModels);
     el("agent-connected-check").addEventListener("click", function() {
       el("agent-connected-check").disabled = true; status("Checking the three GPT-6 models through your subscription…");

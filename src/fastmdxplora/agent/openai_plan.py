@@ -209,9 +209,12 @@ def revoke(account, *, fetch=request_json, opener=_open):
             raise ConnectionError("Remote sign-out was not confirmed.")
 
 
-def complete(token, model, prompt, on_text=None, *, opener=_open):
+def complete(token, model, prompt, on_text=None, *, opener=_open, reasoning=None):
     payload = {"model": model, "input": [{"role": "user", "content": prompt}],
                "store": False, "stream": True, "tools": [], "tool_choice": "none"}
+    if reasoning not in {None, "default"}:
+        from fastmdxplora.agent.reasoning import levels, validate
+        payload["reasoning"] = {"effort": validate(reasoning, levels("openai-chatgpt", model))}
     data = json.dumps(payload).encode("utf-8")
     if len(data) > 1_000_000:
         raise ConnectionError("The selected context is too large. Narrow the selection and try again.")

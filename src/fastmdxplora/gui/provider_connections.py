@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from fastmdxplora.agent.credential_vault import CredentialVault, VaultError
 from fastmdxplora.agent.oauth_transactions import AuthorizationAttempt, AuthorizationError
 from fastmdxplora.agent import openai_plan
+from fastmdxplora.agent.reasoning import decorate, validate
 from fastmdxplora.agent.claude_plan import ClaudePlan, executable as claude_executable, unmanaged_host
 from fastmdxplora.agent.kimi_plan import KimiPlan, executable as kimi_executable
 from fastmdxplora.agent.gemini_plan import GeminiPlan, executable as gemini_executable
@@ -38,6 +39,8 @@ class ProviderConnections:
                     "accounts": [{"id": account["id"], "provider": account.get("provider", "openai-chatgpt"),
                                   "label": account.get("email") or "ChatGPT account",
                                   "model": account.get("model", ""),
+                                  "reasoning": account.get("reasoning", "default"),
+                                  "reasoning_by_model": account.get("reasoning_by_model", {}),
                                   "connected": bool(account.get("refresh_token") or account.get("client_connected"))}
                                  for account in record["accounts"]]}
 
@@ -273,11 +276,9 @@ class ProviderConnections:
         with self.vault.locked():
             record = self.vault.read()
             account = self._account(record, account_id)
-            if account.get("provider") == "claude":
-                return {"ok": True, "models": [{"id": "provider-default", "label": "Claude subscription default model"}]}
-            if account.get("provider") in {"kimi", "gemini"}:
-                return {"ok": True, "models": self._client(account["provider"], account).models(account["subject"])}
-        return {"ok": True, "models": self._openai_models(account)}
+            if account.get("provider") in {"claude", "kimi", "gemini"}:
+                return {"ok": True, "models": decorate(account["provider"], self._client(account["provider"], account).models(account["subject"]))}
+        return {"ok": True, "models": decorate("openai-chatgpt", self._openai_models(account))}
 
     def _openai_models(self, account):
         choices = self.catalog(account["access_token"])
@@ -317,16 +318,19 @@ class ProviderConnections:
             verified.append(model)
         return {"ok": True, "verified": verified, "unavailable": unavailable}
 
-    def select(self, account_id, model):
+    def select(self, account_id, model, reasoning="default"):
         with self.vault.locked():
             record = self.vault.read()
             account = self._account(record, account_id)
-            choices = ([{"id": "provider-default"}] if account.get("provider") == "claude"
-                       else self._client(account["provider"], account).models(account["subject"]) if account.get("provider") in {"kimi", "gemini"}
+            choices = (self._client(account["provider"], account).models(account["subject"]) if account.get("provider") in {"claude", "kimi", "gemini"}
                        else self._openai_models(account))
             if model not in {item["id"] for item in choices}:
                 raise openai_plan.ConnectionError("Choose a model from the selected account's current catalog.")
+            row = next(row for row in decorate(account.get("provider", "openai-chatgpt"), choices) if row["id"] == model)
+            validate(reasoning, row["reasoning_levels"])
             account["model"] = model
+            account["reasoning"] = reasoning
+            account.setdefault("reasoning_by_model", {})[model] = reasoning
             record.update(active=account_id, selection="subscription")
             self.vault.write(record)
         return self.snapshot()
@@ -376,6 +380,7 @@ class ProviderConnections:
             if not account or not account.get("model"):
                 raise openai_plan.ConnectionError("Select a connected account and model in Settings.")
             identity, model = account["id"], account["model"]
+            reasoning = account.get("reasoning", "default")
             provider = account.get("provider", "openai-chatgpt")
 
         def complete(prompt, on_text=None):
@@ -395,22 +400,32 @@ class ProviderConnections:
                     selected = next((item for item in latest["accounts"] if item["id"] == identity), None)
                     if (latest.get("selection") != "subscription" or latest.get("active") != identity
                             or not selected or not (selected.get("refresh_token") or selected.get("client_connected"))
-                            or selected.get("model") != model):
+                            or selected.get("model") != model or selected.get("reasoning", "default") != reasoning):
                         raise openai_plan.ConnectionError("The account or model changed. Send a new request.")
                 if on_text:
                     on_text(piece)
+            guard("")
             if provider == "claude":
                 options = {"cancelled": cancelled} if cancelled is not None else {}
+                if model != "provider-default":
+                    options["model"] = model
+                if reasoning != "default":
+                    options["reasoning"] = reasoning
                 result = self._claude(chosen).complete(prompt, chosen["subject"], **options)
             elif provider in {"kimi", "gemini"}:
                 options = {"cancelled": cancelled} if cancelled is not None else {}
+                if reasoning != "default":
+                    options["reasoning"] = reasoning
                 result = self._client(provider, chosen).complete(prompt, chosen["subject"], model, **options)
             else:
-                result = openai_plan.complete(token, model, prompt, guard)
+                options = {"reasoning": reasoning} if reasoning != "default" else {}
+                result = openai_plan.complete(token, model, prompt, guard, **options)
             guard("")
             return result
         complete.streams = provider not in {"claude", "kimi", "gemini"}
         complete.model_record = {"provider": provider, "model": model}
+        if reasoning != "default":
+            complete.model_record["reasoning"] = reasoning
         return complete
 
 
@@ -445,7 +460,7 @@ def connections_endpoint(runtime, payload):
         if action == "check-model-access":
             return service.check_model_access(payload.get("account"))
         if action == "select":
-            return service.select(payload.get("account"), payload.get("model"))
+            return service.select(payload.get("account"), payload.get("model"), payload.get("reasoning", "default"))
         if action == "disconnect":
             return service.disconnect(payload.get("account"))
         return {"ok": False, "error": "This connection action is unavailable."}

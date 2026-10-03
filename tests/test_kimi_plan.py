@@ -81,10 +81,14 @@ def test_installed_kimi_profile_sends_no_tools_to_local_fixture_model(tmp_path):
         (tmp_path / "config/config.toml").write_text(
             f'default_model = "fixture"\n[providers.fixture]\ntype = "openai"\n'
             f'base_url = "http://127.0.0.1:{server.server_port}/v1"\napi_key = "synthetic-test-key"\n'
-            '[models.fixture]\nprovider = "fixture"\nmodel = "fixture"\nmax_context_size = 32000\n', encoding="utf-8")
+            '[models.fixture]\nprovider = "fixture"\nmodel = "fixture"\nmax_context_size = 32000\n'
+            'capabilities = ["thinking", "always_thinking"]\nsupport_efforts = ["low", "high"]\n', encoding="utf-8")
         assert client._explain("Explain RMSF; literal ${unknown}; never run MD.", "fixture") == "Fixture explanation."
         assert requests and all(not row.get("tools") for row in requests)
         assert "unknown" in json.dumps(requests)
+        assert client._explain("Explain only.", "fixture", reasoning="high") == "Fixture explanation."
+        assert requests[-1].get("reasoning_effort") == "high"
+        assert not requests[-1].get("tools")
         assert not list((tmp_path / "work").glob("explanation-*"))
     finally:
         server.shutdown()

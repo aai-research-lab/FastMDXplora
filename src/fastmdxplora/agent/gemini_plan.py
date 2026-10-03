@@ -76,8 +76,13 @@ class GeminiPlan:
             raise ConnectionError("The Google account changed. Reconnect and select it before asking.")
         return result["models"]
 
-    def complete(self, prompt, expected_subject, model, *, cancelled=None):
-        result = self.invoke("complete", {"prompt": prompt, "subject": expected_subject, "model": model}, cancelled=cancelled)
+    def complete(self, prompt, expected_subject, model, *, cancelled=None, reasoning=None):
+        from .reasoning import levels, validate
+        effort = validate(reasoning, levels("gemini", model))
+        payload = {"prompt": prompt, "subject": expected_subject, "model": model}
+        if effort:
+            payload["reasoning"] = effort
+        result = self.invoke("complete", payload, cancelled=cancelled)
         if result.get("identity", {}).get("subject") != expected_subject or result.get("model") != model:
             raise ConnectionError("The Gemini account or model changed during the explanation.")
         text = result.get("text")

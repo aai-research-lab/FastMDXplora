@@ -60,6 +60,26 @@ def test_account_models_are_verified_and_arbitrary_selection_is_refused(service)
     assert service.snapshot()["active"] is None
 
 
+def test_reasoning_is_saved_per_model_and_passed_to_inference(service, monkeypatch):
+    account = finish_sign_in(service)
+    service.catalog = lambda token: [{"id": name, "label": name} for name in ("gpt-6.1-sol", "gpt-6-luna")]
+    service.select(account, "gpt-6.1-sol", "high")
+    service.select(account, "gpt-6-luna", "low")
+    view = service.snapshot()["accounts"][0]
+    assert view["reasoning_by_model"] == {"gpt-6.1-sol": "high", "gpt-6-luna": "low"}
+    captured = []
+    monkeypatch.setattr("fastmdxplora.agent.openai_plan.complete",
+                        lambda *args, **kwargs: captured.append(kwargs) or "Answer")
+    pending = service.completion()
+    assert pending("question") == "Answer"
+    assert captured == [{"reasoning": "low"}]
+    service.select(account, "gpt-6-luna", "high")
+    with pytest.raises(ConnectionError, match="changed"):
+        pending("question")
+    with pytest.raises(ConnectionError, match="reasoning"):
+        service.select(account, "gpt-6.1-sol", "none")
+
+
 def test_published_models_require_completed_account_inference(service, monkeypatch):
     account_id = finish_sign_in(service)
     observed = []
@@ -169,6 +189,8 @@ def test_claude_official_login_selection_and_disconnect_are_separate_from_api(se
     monkeypatch.setattr("fastmdxplora.gui.provider_connections.unmanaged_host", lambda: None)
     events = []
     class Client:
+        def models(self, subject):
+            return [{"id": "provider-default", "label": "Fixture default"}]
         def login(self, cancelled):
             return {"email": "claude@example.test", "subject": "claude@example.test"}
         def identity(self):
