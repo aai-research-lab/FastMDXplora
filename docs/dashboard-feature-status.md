@@ -11,32 +11,34 @@ every requirement in the expanded framework.
 
 ### Current checkpoint — 2026-10-03
 
-Before the enlarged-text correction recorded below, production revision
-`8d7adc52108cfb2594a24158b4b8405e8e0f5818` was pushed to
-`princeote/context-aware-agent`. The source checkout was clean when inspected;
-the remote branch tip was independently checked with `git ls-remote`. Git describes
-this as `v2.5.8-204-g8d7adc5`; the development wheel's version is
-`2.5.9.dev204+g8d7adc521`. This is the user's v2.5.8-based feature branch, not an
-upstream release or an integration of current main.
+The current source revision is `201cc3686216eb45a5e9ae6807cb0f20c900dc2f`
+(`Keep mobile research tools clear of study navigation`) on
+`princeote/context-aware-agent`. The checkout was clean when inspected, and the
+remote branch points to the same revision. The branch retains its v2.5.8 history;
+this is not an upstream release and current upstream main was not integrated.
 
-The latest clip/bookmark increment has 53 passing targeted checks. The earlier
-209-check combined pass covers production/test revision 1276612, not all latest
-code. The preparation-recording suite at 8d7adc5 has now completed with **9 passed,
-1 skipped in 290.97 s**; Windows OpenFF is the skipped dependency gate. The separate
-installed Ubuntu OpenFF receipt and its environment limitations remain below.
+The latest development wheel is `2.5.9.dev207+g201cc3686`, SHA256
+`2f488a5e7970cb526ed5dfcfbf256f2ed131a886764e6d61affc4e0a9ec45aab`. It was
+installed into the isolated acceptance environment; `pip check` passed and the
+packaged-resource verifier found all 127 registered error references and required
+assets. The app loaded a completed 1L2Y study in the isolated review environment.
+The user's separate dashboard on port 8783 was left untouched. This verifies the
+build and startup, not the remaining full native review.
 
-The latest wheel SHA256 is
-`16259485d0578afb16edadfd89d5ef3b12538d6565b3933ecf4f2be7b8e7d950`.
-Its isolated installation verifies all 127 registered error references and
-required assets. Native acceptance of this latest presentation revision remains
-open: the browser review encountered a connection-refused error document during
-restart, although the server was subsequently confirmed listening on port 8784.
-Listening and installed resources alone do not prove native acceptance.
+The latest mobile-toolbar regression passes in Graphite, Ink and Paper at 390/768
+px and 100%/200% text, checking real body scrolling, study-identity hit testing,
+bookmark opening, Escape and focus return (3 checks, 18.59 s). Ruff and diff checks
+pass. Native acceptance of the installed 201cc build at mobile sizes and the full
+surface/theme/expanded-state review remain open. The final frozen combined release
+suite has not yet been run against this revision.
 
-A further harmless message in the user's dashboard on port 8783 returned
-"Hello." with ChatGPT / GPT-6 Luna / max selected. The old missing-key error
-remains historical transcript text, not the outcome of this successful request.
-No API key was entered, and no configuration or simulation was requested.
+The Agent subscription route remains a specific final regression gate: an earlier
+connected OpenAI session displayed an API-key-required error because the API/local
+route was selected. Applying the connected subscription model restored successful
+Agent replies without entering or copying an API key. Verify the selected route,
+model and reasoning persist after restart and that sending a harmless Agent
+explanation uses the connected OpenAI subscription; keep the API-key action
+separate and do not count an old error in transcript history as a current failure.
 
 The [revised execution checkpoint and next goal prompt](dashboard-next-goal.md)
 separate the remaining local release work from unavailable provider/backend
