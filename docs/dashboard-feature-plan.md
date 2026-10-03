@@ -19,6 +19,17 @@ native trust-store context; live account consent/inference is still unverified.
 These results do not certify live account availability or
 complete the remaining provider acceptance gate.
 
+Live OpenAI acceptance (2026-10-02): the user completed normal browser sign-in.
+The dashboard received the account and completed a real study explanation.
+The public account catalog omitted GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna despite
+successful subscription inference for all three exact model IDs. An explicit
+"Check GPT-6 model access" control now tests these published IDs with short,
+tool-free requests and offers successfully verified models for one hour in that
+account. Failed checks clear earlier verification. Catalog refresh remains
+available; arbitrary IDs are refused and no API billing fallback is used.
+All dashboard native dropdowns and option lists use black backgrounds with
+white text in both themes. Other providers' live account tests remain unverified.
+
 Latest verification at `a2035c5`: the focused Agent boundary suite passed all
 22 checks, covering installed error knowledge, human execution controls and
 verified residue evidence. The provider TLS/transaction/connection suite passed

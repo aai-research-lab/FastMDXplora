@@ -3943,3 +3943,13 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .preparation-bar-fill { height:8px; background:var(--accent-cyan); min-width:2px; }
 #preparation-audit-panel select { max-width:100%; font:inherit; color:var(--text-primary); background:var(--background-elevated); border:1px solid var(--border-primary); padding:0.35rem; }
 @media(max-width:800px) { .preparation-viewers { grid-template-columns:1fr; } }
+
+/* Native dropdowns must keep their options readable when the OS opens them.
+   Apply throughout the dashboard, including dialogs and multiple selections. */
+html body select,
+html body select option,
+html body select optgroup {
+    color-scheme: dark;
+    background-color: #000 !important;
+    color: #fff !important;
+}

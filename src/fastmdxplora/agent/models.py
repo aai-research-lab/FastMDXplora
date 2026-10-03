@@ -83,7 +83,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "label": "OpenAI",
         "url": "https://api.openai.com/v1/chat/completions",
         "default_model": "gpt-5",
-        "models": ("gpt-5",),
+        "models": ("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra", "gpt-5"),
         "models_url": "https://api.openai.com/v1/models",
         "env": "OPENAI_API_KEY",
         "auth": "bearer",

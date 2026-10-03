@@ -31,6 +31,9 @@
   function loadModels() {
     var selected = el("agent-connected-account").value, current = ++generation;
     el("agent-connected-model").replaceChildren(); el("agent-connected-use").disabled = true;
+    el("agent-connected-model-help").textContent = "";
+    el("agent-connected-refresh").disabled = !selected;
+    el("agent-connected-check").disabled = !selected;
     el("agent-connected-disconnect").disabled = !selected;
     el("agent-connected-reconnect").disabled = !selected || pendingLogin;
     if (!selected) return Promise.resolve();
@@ -38,8 +41,21 @@
       if (generation !== current || el("agent-connected-account").value !== selected) return;
       (data.models || []).forEach(function(row) { var option=document.createElement("option"); option.value=row.id; option.textContent=row.label; el("agent-connected-model").appendChild(option); });
       var saved=accounts.filter(function(row){return row.id === selected;})[0];
-      if(saved && Array.from(el("agent-connected-model").options).some(function(option){return option.value === saved.model;})) el("agent-connected-model").value=saved.model;
-      el("agent-connected-use").disabled = !el("agent-connected-model").value;
+      el("agent-connected-check").hidden = !saved || saved.provider !== "openai-chatgpt";
+      if (saved && saved.provider === "openai-chatgpt") {
+        var missing = [];
+        [{id:"gpt-6.1-sol", label:"GPT-6.1 Sol"}, {id:"gpt-6-sol", label:"GPT-6 Sol"}, {id:"gpt-6-luna", label:"GPT-6 Luna"}].forEach(function(row) {
+          if ((data.models || []).some(function(available){return available.id === row.id;})) return;
+          var option = document.createElement("option"); option.value = row.id;
+          option.textContent = row.label + " — unavailable in this account's catalog"; option.disabled = true;
+          el("agent-connected-model").appendChild(option); missing.push(row.label);
+        });
+        el("agent-connected-model-help").textContent = missing.length
+          ? "Not listed: " + missing.join(", ") + ". Check model access sends a short test to each model through your subscription."
+          : "Models available to your connected ChatGPT account.";
+      }
+      if(saved && Array.from(el("agent-connected-model").options).some(function(option){return !option.disabled && option.value === saved.model;})) el("agent-connected-model").value=saved.model;
+      el("agent-connected-use").disabled = !el("agent-connected-model").value || el("agent-connected-model").selectedOptions[0].disabled;
     }).catch(function(error) { if (generation === current) status(error.message); });
   }
   function refresh() {
@@ -111,6 +127,14 @@
     el("agent-connect-cancel").addEventListener("click", function() { post({action:"cancel"}).then(refresh).catch(function(error){status(error.message);}); });
     el("agent-connected-account").addEventListener("change", loadModels);
     el("agent-connected-use").addEventListener("click", function() { post({action:"select", account:el("agent-connected-account").value, model:el("agent-connected-model").value}).then(refresh).catch(function(error){status(error.message);}); });
+    el("agent-connected-refresh").addEventListener("click", loadModels);
+    el("agent-connected-check").addEventListener("click", function() {
+      el("agent-connected-check").disabled = true; status("Checking the three GPT-6 models through your subscription…");
+      post({action:"check-model-access", account:el("agent-connected-account").value}).then(function(data) {
+        status("Verified: " + (data.verified.join(", ") || "none") + (data.unavailable.length ? ". Not verified: " + data.unavailable.join(", ") : ""));
+        return loadModels();
+      }).catch(function(error){status(error.message);}).finally(function(){el("agent-connected-check").disabled=false;});
+    });
     el("agent-connected-disconnect").addEventListener("click", function() { post({action:"disconnect", account:el("agent-connected-account").value}).then(refresh).catch(function(error){status(error.message);}); });
     window.addEventListener("agent:settings-open", refresh);
     window.addEventListener("agent:engine-loaded", refresh);

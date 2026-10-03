@@ -277,8 +277,45 @@ class ProviderConnections:
                 return {"ok": True, "models": [{"id": "provider-default", "label": "Claude subscription default model"}]}
             if account.get("provider") in {"kimi", "gemini"}:
                 return {"ok": True, "models": self._client(account["provider"], account).models(account["subject"])}
-            token = account["access_token"]
-        return {"ok": True, "models": self.catalog(token)}
+        return {"ok": True, "models": self._openai_models(account)}
+
+    def _openai_models(self, account):
+        choices = self.catalog(account["access_token"])
+        for model, checked_at in account.get("verified_models", {}).items():
+            if (model in {"gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"}
+                    and time.time() - checked_at < 3600
+                    and model not in {row["id"] for row in choices}):
+                labels = {"gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6-sol": "GPT-6 Sol", "gpt-6-luna": "GPT-6 Luna"}
+                choices.append({"id": model, "label": labels[model] + " (access verified)"})
+        return choices
+
+    def check_model_access(self, account_id):
+        """Explicit, tool-free inference checks for the requested published models."""
+        verified, unavailable = [], []
+        for model in ("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"):
+            with self.vault.locked():
+                record = self.vault.read()
+                account = self._account(record, account_id)
+                if account.get("provider", "openai-chatgpt") != "openai-chatgpt":
+                    raise openai_plan.ConnectionError("Choose a ChatGPT subscription account.")
+                token = account["access_token"]
+            try:
+                openai_plan.complete(token, model, "Reply exactly: Model access verified.")
+            except openai_plan.ConnectionError:
+                with self.vault.locked():
+                    record = self.vault.read()
+                    account = self._account(record, account_id)
+                    account.get("verified_models", {}).pop(model, None)
+                    self.vault.write(record)
+                unavailable.append(model)
+                continue
+            with self.vault.locked():
+                record = self.vault.read()
+                account = self._account(record, account_id)
+                account.setdefault("verified_models", {})[model] = time.time()
+                self.vault.write(record)
+            verified.append(model)
+        return {"ok": True, "verified": verified, "unavailable": unavailable}
 
     def select(self, account_id, model):
         with self.vault.locked():
@@ -286,7 +323,7 @@ class ProviderConnections:
             account = self._account(record, account_id)
             choices = ([{"id": "provider-default"}] if account.get("provider") == "claude"
                        else self._client(account["provider"], account).models(account["subject"]) if account.get("provider") in {"kimi", "gemini"}
-                       else self.catalog(account["access_token"]))
+                       else self._openai_models(account))
             if model not in {item["id"] for item in choices}:
                 raise openai_plan.ConnectionError("Choose a model from the selected account's current catalog.")
             account["model"] = model
@@ -405,6 +442,8 @@ def connections_endpoint(runtime, payload):
             return service.cancel()
         if action == "models":
             return service.model_list(payload.get("account"))
+        if action == "check-model-access":
+            return service.check_model_access(payload.get("account"))
         if action == "select":
             return service.select(payload.get("account"), payload.get("model"))
         if action == "disconnect":
