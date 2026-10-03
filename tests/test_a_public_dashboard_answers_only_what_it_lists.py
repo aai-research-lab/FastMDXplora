@@ -278,6 +278,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # and the selections named with the study; naming one is a POST,
             # answered on loopback only.
             "/api/viewer-atoms", "/api/viewer-selections",
+            # The scenes written with the study, listed; writing one is a
+            # POST, answered on loopback only.
+            "/api/scenes",
             # The methods paragraphs, as the report gives them.
             "/api/methods",
             # What a study run until it knows has judged: the same means
@@ -292,7 +295,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/structure/live-frame.dcd",
             "/structure/frames.dcd", "/structure/frames-topology.pdb",
         })
-        assert GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK == ("/static/", "/artifacts/")
+        # A scene's files and its page: the archive in the study, served
+        # where the study's files are (its results, as /artifacts/ serves them).
+        assert GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK == ("/static/", "/artifacts/", "/scenes/")
 
     def test_the_routes_were_found(self) -> None:
         routes = _get_routes()

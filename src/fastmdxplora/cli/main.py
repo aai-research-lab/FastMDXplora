@@ -1035,6 +1035,31 @@ def _build_parser() -> argparse.ArgumentParser:
     dif.add_argument("second", metavar="SECOND", help="A Config file or a study folder.")
     dif.add_argument("--json", action="store_true", help="Print the differences as JSON.")
 
+    scn = sub.add_parser(
+        "scene",
+        help="Write a view of a study as a scene file (MolViewSpec).",
+        description=(
+            "Write a view of a study as a MolViewSpec scene (.mvsx): the atoms "
+            "shown, at a frame where one is asked, with the study's secondary "
+            "structure, colours and selections, opened as it is in any viewer "
+            "built on Mol*, such as molstar.org. The scene is written in the "
+            "study's scenes folder, and copied where --output says."
+        ),
+    )
+    scn.add_argument("study", metavar="STUDY", help="The study's folder.")
+    scn.add_argument("--view", default=None, metavar="NAME",
+                     help="A view saved with the study in the GUI (its camera, frame, "
+                          "representation, colouring and parts shown).")
+    scn.add_argument("--frame", type=int, default=None, metavar="N",
+                     help="The frame of the trajectory as the GUI plays it, from 0 "
+                          "(default: the view's, else the structure).")
+    scn.add_argument("--name", default=None, help="The scene's name (default: the view's, "
+                                                  "else 'scene').")
+    scn.add_argument("--output", "-o", default=None, metavar="FILE",
+                     help="Also copy the scene to this file.")
+    scn.add_argument("--no-selections", action="store_true",
+                     help="Leave out the selections named in the GUI.")
+
     gui = sub.add_parser(
         "gui",
         help="Open the FastMDXplora graphical interface in a browser.",
@@ -2129,6 +2154,45 @@ def _phase_status(phase: str, probed: dict[str, tuple[str, str]]) -> str:
     return "ready" + (f" ({', '.join(limits)})" if limits else "")
 
 
+def _cmd_scene(args: argparse.Namespace) -> int:
+    """A view of a study written as a MolViewSpec scene."""
+    import shutil
+
+    from fastmdxplora.gui.saved_views import views_of
+    from fastmdxplora.gui.viewer_selections import selections_of
+    from fastmdxplora.scenes import write_scene
+
+    study = Path(args.study)
+    if not study.is_dir():
+        print(f"fastmdx: {study} is not a study's folder.", file=sys.stderr)
+        return 2
+    view: dict = {}
+    if args.view:
+        found = [v for v in views_of(study)["views"] if v["name"] == args.view]
+        if not found:
+            names = ", ".join(v["name"] for v in views_of(study)["views"]) or "none"
+            print(f"fastmdx: no view named {args.view!r} (saved: {names}).", file=sys.stderr)
+            return 2
+        view = {k: v for k, v in found[0].items() if k != "name"}
+    if args.frame is not None:
+        view["frame"] = args.frame
+    name = args.name or args.view or "scene"
+    said = write_scene(study, name, view,
+                       selections=None if args.no_selections
+                       else selections_of(study)["selections"])
+    if not said.get("ok"):
+        print(f"fastmdx: {said.get('reason')}", file=sys.stderr)
+        return 1
+    print(f"Wrote {said['path']}" + (f" (frame {said['frame']})" if said.get("frame") is not None
+                                     else " (the structure)"))
+    for note in said.get("notes") or []:
+        print(f"  {note}")
+    if args.output:
+        shutil.copyfile(said["path"], args.output)
+        print(f"Copied to {args.output}")
+    return 0
+
+
 def _cmd_diff(args: argparse.Namespace) -> int:
     """The settings two studies or Configs differ in."""
     import json as _json
@@ -3013,6 +3077,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_select(args)
         if args.command == "diff":
             return _cmd_diff(args)
+        if args.command == "scene":
+            return _cmd_scene(args)
         if args.command == "remote":
             return _cmd_remote(args)
     except ConfigError as exc:

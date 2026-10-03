@@ -16,10 +16,11 @@ FastMDXplora/
 │       ├── user_dir.py            # Where per-user settings live, outside any study
 │       ├── own_programs.py        # Puts this environment's programs (AmberTools) on PATH
 │       ├── explain.py             # The prose the CLI prints beside each step
+│       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
-│       │                          #   analyze/report/gui/info/init-config/remote/mcp)
+│       │                          #   analyze/report/gui/info/init-config/remote/mcp/scene)
 │       ├── mcp/
 │       │   ├── protocol.py        # The Model Context Protocol over stdio, both eras
 │       │   ├── app.py             # What `fastmdx mcp` offers an AI app
@@ -82,10 +83,18 @@ FastMDXplora/
 │       │   ├── telemetry.py       # Phase/progress telemetry feed
 │       │   ├── trajectory_frames.py, live_frames.py   # Frame streaming
 │       │   ├── protein_preview.py, structure_info.py, ligand_detection.py
+│       │   ├── viewed_structure.py  # The structures the Viewer is sent, as it is sent them
+│       │   ├── by_residue.py      # Per-residue results to colour by, and DSSP for every frame
+│       │   ├── selection.py       # A clicked atom's selection, checked against the analyses' topology
+│       │   ├── viewer_selections.py  # Selections typed in MDTraj's language, and named ones
+│       │   ├── saved_views.py     # Views of the Viewer saved with the study
+│       │   ├── interactions_over_frames.py  # What holds the ligand, frame by frame
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css/js,
 │       │   │                      #   molecule-viewer.js, charts.js, and the viewer:
-│       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0)
+│       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
+│       │   │                      #   viewer-sequence.js, viewer-selections.js,
+│       │   │                      #   viewer-views.js, frame-series.js, frame-interactions.js
 │       │   └── templates/         # dashboard.html
 │       ├── remote/
 │       │   ├── probe.py           # The read-only inspection script, and reading its answer

@@ -21,7 +21,6 @@ import time
 import zipfile
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from functools import lru_cache
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
@@ -35,8 +34,12 @@ from fastmdxplora.gui.exploration import (
 )
 from fastmdxplora.ligand_detection import detect_ligands, normalise_ligand_resname
 from fastmdxplora.gui.live_frames import live_frame_exists, read_live_frame_index
+from fastmdxplora.gui.viewed_structure import (
+    display_structure_bytes as _display_structure_bytes,
+)
+from fastmdxplora.gui.viewed_structure import structure_file as _structure_file
+from fastmdxplora.gui.viewed_structure import viewer_structure as _viewer_structure
 from fastmdxplora.gui.protein_preview import (
-    find_structure,
     find_system,
     protein_preview_payload,
 )
@@ -144,13 +147,13 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
-    "/api/views", "/api/viewer-atoms", "/api/viewer-selections",
+    "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb", "/structure/live-frame.dcd",
     "/structure/frames.dcd", "/structure/frames-topology.pdb",
 })
-GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/")
+GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/", "/scenes/")
 
 
 #: How a document from a study is served: in a sandbox of its own origin,
@@ -836,6 +839,16 @@ def make_handler(
 
                 self._send_json(selections_of(root))
                 return
+            if path == "/api/scenes":
+                from fastmdxplora.scenes import scenes_of
+
+                self._send_json(scenes_of(root))
+                return
+            if path.startswith("/scenes/"):
+                # One file of a scene written with the study, so a viewer
+                # given the scene's address finds the files it names.
+                self._send_scene_member(root, path.removeprefix("/scenes/"))
+                return
             if path == "/api/interactions-over-frames":
                 from fastmdxplora.gui.interactions_over_frames import interactions_over_frames
 
@@ -868,6 +881,23 @@ def make_handler(
                 self._refuse_beyond_loopback()
                 return
             payload = self._read_json_body()
+            if path == "/api/scenes":
+                # A view of the Viewer written with the study as a scene.
+                from fastmdxplora.gui.viewer_selections import selections_of
+                from fastmdxplora.scenes import write_scene
+
+                study = app_runtime.data_root()
+                if not is_study(study):
+                    self._send_json({"ok": False, "reason": "No study is open to save it in."})
+                    return
+                ligands = payload.get("ligands")
+                self._send_json(write_scene(
+                    study, payload.get("name"), payload.get("view"),
+                    selections=selections_of(study)["selections"]
+                    if payload.get("selections", True) else None,
+                    ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
+                    else None))
+                return
             if path == "/api/viewer-selections":
                 # A selection of the Viewer named in the study, or forgotten.
                 from fastmdxplora.gui.viewer_selections import delete_selection, save_selection
@@ -1368,6 +1398,27 @@ def make_handler(
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _send_scene_member(self, root: Path, rest: str) -> None:
+            from fastmdxplora.scenes import SCENES_DIR, read_scene
+
+            name, _, member = unquote(rest).partition("/")
+            archive = root / SCENES_DIR / f"{name}.mvsx"
+            data = read_scene(root, name, member or "index.mvsj")
+            if data is None or (not allow_control
+                                and not _served_beyond_loopback(root, archive)):
+                self.send_error(404, "Scene not found")
+                return
+            content_type = ("application/json" if member.endswith((".mvsj", ".json"))
+                            else "chemical/x-pdb" if member.endswith(".pdb")
+                            else "application/octet-stream")
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
 
         def _send_artifact(
             self,
@@ -1987,66 +2038,6 @@ def _results_payload(root: Path) -> dict[str, Any]:
         "artifacts": artifacts,
         **_report_panels(root),
     }
-
-
-@lru_cache(maxsize=4)
-def _display_structure_cached(path_string: str, _mtime_ns: int, _size: int) -> bytes:
-    from fastmdxplora.gui.live_frames import dashboard_display_pdb
-
-    target = Path(path_string)
-    text = target.read_text(encoding="utf-8", errors="ignore")
-    filtered = dashboard_display_pdb(text)
-    # An empty filter result means nothing matched the solute test -- an
-    # unusual file rather than a solvent box. Send it as written rather than
-    # sending nothing.
-    return filtered.encode("utf-8") if filtered.strip() else target.read_bytes()
-
-
-def _structure_file(root: Path) -> Path | None:
-    """The structure the Viewer is sent: the system simulated, else the
-    structure the study started from."""
-    target = find_system(root)
-    if target is None or not target.is_file():
-        target = find_structure(root)
-    return target if target is not None and target.is_file() else None
-
-
-def _viewer_structure(root: Path, of: str, *, with_solvent: bool
-                      ) -> tuple[bytes | None, tuple[str, int, int]]:
-    """A structure the Viewer renders, as it was sent, and what names that
-    version of it: ``of`` is "frames" (the frames' topology), "live" (the
-    live frame) or the structure, with its solvent or without."""
-    if of == "frames":
-        target: Path | None = root / "simulation" / "frames_topology.pdb"
-    elif of == "live":
-        target = root / "simulation" / "live_frame.pdb"
-    else:
-        target = _structure_file(root)
-    if target is None:
-        return None, ("", 0, 0)
-    try:
-        stat = target.stat()
-        data = (target.read_bytes() if of in ("frames", "live") or with_solvent
-                else _display_structure_bytes(target))
-    except OSError:
-        return None, ("", 0, 0)
-    key = (f"{target.resolve()}|{of}|{with_solvent}", int(stat.st_mtime_ns), int(stat.st_size))
-    return data, key
-
-
-def _display_structure_bytes(target: Path) -> bytes:
-    """The structure as the browser should draw it: solute only.
-
-    Cached per file version, because a solvated topology is read in full to
-    filter it and the viewer asks on every page load.
-    """
-    try:
-        stat = target.stat()
-        return _display_structure_cached(
-            str(target.resolve()), int(stat.st_mtime_ns), int(stat.st_size)
-        )
-    except OSError:
-        return target.read_bytes()
 
 
 def _settings_for_advice(config: DashboardConfig) -> dict[str, Any]:

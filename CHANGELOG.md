@@ -7,6 +7,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Scenes: a view as a MolViewSpec file
+
+**A view of a study is written as a scene file in MolViewSpec, the Mol\*
+team's format for what a molecular viewer shows, and opens as it was shown in
+any viewer built on Mol\* (molstar.org among them).** A view lived in the
+Viewer and in `viewer_views.json`, which nothing else reads. A scene is an
+`.mvsx` archive written with the study (`scenes/<name>.mvsx`): the atoms
+shown at the frame shown, superposed where the view is; the study's DSSP of
+that frame as HELIX and SHEET records, so the cartoon is the study's and not
+Mol\*'s own; the representation and colouring as the Viewer's engine makes
+them (Mol\*'s themes by name, a result such as RMSF residue by residue on the
+Viewer's scale); the ligand, its pocket, ions and water; the selections named,
+with their colours, representations and labels, hidden ones left out; the
+camera, in MolViewSpec's normalised form; the ground and the publication
+look. Atoms are named by their place in the file the scene holds, which is the
+Viewer's numbering. What a scene cannot hold (water at a frame, the periodic
+box, a residue hidden in part) is said. The box icon beside the saved views
+writes one and downloads it; `fastmdx scene STUDY --view NAME` or `--frame N`
+writes one from the command line. Each is checked against MolViewSpec's own
+schema in the tests, and by Mol\* loading it: the same atoms, camera, colour
+theme and secondary structure as the Viewer showed.
+
 ### Spheres, and a result's colouring kept in a view
 
 **The Viewer's representations include Spheres** (Mol\*'s spacefill, without

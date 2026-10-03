@@ -31,6 +31,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx init-config` | Write a commented Config template |
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx diff` | The settings two studies or Configs differ in |
+| `fastmdx scene` | Write a view of a study as a scene file (MolViewSpec) |
 | `fastmdx info` | What is installed, and how to get what is not |
 | `fastmdx remote` | Inspect other machines over SSH: [Other machines](remote.md) |
 | `fastmdx resume` | Carry a study that stopped part-way on to its end: [When it stops early](production.md#when-it-stops-early) |
@@ -475,6 +476,29 @@ water model), and says so.
 Exits **0** where they ask for the same study (they may still be written to
 different folders), **1** where they differ, **2** where either is not a study
 or a Config.
+
+---
+
+## `scene`
+
+A view of a study written as a scene file: MolViewSpec, the Mol\* team's
+format for what a molecular viewer shows, as an `.mvsx` archive that opens as
+it was shown in any viewer built on Mol\* (molstar.org among them).
+
+```bash
+fastmdx scene runs/trypsin --view "pocket at 40 ns"
+fastmdx scene runs/trypsin --frame 120 --name frame120 -o frame120.mvsx
+```
+
+`--view` names a view saved with the study in the GUI's Viewer (its camera,
+frame, representation, colouring and parts shown); `--frame` is a frame as
+the Viewer plays them, from 0. The scene holds the atoms shown, at that
+frame, with the study's DSSP as the cartoon, its colours (a result such as
+RMSF on the Viewer's scale) and the selections named in the GUI, unless
+`--no-selections`. It is written in the study's `scenes/` folder and copied
+where `--output` says; what a scene cannot hold (water at a frame, the
+periodic box) is said. Exits **0** when it is written, **1** when it could
+not be made, **2** where the folder or the view is not there.
 
 ---
 
