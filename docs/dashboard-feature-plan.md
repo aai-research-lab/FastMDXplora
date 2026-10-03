@@ -8,6 +8,16 @@ User instruction (2026-10-02): keep the existing branch base and all feature
 changes on princeote/context-aware-agent; do not integrate upstream main.
 The initial provisional edits are being reconciled into verified milestones.
 
+Current validation (2026-10-02): the integrated dashboard/provider/research suite
+passed 236 checks with one skipped at commit 88d63d594. The isolated built wheel
+contains all 127 registered-error entries and the current graph, residue,
+bookmark, clip, audit and four-provider resources. The preparation recorder,
+pipeline observation sites and preservation tests are unchanged from verified M5.
+Real subscription-account consent/inference remains a later user test gate;
+OpenAI public authentication discovery currently fails normal TLS verification
+on this computer. These results do not certify live account availability or
+complete the remaining provider acceptance gate.
+
 ## 1. Product contract and priorities
 
 Build five connected additions: an explanation-first context-aware Agent, research
