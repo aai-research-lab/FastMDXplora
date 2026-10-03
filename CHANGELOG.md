@@ -20,8 +20,10 @@ Browser regression coverage verifies saved comparison settings and camera views
 across all three themes without changing source structures.
 Trajectory-export browser checks now cover simultaneous GIF/MP4 downloads,
 decoded output dimensions, artifact byte equality and preserved scientific files.
-Subscription model settings retain the saved model when its access receipt
-expires, clearly prompting an access check instead of displaying another model.
+Subscription model settings keep Astra, Sol 6.1, Sol 6 and Luna 6 selectable in
+that order with plain names and supported reasoning controls after access receipts
+expire. Applying an unchecked published choice tests subscription access first;
+failure preserves the saved model. Access checks include all four models.
 Playback physical-time labels use consistent recorded fixed-step production
 sampling. MDTraj DCD frame ordinals are no longer presented as physical time;
 unsupported or inconsistent timing evidence remains unknown.

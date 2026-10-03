@@ -1,6 +1,6 @@
 # Dashboard completion and aesthetics plan
 
-Prepared 2026-10-02 from the [current milestone audit](dashboard-feature-status.md),
+Updated 2026-10-03 from the [current milestone audit](dashboard-feature-status.md),
 the [original framework](dashboard-feature-plan.md), code inspection and the
 running completed-study dashboard. This is a completion plan, not a claim that
 the remaining features or redesign have been implemented.
@@ -319,6 +319,59 @@ claim. The branch is clean, remote matches the reviewed commit, documentation
 describes the final behavior and remaining limitations honestly.
 
 ## Working rules and obvious improvements
+
+## Execution order after the OpenAI-only account clarification
+
+The user has only OpenAI subscription access. Complete the locally testable
+release scope and OpenAI live acceptance; retain Claude, Kimi Code and Gemini
+adapters with explicitly unverified live-account status. Do not require purchases
+or additional accounts to finish independent dashboard work. Do not describe
+synthetic provider coverage as live subscription verification.
+
+1. **Reconcile the current revision.** Check the GitHub Desktop checkout and
+   branch, update the requirement table from the latest receipts, and identify
+   the exact build under review. Keep earlier baseline failures separate from
+   new feature failures. Deliver an up-to-date requirement/evidence map.
+2. **Close the OpenAI model increment.** Verify the rebuilt installed dashboard
+   shows Astra, Sol 6.1, Sol 6 and Luna 6 in order with plain labels and working
+   supported reasoning controls. Preserve the chosen model on access failure.
+   Record successful live replies separately from response-protocol failures;
+   restore the user's model preference after testing. Deliver installed/native
+   acceptance evidence, not only passing source tests.
+3. **Finish native visual acceptance.** Inspect every surface in the M8b table,
+   all three themes, narrow layouts and enlarged text. Prioritize unreadable
+   dropdowns, overlapping controls, cramped forms, modal scrolling/focus and
+   warning legibility. Correct verified issues using the shared design tokens;
+   rerun only the affected checks after each correction. Deliver representative
+   before/after views and a surface/state acceptance record.
+4. **Close feature integration.** Exercise context inspection/opt-out and exact
+   draft review, bookmark capture/import/restore, viewer export and audit links
+   together on an installed completed-study copy. Include cancellation, stale
+   evidence, missing screenshots and disabled Agent states. Deliver an integrated
+   flow receipt with source checksums unchanged.
+5. **Reconcile scientific preservation.** Review the observational recorder diff
+   and its coverage map against the protein, POPC and OpenFF receipts. Retain
+   historical missing causes and aggregate-only events as explicit limits.
+   Report the reproduced pre-existing CPU repeatability failure and auxiliary
+   chemistry environment conflicts without changing scientific behavior to
+   obtain a pass. Deliver a precise preservation scope and limitation record.
+6. **Run the final release gate.** Freeze the feature revision, run the required
+   combined suite without concurrent edits, build/install its wheel outside the
+   checkout and verify resources plus the integrated flow. Any subsequent code
+   correction invalidates the affected receipt and requires a new final build.
+   Deliver revision, wheel hash, test results, skips and live provider matrix.
+7. **Publish the reviewable branch description.** Reconcile M0–M8, README,
+   changelog, packaged knowledge and feature status. Describe user-visible changes,
+   scientific safeguards and remaining dependencies. Commit/push to the user's
+   branch; prepare the upstream PR description when requested. Do not merge or
+   integrate upstream main. Mark only evidenced milestones complete and clearly
+   qualify the release while other-provider live tests remain unavailable.
+
+Each work package ends with a reviewable result and an updated status record;
+it does not introduce a milestone stop. The full milestone sections above remain
+the acceptance contract for these work packages.
+
+## Implementation rules
 
 - Implement design foundation first, then functional gaps, then final visual
   polish and acceptance. Avoid polishing a dialog before its required controls

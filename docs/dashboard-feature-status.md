@@ -1,6 +1,6 @@
 # Dashboard feature changes and milestone status
 
-Reviewed on 2026-10-02 against the [full implementation framework](dashboard-feature-plan.md),
+Reviewed on 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md),
 with implementation and verification revisions identified in the receipts below.
 This is the current status; the framework's milestone receipts are historical.
 
@@ -57,8 +57,8 @@ These changes are not a published upstream release.
   was removed from application scope. Other providers use their documented
   official-client bridges rather than a claim of universal direct OAuth.
 - **Models and reasoning:** Codex ordering starts Astra, Sol 6.1, Sol 6, Luna 6,
-  then the remaining models. Explicit access checks expose the three requested
-  GPT-6 models when account inference succeeds despite catalog omission. A
+  then the remaining models. Published choices remain available despite catalog
+  omission; an unchecked choice requires successful inference before applying. A
   model-specific reasoning slider uses supported levels, preserves account/model
   preferences and disables unsupported controls. See the
   [model/reasoning contract](agent-model-reasoning.md). Dropdowns/options use
@@ -795,3 +795,25 @@ including equilibration. A contrived Sol 6.1 connection echo also failed protoco
 validation; successful inference and normal explanation are distinct receipts.
 These live results use the pre-change installed package; the revised dropdown's
 installed/native acceptance remains pending its rebuilt wheel.
+
+### Installed model-control acceptance at d0b2a3b
+
+The rebuilt wheel `fastmdxplora-2.5.9.dev198+gd0b2a3bbb-py3-none-any.whl`
+has SHA256 `fe7ecc8f320d08b403fab1602c1b643160b6c8bd7d56b659bac6da399ddacf63`.
+It is installed in the isolated Windows acceptance venv; pip check reports no
+broken requirements. Its CLI runs outside the checkout against the disposable
+completed-study copy. Native dashboard inspection confirms the first four rows
+are Astra, Sol 6.1, Sol 6 and Luna 6, enabled with plain labels. Each option's
+computed background is black and text white. Sol 6.1's slider responds to Home
+and arrow keys and displays high at the supported position. This verifies the
+installed controls and computed styling; it does not certify every native OS
+popup presentation. Luna with provider-default effort remains the saved choice.
+
+The preceding live Sol 6 medium-effort test also completed a normal RMSD
+explanation, retaining the recorded standard error, effective samples and failed
+correlation-time qualification. Together with the preceding Astra and Sol 6.1
+receipts, this demonstrates inference for the requested models at those tested
+efforts, without claiming every effort or scientific question has been tested.
+All 309 baseline completed-study files remain byte-identical by SHA256 after
+the live explanations and installed model-control inspection. Full framework
+completion and the remaining M7/M8 gates are still open.
