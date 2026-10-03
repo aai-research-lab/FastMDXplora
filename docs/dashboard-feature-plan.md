@@ -298,8 +298,8 @@ provider-owned browser authentication/consent → dashboard confirms the account
 and available models. Password/MFA entry stays on the provider's page. Show login
 progress, cancellation, expiry, reconnect, account selection and disconnect.
 
-Initial provider coverage targets OpenAI/ChatGPT/Codex, Claude, Kimi Code, GitHub
-Copilot and Google Gemini. Treat agents/clients and models as separate concepts:
+Provider coverage targets OpenAI/ChatGPT/Codex, Claude, Kimi Code and Google
+Gemini. Treat agents/clients and models as separate concepts:
 connecting a coding agent does not give that agent permission to edit files.
 Add further providers through the same documented adapter contract. Do not label
 an API-key connection or ordinary account sign-in as subscription inference.
@@ -309,11 +309,10 @@ an API-key connection or ordinary account sign-in as subscription inference.
 | OpenAI/ChatGPT/Codex | Public Sign in with ChatGPT for eligible local/open-source apps; Responses API | Dynamic registration, PKCE/state/nonce, identity, scopes, model catalog, completed inference, renewal |
 | Claude | Provider-supported official-client/SDK route with browser login | Current third-party/subscription rules, tool-free operation, account-specific inference; no copying private client tokens |
 | Kimi Code | Official client-managed device/browser login and supported integration | Login lifecycle, cancellable bridge, tool-free inference and plan entitlement; direct third-party OAuth is not assumed |
-| GitHub Copilot | Supported SDK with registered OAuth app or official-client device flow | Required app registration, account entitlement, restricted SDK capabilities, completed request |
 | Gemini | Provider-supported Google login/client integration | App registration requirements, supported headless transport, account entitlement and restricted capabilities |
 
 OpenAI's current public docs describe direct OSS OAuth and Responses API plan
-usage. GitHub documents SDK OAuth-app and signed-in-client routes. Kimi documents
+usage. Kimi documents
 OAuth for official clients and API keys for third-party applications. Claude and
 Gemini routes require a focused compatibility check before selecting transport.
 Document the exact verified support rather than promising universal OAuth.
@@ -350,7 +349,6 @@ Official references used for provider feasibility:
 - [Claude third-party login guidance](https://support.claude.com/en/articles/13189465-log-in-to-your-claude-account)
 - [Kimi membership and integrations](https://www.kimi.com/en/help/kimi-code/membership-guide)
 - [Kimi login/client command](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command.html)
-- [Copilot SDK authentication](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/authenticate)
 - [Gemini authentication](https://geminicli.com/docs/get-started/authentication/)
 
 ## 9. Implementation milestones and review gates
@@ -540,15 +538,10 @@ account models are used; there is no Cloud-project selection, new enrollment,
 API-key fallback or automatic credit overage. Removing the local Gemini login
 does not confirm revocation of Google's grant. OAuth connections expands to one
 provider dropdown for ChatGPT/Codex, Claude, Kimi and Gemini, and one contextual
-Connect button. Connected-account models are selected after login. Copilot is
-explicitly labelled integration pending. Actual subscription-account consent/inference
+Connect button. Connected-account models are selected after login. Actual subscription-account consent/inference
 remains unverified; the user must perform normal provider sign-in.
 
-Copilot remains unfinished: its installed official client can use a global
-keychain or another client's authentication even with a separate home. A
-verified isolated OAuth/SDK route is required before adding a working login
-button. This is an explicit compatibility limitation, not a claim of universal
-subscription OAuth. OpenAI's expired presented certificate still prevents live
+OpenAI's expired presented certificate still prevents live
 verification; TLS verification is never disabled. Browser disconnects now signal
 cancellation to buffered provider processes through streaming heartbeats.
 
@@ -557,29 +550,6 @@ for refused sessions, usage/rate limits, or an unclassified connection failure.
 They are no longer all labelled missing API keys. The packaged reference was
 regenerated and covers all 127 current codes. Fifty provider/Agent tests passed,
 including HTTP 401/403/429/503 classification and no API-billing fallback.
-
-Copilot compatibility follow-up: official SDK 1.0.16 was installed in a separate
-tools folder without changing the scientific venv. Its pinned native CLI 1.0.90
-was installed separately from npm after the SDK's GitHub release download ended
-with RemoteDisconnected. A native SDK probe verified protocol v3 startup,
-no automatic login, and an initialized empty tool catalog. This proves the
-restricted native transport, not completed OAuth, model entitlement or inference.
-The production account/login lifecycle remains unfinished; the dropdown stays
-explicitly pending while that lifecycle is verified. GitHub documents an app-
-owned OAuth token route with use_logged_in_user=False; no existing credentials
-were read or copied during these checks.
-
-Copilot login follow-up: a second native probe created a restricted session on
-the default Copilot route, without a synthetic BYOK provider or model request.
-GitHub.com interactive sign-in is available; the account remains unauthenticated
-and the initialized tool catalog remains empty. The new SDK-independent login
-controller accepts only a deliberate Connect request, verifies GitHub.com browser
-URLs, bounds the flow and cancels unfinished requests. It refuses plaintext
-credential consent, arbitrary input/broker steps and unverified terminal account
-identities. Twenty focused checks passed, including cancellation during a blocked
-advance RPC and timeout cleanup. This controller is preparatory: the production
-SDK child-process bridge, native storage verification, model entitlement and
-end-to-end account consent/inference are still unfinished. Copilot remains disabled.
 
 Package follow-up: the wheel built at 841ae217d contains the current 127-code
 Markdown error reference byte-for-byte, residue pin/compare controls, the provider

@@ -306,6 +306,8 @@ def test_dashboard_browser_sign_in_selects_subscription_without_api_key(service,
             page.goto(url + "/#agent")
             page.evaluate("FastMDXAgent.openSettings()")
             page.locator("#agent-oauth-picker summary").click()
+            assert page.locator("#agent-subscription-provider option").evaluate_all(
+                "options => options.map(option => option.value)") == ["", "openai-chatgpt", "claude", "kimi", "gemini"]
             assert page.locator("#agent-subscription-connect").is_disabled()
             page.locator("#agent-subscription-provider").select_option("openai-chatgpt")
             with page.expect_popup() as new_window:
