@@ -97,19 +97,7 @@ def _over_time(root: Path, analysis: str, label: str, unit: str,
     values = [numbers[-1] for _, numbers in rows]
     n = len(values)
     manifest = _json(root / "analysis" / "analysis_manifest.json")
-    loaded = manifest.get("load_kwargs") if isinstance(manifest.get("load_kwargs"), dict) else {}
-    stride = _positive_int(loaded.get("stride")) or 1
-    first = _non_negative_int(loaded.get("first")) or 0
-    interval = loaded.get("saving_interval_ps")
-    frames = [(first + i) * stride for i in range(n)]
-    if isinstance(interval, (int, float)) and interval > 0:
-        # Rounded to well past the clock's own precision, so 0.0003 ns is
-        # not sent as 0.00030000000000000003.
-        x = [round((frame + 1) * float(interval) / 1000.0, 12) for frame in frames]
-        x_label = "Time (ns)"
-    else:
-        x = [float(frame) for frame in frames]
-        x_label = "Frame"
+    frames, x, x_label = analysed_axis(root, n)
 
     mean = None
     if found is not None and int(found.get("n_frames") or n) == n:
@@ -134,6 +122,31 @@ def _over_time(root: Path, analysis: str, label: str, unit: str,
         "linked": _of_the_played_trajectory(root, manifest),
         "mean": mean,
     }
+
+
+def analysed_axis(root: Path, n: int) -> tuple[list[int], list[float], str]:
+    """The trajectory frame of each of ``n`` analysed frames, its time in ns
+    (or the frame, where no clock is recorded) and the axis's name, as the
+    analysis loaded the trajectory: its stride and first frame, and frame
+    ``k`` of the file written at ``(k + 1)`` saving intervals."""
+    manifest = _json(Path(root) / "analysis" / "analysis_manifest.json")
+    loaded = manifest.get("load_kwargs") if isinstance(manifest.get("load_kwargs"), dict) else {}
+    stride = _positive_int(loaded.get("stride")) or 1
+    first = _non_negative_int(loaded.get("first")) or 0
+    interval = loaded.get("saving_interval_ps")
+    frames = [(first + i) * stride for i in range(n)]
+    if isinstance(interval, (int, float)) and interval > 0:
+        # Rounded to well past the clock's own precision, so 0.0003 ns is
+        # not sent as 0.00030000000000000003.
+        return frames, [round((frame + 1) * float(interval) / 1000.0, 12)
+                        for frame in frames], "Time (ns)"
+    return frames, [float(frame) for frame in frames], "Frame"
+
+
+def of_the_played_trajectory(root: Path) -> bool:
+    """Whether the frames an analysis read are the trajectory the Viewer plays."""
+    return _of_the_played_trajectory(Path(root),
+                                      _json(Path(root) / "analysis" / "analysis_manifest.json"))
 
 
 def _residues(analysis: str, label: str, unit: str,

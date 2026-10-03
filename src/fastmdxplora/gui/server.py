@@ -143,7 +143,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
-    "/api/frames-info", "/api/frames-superposed",
+    "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb", "/structure/live-frame.dcd",
@@ -812,6 +812,11 @@ def make_handler(
                 return
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
                 self._send_frames(root, path.rsplit("/", 1)[1], parse_qs(parsed.query))
+                return
+            if path == "/api/interactions-over-frames":
+                from fastmdxplora.gui.interactions_over_frames import interactions_over_frames
+
+                self._send_json(interactions_over_frames(root))
                 return
             if path == "/api/frames-superposed":
                 self._send_json(_frames_superposed_payload(root, parse_qs(parsed.query)))

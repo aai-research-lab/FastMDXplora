@@ -51,6 +51,9 @@
     spacefill: "spacefill",
   };
 
+  /** The tag the study's interactions carry among Mol*'s measurements. */
+  const INTERACTION = "fastmdx-interaction";
+
   function molstar() {
     if (!window.molstar || !window.molstar.lib) throw new Error("Mol* did not load");
     return window.molstar;
@@ -122,7 +125,7 @@
   const QUEUED = new Set(["loadFrames", "setFramesCoordinates", "loadStructure",
     "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame", "setRepresentation", "setColour",
     "setSecondaryStructure", "redraw", "measure", "showPicks", "clearMeasurements",
-    "showContacts", "loadEnvironment", "renderEnvironment", "moveEnvironment",
+    "showContacts", "showInteractions", "loadEnvironment", "renderEnvironment", "moveEnvironment",
     "removeEnvironment", "picture"]);
 
   function oneAtATime(engine) {
@@ -341,6 +344,7 @@
     }
 
     async clear() {
+      this.interactions = new Map();
       this.coordinatesRef = null;
       this.framesRef = null;
       await this.plugin.clear();
@@ -1073,21 +1077,63 @@
     }
 
     /** How many distances, angles and dihedrals are shown. */
-    measurementCount() {
+    /** The measurements Mol* holds that are the person's, not the study's
+     * interactions shown beside them. */
+    thePersonsMeasurements(kind) {
       const state = this.plugin.managers.structure.measurement.state;
-      return (state.distances || []).length + (state.angles || []).length
-        + (state.dihedrals || []).length;
+      return (state[kind] || []).filter((cell) => !(cell.transform.tags || [])
+        .includes(INTERACTION));
+    }
+
+    measurementCount() {
+      return this.thePersonsMeasurements("distances").length + this.thePersonsMeasurements("angles").length
+        + this.thePersonsMeasurements("dihedrals").length;
     }
 
     async clearMeasurements() {
-      const state = this.plugin.managers.structure.measurement.state;
-      const refs = [...(state.distances || []), ...(state.angles || []),
-        ...(state.dihedrals || []), ...(state.labels || [])].map((cell) => cell.transform.ref);
+      const refs = ["distances", "angles", "dihedrals", "labels"]
+        .flatMap((kind) => this.thePersonsMeasurements(kind)).map((cell) => cell.transform.ref);
       if (!refs.length) return;
       const update = this.plugin.build();
       refs.forEach((ref) => update.delete(ref));
       await update.commit();
       this.measured = false;
+    }
+
+    /** The study's interactions present in the frame shown, as dashed lines
+     * between their atoms ({a, b, colour}), kept apart from the person's
+     * measurements: those already shown stay, those gone are removed, and
+     * they follow the atoms as the frames play. */
+    async showInteractions(pairs) {
+      if (!this.interactions) this.interactions = new Map();
+      const cells = this.plugin.state.data.cells;
+      const wanted = new Map((pairs || []).map((pair) => [`${pair.a}:${pair.b}:${pair.colour}`,
+        pair]));
+      const update = this.plugin.build();
+      let gone = false;
+      for (const [key, ref] of this.interactions) {
+        if (wanted.has(key) && cells.has(ref)) continue;
+        if (cells.has(ref)) { update.delete(ref); gone = true; }
+        this.interactions.delete(key);
+      }
+      if (gone) await update.commit();
+      const measurement = this.plugin.managers.structure.measurement;
+      for (const [key, pair] of wanted) {
+        if (this.interactions.has(key)) continue;
+        const made = await measurement.addDistance(this.lociOf([pair.a]), this.lociOf([pair.b]), {
+          lineParams: {linesColor: pair.colour, linesSize: 0.2, dashLength: 0.25},
+          visualParams: {visuals: ["lines"]},
+          selectionTags: [INTERACTION], reprTags: [INTERACTION]});
+        if (made && made.selection) this.interactions.set(key, made.selection.ref);
+      }
+      return this.interactions.size;
+    }
+
+    /** How many of the study's interactions are shown. */
+    interactionCount() {
+      const state = this.plugin.managers.structure.measurement.state;
+      return (state.distances || []).filter((cell) => (cell.transform.tags || [])
+        .includes(INTERACTION)).length;
     }
 
     /** Dashed lines from atoms to atoms, each with its distance: the

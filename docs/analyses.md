@@ -239,6 +239,13 @@ against another tool.
   frames give the largest single pair, pairs that never coincide give their
   sum, and every real case lies between.
 
+- **Each interaction's frames** are written to `pl_interactions_frames.json`
+  beside the pair table, as runs `[first, last]` of the analysed frames it
+  was present in (both included), with its kind, atoms (indices into the
+  topology analysed, and their names) and occupancy. The Viewer reads it to
+  show what holds the ligand in the frame shown, and when each contact formed
+  and broke.
+
 - **Order parameters** are the Lipari–Szabo S² of each backbone N–H, taken as
   the closed form of the correlation plateau after superposition. The alignment
   set is a choice that changes the answer and is recorded. A trajectory too

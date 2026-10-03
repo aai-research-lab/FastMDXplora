@@ -283,6 +283,11 @@ class ProteinLigandInteractions(Analysis):
 
         self._by_residue = summary.residue_occupancies(
             found, traj.n_frames, residue_of)
+        # And the frames each pair was present in, for the Viewer to show
+        # what holds the ligand in the frame shown, and when each contact
+        # formed and broke.
+        self._episodes = summary.episodes_of(found, traj.n_frames)
+        self._n_frames = int(traj.n_frames)
 
         if not occupancies:
             return pd.DataFrame(columns=[
@@ -328,6 +333,25 @@ class ProteinLigandInteractions(Analysis):
 
             beside = Path(path).with_name("pl_interactions_by_residue.dat")
             _pd.DataFrame(rows).to_csv(beside, index=False)
+
+        episodes = getattr(self, "_episodes", None)
+        if episodes is not None and isinstance(result, pd.DataFrame):
+            import json
+
+            pairs = []
+            for row in result.itertuples(index=False):
+                key = (row.kind, int(row.ligand_atom), int(row.protein_atom))
+                pairs.append({
+                    "kind": row.kind, "ligand_atom": key[1], "protein_atom": key[2],
+                    "residue": row.residue, "ligand_atom_name": row.ligand_atom_name,
+                    "protein_atom_name": row.protein_atom_name,
+                    "occupancy": float(row.occupancy), "episodes": episodes.get(key, []),
+                })
+            Path(path).with_name("pl_interactions_frames.json").write_text(json.dumps({
+                "about": "Each interaction's runs of analysed frames, [first, last], both "
+                         "included; atoms are indices into the topology analysed.",
+                "n_frames": getattr(self, "_n_frames", 0), "pairs": pairs,
+            }), encoding="utf-8")
         return written
 
     def _run_directory(self) -> Path | None:

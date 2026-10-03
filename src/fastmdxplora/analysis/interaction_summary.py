@@ -138,6 +138,32 @@ def occupancies(contacts: Any, n_frames: int) -> list[Occupancy]:
     return found
 
 
+def episodes_of(contacts: Any, n_frames: int) -> dict[tuple[str, int, int], list[list[int]]]:
+    """The frames each interaction was present in, as runs.
+
+    Keyed as :func:`occupancies` groups them (kind, ligand atom, protein
+    atom); each run ``[first, last]`` is a stretch of consecutive frames,
+    both ends included. A run is how a contact is seen to form and break,
+    and it keeps a long trajectory's record small: a hydrogen bond held for
+    a thousand frames is one pair of numbers.
+    """
+    if n_frames <= 0:
+        return {}
+    seen: dict[tuple[str, int, int], np.ndarray] = {}
+    for contact in contacts:
+        key = (contact.kind, contact.ligand_atom, contact.protein_atom)
+        if key not in seen:
+            seen[key] = np.zeros(n_frames, dtype=bool)
+        seen[key][contact.frame] = True
+    runs: dict[tuple[str, int, int], list[list[int]]] = {}
+    for key, present in seen.items():
+        edges = np.diff(present.astype(np.int8), prepend=0, append=0)
+        starts = np.flatnonzero(edges == 1)
+        ends = np.flatnonzero(edges == -1) - 1
+        runs[key] = [[int(a), int(b)] for a, b in zip(starts, ends)]
+    return runs
+
+
 def residue_occupancies(
     contacts: Any, n_frames: int, label_of: Any
 ) -> list[dict[str, Any]]:

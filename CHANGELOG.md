@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### What holds the ligand, frame by frame
+
+**The contacts that hold the ligand are shown under the frames played and in
+the structure, frame by frame.** The interactions analysis (`pl_interactions`)
+said which contacts hold the ligand and how often each is present, in a table
+on the Analysis page apart from the structure. It now also writes the frames
+each contact was present in, as runs (`pl_interactions_frames.json`). Under
+the Viewer's transport, **What holds the ligand** gives each contact, the
+twelve most often present, as a row marked where it was present, with its
+share of the frames; the frame shown is marked across them, and a click or a
+drag shows another. The contacts present in the frame shown are rendered as
+dashed lines between their atoms in the structure, coloured by kind, as the
+frames play; they are the analysis's own, by its published criteria, and are
+kept apart from the ruler's measurements. A study analysed before this is
+told to run the analysis again to see them.
+
 ### The frames superposed
 
 **The frames played can be fitted to the first, on the protein's backbone

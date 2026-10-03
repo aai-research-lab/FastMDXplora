@@ -1062,6 +1062,12 @@ button {
 .frame-series-svg { display: block; cursor: col-resize; touch-action: none; }
 .frame-series-value { font-size: var(--text-2xs); color: var(--text-secondary); }
 .frame-series-note { flex-basis: 100%; margin: 0; }
+.control-row.frame-interactions { align-items: center; gap: 8px; }
+.frame-interactions-title { font-size: var(--text-2xs); color: var(--text-muted); }
+.frame-interactions-now { font-size: var(--text-2xs); color: var(--text-secondary); }
+.frame-interactions-note { flex-basis: 100%; margin: 0; }
+.frame-interactions-chart { flex: 1 1 100%; min-width: 260px; }
+.frame-interactions-svg { display: block; cursor: col-resize; touch-action: none; }
 .icon-group {
     display: inline-flex; align-items: center; gap: 2px; padding: 2px;
     border: 1px solid var(--border-subtle); border-radius: 8px;

@@ -754,6 +754,16 @@
                   <p class="frame-series-note muted small" id="frame-series-note" hidden></p>
                   <div class="frame-series-chart" id="frame-series-chart"></div>
                 </div>
+                <!-- What holds the ligand: each contact the interactions
+                     analysis found, frame by frame, and those of the frame
+                     shown in the structure (frame-interactions.js). -->
+                <div class="control-row frame-interactions" id="frame-interactions" hidden>
+                  <span class="frame-interactions-title">What holds the ligand</span>
+                  <label class="chip-toggle micro"><input type="checkbox" id="frame-interactions-shown" checked>In the structure</label>
+                  <span class="frame-interactions-now mono" id="frame-interactions-now"></span>
+                  <p class="frame-interactions-note muted small" id="frame-interactions-note" hidden></p>
+                  <div class="frame-interactions-chart" id="frame-interactions-chart"></div>
+                </div>
                 <!-- The view: one row of icons, grouped, each named in its
                      tooltip; then how the molecule is drawn, as two lists
                      and the parts shown. It was thirty text buttons in five
@@ -1277,5 +1287,6 @@
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/frame-series.js"></script>
+  <script src="/static/frame-interactions.js"></script>
 </body>
 </html>

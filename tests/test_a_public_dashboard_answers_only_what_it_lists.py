@@ -268,6 +268,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # the same frames superposed: computed from them on request, as
             # the frames are.
             "/api/frames-info", "/api/frames-superposed",
+            # What holds the ligand, frame by frame, as the interactions
+            # analysis recorded it.
+            "/api/interactions-over-frames",
             # The methods paragraphs, as the report gives them.
             "/api/methods",
             # What a study run until it knows has judged: the same means
