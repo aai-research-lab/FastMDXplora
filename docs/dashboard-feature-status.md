@@ -69,13 +69,13 @@ These changes are not a published upstream release.
 | Milestone | Current state | Evidence and remaining work |
 | --- | --- | --- |
 | M0 — reconcile | Implemented | Architecture/boundaries and branch scope documented; this review reconciles subsequent increments with the original full contract. |
-| M1 — context and human control | Implemented in part; core verified | Eight context types, installed knowledge, refusal boundary and selection tests exist. Exact context inspection/message opt-out and an explicit before/after configuration diff are still absent. Builder review is available; the complete draft-diff and exact-draft/study approval contract needs acceptance coverage. |
+| M1 — context and human control | Implemented in part; core verified | Eight context types, installed knowledge, refusal boundary and selection tests exist. Server-resolved context inspection, per-message view opt-out and exact outbound evidence receipts are implemented and verified. Explicit configuration diff and the complete exact-draft/study approval contract remain open. |
 | M2 — bookmarks | Implemented; representative acceptance verified | Persistence, tags/search, screenshots, portability, view restore and stale/import guards tested. Include it in the final broad browser/release pass. |
 | M3 — providers | Implemented; live verification partial | OpenAI browser consent and real explanation inference succeeded, including the requested GPT-6 models. Claude, Kimi and Gemini have restricted adapters and synthetic/native transport tests, but their real account login, entitlement, model enumeration, inference and expiry/disconnect acceptance remain pending. |
 | M4 — clips | Implemented in part; core verified | Saved rotating GIF/MP4 exports decode; labels, source metadata and viewer restoration tested. User-selectable resolution, study/title and custom-caption overlays, and a pre-export source-frame/time preview and estimate remain to implement. Current output size is derived from the viewer and capped, not a resolution selector. |
 | M5 — provenance | Implemented; preservation verification limited | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on OpenMM Reference. Aggregate system snapshots do not record every individual solvent/ion operation. Broader backend/platform and fixture preservation checks remain open. |
 | M6 — audit visuals | Implemented in part; core verified | Stage strip, total inventory bars with component counts, side-by-side/overlay, event detail and Agent/bookmark links tested. Dedicated affected-residue category track, a structured decision table and separate ligand/component series remain to implement; raw event details and aggregate inventory are the current representation. |
-| M8 — aesthetics and interactions | Planned | Shared design system, coherent layouts, responsive panels, all-theme contrast and keyboard/focus acceptance; completed before final M7. |
+| M8 — aesthetics and interactions | Foundation implemented; full review pending | Research toolbar no longer overlaps the composer; Agent typography, evidence cards and drawer spacing improved. Wide/narrow layout checks pass. Full surface/theme, contrast and keyboard/focus acceptance remains open. |
 | M7 — integrated release validation | Partial; not complete | Targeted integrated suites, browser checks and earlier wheel receipts exist. Final expanded-scope acceptance, latest-wheel verification, remaining provider tests and broader scientific/browser coverage are not all complete. |
 
 ## Verification and scientific limits
@@ -107,7 +107,7 @@ scientific equivalence still requires the framework's remaining checks.
 
 ## Remaining exit checklist
 
-- Finish the M1 context-inspection/opt-out and draft-diff contract, then verify
+- Finish the M1 draft-diff contract, then verify
   human approval against the exact draft and study, including changed drafts.
 - Finish the M4 export controls/preview and M6 residue/decision/component visuals.
 - Have the user perform normal Claude, Kimi and Gemini sign-in; test each actual

@@ -8,6 +8,7 @@
   let warning = null, auditEvent = null, auditSource = null, auditSelection = null;
   let importPreview = null, shownCount = 20;
   let comparisonSelection = null;
+  let contextGeneration = 0;
   let tags = ["Simulation settings", "Graph", "Figure", "Trajectory frame", "Structure", "Preparation", "Observation"];
   let enabled = localStorage.getItem("fastmdx-agent-sidebar-enabled") !== "false";
   const board = () => window.FastMDXDashboard;
@@ -63,7 +64,23 @@
       view.range ? "range " + view.range.join("–") : null].filter(Boolean).join(" · ");
   }
   function updateContext() {
-    el("research-context").textContent = "Context: " + describe(capture());
+    const view = capture();
+    el("research-context").textContent = "Context: " + describe(view);
+    const summary = el("agent-context-summary");
+    if (summary) summary.textContent = el("agent-use-context").checked ? describe(view) : "Current view excluded";
+  }
+  function messageContext() {
+    ++contextGeneration;
+    const request = {view_context: capture(), include_view_context: el("agent-use-context").checked};
+    el("agent-context-evidence").textContent = "Resolving the context for this message…";
+    return request;
+  }
+  function showContext(receipt, title = "Evidence used by the last message") {
+    ++contextGeneration;
+    el("agent-context-evidence").textContent = receipt.ok ?
+      title + "\n\n" + receipt.study_evidence + "\n\n" + receipt.view_evidence +
+      "\n\nKnowledge contract: " + receipt.knowledge_version + "\nContext fingerprint: " + receipt.fingerprint :
+      receipt.error || "Context is unavailable.";
   }
   function setDock(open) {
     const page = document.querySelector('[data-page="agent"]');
@@ -74,6 +91,7 @@
     document.body.classList.toggle("research-agent-open", open);
     dock.hidden = !open;
     if (open) {
+      el("research-bookmarks").hidden = true;
       dock.appendChild(page);
       page.hidden = false;
       el("agent-request").focus();
@@ -276,6 +294,23 @@
     updateContext();
   }
   document.addEventListener("DOMContentLoaded", () => {
+    document.querySelector(".page-shell").prepend(document.querySelector(".research-tools"));
+    el("agent-use-context").addEventListener("change", () => {
+      ++contextGeneration;
+      updateContext();
+      el("agent-context-evidence").textContent = "Context preference changed. Inspect again to see the evidence for the next message.";
+    });
+    el("agent-inspect-context").addEventListener("click", async () => {
+      const request = messageContext(), generation = contextGeneration;
+      try {
+        const response = await fetch("/api/agent/context", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(request)});
+        const receipt = await response.json();
+        if (generation !== contextGeneration || JSON.stringify(request.view_context) !== JSON.stringify(capture())) return;
+        showContext(receipt, "Current evidence preview — reverified at Send");
+      } catch (_) {
+        if (generation === contextGeneration) el("agent-context-evidence").textContent = "Could not inspect context. Check the dashboard connection.";
+      }
+    });
     const page = document.querySelector('[data-page="agent"]');
     const anchor = document.createElement("span"); anchor.id = "research-agent-anchor";
     page.before(anchor);
@@ -290,6 +325,9 @@
     board()?.on("app-state", (state) => {
       const next = state.active_run || null;
       if (next !== loadedStudy) {
+        window.FastMDXAgent?.cancelReply();
+        ++contextGeneration;
+        el("agent-context-evidence").textContent = "The study changed. Inspect its context before sending.";
         loadedStudy = next; analysis = null; field = null; figure = null; warning = null; auditEvent = null;
         comparisonSelection = null;
         importPreview = null; el("research-import-preview").hidden = true;
@@ -369,7 +407,11 @@
     });
     el("research-bookmarks-toggle").addEventListener("click", () => {
       el("research-bookmarks").hidden = !el("research-bookmarks").hidden;
-      if (!el("research-bookmarks").hidden) refresh().then(suggestTags).catch(() => status("Could not load bookmarks."));
+      if (!el("research-bookmarks").hidden) {
+        if (docked) setDock(false);
+        refresh().then(suggestTags).catch(() => status("Could not load bookmarks."));
+        el("research-title").focus();
+      }
     });
     el("research-bookmarks-close").addEventListener("click", () => { el("research-bookmarks").hidden = true; });
     el("research-save").addEventListener("click", async () => {
@@ -501,5 +543,6 @@
     el("agent-request").focus();
   }
   window.FastMDXResearch = {capture: capture, restore: restore, describe: describe, ask: ask, enabled: () => enabled,
+    messageContext: messageContext, showContext: showContext,
     selectAudit: (id, source, selection) => { auditEvent = id; auditSource = source || null; auditSelection = selection || null; warning = null; updateContext(); }};
 })();

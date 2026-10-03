@@ -1097,6 +1097,13 @@
           <!-- The composer, pinned. Grows with what is typed; Enter sends,
                Shift+Enter breaks a line. -->
           <div class="agent-composer">
+            <details class="agent-context-review" id="agent-context-review">
+              <summary>Message context <span id="agent-context-summary">Current view included</span></summary>
+              <label class="checkbox-row"><input id="agent-use-context" type="checkbox" checked>Use current view for this message</label>
+              <p class="muted small">Study identity and summary remain available. Earlier messages may contain previous selections; use New for a fresh conversation. Attached files are included separately.</p>
+              <button id="agent-inspect-context" class="ghost-btn" type="button">Inspect current evidence</button>
+              <pre id="agent-context-evidence" class="agent-context-evidence" tabindex="0">Inspect the context before sending. The evidence actually used is recorded here when you send.</pre>
+            </details>
             <!-- Files attached to the next message, as chips. -->
             <div class="agent-attachments" id="agent-attachments" hidden></div>
             <div class="agent-composer-box">

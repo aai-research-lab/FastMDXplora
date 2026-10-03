@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from fastmdxplora.agent.knowledge import dashboard_knowledge, error_reference
-from fastmdxplora.gui.agent_panel import propose_endpoint, run_endpoint
+from fastmdxplora.gui.agent_panel import context_endpoint, propose_endpoint, run_endpoint
 from fastmdxplora.gui.research import context_for, residue_evidence
 from fastmdxplora.refusals import CODES
 
@@ -56,6 +56,102 @@ def test_explanation_receives_packaged_reference(model):
     assert "Knowledge contract version: 1" in prompts[0]
     assert "setup.chemistry.protonation_undetermined" in prompts[0]
     assert "Never launch/stop/resume" in prompts[0]
+
+
+def test_context_opt_out_excludes_view_but_keeps_study_isolation(tmp_path, model):
+    from types import SimpleNamespace
+
+    prompts, _ = model
+    runtime = SimpleNamespace(active_root=tmp_path)
+    payload = {"request": "Explain the workflow", "include_view_context": False,
+               "view_context": {"study": str(tmp_path), "page": "viewer",
+                                "selection": {"chain": "A", "resseq": 999, "resname": "GLU"}}}
+    preview = context_endpoint(payload, runtime)
+    answer = propose_endpoint(payload, runtime)
+    assert preview["ok"] and preview["view"] == {}
+    assert answer["context_receipt"] == preview
+    assert "Selected residue evidence:" not in prompts[0]
+    assert '"resseq": 999' not in prompts[0]
+    assert "Current view selection excluded" in prompts[0]
+    payload["view_context"]["study"] = str(tmp_path / "other")
+    assert not propose_endpoint(payload, runtime)["ok"]
+    assert len(prompts) == 1
+
+
+def test_context_inspection_uses_recorded_evidence_and_stream_receipt(tmp_path, model):
+    from types import SimpleNamespace
+
+    folder = tmp_path / "setup"
+    folder.mkdir()
+    (folder / "setup_parameters.json").write_text('{"parameters":{"ph":6.5}}')
+    runtime = SimpleNamespace(active_root=tmp_path)
+    payload = {"request": "Explain the selected pH", "include_view_context": True,
+               "view_context": {"study": str(tmp_path), "page": "run", "field": "setup.ph", "field_value": "7"}}
+    preview = context_endpoint(payload, runtime)
+    assert "Recorded setting value: 6.5" in preview["view_evidence"]
+    events = []
+    result = propose_endpoint(payload, runtime, emit=events.append)
+    assert events[0] == {"type": "context", "context": preview}
+    assert result["context_receipt"]["fingerprint"] == preview["fingerprint"]
+    (folder / "setup_parameters.json").write_text('{"parameters":{"ph":8}}')
+    assert context_endpoint(payload, runtime)["fingerprint"] != preview["fingerprint"]
+    assert not context_endpoint({**payload, "include_view_context": "false"}, runtime)["ok"]
+    runtime.data_stale = True
+    assert not context_endpoint(payload, runtime)["ok"]
+
+
+def test_reply_from_a_changed_study_is_refused(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import fastmdxplora.agent as agent
+
+    runtime = SimpleNamespace(active_root=tmp_path)
+    def switched(prompt):
+        runtime.active_root = tmp_path / "another-study"
+        return "SAY: This is the old study."
+    monkeypatch.setattr(agent, "completion_for", lambda: switched)
+    answer = propose_endpoint({"request": "Explain this study", "view_context": {"study": str(tmp_path)}}, runtime)
+    assert not answer["ok"] and "study changed" in answer["error"]
+    assert "answer" not in answer
+
+
+def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monkeypatch, model):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    _write_study(tmp_path)
+    server, url = start_test_server(tmp_path)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(url + "/#agent")
+            page.locator("#agent-context-review summary").click()
+            page.locator("#agent-use-context").uncheck()
+            page.locator("#agent-inspect-context").click()
+            page.wait_for_function("document.getElementById('agent-context-evidence').textContent.includes('Current view selection excluded')")
+            sent = []
+            page.on("request", lambda req: sent.append(req.post_data_json) if req.url.endswith("/api/agent/propose-stream") else None)
+            page.locator("#agent-request").fill("Explain this workflow")
+            page.locator("#agent-propose").click()
+            page.wait_for_function("document.getElementById('agent-context-evidence').textContent.includes('Evidence used by the last message')")
+            assert sent and sent[0]["include_view_context"] is False
+            toolbar = page.locator(".research-tools").bounding_box()
+            composer = page.locator(".agent-composer").bounding_box()
+            assert toolbar["y"] + toolbar["height"] <= composer["y"]
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.locator("#research-bookmarks-toggle").click()
+            assert page.locator("#research-bookmarks").is_visible()
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.locator("#research-bookmarks-close").click()
+            page.locator("#agent-context-review summary").click()
+            box = page.locator("#agent-request").bounding_box()
+            assert box["width"] > 0 and box["x"] + box["width"] <= 391
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 @pytest.mark.parametrize("mode", ["autonomous", "unvalidated", "unexpected"])

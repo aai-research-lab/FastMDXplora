@@ -101,6 +101,41 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
             "current": ModelChoice(provider, model, base_url).as_record()}
 
 
+def context_endpoint(payload: dict[str, Any], runtime: Any = None, *, path_for: Any = None) -> dict[str, Any]:
+    """Inspect the same bounded study/view evidence used by an Agent message.
+
+    This private route performs no inference and never reads provider credentials.
+    View opt-out retains study isolation and ordinary study summary evidence.
+    """
+    import hashlib
+    import json
+
+    from fastmdxplora.gui.research import _redact, clean_view, context_for
+
+    included = payload.get("include_view_context", True)
+    if not isinstance(included, bool):
+        return {"ok": False, "error": "Choose whether to include current view context."}
+    supplied = payload.get("view_context")
+    active = getattr(runtime, "active_root", None)
+    if getattr(runtime, "data_stale", False):
+        return {"ok": False, "error": "Reload the current study before inspecting or sending its context."}
+    if isinstance(supplied, dict) and supplied.get("study"):
+        named = path_for(supplied["study"]) if path_for else supplied["study"]
+        if not active or not named or Path(named).resolve() != Path(active).resolve():
+            return {"ok": False, "error": "The study changed. Select the view again before asking the Agent."}
+    try:
+        view = clean_view(supplied) if included and supplied else {}
+        evidence = context_for(active, view) if view else "Current view selection excluded from this message."
+    except (ValueError, TypeError):
+        return {"ok": False, "error": "Invalid dashboard context."}
+    record = {"study": str(active) if active else None, "include_view_context": included,
+              "view": view, "view_evidence": _redact(evidence),
+              "study_evidence": _redact(_run_status(runtime) or "No active study."),
+              "knowledge_version": 1}
+    record["fingerprint"] = hashlib.sha256(json.dumps(record, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
+    return {"ok": True, **record}
+
+
 def propose_endpoint(payload: dict[str, Any],
                      runtime: Any = None, *,
                      path_for: Any = None,
@@ -136,14 +171,9 @@ def propose_endpoint(payload: dict[str, Any],
     if mode != "assisted":
         return {"ok": False, "error": "The dashboard Agent explains and drafts only. Review scientific decisions in the builder.",
                 "code": "config.option.not_permitted"}
-    supplied_view = payload.get("view_context")
-    if isinstance(supplied_view, dict) and supplied_view.get("study"):
-        supplied = supplied_view["study"]
-        if path_for:
-            supplied = path_for(supplied)
-        active = getattr(runtime, "active_root", None)
-        if not active or not supplied or Path(supplied).resolve() != Path(active).resolve():
-            return {"ok": False, "error": "The study changed. Select the view again before asking the Agent."}
+    receipt = context_endpoint(payload, runtime, path_for=path_for)
+    if not receipt["ok"]:
+        return receipt
     phases = payload.get("phases") or ["setup", "simulation"]
     try:
         from fastmdxplora.gui.provider_connections import service_for
@@ -176,21 +206,14 @@ def propose_endpoint(payload: dict[str, Any],
     from fastmdxplora.agent.tools import Toolbox
 
     tools = Toolbox(path_for=path_for)
-    from fastmdxplora.gui.research import context_for
-
-    try:
-        view_context = context_for(getattr(runtime, "active_root", None),
-                                   payload.get("view_context"))
-    except ValueError:
-        return {"ok": False, "error": "Invalid dashboard context."}
-    run_context = _run_status(runtime)
     from fastmdxplora.agent.knowledge import dashboard_knowledge
 
-    run_context = dashboard_knowledge() + "\n\nCurrent study evidence:\n" + (run_context or "No active study.")
-    if view_context:
-        run_context = (run_context or "") + "\n\n" + view_context
+    run_context = dashboard_knowledge() + "\n\nCurrent study evidence:\n" + receipt["study_evidence"]
+    run_context += "\n\n" + receipt["view_evidence"]
     model_record = getattr(complete, "model_record", None)
     if emit is not None:
+        if "include_view_context" in payload:
+            emit({"type": "context", "context": receipt})
         complete = _written_as_it_goes(complete, emit)
         _say_each_look(tools, emit)
     try:
@@ -206,8 +229,12 @@ def propose_endpoint(payload: dict[str, Any],
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code,
                 "looks": [look.as_record() for look in tools.looks]}
+    current_root = getattr(runtime, "active_root", None)
+    if (str(current_root) if current_root else None) != receipt["study"] or getattr(runtime, "data_stale", False):
+        return {"ok": False, "error": "The study changed while the Agent was answering. Ask again using the current study."}
     answer = _proposal_answer(proposal, payload, runtime, request, mode, model_record=model_record)
     answer["looks"] = [look.as_record() for look in proposal.looks]
+    answer["context_receipt"] = receipt
     return answer
 
 

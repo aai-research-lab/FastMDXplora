@@ -932,6 +932,13 @@ def make_handler(
                     payload or {}, app_runtime,
                     dashboard_url=self.headers.get("Origin")))
                 return
+            if path == "/api/agent/context":
+                from fastmdxplora.gui.agent_panel import context_endpoint
+
+                self._send_json(context_endpoint(
+                    payload or {}, app_runtime,
+                    path_for=hosting.inside if hosting is not None else None))
+                return
             if path == "/api/agent/propose":
                 # A sentence in, a config out -- through the same
                 # `propose_config` the CLI uses and the same validator a

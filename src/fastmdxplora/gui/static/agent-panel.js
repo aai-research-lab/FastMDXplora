@@ -623,14 +623,17 @@
     note(box, "Thinking\u2026");
     scrollToEnd();
 
+    var messageContext = window.FastMDXResearch ? window.FastMDXResearch.messageContext() : {};
     propose({
       request: request,
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
       current_config: currentConfig,
-      view_context: window.FastMDXResearch ? window.FastMDXResearch.capture() : null,
+      view_context: messageContext.view_context || null,
+      include_view_context: messageContext.include_view_context !== false,
       attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })
     }, box).then(function (data) {
+      if (data.context_receipt && window.FastMDXResearch) window.FastMDXResearch.showContext(data.context_receipt);
       box.innerHTML = "";
       (data.attempts || []).forEach(function (attempt) {
         if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
@@ -770,7 +773,9 @@
       if (!line.trim()) return;
       var event;
       try { event = JSON.parse(line); } catch (e) { return; }
-      if (event.type === "begin") {
+      if (event.type === "context" && event.context && window.FastMDXResearch) {
+        window.FastMDXResearch.showContext(event.context);
+      } else if (event.type === "begin") {
         raw = "";
         if (!shown) {
           box.innerHTML = "";

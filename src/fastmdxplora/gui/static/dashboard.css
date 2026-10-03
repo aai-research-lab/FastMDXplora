@@ -3953,3 +3953,41 @@ html body select optgroup {
     background-color: #000 !important;
     color: #fff !important;
 }
+
+/* Research workspace foundation. Dashboard-only: report tokens are unchanged. */
+body {
+    --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px;
+    --text-sm: 14px; --text-md: 15px; --text-xs: 13px;
+}
+body:not([data-theme="paper"]) { --text-muted: #a0a0aa; }
+body[data-theme="paper"] { --text-muted: #61616b; }
+.agent-answer, .agent-writing { font-family: var(--font-stack); font-size: var(--text-md); line-height: 1.65; }
+.research-tools {
+    position: sticky; top: 0; bottom: auto; right: auto;
+    width: 100%; justify-content: flex-end; flex-wrap: wrap;
+    margin: 0 0 16px; padding: 8px 0; min-height: 44px;
+    background: var(--background-primary); border-bottom: 1px solid var(--border-primary);
+}
+.research-tools button { min-height: 40px; font-size: var(--text-sm); }
+.page[data-page="agent"] { height: calc(100dvh - var(--shell-pad-top, 24px) - var(--agent-foot) - 76px); }
+.research-agent-dock { bottom: 0; padding: 16px; box-shadow: var(--shadow-modal); }
+.research-agent-dock .page[data-page="agent"] { height: auto; }
+.research-dock-head { min-height: 44px; padding-bottom: 12px; border-bottom: 1px solid var(--border-primary); }
+.research-bookmarks-panel { top: 16px; bottom: 16px; max-height: none; padding: 24px; border-radius: 12px; }
+.research-bookmarks-panel .card-header { position: sticky; top: -24px; background: var(--background-primary); padding: 16px 0; z-index: 1; }
+.agent-context-review { margin-bottom: 12px; border: 1px solid var(--border-primary); border-radius: 8px; padding: 10px 12px; background: var(--background-secondary); }
+.agent-context-review summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-primary); }
+#agent-context-summary { display: block; margin: 4px 0 0 16px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+.agent-context-review .checkbox-row { margin-top: 12px; min-height: 32px; }
+.agent-context-evidence { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font: 13px/1.6 var(--font-mono); background: var(--background-primary); padding: 12px; border-radius: 6px; }
+.page-shell button:focus-visible, .page-shell summary:focus-visible,
+.research-agent-dock button:focus-visible, .research-bookmarks-panel button:focus-visible { outline: var(--focus-ring); outline-offset: 3px; }
+@media (max-width: 900px) {
+    .research-agent-dock { width: min(440px, 100vw); }
+    .research-bookmarks-panel { right: 8px; top: 8px; bottom: 8px; width: min(440px, calc(100vw - 16px)); padding: 16px; }
+    .research-tools { justify-content: flex-start; }
+    .research-tools button { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .research-agent-dock, .research-bookmarks-panel, .agent-context-review { scroll-behavior: auto; transition: none; }
+}

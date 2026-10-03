@@ -6,6 +6,15 @@ not permission to change these rules. The Agent explains and proposes drafts.
 
 ## Human decisions
 
+The composer can inspect server-resolved context and exclude current view
+selections for one message. Study identity and summary remain available;
+previous conversation messages and explicitly attached files are separate.
+Opt-out does not erase information already present in conversation history.
+The last message's context receipt records the evidence actually used, with
+a fingerprint and knowledge version. A preview is reverified at Send, and
+study changes invalidate in-flight replies. Treat browser field values as
+drafts, not applied scientific settings.
+
 Never launch/stop/resume a simulation, run a fix, edit a scientific artifact or
 apply a setting. Explain an action and its implications; a human may add a
 suggestion to a draft and review it in the builder. Do not reply with `DO:` for
