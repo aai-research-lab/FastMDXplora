@@ -2164,19 +2164,15 @@ def _render_static_live_panel(project_root: Path) -> str:
     metrics = read_metrics(project_root)
     health = analyze_health(status, metrics)
     if not status:
-        # Naming the real cause. This used to advise starting the dashboard
-        # during a run, which is what somebody looking at this page has just
-        # done: telemetry is written only when the run asks for it, and it is
-        # off by default, so the advice sent them to repeat what had already
-        # failed.
-        body = (
-            "This run did not record live telemetry, so there is nothing for "
-            "this page to read. It is written only when a run asks for it, "
-            "and that is off by default: set <code>live_telemetry: true</code> "
-            "under <code>simulation</code> in the config, or pass "
-            "<code>--live-telemetry</code>, and this page fills as the run "
-            "goes."
-        )
+        # Naming the real cause, in the live page's words. This advised
+        # starting the dashboard during a run, which is what somebody looking
+        # at this page has just done, and then said telemetry was off by
+        # default and named a flag that does not exist; it has been on by
+        # default since the setting was added.
+        import re
+
+        body = re.sub(r"`([^`]+)`", r"<code>\1</code>",
+                      escape(str(health.get("explanation") or "")))
         # The prose above has already said why there is nothing here; a dash
         # says the same without three more verdicts. This page describes a
         # finished run, so an unreported stage is not "starting" the way it is
@@ -2185,7 +2181,10 @@ def _render_static_live_panel(project_root: Path) -> str:
         updated = "—"
         platform = "—"
     else:
-        body = escape(str(health.get("explanation") or "—"))
+        # A failure's message is said here too: its headline is short.
+        said = [health.get("message") if health.get("headline") else "",
+                health.get("explanation")]
+        body = escape(" ".join(str(part) for part in said if part) or "\u2014")
         stage = escape(str(status.get("stage") or "—"))
         updated = escape(str(status.get("last_update_timestamp") or "—"))
         platform = escape(str(status.get("platform") or "—"))

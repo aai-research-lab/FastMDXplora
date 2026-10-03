@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A failure is headed briefly, and a finished study is worded as one
+
+**The Overview's health card no longer sets a failure's message as its
+headline.** A message can run to a paragraph with a path in it, and "Simulation
+cannot start because setup outputs are missing in /Users/.../setup. Run the
+setup phase first, or choose an analysis-only workflow." was set in the card's
+largest type. A failure is now headed "Stopped with an error", with its message
+beneath at the size of prose; the study's standalone dashboard says the
+message too. That dashboard's note on a run with no live record said telemetry
+was off by default and named a flag that does not exist; it now says what the
+live page says, that it is on by default and `live_telemetry: false` turns it
+off. The Overview's subtitle and its charts' title said a finished study was
+running: they now read "What the run did, and how it went." and "Charts".
+
 ### A test of the Viewer waits for what decides it
 
 **The test that a finished study has no live controls waits for the study's

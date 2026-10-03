@@ -513,8 +513,11 @@ def analyze_health(
         numeric = any(word in said.lower() for word in (
             "nan", "inf", "unstable", "blew up", "exploded", "particle"
             " coordinate", "energy is"))
+        # A headline a card can set large, beside the message, which can run
+        # to a paragraph with a path in it and was set as the headline.
         return {
             "state": "failed",
+            "headline": "Stopped with an error",
             "message": said,
             "explanation": NUMERIC_EXPLANATION if numeric else "",
         }

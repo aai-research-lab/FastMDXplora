@@ -317,10 +317,12 @@ class TestDashboard:
         assert "Run Progress" in text
         assert "Live Simulation" in text
         # The message used to advise starting the dashboard during a
-        # simulation, which is what somebody reading it has just done.
-        # It names the setting that was off instead.
-        assert "did not record live telemetry" in text
-        assert "live_telemetry" in text
+        # simulation, which is what somebody reading it has just done, and
+        # then said telemetry was off by default. It says what the live page
+        # says: on by default, and the setting that turned it off.
+        assert "Live telemetry is on by default" in text
+        assert "<code>live_telemetry: false</code>" in text
+        assert "off by default" not in text and "--live-telemetry" not in text
         assert "Top Metrics" in text
         assert "Recent Outputs" in text
         assert "Quick Actions" in text

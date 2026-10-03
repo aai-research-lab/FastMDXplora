@@ -714,14 +714,26 @@
     const card = byId("hero-card");
     if (card) card.setAttribute("data-state", String(status.status || "running").toLowerCase());
     setText("hero-status-text", humanise(status.status || status.stage || "waiting"));
-    setText("hero-stage", status.stage || "—");
+    setText("hero-stage", status.stage || "\u2014");
+    // Said of a run that is writing, and of one that has ended as it is.
+    const writing = ["running", "starting"].includes(String(status.status || "").toLowerCase())
+      || !!state.appState?.process_running;
+    setText("overview-subtitle", writing
+      ? "What the run is doing, and whether it is doing it well."
+      : "What the run did, and how it went.");
+    setText("overview-charts-title", writing ? "Live charts" : "Charts");
   }
 
   function renderHealth(health) {
     const stateName = String(health.state || "unknown").toLowerCase();
     byId("hero-health")?.setAttribute("data-state", stateName);
-    setText("health-headline", health.message || humanise(stateName));
-    setText("health-explanation", health.explanation || "");
+    // Large, the headline; the message beneath it at the size of prose. A
+    // failure's message was the headline, and a paragraph with a path in it
+    // was set in the card's largest type.
+    setText("health-headline", health.headline || health.message || humanise(stateName));
+    setText("health-explanation", health.headline
+      ? [health.message, health.explanation].filter(Boolean).join(" ")
+      : (health.explanation || ""));
     setText("health-pill", stateName);
     byId("health-pill")?.setAttribute("data-state", stateName);
 
