@@ -126,7 +126,7 @@
     "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame",
     "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
     "showPicks", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
-    "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture"]);
+    "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "setCells"]);
 
   function oneAtATime(engine) {
     let last = Promise.resolve();
@@ -158,7 +158,8 @@
       const SE = this.lib.structure.StructureElement;
       const emit = (kind) => ({current}) => {
         const loci = current && current.loci;
-        const atom = SE.Loci.is(loci) && !SE.Loci.isEmpty(loci)
+        // The periodic box's corners are not atoms of the structure.
+        const atom = SE.Loci.is(loci) && !SE.Loci.isEmpty(loci) && !this.isTheBox(loci.structure)
           ? this.record(SE.Loci.getFirstLocation(loci)) : null;
         this.listeners[kind].forEach((listener) => listener(atom));
       };
@@ -345,6 +346,8 @@
 
     async clear() {
       this.interactions = new Map();
+      this.boxDataRef = null;
+      this.boxRef = null;
       this.coordinatesRef = null;
       this.framesRef = null;
       await this.plugin.clear();
@@ -354,7 +357,8 @@
       const structures = this.plugin.managers.structure.hierarchy.current.structures;
       const main = structures.find((s) => s.cell.transform.ref === this.mainRef);
       if (main) return main.cell;
-      const others = structures.filter((s) => s.cell.transform.ref !== this.environmentRef);
+      const others = structures.filter((s) => s.cell.transform.ref !== this.environmentRef
+        && s.cell.transform.ref !== this.boxRef);
       return others.length ? others[others.length - 1].cell : null;
     }
 
@@ -633,18 +637,110 @@
       await update.commit();
     }
 
-    /** The periodic box, from the topology's CRYST1, shown or not. */
-    async showBox(on) {
-      const models = this.plugin.managers.structure.hierarchy.current.models;
-      for (const model of models) {
-        const unitcell = model.unitcell;
-        if (on && !unitcell) {
-          await this.plugin.builders.structure.tryCreateUnitcell(model.cell.transform.ref,
-            undefined, {isHidden: false});
-        } else if (!on && unitcell) {
-          await this.plugin.build().delete(unitcell.cell.transform.ref).commit();
+    /** The periodic boxes the structure is shown in: one cell, [a, b, c]
+     * in angstroms and [alpha, beta, gamma] in degrees, for each frame
+     * (or one for a structure), and where the cell's centre is: "diagonal",
+     * half each box vector's own component, where the frames made whole
+     * put the protein's centre; "atoms", the middle of the atoms shown,
+     * where setup put the water about the protein. */
+    setCells(cells, centred) {
+      this.cells = Array.isArray(cells) && cells.length ? cells : null;
+      this.cellsCentred = centred === "diagonal" ? "diagonal" : "atoms";
+    }
+
+    /** The box of the frame shown, as OpenMM lays its vectors out. */
+    boxVectors() {
+      if (!this.cells) return null;
+      const cell = this.cells[Math.min(this.cells.length - 1, Math.max(0, this.frame()))];
+      return cell ? vectorsOf(cell) : null;
+    }
+
+    /** Where the box is centred: the frames' own centre, or, where the
+     * water is shown, the middle of that water as it is placed. */
+    boxCentre(vectors) {
+      const water = this.environmentRef && this.environmentShow && this.environmentShow.water
+        ? this.environmentMiddle : null;
+      if (water) {
+        const shift = this.environmentShift || [0, 0, 0];
+        return water.map((v, i) => v + shift[i]);
+      }
+      if (this.cellsCentred === "diagonal") return [0, 1, 2].map((i) => vectors[i][i] / 2);
+      return this.middleOf(this.structure()) || [0, 0, 0];
+    }
+
+    /** The middle of a structure's atoms: halfway between their least and
+     * greatest x, y and z. */
+    middleOf(structure) {
+      if (!structure) return null;
+      const low = [Infinity, Infinity, Infinity];
+      const high = [-Infinity, -Infinity, -Infinity];
+      const point = [0, 0, 0];
+      for (const unit of structure.units) {
+        for (let i = 0; i < unit.elements.length; i += 1) {
+          unit.conformation.position(unit.elements[i], point);
+          for (let d = 0; d < 3; d += 1) {
+            if (point[d] < low[d]) low[d] = point[d];
+            if (point[d] > high[d]) high[d] = point[d];
+          }
         }
       }
+      return Number.isFinite(low[0]) ? low.map((v, d) => (v + high[d]) / 2) : null;
+    }
+
+    /** The periodic box of the frame shown, or none. It is rendered as the
+     * brick the water fills (see boxPdb). Mol*'s own was the
+     * parallelepiped of the box vectors, which a dodecahedron's water did
+     * not fill, and one for every model held: two boxes, apart once the
+     * box changed in NPT or the solvent was moved to the frames. */
+    async showBox(on) {
+      await this.removeBox();
+      this.boxShown = !!on;
+      const vectors = on ? this.boxVectors() : null;
+      if (!vectors) return false;
+      const builders = this.plugin.builders;
+      const text = boxPdb(vectors, this.boxCentre(vectors));
+      const data = await builders.data.rawData({data: text, label: "periodic box"});
+      const model = await builders.structure.createModel(
+        await builders.structure.parseTrajectory(data, "pdb"));
+      const structure = await builders.structure.createStructure(model);
+      this.boxDataRef = data.ref;
+      this.boxRef = structure.ref;
+      const all = await builders.structure.tryCreateComponentStatic(structure, "all");
+      if (all) {
+        await builders.structure.representation.addRepresentation(all, {type: "ball-and-stick",
+          typeParams: {sizeFactor: 0.12, sizeAspectRatio: 1}, color: "uniform",
+          colorParams: {value: BOX_COLOUR}});
+      }
+      // Said once it is rendered.
+      this.boxText = text;
+      return true;
+    }
+
+    isTheBox(structure) {
+      const cell = this.boxRef ? this.plugin.state.data.cells.get(this.boxRef) : null;
+      return !!(cell && cell.obj && structure
+        && (structure === cell.obj.data || structure.root === cell.obj.data));
+    }
+
+    /** The box moved to the frame shown, where it changed. */
+    async followTheBox() {
+      if (!this.boxShown || !this.boxDataRef) return;
+      const vectors = this.boxVectors();
+      if (!vectors) return;
+      const text = boxPdb(vectors, this.boxCentre(vectors));
+      if (text === this.boxText || !this.plugin.state.data.cells.has(this.boxDataRef)) return;
+      this.boxText = text;
+      await this.plugin.build().to(this.boxDataRef)
+        .update((old) => ({...old, data: text})).commit();
+    }
+
+    async removeBox() {
+      const cells = this.plugin.state.data.cells;
+      const ref = this.boxDataRef;
+      this.boxDataRef = null;
+      this.boxRef = null;
+      this.boxText = null;
+      if (ref && cells.has(ref)) await this.plugin.build().delete(ref).commit();
     }
 
     cameraSnapshot() {
@@ -727,6 +823,7 @@
       await this.plugin.build().to(cell.transform.ref)
         .update((old) => ({...old, modelIndex: frame})).commit();
       await this.followThePocket();
+      await this.followTheBox();
     }
 
     async setRepresentation(name) {
@@ -1195,6 +1292,8 @@
       const model = await builders.structure.createModel(trajectory);
       const structure = await builders.structure.createStructure(model);
       this.environmentRef = structure.ref;
+      this.environmentMiddle = this.middleOf(structure.cell && structure.cell.obj
+        ? structure.cell.obj.data : null);
       this.environmentShow = Object.assign({}, show);
       this.environmentShift = translation || [0, 0, 0];
       await this.renderEnvironment();
@@ -1229,6 +1328,7 @@
             typeParams: {sizeFactor: 0.7}, color: "element-symbol"});
         }
       }
+      await this.followTheBox();
     }
 
     async moveEnvironment(translation) {
@@ -1245,6 +1345,8 @@
         parent = tree.transforms.get(parent).parent) root = parent;
       await this.plugin.build().delete(root).commit();
       this.environmentRef = null;
+      this.environmentMiddle = null;
+      await this.followTheBox();
     }
 
     /** Atoms of the environment, for the tests and the box. */
@@ -1363,5 +1465,50 @@
     return new URL(url, window.location.href).href;
   }
 
-  window.FastMDXViewerEngine = {create, COLOUR_THEMES, REPRESENTATIONS};
+  /* ---------------------------------------------------------------- */
+  /* The periodic cell                                                 */
+  /* ---------------------------------------------------------------- */
+
+  const BOX_COLOUR = 0xe69f00;
+
+  /** A box's vectors as rows, from its edges [a, b, c] and angles [alpha,
+   * beta, gamma] in degrees: a along x, b in the xy plane, as OpenMM lays
+   * them out. */
+  function vectorsOf(cell) {
+    const [a, b, c, alpha, beta, gamma] = cell.map(Number);
+    const rad = Math.PI / 180;
+    const [ca, cb, cg, sg] = [Math.cos(alpha * rad), Math.cos(beta * rad),
+      Math.cos(gamma * rad), Math.sin(gamma * rad)];
+    const cy = (ca - cb * cg) / sg;
+    const tidy = (v) => (Math.abs(v) < 1e-9 ? 0 : v);
+    return [[a, 0, 0], [tidy(b * cg), tidy(b * sg), 0],
+      [tidy(c * cb), tidy(c * cy), tidy(c * Math.sqrt(Math.max(0, 1 - cb * cb - cy * cy)))]];
+  }
+
+  /** The box as the water fills it, about a centre, as PDB text Mol* reads:
+   * its eight corners as atoms and its twelve edges as their bonds. Setup
+   * (OpenMM's Modeller) and the frames made whole both put each water and
+   * ion in the brick of the box vectors' own components, a by b by c along
+   * x, y and z, whatever the box's shape: for a cube that is the cube, for a
+   * rhombic dodecahedron or a truncated octahedron a brick of the same
+   * volume, which fills space with the same periodic images. */
+  function boxPdb(vectors, centre) {
+    const half = [0, 1, 2].map((i) => vectors[i][i] / 2);
+    const f = (v) => v.toFixed(3).padStart(8);
+    const corners = [];
+    for (let k = 0; k < 8; k += 1) {
+      corners.push([0, 1, 2].map((d) => centre[d] + ((k >> d) & 1 ? half[d] : -half[d])));
+    }
+    const lines = corners.map((v, i) => `HETATM${String(i + 1).padStart(5)}  X   BOX X   1    `
+      + `${f(v[0])}${f(v[1])}${f(v[2])}  1.00  0.00           C`);
+    for (let i = 0; i < 8; i += 1) {
+      for (const d of [0, 1, 2]) {
+        const j = i | (1 << d);
+        if (j !== i) lines.push(`CONECT${String(i + 1).padStart(5)}${String(j + 1).padStart(5)}`);
+      }
+    }
+    return lines.join("\n") + "\nEND\n";
+  }
+
+  window.FastMDXViewerEngine = {create, COLOUR_THEMES, REPRESENTATIONS, vectorsOf, boxPdb};
 }());

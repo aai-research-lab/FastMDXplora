@@ -208,10 +208,15 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
         source_topology = str(topology_path.resolve().relative_to(simulation.parent.resolve()))
     except ValueError:
         source_topology = str(topology_path.resolve())
+    # Each frame's box, in angstroms and degrees as the DCD holds it, for the
+    # Viewer to show the box of the frame shown: an NPT run's changes.
+    cells = ([[round(float(v), 4) for v in (*length, *angle)]
+              for length, angle in zip(lengths, angles)] if boxed else None)
     return {"available": True, "reason": None, "n_atoms": int(len(shown)),
             "n_frames_total": int(total), "n_frames_browser": len(indices),
             "frame_indices": indices, "frame_times_ns": _times(indices, total, total_ns),
-            "made_whole": bool(boxed), "source_topology": source_topology, "shown": kept}
+            "made_whole": bool(boxed), "source_topology": source_topology, "shown": kept,
+            "cells": cells}
 
 
 def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) -> dict[str, Any]:

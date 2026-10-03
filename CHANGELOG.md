@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### One periodic box, where the water is
+
+**The Viewer's periodic box is one box, the box of the frame shown, and the
+water fills it.** Mol\*'s unit cell was made for every model the Viewer
+held, and played frames are two (their topology and the trajectory built on
+it): two boxes, apart once an NPT run changed the box. Each was the
+parallelepiped of the box vectors from the origin, while setup (OpenMM's
+Modeller) puts each water and ion in the brick of the vectors' own
+components, a by b by c along x, y and z, so a rhombic dodecahedron's water
+filled only part of it and spilled out of the rest. The box is now that
+brick, the same volume and the same periodic images as the dodecahedron or
+octahedron, placed about the water shown, or about the protein where the
+frames were centred; it follows each frame's box as the frames play, is not
+shown for frames turned to fit the first, and a click on it names no atom.
+
 ### The molecule stays in view
 
 **The Viewer's settings are in a panel beside the molecule, scrolled on

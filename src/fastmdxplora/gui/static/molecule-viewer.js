@@ -355,6 +355,16 @@
     }
   }
 
+  /** A PDB's box, [a, b, c, alpha, beta, gamma], from its CRYST1. */
+  function cellOf(text) {
+    const line = /^CRYST1(.{9})(.{9})(.{9})(.{7})(.{7})(.{7})/m.exec(text || "");
+    if (!line) return null;
+    const cell = line.slice(1).map(Number);
+    // A CRYST1 of ones is a structure with no box (written so by tools).
+    if (cell.some((v) => !Number.isFinite(v)) || cell.slice(0, 3).every((v) => v <= 1)) return null;
+    return [cell];
+  }
+
   function needsFullTopology() {
     // The frames hold solute coordinates only. Water and ions require the
     // full topology.
@@ -381,6 +391,8 @@
     // frame moves these atoms rather than loading them again.
     const coordinates = pdbText === STATE.liveTopology ? STATE.liveCoordinates : null;
     applyLook(engine, mini);
+    // The structure's own box, from its CRYST1, about its atoms.
+    engine.setCells(cellOf(pdbText), "atoms");
     try {
       const loaded = await engine.loadStructure({text: pdbText,
         coordinates: coordinates ? coordinates.bytes : null,
@@ -637,7 +649,10 @@
     return {
       mini,
       show: Object.assign({}, STATE.visibility, mini ? {water: false, ions: false, pocket: false,
-        box: false, hydrogens: false} : {}),
+        box: false, hydrogens: false} : {},
+      // Frames turned to fit the first are each in a box turned with them:
+      // no one box is theirs.
+      STATE.superposed !== "none" ? {box: false} : {}),
       ligandNames: ligandResnames(),
       pocketCutoff: STATE.pocketCutoff,
       pocketSurface: !mini && STATE.pocketSurface,
@@ -1499,6 +1514,8 @@
         STATE.environment = false;
         applyLook(engine, false);
         const [topology, coordinates] = framesUrls(available);
+        // Each frame's box, centred as the frames were made whole.
+        engine.setCells(available.cells, "diagonal");
         const loaded = await engine.loadFrames(topology, coordinates);
         if (!isViewerGenerationCurrent(generation)) return false;
         if (!loaded.frames) throw new Error("the viewer made no frames of the trajectory");
@@ -1587,13 +1604,15 @@
       return;
     }
     STATE.superposedUrl = on === "none" ? null : url;
+    if (STATE.visibility.box) await STATE.engine.showBox(on === "none");
     if (STATE.miniEngine && STATE.miniModel?.of === "frames") {
       await STATE.miniEngine.setFramesCoordinates(url);
     }
     if (select) select.value = on;
     if (label) label.setAttribute("data-said", said);
     announce(on === "none" ? "The frames are shown as they were written."
-      : `Each frame is ${said}, fitted to the first frame.`);
+      : `Each frame is ${said}, fitted to the first frame.`
+        + (STATE.visibility.box ? " The periodic box is not shown in frames turned to fit." : ""));
   }
 
   /** The preview plays the same frames, where it is shown. */
