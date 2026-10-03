@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A cited figure is not scrolled away by the conversation
+
+**A figure opened from an answer stays in view.** The Agent's page scrolls
+its conversation to the end once after the next frame and twice more, at 120
+and 400 ms, once the replies have laid out. A cited figure clicked before
+those passes ran was opened on the Analysis page, and the passes then took
+that page to its foot, the figure above the view (CI, ubuntu-latest 3.11, on
+`b2ebd2b`). The passes now act only while the conversation is the page shown.
+A test holds the browser's clock so the click lands before them every time.
+
 ### The Agent answers its questions about a study from the records
 
 **With no AI model set, the start page's questions about the study open are

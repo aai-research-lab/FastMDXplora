@@ -557,6 +557,11 @@
     var thread = el("agent-thread");
     var column = thread.closest(".main") || document.scrollingElement;
     function toEnd() {
+      /* Only while the conversation is the page shown. The later passes
+       * outlived a move to another page: a cited figure opened from an
+       * answer just restored was scrolled to, and then the Analysis page
+       * was taken to its foot, the figure above the view (CI, 10-02). */
+      if (thread.offsetParent === null) return;
       /* Both: the thread when it is the scroller, the column when the
        * thread has grown to fit and the column is. Whichever overflows,
        * setting scrollTop past its end is harmless on the other. */
