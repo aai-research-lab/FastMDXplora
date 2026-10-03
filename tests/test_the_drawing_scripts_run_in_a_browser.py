@@ -152,6 +152,10 @@ def _atoms(page, **selection) -> int:
 
 
 def test_the_structure_is_drawn_without_its_solvent(page) -> None:
+    # Read once the atoms are there: on CI's coverage job the model was set
+    # while the engine held no atoms, a structure being rendered again.
+    page.wait_for_function(f"(n) => {ENGINE}.find({{}}).length === n", arg=SOLUTE,
+                           timeout=60000)
     assert _atoms(page) == SOLUTE
     assert _atoms(page, resn="LIG") == 4
     assert page.evaluate(f"() => {VIEWER}.ligandResname") == "LIG"
