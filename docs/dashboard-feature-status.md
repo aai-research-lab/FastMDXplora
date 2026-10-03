@@ -162,3 +162,15 @@ Three additional browser checks passed for Graphite, Ink and Paper across 1440,
 768 and 390 px on Overview, Analysis, Agent, Run and Settings. Bookmark panels
 fit each width and close with keyboard activation. This is shell/layout evidence,
 not a completed visual or accessibility review of every expanded feature state.
+
+Installed-wheel receipt for feature revision `f42f7e7`: isolated build produced
+`fastmdxplora-2.5.9.dev165+gf42f7e745-py3-none-any.whl`, SHA-256
+`b205e38ba215dea68e7561a3dc7d1a8b39c1f6a279c61fd90f24e5cbc9c773c0`.
+The development version comes from Git history; this is not a published release
+or an upstream-main integration. Installed without dependencies into a separate
+temporary target and imported with isolated Python outside the checkout. The
+installed Markdown knowledge, exact runtime error registry, HTML, draft-review,
+research and CSS assets passed resource checks. A test server using that installed
+package served the dashboard and all three checked static assets successfully.
+Existing venv dependencies supplied the runtime; this is not a clean-machine
+dependency installation or final whole-framework packaging acceptance.
