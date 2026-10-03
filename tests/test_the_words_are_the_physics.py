@@ -41,7 +41,7 @@ def test_no_explanation_says_it():
 
 @pytest.mark.parametrize("page", ["gui/templates/dashboard.html", "gui/static/stopping.js",
                                   "gui/static/series-chart.js", "gui/static/run-builder.js",
-                                  "gui/static/dashboard.js"])
+                                  "gui/static/dashboard.js", "gui/static/frame-series.js"])
 def test_no_page_shows_it(page):
     # What is shown is written as a string; names in the code (a function
     # that settles two inputs into one, `Promise.allSettled`) are not shown.

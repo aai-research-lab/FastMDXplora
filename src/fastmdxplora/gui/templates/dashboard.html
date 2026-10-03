@@ -736,6 +736,17 @@
                   <label class="chip-toggle micro" title="Start again from the first frame at the end"><input type="checkbox" id="traj-loop">Loop</label>
                   <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it" data-while-running hidden><input type="checkbox" id="traj-follow" checked>Follow</label>
                 </div>
+                <!-- One of the study's series over time, the frame shown
+                     marked on it; a click or a drag shows that frame
+                     (frame-series.js). -->
+                <div class="control-row frame-series" id="frame-series" hidden>
+                  <label class="frame-series-pick micro">Series
+                    <select id="frame-series-pick" aria-label="Series plotted under the frames"></select>
+                  </label>
+                  <span class="frame-series-value mono" id="frame-series-value"></span>
+                  <p class="frame-series-note muted small" id="frame-series-note" hidden></p>
+                  <div class="frame-series-chart" id="frame-series-chart"></div>
+                </div>
                 <!-- The view: one row of icons, grouped, each named in its
                      tooltip; then how the molecule is drawn, as two lists
                      and the parts shown. It was thirty text buttons in five
@@ -1258,5 +1269,6 @@
   <script src="/static/fixes.js"></script>
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
+  <script src="/static/frame-series.js"></script>
 </body>
 </html>

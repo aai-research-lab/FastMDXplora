@@ -1050,6 +1050,18 @@ button {
    screen reader; the transport under the canvas, its scrubber taking the
    width. */
 .control-row.transport, .control-row.view-tools, .control-row.display-tools { align-items: center; }
+/* The series under the transport: its chart takes the width, the frame
+   shown marked on it, its value beside it. */
+.control-row.frame-series { align-items: center; gap: 8px; }
+.frame-series-pick {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--text-2xs); color: var(--text-muted);
+}
+.frame-series-pick select { max-width: 12rem; }
+.frame-series-chart { flex: 1 1 100%; min-width: 200px; height: 76px; }
+.frame-series-svg { display: block; cursor: col-resize; touch-action: none; }
+.frame-series-value { font-size: var(--text-2xs); color: var(--text-secondary); }
+.frame-series-note { flex-basis: 100%; margin: 0; }
 .icon-group {
     display: inline-flex; align-items: center; gap: 2px; padding: 2px;
     border: 1px solid var(--border-subtle); border-radius: 8px;

@@ -1598,6 +1598,8 @@
     if (!isViewerGenerationCurrent(generation) || !STATE.framesRendered) return;
     // The atoms measured have moved with the frame, and so have their numbers.
     if (STATE.picks.length) sayMeasurement();
+    // And the series under the transport follows it (frame-series.js).
+    window.dispatchEvent(new CustomEvent("dashboard:frame-shown", {detail: {index}}));
   }
 
   function updatePlaybackButtons() {

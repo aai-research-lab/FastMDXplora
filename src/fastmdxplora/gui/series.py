@@ -43,6 +43,30 @@ MOST_POINTS = 4000
 _NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
+def series_over_time(root: Path) -> dict[str, Any]:
+    """The analyses of a study whose numbers run over its frames, each with
+    its label and unit, for the Viewer to plot one under its transport: the
+    ones listed in :data:`SERIES` first, in that order, then the rest."""
+    folder = Path(root) / "analysis"
+    found: list[dict[str, Any]] = []
+    try:
+        names = sorted(p.name for p in folder.iterdir() if p.is_dir() and _NAME.match(p.name))
+    except OSError:
+        names = []
+    order = list(SERIES)
+    names.sort(key=lambda name: (order.index(name) if name in order else len(order), name))
+    for name in names:
+        if not (folder / name / f"{name}.dat").is_file():
+            continue
+        findings = _json(folder / name / "options.json").get("findings")
+        mean = findings.get("mean") if isinstance(findings, dict) else None
+        mean = mean if isinstance(mean, dict) else None
+        label, kind = SERIES.get(name, (name, "time" if mean else ""))
+        if kind == "time":
+            found.append({"analysis": name, "label": label, "unit": unit_of(name, mean)})
+    return {"ok": True, "series": found}
+
+
 def series_payload(root: Path, analysis: str) -> dict[str, Any]:
     """The series of one analysis, or why there is none."""
     if not _NAME.match(analysis or ""):

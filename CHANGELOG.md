@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A series under the frames played
+
+**One of the study's series over time is plotted under the Viewer's
+transport, and follows the frame.** The slider gave a frame number and a
+time, and where the RMSD rose had to be found on the Analysis page and
+carried back by hand. Now the RMSD, the radius of gyration or any other
+series the study wrote over its frames (chosen from a list, the choice
+kept) is plotted under the frames, with the frames its analysis left out as
+equilibration and the mean of the rest. A line marks the frame shown and
+moves as the frames play, its value is given beside it (or that the
+analysis did not read that frame), and a click or a drag along the series
+shows that frame. Only the trajectory's own frames are followed: a series
+computed from another trajectory says so. `GET /api/series` with no
+analysis named lists the study's series over time.
+
 ### The camera stays where a structure is fitted
 
 **A structure loaded into the Viewer is fitted once, not fitted and then

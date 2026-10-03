@@ -671,11 +671,15 @@ def make_handler(
                 self._send_json(_results_payload(root))
                 return
             if path == "/api/series":
-                from fastmdxplora.gui.series import series_payload
+                from fastmdxplora.gui.series import series_over_time, series_payload
 
                 query = parse_qs(parsed.query)
                 name = (query.get("analysis") or [""])[0]
                 run = (query.get("run") or [""])[0]
+                if not name and not run:
+                    # Which series there are, for the Viewer's.
+                    self._send_json(series_over_time(root))
+                    return
                 if run:
                     # One run of a study of several, named by its id: only
                     # a run the study records, never a path.
