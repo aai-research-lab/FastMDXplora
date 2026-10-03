@@ -696,3 +696,28 @@ or scientific inference. Ruff with the existing E501 exception and diff whitespa
 checks passed; two existing import-order issues were normalized. M8 still needs
 its remaining loading/error/stale and visual review states, and M7's final
 integrated acceptance remains open.
+
+### Agent loading/failure layouts and cancellation regression
+
+The Agent's pending-response and provider-failure states passed the browser
+matrix in Graphite, Ink and Paper at 1440/1280/1024/768/390 px and 100%/200%
+text size (3 cases passed in 13.92 s, 60 state/layout combinations). A controlled
+completion was held while the actual dashboard request remained pending, then
+released with a typed provider connection failure and a long readable message.
+The button exposed Stop while pending and Send after failure. Visible controls
+and transcript content stayed within the viewport, no run action appeared, and
+the inspected setup/simulation/analysis fixture files remained byte-identical.
+This uses an isolated synthetic completion, not an expired live subscription.
+The first test run found an ambiguous test locator matching both the HTML root
+and the Agent page; the locator was scoped to the page and rerun successfully.
+No product-code correction was needed.
+
+Three existing boundary regressions also passed in 9.04 s: the server refuses
+a reply after its study changes without returning an answer; the real browser
+shows incremental text and stopping restores Send without completing the old
+reply; and a browser disconnect cancels the buffered client's completion.
+The cancellation cases use a controlled local HTTP provider. These receipts
+verify behavior and layout within their explicit scope, not real-account expiry,
+account switching or other subscription providers. Ruff with the existing E501
+exception and diff whitespace checks passed. Remaining integrated acceptance
+and native visual inspection gates are still tracked in M7/M8.

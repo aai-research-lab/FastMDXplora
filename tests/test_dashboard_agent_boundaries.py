@@ -117,6 +117,68 @@ def test_reply_from_a_changed_study_is_refused(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_agent_loading_and_provider_failure_layouts(tmp_path, monkeypatch, model, theme):
+    import threading
+
+    playwright = pytest.importorskip("playwright.sync_api")
+    import fastmdxplora.agent as agent
+    from fastmdxplora.agent.openai_plan import ConnectionError
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    entered, released = threading.Event(), threading.Event()
+    failure = "Controlled provider connection failed. " + "Retry through your selected connection. " * 12
+
+    def delayed_failure(prompt):
+        entered.set()
+        assert released.wait(60), "The layout check did not release its controlled provider"
+        raise ConnectionError(failure, code="environment.provider.connection_failed")
+
+    monkeypatch.setattr(agent, "completion_for", lambda: delayed_failure)
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "isolated-settings"))
+    root = _write_study(tmp_path / "study")
+    before = {path.relative_to(root): path.read_bytes() for path in root.rglob("*")
+              if path.is_file() and path.parts[-2] in {"setup", "simulation", "analysis"}}
+    server, url = start_test_server(root)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#agent")
+            page.locator("#agent-request").fill("Explain the available evidence without running a simulation.")
+            page.locator("#agent-propose").click()
+            assert entered.wait(10)
+            for state in ("loading", "failure"):
+                if state == "failure":
+                    released.set()
+                    page.get_by_text(failure, exact=False).first.wait_for()
+                    assert page.locator("#agent-propose").get_attribute("aria-label") == "Send"
+                else:
+                    assert page.locator("#agent-propose").get_attribute("aria-label") == "Stop"
+                for zoom in (100, 200):
+                    page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                    for width in (1440, 1280, 1024, 768, 390):
+                        page.set_viewport_size({"width": width, "height": 1000})
+                        page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                        outside = page.locator('.page[data-page="agent"]').evaluate("""el =>
+                            Array.from(el.querySelectorAll('button,input,select,textarea'))
+                            .filter(node => node.checkVisibility())
+                            .filter(node => {const r=node.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
+                            .map(node => node.id)""")
+                        assert not outside, (theme, state, zoom, width, outside)
+                        assert page.locator("#agent-thread").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+                        assert not page.locator('[data-role="run"]').is_visible()
+            browser.close()
+        for path, content in before.items():
+            assert (root / path).read_bytes() == content
+    finally:
+        released.set()
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
 def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monkeypatch, model, theme):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server
