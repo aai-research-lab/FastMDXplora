@@ -7,6 +7,24 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Mol\* is vendored, behind the viewer's own engine
+
+**The GUI ships Mol\* 5.12.0's viewer build and `static/viewer-engine.js`,
+the one place the page is to meet it.** The engine renders the trajectory from
+the binary frames as a bare canvas with no Mol\* panels, changes frames,
+representations and colours, colours the protein by a study's per-residue
+result, names atoms by the index MDTraj gives them in the same topology (VMD's
+`resid`, in Mol\*'s VMD syntax an author number, selects other atoms than
+MDTraj's `resid`, an index, so selections are to be evaluated by MDTraj and
+handed over as indices), and saves a picture of the size asked for. Its
+cartoon is the study's DSSP in every frame: Mol\*'s own DSSP is computed chain
+by chain and pairs no strands between chains, so 1STP with each strand its
+own chain, as in a fibril, was rendered with no strand at all where MDTraj finds
+53. It renders on software WebGL, which Mol\* otherwise refuses. Nothing is
+fetched from outside the GUI. The page itself is still rendered with 3Dmol; it
+moves to the engine next. The licences of Mol\* and of what its build bundles ship
+beside it, and the conda recipe names them.
+
 ### The trajectory can be sent to the browser as binary frames
 
 **`GET /api/frames-info`, `/structure/frames-topology.pdb` and
