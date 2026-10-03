@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The package says what it ships
+
+**The package's metadata declares the licences of everything it ships:
+`MIT AND Apache-2.0 AND ISC AND 0BSD`, with the three licence files.** It
+said `MIT`, while the wheel carries the viewer build of Mol\* (MIT), which
+bundles React, rxjs and others under Apache-2.0, ISC and 0BSD; the conda
+recipe already said so. FastMDXplora's own code is MIT, as before. Building
+the package now needs setuptools 77 or later, the first to read a licence
+expression; pip fetches it for the build by itself.
+
 ### Selections, named and shown
 
 **The Viewer selects, names, colours, hides, represents and labels atoms,

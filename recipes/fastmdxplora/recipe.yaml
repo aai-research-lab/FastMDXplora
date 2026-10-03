@@ -41,7 +41,7 @@ requirements:
   host:
     - python ${{ python_min }}.*
     - pip
-    - setuptools >=64
+    - setuptools >=77
     - setuptools-scm >=8
   run:
     # Upper bound matches requires-python in pyproject.toml; the chemistry

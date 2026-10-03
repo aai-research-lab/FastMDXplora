@@ -182,7 +182,11 @@ follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+FastMDXplora is MIT licensed. See [LICENSE](LICENSE). The graphical
+interface ships the viewer build of [Mol\*](https://molstar.org) (MIT), which
+bundles code under the MIT, Apache-2.0, ISC and 0BSD licences; their texts are
+in [`src/fastmdxplora/gui/static/molstar/`](src/fastmdxplora/gui/static/molstar/),
+and the package's metadata declares all four.
 
 ---
 

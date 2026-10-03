@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools-scm>=8"]
+# 77 is the first setuptools to read `license` as an SPDX expression and
+# `license-files` (PEP 639).
+requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,7 +15,16 @@ readme = "README.md"
 # a 3.9 install could not simulate, and 3.9 reached end of life in October
 # 2025. Refusing at install is clearer than installing what cannot run.
 requires-python = ">=3.10, <3.14"
-license = { text = "MIT" }
+# FastMDXplora's own code is MIT. The package also ships the viewer build of
+# Mol* (MIT), which bundles React, rxjs and others whose licences are MIT,
+# Apache-2.0, ISC and 0BSD, so the distribution is declared as all four, as
+# the conda recipe declares it, and their texts ship with it.
+license = "MIT AND Apache-2.0 AND ISC AND 0BSD"
+license-files = [
+    "LICENSE",
+    "src/fastmdxplora/gui/static/molstar/LICENSE",
+    "src/fastmdxplora/gui/static/molstar/THIRD-PARTY-NOTICES.txt",
+]
 authors = [
     { name = "Adekunle Aina" },
     { name = "Derrick Kwan" },
@@ -36,7 +47,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Education",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
