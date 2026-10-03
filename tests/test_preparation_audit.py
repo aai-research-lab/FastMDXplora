@@ -2,6 +2,7 @@ import hashlib
 import json
 
 import numpy as np
+import pytest
 
 from fastmdxplora.gui.preparation_audit import audit_payload, comparison_payload, selection_evidence
 
@@ -155,7 +156,8 @@ def test_agent_context_and_bookmark_identity_use_the_actual_audit_stage(tmp_path
     assert not compatible(tmp_path, row)[0]
 
 
-def test_browser_restores_audit_selection_without_modifying_structures(tmp_path):
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_browser_restores_audit_selection_without_modifying_structures(tmp_path, theme):
     import pytest
 
     from fastmdxplora.gui.server import start_test_server
@@ -169,6 +171,7 @@ def test_browser_restores_audit_selection_without_modifying_structures(tmp_path)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(url + "/#overview")
@@ -198,6 +201,30 @@ def test_browser_restores_audit_selection_without_modifying_structures(tmp_path)
             }""")
             view = page.evaluate("FastMDXResearch.capture()")
             assert view["audit_source"] == "input" and view["audit_selection"]["atom"] == "CA"
+            page.locator("#preparation-before").select_option("input")
+            page.locator("#preparation-after").select_option("prepared")
+            page.locator("#preparation-overlay").check()
+            page.wait_for_function("document.querySelector('#preparation-alignment').textContent.includes('4 exact heavy-atom matches')")
+            saved = page.evaluate("FastMDXPreparationAudit.capture()")
+            assert saved["overlay"] is True and saved["linked"] is True
+            page.locator("#preparation-overlay").uncheck()
+            page.locator("#preparation-linked").uncheck()
+            page.evaluate("async view => await FastMDXResearch.restore(view)",
+                          {"page": "overview", "audit_event": "view-input", "audit_source": "input", "audit_display": saved})
+            restored = page.evaluate("FastMDXPreparationAudit.capture()")
+            assert restored["before"] == saved["before"] and restored["after"] == saved["after"]
+            assert restored["overlay"] is True and restored["linked"] is True
+            np.testing.assert_allclose(restored["before_camera"], saved["before_camera"], atol=1e-6)
+            np.testing.assert_allclose(restored["after_camera"], saved["after_camera"], atol=1e-6)
+            page.locator("#research-agent-close").click()
+            page.set_viewport_size({"width": 390, "height": 900})
+            page.add_style_tag(content="html {font-size: 200% !important;}")
+            outside = page.locator("#preparation-audit-panel").evaluate("""panel =>
+                Array.from(panel.querySelectorAll('button,input,select'))
+                .filter(el => el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}) && !el.closest('table'))
+                .filter(el => {const r=el.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
+                .map(el => el.id || el.textContent.slice(0,50))""")
+            assert not outside, outside
             assert not errors
             browser.close()
     finally:

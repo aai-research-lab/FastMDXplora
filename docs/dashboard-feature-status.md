@@ -311,3 +311,14 @@ the source checkout. No live provider inference or scientific preparation was
 performed for this packaging check. Existing venv dependencies supplied the
 runtime; clean-machine extras installation, complete integrated study workflow
 and unavailable live-provider/scientific gates remain open.
+
+### Preparation audit restoration and enlarged-text verification
+
+All 10 preparation audit checks pass, including browser restoration of the
+stage pair, aligned overlay, linked-camera setting and both camera views in
+Graphite, Ink and Paper. Expanded audit controls stay within a 390 px viewport
+at 200% root text size. Stage selectors now wrap within their labels on narrow
+screens. Browser checks report no JavaScript errors and verify unchanged source
+structure bytes. These synthetic UI checks do not establish additional chemical
+validation or native browser zoom behavior. OpenAI is the user's only available
+subscription for live testing; other provider subscription flows remain unverified.

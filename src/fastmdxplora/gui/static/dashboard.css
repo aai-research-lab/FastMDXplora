@@ -4047,6 +4047,12 @@ body input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([t
 body textarea, body select,
 #agent-request, #clip-export-dialog input, #clip-export-dialog select,
 #preparation-audit-panel select { border-color: var(--control-border); }
+#preparation-audit-panel .control-row { flex-wrap: wrap; }
+#preparation-audit-panel .control-row > label { min-width: 0; max-width: 100%; }
+#preparation-audit-panel .control-row select { display: block; width: 100%; min-width: 0; }
+@media (max-width: 800px) {
+  #preparation-audit-panel .control-row > label { width: 100%; }
+}
 body input::placeholder, body textarea::placeholder { color: var(--text-muted); opacity: 1; }
 body input:focus-visible, body textarea:focus-visible, body select:focus-visible {
     outline: var(--focus-ring); outline-offset: 2px;

@@ -9,6 +9,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+Preparation-audit stage selectors wrap on narrow screens with enlarged text.
+Browser regression coverage verifies saved comparison settings and camera views
+across all three themes without changing source structures.
+
 The Agent composer now offers server-resolved evidence inspection and per-message
 view opt-out. Suggested configurations have an explicit before/after review;
 review expires and is invalidated by changed drafts or studies. Agent authorship
