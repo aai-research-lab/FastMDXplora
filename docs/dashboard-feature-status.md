@@ -387,3 +387,19 @@ SHA-256 comparisons across 306 existing setup, simulation, analysis and report
 files found zero changes after the explanation. No scientific action was requested
 or initiated. This is a fresh actual-study live explanation receipt, not proof of
 all context types, provider lifecycle states or the complete M7 walkthrough.
+
+### Actual-study screenshot bookmark and stale loading notice
+
+The completed 1L2Y study now contains a saved Graph-tagged Rg bookmark with title,
+note, source checksums and an 844 by 689 screenshot. The saved screenshot was
+visually inspected: it shows the graph, axes, legend and uncertainty notice, with
+no chat or authentication content. Reloading the dashboard and restoring the
+persisted record returned the selected Rg figure and reported "Bookmark restored."
+The UI reported "Bookmark export ready", but the in-app browser download event
+timed out and no local bundle path was verified; the actual-study bundle download
+and import remain open, separately from passing fixture tests.
+
+The walkthrough exposed a stale "Load a study" notice beside loaded bookmarks.
+Rendering loaded records now clears that obsolete notice while preserving other
+status/error messages. The browser save/reload/restore/export/import regression
+passes with an assertion that the obsolete notice is absent after loading.

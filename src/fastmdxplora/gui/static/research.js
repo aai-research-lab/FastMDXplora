@@ -241,6 +241,7 @@
     el("research-export").disabled = !rows.length;
     el("research-export-bundle").disabled = !rows.length;
     if (!rows.length) status(study ? "No bookmarks yet. Save a view and a note." : "Load a study to save bookmarks.");
+    else if (study && el("research-status").textContent === "Load a study to save bookmarks.") status("");
     const search = el("research-search").value.trim().toLocaleLowerCase();
     const tag = el("research-tag-filter").value;
     const filtered = rows.filter((row) => (!tag || (row.tags || []).includes(tag)) &&
