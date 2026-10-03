@@ -273,6 +273,42 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_sidebar_brand_and_collapse_fit_resized_columns_and_large_text(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    _write_study(tmp_path)
+    server, url = start_test_server(tmp_path)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            for width in (180, 232, 320):
+                page.add_init_script(f"localStorage.setItem('fmx.sidebarWidth', '{width}')")
+                for zoom in (100, 200):
+                    page.goto(url + "/#overview")
+                    page.wait_for_function("document.body.dataset.theme === " + json.dumps(theme))
+                    page.add_style_tag(content=f"html {{font-size: {zoom}% !important;}}")
+                    product = page.locator(".sidebar .brand-product")
+                    assert product.inner_text() == "FastMDXplora"
+                    assert product.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), (theme, width, zoom)
+                    bounds = page.locator(".sidebar").bounding_box()
+                    button = page.locator("#sidebar-collapse").bounding_box()
+                    assert button and bounds and button["x"] >= bounds["x"]
+                    assert button["x"] + button["width"] <= bounds["x"] + bounds["width"] + 1
+                    page.locator("#sidebar-collapse").click()
+                    assert page.locator(".sidebar-expand").is_visible()
+                    page.locator(".sidebar-expand").click()
+                    assert product.is_visible()
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
 def test_research_controls_follow_double_text_size_without_losing_actions(tmp_path, theme):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server

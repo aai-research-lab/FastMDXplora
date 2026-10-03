@@ -9,6 +9,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+The dashboard's product name wraps within resized sidebars and enlarged text
+instead of being clipped. Sidebar collapse/expand, full-page layouts and text
+scaling have regression coverage across all three themes.
+
 Research bookmark title, note and search fields fill the panel width with
 theme-aware styling, readable placeholders and clear keyboard focus. The note
 area is larger and can be resized vertically. Populated lists, missing images,

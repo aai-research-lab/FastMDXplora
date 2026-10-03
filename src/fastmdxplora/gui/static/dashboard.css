@@ -3263,6 +3263,11 @@ body.sidebar-collapsed .col-handle[data-handle="sidebar"] {
 body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sidebar-brand { display: flex; align-items: flex-start; gap: 8px; }
 .sidebar-brand .brand-text { flex: 1; min-width: 0; }
+.sidebar .brand-product {
+    /* A resized column or enlarged text must keep the complete name visible. */
+    overflow-wrap: anywhere;
+    line-height: 1.15;
+}
 .sidebar-collapse { order: 2; padding: 4px 7px; font-size: var(--text-2xs); margin-top: 4px; }
 .sidebar-expand {
     position: fixed; left: 0; top: 50%; transform: translateY(-50%);

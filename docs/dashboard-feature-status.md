@@ -817,3 +817,33 @@ efforts, without claiming every effort or scientific question has been tested.
 All 309 baseline completed-study files remain byte-identical by SHA256 after
 the live explanations and installed model-control inspection. Full framework
 completion and the remaining M7/M8 gates are still open.
+
+User acceptance on 2026-10-03: the user confirmed, "sol works the slider works
+aswell." This corroborates the Sol/reasoning interaction without identifying an
+additional exact model version or effort. Native Paper review also confirmed
+readable Report/Files layouts, a working saved HTML report preview and a visible
+historical PDF dependency notice. A measured visual defect remains: at the
+supported 180 px sidebar width, the brand text has about 100 px available while
+its product-name line requires 174 px, clipping the name. This is a pending M8
+correction; page-shell overflow checks alone did not detect it.
+
+### Coherent model/research regression and sidebar correction
+
+The combined nine-module run completed with 168 passed, 1 skipped and 5 Pillow
+deprecation warnings in 615.65 s. It covers provider/reasoning, research
+views/bundles, clips, audit/provenance, Agent boundaries and exact draft review.
+Production/test code remained at d0b2a3b throughout; 3f1f648 only added docs.
+The skip is Windows OpenFF unavailability, with separate installed Ubuntu
+evidence above. This is a coherent combined feature receipt, not certification
+of every M7/M8 requirement or all scientific/platform combinations.
+
+The native sidebar clipping defect was reproduced by a new browser regression
+in Graphite, Ink and Paper at the supported 180 px width (3 expected failures).
+Dashboard-only product-name wrapping and a legible multiline line height fix
+the overflow without reducing text size or removing the name. The new check
+then passed at 180/232/320 px sidebar widths and 100%/200% root text size in
+all three themes, including collapse/expand. Together with whole-dashboard
+shell and doubled-text controls, 9 checks passed in 105.64 s. Ruff with the
+existing E501 exception and diff checks passed. This CSS correction postdates
+the combined run and installed wheel; its installed/native acceptance and the
+remaining broader M7/M8 gates remain open.
