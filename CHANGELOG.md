@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A per-residue SASA averages each chain apart
+
+**Run per residue, SASA's average beside the per-frame table is now taken
+residue by residue of each chain.** It was grouped by residue number alone, so
+on a structure of several chains the copies of each residue were averaged
+together and the table had one row where there were several residues; 184 and
+184A of one chain were averaged together too. The per-frame table was right
+and is unchanged.
+
 ### A failure is headed briefly, and a finished study is worded as one
 
 **The Overview's health card no longer sets a failure's message as its

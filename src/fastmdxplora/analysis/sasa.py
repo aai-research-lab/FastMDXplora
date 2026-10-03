@@ -317,8 +317,13 @@ class SASA(Analysis):
         result.to_csv(path, index=False)
 
         if self.mode == "residue":
+            # By chain and insertion code as well as number, where the table
+            # has them: grouped by the number alone, the copies of a residue
+            # in a structure of several chains were averaged together, and
+            # 184 and 184A of one chain with them.
+            keys = [key for key in ("chain", "residue", "insertion") if key in result]
             summary = (
-                result.groupby("residue")["sasa_nm2"]
+                result.groupby(keys, dropna=False)["sasa_nm2"]
                 .agg(mean_sasa_nm2="mean", std_sasa_nm2="std")
                 .reset_index()
             )
