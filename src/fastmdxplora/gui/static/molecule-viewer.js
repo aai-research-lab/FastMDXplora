@@ -1348,14 +1348,31 @@
     window.addEventListener("dashboard:residue-focus", (event) => {
       const detail = event.detail || {};
       const resi = Number(detail.resi);
-      STATE.focusResidue = Number.isFinite(resi)
-        ? {resi, chain: detail.chain == null ? null : detail.chain} : null;
+      STATE.focusResidue = Number.isFinite(resi) && detail.chain != null
+        ? {resi, chain: detail.chain, icode: detail.icode || "", resname: detail.resname || detail.resn || ""} : null;
+      const requestedFocus = STATE.focusResidue;
       whenDrawn(() => {
+        if (STATE.focusResidue !== requestedFocus) return;
         restyleViewers();
         const selection = focusSelection();
-        if (!selection) return;
+        if (!selection) {
+          STATE.researchSelection = null;
+          window.dispatchEvent(new CustomEvent("dashboard:research-selection", {detail: null}));
+          return;
+        }
         safeCall(STATE.viewer, "removeAllLabels");
         const atoms = safeCall(STATE.viewer, "selectedAtoms", selection) || [];
+        const identities = new Set(atoms.map(atom => JSON.stringify([atom.chain || "", atom.resi, atom.resn, (atom.icode || "").trim()])));
+        if (atoms.length && identities.size === 1 && AMINO_ACIDS.includes(atoms[0].resn)) {
+          selectResearchAtom(atoms[0], true);
+        } else {
+          STATE.researchSelection = null;
+          window.dispatchEvent(new CustomEvent("dashboard:research-selection", {detail: null}));
+          if (identities.size > 1) {
+            announce(`Residue ${resi} matches multiple identities; select a specific residue in the structure.`);
+            return;
+          }
+        }
         const name = `${atoms[0]?.resn || "residue"} ${detail.chain ? detail.chain + ":" : ""}${resi}`;
         if (atoms.length) {
           safeCall(STATE.viewer, "addLabel", name, {
@@ -1575,18 +1592,22 @@
     if (!atom) return;
     const residueMode = document.getElementById("viewer-click-mode")?.value === "residue" && !STATE.measuring;
     if (residueMode && !AMINO_ACIDS.includes(atom.resn)) return;
+    selectResearchAtom(atom, residueMode);
+    if (STATE.measuring) addPick(atom);
+  }
+
+  function selectResearchAtom(atom, residueMode) {
     STATE.researchSelection = {chain: atom.chain || "", resseq: Number(atom.resi),
       resname: atom.resn || "", atom: residueMode ? "" : atom.atom || atom.name || "",
-      icode: atom.icode || "", altloc: atom.altLoc || ""};
+      icode: (atom.icode || "").trim(), altloc: (atom.altLoc || "").trim()};
     if (residueMode) {
-      STATE.focusResidue = {resi: atom.resi, chain: atom.chain || "", icode: atom.icode || "", resname: atom.resn};
+      STATE.focusResidue = {resi: atom.resi, chain: atom.chain || "", icode: (atom.icode || "").trim(), resname: atom.resn};
       restyleViewers();
     }
     window.dispatchEvent(new CustomEvent("dashboard:research-selection", {detail: STATE.researchSelection}));
     updateSelectionPanel(atom);
     if (!STATE.measuring) document.querySelector('.info-tab[data-tab="selection"]')?.click();
     void showSelectionFor(atom);
-    if (STATE.measuring) addPick(atom);
   }
 
   /* ------------------------------------------------------------------ */

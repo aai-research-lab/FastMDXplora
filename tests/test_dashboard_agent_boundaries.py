@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 
@@ -274,6 +275,60 @@ def test_protein_residue_clicks_highlight_and_prepare_a_question(tmp_path, monke
             }""")
             assert page.evaluate("FastMDXResearch.capture().selection.atom") == "CA"
             browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_graph_residue_selection_can_be_pinned_and_compared_without_inference(tmp_path, monkeypatch):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _analysis
+    import hashlib
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "isolated-settings"))
+    root = _write_study(tmp_path / "study")
+    _analysis(root, "rmsf", "A 1 0.10\nA 2 0.25\n")
+    files_before = {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in root.rglob("*") if path.is_file()}
+    server, url = start_test_server(root)
+    try:
+        with playwright.sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            sent = []
+            page.on("request", lambda req: sent.append(req.url) if "/api/agent/propose" in req.url else None)
+            page.goto(url + "/#analysis")
+            page.wait_for_function("window.FastMDXResearch && window.FastMDXMoleculeViewer")
+            chart = page.locator('.series-chart[data-analysis="rmsf"] svg')
+            chart.wait_for()
+            chart.focus()
+            chart.press("Enter")
+            page.wait_for_function("FastMDXMoleculeViewer.STATE.researchSelection?.resseq === 1")
+            assert page.evaluate("FastMDXResearch.capture().selection") == {
+                "chain": "A", "resseq": 1, "resname": "ALA", "atom": "", "icode": "", "altloc": ""}
+            page.locator("#research-pin-residue").click()
+            page.evaluate("FastMDXDashboard.navigate('analysis')")
+            chart.focus()
+            chart.press("ArrowRight")
+            chart.press("Enter")
+            page.wait_for_function("FastMDXMoleculeViewer.STATE.researchSelection?.resseq === 2")
+            assert page.locator("#research-compare-residues").is_enabled()
+            page.locator("#research-compare-residues").click()
+            assert "pinned comparison residue" in page.locator("#agent-request").input_value()
+            assert sent == [], "Selecting/comparing must wait for the user to send the question"
+            # An unmatched graph point clears the prior selection rather than
+            # offering the old residue as the answer to a new graph selection.
+            page.evaluate("window.dispatchEvent(new CustomEvent('dashboard:residue-focus', {detail:{chain:'Z',resi:999}}))")
+            assert page.evaluate("FastMDXMoleculeViewer.STATE.researchSelection") is None
+            assert page.locator("#research-compare-residues").is_disabled()
+            browser.close()
+        assert files_before == {path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                                for path in files_before}
+        added = {str(path.relative_to(root)).replace('\\', '/') for path in root.rglob("*")
+                 if path.is_file() and str(path) not in files_before}
+        assert added <= {"simulation/playback.pdb", "simulation/playback_index.json"}, "Only existing display caches may be generated"
     finally:
         server.shutdown()
         server.server_close()

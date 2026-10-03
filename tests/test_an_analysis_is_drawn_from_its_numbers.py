@@ -343,8 +343,9 @@ class TestTheChart:
             "() => { const v = window.FastMDXMoleculeViewer.STATE.viewer;"
             " return v && v.selectedAtoms({resi: 6}).some(a => a.style && a.style.stick); }",
             timeout=15000)
+        page.wait_for_function("FastMDXMoleculeViewer.STATE.researchSelection?.resseq === 6")
         focus = page.evaluate("() => window.FastMDXMoleculeViewer.STATE.focusResidue")
-        assert focus == {"resi": 6, "chain": "A"}
+        assert focus == {"resi": 6, "chain": "A", "icode": "", "resname": "ALA"}
 
     def test_a_cropped_residue_profile_focuses_the_displayed_residue(self, page):
         chart = page.locator('.series-chart[data-analysis="rmsf"]')
@@ -357,5 +358,6 @@ class TestTheChart:
         assert "residue 6" in chart.locator('.series-tip').text_content()
         page.keyboard.press("Enter")
         page.wait_for_function("() => document.documentElement.dataset.page === 'viewer' && window.FastMDXMoleculeViewer.STATE.focusResidue")
-        assert page.evaluate("window.FastMDXMoleculeViewer.STATE.focusResidue") == {"resi": 6, "chain": "A"}
+        page.wait_for_function("FastMDXMoleculeViewer.STATE.researchSelection?.resseq === 6")
+        assert page.evaluate("window.FastMDXMoleculeViewer.STATE.focusResidue") == {"resi": 6, "chain": "A", "icode": "", "resname": "ALA"}
         assert page.errors == []

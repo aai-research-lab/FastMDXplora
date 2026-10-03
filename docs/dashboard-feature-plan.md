@@ -661,3 +661,34 @@ bookmark invalidation when a displayed stage changes. The 31 audit/bookmark
 checks passed before the last inventory grouping; 44 Agent/public-route checks
 passed with one skipped after grouping. Real 1L2Y saved-stage comparison was
 inspected in the dashboard without launching a new simulation.
+
+### Verified follow-up — graph selections and residue explanations
+
+Selecting a verified per-residue graph point now selects that protein residue
+for the research panel, in addition to highlighting it in the viewer. Graph and
+canvas clicks share the same selection path. A graph selection remains a residue
+selection even when the canvas is in atom/measurement mode. Unknown or ambiguous
+identities clear the previous research selection; stale deferred focus requests
+cannot override a newer selection. Blank PDB insertion/alternate-location fields
+are normalized, while actual nonblank codes remain distinct.
+
+Acceptance on 2026-10-02: all 23 dashboard Agent boundary checks and all 35
+analysis graph checks passed after the fix. The new browser acceptance selects
+two real graph points, pins one, prepares a comparison without sending inference,
+and refuses an unmatched selection. Original study file checksums stayed unchanged;
+only the existing playback PDB/index display caches could be generated. Direct
+viewer residue/atom selection and bookmarked comparisons still pass.
+
+In the running completed 1L2Y study, ASN A1 and LEU A2 were selected from the
+RMSF graph and compared through the connected OpenAI subscription. The reply
+reported their recorded C-alpha RMSF values (0.131109476 and 0.0686216503 nm),
+identified missing residue-level uncertainty, and declined to establish a chemical
+cause without evidence. These are acceptance observations, not new scientific
+claims or a new simulation. The supplied source table was checked against the
+reply. No simulation or scientific setting was applied by the Agent.
+
+The installed Markdown knowledge was reconciled with all 127 current registered
+errors: every identifier is present and the packaged error reference exactly
+matches the runtime registry. Dynamic warnings retain their actual diagnostics;
+unclassified external failures are explicitly uncertain. Coverage of the software
+registry does not claim advance knowledge of every possible external failure.
