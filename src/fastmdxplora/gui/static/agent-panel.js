@@ -1071,22 +1071,20 @@
      * builder's actions read that state, so the file, the command and
      * the script are exactly what the builder would produce. One
      * derivation, two doors. */
-    var loaded = null;
-    function loadDraft() {
-      if (loaded) return loaded;
-      loaded = post("/api/load-config", {config: data.config}).then(function (m) {
-        if (!m || !m.ok) {
-          noteEl.textContent = (m && m.error) || "Could not prepare the draft.";
-          return false;
-        }
-        var run = window.FastMDXRun;
-        if (!run || !run.applyLoadedState) return false;
-        return Promise.resolve(run.applyLoadedState(m.state, {})).then(function () {
-          noteEl.textContent = "Added to a draft. Review it in the builder; nothing has run.";
-          return true;
-        });
-      });
-      return loaded;
+    var reviewedState = null, reviewedStudy = null;
+    async function loadDraft() {
+      var run = window.FastMDXRun;
+      var activeStudy = window.FastMDXDashboard?.state.appState?.active_run || null;
+      if (!run || !run.applyLoadedState || !window.FastMDXReview) return false;
+      if (reviewedState === JSON.stringify(run.currentState()) && reviewedStudy === activeStudy) return true;
+      try {
+        var m = await window.FastMDXReview.review(data.config);
+        if (!m) return false;
+        await run.applyLoadedState(m.state, {});
+        reviewedState = JSON.stringify(run.currentState()); reviewedStudy = activeStudy;
+        noteEl.textContent = "Added the reviewed draft. Review final settings before Run here; nothing has run.";
+        return true;
+      } catch (error) { noteEl.textContent = error.message; return false; }
     }
 
     function viaBuilder(action) {

@@ -9,6 +9,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+The Agent composer now offers server-resolved evidence inspection and per-message
+view opt-out. Suggested configurations have an explicit before/after review;
+review expires and is invalidated by changed drafts or studies. Agent authorship
+survives builder loading, and Run here requires fresh human review of the exact
+Agent draft. The research toolbar is moved away from the composer and Agent text
+uses consistent interface typography. Scientific settings are never applied by
+the model.
+
 The princeote feature branch adds a context-aware explanation Agent with packaged
 error knowledge and human-reviewed draft suggestions, portable screenshot
 bookmarks, rotating MP4/GIF trajectory exports, future preparation provenance and

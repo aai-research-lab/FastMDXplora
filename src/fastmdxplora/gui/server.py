@@ -896,6 +896,12 @@ def make_handler(
                     path_for=hosting.inside if hosting is not None else None))
                 return
             if path == "/api/run":
+                from fastmdxplora.gui.draft_review import verify_run_review
+
+                refused = verify_run_review(payload or {}, app_runtime)
+                if refused:
+                    self._send_json(refused)
+                    return
                 # Runs what the config describes rather than what a form was
                 # wired for, which is how an analysis of an existing
                 # trajectory can be started at all.
@@ -931,6 +937,11 @@ def make_handler(
                 self._send_json(run_endpoint(
                     payload or {}, app_runtime,
                     dashboard_url=self.headers.get("Origin")))
+                return
+            if path == "/api/agent/review-draft":
+                from fastmdxplora.gui.draft_review import review_endpoint
+
+                self._send_json(review_endpoint(payload or {}, app_runtime))
                 return
             if path == "/api/agent/context":
                 from fastmdxplora.gui.agent_panel import context_endpoint

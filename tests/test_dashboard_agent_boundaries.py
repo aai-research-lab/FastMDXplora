@@ -296,14 +296,39 @@ def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_pat
             page.goto(url + "/#agent")
             page.locator("#agent-request").fill("Suggest a study at pH 6.5")
             loads = []
-            page.on("request", lambda req: loads.append(req.url) if req.url.endswith("/api/load-config") else None)
+            page.on("request", lambda req: loads.append(req.url) if req.url.endswith("/api/agent/review-draft") and req.post_data_json.get("action") == "accept" else None)
             page.locator("#agent-propose").click()
             page.locator("[data-role=load]").wait_for()
             assert not loads, "A reply must not overwrite the builder's draft"
             assert not page.locator("[data-role=run]").is_visible()
             page.locator("[data-role=load]").click()
+            page.locator("#draft-review-dialog").wait_for(state="visible")
+            assert not loads
+            assert page.locator("#draft-review-accept").is_disabled()
+            assert "setup.ph" in page.locator("#draft-review-rows").inner_text()
+            page.locator("#draft-review-confirmed").check()
+            page.locator("#draft-review-accept").click()
             page.wait_for_function("FastMDXDashboard.state.activePage === 'run'")
             assert loads
+            assert page.evaluate("FastMDXRun.currentState().study.agent") == "assisted"
+            runs = []
+            def intercepted_run(route):
+                runs.append(route.request.post_data_json)
+                route.fulfill(json={"ok": False, "error": "Test intercepted the human run; no simulation starts."})
+            page.route("**/api/run", intercepted_run)
+            page.locator("#run-output").fill(str(tmp_path / "reviewed-output"))
+            page.locator("#run-start-button").click()
+            page.locator("#draft-review-dialog").wait_for(state="visible")
+            assert not runs
+            page.locator("#draft-review-cancel").click()
+            assert not runs
+            page.locator("#run-start-button").click()
+            page.locator("#draft-review-confirmed").check()
+            page.locator("#draft-review-accept").click()
+            page.wait_for_function("document.getElementById('run-note').textContent.includes('Test intercepted')")
+            from types import SimpleNamespace
+            from fastmdxplora.gui.draft_review import verify_run_review
+            assert runs and verify_run_review(runs[0], SimpleNamespace(active_root=root)) is None
             # Preference persists and closes the sidebar without navigation.
             page.evaluate("document.getElementById('research-agent-enabled').checked=false; document.getElementById('research-agent-enabled').dispatchEvent(new Event('change'))")
             page.reload()

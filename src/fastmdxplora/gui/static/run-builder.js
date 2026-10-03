@@ -1566,6 +1566,7 @@
 
     const everything = el("run-full-config");
     config.full = Boolean(everything && everything.checked);
+    if (state.study) config.study = JSON.parse(JSON.stringify(state.study));
     return config;
   }
 
@@ -2166,6 +2167,7 @@
       return loadSchema().then(() => applyLoadedState(from, options));
     }
     const { from: origin, note } = options;
+    state.study = JSON.parse(JSON.stringify(from.study || {}));
     state.start = from.start;
     // `include_phase` is what the server sends since the phase lists took one
     // name; reading `include` alone left every phase unticked on load, and the
@@ -2390,14 +2392,21 @@
     text(el("run-note"), "Starting\u2026");
     let started;
     try {
+      let payload = currentState();
+      if (payload.study?.agent) {
+        const reviewed = await window.FastMDXReview.review(null, "run");
+        if (!reviewed) { button.disabled = false; text(el("run-note"), "Run cancelled; the draft remains available."); return; }
+        if (JSON.stringify(reviewed.builder_state) !== JSON.stringify(currentState())) throw new Error("The draft changed. Review it again before running.");
+        payload = {...reviewed.builder_state, review_token: reviewed.review_token, review_confirmed: true};
+      }
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(currentState()),
+        body: JSON.stringify(payload),
       });
       started = await response.json();
     } catch (error) {
-      text(el("run-note"), "Could not reach the server.");
+      text(el("run-note"), error.message || "Could not reach the server.");
       button.disabled = false;
       return;
     }
@@ -2458,6 +2467,7 @@
   }
 
   function resetEverything() {
+    state.study = {};
     state.phases = state.start
       ? new Set(STARTING_POINTS[state.start].phases)
       : new Set();

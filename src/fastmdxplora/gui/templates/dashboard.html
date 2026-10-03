@@ -1322,6 +1322,16 @@
     <a id="clip-metadata" class="ghost-btn" hidden download>Download source/view metadata</a>
     <div class="control-row"><button id="clip-export-start" type="button" class="primary-btn">Export selected frames</button><button id="clip-export-cancel" type="button" class="ghost-btn">Close</button></div>
   </dialog>
+  <dialog id="draft-review-dialog" class="draft-review-dialog" aria-labelledby="draft-review-heading">
+    <h2 id="draft-review-heading">Review the suggested draft</h2>
+    <p id="draft-review-notice"></p>
+    <p id="draft-review-study" class="muted small"></p>
+    <div class="draft-review-table" tabindex="0"><table><thead><tr><th scope="col">Setting and implications</th><th scope="col">Current draft</th><th scope="col">Suggested value</th></tr></thead><tbody id="draft-review-rows"></tbody></table></div>
+    <details><summary>Full configuration</summary><pre id="draft-review-yaml"></pre></details>
+    <label class="checkbox-row"><input id="draft-review-confirmed" type="checkbox">I reviewed this exact configuration and its scientific choices.</label>
+    <p id="draft-review-status" role="status"></p>
+    <div class="draft-review-footer"><button id="draft-review-cancel" class="ghost-btn" type="button">Cancel</button><button id="draft-review-accept" class="primary-btn" type="button" disabled>Add reviewed draft</button></div>
+  </dialog>
   <div class="research-tools" aria-label="Research tools">
     <button id="research-agent-toggle" class="ctl-btn" type="button" aria-expanded="false">Ask about this view</button>
     <button id="research-bookmarks-toggle" class="ctl-btn" type="button">Research bookmarks</button>
@@ -1363,6 +1373,7 @@
   <script src="/static/agent-panel.js"></script>
   <script src="/static/provider-connections.js"></script>
   <script src="/static/research.js"></script>
+  <script src="/static/draft-review.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>
     <script src="/static/dashboard.js"></script>

@@ -508,7 +508,8 @@ class TestLoadIntoTheFormActuallyLoads(unittest.TestCase):
     def test_the_panel_sends_the_config_to_an_endpoint_that_takes_one(self):
         # It holds a mapping, never a path, so the endpoint had to learn to
         # take one rather than the browser learning the mapping.
-        self.assertIn("/api/load-config", self._static("agent-panel.js"))
+        self.assertIn("FastMDXReview.review(data.config)", self._static("agent-panel.js"))
+        self.assertIn("/api/agent/review-draft", self._static("draft-review.js"))
 
 
 class TestAConfigThatWasNeverOnDiskCanBeOpened(unittest.TestCase):

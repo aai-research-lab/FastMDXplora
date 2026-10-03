@@ -69,7 +69,7 @@ These changes are not a published upstream release.
 | Milestone | Current state | Evidence and remaining work |
 | --- | --- | --- |
 | M0 — reconcile | Implemented | Architecture/boundaries and branch scope documented; this review reconciles subsequent increments with the original full contract. |
-| M1 — context and human control | Implemented in part; core verified | Eight context types, installed knowledge, refusal boundary and selection tests exist. Server-resolved context inspection, per-message view opt-out and exact outbound evidence receipts are implemented and verified. Explicit configuration diff and the complete exact-draft/study approval contract remain open. |
+| M1 — context and human control | Implemented; representative acceptance verified | Eight context types, installed knowledge, refusal boundary, server-resolved context inspection, per-message view opt-out and outbound evidence receipts. Before/after draft review is bound to candidate, builder baseline and study; final Agent-authored builder runs require fresh exact-state human review. Expiry, changed-state rejection, cancellation and intercepted browser-run checks pass; full integrated regression remains M7. |
 | M2 — bookmarks | Implemented; representative acceptance verified | Persistence, tags/search, screenshots, portability, view restore and stale/import guards tested. Include it in the final broad browser/release pass. |
 | M3 — providers | Implemented; live verification partial | OpenAI browser consent and real explanation inference succeeded, including the requested GPT-6 models. Claude, Kimi and Gemini have restricted adapters and synthetic/native transport tests, but their real account login, entitlement, model enumeration, inference and expiry/disconnect acceptance remain pending. |
 | M4 — clips | Implemented in part; core verified | Saved rotating GIF/MP4 exports decode; labels, source metadata and viewer restoration tested. User-selectable resolution, study/title and custom-caption overlays, and a pre-export source-frame/time preview and estimate remain to implement. Current output size is derived from the viewer and capped, not a resolution selector. |
@@ -107,8 +107,7 @@ scientific equivalence still requires the framework's remaining checks.
 
 ## Remaining exit checklist
 
-- Finish the M1 draft-diff contract, then verify
-  human approval against the exact draft and study, including changed drafts.
+- Include the completed M1 context/draft-review flow in final integrated acceptance.
 - Finish the M4 export controls/preview and M6 residue/decision/component visuals.
 - Have the user perform normal Claude, Kimi and Gemini sign-in; test each actual
   account's models, explanation response, cancellation, expiry and disconnect.
@@ -124,3 +123,18 @@ scientific equivalence still requires the framework's remaining checks.
 
 This status update documents existing work and outstanding requirements; it does
 not silently remove requirements from the approved framework.
+
+## Completion implementation receipts
+
+The context inspector/view opt-out and initial typography/toolbar changes passed
+36 Agent boundary/streaming checks, including 390 px browser layout. Draft review
+adds read-only differences with schema explanations, explicit human confirmation,
+process-local signed review binding and expiry. Agent authorship is preserved
+when loading the builder so final runs require exact-state review. Eight review
+tests and the browser approval/cancel/intercepted-run flow pass; 13 focused
+review/load checks passed after the final changes. No production simulation was
+started for these checks. Scientific source files are not written by review.
+
+A broader Agent-panel run exposed an existing API fallback-model list assertion
+that conflicts with the earlier GPT-6 list change. This remains an M3/M7 catalog
+reconciliation item; it is not hidden by the focused passing review tests.

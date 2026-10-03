@@ -3980,6 +3980,16 @@ body[data-theme="paper"] { --text-muted: #61616b; }
 #agent-context-summary { display: block; margin: 4px 0 0 16px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
 .agent-context-review .checkbox-row { margin-top: 12px; min-height: 32px; }
 .agent-context-evidence { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font: 13px/1.6 var(--font-mono); background: var(--background-primary); padding: 12px; border-radius: 6px; }
+.draft-review-dialog { width: min(960px, calc(100vw - 32px)); max-height: 90dvh; overflow: auto; color: var(--text-primary); background: var(--background-elevated); border: 1px solid var(--border-primary); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-modal); }
+.draft-review-dialog::backdrop { background: #0009; }
+.draft-review-table { overflow-x: auto; max-height: 40dvh; margin: 16px 0; }
+.draft-review-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.draft-review-table th, .draft-review-table td { padding: 12px; vertical-align: top; border-bottom: 1px solid var(--border-primary); overflow-wrap: anywhere; }
+.draft-review-table tbody th { width: 50%; font-weight: normal; }
+.draft-review-table th p { font-size: var(--text-xs); color: var(--text-secondary); margin: 6px 0; }
+.draft-review-table td { font: 13px/1.6 var(--font-mono); }
+#draft-review-yaml { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+.draft-review-footer { position: sticky; bottom: -24px; background: var(--background-elevated); border-top: 1px solid var(--border-primary); padding: 16px 0; display: flex; justify-content: flex-end; gap: 12px; }
 .page-shell button:focus-visible, .page-shell summary:focus-visible,
 .research-agent-dock button:focus-visible, .research-bookmarks-panel button:focus-visible { outline: var(--focus-ring); outline-offset: 3px; }
 @media (max-width: 900px) {
