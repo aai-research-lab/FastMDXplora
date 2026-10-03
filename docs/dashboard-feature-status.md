@@ -335,3 +335,15 @@ simulation and analysis fixture files. Preview/export restore structure mode and
 release viewer interaction; browser errors remain absent. This closes a browser
 Both-format gap but does not replace the complete integrated-study gate or prove
 every label's visible placement at every export resolution.
+
+### Combined workflow with a real dashboard restart
+
+`tests/test_research_workflow.py` passes one browser workflow in a single synthetic
+completed study: select an RMSD range, save/export a bookmark bundle, stop and
+restart the dashboard server, find/restore the persisted range, import the bundle,
+inspect server-resolved Agent context, render/download GIF and MP4, and restore
+a preparation event after changing its selection. All original fixture files
+retain their SHA-256 hashes; there are no browser page errors. This checks combined
+feature state beyond isolated tests. It uses a test fixture, not the user's
+completed study; it does not call a provider, exercise graph-residue comparison,
+or replace the remaining complete M7 live workflow and scientific gates.
