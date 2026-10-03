@@ -58,6 +58,43 @@ def test_duplicate_identity_refuses_alignment_and_selection(tmp_path):
     ]
 
 
+def test_ligand_inventory_requires_saved_parameterization_names(tmp_path):
+    folder, _ = study(tmp_path)
+    text = (folder / "prepared.pdb").read_text().replace("ALA", "BEN")
+    (folder / "prepared.pdb").write_text(text)
+    payload = audit_payload(tmp_path)
+    assert payload["sources"]["prepared"]["counts"]["ligand"] == 0
+    assert payload["sources"]["prepared"]["counts"]["other"] == 4
+    (folder / "setup_parameters.json").write_text('{"resolved_forcefield":{"ligand":{"name":"BEN"}}}')
+    payload = audit_payload(tmp_path)
+    assert payload["sources"]["prepared"]["counts"]["ligand"] == 4
+    assert payload["sources"]["prepared"]["counts"]["other"] == 0
+
+
+def test_recorded_stage_track_preserves_insertion_identity_and_reason(tmp_path):
+    folder, _ = study(tmp_path)
+    before = folder / "audit/run/before.pdb"
+    after = folder / "audit/run/after.pdb"
+    before.parent.mkdir(parents=True)
+    before.write_text((folder / "input.pdb").read_text())
+    # Remove one atom in the saved after stage; do not label it a repair cause.
+    after.write_text("\n".join(before.read_text().splitlines()[1:]) + "\n")
+    journal = {"version": 1, "status": "complete", "sources": {
+        "before": {"label": "Before", "snapshot": "setup/audit/run/before.pdb", "sha256": hashlib.sha256(before.read_bytes()).hexdigest()},
+        "after": {"label": "After", "snapshot": "setup/audit/run/after.pdb", "sha256": hashlib.sha256(after.read_bytes()).hexdigest()}},
+        "events": [{"id": "repair", "operation": "missing_atom_repair", "before": "before", "after": "after",
+                    "details": {"requested": {"ph": 6.5}}, "reason": "Fixture recorded reason", "evidence": "Recorded at operation"}]}
+    (folder / "preparation_audit.json").write_text(json.dumps(journal))
+    payload = audit_payload(tmp_path)
+    assert payload["decisions"][0]["requested"] == {"ph": 6.5}
+    assert payload["decisions"][0]["reason"] == "Fixture recorded reason"
+    affected = payload["affected_residues"][0]
+    assert affected["category"] == "Repair stage" and not affected["ambiguous"]
+    assert affected["selection"]["chain"] == "A"
+    assert "difference alone does not establish its cause" in affected["evidence"]
+    assert affected["event_id"] in {row["id"] for row in payload["changes"]}
+
+
 def test_snapshot_checksums_and_corrupt_journal_are_visible(tmp_path):
     folder, _ = study(tmp_path)
     snapshot = folder / "audit" / "run" / "source.pdb"
@@ -136,12 +173,14 @@ def test_browser_restores_audit_selection_without_modifying_structures(tmp_path)
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(url + "/#overview")
             page.wait_for_function("window.FastMDXDashboard?.state.appState.active_run")
-            page.locator("#preparation-audit-panel summary").click()
+            page.locator("#preparation-audit-panel > summary").click()
             page.wait_for_function(
                 "document.querySelector('#preparation-after-title').textContent "
                 "=== 'Prepared solute'"
             )
             page.locator("#preparation-overlay").check()
+            assert page.locator(".preparation-component").count() == 10
+            assert "Force field" in page.locator("#preparation-decision-rows").inner_text()
             page.wait_for_function(
                 "document.querySelector('#preparation-alignment').textContent"
                 ".includes('4 exact heavy-atom matches')"

@@ -552,9 +552,11 @@
                 <div><h3 id="preparation-after-title">After</h3><div id="preparation-after-canvas" class="preparation-canvas" aria-label="After preparation structure"></div></div>
               </div>
               <div id="preparation-inventory" aria-label="Atom inventories by saved stage"></div>
+              <section aria-labelledby="preparation-residue-heading"><h3 id="preparation-residue-heading">Affected residues</h3><p class="muted small">Categories describe the recorded stage. Differences do not prove a chemical cause; ambiguous identities remain unselectable.</p><div id="preparation-residue-track" class="preparation-residue-track"></div></section>
+              <section aria-labelledby="preparation-decisions-heading"><h3 id="preparation-decisions-heading">Preparation choices and evidence</h3><div class="draft-review-table" tabindex="0"><table><thead><tr><th>Choice / source</th><th>Requested</th><th>Resolved / evidence</th><th>Recorded reason</th></tr></thead><tbody id="preparation-decision-rows"></tbody></table></div></section>
               <label>Recorded operation or observed change<select id="preparation-event" aria-label="Preparation change"></select></label>
               <p id="preparation-evidence" class="muted small"></p>
-              <pre id="preparation-details" class="preparation-details"></pre>
+              <details><summary>Raw event evidence</summary><pre id="preparation-details" class="preparation-details"></pre></details>
               <div class="control-row"><button id="preparation-ask" class="ghost-btn" type="button" disabled>Ask Agent about this change</button><button id="preparation-bookmark" class="ghost-btn" type="button" data-research-bookmark="" disabled>Bookmark this preparation change</button></div>
             </div>
           </details>

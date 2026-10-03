@@ -120,13 +120,48 @@
       label.textContent=row.label+": "+(row.counts ? `${row.counts.total} atoms · protein ${row.counts.protein}, water ${row.counts.water}, ions ${row.counts.ions}, other ${row.counts.other}` : "inventory unavailable for this format");
       bar.className="preparation-bar-fill"; bar.style.width=(60*(row.counts?.total || 0)/maximum)+"%";
       button.append(label,bar); button.addEventListener("click",()=>choose("view-"+identity)); host.appendChild(button);
+      if(row.counts) {
+        const components=document.createElement("div"); components.className="preparation-components";
+        for(const kind of ["protein","ligand","water","ions","other"]) {
+          const part=document.createElement("button"); part.type="button"; part.className="preparation-component";
+          part.textContent=`${kind === "other" ? "Other / unclassified" : kind}: ${row.counts[kind]} atoms`;
+          if(kind === "ligand") part.title=row.ligand_evidence;
+          const meter=document.createElement("progress"); meter.max=Math.max(1,row.counts.total); meter.value=row.counts[kind]; meter.setAttribute("aria-label",`${kind} atoms in ${row.label}`);
+          part.append(meter); part.addEventListener("click",()=>choose("view-"+identity)); components.append(part);
+        }
+        host.append(components);
+      }
+    }
+  }
+  function evidenceVisuals() {
+    const track=el("preparation-residue-track"), table=el("preparation-decision-rows"); track.replaceChildren(); table.replaceChildren();
+    for(const row of data.affected_residues || []) {
+      const marker=document.createElement("button"); marker.type="button"; marker.className="preparation-residue-marker";
+      const selected=row.selection;
+      marker.textContent=`${selected.chain || "_"}:${selected.resseq}${selected.icode || ""} ${selected.resname} · ${row.category}`;
+      marker.title=row.evidence; marker.disabled=row.ambiguous;
+      if(row.ambiguous) marker.textContent+=" · ambiguous mapping";
+      marker.addEventListener("click",()=>choose(row.event_id)); track.append(marker);
+    }
+    if(!track.childNodes.length) track.textContent="No affected residue identities are recorded or derivable from available stage snapshots.";
+    for(const row of data.decisions || []) {
+      const tr=document.createElement("tr");
+      const first=document.createElement("th"); first.scope="row";
+      const action=document.createElement("button"); action.type="button"; action.className="ghost-btn"; action.textContent=row.choice;
+      action.addEventListener("click",()=>choose(row.event_id));
+      const source=document.createElement("p"); source.className="muted small"; source.textContent=row.status+" · "+row.source;
+      first.append(action,source); tr.append(first);
+      for(const key of ["requested","resolved","reason"]) {
+        const cell=document.createElement("td"); cell.textContent=typeof row[key] === "string" ? row[key] : JSON.stringify(row[key],null,2); tr.append(cell);
+      }
+      table.append(tr);
     }
   }
   async function load() {
     const expected=++generation; ++drawGeneration;
     say("Reading saved preparation evidence…"); selected=null; residue=null; source=null;
     data=null;
-    for(const id of ["preparation-stage-strip","preparation-inventory","preparation-event","preparation-before","preparation-after"]) el(id).replaceChildren();
+    for(const id of ["preparation-stage-strip","preparation-inventory","preparation-event","preparation-before","preparation-after","preparation-residue-track","preparation-decision-rows"]) el(id).replaceChildren();
     viewers.forEach((viewer)=>viewer.clear());
     el("preparation-ask").disabled=true; el("preparation-bookmark").disabled=true;
     try {
@@ -136,6 +171,7 @@
       data=received; if(!valid()) throw new Error("The study changed while loading the audit.");
       el("preparation-audit-notice").textContent=data.notice;
       inventories();
+      evidenceVisuals();
       const available=Object.entries(data.sources).filter(([,row])=>row.url);
       for(const name of ["preparation-before","preparation-after"]) {
         el(name).replaceChildren();

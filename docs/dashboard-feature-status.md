@@ -74,7 +74,7 @@ These changes are not a published upstream release.
 | M3 — providers | Implemented; live verification partial | OpenAI browser consent and real explanation inference succeeded, including the requested GPT-6 models. Claude, Kimi and Gemini have restricted adapters and synthetic/native transport tests, but their real account login, entitlement, model enumeration, inference and expiry/disconnect acceptance remain pending. |
 | M4 — clips | Implemented; representative acceptance verified | Resolution presets re-render the molecular view at selected dimensions; study title/custom caption join residue/atom/frame/time overlays. First/last previews share the export renderer and show source mapping, physical time, playback duration and approximate upload size. Server dimensions/text bounds, decoded media, cancellation and restoration checks pass. Final integration remains M7. |
 | M5 — provenance | Implemented; preservation verification limited | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on OpenMM Reference. Aggregate system snapshots do not record every individual solvent/ion operation. Broader backend/platform and fixture preservation checks remain open. |
-| M6 — audit visuals | Implemented in part; core verified | Stage strip, total inventory bars with component counts, side-by-side/overlay, event detail and Agent/bookmark links tested. Dedicated affected-residue category track, a structured decision table and separate ligand/component series remain to implement; raw event details and aggregate inventory are the current representation. |
+| M6 — audit visuals | Implemented; representative acceptance verified | Stage strip, separate protein/recorded-ligand/water/ion/other bars, affected-residue category track, decision table, side-by-side/overlay and Agent/bookmark links. Recorded stages and observed identity differences are distinct; ambiguous mappings are unselectable and raw evidence remains expandable. Eight final audit checks pass; broader integration remains M7. |
 | M8 — aesthetics and interactions | Foundation implemented; full review pending | Research toolbar no longer overlaps the composer; Agent typography, evidence cards and drawer spacing improved. Wide/narrow layout checks pass. Full surface/theme, contrast and keyboard/focus acceptance remains open. |
 | M7 — integrated release validation | Partial; not complete | Targeted integrated suites, browser checks and earlier wheel receipts exist. Final expanded-scope acceptance, latest-wheel verification, remaining provider tests and broader scientific/browser coverage are not all complete. |
 
@@ -135,10 +135,19 @@ tests and the browser approval/cancel/intercepted-run flow pass; 13 focused
 review/load checks passed after the final changes. No production simulation was
 started for these checks. Scientific source files are not written by review.
 
-A broader Agent-panel run exposed an existing API fallback-model list assertion
-that conflicts with the earlier GPT-6 list change. This remains an M3/M7 catalog
-reconciliation item; it is not hidden by the focused passing review tests.
+A broader Agent-panel run exposed an API fallback-model list assertion that
+conflicted with the earlier GPT-6 list change. The API-key fallback is now separate
+from verified subscription availability. All 193 Agent-panel/reasoning/connection
+checks passed after reconciliation; requested subscription models are retained.
 
 Clip completion: all 16 clip checks passed, including a real browser preview,
 selected-resolution GIF export with title/caption metadata, valid MP4/GIF decoding,
 invalid dimensions/caption refusal, source preservation and cancellation/restore.
+
+Audit visual completion: 56 audit/bookmark checks passed before the final ligand
+classification refinement; all eight final audit checks and the five preparation
+recorder checks pass. Ligand inventory requires saved parameterization names;
+unknown components remain other. Recorded-stage snapshot differences remain
+observations, not automatically recorded chemical causes. The user has only an
+OpenAI subscription, so live Claude/Kimi/Gemini verification is an explicit
+external dependency while their restricted adapters remain available.

@@ -69,6 +69,7 @@ def _inventory(path):
     ):
         raise ValueError("Preparation source changed during reading")
     atoms, ambiguous = {}, False
+    component_counts = {}
     counts = {"protein": 0, "water": 0, "ions": 0, "other": 0, "hydrogens": 0, "total": 0}
     lines = raw.decode("utf-8", errors="replace").splitlines()
     model_count = sum(line.startswith("MODEL ") for line in lines)
@@ -87,6 +88,7 @@ def _inventory(path):
         )
         element = line[76:78].strip().upper() if len(line) >= 78 else ""
         counts["total"] += 1
+        component_counts[key[3]] = component_counts.get(key[3], 0) + 1
         counts["hydrogens"] += element in {"H", "D"}
         kind = (
             "protein"
@@ -110,6 +112,7 @@ def _inventory(path):
     return {
         "atoms": atoms,
         "counts": counts,
+        "component_counts": component_counts,
         "ambiguous": ambiguous,
         "models": model_count or int(counts["total"] > 0),
         "sha256": hashlib.sha256(raw).hexdigest(),
@@ -229,6 +232,8 @@ def audit_payload(root):
         and isinstance(journal.get("sources"), dict)
     )
     sources, inventories, events = {}, {}, []
+    observed_changes = 0
+    observed_limited = False
     if recorded:
         for identity, row in list(journal["sources"].items())[:1000]:
             if not isinstance(identity, str) or not isinstance(row, dict):
@@ -263,6 +268,18 @@ def audit_payload(root):
                     .capitalize()[:200],
                 }
             )
+            # Snapshot differences are observations at a recorded stage, not
+            # proof that every changed identity was caused by that operation.
+            if row.get("before") and row.get("after"):
+                observed = _changes(row["before"], row["after"], inventories)
+                allowance = max(0, 1000 - observed_changes)
+                observed_limited |= len(observed) > allowance
+                for change in observed[:allowance]:
+                    change["id"] = row["id"] + "-" + change["id"]
+                    change["recorded_event"] = row["id"]
+                    change["operation"] = row.get("operation")
+                    events.append(change)
+                    observed_changes += 1
     else:
         for stage, relative in (
             ("input", "setup/input.pdb"),
@@ -305,6 +322,18 @@ def audit_payload(root):
                 }
             )
     available = [identity for identity, row in sources.items() if row.get("url")]
+    forcefield = setup.get("resolved_forcefield")
+    ligand_record = forcefield.get("ligand") if isinstance(forcefield, dict) else None
+    ligand_name = ligand_record.get("name") if isinstance(ligand_record, dict) else None
+    ligand_names = ligand_name if isinstance(ligand_name, list) else [ligand_name] if isinstance(ligand_name, str) else []
+    ligand_names = {name for name in ligand_names if isinstance(name, str) and name not in PROTEIN | WATER | IONS}
+    for identity, row in sources.items():
+        counts = row.get("counts")
+        if not isinstance(counts, dict):
+            continue
+        counts["ligand"] = sum(count for name, count in inventories[identity]["component_counts"].items() if name in ligand_names)
+        counts["other"] -= counts["ligand"]
+        row["ligand_evidence"] = "Named in setup/resolved_forcefield.ligand; residue-name classification, not chemical validation." if ligand_names else "No recorded ligand names; unmatched components remain other."
     source_events = []
     for identity in available:
         source = sources[identity]
@@ -327,6 +356,35 @@ def audit_payload(root):
         + [row for row in events if row["kind"] != "inventory"]
         + [row for row in events if row["kind"] == "inventory"]
     )
+    decisions = []
+    for row in events[:1000]:
+        if row["kind"] not in {"recorded", "decision"}:
+            continue
+        details = row.get("details")
+        details = details if isinstance(details, dict) else {}
+        decisions.append({"event_id": row["id"], "choice": row["label"],
+                          "requested": details.get("requested_settings", details.get("requested", "Not separately recorded")),
+                          "resolved": details.get("resolved_forcefield", details.get("resolved", details or row.get("evidence"))),
+                          "reason": row.get("reason") or "No chemical reason recorded; inventory changes alone do not establish one.",
+                          "before": row.get("before"), "after": row.get("after"),
+                          "status": "Recorded operation" if row["kind"] == "recorded" else "Historical evidence",
+                          "source": "setup/preparation_audit.json" if recorded else "setup/setup_parameters.json"})
+    affected = []
+    for row in events[:1000]:
+        selection = row.get("selection")
+        if not isinstance(selection, dict):
+            continue
+        stage = row.get("stage")
+        ambiguous = not stage or inventories.get(stage, {}).get("ambiguous", True)
+        operation = str(row.get("operation") or "")
+        category = ("Mutation stage" if "mutat" in operation else
+                    "Repair stage" if "missing" in operation or "repair" in operation else
+                    "Hydrogen/state stage" if "hydrogen" in operation or "proton" in operation else
+                    "Component/assembly stage" if "heterogen" in operation or "assembly" in operation else
+                    "Observed inventory difference")
+        affected.append({"event_id": row["id"], "selection": selection, "stage": stage,
+                         "category": category, "ambiguous": ambiguous,
+                         "evidence": row["evidence"], "label": row["label"]})
     warnings = (
         journal.get("warnings", [])[:30]
         if recorded and isinstance(journal.get("warnings"), list)
@@ -347,15 +405,18 @@ def audit_payload(root):
         "warnings": warnings,
         "sources": sources,
         "changes": events[:1000],
+        "decisions": decisions,
+        "affected_residues": affected,
         "total_changes": len(events),
-        "limited": len(events) > 1000,
+        "limited": len(events) > 1000 or observed_limited,
         "ambiguous": any(row["ambiguous"] for row in inventories.values()),
         "notice": (
             "Structures show their first saved model. Atom identity matching "
             "includes chain, residue number, insertion code, residue name, "
             "atom name and alternate location. Component counts are based on "
-            "residue names; other components are not automatically labelled "
-            "ligands. Historical differences do not establish chemical causes."
+            "residue names; ligand counts require names in the saved resolved "
+            "ligand parameterization record. Other components remain unclassified. "
+            "Historical differences do not establish chemical causes."
             " This audit does not certify scientific suitability."
         ),
     }
