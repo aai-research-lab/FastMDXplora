@@ -1,47 +1,18 @@
 # FastMDXplora dashboard implementation framework
 
-Status: implementation resumed after user approval. Milestones are committed and pushed after verification.
-This document replaces the preliminary plan using the user's clarified requirements.
+Status reviewed 2026-10-02: **the full framework is not complete**.
+The current requirement-by-requirement assessment and change description are in
+[Dashboard feature changes and milestone status](dashboard-feature-status.md).
+M1, M4 and M6 have remaining specified controls; M3 has pending live tests for
+Claude, Kimi and Gemini; M5/M7 have remaining preservation/release acceptance gates.
+Milestone receipts below describe verified increments at their stated revision,
+not completion of all requirements or current verification of the whole branch.
+
 Working checkout: `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`.
 Branch: `context-aware-agent`, tracking `princeote/context-aware-agent`.
-User instruction (2026-10-02): keep the existing branch base and all feature
-changes on princeote/context-aware-agent; do not integrate upstream main.
-The initial provisional edits are being reconciled into verified milestones.
-
-Current validation (2026-10-02): the integrated dashboard/provider/research suite
-passed 236 checks with one skipped at commit 88d63d594. The isolated built wheel
-contains all 127 registered-error entries and the current graph, residue,
-bookmark, clip, audit and four-provider resources. The preparation recorder,
-pipeline observation sites and preservation tests are unchanged from verified M5.
-Real subscription-account consent/inference remains a later user test gate;
-OpenAI public authentication discovery now validates with a transport-specific
-native trust-store context; live account consent/inference is still unverified.
-These results do not certify live account availability or
-complete the remaining provider acceptance gate.
-
-Live OpenAI acceptance (2026-10-02): the user completed normal browser sign-in.
-The dashboard received the account and completed a real study explanation.
-The public account catalog omitted GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna despite
-successful subscription inference for all three exact model IDs. An explicit
-"Check GPT-6 model access" control now tests these published IDs with short,
-tool-free requests and offers successfully verified models for one hour in that
-account. Failed checks clear earlier verification. Catalog refresh remains
-available; arbitrary IDs are refused and no API billing fallback is used.
-All dashboard native dropdowns and option lists use black backgrounds with
-white text in both themes. Other providers' live account tests remain unverified.
-
-Latest verification at `a2035c5`: the focused Agent boundary suite passed all
-22 checks, covering installed error knowledge, human execution controls and
-verified residue evidence. The provider TLS/transaction/connection suite passed
-50 checks. The built wheel
-`fastmdxplora-2.5.9.dev154+ga2035c5da-py3-none-any.whl` has SHA-256
-`d6c88f038d69f190d213a92e853dc91d34e0be2de8dc7624180819777a761999`.
-Its error reference equals the runtime registry byte-for-byte; its dropdown
-contains OpenAI/ChatGPT/Codex, Claude, Kimi and Gemini, with no Copilot files or
-option. The optional `agent` dependency includes the native TLS trust store.
-Public discovery and signing-key retrieval succeeded with certificate and
-hostname verification enabled. These public requests used no account tokens
-and do not establish subscription consent or successful account inference.
+Keep the existing v2.5.8 branch history; do not integrate upstream main.
+OpenAI normal browser sign-in and real subscription explanations are now verified.
+All four provider adapters exist, but the other three live accounts remain unverified.
 
 ## 1. Product contract and priorities
 
@@ -429,7 +400,11 @@ ions and component counts. Do not launch a new production MD study merely to tes
 a UI control. Run existing relevant scientific and dashboard suites after feature
 tests; expand testing when failures or scientific instrumentation justify it.
 
-## 11. Completion definition and status tracking
+## 11. Completion definition and historical status tracking
+
+The receipts below preserve the state at each increment. For the current status,
+use [the milestone review](dashboard-feature-status.md); later work supersedes
+statements here about features being future work or OpenAI being unverified.
 
 Residue-comparison follow-up: the molecular viewer can pin one clicked residue,
 select another, and prepare an unsent comparison question. Both identities are
@@ -527,7 +502,7 @@ against the built wheel. Scientific preparation/simulation/analysis modules are
 unchanged; verification uses completed studies and fixtures without a new MD run.
 Provider connections, clip export and preparation audit remain future milestones.
 
-### Milestone M3 — provider connections in progress
+### Historical milestone M3 receipts — provider implementation and partial verification
 
 User revoked the milestone stop on 2026-10-02. Continue through M3 connections,
 M4 clips, M5/M6 preparation provenance and audit, and M7 final verification.
@@ -692,3 +667,51 @@ errors: every identifier is present and the packaged error reference exactly
 matches the runtime registry. Dynamic warnings retain their actual diagnostics;
 unclassified external failures are explicitly uncertain. Coverage of the software
 registry does not claim advance knowledge of every possible external failure.
+
+## Historical validation notes from the earlier header
+
+These notes predate the current review and retain their original chronology.
+The OpenAI acceptance paragraph supersedes earlier OpenAI-unverified statements.
+
+Status: implementation resumed after user approval. Milestones are committed and pushed after verification.
+This document replaces the preliminary plan using the user's clarified requirements.
+Working checkout: `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`.
+Branch: `context-aware-agent`, tracking `princeote/context-aware-agent`.
+User instruction (2026-10-02): keep the existing branch base and all feature
+changes on princeote/context-aware-agent; do not integrate upstream main.
+The initial provisional edits are being reconciled into verified milestones.
+
+Current validation (2026-10-02): the integrated dashboard/provider/research suite
+passed 236 checks with one skipped at commit 88d63d594. The isolated built wheel
+contains all 127 registered-error entries and the current graph, residue,
+bookmark, clip, audit and four-provider resources. The preparation recorder,
+pipeline observation sites and preservation tests are unchanged from verified M5.
+Real subscription-account consent/inference remains a later user test gate;
+OpenAI public authentication discovery now validates with a transport-specific
+native trust-store context; live account consent/inference is still unverified.
+These results do not certify live account availability or
+complete the remaining provider acceptance gate.
+
+Live OpenAI acceptance (2026-10-02): the user completed normal browser sign-in.
+The dashboard received the account and completed a real study explanation.
+The public account catalog omitted GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna despite
+successful subscription inference for all three exact model IDs. An explicit
+"Check GPT-6 model access" control now tests these published IDs with short,
+tool-free requests and offers successfully verified models for one hour in that
+account. Failed checks clear earlier verification. Catalog refresh remains
+available; arbitrary IDs are refused and no API billing fallback is used.
+All dashboard native dropdowns and option lists use black backgrounds with
+white text in both themes. Other providers' live account tests remain unverified.
+
+Latest verification at `a2035c5`: the focused Agent boundary suite passed all
+22 checks, covering installed error knowledge, human execution controls and
+verified residue evidence. The provider TLS/transaction/connection suite passed
+50 checks. The built wheel
+`fastmdxplora-2.5.9.dev154+ga2035c5da-py3-none-any.whl` has SHA-256
+`d6c88f038d69f190d213a92e853dc91d34e0be2de8dc7624180819777a761999`.
+Its error reference equals the runtime registry byte-for-byte; its dropdown
+contains OpenAI/ChatGPT/Codex, Claude, Kimi and Gemini, with no Copilot files or
+option. The optional `agent` dependency includes the native TLS trust store.
+Public discovery and signing-key retrieval succeeded with certificate and
+hostname verification enabled. These public requests used no account tokens
+and do not establish subscription consent or successful account inference.

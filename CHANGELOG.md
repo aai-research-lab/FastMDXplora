@@ -7,6 +7,24 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Dashboard research features on `context-aware-agent`
+
+The princeote feature branch adds a context-aware explanation Agent with packaged
+error knowledge and human-reviewed draft suggestions, portable screenshot
+bookmarks, rotating MP4/GIF trajectory exports, future preparation provenance and
+an expandable saved-stage audit. Protein and graph selections support verified
+residue explanations and pinned comparisons without changing scientific source
+data. Subscription adapters cover OpenAI, Claude, Kimi and Gemini; Copilot is
+removed. Codex models are ordered Astra, Sol 6.1, Sol 6, Luna 6, then the remaining
+models, with model-specific reasoning controls and readable dark dropdowns.
+
+**The full implementation framework is not complete.** OpenAI sign-in/inference
+has live acceptance; the other providers still need real account tests. Remaining
+context/draft review controls, clip options, audit visuals and final scientific,
+browser and packaging gates are listed in the
+[current milestone status and change description](docs/dashboard-feature-status.md).
+This branch update does not integrate upstream main or declare a new release.
+
 ### A hosted GUI shows its service's name and the person signed in
 
 **`fastmdx gui --hosted --product-name NAME --product-tagline TEXT`** shows the

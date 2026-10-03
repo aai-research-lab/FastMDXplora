@@ -42,6 +42,11 @@ Or configure the whole MD study in the GUI:
 fastmdx gui
 ```
 
+On the `context-aware-agent` feature branch, the dashboard includes Agent
+explanations, research bookmarks, trajectory clips and preparation comparisons.
+See the [feature changes and milestone status](docs/dashboard-feature-status.md)
+for available behavior, verification and remaining work before full acceptance.
+
 ## Install
 
 ```bash
