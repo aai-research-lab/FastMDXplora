@@ -1,6 +1,6 @@
 """One study survives a server restart across research tools; no inference or MD."""
+
 import hashlib
-import io
 import shutil
 
 import pytest
@@ -21,8 +21,11 @@ def test_completed_study_research_workflow_survives_server_restart(tmp_path):
     Image.new("RGB", (100, 100), "white").save(analysis / "rmsd.png")
     for name in ("input", "prepared"):
         shutil.copyfile(root / "setup/topology.pdb", root / f"setup/{name}.pdb")
-    original = {path: hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in root.rglob("*") if path.is_file()}
+    original = {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
     server, url = start_test_server(root)
     try:
         with playwright.sync_playwright() as pw:
@@ -32,7 +35,9 @@ def test_completed_study_research_workflow_survives_server_restart(tmp_path):
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(url + "/#analysis")
             page.wait_for_function("FastMDXDashboard.state.appState.active_run")
-            page.evaluate("FastMDXDashboard.showAnalysis('rmsd'); FastMDXSeries.setRange('rmsd', [1,3])")
+            page.evaluate(
+                "FastMDXDashboard.showAnalysis('rmsd'); FastMDXSeries.setRange('rmsd', [1,3])"
+            )
             page.locator('.page[data-page="analysis"] [data-research-bookmark="rmsd"]').click()
             page.locator("#research-title").fill("Integrated graph range")
             page.locator("#research-save").click()
@@ -58,24 +63,34 @@ def test_completed_study_research_workflow_survives_server_restart(tmp_path):
             page.locator("#research-agent-toggle").click()
             page.locator("#agent-context-review summary").click()
             page.locator("#agent-inspect-context").click()
-            page.wait_for_function("document.querySelector('#agent-context-evidence').textContent.includes('rmsd')")
+            page.wait_for_function(
+                "document.querySelector('#agent-context-evidence').textContent.includes('rmsd')"
+            )
             assert "1" in page.locator("#agent-context-evidence").inner_text()
             page.locator("#research-agent-close").click()
             page.evaluate("FastMDXDashboard.navigate('viewer')")
             page.wait_for_function("FastMDXMoleculeViewer.STATE.model !== null")
             page.locator("#clip-export-open").click()
-            page.wait_for_function("document.querySelector('#clip-status').textContent.includes('saved browser frames available')")
+            page.wait_for_function(
+                "document.querySelector('#clip-status').textContent"
+                ".includes('saved browser frames available')"
+            )
             page.locator("#clip-last").fill("2")
             page.locator("#clip-format").select_option("both")
             page.locator("#clip-export-start").click()
-            page.wait_for_function("document.querySelector('#clip-status').textContent.includes('metadata saved')", timeout=60000)
+            page.wait_for_function(
+                "document.querySelector('#clip-status').textContent.includes('metadata saved')",
+                timeout=60000,
+            )
             for selector in ("#clip-download", "#clip-download-mp4"):
                 response = page.request.get(url + page.locator(selector).get_attribute("href"))
                 assert response.ok and response.body()
             page.locator("#clip-export-cancel").click()
             page.evaluate("FastMDXDashboard.navigate('overview')")
             page.locator("#preparation-audit-panel > summary").click()
-            page.wait_for_function("document.querySelector('#preparation-event').options.length > 0")
+            page.wait_for_function(
+                "document.querySelector('#preparation-event').options.length > 0"
+            )
             page.locator("#preparation-event").select_option("view-prepared")
             page.wait_for_function("FastMDXResearch.capture().audit_source === 'prepared'")
             audit_view = page.evaluate("FastMDXResearch.capture()")
