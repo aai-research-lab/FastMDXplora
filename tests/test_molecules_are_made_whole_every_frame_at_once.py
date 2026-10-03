@@ -9,15 +9,34 @@ MDTraj's imaging over all frames together, with a k-d tree for the closest
 contact, and its coordinates are MDTraj's bit for bit: in a cube, a rhombic
 dodecahedron and a truncated octahedron, for one chain, two and five, with a
 ligand, ions and water, every atom thrown into a random periodic copy.
+
+Bit for bit where MDTraj's compiled imaging rounds each multiplication and
+addition on its own, as on x86-64. On arm64 (Apple silicon) its compiler
+fuses a multiplication and the addition after it into one rounding, so in a
+box with slanted vectors MDTraj's own coordinates differ in the last bits
+there; within 1e-5 nm, far below any periodic copy being chosen otherwise.
 """
 
 from __future__ import annotations
+
+import platform
 
 import numpy as np
 import pytest
 
 md = pytest.importorskip("mdtraj")
 pytest.importorskip("scipy")
+
+
+#: Where MDTraj's compiled code fuses multiply-adds (clang on arm64).
+FUSED = platform.machine().lower() in ("arm64", "aarch64")
+
+
+def _same_as_mdtraj(ours: np.ndarray, theirs: np.ndarray) -> bool:
+    """Bit for bit, or, where MDTraj's arithmetic is fused, within 1e-5 nm."""
+    if FUSED:
+        return ours.shape == theirs.shape and float(np.abs(ours - theirs).max()) < 1e-5
+    return np.array_equal(ours, theirs)
 
 
 def _box(kind: str, d: float) -> np.ndarray:
@@ -126,7 +145,7 @@ def test_the_coordinates_are_mdtrajs_bit_for_bit(kind, chains):
         by_mdtraj = trajectory.image_molecules(inplace=False, anchor_molecules=_anchors(topology))
         imaged = trajectory[:]
         image_trajectory(imaged, _anchors(topology))
-        assert np.array_equal(imaged.xyz, by_mdtraj.xyz), (kind, chains, d)
+        assert _same_as_mdtraj(imaged.xyz, by_mdtraj.xyz), (kind, chains, d)
         bonds = np.array([[a.index, b.index] for a, b in topology.bonds])
         assert md.compute_distances(imaged, bonds, periodic=False).max() < 0.3
 
@@ -141,7 +160,7 @@ def test_the_ligand_and_chains_as_anchors_are_mdtrajs_too():
     assert len(anchors) == 4
     by_mdtraj = trajectory.image_molecules(inplace=False, anchor_molecules=anchors)
     image_trajectory(trajectory, anchors)
-    assert np.array_equal(trajectory.xyz, by_mdtraj.xyz)
+    assert _same_as_mdtraj(trajectory.xyz, by_mdtraj.xyz)
 
 
 def test_the_loader_makes_molecules_whole_as_it_did():
@@ -156,7 +175,7 @@ def test_the_loader_makes_molecules_whole_as_it_did():
     others = [m for m in topology.find_molecules()
               if m not in large and not all(a.residue.is_water for a in m)]
     loading._nearest_copies(before, large, others)
-    assert np.array_equal(loading._made_whole(trajectory).xyz, before.xyz)
+    assert _same_as_mdtraj(loading._made_whole(trajectory).xyz, before.xyz)
 
 
 def test_what_cannot_be_imaged_is_refused_with_its_code():

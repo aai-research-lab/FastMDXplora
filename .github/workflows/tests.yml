@@ -125,8 +125,10 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     # A hung leg otherwise holds a runner for the six-hour default, which
-    # during a pileup is a fifth of the account's whole capacity.
-    timeout-minutes: 45
+    # during a pileup is a fifth of the account's whole capacity. The
+    # coverage leg runs the same tests traced, about twice as long, and
+    # was cancelled at 99% under the 45 minutes the others take.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && 90 || 60 }}
     strategy:
       fail-fast: false
       matrix:

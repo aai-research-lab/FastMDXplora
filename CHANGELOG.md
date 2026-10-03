@@ -115,7 +115,11 @@ closest contact between chains found with a k-d tree: 6.7 s and 1.3 s. The
 coordinates are MDTraj's bit for bit in a cube, a rhombic dodecahedron and a
 truncated octahedron, for one to eight chains with a ligand, ions and water,
 each atom first thrown into a random periodic copy
-(`fastmdxplora.analysis.imaging`). More than 32 anchored molecules are still
+(`fastmdxplora.analysis.imaging`), wherever MDTraj's compiled code rounds
+each operation, as on x86-64. On arm64 (Apple silicon) MDTraj's compiler
+fuses a multiplication and an addition into one rounding, so in a rhombic
+dodecahedron or an octahedron the two agree within 1e-5 nm rather than to
+the bit. More than 32 anchored molecules are still
 placed by MDTraj, and a topology without bonds is still left as stored.
 
 ### The PDB playback is gone

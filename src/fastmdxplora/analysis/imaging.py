@@ -22,7 +22,9 @@ and computed over all frames together rather than frame by frame:
 The rounding is MDTraj's own (box vectors in OpenMM's reduced form, rounded
 along the third vector, then the second, then the first) and in single
 precision, and the atoms are summed in MDTraj's order, so the coordinates
-are MDTraj's bit for bit.
+are MDTraj's bit for bit where MDTraj's compiled code rounds each operation,
+as on x86-64. On arm64 its compiler fuses a multiplication and an addition
+into one rounding, and in a slanted box the two agree within 1e-5 nm.
 """
 
 from __future__ import annotations
