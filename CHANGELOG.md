@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Play plays from the first frame
+
+**The first Play of a finished study plays from the first frame.** The
+box that follows a running study's newest frame is hidden once the study
+has finished, and was still ticked, so the first Play loaded the frames at
+the last one and, with nothing after it, stopped. It now follows only while
+the run writes frames, and Play at the last frame starts again from the
+first, as a player does (from the last, played backwards).
+
 ### The package says what it ships
 
 **The package's metadata declares the licences of everything it ships:

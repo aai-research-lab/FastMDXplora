@@ -1546,8 +1546,10 @@
         /* Follow the run: when frames arrive while it is ticked, show the
          * newest rather than returning to wherever the slider was. Scrubbing
          * back unticks it, so a person looking at frame 40 is not dragged
-         * to frame 200 by the next poll. */
-        const follow = document.getElementById("traj-follow")?.checked;
+         * to frame 200 by the next poll. Only while the run writes frames:
+         * the box is hidden, and still ticked, for a finished study, whose
+         * first Play jumped to the last frame and stopped there. */
+        const follow = document.getElementById("traj-follow")?.checked && runIsWriting();
         const current = Number(document.getElementById("traj-slider")?.value || 0);
         const target = follow && STATE.playbackFrames > 0 ? STATE.playbackFrames - 1 : current;
         await setPlaybackFrame(Math.max(0, target));
@@ -1735,6 +1737,15 @@
       return;
     }
     if (!STATE.playbackPlaying || asked !== STATE.playbackAsked) return;
+    // Played from the end it stands at, as a player does: from the first
+    // frame where the last is shown (the last, played backwards).
+    const shown = Number(document.getElementById("traj-slider")?.value || 0);
+    const end = STATE.playbackReverse ? 0 : STATE.playbackFrames - 1;
+    if (STATE.playbackFrames > 1 && shown === end && !STATE.playbackLoop) {
+      stopFollowing();
+      await setPlaybackFrame(STATE.playbackReverse ? STATE.playbackFrames - 1 : 0);
+      if (!STATE.playbackPlaying || asked !== STATE.playbackAsked) return;
+    }
     const interval = Math.max(50, Math.round(700 / Math.max(0.25, STATE.playbackSpeed)));
     // One frame at a time: the next is asked for once the last is rendered.
     const step = async () => {
@@ -1772,6 +1783,11 @@
       }
     }
     await setPlaybackFrame(next);
+  }
+
+  /** Whether the run is writing frames now, so the newest can be followed. */
+  function runIsWriting() {
+    return STATE.runStatus === "running" || STATE.runStatus === "starting";
   }
 
   function stopFollowing() {
