@@ -272,6 +272,97 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
         server.server_close()
 
 
+@pytest.mark.parametrize("connected", [True, False])
+def test_settings_engine_tracks_selected_subscription_and_refreshes_on_open(tmp_path, monkeypatch, connected):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "isolated-settings"))
+    server, url = start_test_server(_write_study(tmp_path / "study"))
+    state = {"ok": True, "selection": "subscription", "active": "fixture",
+             "accounts": [{"id": "fixture", "provider": "openai-chatgpt",
+                           "model": "gpt-6.1-sol", "reasoning": "high", "connected": connected}]}
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.route("**/api/agent/connections", lambda route: route.fulfill(json=state))
+            page.goto(url + "/#overview")
+            page.locator("#settings-open").click()
+            expected = "ChatGPT · gpt-6.1-sol · " + ("reasoning: high" if connected else "reconnect required")
+            playwright.expect(page.locator("#settings-engine")).to_have_text(expected)
+            page.locator("#settings-open").click()
+            state["accounts"] = []
+            page.locator("#settings-open").click()
+            playwright.expect(page.locator("#settings-engine")).to_have_text("Select a subscription account")
+            page.locator("#settings-open").click()
+            state["ok"] = False
+            page.locator("#settings-open").click()
+            playwright.expect(page.locator("#settings-engine")).to_have_text("Connection status unavailable")
+            page.locator("#settings-open").click()
+            state.update(ok=True, selection="api")
+            page.route("**/api/agent/model", lambda route: route.fulfill(json={
+                "ok": True, "current": {"provider": "openai", "model": "fixture-api-model"}, "providers": []}))
+            page.locator("#settings-open").click()
+            playwright.expect(page.locator("#settings-engine")).to_have_text("openai · fixture-api-model")
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_column_and_file_splitters_resize_with_keyboard_and_keep_sources(tmp_path, monkeypatch, theme):
+    import hashlib
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "isolated-settings"))
+    root = _write_study(tmp_path / "study")
+    before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in root.rglob("*") if path.is_file()}
+    server, url = start_test_server(root)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + "); localStorage.setItem('fmx.panelCollapsed', '0')")
+            page.goto(url + "/#files")
+            sidebar = page.get_by_role("separator", name="Resize sidebar", exact=True)
+            panel = page.get_by_role("separator", name="Resize side panel", exact=True)
+            assert sidebar.get_attribute("tabindex") == "0"
+            sidebar.press("End")
+            assert page.locator(".sidebar").bounding_box()["width"] == pytest.approx(320)
+            sidebar.press("Home")
+            assert page.locator(".sidebar").bounding_box()["width"] == pytest.approx(180)
+            sidebar.press("Shift+ArrowRight")
+            assert sidebar.get_attribute("aria-valuenow") == "212"
+            panel.press("End")
+            assert page.locator("#side-panel").bounding_box()["width"] == pytest.approx(640)
+            panel.press("Home")
+            panel.press("ArrowLeft")
+            assert page.locator("#side-panel").bounding_box()["width"] == pytest.approx(296)
+            page.locator('.file-row').filter(has=page.locator('.file-title[title="simulation/energy.csv"]')).get_by_role("button", name="View", exact=True).click()
+            seam = page.get_by_role("separator", name="Resize the file list", exact=True)
+            playwright.expect(seam).to_be_visible()
+            seam.press("End")
+            assert seam.get_attribute("aria-valuenow") == "100"
+            seam.press("ArrowUp")
+            assert seam.get_attribute("aria-valuenow") == "95"
+            seam.press("Home")
+            assert seam.get_attribute("aria-valuenow") == "0"
+            page.reload()
+            playwright.expect(sidebar).to_have_attribute("aria-valuenow", "212")
+            assert panel.get_attribute("aria-valuenow") == "296"
+            assert page.locator("#side-seam").get_attribute("aria-valuenow") == "0"
+            browser.close()
+        assert before == {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in before}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
 def test_sidebar_brand_and_collapse_fit_resized_columns_and_large_text(tmp_path, theme):
     playwright = pytest.importorskip("playwright.sync_api")
@@ -294,6 +385,8 @@ def test_sidebar_brand_and_collapse_fit_resized_columns_and_large_text(tmp_path,
                     product = page.locator(".sidebar .brand-product")
                     assert product.inner_text() == "FastMDXplora"
                     assert product.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), (theme, width, zoom)
+                    if zoom == 100:
+                        assert product.evaluate("el => el.clientHeight <= parseFloat(getComputedStyle(el).lineHeight) + 1"), (theme, width)
                     bounds = page.locator(".sidebar").bounding_box()
                     button = page.locator("#sidebar-collapse").bounding_box()
                     assert button and bounds and button["x"] >= bounds["x"]

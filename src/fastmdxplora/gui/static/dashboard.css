@@ -2626,6 +2626,10 @@ body.panel-collapsed .side-expand { display: inline-flex; }
 }
 .col-handle:hover::after,
 .col-handle.dragging::after { background: var(--border-primary); }
+.col-handle:focus-visible, .side-seam:focus-visible {
+    outline: 2px solid var(--accent-cyan);
+    outline-offset: -2px;
+}
 body.col-dragging { cursor: col-resize; user-select: none; }
 body.col-dragging iframe, body.col-dragging canvas { pointer-events: none; }
 
@@ -3267,6 +3271,13 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     /* A resized column or enlarged text must keep the complete name visible. */
     overflow-wrap: anywhere;
     line-height: 1.15;
+}
+@media (min-width: 801px) {
+    .sidebar .brand-product {
+        /* Fit the name at ordinary text size; the rem floor still follows
+           enlarged text, which may wrap instead of becoming clipped. */
+        font-size: clamp(1rem, calc((var(--sidebar-width) - 84px) * 0.15), var(--text-3xl));
+    }
 }
 .sidebar-collapse { order: 2; padding: 4px 7px; font-size: var(--text-2xs); margin-top: 4px; }
 .sidebar-expand {

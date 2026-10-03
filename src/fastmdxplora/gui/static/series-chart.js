@@ -200,17 +200,19 @@
 
     // What the analysis left out, first, so the line is drawn over it.
     if (mean && mean.from_x != null && mean.discard > 0) {
-      var cut = px(mean.from_x);
-      el("rect", {
-        x: plot.left, y: plot.top, width: Math.max(0, cut - plot.left),
-        height: plot.bottom - plot.top, fill: c.axis, "fill-opacity": 0.12,
-        class: "series-excluded",
-      }, svg);
-      var note = el("text", {
-        x: plot.left + 6, y: plot.top + 12, fill: c.axis, "font-size": 10,
-        class: "series-excluded-label",
-      }, svg);
-      note.textContent = "equilibration, not averaged";
+      var cut = Math.max(plot.left, Math.min(plot.right, px(mean.from_x)));
+      if (cut > plot.left) {
+        el("rect", {
+          x: plot.left, y: plot.top, width: cut - plot.left,
+          height: plot.bottom - plot.top, fill: c.axis, "fill-opacity": 0.12,
+          class: "series-excluded",
+        }, svg);
+        var note = el("text", {
+          x: plot.left + 6, y: plot.top + 12, fill: c.axis, "font-size": 10,
+          class: "series-excluded-label",
+        }, svg);
+        note.textContent = "equilibration, not averaged";
+      }
     }
 
     var yTicks = ticks(yLow, yHigh, 4);

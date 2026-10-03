@@ -72,10 +72,26 @@
     px = Math.max(lim[0], Math.min(lim[1], px));
     document.documentElement.style.setProperty("--" + which + "-width", px + "px");
     store.set(which + "Width", px);
+    $$('.col-handle[data-handle="' + which + '"]').forEach(function (handle) {
+      handle.setAttribute("aria-valuemin", String(lim[0]));
+      handle.setAttribute("aria-valuemax", String(lim[1]));
+      handle.setAttribute("aria-valuenow", String(px));
+    });
   }
 
   function wireHandle(handle) {
     var which = handle.dataset.handle;
+    handle.addEventListener("keydown", function (event) {
+      var value = parseFloat(handle.getAttribute("aria-valuenow"));
+      var step = event.shiftKey ? 32 : 16;
+      if (event.key === "Home") value = LIMITS[which][0];
+      else if (event.key === "End") value = LIMITS[which][1];
+      else if (event.key === "ArrowLeft") value += which === "sidebar" ? -step : step;
+      else if (event.key === "ArrowRight") value += which === "sidebar" ? step : -step;
+      else return;
+      event.preventDefault();
+      setWidth(which, value);
+    });
     handle.addEventListener("mousedown", function (down) {
       down.preventDefault();
       var startX = down.clientX;
@@ -706,16 +722,36 @@
     if (!popup || !trigger) return;
     popup.hidden = !open;
     trigger.setAttribute("aria-expanded", String(open));
+    if (open) loadAgentStatus();
   }
 
+  var agentStatusGeneration = 0;
   function loadAgentStatus() {
-    fetch("/api/agent/model", {
-      method: "POST", headers: {"content-type": "application/json"}, body: "{}"
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      var cur = d && d.current;
+    var generation = ++agentStatusGeneration;
+    function display(text) {
       var engine = el("settings-engine");
-      if (engine) engine.textContent = cur ? cur.provider + " \u00b7 " + cur.model : "none";
-    }).catch(function () { /* fine */ });
+      if (engine && generation === agentStatusGeneration) engine.textContent = text;
+    }
+    fetch("/api/agent/connections", {
+      method: "POST", headers: {"content-type": "application/json"}, body: '{"action":"status"}'
+    }).then(function (r) { return r.json(); }).then(function (connection) {
+      if (!connection || !connection.ok) throw new Error("Connection status unavailable");
+      if (connection.selection === "subscription") {
+        var account = (connection.accounts || []).find(function (row) { return row.id === connection.active; });
+        if (!account) { display("Select a subscription account"); return; }
+        var names = {"openai-chatgpt": "ChatGPT", claude: "Claude", kimi: "Kimi Code", gemini: "Gemini"};
+        display((names[account.provider] || account.provider) + " \u00b7 " + account.model
+          + (account.connected ? " \u00b7 reasoning: " + (account.reasoning || "default") : " \u00b7 reconnect required"));
+        return;
+      }
+      return fetch("/api/agent/model", {
+        method: "POST", headers: {"content-type": "application/json"}, body: "{}"
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || !d.ok) throw new Error("Model status unavailable");
+        var cur = d.current;
+        display(cur ? cur.provider + " \u00b7 " + cur.model : "none");
+      });
+    }).catch(function () { display("Connection status unavailable"); });
   }
 
   /* ---- Wire it up --------------------------------------------------- */
@@ -994,8 +1030,21 @@
         var bounded = Math.max(0, Math.min(100, pct));
         document.documentElement.style.setProperty("--side-files-height", bounded + "%");
         store.set("sideFilesHeight", String(bounded));
+        seam.setAttribute("aria-valuenow", String(bounded));
       }
-      setFilesHeight(parseFloat(store.get("sideFilesHeight", "45")) || 45);
+      var storedHeight = parseFloat(store.get("sideFilesHeight", "45"));
+      setFilesHeight(Number.isFinite(storedHeight) ? storedHeight : 45);
+      seam.addEventListener("keydown", function (event) {
+        var value = parseFloat(seam.getAttribute("aria-valuenow"));
+        var step = event.shiftKey ? 10 : 5;
+        if (event.key === "Home") value = 0;
+        else if (event.key === "End") value = 100;
+        else if (event.key === "ArrowUp") value -= step;
+        else if (event.key === "ArrowDown") value += step;
+        else return;
+        event.preventDefault();
+        setFilesHeight(value);
+      });
       seam.addEventListener("mousedown", function (e) {
         e.preventDefault();
         seam.classList.add("dragging");

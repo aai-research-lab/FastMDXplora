@@ -9,6 +9,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+Settings now shows the selected subscription model and reasoning level, including
+reconnect status, and refreshes when opened. Dashboard column and file-list
+splitters support keyboard resizing with visible focus and persisted sizes.
+Sidebar branding adapts to the available width and still wraps with enlarged
+text. Cropped analysis charts keep equilibration shading inside the plot and
+omit its label when the displayed range contains no excluded samples; recorded
+means, uncertainties and scientific data remain unchanged.
+
 The dashboard's product name wraps within resized sidebars and enlarged text
 instead of being clipped. Sidebar collapse/expand, full-page layouts and text
 scaling have regression coverage across all three themes.

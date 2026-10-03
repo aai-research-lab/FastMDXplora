@@ -255,13 +255,36 @@ def page(dashboard):
 
 
 def _point_at(page, analysis: str, share: float) -> None:
-    box = page.locator(f'.series-chart[data-analysis="{analysis}"] svg').bounding_box()
+    svg = page.locator(f'.series-chart[data-analysis="{analysis}"] svg')
+    svg.scroll_into_view_if_needed()
+    box = svg.bounding_box()
     # Inside the plotting area, which starts after the y axis's labels.
     x = box["x"] + 64 + (box["width"] - 64 - 28) * share
     page.mouse.move(x, box["y"] + box["height"] / 2)
 
 
 class TestTheChart:
+
+    @pytest.mark.parametrize("start,end,excluded", [(0.002, 0.008, True),
+                                                   (0.014, 0.030, False),
+                                                   (0.006, 0.018, True)])
+    def test_cropped_equilibration_shading_stays_inside_plot(self, page, start, end, excluded):
+        chart = page.locator('.series-chart[data-analysis="rmsd"]')
+        original_mean_label = chart.locator("svg").get_attribute("aria-label").split("; mean ")[1]
+        chart.get_by_role("spinbutton", name="Range start", exact=True).fill(str(start))
+        chart.get_by_role("spinbutton", name="Range end", exact=True).fill(str(end))
+        chart.get_by_role("button", name="Apply", exact=True).click()
+        assert chart.locator(".series-excluded").count() == int(excluded)
+        assert chart.locator(".series-excluded-label").count() == int(excluded)
+        if excluded:
+            geometry = chart.locator(".series-excluded").evaluate("""el => ({
+                left:Number(el.getAttribute('x')), right:Number(el.getAttribute('x'))+Number(el.getAttribute('width')),
+                plotRight:Math.max(...Array.from(el.ownerSVGElement.querySelectorAll('line')).map(line=>Number(line.getAttribute('x2'))))})""")
+            assert geometry["right"] <= geometry["plotRight"] + 0.01
+            assert geometry["right"] > geometry["left"]
+        assert chart.locator("svg").get_attribute("aria-label").split("; mean ")[1] == original_mean_label
+        assert "Mean and uncertainty still describe the full analysis" in chart.inner_text()
+        assert page.errors == []
 
     @pytest.mark.parametrize("kind,axis,prefix", [("atom", "Atom identifier", "atom"),
         ("index", "Recorded index", "recorded index")])

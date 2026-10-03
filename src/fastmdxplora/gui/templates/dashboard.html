@@ -287,7 +287,7 @@
         </button>
       </div>
     </aside>
-    <div class="col-handle" data-handle="sidebar" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
+    <div class="col-handle" data-handle="sidebar" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize sidebar" title="Resize sidebar: Left/Right arrows, Home/End; Shift for larger steps"></div>
 
     <!-- Main content -->
     <div class="main">
@@ -1244,7 +1244,7 @@
         </section>
       </main>
     </div>
-    <div class="col-handle" data-handle="panel" role="separator" aria-orientation="vertical" aria-label="Resize side panel"></div>
+    <div class="col-handle" data-handle="panel" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize side panel" title="Resize side panel: Left/Right arrows, Home/End; Shift for larger steps"></div>
 
     <!-- Side panel: the run as it happens, and what it has written -->
     <aside class="side-panel" id="side-panel" aria-label="Run log and files">
@@ -1273,7 +1273,7 @@
         <!-- The seam between the list and the preview: drag it, and
              either can take the whole panel. Double-click resets. -->
         <div class="side-seam" id="side-seam" role="separator" aria-orientation="horizontal"
-             aria-label="Resize the file list" hidden></div>
+             tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-label="Resize the file list" title="Resize file list: Up/Down arrows, Home/End; Shift for larger steps" hidden></div>
         <div class="side-preview" id="side-preview" hidden>
           <div class="side-preview-head">
             <span class="mono side-preview-name" id="side-preview-name"></span>

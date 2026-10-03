@@ -847,3 +847,35 @@ shell and doubled-text controls, 9 checks passed in 105.64 s. Ruff with the
 existing E501 exception and diff checks passed. This CSS correction postdates
 the combined run and installed wheel; its installed/native acceptance and the
 remaining broader M7/M8 gates remain open.
+
+### Installed study context and interface acceptance, 2026-10-03
+
+A fresh Windows venv installed the 7405f99 wheel with declared core and Agent
+dependencies, outside the source checkout. Pip check reports no broken
+requirements. Packaged knowledge covers all 127 registered errors; the Gemini
+bridge and dashboard research assets are present. Wheel SHA256:
+`cdf0efcd80299e68468ba189d52c9adbc26f1b23b5d2839588e67eedbc807701`.
+Its isolated dashboard on port 8784 uses a new completed 1L2Y study copy and
+does not use the user's authenticated settings or conversation history.
+
+Native interaction verifies a cropped RMSD range of 0.1–0.2 ns, server-resolved
+context inspection, and explicit per-message view opt-out. Inspection retains
+the study's full-analysis statistical qualifications and distinguishes selected
+view hints from recorded evidence. No inference was sent in this isolated
+environment. A titled Graph bookmark with a screenshot exports as a ZIP,
+passes archive integrity checking, and restores the range after Reset. The
+screenshot is 844 by 475 pixels. All 309 baseline study files remain identical
+by SHA256. Restart/import and the remaining integrated acceptance are pending.
+
+Further source-browser review corrected Settings' misleading API-only Engine
+label, added keyboard controls and ARIA values to all layout splitters, preserved
+a saved zero-height file pane, and made branding fit ordinary sidebar widths
+while retaining wrapping for enlarged text. Seventeen targeted interface checks
+pass across Graphite, Ink and Paper in 102.04 s. Cropped equilibration shading
+now stays within the chart, with no excluded-region label after the cutoff.
+All 38 analysis-chart checks pass in 45.63 s. An initial residue-selection check
+clicked below the viewport; scrolling the chart into view corrected the test
+harness while retaining its actual residue and viewer assertions. Scientific
+values and source structures were not changed. Ruff and diff checks pass.
+These additional changes postdate the 7405f99 wheel; their installed acceptance
+requires the next build. M7/M8 and the full framework remain open.
