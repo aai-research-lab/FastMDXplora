@@ -371,3 +371,19 @@ expires and the catalog omits it, Settings keeps that saved model selected and
 labels it "not listed; check access" rather than displaying the first available
 model. Applying it stays disabled until access is verified. The 19 provider and
 reasoning checks pass, including the browser regression for this condition.
+
+### Fresh live selected-graph explanation on the completed study
+
+On the current dashboard serving the actual completed 1L2Y study, the connected
+GPT-6 Luna subscription answered a new three-sentence question about selected
+radius of gyration. It reported 0.7043 nm, uncertainty not determined, and separated
+the report's passed equilibration check from its failed correlation-time check.
+The UI attached the Rg evidence chip. Inspect current evidence resolved page
+`analysis`, metric `rg`, figure `analysis/rg/rg.png`, mean 0.7043278748801384 nm,
+null error, and the recorded insufficient-correlation-time explanation. The
+study's analysis options and report evidence agree with those statements.
+
+SHA-256 comparisons across 306 existing setup, simulation, analysis and report
+files found zero changes after the explanation. No scientific action was requested
+or initiated. This is a fresh actual-study live explanation receipt, not proof of
+all context types, provider lifecycle states or the complete M7 walkthrough.
