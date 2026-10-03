@@ -25,7 +25,7 @@ from functools import lru_cache
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from fastmdxplora.gui.browse import is_study
 from fastmdxplora.gui.hosting import ACCOUNT_HEADER, SECRET_HEADER, Hosting
@@ -146,7 +146,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/frames-info",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
-    "/structure/topology.pdb", "/structure/live-frame.pdb",
+    "/structure/topology.pdb", "/structure/live-frame.pdb", "/structure/live-frame.dcd",
     "/structure/frames.dcd", "/structure/frames-topology.pdb",
 })
 GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/")
@@ -802,6 +802,9 @@ def make_handler(
             if path == "/structure/live-frame.pdb":
                 self._send_live_frame(root)
                 return
+            if path == "/structure/live-frame.dcd":
+                self._send_live_coordinates(root)
+                return
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
                 self._send_frames(root, path.rsplit("/", 1)[1])
                 return
@@ -1412,6 +1415,25 @@ def make_handler(
             self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_live_coordinates(self, root: Path) -> None:
+            from fastmdxplora.gui.live_frames import live_frame_coordinates
+
+            said = live_frame_coordinates(root / "simulation")
+            if said is None:
+                self.send_error(404, "Live frame not available")
+                return
+            data = said["data"]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("X-FastMDX-Atoms", str(said["atoms"]))
+            # Percent-encoded: a header's leading spaces are not kept, and the
+            # fingerprint is columns of a PDB line, spaces and all.
+            self.send_header("X-FastMDX-Fingerprint", quote(said["fingerprint"]))
             self.end_headers()
             self.wfile.write(data)
 

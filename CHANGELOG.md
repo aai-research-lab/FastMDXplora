@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A live frame moves the atoms shown
+
+**While a study runs, each new frame moves the atoms the Viewer and the
+Overview's preview already show, rather than being loaded as a new
+structure.** A frame was fetched as its whole PDB, about 81 bytes an atom,
+and loaded afresh: every representation built again, and the atoms being
+measured or picked dropped and picked again. Its coordinates now come alone
+as a one-frame DCD, 12 bytes an atom (`/structure/live-frame.dcd`), and move
+the atoms as a frame played does, in about 50 ms for 2,192 atoms: the
+measurement stays and its numbers follow, and the cartoon is the new frame's
+DSSP. A frame of other atoms is loaded whole, as before.
+
 ### Molecules are made whole in seconds
 
 **Making a trajectory's molecules whole across the periodic boundary, which

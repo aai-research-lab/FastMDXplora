@@ -245,6 +245,47 @@ def live_frame_exists(output_dir: str | Path) -> bool:
     return live_frame_pdb_path(output_dir).is_file()
 
 
+def live_frame_coordinates(output_dir: str | Path) -> dict[str, Any] | None:
+    """The live frame's coordinates alone, as a one-frame DCD.
+
+    A live frame was sent as its whole PDB, about 81 bytes an atom, and
+    loaded as a new structure, which rebuilt every representation and took
+    the measurements and picks with it. As a DCD it is 12 bytes an atom, and
+    the viewer moves the atoms it already shows. Returned with the number of
+    atoms, so a frame of other atoms is loaded whole instead, and the
+    fingerprint the secondary structure is matched by: the first atom's
+    coordinates as the PDB gives them (see ``gui/by_residue.py``). ``None``
+    where there is no live frame or it holds no atoms.
+    """
+    import tempfile
+
+    import numpy as np
+
+    try:
+        text = live_frame_pdb_path(output_dir).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    atoms = [line for line in text.splitlines() if line[:6] in ("ATOM  ", "HETATM")]
+    if not atoms:
+        return None
+    try:
+        xyz = np.array([(float(a[30:38]), float(a[38:46]), float(a[46:54])) for a in atoms],
+                       dtype=np.float32)
+    except ValueError:
+        return None
+    import mdtraj as md
+
+    topology = md.Topology()
+    residue = topology.add_residue("UNK", topology.add_chain())
+    for _ in atoms:
+        topology.add_atom("X", md.element.carbon, residue)
+    with tempfile.TemporaryDirectory(prefix="fastmdx-live-") as folder:
+        path = Path(folder) / "live_frame.dcd"
+        md.Trajectory(xyz[None] / 10.0, topology).save_dcd(str(path))
+        data = path.read_bytes()
+    return {"data": data, "atoms": len(atoms), "fingerprint": atoms[0][30:54]}
+
+
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")

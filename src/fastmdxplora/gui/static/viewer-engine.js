@@ -119,8 +119,8 @@
    * frame arriving while the frames load, or a click while the last pick
    * is still being rendered, each replaced the other's half-built scene. The
    * engine's own calls to itself are not queued, so none waits on itself. */
-  const QUEUED = new Set(["loadFrames", "loadStructure", "showScene", "clear", "build",
-    "setScene", "showBox", "setFrame", "setRepresentation", "setColour",
+  const QUEUED = new Set(["loadFrames", "loadStructure", "setCoordinates", "showScene",
+    "clear", "build", "setScene", "showBox", "setFrame", "setRepresentation", "setColour",
     "setSecondaryStructure", "redraw", "measure", "showPicks", "clearMeasurements",
     "showContacts", "loadEnvironment", "renderEnvironment", "moveEnvironment",
     "removeEnvironment", "picture"]);
@@ -189,7 +189,9 @@
       return {frames: this.frameCount(), atoms: this.atomCount()};
     }
 
-    /** One structure, as PDB text or a URL. */
+    /** One structure, as PDB text or a URL. With ``coordinates``, the
+     * bytes of a one-frame DCD of its atoms, it is rendered at those
+     * coordinates, and ``setCoordinates`` moves its atoms after. */
     async loadStructure(source) {
       const view = source.keepCamera ? this.cameraSnapshot() : null;
       await this.clear();
@@ -197,7 +199,9 @@
       const data = source.text != null
         ? await builders.data.rawData({data: source.text, label: source.label || "structure"})
         : await builders.data.download({url: absolute(source.url), isBinary: false});
-      const trajectory = await builders.structure.parseTrajectory(data, source.format || "pdb");
+      const trajectory = source.coordinates
+        ? await this.atCoordinates(data, source.coordinates)
+        : await builders.structure.parseTrajectory(data, source.format || "pdb");
       await builders.structure.hierarchy.applyPreset(trajectory, "default",
         {representationPreset: "empty", showUnitcell: false});
       // The view kept is the person's, where it still looks at this
@@ -207,6 +211,44 @@
       await this.build(!keep);
       if (keep) this.restoreCamera(view);
       return {frames: this.frameCount(), atoms: this.atomCount()};
+    }
+
+    /** A topology's atoms at the coordinates of a DCD's bytes: the same
+     * trajectory the frames are, its coordinates kept as data that
+     * ``setCoordinates`` replaces. */
+    async atCoordinates(topology, bytes) {
+      const builders = this.plugin.builders;
+      const model = await builders.structure.createModel(
+        await builders.structure.parseTrajectory(topology, "pdb"));
+      const raw = await builders.data.rawData({data: bytes, label: "coordinates"});
+      const coordinates = await this.plugin.dataFormats.get("dcd").parse(this.plugin, raw);
+      this.coordinatesRef = raw.ref;
+      return this.plugin.build().toRoot()
+        .apply(this.lib.plugin.StateTransforms.Model.TrajectoryFromModelAndCoordinates,
+          {modelRef: model.ref, coordinatesRef: coordinates.ref},
+          {dependsOn: [model.ref, coordinates.ref]})
+        .commit();
+    }
+
+    /** The atoms shown moved to a one-frame DCD's coordinates: every
+     * representation, measurement and pick follows them, as they follow a
+     * frame played, and nothing is loaded again. False where the structure
+     * was not loaded with coordinates or these are not its atoms' (Mol*
+     * then has nothing to show, and the caller loads the frame whole). */
+    async setCoordinates(bytes) {
+      const cells = this.plugin.state.data.cells;
+      if (!this.coordinatesRef || !cells.has(this.coordinatesRef)) return false;
+      const atoms = this.atomCount();
+      try {
+        await this.plugin.build().to(this.coordinatesRef)
+          .update((old) => ({...old, data: bytes})).commit();
+      } catch (error) {
+        console.debug("coordinates not applied", error);
+        return false;
+      }
+      if (!this.structure() || this.atomCount() !== atoms) return false;
+      await this.followThePocket();
+      return true;
     }
 
     /** Whether a camera's target is within the structure shown. */
@@ -274,6 +316,7 @@
     }
 
     async clear() {
+      this.coordinatesRef = null;
       await this.plugin.clear();
     }
 

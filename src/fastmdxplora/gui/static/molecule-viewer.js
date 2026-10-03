@@ -43,6 +43,11 @@
     structureUrl: null,
     structurePdb: null,
     currentPdb: null,
+    // A live frame: the PDB its atoms are named by, and the newest
+    // coordinates as a one-frame DCD ({bytes, atoms, fingerprint}).
+    liveTopology: null,
+    liveTopologyAtoms: 0,
+    liveCoordinates: null,
     liveFrameIndex: null,
     liveUpdates: true,
     mode: "structure",
@@ -134,6 +139,9 @@
     pausePlayback();
     STATE.liveUpdates = true;
     STATE.liveFrameIndex = null;
+    STATE.liveTopology = null;
+    STATE.liveTopologyAtoms = 0;
+    STATE.liveCoordinates = null;
     STATE.mode = "structure";
     STATE.structureInfo = null;
     STATE.structureUrl = null;
@@ -318,7 +326,9 @@
       STATE.structurePdb = pdb;
       // Solvent wins over the live frame: frames are written with water and
       // ions already stripped, so live mode cannot show them at all.
-      if (STATE.mode !== "live" || !STATE.currentPdb || needsFullTopology()) {
+      if (STATE.liveFrameIndex != null && STATE.liveTopology && !needsFullTopology()) {
+        STATE.currentPdb = STATE.liveTopology;
+      } else if (STATE.mode !== "live" || !STATE.currentPdb || needsFullTopology()) {
         STATE.currentPdb = pdb;
       }
       STATE.mode = STATE.liveFrameIndex != null ? "live" : "structure";
@@ -353,9 +363,13 @@
     const of = pdbText === STATE.structurePdb ? "structure" : "live";
     const version = of === "structure" ? STATE.structureUrl : STATE.liveFrameIndex;
     const hadModel = mini ? !!STATE.miniModel : !!STATE.model;
+    // A live frame is its topology at the newest coordinates, so the next
+    // frame moves these atoms rather than loading them again.
+    const coordinates = pdbText === STATE.liveTopology ? STATE.liveCoordinates : null;
     applyLook(engine, mini);
     try {
       const loaded = await engine.loadStructure({text: pdbText,
+        coordinates: coordinates ? coordinates.bytes : null,
         keepCamera: hadModel && !opts.fit && STATE.preservingCamera});
       if (!isViewerGenerationCurrent(generation)) return;
       const rendered = {atoms: loaded.atoms, frames: loaded.frames, of};
@@ -370,7 +384,8 @@
         if (activeResult()) applyLook(engine, false);
         if (STATE.picks.length) await renderMeasurement();
       }
-      await giveTheSecondaryStructure(engine, of, version, mini, pdbText);
+      await giveTheSecondaryStructure(engine, of, version, mini,
+        coordinates ? coordinates.fingerprint : fingerprintOf(pdbText));
       if (!mini) sayTheColours();
     } catch (error) {
       console.warn("the viewer could not render this structure", error);
@@ -471,21 +486,47 @@
         });
         return;
       }
-      const frameResponse = await fetch(
-        `/structure/live-frame.pdb?v=${encodeURIComponent(index.live_frame_mtime || Date.now())}`,
-        {cache: "no-store"}
-      );
+      const version = encodeURIComponent(index.live_frame_mtime || Date.now());
+      const coordinates = await liveCoordinates(version);
+      if (!isViewerGenerationCurrent(generation)) return;
+      if (needsFullTopology()) {
+        // The frame has no solvent in it; replacing the solvated system with
+        // it would empty the view the reader just asked for.
+        STATE.liveFrameIndex = index.live_frame_index;
+        return;
+      }
+      const overlay = {
+        stage: index.simulation_stage || "live",
+        age: liveFrameAge(index),
+        step: index.live_frame_index,
+        simtime: index.simulation_time_ns,
+      };
+      // The atoms already shown moved to the new coordinates, where they are
+      // the frame's atoms: nothing loaded again, the measurements and picks
+      // kept.
+      if (coordinates && STATE.liveTopology && STATE.currentPdb === STATE.liveTopology
+          && coordinates.atoms === STATE.liveTopologyAtoms) {
+        STATE.liveCoordinates = coordinates;
+        STATE.liveFrameIndex = index.live_frame_index;
+        if (await moveTheLiveAtoms(coordinates)) {
+          setOverlay(true, overlay);
+          return;
+        }
+      }
+      const frameResponse = await fetch(`/structure/live-frame.pdb?v=${version}`,
+        {cache: "no-store"});
       if (!isViewerGenerationCurrent(generation)) return;
       if (!frameResponse.ok) return;
       const pdb = await frameResponse.text();
       if (!isViewerGenerationCurrent(generation)) return;
       if (!pdb.includes("ATOM") && !pdb.includes("HETATM")) return;
       STATE.liveFrameIndex = index.live_frame_index;
-      if (needsFullTopology()) {
-        // The frame has no solvent in it; replacing the solvated system with
-        // it would empty the view the reader just asked for.
-        return;
-      }
+      const atoms = (pdb.match(/^(?:ATOM  |HETATM)/gm) || []).length;
+      STATE.liveTopology = pdb;
+      STATE.liveTopologyAtoms = atoms;
+      // Coordinates of other atoms than the topology's (the file rewritten
+      // between the two requests) are left out: the PDB's own are shown.
+      STATE.liveCoordinates = coordinates && coordinates.atoms === atoms ? coordinates : null;
       STATE.currentPdb = pdb;
       if (STATE.mode !== "playback") {
         STATE.mode = "live";
@@ -495,15 +536,51 @@
       }
       const preview = document.getElementById("mini-preview-canvas");
       if (preview && isVisible(preview)) await mountStructure(pdb, {mini: true, fit: !STATE.miniModel});
-      setOverlay(true, {
-        stage: index.simulation_stage || "live",
-        age: liveFrameAge(index),
-        step: index.live_frame_index,
-        simtime: index.simulation_time_ns,
-      });
+      setOverlay(true, overlay);
     } catch (error) {
       console.debug("live molecular frame unavailable", error);
     }
+  }
+
+  /** The live frame's coordinates alone (`/structure/live-frame.dcd`): its
+   * bytes, how many atoms, and the fingerprint its DSSP is matched by. */
+  async function liveCoordinates(version) {
+    try {
+      const response = await fetch(`/structure/live-frame.dcd?v=${version}`, {cache: "no-store"});
+      if (!response.ok) return null;
+      const atoms = Number(response.headers.get("X-FastMDX-Atoms"));
+      const fingerprint = decodeURIComponent(response.headers.get("X-FastMDX-Fingerprint") || "");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return Number.isFinite(atoms) && atoms > 0 && bytes.length ? {bytes, atoms, fingerprint} : null;
+    } catch (error) {
+      console.debug("live coordinates unavailable", error);
+      return null;
+    }
+  }
+
+  /** The live frame shown in the Viewer and the preview, each moved to the
+   * new coordinates where it is showing the live frame. False where one
+   * could not be moved, so the frame is loaded whole. */
+  async function moveTheLiveAtoms(coordinates) {
+    const generation = STATE.viewerGeneration;
+    if (STATE.mode === "playback") return true;
+    STATE.mode = "live";
+    const targets = [
+      {mini: false, model: STATE.model, engine: STATE.engine},
+      {mini: true, model: STATE.miniModel, engine: STATE.miniEngine},
+    ];
+    for (const target of targets) {
+      // Moved whether or not its page is open, which costs a few
+      // milliseconds, so it is current, camera and all, when it is opened.
+      if (!target.engine || !target.model || target.model.of !== "live") continue;
+      if (!await target.engine.setCoordinates(coordinates.bytes)) return false;
+      if (!isViewerGenerationCurrent(generation)) return true;
+      await giveTheSecondaryStructure(target.engine, "live", STATE.liveFrameIndex, target.mini,
+        coordinates.fingerprint);
+    }
+    // The atoms measured have moved, and so have their numbers.
+    if (STATE.picks.length) sayMeasurement();
+    return true;
   }
 
   function liveFrameAge(index) {
@@ -774,7 +851,7 @@
    * the frames, from what the viewer was sent, as the secondary structure
    * analysis computes it. Mol*'s own stands wherever it cannot be had, and
    * the Structure tab says which the cartoon is. */
-  async function giveTheSecondaryStructure(engine, of, version, mini, text) {
+  async function giveTheSecondaryStructure(engine, of, version, mini, fingerprint) {
     if (!engine) return;
     const generation = STATE.viewerGeneration;
     const tag = `${of}|${version == null ? "" : version}`;
@@ -801,7 +878,7 @@
     // a newer file than the one rendered is not DSSP of what is rendered.
     const same = of === "structure"
       || (of === "frames" ? said.signature === STATE.playbackSignature
-        : (!text || said.fingerprint === fingerprintOf(text)));
+        : (!fingerprint || said.fingerprint === fingerprint));
     const frames = engine.frameCount() || 1;
     const fits = said.available && same && (said.frames || []).length === frames;
     let applied = false;

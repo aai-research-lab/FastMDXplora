@@ -276,6 +276,8 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/stream",
             "/analysis-figures-svg.zip",
             "/structure/topology.pdb", "/structure/live-frame.pdb",
+            # The live frame's coordinates alone, read from the same file.
+            "/structure/live-frame.dcd",
             "/structure/frames.dcd", "/structure/frames-topology.pdb",
         })
         assert GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK == ("/static/", "/artifacts/")
