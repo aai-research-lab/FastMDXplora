@@ -11,7 +11,8 @@ every requirement in the expanded framework.
 
 ### Current checkpoint — 2026-10-03
 
-Production revision `8d7adc52108cfb2594a24158b4b8405e8e0f5818` is pushed to
+Before the enlarged-text correction recorded below, production revision
+`8d7adc52108cfb2594a24158b4b8405e8e0f5818` was pushed to
 `princeote/context-aware-agent`. The source checkout was clean when inspected;
 the remote branch tip was independently checked with `git ls-remote`. Git describes
 this as `v2.5.8-204-g8d7adc5`; the development wheel's version is
@@ -995,4 +996,47 @@ viewer restoration, three-theme layout/text contrast, populated/import/error
 states and the integrated bookmark browser flow. Diff checks pass. The scientific
 setup, backend, phase and analysis modules are unchanged since b103dd8, whose
 protein/POPC/OpenFF preservation scope and limitations remain documented above.
-The new presentation increment still requires installed/native acceptance.
+Installed/native acceptance of this increment is recorded next. Later CSS
+corrections require their own final installed build.
+
+### Installed latest controls, media downloads and enlarged-text corrections
+
+Native review recovered the installed 8d7adc5 dashboard on port 8784 in a fresh
+review tab. The prior error document was stale; the existing server was reused,
+not restarted. Bookmark cards show recorded saved/updated dates and initial
+unverified source status. Restore changes the chosen card to matched-source
+status and restores its RMSD range. Settings retains ChatGPT / GPT-5.6 Luna /
+medium after the earlier server restart. The grouped clip dialog exposes Frames,
+Camera, Labels and Output. At 390 px, its footer remains reachable; Escape closes
+the dialog and restores focus to the export action.
+
+A new native two-frame export at 640 by 480, 10 fps and 45-degree camera rotation
+produced clip `66923f0fe138426cab0b2f8254868a2c`. The GUI's actual Download GIF
+and Download MP4 links saved files whose hashes equal the study artifacts:
+GIF `6ad5c51766d39df0d811305f26e329ad45f616a335cc8fe51d96530130e55867`;
+MP4 `3c825052ac9d11f471c4db78b654e86b9899da3d9b278b2e95187cc388ec5e3c`.
+Pillow decodes two 640 by 480 GIF frames of 100 ms each. ffprobe reports two
+640 by 480 MP4 frames, 10 fps and 0.20 s; ffmpeg fully decodes without errors.
+The sidecar matches preview browser frames 0/6, source frames 0/181 and times
+0.0005/0.091 ns. Labels/captions and source fingerprints are retained. Protein-wide
+residue labels can still overlap in this view; the dialog explains crowding and
+offers selected-identity scope. All 309 baseline study files remain byte-identical.
+
+Native enlarged-text inspection found a short study ID squeezed by the mobile
+brand, an appearance popup extending above the screen with overflowing version
+metadata, and a viewer status badge extending outside the canvas. The mobile
+header now reserves study space before wrapping; the popup has bounded scrolling
+and wraps rows/metadata; the viewer badge wraps inside the canvas. No scientific
+values, camera state or account/model selection logic changed.
+
+The new short-ID regression initially failed in all three themes at 200% / 390 px.
+After correction, it and existing shell checks passed (6 checks, 48.53 s). The new
+expanded-popup regression also failed in all themes before correction. Nine
+header/popup/doubled-text checks then passed in 115.63 s. Six additional viewer
+badge/contrast checks passed in 54.26 s. Ruff with the established E501 exception
+and diff checks pass. Native temporary-style previews show the whole 1L2Y ID and
+status, a bounded scrollable Paper popup at 200% / 390 px, and reachable citation
+navigation. Temporary styles, text size and viewport overrides were removed;
+the original Paper theme was restored. These previews are candidate-CSS evidence,
+not a claim that the new CSS is already in the installed wheel. Full M8 visual
+coverage and the final exact-revision installed release gate remain open.

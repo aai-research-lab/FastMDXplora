@@ -9,6 +9,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+With enlarged text, the mobile header gives the study identity room to wrap
+below the brand. The appearance popup scrolls within the screen and wraps long
+engine/version metadata; viewer status labels stay within the molecular canvas.
+These display changes preserve scientific values and model selection.
+
 Clip export groups controls into Frames, Camera, Labels and Output, with guidance
 for crowded protein-wide labels. Bookmark cards show saved/updated dates,
 screenshot placeholders and source-check status; restoration checks remain

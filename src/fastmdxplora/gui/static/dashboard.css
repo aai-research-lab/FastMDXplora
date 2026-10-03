@@ -918,6 +918,9 @@ button {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;
+    max-width: calc(100% - 28px);
+    overflow-wrap: anywhere;
     /* Dark enough to read over a white viewer background as well. */
     background: rgba(5, 5, 5, 0.82);
     border: 1px solid var(--border-primary);
@@ -2673,7 +2676,9 @@ body.col-dragging iframe, body.col-dragging canvas { pointer-events: none; }
     position: fixed;
     left: 12px;
     bottom: 64px;
-    width: 300px;
+    width: min(300px, calc(100vw - 24px));
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
     border-radius: 10px;
     background: var(--background-elevated);
     border: 1px solid var(--border-primary);
@@ -2694,16 +2699,18 @@ body.col-dragging iframe, body.col-dragging canvas { pointer-events: none; }
 }
 .settings-row {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap;
     padding: 8px 14px; font-size: var(--text-xs); color: var(--text-secondary);
 }
-.settings-value { font-size: var(--text-2xs); color: var(--text-primary); }
+.settings-value { font-size: var(--text-2xs); color: var(--text-primary); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .settings-divider { height: 1px; background: var(--border-subtle); margin: 4px 0; }
 .settings-item {
     display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 4px 12px; overflow-wrap: anywhere;
     padding: 8px 14px; font-size: var(--text-xs); color: var(--text-secondary); text-decoration: none;
 }
 a.settings-item:hover { background: var(--background-secondary); color: var(--text-primary); }
-.settings-hint { font-size: var(--text-2xs); color: var(--text-muted); }
+.settings-hint { font-size: var(--text-2xs); color: var(--text-muted); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .seg { display: flex; gap: 2px; padding: 2px; border-radius: 6px; border: 1px solid var(--border-primary); background: var(--background-primary); }
 .seg-btn {
     padding: 4px 9px; border-radius: 4px; border: none; background: transparent;
@@ -3518,7 +3525,10 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
         background: transparent;
     }
     .brand-product { font-size: var(--text-xl); }
-    .sidebar-study { padding: 0; border-bottom: none; flex: 1; min-width: 0; }
+    /* Reserve readable study identity space before wrapping the header row.
+       A zero minimum let enlarged branding squeeze even a short ID to an ellipsis. */
+    .sidebar-study { padding: 0; border-bottom: none; flex: 1 1 8rem; min-width: min(8rem, 100%); }
+    .sidebar-study .study-status { flex-wrap: wrap; row-gap: 4px; }
     .sidebar-study .study-name { font-size: var(--text-sm); }
     .sidebar-foot { position: static; margin: 0; background: transparent; }
     .sidebar-account-text, .sidebar-account-caret { display: none; }

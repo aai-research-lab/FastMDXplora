@@ -272,6 +272,123 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
         server.server_close()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_phone_header_keeps_short_study_identity_readable_at_large_text(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    server, url = start_test_server(_write_study(tmp_path / "1L2Y"))
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#overview")
+            page.wait_for_function("document.getElementById('topbar-run-title').textContent === '1L2Y'")
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                for width in (390, 768):
+                    page.set_viewport_size({"width": width, "height": 844})
+                    name = page.locator("#topbar-run-title")
+                    assert name.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), (theme, zoom, width)
+                    assert page.locator(".study-status").evaluate("""el => {
+                        const box = el.getBoundingClientRect();
+                        const range = document.createRange(); range.selectNodeContents(el);
+                        return range.getBoundingClientRect().right <= box.right + 1;
+                    }"""), (theme, zoom, width)
+                    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (theme, zoom, width)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_expanded_appearance_popup_keeps_long_metadata_and_actions_in_bounds(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    server, url = start_test_server(_write_study(tmp_path / "study"))
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.route("**/api/agent/connections", lambda route: route.fulfill(json={
+                "ok": True, "selection": "subscription", "active": "fixture",
+                "accounts": [{"id": "fixture", "provider": "openai-chatgpt", "connected": True,
+                              "model": "gpt-6.1-sol", "reasoning": "xhigh"}]}))
+            page.goto(url + "/#overview")
+            page.locator("#settings-version").evaluate("el => el.textContent = '2.5.9.dev204+g8d7adc521'")
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                for width in (1440, 1280, 1024, 768, 390):
+                    page.set_viewport_size({"width": width, "height": 844})
+                    page.locator("#settings-open").click()
+                    popup = page.locator("#settings-popup")
+                    assert popup.is_visible()
+                    page.wait_for_function("document.getElementById('settings-engine').textContent.includes('gpt-6.1-sol')")
+                    assert popup.evaluate("""el => {
+                        const r=el.getBoundingClientRect();
+                        return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+                    }"""), (theme, zoom, width)
+                    assert popup.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), (theme, zoom, width)
+                    for selector in (".seg", "#settings-engine", "#settings-version", ".settings-item"):
+                        assert popup.locator(selector).evaluate_all("els => els.every(el => el.scrollWidth <= el.clientWidth + 1)"), (theme, zoom, width, selector)
+                    page.locator('#settings-popup a[data-view-link="cite"]').click()
+                    assert page.locator('.page[data-page="cite"]').is_visible()
+                    assert popup.is_hidden()
+                    page.goto(url + "/#overview")
+                    page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                    page.locator("#settings-version").evaluate("el => el.textContent = '2.5.9.dev204+g8d7adc521'")
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_viewer_status_labels_wrap_inside_canvas_with_large_text(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    server, url = start_test_server(_write_study(tmp_path / "study"))
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#viewer")
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                for width in (1440, 1280, 1024, 768, 390):
+                    page.set_viewport_size({"width": width, "height": 844})
+                    # Representative display strings test wrapping, not trajectory provenance.
+                    for labels in (("LATEST", "production", "step 1,250,000", "age 99999m", "2.500 ns"),
+                                   ("PLAYBACK", "playback", "frame 199", "", "0.997 ns")):
+                        page.locator("#viewer-overlay").evaluate("""(el, labels) => {
+                            [...el.children].forEach((field, i) => {
+                                field.textContent=labels[i]; field.hidden=!labels[i];
+                            });
+                        }""", labels)
+                        assert page.locator("#viewer-overlay").evaluate("""el => {
+                            const r=el.getBoundingClientRect(), parent=el.parentElement.getBoundingClientRect();
+                            return r.left >= parent.left && r.right <= parent.right &&
+                                [...el.children].filter(field => !field.hidden).every(field => {
+                                    const box=field.getBoundingClientRect();
+                                    return box.left >= r.left && box.right <= r.right &&
+                                        field.scrollWidth <= field.clientWidth + 1;
+                                });
+                        }"""), (theme, zoom, width, labels)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("connected", [True, False])
 def test_settings_engine_tracks_selected_subscription_and_refreshes_on_open(tmp_path, monkeypatch, connected):
     playwright = pytest.importorskip("playwright.sync_api")
