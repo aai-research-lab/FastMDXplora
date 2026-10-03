@@ -6,7 +6,7 @@ every check on the viewer read its source for a string. So a change that
 left the canvas blank, drew the solvated system with no water in it, or
 stopped playback on its second frame passed.
 
-Here it is driven as a person would, with the bundled 3Dmol, on a study with
+Here it is driven as a person would, with the bundled Mol*, on a study with
 a protein, a ligand, water, ions and a short trajectory: the structure is
 drawn without solvent, the water toggle fetches it, every representation,
 colouring and ligand control runs, and playback steps through the frames
@@ -26,7 +26,10 @@ import pytest
 md = pytest.importorskip("mdtraj")
 pytest.importorskip("playwright.sync_api")
 
+from tests import viewer_hooks as hooks  # noqa: E402
+
 VIEWER = "window.FastMDXMoleculeViewer.STATE"
+ENGINE = f"{VIEWER}.engine"
 FRAMES = 20
 #: Atoms the browser is sent without solvent: ten alanines and the ligand.
 SOLUTE = 10 * 5 + 4
@@ -129,9 +132,8 @@ def page(dashboard):
     for opened in _open(dashboard, "#viewer"):
         if not opened.evaluate(
                 "() => !!document.createElement('canvas').getContext('webgl')"):
-            pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
-        opened.wait_for_function(f"() => window.FastMDXMoleculeViewer && {VIEWER}.model",
-                                 timeout=60000)
+            pytest.skip("this browser has no WebGL, so the viewer cannot render")
+        opened.wait_for_function(hooks.RENDERED, timeout=60000)
         yield opened
 
 
@@ -145,13 +147,13 @@ def overview(dashboard):
         yield opened
 
 
-def _atoms(page, selection: str = "{}") -> int:
-    return page.evaluate(f"() => {VIEWER}.model.selectedAtoms({selection}).length")
+def _atoms(page, **selection) -> int:
+    return len(hooks.atoms(page, **selection))
 
 
 def test_the_structure_is_drawn_without_its_solvent(page) -> None:
     assert _atoms(page) == SOLUTE
-    assert _atoms(page, "{resn: 'LIG'}") == 4
+    assert _atoms(page, resn="LIG") == 4
     assert page.evaluate(f"() => {VIEWER}.ligandResname") == "LIG"
     assert page.get_attribute("#viewer-canvas-frame", "data-ready") is not None
     assert page.errors == []
@@ -160,11 +162,11 @@ def test_the_structure_is_drawn_without_its_solvent(page) -> None:
 def test_the_water_toggle_fetches_the_water(page) -> None:
     page.click('.chip-toggle input[data-vis="water"]')
     page.wait_for_function(
-        f"() => {VIEWER}.model && {VIEWER}.model.selectedAtoms({{resn: 'HOH'}}).length", timeout=60000)
-    assert _atoms(page, "{resn: 'HOH'}") == 18
+        f"() => {VIEWER}.model && {ENGINE}.find({{resn: 'HOH'}}).length", timeout=60000)
+    assert _atoms(page, resn="HOH") == 18
     page.click('.chip-toggle input[data-vis="water"]')
     page.wait_for_function(
-        f"() => {VIEWER}.model && !{VIEWER}.model.selectedAtoms({{resn: 'HOH'}}).length", timeout=60000)
+        f"() => {VIEWER}.model && !{ENGINE}.find({{resn: 'HOH'}}).length", timeout=60000)
     assert page.errors == []
 
 
@@ -186,13 +188,43 @@ def test_every_style_and_ligand_control_runs(page) -> None:
     assert page.errors == []
 
 
+def test_the_pocket_is_the_residues_within_the_cutoff(page, dashboard) -> None:
+    """The residues with a heavy atom within the cutoff of the ligand's,
+    centre to centre, as MDTraj finds them. Mol*'s own "within" took in
+    atoms a whole angstrom past it, so the pocket is worked out here."""
+    from urllib.request import urlopen
+
+    text = urlopen(dashboard.url.rstrip("/") + "/structure/topology.pdb").read().decode()
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w", suffix=".pdb", delete=False) as handle:
+        handle.write(text)
+    shown = md.load_pdb(handle.name)
+    Path(handle.name).unlink()
+    ligand = shown.topology.select("resname LIG and not element H")
+    protein = shown.topology.select("protein and not element H")
+    for cutoff in (5.0, 6.0, 7.5, 12.0):
+        near = md.compute_neighbors(shown, cutoff / 10 + 1e-6, ligand, haystack_indices=protein)[0]
+        residues = {shown.topology.atom(int(i)).residue.index for i in near}
+        expected = sorted(atom.index for atom in shown.topology.atoms
+                          if atom.residue.index in residues)
+        found = page.evaluate("(cutoff) => window.FastMDXMoleculeViewer.STATE.engine"
+                              ".pocketAtoms(['LIG'], cutoff)", cutoff)
+        assert found == expected, cutoff
+    # One that takes in a residue is rendered, and follows the cutoff asked.
+    page.fill("#pocket-cutoff", "7.5")
+    page.dispatch_event("#pocket-cutoff", "change")
+    page.wait_for_function(f"() => ({ENGINE}.rendered || []).includes('pocket')")
+    assert page.errors == []
+
+
 def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
     page.click('.ctl-btn[data-action="next-frame"]')
     page.wait_for_function(f"() => {VIEWER}.playbackLoaded", timeout=60000)
     page.wait_for_function("() => document.getElementById('traj-slider').value === '1'",
                            timeout=60000)
-    first_z = page.evaluate(
-        f"() => {VIEWER}.viewer.getModel().selectedAtoms({{resn: 'LIG'}})[0].z")
+    page.wait_for_function(f"() => {ENGINE}.frame() === 1", timeout=60000)
+    first_z = hooks.atoms(page, resn="LIG")[0]["z"]
     assert page.evaluate(f"() => {VIEWER}.playbackFrames") == FRAMES
     # Stepping a frame is choosing one: following the run stops, or the first
     # press lands on the newest frame and "next" goes nowhere.
@@ -201,10 +233,10 @@ def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
         page.click('.ctl-btn[data-action="next-frame"]')
     page.wait_for_function("() => document.getElementById('traj-current').textContent === '10'",
                            timeout=60000)
-    moved = page.evaluate(
-        f"() => {VIEWER}.viewer.getModel().selectedAtoms({{resn: 'LIG'}})[0].z") - first_z
+    page.wait_for_function(f"() => {ENGINE}.frame() === 10", timeout=60000)
+    moved = hooks.atoms(page, resn="LIG")[0]["z"] - first_z
     # The ligand moves 0.3 nm along z from the protein over the run; frames
-    # 1 to 10 of 20 are 9/19 of it, and 3Dmol works in angstroms.
+    # 1 to 10 of 20 are 9/19 of it, and Mol* works in angstroms.
     assert moved == pytest.approx(3.0 * 9 / (FRAMES - 1), abs=0.05)
     page.click('.ctl-btn[data-action="prev-frame"]')
     page.wait_for_function("() => document.getElementById('traj-current').textContent === '9'",
@@ -216,9 +248,8 @@ def test_water_during_playback_is_an_overlay_that_follows_the_frames(page) -> No
     page.click('.ctl-btn[data-action="next-frame"]')
     page.wait_for_function(f"() => {VIEWER}.playbackLoaded", timeout=60000)
     page.click('.chip-toggle input[data-vis="water"]')
-    page.wait_for_function(f"() => {VIEWER}.environmentModel", timeout=60000)
-    assert page.evaluate(
-        f"() => {VIEWER}.environmentModel.selectedAtoms({{resn: 'HOH'}}).length") == 18
+    page.wait_for_function(f"() => {ENGINE}.environmentCount('HOH')", timeout=60000)
+    assert page.evaluate(f"() => {ENGINE}.environmentCount('HOH')") == 18
     # The animated solute stays the playback model.
     assert page.evaluate(f"() => {VIEWER}.mode") == "playback"
     page.click('.ctl-btn[data-action="next-frame"]')

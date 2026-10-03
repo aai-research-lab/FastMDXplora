@@ -83,7 +83,7 @@ FastMDXplora/
 │       │   ├── protein_preview.py, structure_info.py, ligand_detection.py
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css/js,
-│       │   │                      #   molecule-viewer.js, charts.js, vendored 3Dmol.js;
+│       │   │                      #   molecule-viewer.js, charts.js, and the viewer:
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0)
 │       │   └── templates/         # dashboard.html
 │       ├── remote/

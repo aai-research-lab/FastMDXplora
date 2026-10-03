@@ -92,7 +92,7 @@ def page(dashboard):
         opened.errors = errors
         opened.goto(dashboard.url + "#viewer", wait_until="domcontentloaded")
         if not opened.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-            pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
+            pytest.skip("this browser has no WebGL, so the viewer cannot render")
         opened.wait_for_function(f"() => window.FastMDXMoleculeViewer && {VIEWER}.model")
         opened.wait_for_selector("#trajectory-row:not([hidden])")
         yield opened
@@ -152,7 +152,7 @@ def test_a_picture_is_saved_for_a_page_and_the_view_is_put_back(page) -> None:
     screen is as it was."""
     import struct
 
-    before = page.evaluate(f"() => {{ const c = {VIEWER}.viewer.getCanvas(); "
+    before = page.evaluate(f"() => {{ const c = {VIEWER}.engine.plugin.canvas3d.webgl.gl.canvas; "
                            "return [c.width, c.height, c.clientWidth, window.devicePixelRatio]; }")
     with page.expect_download() as caught:
         page.click('[data-action="screenshot"]')
@@ -160,7 +160,7 @@ def test_a_picture_is_saved_for_a_page_and_the_view_is_put_back(page) -> None:
     assert saved[:8] == b"\x89PNG\r\n\x1a\n"
     width, height = struct.unpack(">II", saved[16:24])
     assert width >= 2400 and abs(width / height - before[0] / before[1]) < 0.01
-    after = page.evaluate(f"() => {{ const c = {VIEWER}.viewer.getCanvas(); "
+    after = page.evaluate(f"() => {{ const c = {VIEWER}.engine.plugin.canvas3d.webgl.gl.canvas; "
                           "return [c.width, c.height, c.clientWidth, window.devicePixelRatio]; }")
     assert after == before
     assert "2,400 pixels" in page.get_attribute('[data-action="screenshot"]', "title")

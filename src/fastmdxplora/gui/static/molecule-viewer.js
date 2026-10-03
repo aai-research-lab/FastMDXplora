@@ -1,9 +1,11 @@
-/* FastMDXplora Live Dashboard — 3D molecular viewer.
+/* FastMDXplora Live Dashboard: the 3D molecular viewer.
  *
- * Uses the locally bundled 3Dmol.js asset.  The module deliberately keeps
- * structure loading, live-frame replacement, styling, and trajectory playback
- * separate so a failed optional feature never leaves the canvas permanently
- * blank.
+ * Rendered by Mol* through the viewer's own engine (viewer-engine.js); this
+ * module is the page: the structure, the live frame and the trajectory it
+ * is given, the controls under the canvas, the information beside it, and
+ * the Overview's preview. Structure loading, live frames, styling and
+ * playback are kept apart, so a failed optional feature never leaves the
+ * canvas blank.
  */
 
 (function () {
@@ -13,13 +15,7 @@
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS",
     "HID", "HIE", "HIP", "ILE", "LEU", "LYS", "MET", "PHE", "PRO",
     "SER", "THR", "TRP", "TYR", "VAL", "MSE", "SEC", "PYL",
-  ];
-  const WATERS = ["HOH", "WAT", "TIP", "TIP3", "TIP3P", "SOL", "H2O"];
-  /* Below this many residues a cartoon cannot shape a ribbon. */
-  const SHORT_PEPTIDE_RESIDUES = 8;
-  const IONS = [
-    "NA", "K", "CL", "BR", "I", "F", "MG", "CA", "ZN", "MN", "FE",
-    "CU", "NI", "CO", "CD", "HG", "PB", "CS", "RB", "LI", "BA", "SR",
+    "CYX", "ASH", "GLH", "LYN", "HSD", "HSE", "HSP",
   ];
   const COLORS = {
     cyan: "#63e6ff",
@@ -27,18 +23,22 @@
     white: "#ffffff",
     violet: "#a78bfa",
     black: "#050505",
+    charcoal: "#101012",
     green: "#67e8a3",
     orange: "#ffb86b",
   };
 
   const STATE = {
-    viewer: null,
-    miniViewer: null,
+    // The engines: the Viewer page's and the Overview's preview's.
+    engine: null,
+    miniEngine: null,
+    engineCreating: null,
+    miniCreating: null,
     viewerUnavailable: false,
     miniViewerUnavailable: false,
+    // What is rendered in each, when something is: its atoms and frames.
     model: null,
     miniModel: null,
-    miniPlaybackModel: null,
     structureInfo: null,
     structureUrl: null,
     structurePdb: null,
@@ -48,6 +48,7 @@
     mode: "structure",
     representation: "cartoon",
     colorMode: "spectrum",
+    background: COLORS.black,
     visibility: {
       protein: true,
       ligand: true,
@@ -62,23 +63,24 @@
     pocketSurface: false,
     pocketOnly: false,
     isolateLigand: false,
+    labels: false,
     preservingCamera: true,
     spinning: false,
     playbackPayload: null,
-    playbackPdb: null,
     // Incremented on a dashboard run transition so a late response from the
     // previous run cannot repopulate the reset viewer.
     viewerGeneration: 0,
-    // Full solvated topology used as a static overlay while the solute-only
-    // trajectory frames remain animated.
+    // The solvated system beside the frames, for water and ions.
+    environment: false,
     environmentPdb: null,
     environmentUrl: null,
-    environmentModel: null,
-    environmentBaseCoordinates: null,
-    environmentTranslation: null,
     playbackSignature: null,
     playbackLoadPromise: null,
     playbackLoaded: false,
+    // The frames are in the engine (playbackLoaded: and shown, ready).
+    framesRendered: false,
+    // Each press of play, so a later one or a pause outranks an earlier.
+    playbackAsked: 0,
     playbackFrames: 0,
     playbackFrameTimes: [],
     playbackPlaying: false,
@@ -86,11 +88,11 @@
     playbackLoop: false,
     playbackSpeed: 1,
     playbackTimer: null,
-    // Measuring: whether clicks pick atoms, the atoms picked, and what was
-    // drawn for them, so only that is taken away when it is drawn again.
+    // Measuring: whether clicks pick atoms, and the atoms picked.
     measuring: false,
     picks: [],
-    measureDrawn: {shapes: [], labels: []},
+    focusResidue: null,
+    focusIndices: null,
     // The study's per-residue results the protein can be coloured by, and
     // DSSP for the structures shown (gui/by_residue.py).
     residueValues: null,
@@ -138,21 +140,21 @@
     STATE.structurePdb = null;
     STATE.currentPdb = null;
     STATE.playbackPayload = null;
-    STATE.playbackPdb = null;
+    STATE.environment = false;
     STATE.environmentPdb = null;
     STATE.environmentUrl = null;
-    STATE.environmentModel = null;
-    STATE.environmentBaseCoordinates = null;
-    STATE.environmentTranslation = null;
     STATE.playbackSignature = null;
     STATE.playbackLoaded = false;
+    STATE.framesRendered = false;
     STATE.playbackFrames = 0;
     STATE.playbackFrameTimes = [];
     STATE.playbackTimer = null;
     STATE.model = null;
     STATE.miniModel = null;
-    STATE.miniPlaybackModel = null;
     STATE.spinning = false;
+    STATE.picks = [];
+    STATE.focusResidue = null;
+    STATE.focusIndices = null;
     STATE.residueValues = null;
     STATE.residueValuesAsked = 0;
     STATE.residueLookups = null;
@@ -172,105 +174,96 @@
     document.querySelectorAll(".chip-toggle input[data-vis]").forEach((checkbox) => {
       checkbox.checked = !!STATE.visibility[checkbox.getAttribute("data-vis")];
     });
-    [STATE.viewer, STATE.miniViewer].forEach((viewer) => {
-      if (!viewer) return;
-      safeCall(viewer, "removeAllModels");
-      safeCall(viewer, "removeAllSurfaces");
-      safeCall(viewer, "removeAllShapes");
-      safeCall(viewer, "removeAllLabels");
-      safeCall(viewer, "render");
+    [STATE.engine, STATE.miniEngine].forEach((engine) => {
+      if (engine) void engine.clear().catch((error) => console.debug(error));
     });
     document.getElementById("viewer-canvas-frame")?.removeAttribute("data-ready");
     document.getElementById("mini-preview-frame")?.removeAttribute("data-ready");
   }
 
   /* ------------------------------------------------------------------ */
-  /* Mounting and structure loading                                      */
+  /* The engines                                                         */
   /* ------------------------------------------------------------------ */
-  function has3Dmol() {
-    return !!(window.$3Dmol && typeof window.$3Dmol.createViewer === "function");
+  function hasEngine() {
+    return !!(window.FastMDXViewerEngine && window.molstar && window.molstar.lib);
   }
 
-  function ensureMainViewer() {
-    if (STATE.viewer) {
-      resizeViewer(STATE.viewer);
-      return STATE.viewer;
-    }
+  /** The Viewer page's engine, made the first time its canvas is shown. */
+  async function mainEngine() {
+    if (STATE.engine) return STATE.engine;
+    if (STATE.engineCreating) return STATE.engineCreating;
     const target = document.getElementById("viewer-canvas");
-    if (!target || !isVisible(target)) return null;
-    if (!has3Dmol()) {
-      showViewerMessage("3Dmol.js did not load.", "Confirm /static/3Dmol-min.js is being served, then hard-refresh the page.");
+    if (!target || !isVisible(target) || STATE.viewerUnavailable) return null;
+    if (!hasEngine()) {
+      showViewerMessage("The molecular viewer did not load.",
+        "Confirm /static/molstar/molstar.js is being served, then refresh the page.");
       return null;
     }
-    if (STATE.viewerUnavailable) return null;
-    try {
-      STATE.viewer = window.$3Dmol.createViewer(target, {
-        backgroundColor: COLORS.black,
-        antialias: true,
-        disableFog: false,
-      });
-    } catch (error) {
-      STATE.viewerUnavailable = true;
-      STATE.viewer = null;
-      console.warn("3Dmol viewer initialization failed", error);
-      showViewerMessage(
-        "Interactive molecular viewer unavailable",
-        "WebGL could not be initialized in this browser. Try enabling hardware acceleration or use the static preview."
-      );
-      return null;
-    }
-    if (STATE.currentPdb) installPdb(STATE.viewer, STATE.currentPdb, {main: true, center: true});
-    return STATE.viewer;
+    STATE.engineCreating = (async () => {
+      try {
+        const engine = await window.FastMDXViewerEngine.create(target,
+          {background: colourNumber(STATE.background), quality: "auto"});
+        engine.on("hover", onHoverAtom);
+        engine.on("click", onClickAtom);
+        STATE.engine = engine;
+        return engine;
+      } catch (error) {
+        STATE.viewerUnavailable = true;
+        console.warn("molecular viewer initialization failed", error);
+        showViewerMessage("Interactive molecular viewer unavailable",
+          "WebGL could not be initialized in this browser. Try enabling hardware acceleration or use the static preview.");
+        return null;
+      } finally {
+        STATE.engineCreating = null;
+      }
+    })();
+    return STATE.engineCreating;
   }
 
-  function ensureMiniViewer() {
-    if (STATE.miniViewer) {
-      resizeViewer(STATE.miniViewer);
-      return STATE.miniViewer;
-    }
+  /** The Overview's preview, made the first time it is shown. */
+  async function miniEngine() {
+    if (STATE.miniEngine) return STATE.miniEngine;
+    if (STATE.miniCreating) return STATE.miniCreating;
     const target = document.getElementById("mini-preview-canvas");
-    if (!target || !isVisible(target) || !has3Dmol()) return null;
-    if (STATE.miniViewerUnavailable) return null;
-    try {
-      STATE.miniViewer = window.$3Dmol.createViewer(target, {
-        backgroundColor: COLORS.black,
-        antialias: true,
-        disableFog: true,
-        nomouse: false,
-      });
-    } catch (error) {
-      STATE.miniViewerUnavailable = true;
-      STATE.miniViewer = null;
-      console.warn("3Dmol mini viewer initialization failed", error);
-      const empty = document.getElementById("mini-preview-empty");
-      if (empty) empty.textContent = "Interactive preview unavailable (WebGL).";
-      return null;
-    }
-    if (STATE.currentPdb) installPdb(STATE.miniViewer, STATE.currentPdb, {mini: true, center: true});
-    return STATE.miniViewer;
+    if (!target || !isVisible(target) || !hasEngine() || STATE.miniViewerUnavailable) return null;
+    STATE.miniCreating = (async () => {
+      try {
+        const engine = await window.FastMDXViewerEngine.create(target,
+          {background: colourNumber(COLORS.black), quality: "auto", axes: false});
+        STATE.miniEngine = engine;
+        return engine;
+      } catch (error) {
+        STATE.miniViewerUnavailable = true;
+        console.warn("molecular preview initialization failed", error);
+        const empty = document.getElementById("mini-preview-empty");
+        if (empty) empty.textContent = "Interactive preview unavailable (WebGL).";
+        return null;
+      } finally {
+        STATE.miniCreating = null;
+      }
+    })();
+    return STATE.miniCreating;
   }
 
   function onViewerPageOpened() {
     void askForResidueValues();
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const viewer = ensureMainViewer();
-      if (viewer && STATE.currentPdb && STATE.mode !== "playback") {
-        installPdb(viewer, STATE.currentPdb, {main: true, center: !STATE.model});
-      } else if (viewer && STATE.mode === "playback" && STATE.playbackPdb && !STATE.playbackLoaded) {
-        installPlaybackPdb(viewer, STATE.playbackPdb, {main: true, center: false});
+    requestAnimationFrame(() => requestAnimationFrame(async () => {
+      const engine = await mainEngine();
+      if (engine && STATE.mode === "playback" && STATE.playbackPayload && !STATE.playbackLoaded) {
+        await loadPlayback(STATE.playbackPayload);
+      } else if (engine && STATE.currentPdb && !STATE.model) {
+        await mountStructure(STATE.currentPdb, {main: true, fit: true});
       }
       resizeViewers();
     }));
   }
 
   function onLivePageOpened() {
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const viewer = ensureMiniViewer();
-      if (viewer && STATE.mode === "playback" && STATE.playbackPdb) {
-        installPlaybackPdb(viewer, STATE.playbackPdb, {mini: true, center: !STATE.miniPlaybackModel});
-        setPlaybackFrame(Number(document.getElementById("traj-slider")?.value || 0));
-      } else if (viewer && STATE.currentPdb) {
-        installPdb(viewer, STATE.currentPdb, {mini: true, center: !STATE.miniModel});
+    requestAnimationFrame(() => requestAnimationFrame(async () => {
+      const engine = await miniEngine();
+      if (engine && !STATE.miniModel) {
+        if (STATE.mode === "playback" && STATE.playbackLoaded) await loadMiniFrames();
+        else if (STATE.currentPdb) await mountStructure(STATE.currentPdb, {mini: true, fit: true});
       }
       resizeViewers();
     }));
@@ -297,29 +290,19 @@
       return;
     }
 
-    // Playback owns the animated model. Replacing it with a static topology
-    // on a visibility or dashboard update stops the trajectory. A separate
-    // static environment model provides solvent, ions, and the unit cell.
+    // Playback owns the main canvas. Water, ions and the box beside it come
+    // from the solvated system, rendered beside the frames.
     if (STATE.mode === "playback") {
       if (needsFullTopology()) await ensurePlaybackEnvironment();
-      if (!isViewerGenerationCurrent(generation)) return;
       return;
     }
 
-    // Water and ions are stripped from the copy the browser gets, so the
-    // toggles for them had nothing to act on. Ask for the solvated system
-    // only when one of them is on: the box is most of the atoms, and a reader
-    // who never opens that view should not pay to download it.
+    // Water and ions are stripped from the copy the browser gets; the
+    // solvated system is asked for only when one of them is shown.
     const url = withSolvent(info.structure_url || "/structure/topology.pdb");
     if (url === STATE.structureUrl && STATE.structurePdb) {
-      const main = ensureMainViewer();
-      if (main && !STATE.model) {
-        installPdb(main, STATE.currentPdb || STATE.structurePdb, {main: true, center: true});
-      }
-      const mini = ensureMiniViewer();
-      if (mini && !STATE.miniModel) {
-        installPdb(mini, STATE.currentPdb || STATE.structurePdb, {mini: true, center: true});
-      }
+      if (!STATE.model) await mountStructure(STATE.currentPdb || STATE.structurePdb, {main: true, fit: true});
+      if (!STATE.miniModel) await mountStructure(STATE.currentPdb || STATE.structurePdb, {mini: true, fit: true});
       return;
     }
     try {
@@ -333,15 +316,14 @@
       }
       STATE.structureUrl = url;
       STATE.structurePdb = pdb;
-      // Solvent wins over the live frame. Frames are written to disk with
-      // water and ions already stripped, so live mode cannot show them at
-      // all -- asking for water while a frame is mounted otherwise fetched
-      // the solvated system, stored it, and went on drawing the frame.
+      // Solvent wins over the live frame: frames are written with water and
+      // ions already stripped, so live mode cannot show them at all.
       if (STATE.mode !== "live" || !STATE.currentPdb || needsFullTopology()) {
         STATE.currentPdb = pdb;
       }
       STATE.mode = STATE.liveFrameIndex != null ? "live" : "structure";
-      mountStoredStructureWhereVisible(true, {forceFit: true});
+      await mountStructure(STATE.currentPdb, {main: true, fit: true});
+      await mountStructure(STATE.currentPdb, {mini: true, fit: true});
       hideViewerMessage();
     } catch (error) {
       console.warn("molecular structure load failed", error);
@@ -349,18 +331,10 @@
     }
   }
 
-  function mountStoredStructureWhereVisible(center, options) {
-    const opts = options || {};
-    const main = ensureMainViewer();
-    if (main && STATE.currentPdb) installPdb(main, STATE.currentPdb, {main: true, center: !!center, ...opts});
-    const mini = ensureMiniViewer();
-    if (mini && STATE.currentPdb) installPdb(mini, STATE.currentPdb, {mini: true, center: !!center, ...opts});
-  }
-
   function needsFullTopology() {
-    // The saved/live trajectory frames contain solute coordinates only. Water,
-    // ions, and CRYST1/unit-cell metadata all require the full topology.
-    return Boolean(STATE.visibility?.water || STATE.visibility?.ions || STATE.visibility?.box);
+    // The frames hold solute coordinates only. Water and ions require the
+    // full topology.
+    return Boolean(STATE.visibility?.water || STATE.visibility?.ions);
   }
 
   function withSolvent(url) {
@@ -368,11 +342,52 @@
     return url + (url.includes("?") ? "&" : "?") + "solvent=1";
   }
 
+  /** One structure into the Viewer's engine or the preview's, as PDB text:
+   * rendered as the controls say, its cartoon given DSSP. */
+  async function mountStructure(pdbText, options) {
+    const opts = options || {};
+    const mini = !!opts.mini;
+    const generation = STATE.viewerGeneration;
+    const engine = mini ? await miniEngine() : await mainEngine();
+    if (!engine || !pdbText || !isViewerGenerationCurrent(generation)) return;
+    const of = pdbText === STATE.structurePdb ? "structure" : "live";
+    const version = of === "structure" ? STATE.structureUrl : STATE.liveFrameIndex;
+    const hadModel = mini ? !!STATE.miniModel : !!STATE.model;
+    applyLook(engine, mini);
+    try {
+      const loaded = await engine.loadStructure({text: pdbText,
+        keepCamera: hadModel && !opts.fit && STATE.preservingCamera});
+      if (!isViewerGenerationCurrent(generation)) return;
+      const rendered = {atoms: loaded.atoms, frames: loaded.frames, of};
+      if (mini) {
+        STATE.miniModel = rendered;
+        document.getElementById("mini-preview-frame")?.setAttribute("data-ready", "true");
+      } else {
+        STATE.model = rendered;
+        document.getElementById("viewer-canvas-frame")?.setAttribute("data-ready", "true");
+        // A result's colours are for the residues now rendered: two that this
+        // structure cannot tell apart are given neither's value.
+        if (activeResult()) applyLook(engine, false);
+        if (STATE.picks.length) await renderMeasurement();
+      }
+      await giveTheSecondaryStructure(engine, of, version, mini, pdbText);
+      if (!mini) sayTheColours();
+    } catch (error) {
+      console.warn("the viewer could not render this structure", error);
+      if (!mini) showViewerMessage("The viewer could not read this structure.", String(error));
+    }
+  }
+
   async function ensurePlaybackEnvironment() {
     const generation = STATE.viewerGeneration;
     if (STATE.mode !== "playback") return false;
+    const engine = await mainEngine();
+    if (!engine) return false;
     if (!needsFullTopology()) {
-      restyleViewers();
+      if (STATE.environment) {
+        await engine.removeEnvironment();
+        STATE.environment = false;
+      }
       return true;
     }
     const url = withSolvent(STATE.structureInfo?.structure_url || "/structure/topology.pdb");
@@ -388,173 +403,31 @@
         }
         STATE.environmentUrl = url;
         STATE.environmentPdb = pdb;
-        STATE.environmentModel = null;
-        STATE.environmentBaseCoordinates = null;
-        STATE.environmentTranslation = null;
       }
-      const viewer = ensureMainViewer();
-      if (viewer && STATE.environmentPdb && !STATE.environmentModel) {
-        STATE.environmentModel = viewer.addModel(STATE.environmentPdb, "pdb", {keepH: true});
-        alignPlaybackEnvironment();
-      }
-      restyleViewers();
+      await engine.loadEnvironment(STATE.environmentPdb, {water: STATE.visibility.water,
+        ions: STATE.visibility.ions, hydrogens: STATE.visibility.hydrogens},
+        environmentShift(engine));
+      STATE.environment = true;
       return true;
     } catch (error) {
       console.warn("playback environment load failed", error);
-      announce("Water, ions, or the periodic box could not be loaded for trajectory playback.");
+      announce("Water or ions could not be loaded for trajectory playback.");
       return false;
     }
   }
 
-  function alignPlaybackEnvironment() {
-    const playbackModel = STATE.model;
-    const environmentModel = STATE.environmentModel;
-    if (!playbackModel || !environmentModel || typeof playbackModel.selectedAtoms !== "function"
-      || typeof environmentModel.selectedAtoms !== "function") return false;
-    try {
-      const playbackAnchor = playbackModel.selectedAtoms({resn: AMINO_ACIDS})[0];
-      const environmentAtoms = environmentModel.selectedAtoms({});
-      const environmentAnchor = environmentModel.selectedAtoms({resn: AMINO_ACIDS})[0];
-      if (!playbackAnchor || !environmentAnchor || !environmentAtoms.length) return false;
-      if (!STATE.environmentBaseCoordinates) {
-        STATE.environmentBaseCoordinates = new Map(environmentAtoms.map((atom) => [
-          atom.index, {x: atom.x, y: atom.y, z: atom.z},
-        ]));
-      }
-      const anchorBase = STATE.environmentBaseCoordinates.get(environmentAnchor.index);
-      if (!anchorBase) return false;
-      const translation = {
-        x: playbackAnchor.x - anchorBase.x,
-        y: playbackAnchor.y - anchorBase.y,
-        z: playbackAnchor.z - anchorBase.z,
-      };
-      environmentAtoms.forEach((atom) => {
-        const base = STATE.environmentBaseCoordinates.get(atom.index);
-        if (!base) return;
-        atom.x = base.x + translation.x;
-        atom.y = base.y + translation.y;
-        atom.z = base.z + translation.z;
-      });
-      STATE.environmentTranslation = translation;
-      return true;
-    } catch (error) {
-      console.debug("playback environment alignment skipped", error);
-      return false;
-    }
-  }
-
-  function installPdb(viewer, pdbText, options) {
-    if (!viewer || !pdbText) return;
-    const opts = options || {};
-    const hadModel = opts.main ? !!STATE.model : !!STATE.miniModel;
-    const previousView = hadModel && STATE.preservingCamera && !opts.forceFit
-      ? captureView(viewer) : null;
-    stopViewerMotion(viewer);
-    safeCall(viewer, "removeAllModels");
-    safeCall(viewer, "removeAllSurfaces");
-    safeCall(viewer, "removeAllShapes");
-    safeCall(viewer, "removeAllLabels");
-    if (opts.main) {
-      STATE.environmentModel = null;
-      STATE.environmentBaseCoordinates = null;
-      STATE.environmentTranslation = null;
-    }
-
-    let model;
-    try {
-      model = viewer.addModel(pdbText, "pdb", {keepH: true});
-    } catch (error) {
-      console.warn("3Dmol addModel failed", error);
-      showViewerMessage("3Dmol could not parse this structure.", String(error));
-      return;
-    }
-    const of = pdbText === STATE.structurePdb ? "structure" : "live";
-    const version = of === "structure" ? STATE.structureUrl : STATE.liveFrameIndex;
-    if (opts.main) {
-      STATE.model = model;
-      // Made clickable here, not once at viewer creation. 3Dmol sets the
-      // property on the atoms currently selected, and at creation there are
-      // none -- the model is added afterwards, and every atom in it arrived
-      // unclickable. Clicking the structure did nothing, and the selection
-      // panel waited for an event that could not be raised.
-      try {
-        viewer.setHoverable({}, true, onHoverAtom, clearHoverAtom);
-        viewer.setClickable({}, true, onClickAtom);
-      } catch (error) {
-        console.debug("3Dmol interaction callbacks unavailable", error);
-      }
-      styleViewer(viewer, model, false);
-      document.getElementById("viewer-canvas-frame")?.setAttribute("data-ready", "true");
-    } else {
-      STATE.miniModel = model;
-      styleViewer(viewer, model, true);
-      document.getElementById("mini-preview-frame")?.setAttribute("data-ready", "true");
-    }
-
-    if (previousView && framesTheModel(previousView, model)) {
-      restoreView(viewer, previousView);
-    } else if (previousView || opts.center !== false || !hadModel) {
-      // A viewer created before the first structure has the default camera,
-      // which points at empty space.  Always center the first real model even
-      // when a live-frame refresh requested camera preservation.
-      safeCall(viewer, "zoomTo");
-    }
-    resizeViewer(viewer);
-    safeCall(viewer, "render");
-    void giveTheSecondaryStructure(viewer, model, of, version, !opts.main, pdbText);
-    if (opts.main) sayTheColours();
-    // 3Dmol can calculate its canvas size one animation frame after a hidden
-    // page becomes visible.  Re-center/render once more for the first model so
-    // the mini viewer never remains black during a running simulation.
-    if (!hadModel) {
-      window.requestAnimationFrame(() => {
-        resizeViewer(viewer);
-        safeCall(viewer, "zoomTo");
-        safeCall(viewer, "render");
-      });
-    }
-  }
-
-  function installPlaybackPdb(viewer, pdbText, options) {
-    if (!viewer || !pdbText) return null;
-    const opts = options || {};
-    const previousView = opts.main && STATE.preservingCamera ? captureView(viewer) : null;
-    stopViewerMotion(viewer);
-    safeCall(viewer, "removeAllModels");
-    safeCall(viewer, "removeAllSurfaces");
-    safeCall(viewer, "removeAllShapes");
-    safeCall(viewer, "removeAllLabels");
-    if (opts.main) {
-      STATE.environmentModel = null;
-      STATE.environmentBaseCoordinates = null;
-      STATE.environmentTranslation = null;
-    }
-    try {
-      const added = viewer.addModelsAsFrames(pdbText, "pdb");
-      const model = added && typeof added === "object" && !Array.isArray(added)
-        ? added : safeCall(viewer, "getModel", 0);
-      if (opts.main) {
-        STATE.model = model;
-        STATE.playbackLoaded = true;
-        document.getElementById("viewer-canvas-frame")?.setAttribute("data-ready", "true");
-        styleViewer(viewer, model, false);
-      } else {
-        STATE.miniPlaybackModel = model;
-        document.getElementById("mini-preview-frame")?.setAttribute("data-ready", "true");
-        styleViewer(viewer, model, true);
-      }
-      if (previousView) restoreView(viewer, previousView);
-      else if (opts.center !== false) safeCall(viewer, "zoomTo");
-      resizeViewer(viewer);
-      void giveTheSecondaryStructure(viewer, model, "playback", STATE.playbackSignature,
-        !opts.main, pdbText);
-      if (opts.main) sayTheColours();
-      return model;
-    } catch (error) {
-      console.warn("3Dmol playback parsing failed", error);
-      announce("Trajectory playback could not be parsed by 3Dmol.");
-      return null;
-    }
+  /** How far the solvated system is moved to sit where the frame does: by
+   * the first atom of the protein in each. The frames are centred on the
+   * protein, as the analyses read them, so once is enough. */
+  function environmentShift(engine) {
+    const anchor = engine.find({resn: AMINO_ACIDS})[0];
+    if (!anchor || !STATE.environmentPdb) return [0, 0, 0];
+    const line = STATE.environmentPdb.split("\n").find((text) => /^(ATOM  |HETATM)/.test(text)
+      && AMINO_ACIDS.includes(text.slice(17, 20).trim()));
+    if (!line) return [0, 0, 0];
+    const base = [30, 38, 46].map((at) => parseFloat(line.slice(at, at + 8)));
+    if (base.some((value) => !Number.isFinite(value))) return [0, 0, 0];
+    return [anchor.x - base[0], anchor.y - base[1], anchor.z - base[2]];
   }
 
   function showViewerMessage(title, detail) {
@@ -586,7 +459,7 @@
       const index = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
       if (!index.live_frame_available) {
-        setOverlay(false, {stage: index.simulation_stage || "waiting", age: "—"});
+        setOverlay(false, {stage: index.simulation_stage || "waiting", age: "\u2014"});
         return;
       }
       if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
@@ -614,9 +487,14 @@
         return;
       }
       STATE.currentPdb = pdb;
-      STATE.mode = "live";
-      STATE.playbackLoaded = false;
-      updateViewerCoordinates(pdb);
+      if (STATE.mode !== "playback") {
+        STATE.mode = "live";
+        if (isVisible(document.getElementById("viewer-canvas") || document.body) && STATE.engine) {
+          await mountStructure(pdb, {main: true, fit: !STATE.model});
+        }
+      }
+      const preview = document.getElementById("mini-preview-canvas");
+      if (preview && isVisible(preview)) await mountStructure(pdb, {mini: true, fit: !STATE.miniModel});
       setOverlay(true, {
         stage: index.simulation_stage || "live",
         age: liveFrameAge(index),
@@ -628,29 +506,10 @@
     }
   }
 
-  function updateViewerCoordinates(pdbText) {
-    const mainTarget = document.getElementById("viewer-canvas");
-    const miniTarget = document.getElementById("mini-preview-canvas");
-    if (
-      STATE.viewer
-      && STATE.mode !== "playback"
-      && mainTarget
-      && isVisible(mainTarget)
-    ) {
-      installPdb(STATE.viewer, pdbText, {main: true, center: false});
-    }
-    if (miniTarget && isVisible(miniTarget)) {
-      const miniViewer = ensureMiniViewer();
-      if (miniViewer) {
-        installPdb(miniViewer, pdbText, {mini: true, center: !STATE.miniModel});
-      }
-    }
-  }
-
   function liveFrameAge(index) {
-    if (!index?.live_frame_updated_at) return "—";
+    if (!index?.live_frame_updated_at) return "\u2014";
     const time = new Date(index.live_frame_updated_at).getTime();
-    if (!Number.isFinite(time)) return "—";
+    if (!Number.isFinite(time)) return "\u2014";
     return howLongAgo(Math.max(0, Math.round((Date.now() - time) / 1000)));
   }
 
@@ -668,267 +527,57 @@
   /* ------------------------------------------------------------------ */
   /* Styling                                                             */
   /* ------------------------------------------------------------------ */
-  function styleViewer(viewer, model, mini) {
-    if (!viewer || !model) return;
-    safeCall(viewer, "removeAllSurfaces");
-    // Unit-cell lines are viewer shapes, not styles. Without clearing them a
-    // visibility/color change stacks duplicate boxes on the canvas.
-    safeCall(viewer, "removeAllShapes");
-    try { viewer.setStyle({}, {}); } catch (error) { console.debug(error); }
-
-    const ligandNames = ligandResnames();
-    const proteinSelection = resolveProteinSelection(model);
-    const ligandSelection = ligandNames.length ? {resn: ligandNames} : {resn: "__NO_LIGAND__"};
-    const waterSelection = {resn: WATERS};
-    const ionSelection = {resn: IONS};
-    const pocketSelection = {
-      byres: true,
-      within: {distance: STATE.pocketCutoff, sel: ligandSelection},
-    };
-
-    if (STATE.isolateLigand && ligandNames.length) {
-      addStyle(viewer, ligandSelection, ligandStyle());
-    } else if (STATE.pocketOnly && ligandNames.length) {
-      addStyle(viewer, pocketSelection, proteinStyle(model));
-      if (STATE.visibility.ligand) addStyle(viewer, ligandSelection, ligandStyle());
+  /** What the engine is to render, from the controls: the preview shows the
+   * protein as a spectrum cartoon with its ligand, and nothing else. */
+  function applyLook(engine, mini) {
+    engine.representation = mini ? "cartoon" : STATE.representation;
+    const property = !mini ? activeResult() : null;
+    if (property) {
+      const lookup = STATE.model ? lookupFor(property) : null;
+      engine.colour = "result";
+      engine.result = engine.registerResult(property, lookup ? lookup.shared : null);
     } else {
-      if (STATE.visibility.protein) {
-        if (mini) {
-          // The line overlay guarantees a visible silhouette even when a PDB
-          // frame lacks HELIX/SHEET records and the cartoon representation is
-          // still being inferred by 3Dmol.
-          addStyle(viewer, proteinSelection, {
-            cartoon: {color: "spectrum", thickness: 0.5, opacity: 1.0},
-            line: {color: COLORS.silver, linewidth: 1.0, opacity: 0.55},
-          });
-        } else {
-          addStyle(viewer, proteinSelection, proteinStyle(model));
-        }
-      }
-      if (!mini && STATE.visibility.pocket && ligandNames.length) {
-        addStyle(viewer, pocketSelection, {
-          stick: {radius: 0.10, colorscheme: STATE.colorMode === "monochrome" ? undefined : "Jmol", color: STATE.colorMode === "monochrome" ? COLORS.violet : undefined},
-        });
-      }
-      if (STATE.visibility.ligand && ligandNames.length) {
-        addStyle(viewer, ligandSelection, ligandStyle());
-      }
-      if (!mini && STATE.visibility.water) {
-        // Explicit cyan-blue gives the solvent enough contrast on the dark
-        // canvas; Jmol oxygen/hydrogen colors rendered nearly black at this
-        // density and made the checked control appear broken.
-        addStyle(viewer, waterSelection, {
-          sphere: {scale: 0.28, color: "#4da3ff", opacity: 0.88},
-          stick: {radius: 0.075, color: "#4da3ff", opacity: 0.82},
-          line: {color: "#4da3ff", linewidth: 1.1, opacity: 0.72},
-        });
-      }
-      if (!mini && STATE.visibility.ions) {
-        addStyle(viewer, ionSelection, {sphere: {scale: 0.55, colorscheme: "Jmol"}});
-      }
+      engine.colour = mini || STATE.colorMode.startsWith(RESULT_PREFIX) ? "spectrum" : STATE.colorMode;
     }
-
-    // A residue chosen elsewhere (a point of the RMSF on the Analysis
-    // page), drawn in full over whatever else is shown.
-    const focused = mini ? null : focusSelection();
-    if (focused) {
-      addStyle(viewer, focused, {stick: {radius: 0.24, color: COLORS.orange}});
-    }
-
-    // A ribbon needs a few residues to be a ribbon: a peptide of three drew
-    // as a smear, or not at all. Its atoms are drawn as well.
-    if (STATE.visibility.protein && !STATE.isolateLigand
-        && STATE.representation === "cartoon" && isShortPeptide(model, proteinSelection)) {
-      addStyle(viewer, proteinSelection, {
-        stick: {radius: mini ? 0.18 : 0.14, colorscheme: "Jmol"},
-      });
-    }
-
-    if (STATE.visibility.hydrogens) {
-      addStyle(viewer, {elem: "H"}, {
-        sphere: {scale: 0.18, colorscheme: "Jmol"},
-        stick: {radius: 0.08, colorscheme: "Jmol"},
-      });
-    } else {
-      try { viewer.setStyle({elem: "H"}, {}); } catch (error) { console.debug(error); }
-    }
-    if (!mini && STATE.representation === "surface" && STATE.visibility.protein) {
-      addSurface(viewer, proteinSelection,
-        Object.assign({opacity: 0.78}, resultColouring(model) || {color: "#d8d8dd"}));
-    }
-    if (!mini && STATE.pocketSurface && ligandNames.length) {
-      addSurface(viewer, pocketSelection, {opacity: 0.55, color: COLORS.violet});
-    }
-    if (!mini && STATE.mode === "playback" && STATE.environmentModel) {
-      stylePlaybackEnvironment(viewer, STATE.environmentModel);
-    }
-    const boxModel = STATE.mode === "playback" ? STATE.environmentModel : model;
-    if (!mini && STATE.visibility.box && boxModel) drawPeriodicBox(viewer, boxModel);
-    if (!mini) drawMeasurement(false);
-    safeCall(viewer, "render");
+    engine.scene = sceneFor(mini);
   }
 
-  function drawPeriodicBox(viewer, model) {
-    if (!viewer || !model || typeof viewer.addLine !== "function") return;
-    try {
-      const cryst = typeof model.getCrystData === "function" ? model.getCrystData() : null;
-      const elements = cryst?.matrix?.elements;
-      const atoms = typeof model.selectedAtoms === "function" ? model.selectedAtoms({}) : [];
-      if (!elements || elements.length < 9 || !atoms.length) return;
-      const vectors = [
-        {x: elements[0], y: elements[1], z: elements[2]},
-        {x: elements[3], y: elements[4], z: elements[5]},
-        {x: elements[6], y: elements[7], z: elements[8]},
-      ];
-      const centroid = atoms.reduce((sum, atom) => ({
-        x: sum.x + atom.x, y: sum.y + atom.y, z: sum.z + atom.z,
-      }), {x: 0, y: 0, z: 0});
-      centroid.x /= atoms.length; centroid.y /= atoms.length; centroid.z /= atoms.length;
-      const origin = {
-        x: centroid.x - 0.5 * (vectors[0].x + vectors[1].x + vectors[2].x),
-        y: centroid.y - 0.5 * (vectors[0].y + vectors[1].y + vectors[2].y),
-        z: centroid.z - 0.5 * (vectors[0].z + vectors[1].z + vectors[2].z),
-      };
-      const corner = (a, b, c) => ({
-        x: origin.x + a * vectors[0].x + b * vectors[1].x + c * vectors[2].x,
-        y: origin.y + a * vectors[0].y + b * vectors[1].y + c * vectors[2].y,
-        z: origin.z + a * vectors[0].z + b * vectors[1].z + c * vectors[2].z,
-      });
-      const corners = [corner(0,0,0), corner(1,0,0), corner(0,1,0), corner(1,1,0),
-        corner(0,0,1), corner(1,0,1), corner(0,1,1), corner(1,1,1)];
-      // A true periodic cell is physically larger than the protein. Keep the
-      // guide visible without allowing it to overpower a protein-only view.
-      const boxOpacity = STATE.visibility.water ? 0.55 : 0.38;
-      for (const [start, end] of [[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]]) {
-        viewer.addLine({start: corners[start], end: corners[end], color: COLORS.cyan, linewidth: 1.2, opacity: boxOpacity});
-      }
-    } catch (error) { console.debug("periodic box rendering skipped", error); }
-  }
-
-  function stylePlaybackEnvironment(viewer, environmentModel) {
-    if (!viewer || !environmentModel || typeof environmentModel.getID !== "function") return;
-    const scope = {model: environmentModel.getID()};
-    // The static full topology is an overlay. Clear its duplicate protein
-    // first, then apply only controls that require the full system.
-    try { viewer.setStyle(scope, {}); } catch (error) { console.debug(error); }
-    if (STATE.visibility.water) {
-      // A solvated system contains thousands of water hydrogens. Rendering
-      // every bond here hides the solute; oxygen markers preserve the solvent
-      // envelope while the Hydrogens control still exposes atom-level detail.
-      addStyle(viewer, {...scope, resn: WATERS, elem: "O"}, {
-        sphere: {scale: 0.22, color: "#4da3ff", opacity: 0.42},
-      });
-    }
-    if (STATE.visibility.ions) {
-      addStyle(viewer, {...scope, resn: IONS}, {
-        sphere: {scale: 0.70, colorscheme: "Jmol", opacity: 1.0},
-      });
-    }
-    if (STATE.visibility.hydrogens) {
-      addStyle(viewer, {...scope, elem: "H"}, {
-        sphere: {scale: 0.12, colorscheme: "Jmol", opacity: 0.45},
-      });
-    }
-  }
-
-  function resolveProteinSelection(model) {
-    const aminoSelection = {resn: AMINO_ACIDS};
-    try {
-      if (model && typeof model.selectedAtoms === "function") {
-        if (model.selectedAtoms(aminoSelection).length) return aminoSelection;
-        const atomRecords = {hetflag: false};
-        if (model.selectedAtoms(atomRecords).length) return atomRecords;
-      }
-    } catch (error) {
-      console.debug("protein selection fallback", error);
-    }
-    return aminoSelection;
-  }
-
-  function proteinStyle(model) {
-    const color = proteinColor(model);
-    switch (STATE.representation) {
-      case "backbone": return {cartoon: Object.assign({style: "trace", thickness: 0.3}, color)};
-      case "sticks": return {stick: Object.assign({radius: 0.13}, color)};
-      case "ballAndStick": return {
-        stick: Object.assign({radius: 0.12}, color),
-        sphere: Object.assign({scale: 0.25}, color),
-      };
-      case "lines": return {line: Object.assign({linewidth: 1.2}, color)};
-      case "surface": return {cartoon: Object.assign({opacity: 0.18}, color)};
-      case "cartoon":
-      default: return {cartoon: Object.assign({thickness: 0.35}, color)};
-    }
-  }
-
-  function proteinColor(model) {
-    if (STATE.colorMode.startsWith(RESULT_PREFIX)) {
-      return resultColouring(model) || {color: "spectrum"};
-    }
-    if (STATE.colorMode === "monochrome") return {color: COLORS.white};
-    if (STATE.colorMode === "spectrum") return {color: "spectrum"};
-    const schemes = {
-      chain: "chain",
-      residue: "amino",
-      element: "Jmol",
-      secondary_structure: "ssPyMol",
-    };
-    return {colorscheme: schemes[STATE.colorMode] || "chain"};
-  }
-
-  function ligandStyle() {
-    if (STATE.colorMode === "monochrome") {
-      return {
-        stick: {color: COLORS.cyan, radius: 0.20},
-        sphere: {color: COLORS.cyan, scale: 0.26},
-      };
-    }
+  function sceneFor(mini) {
     return {
-      stick: {colorscheme: "Jmol", radius: 0.20},
-      sphere: {colorscheme: "Jmol", scale: 0.26},
+      mini,
+      show: Object.assign({}, STATE.visibility, mini ? {water: false, ions: false, pocket: false,
+        box: false, hydrogens: false} : {}),
+      ligandNames: ligandResnames(),
+      pocketCutoff: STATE.pocketCutoff,
+      pocketSurface: !mini && STATE.pocketSurface,
+      isolateLigand: !mini && STATE.isolateLigand,
+      pocketOnly: !mini && STATE.pocketOnly,
+      labels: !mini && STATE.labels,
+      focus: mini ? null : STATE.focusIndices,
+      // The atoms picked to measure, rendered so the person sees what they picked.
+      picks: mini ? null : STATE.picks.map((pick) => pick.index),
     };
   }
 
-  /** Fewer residues than a cartoon can shape: under eight alpha carbons. */
-  function isShortPeptide(model, selection) {
-    try {
-      const alphas = model.selectedAtoms(Object.assign({}, selection, {atom: "CA"}));
-      return alphas.length > 0 && alphas.length < SHORT_PEPTIDE_RESIDUES;
-    } catch (error) {
-      return false;
+  /** Rendered again as the controls now say, in both engines. */
+  async function restyleViewers() {
+    sayTheColours();
+    const engines = [[STATE.engine, false, STATE.model], [STATE.miniEngine, true, STATE.miniModel]];
+    for (const [engine, mini, rendered] of engines) {
+      if (!engine || !rendered) continue;
+      applyLook(engine, mini);
+      try {
+        await engine.setScene(engine.scene);
+      } catch (error) {
+        console.debug("restyle skipped", error);
+      }
     }
-  }
-
-  function addStyle(viewer, selection, style) {
-    try {
-      if (typeof viewer.addStyle === "function") viewer.addStyle(selection, style);
-      else viewer.setStyle(selection, style);
-    } catch (error) {
-      console.debug("3Dmol style skipped", error);
+    if (STATE.engine && STATE.mode === "playback" && STATE.environment) {
+      STATE.engine.environmentShow = {water: STATE.visibility.water, ions: STATE.visibility.ions,
+        hydrogens: STATE.visibility.hydrogens};
+      await STATE.engine.renderEnvironment();
     }
-  }
-
-  function addSurface(viewer, selection, style) {
-    if (typeof viewer.addSurface !== "function" || !window.$3Dmol?.SurfaceType) return;
-    try {
-      viewer.addSurface(window.$3Dmol.SurfaceType.VDW, style, selection);
-    } catch (error) {
-      console.debug("3Dmol surface skipped", error);
-    }
-  }
-
-  function restyleViewers() {
-    const mainTarget = document.getElementById("viewer-canvas");
-    const miniTarget = document.getElementById("mini-preview-canvas");
-    if (STATE.viewer && STATE.model && mainTarget && isVisible(mainTarget)) {
-      styleViewer(STATE.viewer, STATE.model, false);
-    }
-    const miniModel = STATE.mode === "playback"
-      ? STATE.miniPlaybackModel
-      : STATE.miniModel;
-    if (STATE.miniViewer && miniModel && miniTarget && isVisible(miniTarget)) {
-      styleViewer(STATE.miniViewer, miniModel, true);
-    }
+    if (STATE.picks.length) await renderMeasurement();
     sayTheColours();
   }
 
@@ -988,7 +637,7 @@
     }
     STATE.residueLookups = new Map();
     offerResultColours();
-    if (STATE.colorMode.startsWith(RESULT_PREFIX)) restyleViewers();
+    if (STATE.colorMode.startsWith(RESULT_PREFIX)) await restyleViewers();
   }
 
   /* The results are offered in the "Coloured by" list where there are any,
@@ -1036,49 +685,34 @@
     return `${chain == null ? "" : String(chain).trim()}|${resi}|${String(icode || "").trim()}`;
   }
 
-  /* A property's values by residue, and the residues of the model it cannot
-   * name one to one: a number that two residues of the protein share (two
-   * chains where the study named none, or insertion codes lost on the way)
-   * is grey rather than given to both. */
-  function lookupFor(property, model) {
+  /* A property's values by residue, and the residues of the structure it
+   * cannot name one to one: a number that two residues of the protein
+   * share (two chains where the study named none, or insertion codes lost
+   * on the way) is grey rather than given to both. */
+  function lookupFor(property) {
     if (!STATE.residueLookups) STATE.residueLookups = new Map();
+    const rendered = STATE.model;
     const cached = STATE.residueLookups.get(property.key);
-    if (cached && cached.model === model) return cached;
+    if (cached && cached.rendered === rendered) return cached;
     const chained = property.values.some((row) => row[0] != null);
     const values = new Map(property.values.map(
       (row) => [residueKey(chained ? row[0] : "", row[1], row[2]), Number(row[3])]));
     const residues = new Map();
-    let atoms = [];
-    try { atoms = model.selectedAtoms(resolveProteinSelection(model)); } catch (error) { atoms = []; }
-    // Residues as gui/by_residue.py's residue_runs finds them: a new one
-    // wherever the chain, number, code or name changes, or an atom's name
-    // comes round again.
-    let previous = null;
-    let names = new Set();
-    let count = 0;
-    atoms.forEach((atom) => {
-      const run = `${String(atom.chain || "").trim()}|${atom.resi}|${String(atom.icode || "").trim()}|${atom.resn}`;
-      if (run === previous && !names.has(atom.atom)) {
-        names.add(atom.atom);
-        return;
-      }
-      previous = run;
-      names = new Set([atom.atom]);
-      count += 1;
-      const key = residueKey(chained ? atom.chain : "", atom.resi, atom.icode);
+    const runs = STATE.engine && rendered ? STATE.engine.residues() : [];
+    runs.forEach((run, position) => {
+      const key = residueKey(chained ? run.chain : "", run.resi, run.icode);
       const seen = residues.get(key) || new Set();
-      seen.add(count);
+      seen.add(position);
       residues.set(key, seen);
     });
-    const shared = new Set([...residues].filter(([, runs]) => runs.size > 1).map(([key]) => key));
+    const shared = new Set([...residues].filter(([, seen]) => seen.size > 1).map(([key]) => key));
     let named = 0;
     let unnamed = 0;
-    residues.forEach((runs, key) => {
-      const count = runs.size;
-      if (shared.has(key) || (!values.has(key) && property.absent == null)) unnamed += count;
-      else named += count;
+    residues.forEach((seen, key) => {
+      if (shared.has(key) || (!values.has(key) && property.absent == null)) unnamed += seen.size;
+      else named += seen.size;
     });
-    const lookup = {model, chained, values, shared, named, unnamed};
+    const lookup = {rendered, chained, values, shared, named, unnamed};
     STATE.residueLookups.set(property.key, lookup);
     return lookup;
   }
@@ -1088,27 +722,6 @@
     if (lookup.shared.has(key)) return null;
     if (lookup.values.has(key)) return lookup.values.get(key);
     return property.absent == null ? null : Number(property.absent);
-  }
-
-  function resultColour(property, value) {
-    if (value == null || !Number.isFinite(value)) return NO_VALUE;
-    const span = Number(property.high) - Number(property.low);
-    let t = span > 0 ? (value - Number(property.low)) / span : 0;
-    t = Math.max(0, Math.min(1, t));
-    if (property.reverse) t = 1 - t;
-    const scaled = t * (RESULT_STOPS.length - 1);
-    const lower = Math.min(RESULT_STOPS.length - 2, Math.floor(scaled));
-    const within = scaled - lower;
-    const mixed = RESULT_STOPS[lower].map((channel, index) =>
-      Math.round(channel + within * (RESULT_STOPS[lower + 1][index] - channel)));
-    return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-  }
-
-  function resultColouring(model) {
-    const property = activeResult();
-    if (!property || !model) return null;
-    const lookup = lookupFor(property, model);
-    return {colorfunc: (atom) => resultColour(property, valueOfResidue(property, lookup, atom))};
   }
 
   function formatValue(value) {
@@ -1133,7 +746,7 @@
       if (said) { said.hidden = true; said.textContent = ""; }
       return;
     }
-    const lookup = lookupFor(property, STATE.model);
+    const lookup = lookupFor(property);
     const low = formatValue(Number(property.low));
     const high = formatValue(Number(property.high));
     const stops = property.reverse ? RESULT_STOPS.slice().reverse() : RESULT_STOPS;
@@ -1157,12 +770,12 @@
     }
   }
 
-  /* Secondary structure: DSSP for the structure, the live frame or each
-   * frame of the playback, from the file the viewer was sent. 3Dmol's own
-   * estimate stands wherever it cannot be had, and the Structure tab says
-   * which the cartoon is. */
-  async function giveTheSecondaryStructure(viewer, model, of, version, mini, text) {
-    if (!viewer || !model) return;
+  /* Secondary structure: DSSP for the structure, the live frame or each of
+   * the frames, from what the viewer was sent, as the secondary structure
+   * analysis computes it. Mol*'s own stands wherever it cannot be had, and
+   * the Structure tab says which the cartoon is. */
+  async function giveTheSecondaryStructure(engine, of, version, mini, text) {
+    if (!engine) return;
     const generation = STATE.viewerGeneration;
     const tag = `${of}|${version == null ? "" : version}`;
     if (!STATE.secondaryStructures) STATE.secondaryStructures = new Map();
@@ -1184,23 +797,24 @@
         }
       }
     }
-    const current = mini
-      ? (model === STATE.miniModel || model === STATE.miniPlaybackModel)
-      : model === STATE.model;
-    if (!current) return;
-    // A live frame and a playback are rewritten as the run goes on: DSSP of
-    // a newer file than the one drawn is not DSSP of what is drawn.
-    const same = of === "structure" || !text || said.fingerprint === fingerprintOf(text);
-    const assigned = said.available && same ? assignSecondaryStructure(model, said) : null;
-    const applied = !!assigned;
+    // A live frame and the frames are rewritten as the run goes on: DSSP of
+    // a newer file than the one rendered is not DSSP of what is rendered.
+    const same = of === "structure"
+      || (of === "frames" ? said.signature === STATE.playbackSignature
+        : (!text || said.fingerprint === fingerprintOf(text)));
+    const frames = engine.frameCount() || 1;
+    const fits = said.available && same && (said.frames || []).length === frames;
+    let applied = false;
+    try {
+      applied = await engine.setSecondaryStructure(fits ? said : null) && fits;
+    } catch (error) {
+      console.debug("secondary structure not given", error);
+    }
     if (!mini) {
       STATE.secondaryStructure = {of, applied, frames: said.n_frames || 0,
         reason: applied ? null : (said.reason || "the frames it was computed for are not the ones shown")};
       sayTheSecondaryStructure();
     }
-    // Drawn again only where DSSP says something the estimate did not:
-    // each drawing of the canvas is the slow part of a page load.
-    if (assigned && assigned.changed) styleViewer(viewer, model, !!mini);
   }
 
   /* The coordinates of each model's first atom, as gui/by_residue.py
@@ -1228,84 +842,27 @@
     return parts.join("");
   }
 
-  function framesOf(model) {
-    if (Array.isArray(model.frames) && model.frames.length) return model.frames;
-    try { return [model.selectedAtoms({})]; } catch (error) { return []; }
-  }
-
-  const SS_CODES = {H: "h", E: "s", C: "c"};
-
-  /* Each frame's atoms get DSSP's assignment for their residue, matched by
-   * chain, number, insertion code, name and which occurrence of those it
-   * is, as the server read them from the same file. */
-  function assignSecondaryStructure(model, said) {
-    const frames = framesOf(model);
-    if (!frames.length || frames.length !== said.frames.length) return false;
-    const index = new Map(said.residues.map(
-      (row, position) => [`${row[0]}|${row[1]}|${row[2]}|${row[3]}#${row[4]}`, position]));
-    let changed = false;
-    frames.forEach((atoms, frame) => {
-      const codes = said.frames[frame];
-      const runs = [];
-      const seen = new Map();
-      let previous = null;
-      let names = new Set();
-      atoms.forEach((atom) => {
-        const key = `${String(atom.chain || "").trim()}|${atom.resi}|${String(atom.icode || "").trim()}|${atom.resn}`;
-        if (key !== previous || names.has(atom.atom)) {
-          const occurrence = seen.get(key) || 0;
-          seen.set(key, occurrence + 1);
-          const position = index.get(`${key}#${occurrence}`);
-          runs.push({chain: String(atom.chain || "").trim(), atoms: [],
-            code: position == null ? null : (SS_CODES[codes[position]] || "c")});
-          previous = key;
-          names = new Set();
-        }
-        names.add(atom.atom);
-        runs[runs.length - 1].atoms.push(atom);
-      });
-      runs.forEach((run, position) => {
-        if (run.code == null) return;
-        const before = runs[position - 1];
-        const after = runs[position + 1];
-        const begins = !(before && before.code === run.code && before.chain === run.chain);
-        const ends = !(after && after.code === run.code && after.chain === run.chain);
-        run.atoms.forEach((atom) => {
-          const before = `${atom.ss}|${!!atom.ssbegin}|${!!atom.ssend}`;
-          atom.ss = run.code;
-          delete atom.ssbegin;
-          delete atom.ssend;
-          if (run.code !== "c") {
-            if (begins) atom.ssbegin = true;
-            if (ends) atom.ssend = true;
-          }
-          if (!changed && before !== `${atom.ss}|${!!atom.ssbegin}|${!!atom.ssend}`) changed = true;
-        });
-      });
-    });
-    return {changed};
-  }
-
   function sayTheSecondaryStructure() {
     const line = document.getElementById("viewer-ss-said");
     if (!line) return;
     const said = STATE.secondaryStructure;
     if (!said) { line.textContent = ""; return; }
     if (said.applied) {
-      const where = said.of === "playback"
+      const where = said.of === "frames"
         ? `each of the ${said.frames} frames played`
         : (said.of === "live" ? "the frame shown" : "the structure shown");
       line.textContent = `Secondary structure: DSSP, computed for ${where}, as the study's `
         + "secondary structure analysis computes it.";
     } else {
-      line.textContent = "Secondary structure: the viewer's own estimate from backbone N-O "
-        + `distances, not DSSP (${said.reason}).`;
+      line.textContent = "Secondary structure: Mol*'s own DSSP, chain by chain, not the "
+        + `study's (${said.reason}).`;
     }
   }
 
   function secondaryStructureOf(atom) {
-    const name = {h: "Helix", s: "Strand"}[atom?.ss] || "Coil";
-    return STATE.secondaryStructure?.applied ? `${name} (DSSP)` : `${name} (viewer's estimate)`;
+    const code = STATE.engine ? STATE.engine.secondaryStructureOf(atom.index) : "c";
+    const name = {h: "Helix", s: "Strand"}[code] || "Coil";
+    return STATE.secondaryStructure?.applied ? `${name} (DSSP)` : `${name} (Mol*'s DSSP)`;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1316,20 +873,19 @@
       STATE.representation = event.target.value || "cartoon";
       STATE.isolateLigand = false;
       STATE.pocketOnly = false;
-      restyleViewers();
+      void restyleViewers();
     });
     document.getElementById("viewer-color")?.addEventListener("change", (event) => {
       STATE.colorMode = event.target.value || "spectrum";
-      restyleViewers();
+      void restyleViewers();
     });
     document.querySelectorAll(".chip-toggle input[data-vis]").forEach((checkbox) => {
       checkbox.addEventListener("change", () => {
         const which = checkbox.getAttribute("data-vis");
         STATE.visibility[which] = checkbox.checked;
-        if (which === "water" || which === "ions" || which === "box") {
+        if (which === "water" || which === "ions") {
           if (STATE.mode === "playback") {
-            // Keep the animated solute frames mounted and add/update a static
-            // full-system overlay for water, ions, and the periodic cell.
+            // The frames stay; the solvated system is rendered beside them.
             void ensurePlaybackEnvironment();
             return;
           }
@@ -1337,10 +893,12 @@
           // dropped, not merely restyled.
           STATE.structureUrl = null;
           STATE.currentPdb = null;
-          onStructureUpdated(STATE.structureInfo || {});
+          STATE.model = null;
+          STATE.miniModel = null;
+          void onStructureUpdated(STATE.structureInfo || {});
           return;
         }
-        restyleViewers();
+        void restyleViewers();
       });
     });
     document.querySelectorAll(".chip-btn[data-cam]").forEach((button) => {
@@ -1355,7 +913,7 @@
     document.getElementById("pocket-cutoff")?.addEventListener("change", (event) => {
       STATE.pocketCutoff = clamp(Number(event.target.value), 3, 15, 5);
       sayTheCutoffInNanometres();
-      restyleViewers();
+      void restyleViewers();
     });
   }
 
@@ -1364,10 +922,12 @@
       pausePlayback();
       STATE.liveUpdates = true;
       STATE.mode = STATE.liveFrameIndex != null ? "live" : "structure";
-      const viewer = ensureMainViewer();
-      if (STATE.currentPdb && viewer) installPdb(viewer, STATE.currentPdb, {main: true, center: false});
-      const mini = ensureMiniViewer();
-      if (STATE.currentPdb && mini) installPdb(mini, STATE.currentPdb, {mini: true, center: false});
+      STATE.playbackLoaded = false;
+      STATE.framesRendered = false;
+      if (STATE.currentPdb) {
+        await mountStructure(STATE.currentPdb, {main: true});
+        await mountStructure(STATE.currentPdb, {mini: true});
+      }
       button?.classList.add("active");
       updatePlaybackButtons();
       announce("Live molecular updates enabled.");
@@ -1381,8 +941,12 @@
       announce(STATE.liveUpdates ? "Live molecular updates resumed." : "Live molecular updates paused.");
       return;
     }
-    const viewer = ensureMainViewer();
-    if (!viewer) return;
+    if (action === "fullscreen") {
+      document.getElementById("viewer-canvas-frame")?.requestFullscreen?.();
+      return;
+    }
+    const engine = await mainEngine();
+    if (!engine) return;
     if (action === "play-trajectory") {
       if (STATE.playbackPlaying) pausePlayback();
       else await startPlayback();
@@ -1394,16 +958,11 @@
     if (action === "prev-frame") { stopFollowing(); await seekRelative(-1); return; }
     if (action === "next-frame") { stopFollowing(); await seekRelative(1); return; }
     if (action === "reset-view") {
-      setSpinning(viewer, false);
-      safeCall(viewer, "zoomTo");
-      safeCall(viewer, "render");
+      setSpinning(engine, false);
+      engine.resetView();
       return;
     }
-    if (action === "fullscreen") {
-      document.getElementById("viewer-canvas-frame")?.requestFullscreen?.();
-      return;
-    }
-    if (action === "screenshot") takeScreenshot();
+    if (action === "screenshot") await takeScreenshot();
     if (action === "measure") toggleMeasuring(button);
   }
 
@@ -1439,7 +998,8 @@
       if (document.documentElement.dataset.page !== "viewer") return;
       if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
       const target = event.target;
-      if (target && (target.isContentEditable
+      // Escape is the one key a button does nothing with.
+      if (target && event.key !== "Escape" && (target.isContentEditable
           || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName))) return;
       const handler = KEYS[event.key.length === 1 ? event.key.toLowerCase() : event.key];
       if (!handler) return;
@@ -1448,15 +1008,15 @@
     });
   }
 
-  /* The viewer is in angstroms, 3Dmol's unit, and every analysis in
-   * nanometres; where the two meet the cutoff is said in both. */
+  /* The viewer is in angstroms and every analysis in nanometres; where the
+   * two meet the cutoff is said in both. */
   function sayTheCutoffInNanometres() {
     const said = document.getElementById("pocket-cutoff-nm");
     if (said) said.textContent = `(${(STATE.pocketCutoff / 10).toFixed(2)} nm)`;
   }
 
-  function setSpinning(viewer, on) {
-    safeCall(viewer, "spin", on);
+  function setSpinning(engine, on) {
+    if (engine) engine.spin(on);
     STATE.spinning = on;
     document.querySelectorAll('[data-cam="spin"]').forEach((button) => {
       button.setAttribute("aria-pressed", String(on));
@@ -1464,108 +1024,98 @@
     });
   }
 
-  function handleCameraAction(action) {
-    const viewer = ensureMainViewer();
-    if (!viewer) return;
+  async function handleCameraAction(action) {
+    const engine = await mainEngine();
+    if (!engine) return;
     // One button: it spins, and stops what it started.
     if (action === "spin") {
-      setSpinning(viewer, !STATE.spinning);
+      setSpinning(engine, !STATE.spinning);
       return;
     }
     if (action === "stop") {
-      setSpinning(viewer, false);
+      setSpinning(engine, false);
       return;
     }
-    if (action === "center-protein") safeCall(viewer, "zoomTo", {resn: AMINO_ACIDS});
-    if (action === "center-ligand" && ligandResnames().length) safeCall(viewer, "zoomTo", {resn: ligandResnames()});
+    if (action === "center-protein") engine.focusPart("polymer") || engine.resetView();
+    if (action === "center-ligand" && ligandResnames().length) engine.focusPart("ligand");
     if (action === "center-pocket" && ligandResnames().length) {
-      safeCall(viewer, "zoomTo", {byres: true, within: {distance: STATE.pocketCutoff, sel: {resn: ligandResnames()}}});
+      engine.focusPart("pocket") || engine.focusPart("ligand");
     }
-    if (action === "zoom-in") safeCall(viewer, "zoom", 1.2);
-    if (action === "zoom-out") safeCall(viewer, "zoom", 0.8);
-    safeCall(viewer, "render");
+    if (action === "zoom-in") engine.zoom(1.2);
+    if (action === "zoom-out") engine.zoom(0.8);
   }
 
-  function handleLigandAction(action) {
-    const viewer = ensureMainViewer();
+  async function handleLigandAction(action) {
+    const engine = await mainEngine();
     const ligands = ligandResnames();
-    if (!viewer || !ligands.length) {
+    if (!engine || !ligands.length) {
       announce("No ligand is available for this control.");
       return;
     }
-    if (action === "center") safeCall(viewer, "zoomTo", {resn: ligands});
+    if (action === "center") engine.focusPart("ligand");
     if (action === "isolate") {
       STATE.isolateLigand = !STATE.isolateLigand;
       STATE.pocketOnly = false;
-      restyleViewers();
-      safeCall(viewer, "zoomTo", {resn: ligands});
+      await restyleViewers();
+      engine.focusPart("ligand");
     }
     if (action === "show-pocket") {
       STATE.visibility.pocket = true;
       STATE.isolateLigand = false;
-      restyleViewers();
-      safeCall(viewer, "zoomTo", {byres: true, within: {distance: STATE.pocketCutoff, sel: {resn: ligands}}});
+      await restyleViewers();
+      engine.focusPart("pocket");
     }
     if (action === "show-pocket-surface") {
       STATE.pocketSurface = !STATE.pocketSurface;
-      restyleViewers();
+      await restyleViewers();
     }
     if (action === "hide-distant") {
       STATE.pocketOnly = !STATE.pocketOnly;
       STATE.isolateLigand = false;
-      restyleViewers();
-      safeCall(viewer, "zoomTo");
+      await restyleViewers();
+      engine.focusPart(STATE.pocketOnly ? "pocket" : "polymer");
     }
     if (action === "show-labels") {
-      safeCall(viewer, "removeAllLabels");
-      try { viewer.addResLabels({resn: ligands}, {fontColor: COLORS.white, backgroundColor: "#101012"}); } catch (error) { console.debug(error); }
+      STATE.labels = !STATE.labels;
+      await restyleViewers();
     }
-    if (action === "show-contacts") drawGeometricContacts();
+    if (action === "show-contacts") await showGeometricContacts();
     if (action === "show-hbonds") announce("Hydrogen-bond overlays appear only when a dedicated interaction analysis provides them.");
-    safeCall(viewer, "render");
   }
 
-  function drawGeometricContacts() {
-    const viewer = STATE.viewer;
-    const model = STATE.model;
+  /* The ligand's closest contacts: for each ligand atom, the nearest atom
+   * of the protein within the cutoff, the thirty shortest of them rendered
+   * dashed with their distances. In the frame shown, as rendered. */
+  async function showGeometricContacts() {
+    const engine = STATE.engine;
     const ligands = ligandResnames();
-    if (!viewer || !model || !ligands.length || typeof model.selectedAtoms !== "function") return;
-    safeCall(viewer, "removeAllShapes");
+    if (!engine || !STATE.model || !ligands.length) return;
     try {
-      const ligandAtoms = model.selectedAtoms({resn: ligands});
-      const pocketAtoms = model.selectedAtoms({
-        byres: true,
-        within: {distance: STATE.pocketCutoff, sel: {resn: ligands}},
-        invert: true,
-      });
+      // Heavy atoms, as the contacts analysis and the pocket count them.
+      const ligandAtoms = engine.find({resn: ligands}).filter((atom) => atom.elem !== "H");
+      const cutoff = STATE.pocketCutoff;
+      const near = (a, b) => Math.abs(a.x - b.x) <= cutoff && Math.abs(a.y - b.y) <= cutoff
+        && Math.abs(a.z - b.z) <= cutoff;
+      const others = engine.find({resn: AMINO_ACIDS}).filter((atom) => atom.elem !== "H");
       const contacts = [];
       ligandAtoms.forEach((ligandAtom) => {
         let closest = null;
         let closestDistance = Infinity;
-        pocketAtoms.forEach((atom) => {
-          if (ligands.includes(atom.resn)) return;
-          const dx = ligandAtom.x - atom.x;
-          const dy = ligandAtom.y - atom.y;
-          const dz = ligandAtom.z - atom.z;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (distance <= STATE.pocketCutoff && distance < closestDistance) {
+        others.forEach((atom) => {
+          if (!near(ligandAtom, atom)) return;
+          const distance = Math.hypot(ligandAtom.x - atom.x, ligandAtom.y - atom.y, ligandAtom.z - atom.z);
+          if (distance <= cutoff && distance < closestDistance) {
             closest = atom;
             closestDistance = distance;
           }
         });
-        if (closest) contacts.push({ligandAtom, atom: closest, distance: closestDistance});
+        if (closest) contacts.push({a: ligandAtom.index, b: closest.index, distance: closestDistance});
       });
-      contacts.sort((a, b) => a.distance - b.distance).slice(0, 30).forEach((contact) => {
-        viewer.addLine({
-          start: {x: contact.ligandAtom.x, y: contact.ligandAtom.y, z: contact.ligandAtom.z},
-          end: {x: contact.atom.x, y: contact.atom.y, z: contact.atom.z},
-          color: COLORS.cyan,
-          dashed: true,
-          linewidth: 1,
-          opacity: 0.75,
-        });
-      });
-      announce(`Displayed ${Math.min(30, contacts.length)} geometric contacts within ${STATE.pocketCutoff} Å.`);
+      const shown = contacts.sort((x, y) => x.distance - y.distance).slice(0, 30);
+      await engine.showContacts(shown.map((contact) => [contact.a, contact.b]));
+      STATE.picks = [];
+      sayMeasurement();
+      announce(`Displayed ${shown.length} geometric contacts within ${STATE.pocketCutoff} Å.`);
     } catch (error) {
       console.warn("geometric contact rendering failed", error);
       announce("Geometric contacts could not be calculated for this structure.");
@@ -1573,56 +1123,35 @@
   }
 
   /* A picture for a page, not for the screen: at least this many pixels
-   * across, which is a double-column figure (183 mm) at 300 dpi. The canvas
-   * is drawn at the screen's pixel ratio, so a 900 px view saved as it
-   * stood was 900 px wide, a third of what a journal asks for. */
+   * across, which is a double-column figure (183 mm) at 300 dpi. */
   const PICTURE_WIDTH_PX = 2400;
-  const PICTURE_MOST_RATIO = 6;
 
-  function pictureRatio(cssWidth) {
-    const screen = window.devicePixelRatio || 1;
-    if (!(cssWidth > 0)) return screen;
-    return Math.min(PICTURE_MOST_RATIO, Math.max(screen, PICTURE_WIDTH_PX / cssWidth));
-  }
-
-  function takeScreenshot() {
-    if (!STATE.viewer || typeof STATE.viewer.pngURI !== "function") return;
-    const viewer = STATE.viewer;
-    const canvas = typeof viewer.getCanvas === "function" ? viewer.getCanvas() : null;
-    const ratio = pictureRatio(canvas ? canvas.clientWidth : 0);
-    // 3Dmol sizes its drawing buffer from window.devicePixelRatio when it
-    // resizes, so the view is drawn once at the picture's ratio and then
-    // put back, the browser's own property with it (deleting a replacement
-    // leaves none at all).
+  async function takeScreenshot() {
+    const engine = STATE.engine;
+    const canvas = document.querySelector("#viewer-canvas canvas");
+    if (!engine || !canvas) return;
+    const ratio = Math.max(window.devicePixelRatio || 1, PICTURE_WIDTH_PX / Math.max(1, canvas.clientWidth));
+    const width = Math.round(canvas.clientWidth * ratio);
+    const height = Math.round(canvas.clientHeight * ratio);
     let uri = "";
-    const own = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
-    let replaced = false;
     try {
-      if (ratio > (window.devicePixelRatio || 1)) {
-        Object.defineProperty(window, "devicePixelRatio",
-          {value: ratio, configurable: true, writable: true});
-        replaced = true;
-        safeCall(viewer, "resize");
-      }
-      safeCall(viewer, "render");
-      uri = viewer.pngURI();
-    } finally {
-      if (replaced) {
-        if (own) Object.defineProperty(window, "devicePixelRatio", own);
-        else delete window.devicePixelRatio;
-        safeCall(viewer, "resize");
-        safeCall(viewer, "render");
-      }
+      uri = await engine.picture(width, height);
+    } catch (error) {
+      console.warn("the picture could not be made", error);
+      return;
     }
     if (!uri) return;
     // Coloured by a result, the picture carries its colour bar: without it
     // the colours say nothing on a slide or in a figure.
     const property = activeResult();
     if (property) {
-      withTheLegend(uri, property).then(saveThePicture, () => saveThePicture(uri));
-    } else {
-      saveThePicture(uri);
+      try {
+        uri = await withTheLegend(uri, property);
+      } catch (error) {
+        console.debug("the colour bar was left off the picture", error);
+      }
     }
+    saveThePicture(uri);
   }
 
   function saveThePicture(uri) {
@@ -1634,7 +1163,7 @@
     anchor.remove();
   }
 
-  /* The picture with the colour bar drawn in its lower left corner, sized
+  /* The picture with the colour bar in its lower left corner, sized
    * to the picture as the bar on screen is sized to the canvas. */
   function withTheLegend(uri, property) {
     return new Promise((resolve, reject) => {
@@ -1650,7 +1179,7 @@
           const scale = Math.max(1, canvas.width / 900);
           const pad = 10 * scale;
           const width = 200 * scale;
-          const lookup = STATE.model ? lookupFor(property, STATE.model) : null;
+          const lookup = STATE.model ? lookupFor(property) : null;
           const none = lookup && lookup.unnamed
             ? (lookup.named ? `No value: ${lookup.unnamed}` : "No residue shown has a value") : "";
           const height = (none ? 74 : 56) * scale;
@@ -1694,6 +1223,9 @@
   /* ------------------------------------------------------------------ */
   /* Playback                                                            */
   /* ------------------------------------------------------------------ */
+  /* The trajectory is the binary frames the server writes
+   * (gui/trajectory_frames.py, `/api/frames-info`): a topology once and
+   * the frames as a DCD, made whole and centred on the protein. */
   function onPlaybackReady(payload) {
     const signature = payload?.source_signature || payload?.compiled_at || null;
     const changed = !!(STATE.playbackSignature && signature && STATE.playbackSignature !== signature);
@@ -1703,10 +1235,9 @@
       && previousPayload?.source_kind === "live-history"
       && payload?.source_kind === "live-history";
     STATE.playbackPayload = payload || null;
-    // A running job appends to the bounded live-history file, so its source
-    // signature changes on every polling cycle. That is not a replacement
-    // trajectory: keep the snapshot currently playing and retain the new
-    // payload for the next explicit reload.
+    // A running job appends to its history, so the signature changes on
+    // every poll. That is not a new trajectory: keep the frames playing and
+    // the new payload for the next explicit reload.
     if (sameLiveHistorySource) {
       updatePlaybackButtons();
       return;
@@ -1716,8 +1247,7 @@
     STATE.playbackFrames = Number(payload?.n_frames_browser || 0);
     if (changed && !sameLiveHistorySource) {
       STATE.playbackLoaded = false;
-      STATE.playbackPdb = null;
-      STATE.miniPlaybackModel = null;
+      STATE.framesRendered = false;
       if (STATE.mode === "playback") {
         pausePlayback();
         announce("New trajectory frames are available. Press Play Trajectory to reload them.");
@@ -1729,32 +1259,33 @@
   async function requestPlaybackPayload(force) {
     const generation = STATE.viewerGeneration;
     try {
-      const response = await fetch(`/api/playback-info${force ? "?force=1" : ""}`, {cache: "no-store"});
+      const response = await fetch(`/api/frames-info${force ? "?force=1" : ""}`, {cache: "no-store"});
       if (!isViewerGenerationCurrent(generation)) return null;
-      if (!response.ok) throw new Error(`playback info HTTP ${response.status}`);
+      if (!response.ok) throw new Error(`frames info HTTP ${response.status}`);
       const payload = await response.json();
       if (!isViewerGenerationCurrent(generation)) return null;
       onPlaybackReady(payload);
       return payload;
     } catch (error) {
-      console.warn("playback information request failed", error);
+      console.warn("frames information request failed", error);
       return null;
     }
   }
 
   async function ensurePlaybackPayload() {
     if (STATE.playbackPayload?.playback_available) return STATE.playbackPayload;
-    // Not forced. Force means "the user asked for this to be rebuilt"; using
-    // it for "the browser has not got it yet" bypassed the disk cache every
-    // time the viewer mounted or the page reloaded, re-streaming the whole
-    // trajectory to produce the file that was already sitting beside it.
     const payload = await requestPlaybackPayload(false);
     if (!payload?.playback_available) {
-      const reason = String(payload?.reason || "not enough frames yet").replaceAll("-", " ");
-      announce(`Trajectory playback is not ready: ${reason}. Live molecular updates remain active.`);
+      const reason = String(payload?.reason || "not enough frames yet");
+      announce(`Trajectory playback is not ready: ${reason} Live molecular updates remain active.`);
       return null;
     }
     return payload;
+  }
+
+  function framesUrls(payload) {
+    const version = encodeURIComponent(payload?.compiled_at || Date.now());
+    return [`/structure/frames-topology.pdb?v=${version}`, `/structure/frames.dcd?v=${version}`];
   }
 
   async function loadPlayback(payload) {
@@ -1762,33 +1293,32 @@
     const available = payload?.playback_available ? payload : await ensurePlaybackPayload();
     if (!isViewerGenerationCurrent(generation) || !available) return false;
     const signature = available.source_signature || available.compiled_at || null;
-    if (STATE.playbackLoaded && STATE.playbackPdb && STATE.playbackSignature === signature) return true;
+    if (STATE.playbackLoaded && STATE.playbackSignature === signature) return true;
     if (STATE.playbackLoadPromise) return STATE.playbackLoadPromise;
 
-    const viewer = ensureMainViewer();
-    if (!viewer) return false;
     let loadPromise;
     loadPromise = (async () => {
       try {
-        const response = await fetch(`/structure/playback.pdb?v=${encodeURIComponent(available.compiled_at || Date.now())}`, {cache: "no-store"});
-        if (!isViewerGenerationCurrent(generation)) return false;
-        if (!response.ok) throw new Error(`playback HTTP ${response.status}`);
-        const pdb = await response.text();
-        if (!isViewerGenerationCurrent(generation)) return false;
-        if (!pdb.includes("MODEL") || (!pdb.includes("ATOM") && !pdb.includes("HETATM"))) {
-          throw new Error("playback PDB contains no model frames");
-        }
-        STATE.playbackPdb = pdb;
+        const engine = await mainEngine();
+        if (!engine) return false;
         STATE.playbackSignature = signature;
         STATE.playbackFrames = Number(available.n_frames_browser || 0);
         STATE.playbackFrameTimes = Array.isArray(available.frame_times_ns) ? available.frame_times_ns : [];
         STATE.mode = "playback";
-        const model = installPlaybackPdb(viewer, pdb, {main: true, center: false});
-        if (!model) throw new Error("3Dmol did not create a playback model");
-
-        const mini = ensureMiniViewer();
-        if (mini) installPlaybackPdb(mini, pdb, {mini: true, center: false});
-        STATE.playbackLoaded = true;
+        STATE.environment = false;
+        applyLook(engine, false);
+        const [topology, coordinates] = framesUrls(available);
+        const loaded = await engine.loadFrames(topology, coordinates);
+        if (!isViewerGenerationCurrent(generation)) return false;
+        if (!loaded.frames) throw new Error("the viewer made no frames of the trajectory");
+        STATE.playbackFrames = loaded.frames;
+        STATE.model = {atoms: loaded.atoms, frames: loaded.frames, of: "frames"};
+        STATE.residueLookups = new Map();
+        if (activeResult()) applyLook(engine, false);
+        document.getElementById("viewer-canvas-frame")?.setAttribute("data-ready", "true");
+        STATE.framesRendered = true;
+        await giveTheSecondaryStructure(engine, "frames", signature, false, null);
+        await loadMiniFrames();
         if (needsFullTopology()) await ensurePlaybackEnvironment();
         if (!isViewerGenerationCurrent(generation)) return false;
         document.getElementById("trajectory-row")?.removeAttribute("hidden");
@@ -1801,12 +1331,16 @@
         const target = follow && STATE.playbackFrames > 0 ? STATE.playbackFrames - 1 : current;
         await setPlaybackFrame(Math.max(0, target));
         if (!isViewerGenerationCurrent(generation)) return false;
+        // Loaded once a frame is shown, with its cartoon and its preview.
+        STATE.playbackLoaded = true;
+        sayTheColours();
         updatePlaybackButtons();
         return true;
       } catch (error) {
         console.warn("trajectory playback load failed", error);
         announce("Trajectory playback could not be loaded. Live molecular updates still work.");
         STATE.playbackLoaded = false;
+        STATE.framesRendered = false;
         return false;
       } finally {
         if (STATE.playbackLoadPromise === loadPromise) STATE.playbackLoadPromise = null;
@@ -1816,22 +1350,46 @@
     return loadPromise;
   }
 
-  function focusSelection() {
+  /** The preview plays the same frames, where it is shown. */
+  async function loadMiniFrames() {
+    const preview = document.getElementById("mini-preview-canvas");
+    if (!preview || !isVisible(preview) || !STATE.playbackPayload) return;
+    const engine = await miniEngine();
+    if (!engine) return;
+    applyLook(engine, true);
+    const [topology, coordinates] = framesUrls(STATE.playbackPayload);
+    const loaded = await engine.loadFrames(topology, coordinates);
+    STATE.miniModel = {atoms: loaded.atoms, frames: loaded.frames, of: "frames"};
+    document.getElementById("mini-preview-frame")?.setAttribute("data-ready", "true");
+    await giveTheSecondaryStructure(engine, "frames", STATE.playbackSignature, true, null);
+  }
+
+  /* A residue chosen elsewhere (a point of the RMSF on the Analysis page),
+   * rendered in full over whatever else is shown, and labelled. */
+  async function focusTheResidue() {
     const residue = STATE.focusResidue;
-    if (!residue) return null;
-    const selection = {resi: residue.resi};
-    if (residue.chain) selection.chain = residue.chain;
-    return selection;
+    const engine = STATE.engine;
+    if (!residue || !engine) {
+      STATE.focusIndices = null;
+      return [];
+    }
+    const wanted = {resi: residue.resi};
+    if (residue.chain) wanted.chain = residue.chain;
+    const atoms = engine.find(wanted);
+    STATE.focusIndices = atoms.map((atom) => atom.index);
+    await restyleViewers();
+    if (atoms.length) engine.focus(STATE.focusIndices);
+    return atoms;
   }
 
   /* Once the viewer has a structure: a residue asked for as the page opens
    * is shown when there is something to show it in. */
-  function whenDrawn(then, tries) {
+  function whenRendered(then, tries) {
     const left = tries == null ? 60 : tries;
-    if (STATE.viewer && (STATE.model || STATE.playbackLoaded)) {
+    if (STATE.engine && (STATE.model || STATE.playbackLoaded)) {
       then();
     } else if (left > 0) {
-      window.setTimeout(() => whenDrawn(then, left - 1), 150);
+      window.setTimeout(() => whenRendered(then, left - 1), 150);
     }
   }
 
@@ -1841,21 +1399,10 @@
       const resi = Number(detail.resi);
       STATE.focusResidue = Number.isFinite(resi)
         ? {resi, chain: detail.chain || null} : null;
-      whenDrawn(() => {
-        restyleViewers();
-        const selection = focusSelection();
-        if (!selection) return;
-        safeCall(STATE.viewer, "removeAllLabels");
-        const atoms = safeCall(STATE.viewer, "selectedAtoms", selection) || [];
+      whenRendered(async () => {
+        const atoms = await focusTheResidue();
+        if (!STATE.focusResidue) return;
         const name = `${atoms[0]?.resn || "residue"} ${detail.chain ? detail.chain + ":" : ""}${resi}`;
-        if (atoms.length) {
-          safeCall(STATE.viewer, "addLabel", name, {
-            fontSize: 12, fontColor: "#050505", backgroundColor: COLORS.orange,
-            backgroundOpacity: 0.9, borderThickness: 0, inFront: true,
-          }, selection);
-          safeCall(STATE.viewer, "zoomTo", selection, 400);
-        }
-        safeCall(STATE.viewer, "render");
         announce(atoms.length ? `${name} shown` : `Residue ${resi} is not in the structure shown`);
       });
     });
@@ -1897,17 +1444,30 @@
   }
 
   async function startPlayback() {
-    const payload = await ensurePlaybackPayload();
-    if (!payload || !(await loadPlayback(payload))) return;
+    // Playing from the moment it is asked: the button and the keys say so
+    // while the frames load, and a pause pressed before they have is kept.
+    const asked = ++STATE.playbackAsked;
     STATE.playbackPlaying = true;
     STATE.liveUpdates = false;
     clearPlaybackTimer();
     updatePlaybackButtons();
+    const payload = await ensurePlaybackPayload();
+    if (!payload || !(await loadPlayback(payload))) {
+      if (asked === STATE.playbackAsked) pausePlayback();
+      return;
+    }
+    if (!STATE.playbackPlaying || asked !== STATE.playbackAsked) return;
     const interval = Math.max(50, Math.round(700 / Math.max(0.25, STATE.playbackSpeed)));
-    STATE.playbackTimer = window.setInterval(() => {
-      if (!STATE.playbackPlaying) return clearPlaybackTimer();
-      seekRelative(STATE.playbackReverse ? -1 : 1, true);
-    }, interval);
+    // One frame at a time: the next is asked for once the last is rendered.
+    const step = async () => {
+      if (!STATE.playbackPlaying) return;
+      const started = performance.now();
+      await seekRelative(STATE.playbackReverse ? -1 : 1, true);
+      if (!STATE.playbackPlaying) return;
+      STATE.playbackTimer = window.setTimeout(step,
+        Math.max(0, interval - (performance.now() - started)));
+    };
+    STATE.playbackTimer = window.setTimeout(step, interval);
   }
 
   function pausePlayback() {
@@ -1917,7 +1477,7 @@
   }
 
   function clearPlaybackTimer() {
-    if (STATE.playbackTimer) window.clearInterval(STATE.playbackTimer);
+    if (STATE.playbackTimer) window.clearTimeout(STATE.playbackTimer);
     STATE.playbackTimer = null;
   }
 
@@ -1943,38 +1503,24 @@
 
   async function setPlaybackFrame(frame) {
     const generation = STATE.viewerGeneration;
-    if (!STATE.viewer || !STATE.playbackLoaded) return;
+    if (!STATE.engine || !STATE.framesRendered) return;
     const index = clamp(Math.round(Number(frame)), 0, Math.max(0, STATE.playbackFrames - 1), 0);
-    await setViewerFrame(STATE.viewer, index);
-    if (!isViewerGenerationCurrent(generation) || !STATE.playbackLoaded) return;
-    if (STATE.environmentModel) {
-      alignPlaybackEnvironment();
-      if (STATE.visibility.box) {
-        safeCall(STATE.viewer, "removeAllShapes");
-        drawPeriodicBox(STATE.viewer, STATE.environmentModel);
-      }
-      safeCall(STATE.viewer, "render");
-    }
-    if (STATE.miniViewer && STATE.miniPlaybackModel) await setViewerFrame(STATE.miniViewer, index);
-    // The atoms measured have moved with the frame, and so have their numbers.
-    if (STATE.picks.length) { drawMeasurement(true); sayMeasurement(); }
     const slider = document.getElementById("traj-slider");
     if (slider) slider.value = String(index);
     setText("traj-current", String(index));
     setText("traj-total", String(STATE.playbackFrames));
     const time = STATE.playbackFrameTimes[index];
-    setText("traj-simtime", time != null ? Number(time).toFixed(3) : "—");
+    setText("traj-simtime", time != null ? Number(time).toFixed(3) : "\u2014");
     setOverlay(false, {stage: "playback", frame: index, simtime: time});
-  }
-
-  async function setViewerFrame(viewer, index) {
-    if (!viewer || typeof viewer.setFrame !== "function") return;
     try {
-      await Promise.resolve(viewer.setFrame(index));
-      viewer.render();
+      await STATE.engine.setFrame(index);
+      if (STATE.miniEngine && STATE.miniModel?.of === "frames") await STATE.miniEngine.setFrame(index);
     } catch (error) {
-      console.debug("3Dmol setFrame failed", error);
+      console.debug("frame change skipped", error);
     }
+    if (!isViewerGenerationCurrent(generation) || !STATE.framesRendered) return;
+    // The atoms measured have moved with the frame, and so have their numbers.
+    if (STATE.picks.length) sayMeasurement();
   }
 
   function updatePlaybackButtons() {
@@ -2005,7 +1551,7 @@
     if (Number.isFinite(settings.pocketCutoff)) STATE.pocketCutoff = settings.pocketCutoff;
     if (settings.proteinRepresentation) {
       STATE.representation = settings.proteinRepresentation;
-      // The list says what is drawn, whichever way it was chosen.
+      // The list says what is rendered, whichever way it was chosen.
       const listed = document.getElementById("viewer-rep");
       if (listed && [...listed.options].some((o) => o.value === STATE.representation)) {
         listed.value = STATE.representation;
@@ -2014,18 +1560,13 @@
     STATE.visibility.water = !!settings.showWater;
     STATE.visibility.ions = !!settings.showIons;
     STATE.preservingCamera = settings.preserveCamera !== false;
-    if (STATE.viewer && typeof STATE.viewer.setBackgroundColor === "function") {
-      const background = settings.background === "charcoal" ? "#101012" : COLORS.black;
-      STATE.viewer.setBackgroundColor(background);
-    }
-    if (STATE.miniViewer && typeof STATE.miniViewer.setBackgroundColor === "function") {
-      STATE.miniViewer.setBackgroundColor(COLORS.black);
-    }
-    if (settings.spin && STATE.viewer) safeCall(STATE.viewer, "spin", true);
+    STATE.background = settings.background === "charcoal" ? COLORS.charcoal : COLORS.black;
+    if (STATE.engine) STATE.engine.setBackground(colourNumber(STATE.background));
+    if (settings.spin && STATE.engine) setSpinning(STATE.engine, true);
     if (STATE.mode === "playback" && needsFullTopology()) void ensurePlaybackEnvironment();
     const cutoff = document.getElementById("pocket-cutoff");
     if (cutoff) cutoff.value = String(STATE.pocketCutoff);
-    restyleViewers();
+    void restyleViewers();
   }
 
   function onStatusUpdated(status) {
@@ -2048,7 +1589,7 @@
         : "The last frame the run wrote.";
     }
     setOverlay(running, {
-      stage: status?.stage || "—",
+      stage: status?.stage || "\u2014",
       simtime: status?.simulation_time_completed_ns,
     });
   }
@@ -2058,15 +1599,11 @@
     updateSelectionPanel(atom);
   }
 
-  function clearHoverAtom() {
-    // Keep the last selection visible; hover-out should not erase useful data.
-  }
-
   function onClickAtom(atom) {
     if (!atom) return;
     updateSelectionPanel(atom);
     void showSelectionFor(atom);
-    if (STATE.measuring) addPick(atom);
+    if (STATE.measuring) void addPick(atom);
   }
 
   /* ------------------------------------------------------------------ */
@@ -2074,12 +1611,10 @@
   /* ------------------------------------------------------------------ */
   /* Two atoms clicked give their distance, three the angle at the middle
    * one, four the dihedral about the middle bond: in the frame on screen,
-   * as drawn, in angstroms and degrees. A fifth click starts again. Each
-   * atom is found again by its chain, residue and name, so the numbers
-   * follow the trajectory as it plays. Two atoms can be measured over
-   * every frame too, by the pair_distance analysis (gui/measure.py). */
-  const MEASURE_COLOR = "#e69f00";
-
+   * as rendered, in angstroms and degrees. A fifth click starts again. Mol*
+   * renders them and follows them as the trajectory plays; the numbers here
+   * are read from the frame shown. Two atoms can be measured over every
+   * frame too, by the pair_distance analysis (gui/measure.py). */
   function toggleMeasuring(button) {
     STATE.measuring = !STATE.measuring;
     const pressed = button || document.querySelector('[data-action="measure"]');
@@ -2087,7 +1622,7 @@
     pressed?.classList.toggle("active", STATE.measuring);
     if (!STATE.measuring) STATE.picks = [];
     else document.querySelector('.info-tab[data-tab="selection"]')?.click();
-    drawMeasurement(true);
+    void renderMeasurement();
     sayMeasurement();
     announce(STATE.measuring
       ? "Measuring. Click two atoms for a distance, three for an angle, four for a dihedral."
@@ -2096,34 +1631,38 @@
 
   function clearPicks() {
     STATE.picks = [];
-    drawMeasurement(true);
+    void renderMeasurement();
     sayMeasurement();
   }
 
-  function addPick(atom) {
-    const pick = {chain: atom.chain || "", resi: atom.resi, resn: atom.resn || "",
-                  atom: atom.atom || atom.name || "", selection: null, asked: false};
+  async function addPick(atom) {
+    const pick = {index: atom.index, chain: atom.chain || "", resi: atom.resi,
+                  resn: atom.resn || "", atom: atom.atom || atom.name || "",
+                  selection: null, asked: false};
     const last = STATE.picks[STATE.picks.length - 1];
     if (last && ["chain", "resi", "resn", "atom"].every((key) => last[key] === pick[key])) return;
     if (STATE.picks.length >= 4) STATE.picks = [];
     STATE.picks.push(pick);
-    drawMeasurement(true);
+    // Said at once; rendered once Mol* has rendered what was asked before it.
     sayMeasurement();
     void selectionOfPick(pick);
+    await renderMeasurement();
   }
 
-  /* The atom a pick names, where it is in the frame on screen. */
+  /* The atom a pick names, where it is in the frame on screen: by its
+   * index, or by chain, residue and name where the structure shown has
+   * been replaced by one numbered otherwise. */
   function currentAtom(pick) {
-    const model = STATE.model;
-    if (!model || typeof model.selectedAtoms !== "function") return null;
+    const engine = STATE.engine;
+    if (!engine || !STATE.model) return null;
+    const byIndex = pick.index != null ? engine.atoms([pick.index])[0] : null;
+    if (byIndex && byIndex.atom === pick.atom && byIndex.resi === pick.resi) return byIndex;
     const wanted = {resi: pick.resi, atom: pick.atom};
     if (pick.chain) wanted.chain = pick.chain;
     if (pick.resn) wanted.resn = pick.resn;
-    try {
-      return model.selectedAtoms(wanted)[0] || null;
-    } catch (error) {
-      return null;
-    }
+    const found = engine.find(wanted)[0] || null;
+    if (found) pick.index = found.index;
+    return found;
   }
 
   const minus = (a, b) => [a.x - b.x, a.y - b.y, a.z - b.z];
@@ -2162,59 +1701,29 @@
   }
 
   function measureText(m) {
-    if (m.kind === "distance") return `${m.value.toFixed(2)} \u00c5`;
-    return `${m.value.toFixed(1)}\u00b0`;
+    if (m.kind === "distance") return `${m.value.toFixed(2)} Å`;
+    return `${m.value.toFixed(1)}°`;
   }
 
-  /* The picked atoms marked, the path between them dashed, and the last
-   * quantity labelled where it belongs: a distance at its middle, an angle
-   * at its vertex, a dihedral on its middle bond. */
-  function drawMeasurement(render) {
-    const viewer = STATE.viewer;
-    if (!viewer) return;
-    STATE.measureDrawn.shapes.forEach((shape) => safeCall(viewer, "removeShape", shape));
-    STATE.measureDrawn.labels.forEach((label) => safeCall(viewer, "removeLabel", label));
-    STATE.measureDrawn = {shapes: [], labels: []};
+  /* The picked atoms measured by Mol*: the distance, angle or dihedral the
+   * last of them completes, rendered in the structure. */
+  async function renderMeasurement() {
+    const engine = STATE.engine;
+    if (!engine) return;
     const atoms = STATE.picks.map(currentAtom);
-    if (atoms.some((atom) => !atom)) {
-      if (render) safeCall(viewer, "render");
-      return;
+    try {
+      await engine.showPicks(STATE.picks.map((pick) => pick.index));
+      if (atoms.some((atom) => !atom) || atoms.length < 2) await engine.clearMeasurements();
+      else await engine.measure(atoms.map((atom) => atom.index));
+    } catch (error) {
+      console.debug("measurement not rendered", error);
     }
-    const at = (atom) => ({x: atom.x, y: atom.y, z: atom.z});
-    atoms.forEach((atom) => {
-      const sphere = safeCall(viewer, "addSphere", {center: at(atom), radius: 0.45,
-                                                    color: MEASURE_COLOR, opacity: 0.85});
-      if (sphere) STATE.measureDrawn.shapes.push(sphere);
-    });
-    for (let i = 1; i < atoms.length; i += 1) {
-      const line = safeCall(viewer, "addCylinder", {start: at(atoms[i - 1]), end: at(atoms[i]),
-                                                    radius: 0.07, color: MEASURE_COLOR,
-                                                    dashed: true, fromCap: 1, toCap: 1});
-      if (line) STATE.measureDrawn.shapes.push(line);
-    }
-    const said = measurements(atoms);
-    const last = said[said.length - 1];
-    if (last) {
-      const middle = (a, b) => ({x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2});
-      const where = atoms.length === 2 ? middle(atoms[0], atoms[1])
-        : atoms.length === 3 ? at(atoms[1]) : middle(atoms[1], atoms[2]);
-      const label = safeCall(viewer, "addLabel", measureText(last), {
-        position: where, inFront: true, fontSize: 13, fontColor: "#ffffff",
-        backgroundColor: "#1f2328", backgroundOpacity: 0.85, showBackground: true,
-      });
-      if (label) STATE.measureDrawn.labels.push(label);
-    }
-    if (render) safeCall(viewer, "render");
   }
 
   function pickSaid(pick, number) {
     return `${number}. ${pick.resn} ${pick.resi} ${pick.atom}` + (pick.chain ? `, chain ${pick.chain}` : "");
   }
 
-  /* What was measured, in the Selection tab: the atoms, every distance,
-   * angle and dihedral between them, and for two atoms the command that
-   * measures them over every frame. Built as elements: atom names are the
-   * file's text. */
   function sayMeasurement() {
     const host = document.getElementById("measure-said");
     if (!host) return;
@@ -2467,10 +1976,10 @@
     const body = document.getElementById("selection-tab-tbody");
     if (!body) return;
     body.innerHTML = `
-      <tr><th>Residue</th><td>${escapeHTML(atom.resn || "—")} ${escapeHTML(atom.resi ?? "")}</td></tr>
-      <tr><th>Chain</th><td>${escapeHTML(atom.chain || "—")}</td></tr>
-      <tr><th>Atom</th><td>${escapeHTML(atom.atom || atom.name || "—")}</td></tr>
-      <tr><th>Element</th><td>${escapeHTML(atom.elem || atom.element || "—")}</td></tr>
+      <tr><th>Residue</th><td>${escapeHTML(atom.resn || "\u2014")} ${escapeHTML(atom.resi ?? "")}</td></tr>
+      <tr><th>Chain</th><td>${escapeHTML(atom.chain || "\u2014")}</td></tr>
+      <tr><th>Atom</th><td>${escapeHTML(atom.atom || atom.name || "\u2014")}</td></tr>
+      <tr><th>Element</th><td>${escapeHTML(atom.elem || atom.element || "\u2014")}</td></tr>
       <tr><th>Coordinates</th><td>${coordinate(atom.x)}, ${coordinate(atom.y)}, ${coordinate(atom.z)}</td></tr>`
       + residueRows(atom);
   }
@@ -2478,22 +1987,15 @@
   /* For an atom of the protein: its residue's secondary structure in this
    * frame, and its value in each of the study's per-residue results. */
   function residueRows(atom) {
-    const model = STATE.model;
-    if (!model || !inTheProtein(atom, model)) return "";
+    if (!STATE.model || !AMINO_ACIDS.includes(String(atom.resn || "").toUpperCase())) return "";
     let rows = `<tr><th>Secondary structure</th><td>${escapeHTML(secondaryStructureOf(atom))}</td></tr>`;
     (STATE.residueValues || []).forEach((property) => {
-      const value = valueOfResidue(property, lookupFor(property, model), atom);
+      const value = valueOfResidue(property, lookupFor(property), atom);
       const said = value == null ? "\u2014"
         : `${formatValue(value)}${property.unit ? ` ${property.unit}` : ""}`;
       rows += `<tr><th>${escapeHTML(property.label)}</th><td>${escapeHTML(said)}</td></tr>`;
     });
     return rows;
-  }
-
-  function inTheProtein(atom, model) {
-    const selection = resolveProteinSelection(model);
-    if (Array.isArray(selection.resn)) return selection.resn.includes(atom.resn);
-    return !atom.hetflag;
   }
 
   /* A field of the overlay with nothing to say is not shown: a structure
@@ -2536,73 +2038,17 @@
   /* ------------------------------------------------------------------ */
   /* Generic helpers                                                     */
   /* ------------------------------------------------------------------ */
-  /* Whether a camera kept from the last structure still looks at this one.
-   * A frame of the same system in the same place keeps the view the person
-   * chose; a structure written somewhere else (the prepared system, then a
-   * frame the engine wrote about its own origin 4 nm away) left the camera
-   * on empty space, and the Overview's preview stayed black. 3Dmol's view
-   * holds the model's translation, which is minus the point it centres. */
-  function framesTheModel(view, model) {
-    if (!Array.isArray(view) || view.length < 3 || !model) return true;
-    let atoms;
-    try { atoms = model.selectedAtoms({}); } catch (error) { return true; }
-    if (!atoms || !atoms.length) return true;
-    const low = [Infinity, Infinity, Infinity];
-    const high = [-Infinity, -Infinity, -Infinity];
-    atoms.forEach((atom) => {
-      [atom.x, atom.y, atom.z].forEach((value, axis) => {
-        if (value < low[axis]) low[axis] = value;
-        if (value > high[axis]) high[axis] = value;
-      });
-    });
-    const centre = low.map((value, axis) => (value + high[axis]) / 2);
-    const radius = Math.max(5, 0.5 * Math.hypot(...high.map((value, axis) => value - low[axis])));
-    const off = Math.hypot(...centre.map((value, axis) => value + view[axis]));
-    return Number.isFinite(off) && off <= radius;
-  }
-
-  function captureView(viewer) {
-    try {
-      const view = viewer.getView();
-      if (Array.isArray(view)) return view.slice();
-      return view ? JSON.parse(JSON.stringify(view)) : null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function restoreView(viewer, view) {
-    try { viewer.setView(view); } catch (error) { console.debug(error); }
-  }
-
   function resizeViewers() {
     const mainTarget = document.getElementById("viewer-canvas");
     const miniTarget = document.getElementById("mini-preview-canvas");
-    if (mainTarget && isVisible(mainTarget)) resizeViewer(STATE.viewer);
-    if (miniTarget && isVisible(miniTarget)) resizeViewer(STATE.miniViewer);
-  }
-
-  function resizeViewer(viewer) {
-    if (!viewer) return;
-    try {
-      if (typeof viewer.resize === "function") viewer.resize();
-      viewer.render();
-    } catch (error) {
-      console.debug("viewer resize skipped", error);
-    }
-  }
-
-  function stopViewerMotion(viewer) {
-    try { viewer.spin(false); } catch (error) { console.debug(error); }
-  }
-
-  function safeCall(object, method, ...args) {
-    try {
-      if (object && typeof object[method] === "function") return object[method](...args);
-    } catch (error) {
-      console.debug(`3Dmol ${method} skipped`, error);
-    }
-    return undefined;
+    [[mainTarget, STATE.engine], [miniTarget, STATE.miniEngine]].forEach(([target, engine]) => {
+      if (!target || !engine || !isVisible(target)) return;
+      try {
+        engine.resize();
+      } catch (error) {
+        console.debug("viewer resize skipped", error);
+      }
+    });
   }
 
   function isVisible(element) {
@@ -2621,7 +2067,7 @@
   }
 
   function coordinate(value) {
-    return Number.isFinite(Number(value)) ? Number(value).toFixed(3) : "—";
+    return Number.isFinite(Number(value)) ? Number(value).toFixed(3) : "\u2014";
   }
 
   function clamp(value, low, high, fallback) {
@@ -2636,6 +2082,16 @@
     })[character]);
   }
 
+  /* "#rrggbb" as the number Mol* takes for a colour. */
+  function colourNumber(hex) {
+    const match = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+    return match ? parseInt(match[1], 16) : 0x050505;
+  }
+
+  function hexOf(number) {
+    return number == null ? null : `#${Number(number).toString(16).padStart(6, "0")}`;
+  }
+
   window.FastMDXMoleculeViewer = {
     STATE,
     onStructureUpdated,
@@ -2644,9 +2100,11 @@
     resize: resizeViewers,
     measurements,
     pick: addPick,
+    // The atoms a selection names, as the engine reads them, for the tests.
+    atoms: (selection) => (STATE.engine ? STATE.engine.find(selection || {}) : []),
     // What the colours and the cartoon are made from, for the tests.
     byResidue: {
-      colourOf: (atom) => resultColouring(STATE.model)?.colorfunc(atom) ?? null,
+      colourOf: (atom) => (STATE.engine ? hexOf(STATE.engine.resultColourOf(atom.index)) : null),
       describe: updateSelectionPanel,
       giveTheSecondaryStructure,
       fingerprintOf,

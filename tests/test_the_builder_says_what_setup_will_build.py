@@ -262,7 +262,7 @@ class TestInTheBrowser:
         assert "3 residues in chain A" in rows and "Na+" in rows
         assert "grown from 1 to" in rows
         # Drawn beside the numbers: a rhombic dodecahedron has 24 edges.
-        assert page.get_attribute("#run-system-preview-view", "data-edges") == "24"
+        page.wait_for_selector('#run-system-preview-view[data-edges="24"]')
         assert page.is_visible("#run-system-preview-view canvas")
         assert "Time here" in rows
 
@@ -280,7 +280,7 @@ class TestInTheBrowser:
             "(was) => document.querySelector('.system-preview-headline')?.textContent !== was"
             " && /cube/.test(document.querySelector('.system-preview-headline').textContent)",
             arg=before, timeout=60000)
-        assert page.get_attribute("#run-system-preview-view", "data-edges") == "12"
+        page.wait_for_selector('#run-system-preview-view[data-edges="12"]')
 
     def test_each_shape_is_its_own_cell(self, page) -> None:
         """The cell OpenMM's box vectors tile space with: corners, edges, and

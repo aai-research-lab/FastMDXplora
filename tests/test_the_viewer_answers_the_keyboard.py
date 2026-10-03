@@ -38,9 +38,9 @@ def page(dashboard):
         opened = browser.new_page(viewport={"width": 1400, "height": 900})
         opened.goto(dashboard.url + "#viewer", wait_until="domcontentloaded")
         if not opened.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-            pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
-        # Sixty seconds: 3Dmol on a software renderer, beside a full suite,
-        # took longer than thirty to draw once.
+            pytest.skip("this browser has no WebGL, so the viewer cannot render")
+        # Sixty seconds: a software renderer, beside a full suite, took
+        # longer than thirty to render once.
         opened.wait_for_function(f"() => window.FastMDXMoleculeViewer && {VIEWER}.model",
                                  timeout=60000)
         opened.set_default_timeout(60000)

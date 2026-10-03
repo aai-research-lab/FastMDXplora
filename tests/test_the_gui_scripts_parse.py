@@ -18,12 +18,14 @@ import fastmdxplora.gui as gui
 
 STATIC = Path(gui.__file__).parent / "static"
 #: Minified and vendored, not ours to check.
-VENDORED = {"3Dmol-min.js"}
-SCRIPTS = sorted(path for path in STATIC.glob("*.js") if path.name not in VENDORED)
+VENDORED = {"molstar/molstar.js"}
+SCRIPTS = sorted(path for path in STATIC.rglob("*.js")
+                 if path.relative_to(STATIC).as_posix() not in VENDORED)
 
 
 def test_there_are_scripts_to_check() -> None:
-    assert {"molecule-viewer.js", "dashboard.js", "charts.js"} <= {p.name for p in SCRIPTS}
+    assert {"molecule-viewer.js", "viewer-engine.js", "dashboard.js", "charts.js"} <= {
+        p.name for p in SCRIPTS}
 
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=[p.name for p in SCRIPTS])

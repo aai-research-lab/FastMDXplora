@@ -230,15 +230,16 @@ def _structure_info(root: Path) -> dict[str, Any]:
         "structure_url": structure_url,
         "structure_available": structure_url is not None,
         "viewer_available": structure_url is not None and viewer_asset_available(),
-        "viewer_mode": "3dmol" if structure_url is not None and viewer_asset_available() else None,
+        "viewer_mode": "molstar" if structure_url is not None and viewer_asset_available() else None,
         "fallback_available": structure_url is not None,
         "fallback_mode": "schematic" if structure_url is not None else None,
     }
 
 
 def viewer_asset_available() -> bool:
-    """Return True when the bundled 3Dmol browser asset is available."""
-    return (Path(__file__).with_name("static") / "3Dmol-min.js").is_file()
+    """Return True when the bundled viewer (Mol* and its engine) is available."""
+    static = Path(__file__).with_name("static")
+    return (static / "molstar" / "molstar.js").is_file() and (static / "viewer-engine.js").is_file()
 
 
 def _render_with_pymol(pymol: str, structure: Path, output_path: Path) -> None:

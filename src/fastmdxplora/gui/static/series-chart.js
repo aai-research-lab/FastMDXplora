@@ -325,7 +325,7 @@
         { detail: { frame: played, trajectoryFrame: frame } }));
     };
     if (playback) { go(); return; }
-    fetch("/api/playback-info", { cache: "no-store" })
+    fetch("/api/frames-info", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (payload) {
         // Frames of the trajectory only when the viewer plays the

@@ -1488,14 +1488,49 @@ def make_handler(
                 return
             content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
             data = target.read_bytes()
+            vendored = target.relative_to(static_root.resolve()).parts[0] == "molstar"
+            compressed = None
+            if "gzip" in (self.headers.get("Accept-Encoding") or "") and len(data) > 65536 \
+                    and content_type.startswith(("text/", "application/javascript")):
+                compressed = _gzipped(target, data)
             self.send_response(200)
             self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "no-store")
+            # The vendored Mol*, 5 MB, is named by its version in the page
+            # (`molstar.js?v=5.12.0`), so a browser keeps it until the
+            # version changes; FastMDXplora's own scripts are asked for
+            # afresh each time.
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable"
+                             if vendored else "no-store")
+            if compressed is not None:
+                data = compressed
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
 
     return LiveDashboardHandler
+
+
+_GZIPPED: dict[tuple[str, int, int], bytes] = {}
+_GZIPPED_LOCK = threading.Lock()
+
+
+def _gzipped(path: Path, data: bytes) -> bytes:
+    """A static file compressed once for each version of it: the vendored
+    Mol* is 5.2 MB as sent and 1.5 MB compressed."""
+    import gzip
+
+    stat = path.stat()
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    with _GZIPPED_LOCK:
+        kept = _GZIPPED.get(key)
+        if kept is None:
+            kept = gzip.compress(data, compresslevel=6, mtime=0)
+            for old in [k for k in _GZIPPED if k[0] == key[0]]:
+                del _GZIPPED[old]
+            _GZIPPED[key] = kept
+        return kept
 
 
 def _load_template() -> str:

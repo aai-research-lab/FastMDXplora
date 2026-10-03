@@ -159,7 +159,7 @@ def _open(study: Path, then) -> object:
 
 #: The colour the viewer gives the alpha carbon of a residue.
 COLOUR_OF = """([chain, resi, icode]) => { const v = window.FastMDXMoleculeViewer;
-    const atom = v.STATE.model.selectedAtoms({resi, atom: 'CA'})
+    const atom = v.atoms({resi, atom: 'CA'})
         .find((a) => (!chain || a.chain === chain) && (a.icode || ' ').trim() === (icode || ''));
     return atom ? v.byResidue.colourOf(atom) : 'missing'; }"""
 
@@ -182,7 +182,7 @@ def test_the_protein_is_coloured_by_its_rmsf(study):
         said["a"] = page.evaluate(COLOUR_OF, ["A", 60, ""])
         said["b"] = page.evaluate(COLOUR_OF, ["B", 60, ""])
         page.evaluate("""() => { const v = window.FastMDXMoleculeViewer;
-            v.byResidue.describe(v.STATE.model.selectedAtoms({chain: 'B', resi: 60, atom: 'CA'})[0]); }""")
+            v.byResidue.describe(v.atoms({chain: 'B', resi: 60, atom: 'CA'})[0]); }""")
         said["rows"] = page.eval_on_selector_all(
             "#selection-tab-tbody tr",
             "rows => rows.map((r) => [r.cells[0].textContent, r.cells[1].textContent])")
@@ -219,7 +219,8 @@ def test_the_protein_is_coloured_by_its_rmsf(study):
 
 def _numbered_with_a_code(root: Path) -> Path:
     """Ten alanines, the sixth numbered 5A, with an RMSF for each and a
-    trajectory: MDTraj writes the playback without the code."""
+    trajectory whose topology keeps the code; the prepared structure was
+    written without it, so it has two residues 5."""
     (root / "setup").mkdir(parents=True)
     (root / "simulation").mkdir()
     numbers = [(1, ""), (2, ""), (3, ""), (4, ""), (5, ""), (5, "A"), (6, ""), (7, ""),
@@ -232,9 +233,11 @@ def _numbered_with_a_code(root: Path) -> Path:
                          f"  1.00  0.00           {name[0]}")
             serial += 1
     text = "\n".join(lines) + "\nEND\n"
-    (root / "setup" / "topology.pdb").write_text(text, encoding="utf-8")
+    (root / "setup" / "topology.pdb").write_text(
+        "\n".join(line[:26] + " " + line[27:] if line.startswith("ATOM") else line
+                  for line in text.splitlines()) + "\n", encoding="utf-8")
     (root / "simulation" / "trajectory_topology.pdb").write_text(text, encoding="utf-8")
-    topology = md.load_pdb(str(root / "setup" / "topology.pdb"))
+    topology = md.load_pdb(str(root / "simulation" / "trajectory_topology.pdb"))
     md.Trajectory(np.repeat(topology.xyz, 3, axis=0), topology.topology).save_dcd(
         str(root / "simulation" / "production.dcd"))
     (root / "simulation" / "live_status.json").write_text(
@@ -248,39 +251,39 @@ def _numbered_with_a_code(root: Path) -> Path:
 
 def test_a_residue_named_twice_is_left_grey(tmp_path):
     """Two residues the structure shown cannot tell apart are not both given
-    one residue's value: the structure keeps 5 and 5A apart, and the
-    playback, written without insertion codes, has two residues 5."""
+    one residue's value: the prepared structure, written without insertion
+    codes, has two residues 5, and the frames, read with the trajectory's
+    topology, keep 5 and 5A apart."""
     pytest.importorskip("playwright.sync_api")
     root = _numbered_with_a_code(tmp_path / "study")
 
     def look(page):
         page.wait_for_function("() => document.getElementById('viewer-color-results')")
         page.select_option("#viewer-color", "result:rmsf")
-        said = {"structure": [page.evaluate(COLOUR_OF, ["A", 5, code]) for code in ("", "A")]}
+        page.wait_for_function("() => !document.getElementById('viewer-legend').hidden")
+        said = {"structure": page.evaluate("""() => { const v = window.FastMDXMoleculeViewer;
+            return v.atoms({resi: 5, atom: 'CA'}).map((atom) => v.byResidue.colourOf(atom)); }""")}
+        said["neighbour"] = page.evaluate(COLOUR_OF, ["A", 6, ""])
+        said["legend"] = page.inner_text("#viewer-legend")
         said["structure_said"] = page.text_content("#viewer-colour-said")
         page.evaluate("() => window.FastMDXMoleculeViewer.loadPlayback()")
         page.wait_for_function(
             "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure"
-            " && window.FastMDXMoleculeViewer.STATE.secondaryStructure.of === 'playback'")
-        said["playback"] = page.evaluate("""() => { const v = window.FastMDXMoleculeViewer;
-            return v.STATE.model.selectedAtoms({resi: 5, atom: 'CA'})
-                .map((atom) => v.byResidue.colourOf(atom)); }""")
-        said["neighbour"] = page.evaluate(COLOUR_OF, ["A", 6, ""])
-        said["legend"] = page.inner_text("#viewer-legend")
-        said["playback_said"] = page.text_content("#viewer-colour-said")
+            " && window.FastMDXMoleculeViewer.STATE.secondaryStructure.of === 'frames'")
+        said["frames"] = [page.evaluate(COLOUR_OF, ["A", 5, code]) for code in ("", "A")]
+        said["frames_said"] = page.text_content("#viewer-colour-said")
         said["cartoon"] = page.evaluate(
             "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure.applied")
         return said
 
     said = _open(root, look)
-    assert len(set(said["structure"])) == 2 and "#5c5c66" not in said["structure"]
-    assert "10 of the 10 residues shown have a value" in said["structure_said"]
-    assert said["playback"] == ["#5c5c66", "#5c5c66"]
+    assert said["structure"] == ["#5c5c66", "#5c5c66"]
     assert said["neighbour"] != "#5c5c66"
     assert "No value: 2" in said["legend"]
-    assert "8 of the 10 residues shown have a value" in said["playback_said"]
-    # DSSP is still had for the playback: from the topology it was written
-    # from, which keeps the two apart.
+    assert "8 of the 10 residues shown have a value" in said["structure_said"]
+    assert len(set(said["frames"])) == 2 and "#5c5c66" not in said["frames"]
+    assert "10 of the 10 residues shown have a value" in said["frames_said"]
+    # DSSP is had for the frames, which MDTraj reads as ten residues.
     assert said["cartoon"] is True
 
 

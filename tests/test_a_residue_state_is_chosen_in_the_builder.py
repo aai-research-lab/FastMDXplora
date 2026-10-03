@@ -132,7 +132,7 @@ class TestInTheBuilder:
         return built["yaml"]
 
     def test_the_histidine_is_marked_in_the_picture(self, page):
-        assert page.get_attribute("#run-system-preview-view", "data-residues-marked") == "1"
+        page.wait_for_selector('#run-system-preview-view[data-residues-marked="1"]')
 
     def test_a_residue_is_chosen_from_the_structure(self, page):
         page.evaluate("() => window.FastMDXRun.pickResidue('A:2')")

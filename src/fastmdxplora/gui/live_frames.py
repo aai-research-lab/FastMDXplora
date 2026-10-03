@@ -31,8 +31,9 @@ def dashboard_display_pdb(pdb_text: str) -> str:
     """Return a browser-friendly PDB with bulk solvent and ions removed.
 
     The simulation topology and DCD remain untouched.  Filtering only the
-    dashboard copy keeps 3Dmol responsive while preserving protein and ligand
-    coordinates.  Bonds are inferred by 3Dmol from the displayed atoms.
+    dashboard copy keeps the viewer responsive while preserving protein and
+    ligand coordinates.  Bonds are inferred by the viewer from the displayed
+    atoms.
     """
     output: list[str] = []
     atom_written = False

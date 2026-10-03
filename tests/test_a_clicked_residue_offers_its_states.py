@@ -22,6 +22,7 @@ md = pytest.importorskip("mdtraj")
 
 from fastmdxplora.gui.selection import states_for  # noqa: E402
 from tests.test_a_structure_looked_at_says_what_setup_builds import CHAIN, DIMER  # noqa: E402
+from tests import viewer_hooks as hooks  # noqa: E402
 
 
 def _study(root: Path, structure_text: str, **extra) -> Path:
@@ -133,13 +134,10 @@ def test_the_viewer_offers_them(tmp_path) -> None:
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#viewer", wait_until="domcontentloaded")
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-                pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {viewer}.model")
             page.click('.info-tab[data-tab="selection"]')
-            page.evaluate(f"""() => {{
-                const atom = {viewer}.viewer.getModel().selectedAtoms({{resi: 3, atom: 'CA'}})[0];
-                atom.callback(atom, {viewer}.viewer);
-            }}""")
+            hooks.click(page, resi=3, atom="CA")
             page.wait_for_selector(".residue-states [data-state='HIE']")
             offered = page.text_content(".residue-states")
             page.click(".residue-states [data-state='HIE']")

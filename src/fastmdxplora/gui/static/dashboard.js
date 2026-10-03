@@ -430,7 +430,7 @@
     const names = ["app", "status", "metrics", "events", "results", "structure", "playback"];
     const urls = [
       "/api/app-state", "/api/status", "/api/metrics", "/api/events", "/api/results",
-      "/api/structure-info", "/api/playback-info",
+      "/api/structure-info", "/api/frames-info",
     ];
     const settled = await Promise.allSettled(urls.map(fetchJSON));
     let successes = 0;

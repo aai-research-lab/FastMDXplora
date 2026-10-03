@@ -174,7 +174,7 @@ def filter_pdb_to_ligand(
     """Return PDB text containing only the ligand atoms + END.
 
     Used by the binding-pocket / ligand-tools features that want just the
-    ligand string for the 3Dmol viewer. Caller is responsible for
+    ligand string for the molecule viewer. Caller is responsible for
     cross-origin / size validation; this helper does no IO.
     """
     if not ligand_resname:

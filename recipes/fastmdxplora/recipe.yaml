@@ -149,15 +149,12 @@ about:
     results into a written report, a slide deck, and a shareable bundle. A
     graphical interface is included for designing, starting, watching, and
     reviewing a run.
-  # The package bundles a minified build of 3Dmol.js (BSD-3-Clause) and the
-  # viewer build of Mol* (MIT; with React, rxjs and others, whose licences
-  # are MIT, Apache-2.0, ISC and 0BSD) for the molecular viewer in the
-  # graphical interface, so their licenses ship too.
-  license: MIT AND BSD-3-Clause AND Apache-2.0 AND ISC AND 0BSD
+  # The package bundles the viewer build of Mol* (MIT; with React, rxjs and
+  # others, whose licences are MIT, Apache-2.0, ISC and 0BSD) for the
+  # molecular viewer in the graphical interface, so their licenses ship too.
+  license: MIT AND Apache-2.0 AND ISC AND 0BSD
   license_file:
     - LICENSE
-    - src/fastmdxplora/gui/static/3Dmol-LICENSE.txt
-    - src/fastmdxplora/gui/static/3Dmol-min.js.LICENSE.txt
     - src/fastmdxplora/gui/static/molstar/LICENSE
     - src/fastmdxplora/gui/static/molstar/THIRD-PARTY-NOTICES.txt
   documentation: https://fastmdxplora.readthedocs.io

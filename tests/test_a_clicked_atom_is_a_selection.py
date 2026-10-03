@@ -20,6 +20,7 @@ import pytest
 md = pytest.importorskip("mdtraj")
 
 from fastmdxplora.gui.selection import selection_for, topology_the_analyses_read  # noqa: E402
+from tests import viewer_hooks as hooks  # noqa: E402
 
 
 def _topology(path: Path, *, chains=(("A", [("ALA", 1), ("GLY", 2)]),
@@ -134,14 +135,10 @@ def test_a_click_in_the_viewer_gives_it(tmp_path) -> None:
             page.set_default_timeout(60000)
             page.goto(session.url + "#viewer", wait_until="domcontentloaded")
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-                pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {viewer}.model")
             page.click('.info-tab[data-tab="selection"]')
-            # As 3Dmol calls it on a click: the atom's own callback.
-            page.evaluate(f"""() => {{
-                const atom = {viewer}.viewer.getModel().selectedAtoms({{resi: 3, atom: 'CA'}})[0];
-                atom.callback(atom, {viewer}.viewer);
-            }}""")
+            hooks.click(page, resi=3, atom="CA")
             page.wait_for_selector('#selection-strings .selection-string[data-of="atom"]')
             residue = page.text_content('#selection-strings [data-of="residue"] code')
             atom = page.text_content('#selection-strings [data-of="atom"] code')

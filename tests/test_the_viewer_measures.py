@@ -4,7 +4,7 @@ over every frame.
 The viewer said where a clicked atom was and nothing about how far it was
 from another: the plainest question asked of a structure. With Measure on
 (the ruler, or M), two atoms clicked give their distance, three the angle
-at the middle one, four the dihedral, drawn in the structure and listed in
+at the middle one, four the dihedral, shown in the structure and listed in
 the Selection tab, in the frame on screen, and following the trajectory as
 it plays. Two atoms can be measured over every frame too: the command runs
 the pair_distance analysis over the study's trajectory into a folder of its
@@ -21,6 +21,7 @@ import pytest
 md = pytest.importorskip("mdtraj")
 
 from fastmdxplora.gui.measure import over_frames  # noqa: E402
+from tests import viewer_hooks as hooks  # noqa: E402
 from tests.test_the_drawing_scripts_run_in_a_browser import _write_study  # noqa: E402
 
 A = "resSeq 3 and name CA"
@@ -111,11 +112,7 @@ def test_the_viewer_measures(study) -> None:
     session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
 
     def click(page, resi):
-        page.evaluate(f"""() => {{
-            const atom = {viewer}.STATE.viewer.getModel()
-                .selectedAtoms({{resi: {resi}, atom: 'CA'}})[0];
-            atom.callback(atom, {viewer}.STATE.viewer);
-        }}""")
+        assert hooks.click(page, resi=resi, atom="CA")
 
     try:
         with sync_playwright() as pw:
@@ -126,8 +123,8 @@ def test_the_viewer_measures(study) -> None:
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#viewer", wait_until="domcontentloaded")
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-                pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
-            page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {viewer}.STATE.model")
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(hooks.RENDERED)
             # The geometry, against numbers worked out here: MDTraj's
             # dihedral sign, a right angle, a known length.
             geometry = page.evaluate(f"""() => {viewer}.measurements([
@@ -141,16 +138,17 @@ def test_the_viewer_measures(study) -> None:
             click(page, 6)
             page.wait_for_selector("#measure-said .measure-over-frames:not([disabled])")
             two = page.text_content("#measure-said .measure-values")
-            drawn = page.evaluate(f"() => {viewer}.STATE.measureDrawn.labels.length")
-            atoms = page.evaluate(f"""() => [3, 6].map((resi) => {{
-                const a = {viewer}.STATE.viewer.getModel()
-                    .selectedAtoms({{resi, atom: 'CA'}})[0];
-                return [a.x, a.y, a.z]; }})""")
+            page.wait_for_function(f"() => {viewer}.STATE.engine.measurementCount() === 1")
+            shown = page.evaluate(f"() => {viewer}.STATE.engine.measurementCount()")
+            atoms = [[a["x"], a["y"], a["z"]] for resi in (3, 6)
+                     for a in hooks.atoms(page, resi=resi, atom="CA")]
             page.click("#measure-said .measure-over-frames")
             page.wait_for_selector("#measure-said .measure-command")
             command = page.text_content("#measure-said .measure-command")
             click(page, 7)
             click(page, 9)
+            page.wait_for_function("() => /Dihedral/.test(document.querySelector("
+                                   "'#measure-said .measure-values')?.textContent || '')")
             four = page.text_content("#measure-said .measure-values")
             page.keyboard.press("Escape")
             cleared = page.evaluate(f"() => {viewer}.STATE.picks.length")
@@ -164,7 +162,7 @@ def test_the_viewer_measures(study) -> None:
     assert pressed == "true" and asked.startswith("MeasuringClick an atom")
     angstroms = float(np.linalg.norm(np.subtract(*atoms)))
     assert f"Distance, 1 to 2{angstroms:.2f} Å ({angstroms / 10:.3f} nm)" in two
-    assert drawn == 1
+    assert shown == 1
     assert "--analyze-analyses pair_distance" in command
     assert "Angle at 2" in four and "Angle at 3" in four and "Dihedral, 1-2-3-4" in four
     assert cleared == 0 and off == "false"

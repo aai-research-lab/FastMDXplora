@@ -1,11 +1,11 @@
 """The viewer's cartoon is DSSP, for the structure and each frame played.
 
-No PDB the viewer is sent has HELIX or SHEET records, so 3Dmol shaped the
-cartoon from its own estimate: an N-O distance under 3.2 Angstrom between
-residues four or more apart. That is not DSSP, and the cartoon could
-disagree with the study's secondary structure plot about the same frame.
-DSSP is now computed for what the viewer was sent (gui/by_residue.py), from
-the trajectory's own coordinates where the playback came from it, and the
+No PDB the viewer is sent has HELIX or SHEET records, so the viewer shaped
+the cartoon from its own estimate, and it could disagree with the study's
+secondary structure plot about the same frame: 3Dmol's was not DSSP at all,
+and Mol*'s is DSSP chain by chain, with no strand paired across chains.
+DSSP is computed for what the viewer was sent (gui/by_residue.py), from the
+trajectory's own coordinates where the frames came from it, and the
 Structure tab says which the cartoon is.
 """
 
@@ -172,10 +172,16 @@ def _open(study: Path, then) -> object:
     return said
 
 
-#: Each frame's codes for chain A's alpha carbons, as the cartoon has them.
-CHAIN_A = """() => window.FastMDXMoleculeViewer.STATE.model.frames.map((atoms) => atoms
-    .filter((atom) => atom.atom === 'CA' && atom.chain === 'A')
-    .map((atom) => ({h: 'H', s: 'E'})[atom.ss] || 'C').join(''))"""
+#: Each frame's codes for chain A's residues, as the cartoon has them.
+CHAIN_A = """async () => {
+    const engine = window.FastMDXMoleculeViewer.STATE.engine;
+    const codes = [];
+    for (let frame = 0; frame < engine.frameCount(); frame++) {
+        await engine.setFrame(frame);
+        codes.push(engine.secondaryStructureShown().A);
+    }
+    return codes;
+}"""
 
 
 def test_the_viewer_draws_the_cartoon_from_it(study):
@@ -187,7 +193,7 @@ def test_the_viewer_draws_the_cartoon_from_it(study):
                 "line": page.text_content("#viewer-ss-said")}
         page.evaluate("() => window.FastMDXMoleculeViewer.loadPlayback()")
         page.wait_for_function(
-            "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure.of === 'playback'")
+            "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure.of === 'frames'")
         said["playback"] = page.evaluate(
             "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure")
         said["frames"] = page.evaluate(CHAIN_A)
@@ -200,33 +206,33 @@ def test_the_viewer_draws_the_cartoon_from_it(study):
     assert said["playback"]["applied"] is True
     assert "each of the 6 frames played" in said["played"]
     plotted = _plotted(study)
-    assert said["frames"] == [codes[:141] for codes in plotted]
+    assert [codes[:141] for codes in said["frames"]] == [codes[:141] for codes in plotted]
     assert said["frames"][0] != said["frames"][-1]
 
 
 def test_a_playback_rewritten_since_it_was_drawn_keeps_the_estimate(study):
-    """A run rewrites its playback as it goes, and DSSP can be computed from
-    a newer file than the one drawn: that is not DSSP of what is drawn, and
-    the cartoon keeps the viewer's estimate, saying so."""
+    """A run rewrites its frames as it goes, and DSSP can be computed from
+    newer frames than the ones rendered: that is not DSSP of what is rendered, and
+    the cartoon keeps the viewer's own, saying so."""
     pytest.importorskip("playwright.sync_api")
 
     def look(page):
         def newer(route):
             said = route.fetch().json()
-            said["fingerprint"] = "a later version of the file"
+            said["signature"] = "a later version of the frames"
             route.fulfill(json=said)
 
-        page.route("**/api/secondary-structure?of=playback*", newer)
+        page.route("**/api/secondary-structure?of=frames*", newer)
         page.evaluate("() => window.FastMDXMoleculeViewer.loadPlayback()")
         page.wait_for_function(
-            "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure.of === 'playback'")
+            "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure.of === 'frames'")
         return {"state": page.evaluate(
                     "() => window.FastMDXMoleculeViewer.STATE.secondaryStructure"),
                 "line": page.text_content("#viewer-ss-said")}
 
     said = _open(study, look)
     assert said["state"]["applied"] is False
-    assert "the viewer's own estimate" in said["line"]
+    assert "Mol*'s own DSSP" in said["line"]
     assert "not the ones shown" in said["line"]
 
 

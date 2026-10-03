@@ -1887,7 +1887,8 @@
     return { vertices, edges };
   }
 
-  let previewViewer = null;
+  let previewEngine = null;
+  let previewAsked = 0;
 
   /* The structure setup keeps, copies included, inside the cell it builds,
    * to scale: how much water there is around the protein is seen, not read. */
@@ -1895,73 +1896,78 @@
     const host = el("run-system-preview-view");
     if (!host) return;
     const e = answer && answer.ok ? answer.estimate : null;
-    if (!e || !answer.drawing || typeof window.$3Dmol === "undefined") {
+    if (!e || !answer.drawing || typeof window.FastMDXViewerEngine === "undefined") {
       host.hidden = true;
       return;
     }
     host.hidden = false;
-    if (!previewViewer) {
-      previewViewer = window.$3Dmol.createViewer(host, { backgroundAlpha: 0 });
-    }
-    const viewer = previewViewer;
+    const asked = ++previewAsked;
+    void showSystem(host, answer, e, asked).catch((error) => {
+      // The numbers stand without the picture.
+      console.debug("system preview not rendered", error);
+      if (asked === previewAsked) host.hidden = true;
+    });
+  }
+
+  async function showSystem(host, answer, e, asked) {
     const tone = (name, fallback) => (getComputedStyle(document.documentElement)
       .getPropertyValue(name) || "").trim() || fallback;
-    viewer.clear();
-    viewer.addModel(answer.drawing, "pdb");
-    viewer.setStyle({ hetflag: false }, { cartoon: { colorscheme: "chain", thickness: 0.6 } });
-    viewer.setStyle({ hetflag: true }, { stick: { radius: 0.25 } });
-    markResidues(viewer, answer, tone);
+    if (!previewEngine) {
+      previewEngine = window.FastMDXViewerEngine.create(host,
+        { transparent: true, quality: "auto", axes: false });
+      (await previewEngine).on("click", (atom) => {
+        const residue = atom && previewListed.get(`${atom.chain}:${atom.resi}`);
+        if (residue) pickResidue(residue.key);
+      });
+    }
+    const engine = await previewEngine;
+    if (asked !== previewAsked) return;
     const cell = periodicCell(boxVectors(e.box_shape, Number(e.width_nm) * 10));
     const centre = e.centre_angstrom || [0, 0, 0];
-    const at = (v) => ({ x: v[0] + centre[0], y: v[1] + centre[1], z: v[2] + centre[2] });
+    const at = (v) => [v[0] + centre[0], v[1] + centre[1], v[2] + centre[2]];
     const colour = tone("--accent-cyan", "#63e6ff");
-    cell.edges.forEach(([i, j]) => {
-      viewer.addCylinder({ start: at(cell.vertices[i]), end: at(cell.vertices[j]),
-        radius: 0.35, color: colour, fromCap: 1, toCap: 1 });
-    });
-    host.dataset.edges = String(cell.edges.length);
+    const tubes = cell.edges.map(([i, j]) => ({ start: at(cell.vertices[i]),
+      end: at(cell.vertices[j]), radius: 0.35, colour }));
+    // Turned a little off the box's axes, so the cell reads as a solid, and
+    // far enough back that all of it is in view.
+    const reach = Math.max(1, ...cell.vertices.map((v) => Math.hypot(v[0], v[1], v[2])));
+    const away = [0.42, 0.36, 0.83];
+    const distance = 1.15 * reach / Math.sin(Math.PI / 8);
+    const camera = { target: centre, up: [0, 1, 0],
+      position: centre.map((value, axis) => value + distance * away[axis]) };
     // Sized to the panel as it is now: it was hidden, or the window changed.
-    viewer.resize();
-    viewer.zoomTo();
-    // Turned a little off the box's axes, so the cell reads as a solid.
-    viewer.rotate(-25, "x");
-    viewer.rotate(30, "y");
-    viewer.zoom(0.85);
-    viewer.render();
+    engine.resize();
+    const marks = markResidues(answer, tone);
+    await engine.showScene({ text: answer.drawing, marks, tubes,
+      camera, labelSize: Math.max(3, reach / 4),
+      labelColour: tone("--text-primary", "#1f2328") });
+    if (asked !== previewAsked) return;
+    host.dataset.edges = String(cell.edges.length);
+    host.dataset.residuesMarked = String(marks.length);
   }
 
   /* Each histidine as a small sphere on its alpha carbon, and every residue
    * given a state as a larger one labelled with it; a click on either picks
    * the residue for `setup.residue_states`. Histidines, because theirs is the
    * choice setup makes least reliably (a tautomer from hydrogen bonds). */
-  function markResidues(viewer, answer, tone) {
+  let previewListed = new Map();
+
+  function markResidues(answer, tone) {
     const listed = Array.isArray(answer.titratable) ? answer.titratable : [];
     const chosen = residueStatesChosen();
-    const selectionOf = (residue) => ({
-      chain: residue.chain, resi: residue.number, atom: "CA" });
     const histidine = tone("--accent-orange", "#ffb86b");
     const set = tone("--accent-violet", "#a78bfa");
-    viewer.removeAllLabels();
-    let marked = 0;
+    const marks = [];
+    previewListed = new Map(listed.map((residue) => [`${residue.chain}:${residue.number}`, residue]));
     listed.forEach((residue) => {
       const given = chosen[residue.key];
       if (residue.resname !== "HIS" && !given) return;
-      viewer.addStyle(selectionOf(residue),
-        { sphere: { radius: given ? 1.6 : 1.1, color: given ? set : histidine } });
-      if (given) {
-        viewer.addLabel(`${residue.key} ${given}`, {
-          fontSize: 11, showBackground: true, backgroundOpacity: 0.7,
-          inFront: true }, selectionOf(residue));
-      }
-      marked += 1;
+      marks.push({ chain: residue.chain, resi: residue.number, atom: "CA",
+        // Spheres of 1.6 and 1.1 angstroms: Mol* scales a carbon's 1.7.
+        size: (given ? 1.6 : 1.1) / 1.7, colour: given ? set : histidine,
+        label: given ? `${residue.key} ${given}` : null });
     });
-    const byAtom = new Map(listed.map((residue) => [`${residue.chain}:${residue.number}`, residue]));
-    viewer.setClickable({ atom: "CA" }, true, (atom) => {
-      const residue = byAtom.get(`${atom.chain}:${atom.resi}`);
-      if (residue) pickResidue(residue.key);
-    });
-    const host = el("run-system-preview-view");
-    if (host) host.dataset.residuesMarked = String(marked);
+    return marks;
   }
 
   /* The size and the time of an answer from /api/preview-system, in two

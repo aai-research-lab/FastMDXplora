@@ -76,12 +76,12 @@ def _overview(browser, study: Path):
 
     session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
     page = browser.new_page(viewport={"width": 1440, "height": 900})
-    # 3Dmol on a software renderer, beside a full suite on two cores, took
-    # longer than thirty seconds to draw once.
+    # A software renderer, beside a full suite on two cores, took longer
+    # than thirty seconds to render once.
     page.set_default_timeout(60000)
     page.goto(session.url + "#overview", wait_until="domcontentloaded")
     if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-        pytest.skip("this browser has no WebGL, so 3Dmol cannot draw")
+        pytest.skip("this browser has no WebGL, so the viewer cannot render")
     # Until the engine's frame has replaced the prepared system.
     page.wait_for_function(
         "() => { const S = window.FastMDXMoleculeViewer && window.FastMDXMoleculeViewer.STATE;"
@@ -105,15 +105,17 @@ def test_the_preview_follows_a_frame_written_elsewhere(browser, tmp_path) -> Non
     session, page = _overview(browser, _study(tmp_path / "study", residues=12))
     try:
         centre = page.evaluate("""() => {
-            const v = window.FastMDXMoleculeViewer.STATE.miniViewer;
-            const atoms = v.getModel().selectedAtoms({});
+            const engine = window.FastMDXMoleculeViewer.STATE.miniEngine;
+            const atoms = engine.find({});
             const mean = axis => atoms.reduce((s, a) => s + a[axis], 0) / atoms.length;
-            const view = v.getView();
-            return [mean('x') + view[0], mean('y') + view[1], mean('z') + view[2]];
+            const target = engine.cameraSnapshot().target;
+            return [mean('x') - target[0], mean('y') - target[1], mean('z') - target[2]];
         }""")
         # The camera is on the frame, which is 40 A from the prepared system.
         assert max(abs(c) for c in centre) < 10.0
-        assert _lit(page) > 0.005
+        # Not black: Mol*'s cartoon of twelve residues lights about half a
+        # per cent of the preview, under 3Dmol's thicker one.
+        assert _lit(page) > 0.002
     finally:
         page.close()
         session.server.shutdown()
@@ -122,12 +124,11 @@ def test_the_preview_follows_a_frame_written_elsewhere(browser, tmp_path) -> Non
 def test_a_short_peptide_has_its_atoms_drawn(browser, tmp_path) -> None:
     session, page = _overview(browser, _study(tmp_path / "study", residues=3))
     try:
-        styles = page.evaluate("""() => {
+        rendered = page.evaluate("""() => {
             const S = window.FastMDXMoleculeViewer.STATE;
-            return [S.miniViewer, S.viewer].filter(Boolean).map(v =>
-                v.getModel().selectedAtoms({atom: 'CA'}).map(a => !!(a.style && a.style.stick)));
+            return [S.miniEngine, S.engine].filter(Boolean).map((engine) => engine.rendered);
         }""")
-        assert styles and all(all(drawn) for drawn in styles)
+        assert rendered and all("short" in parts for parts in rendered)
     finally:
         page.close()
         session.server.shutdown()
@@ -136,9 +137,8 @@ def test_a_short_peptide_has_its_atoms_drawn(browser, tmp_path) -> None:
 def test_a_protein_is_a_cartoon_without_its_atoms(browser, tmp_path) -> None:
     session, page = _overview(browser, _study(tmp_path / "study", residues=12))
     try:
-        sticks = page.evaluate("""() => window.FastMDXMoleculeViewer.STATE.miniViewer
-            .getModel().selectedAtoms({atom: 'CA'}).some(a => a.style && a.style.stick)""")
-        assert sticks is False
+        rendered = page.evaluate("() => window.FastMDXMoleculeViewer.STATE.miniEngine.rendered")
+        assert "polymer" in rendered and "short" not in rendered
     finally:
         page.close()
         session.server.shutdown()

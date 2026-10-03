@@ -517,7 +517,9 @@ def test_dashboard_html_has_aai_branding(tmp_path: Path) -> None:
     assert "/static/dashboard.js" in html
     assert "/static/charts.js" in html
     assert "/static/molecule-viewer.js" in html
-    assert "/static/3Dmol-min.js" in html
+    assert "/static/molstar/molstar.js" in html
+    assert "/static/viewer-engine.js" in html
+    assert "3Dmol" not in html
 
     # Pages
     # "live" was a page of its own; its panels are on the overview now.
@@ -757,20 +759,63 @@ def test_live_server_does_not_serve_static_path_traversal(tmp_path: Path) -> Non
         server.server_close()
 
 
-def test_static_3dmol_asset_is_served_locally(tmp_path: Path) -> None:
+def test_a_file_compressed_is_compressed_again_once_it_changes(tmp_path: Path) -> None:
+    """One copy kept for each file, the one for what it now holds."""
+    import gzip
+    import os
+
+    from fastmdxplora.gui import server
+
+    script = tmp_path / "big.js"
+    script.write_text("var a = 1;\n" * 10000, encoding="utf-8")
+    first = server._gzipped(script, script.read_bytes())
+    assert server._gzipped(script, script.read_bytes()) is first
+    script.write_text("var b = 2;\n" * 10000, encoding="utf-8")
+    later = script.stat().st_mtime_ns + 1_000_000_000
+    os.utime(script, ns=(later, later))
+    second = server._gzipped(script, script.read_bytes())
+    assert gzip.decompress(second).startswith(b"var b")
+    assert [key for key in server._GZIPPED if key[0] == str(script)] == [
+        (str(script), later, script.stat().st_size)]
+
+
+def test_static_molstar_asset_is_served_locally(tmp_path: Path) -> None:
+    """Mol* is served from the package, compressed where the browser takes
+    it so (5.2 MB as 1.5 MB), and kept by the browser: the page names it by
+    its version. FastMDXplora's own scripts are asked for afresh."""
+    import gzip
+    from urllib.request import Request
+
     run = tmp_path / "run"
     run.mkdir()
     server, base_url = start_test_server(run)
     try:
-        response = urlopen(f"{base_url}/static/3Dmol-min.js", timeout=HTTP_TIMEOUT)
+        response = urlopen(f"{base_url}/static/molstar/molstar.js?v=5.12.0",
+                           timeout=HTTP_TIMEOUT)
         body = response.read().decode("utf-8", errors="ignore")
+        packed = urlopen(Request(f"{base_url}/static/molstar/molstar.js",
+                                 headers={"Accept-Encoding": "gzip"}), timeout=HTTP_TIMEOUT)
+        packed_body = packed.read()
+        engine = urlopen(f"{base_url}/static/viewer-engine.js", timeout=HTTP_TIMEOUT)
+        engine_body = engine.read()
     finally:
         server.shutdown()
         server.server_close()
-    assert response.headers["Cache-Control"] == "no-store"
-    assert "$3Dmol" in body
+    assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert response.headers.get("Content-Encoding") is None
+    assert packed.headers["Content-Encoding"] == "gzip" and len(packed_body) < len(body) / 2
+    assert gzip.decompress(packed_body).decode("utf-8", errors="ignore") == body
+    assert engine.headers["Cache-Control"] == "no-store"
+    assert "molstar" in body and b"FastMDXViewerEngine" in engine_body
     assert "http://" not in body[:1000]
     assert "https://" not in body[:1000]
+    html = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui" / "templates"
+            / "dashboard.html").read_text(encoding="utf-8")
+    # The version the bundle itself says, so a new Mol* is a new name.
+    import re
+
+    version = re.search(r'="(\d+\.\d+\.\d+)",\w+=new Date\(', body).group(1)
+    assert f"/static/molstar/molstar.js?v={version}" in html
 
 
 def test_live_json_endpoints_are_no_store(tmp_path: Path) -> None:
@@ -1142,61 +1187,9 @@ def test_dashboard_assets_include_svg_download_and_first_model_miniviewer_fix() 
 
     assert 'id="download-all-svg"' in html
     assert "Download SVG" in dashboard_js
+    # The preview's first model is rendered and framed: run in a browser by
+    # test_the_overview_shows_the_molecule.py.
     assert "const hadModel" in viewer_js
-    assert "opts.center !== false || !hadModel" in viewer_js
-    assert "resolveProteinSelection" in viewer_js
-
-
-def test_viewer_visibility_controls_render_solvent_and_hydrogen_atoms() -> None:
-    root = Path(__file__).resolve().parents[1]
-    viewer_js = (root / "src" / "fastmdxplora" / "gui" / "static" / "molecule-viewer.js").read_text(encoding="utf-8")
-
-    assert '"TIP3P"' in viewer_js
-    assert 'if (STATE.visibility.hydrogens)' in viewer_js
-    assert 'addStyle(viewer, {elem: "H"' in viewer_js
-    assert 'sphere: {scale: 0.28' in viewer_js
-    assert 'color: "#4da3ff"' in viewer_js
-    assert 'line: {color: "#4da3ff"' in viewer_js
-    assert 'sphere: {scale: 0.55' in viewer_js
-    assert "forceFit" in viewer_js
-
-
-def test_viewer_solvent_toggles_preserve_playback_with_static_environment_overlay() -> None:
-    """Water/ion visibility must not replace an animated trajectory model."""
-    root = Path(__file__).resolve().parents[1]
-    viewer_js = (root / "src" / "fastmdxplora" / "gui" / "static" / "molecule-viewer.js").read_text(encoding="utf-8")
-    toggle_start = viewer_js.index('if (which === "water" || which === "ions" || which === "box")')
-    toggle_end = viewer_js.index("restyleViewers();", toggle_start)
-    toggle_handler = viewer_js[toggle_start:toggle_end]
-
-    assert 'if (STATE.mode === "playback")' in toggle_handler
-    assert "ensurePlaybackEnvironment" in toggle_handler
-    assert 'STATE.mode = "structure"' not in toggle_handler
-    assert "function ensurePlaybackEnvironment" in viewer_js
-    assert "STATE.environmentPdb" in viewer_js
-    assert "STATE.environmentModel" in viewer_js
-    assert "alignPlaybackEnvironment" in viewer_js
-    assert "function drawPeriodicBox" in viewer_js
-    assert "viewer.addLine" in viewer_js
-    assert "environmentModel.getID()" in viewer_js
-
-
-def test_viewer_environment_overlay_keeps_the_solute_legible() -> None:
-    """Dense solvent and the periodic-cell guide must not dominate the protein."""
-    root = Path(__file__).resolve().parents[1]
-    viewer_js = (root / "src" / "fastmdxplora" / "gui" / "static" / "molecule-viewer.js").read_text(encoding="utf-8")
-
-    environment_style = viewer_js.split("function stylePlaybackEnvironment", 1)[1].split(
-        "\n  function resolveProteinSelection", 1
-    )[0]
-    periodic_box = viewer_js.split("function drawPeriodicBox", 1)[1].split(
-        "\n  function stylePlaybackEnvironment", 1
-    )[0]
-
-    assert 'resn: WATERS, elem: "O"' in environment_style
-    assert "opacity: 0.42" in environment_style
-    assert "const boxOpacity = STATE.visibility.water ? 0.55 : 0.38" in periodic_box
-    assert "linewidth: 1.2, opacity: boxOpacity" in periodic_box
 
 
 def test_dashboard_resets_run_dependent_state_when_active_run_changes() -> None:

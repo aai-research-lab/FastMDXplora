@@ -10,11 +10,11 @@ residues a reader wanted to find had to be found by number. The values are
 read here from the files the analyses wrote, as written, so the colours say
 what the report says; nothing is computed again.
 
-**Secondary structure by DSSP, for each frame shown.** 3Dmol shapes a
-cartoon from its own estimate when a PDB has no HELIX or SHEET records, and
-no frame the viewer is sent has them: an N-O distance under 3.2 Angstrom
-between residues four or more apart. It is not DSSP, so the cartoon could
-disagree with the study's secondary structure plot about the same frame.
+**Secondary structure by DSSP, for each frame shown.** No frame the viewer
+is sent has HELIX or SHEET records, so the viewer shapes the cartoon from
+its own assignment: Mol*'s DSSP, computed chain by chain, which pairs no
+strand between chains, so the cartoon could disagree with the study's
+secondary structure plot about the same frame.
 DSSP is computed here, as the `ss` analysis computes it (MDTraj's
 implementation, in its three classes), for the structure, the live frame or
 every frame of the playback, from the file the viewer was sent.
@@ -487,7 +487,7 @@ def residue_runs(lines: list[str]) -> list[tuple[str, int, str, str, int, list[i
             number = int(line[22:26])
         except ValueError:
             number = 0
-        # Read as 3Dmol reads them, so the viewer finds the same residues.
+        # Read as the viewer reads them, so it finds the same residues.
         key = (line[21:22].strip(), number, line[26:27].strip(), line[17:20].replace(" ", ""))
         name = line[12:16].replace(" ", "")
         if key != previous or name in names:

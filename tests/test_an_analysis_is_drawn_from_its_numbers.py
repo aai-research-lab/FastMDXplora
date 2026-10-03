@@ -281,9 +281,9 @@ class TestTheChart:
         page.wait_for_function(
             "() => document.documentElement.dataset.page === 'viewer'"
             " && window.FastMDXMoleculeViewer.STATE.playbackLoaded", timeout=30000)
-        page.wait_for_timeout(300)
-        slider = page.evaluate("() => document.getElementById('traj-slider').value")
-        assert slider == "19"
+        page.wait_for_function(
+            "() => document.getElementById('traj-slider').value === '19'", timeout=30000)
+        assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.engine.frame()") == 19
 
     def test_choosing_a_residue_shows_it(self, page) -> None:
         _point_at(page, "rmsf", 0.5)
@@ -293,8 +293,9 @@ class TestTheChart:
             "() => document.documentElement.dataset.page === 'viewer'"
             " && window.FastMDXMoleculeViewer.STATE.focusResidue", timeout=30000)
         page.wait_for_function(
-            "() => { const v = window.FastMDXMoleculeViewer.STATE.viewer;"
-            " return v && v.selectedAtoms({resi: 6}).some(a => a.style && a.style.stick); }",
+            "() => { const S = window.FastMDXMoleculeViewer.STATE;"
+            " return S.engine && (S.engine.rendered || []).includes('focus') && S.focusIndices.length"
+            " && S.engine.atoms(S.focusIndices).every((atom) => atom.resi === 6); }",
             timeout=15000)
         focus = page.evaluate("() => window.FastMDXMoleculeViewer.STATE.focusResidue")
         assert focus == {"resi": 6, "chain": None}

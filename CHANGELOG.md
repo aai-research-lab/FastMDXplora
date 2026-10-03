@@ -7,6 +7,46 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Viewer renders with Mol\*
+
+**The Viewer, the Overview's preview and the run builder's picture of the
+system now render with Mol\*, through the viewer's engine, and 3Dmol is
+gone.** The trajectory is played from the binary frames: a solvated
+116,601-atom system, its 6,690 atoms of protein and ions shown, is sent all
+200 of its frames as 16 MB, where the playback sent 149 as about 80 MB of
+text. Once written, which for this system is about a minute of making 200
+frames whole, once for the trajectory, they are loaded and shown in under
+three seconds, and each frame costs Mol\* 15 to 20 ms before it is rendered.
+Every control is kept: the representations, colourings and the study's
+per-residue results, the ligand tools, water and ions beside the frames, the
+periodic box, measuring, a clicked atom's selection and its protonation
+states, the keyboard, and pictures 2,400 pixels across.
+
+**The cartoon is the study's DSSP in every frame, and a strand paired with
+one in another chain is rendered as a strand.** Mol\*'s own assignment, used
+where the study's cannot be had, is computed chain by chain and pairs no
+strand between chains; the Structure tab says which the cartoon is.
+
+**The binding pocket is the residues with a heavy atom within the cutoff of
+one of the ligand's, centre to centre, as MDTraj finds them, in the frame
+shown.** Mol\*'s "within" took in atoms a whole angstrom past the cutoff, so
+the pocket is worked out by the viewer and follows the frames; the closest
+contacts are counted by heavy atoms too. **Show atom labels** labels the
+ligand's atoms, as it says; it labelled the residue.
+
+**A terminal cap is rendered with its chain.** ACE and NME, which Mol\*
+counts as no part of the chain, are rendered bonded to the residues they
+cap, so a capped peptide such as alanine dipeptide is whole. The atoms
+picked to measure are shown, the distance, angle or dihedral is rendered by
+Mol\* and follows the frames, and its label is in front of the structure.
+Colouring by element colours carbon grey, as it says; Mol\* colours carbon
+by chain. Spinning is a turn every ten seconds. A click names the atom and
+leaves the camera where it is: Mol\*'s own click flies the camera to the
+residue, which at every atom picked to measure would lose the view. What
+changes the scene is done one change at a time, so a live frame arriving
+while the frames load cannot leave half of each. Mol\* is sent compressed,
+1.5 MB of its 5.2, and the browser keeps it until its version changes.
+
 ### Mol\* is vendored, behind the viewer's own engine
 
 **The GUI ships Mol\* 5.12.0's viewer build and `static/viewer-engine.js`,
@@ -21,9 +61,8 @@ cartoon is the study's DSSP in every frame: Mol\*'s own DSSP is computed chain
 by chain and pairs no strands between chains, so 1STP with each strand its
 own chain, as in a fibril, was rendered with no strand at all where MDTraj finds
 53. It renders on software WebGL, which Mol\* otherwise refuses. Nothing is
-fetched from outside the GUI. The page itself is still rendered with 3Dmol; it
-moves to the engine next. The licences of Mol\* and of what its build bundles ship
-beside it, and the conda recipe names them.
+fetched from outside the GUI. The licences of Mol\* and of what its build
+bundles ship beside it, and the conda recipe names them.
 
 ### The trajectory can be sent to the browser as binary frames
 
@@ -35,18 +74,17 @@ binary, 12 bytes an atom, under ten million atoms times frames, it is sent 85
 and a 5,000-atom protein 2,000. The frames are the playback's, chosen and made
 whole the same way, and the topology is the source's own lines for the atoms
 shown, so insertion codes and a ligand's bonds are kept. Their DSSP is
-`/api/secondary-structure?of=frames`. This is what the Viewer is to be
-rendered from once it moves to Mol\*; the playback is unchanged.
+`/api/secondary-structure?of=frames`. The Viewer is rendered from them.
 
 ### The trajectory is played with its molecules whole
 
 **The Viewer's playback is now made whole as the analyses read the
 trajectory.** It was the trajectory as the engine wrote it, solvent stripped
-and nothing else: a chain split across a face of the box was drawn in two
-pieces, and a ligand stored in a periodic copy was drawn a box length from its
+and nothing else: a chain split across a face of the box was rendered in two
+pieces, and a ligand stored in a periodic copy was rendered a box length from its
 protein and jumped back between frames. The analyses make molecules whole and
 put each beside the protein before they measure anything; the playback, and
-the DSSP the cartoon is drawn from, now do the same, so the Viewer shows what
+the DSSP the cartoon is rendered from, now do the same, so the Viewer shows what
 was measured. A trajectory without a box is played as before.
 
 ### The Viewer colours the protein by the study's results, and its cartoon is DSSP
@@ -71,7 +109,7 @@ the same frame. DSSP is now computed as the `ss` analysis computes it, for the
 playback from the trajectory's own coordinates, and on a two-chain test system
 it matches the analysis for every residue of every frame. The Structure tab
 says which the cartoon is; where DSSP cannot be had, or was computed from a
-newer file than the one drawn, the viewer's estimate stays and the tab says
+newer file than the one rendered, the viewer's estimate stays and the tab says
 why.
 
 ### A per-residue SASA averages each chain apart
