@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The zoom zooms, and the header stays
+
+**The Viewer's zoom buttons move the camera nearer or further.** They
+changed the depth Mol\* fogs and clips at, so the molecule faded and came
+back. A distance, angle or dihedral is labelled beside its line, about an
+angstrom high in a light box, where it was two angstroms high on the atoms
+it measured. **The ground** (the half-filled circle) shows the molecule on
+white, or on dark again, and a saved view keeps it. **A page's header stays
+where it is as the page scrolls**: it was placed under the page's top
+padding and scrolled up by that much before it stopped, on every page.
+
 ### Views saved with the study, and a publication look
 
 **A view of the Viewer is saved with the study under a name, and shown again

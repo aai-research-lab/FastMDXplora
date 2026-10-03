@@ -397,7 +397,11 @@ button {
     top: 0;
     z-index: 5;
     background: var(--background-primary);
-    padding-top: 8px;
+    /* Starting where it stays: placed under the shell's top padding, it
+       first scrolled up by that much and then stopped, so it was seen to
+       move with every page scrolled. */
+    margin-top: calc(-1 * var(--shell-pad-top, 0px));
+    padding-top: calc(var(--shell-pad-top, 0px) + 8px);
 }
 .page-header > div:first-child { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .page-title {

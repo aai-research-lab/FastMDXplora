@@ -127,4 +127,6 @@ def _checked(view: Any) -> dict[str, Any] | None:
         clean["pocket_cutoff"] = float(cutoff)
     if isinstance(view.get("publication"), bool):
         clean["publication"] = view["publication"]
+    if view.get("ground") in ("dark", "white"):
+        clean["ground"] = view["ground"]
     return clean

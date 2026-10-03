@@ -71,6 +71,8 @@
     superposedUrl: null,
     // A white ground and the highest quality, for a figure.
     publication: false,
+    // "dark" (the settings' black or charcoal) or "white".
+    ground: "dark",
     framesCoordinatesUrl: null,
     pocketSurface: false,
     pocketOnly: false,
@@ -219,7 +221,7 @@
     STATE.engineCreating = (async () => {
       try {
         const engine = await window.FastMDXViewerEngine.create(target,
-          {background: colourNumber(STATE.background), quality: "auto"});
+          {background: STATE.publication ? 0xffffff : groundColour(), quality: "auto"});
         engine.on("hover", onHoverAtom);
         engine.on("click", onClickAtom);
         STATE.engine = engine;
@@ -1055,16 +1057,32 @@
     if (action === "screenshot") await takeScreenshot();
     if (action === "measure") toggleMeasuring(button);
     if (action === "publication") setPublication(!STATE.publication);
+    if (action === "background") setGround(STATE.ground === "white" ? "dark" : "white");
   }
 
   /** The look a figure is made in: a white ground, and the outlines and
    * shading of the highest quality, wherever the page is rendered; off,
    * the ground and quality as set. */
+  /** The ground the molecule is shown on: "white", or "dark" (black or
+   * charcoal, as the settings say). */
+  function setGround(ground) {
+    STATE.ground = ground === "white" ? "white" : "dark";
+    if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
+    document.querySelectorAll('[data-action="background"]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(STATE.ground === "white"));
+      button.classList.toggle("active", STATE.ground === "white");
+    });
+  }
+
+  function groundColour() {
+    return STATE.ground === "white" ? 0xffffff : colourNumber(STATE.background);
+  }
+
   function setPublication(on) {
     STATE.publication = !!on;
     const engine = STATE.engine;
     if (engine) {
-      engine.setBackground(on ? 0xffffff : colourNumber(STATE.background));
+      engine.setBackground(on ? 0xffffff : groundColour());
       engine.setQuality(on || !engine.softwareRendering() ? "high" : "low");
     }
     document.querySelectorAll('[data-action="publication"]').forEach((button) => {
@@ -1085,6 +1103,7 @@
       representation: STATE.representation, colour: STATE.colorMode,
       shown: Object.assign({}, STATE.visibility), superposed: STATE.superposed,
       pocket_cutoff: STATE.pocketCutoff, publication: !!STATE.publication,
+      ground: STATE.ground,
     };
     if (STATE.mode === "playback" && STATE.framesRendered) view.frame = engine.frame();
     return view;
@@ -1117,6 +1136,7 @@
       box.checked = !!on;
       box.dispatchEvent(new Event("change"));
     });
+    if (view.ground) setGround(view.ground);
     setPublication(!!view.publication);
     if (Number.isInteger(view.frame) && (await loadPlayback(STATE.playbackPayload))) {
       stopFollowing();
@@ -1789,8 +1809,8 @@
     STATE.visibility.ions = !!settings.showIons;
     STATE.preservingCamera = settings.preserveCamera !== false;
     STATE.background = settings.background === "charcoal" ? COLORS.charcoal : COLORS.black;
-    // The publication look keeps its white ground until it is turned off.
-    if (STATE.engine && !STATE.publication) STATE.engine.setBackground(colourNumber(STATE.background));
+    // The publication look and a white ground keep theirs.
+    if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
     if (settings.spin && STATE.engine) setSpinning(STATE.engine, true);
     if (STATE.mode === "playback" && needsFullTopology()) void ensurePlaybackEnvironment();
     const cutoff = document.getElementById("pocket-cutoff");

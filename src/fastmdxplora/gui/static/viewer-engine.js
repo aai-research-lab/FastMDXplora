@@ -1053,8 +1053,11 @@
       // Lines and words a figure can carry: Mol*'s are a hairline and a
       // label a few tenths of an angstrom high.
       const options = {lineParams: {linesColor: 0xe69f00, linesSize: 0.12, dashLength: 0.3},
-        labelParams: {textColor: 0xffffff, textSize: 2, borderColor: 0x1f2328,
-          borderWidth: 0.25, background: true, backgroundColor: 0x1f2328, backgroundOpacity: 0.75,
+        // A label beside the line, not on it: about an angstrom high, its
+        // corner at the middle of the line, and rendered in front of the atoms.
+        labelParams: {textColor: 0xffffff, textSize: 1.1, borderColor: 0x1f2328,
+          borderWidth: 0.15, background: true, backgroundColor: 0x1f2328, backgroundOpacity: 0.6,
+          backgroundMargin: 0.1, attachment: "bottom-left", offsetX: 0.4, offsetY: 0.4,
           offsetZ: 4}};
       if (loci.length === 2) await measurement.addDistance(loci[0], loci[1], options);
       if (loci.length === 3) await measurement.addAngle(loci[0], loci[1], loci[2], options);
@@ -1156,11 +1159,18 @@
       }
     }
 
+    /** Closer by ``factor`` (more than one), or further (less than one):
+     * the camera moved along its line of sight to what it looks at. The
+     * radius it was given is the depth Mol* fogs and clips at, so changing
+     * that faded the molecule rather than bringing it nearer. */
     zoom(factor) {
       const camera = this.plugin.canvas3d && this.plugin.canvas3d.camera;
-      if (!camera) return;
+      if (!camera || !(factor > 0)) return;
       const snapshot = camera.getSnapshot();
-      camera.setState({...snapshot, radius: snapshot.radius / factor}, 200);
+      const target = snapshot.target;
+      const position = [0, 1, 2].map((axis) => target[axis]
+        + (snapshot.position[axis] - target[axis]) / factor);
+      camera.setState({...snapshot, position}, 200);
     }
 
     spin(on) {
