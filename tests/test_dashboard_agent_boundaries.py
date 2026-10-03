@@ -154,6 +154,39 @@ def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monke
         server.server_close()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    _write_study(tmp_path)
+    server, url = start_test_server(tmp_path)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            for width in (1440, 768, 390):
+                page.set_viewport_size({"width": width, "height": 900})
+                for view in ("overview", "analysis", "agent", "run", "settings"):
+                    page.goto(url + "/#" + view)
+                    page.wait_for_function("document.body.dataset.theme === " + json.dumps(theme))
+                    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), (theme, width, view)
+                page.locator("#research-bookmarks-toggle").click()
+                panel = page.locator("#research-bookmarks")
+                assert panel.is_visible()
+                bounds = panel.bounding_box()
+                assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width + 1
+                page.locator("#research-bookmarks-close").focus()
+                page.keyboard.press("Enter")
+                assert not panel.is_visible()
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("mode", ["autonomous", "unvalidated", "unexpected"])
 def test_dashboard_cannot_select_unreviewed_modes(model, mode):
     prompts, _ = model

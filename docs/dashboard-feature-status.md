@@ -1,7 +1,7 @@
 # Dashboard feature changes and milestone status
 
 Reviewed on 2026-10-02 against the [full implementation framework](dashboard-feature-plan.md),
-with implementation at `4ff756527045c5bd7e5c8ac481d3aca895532cdb`.
+with implementation through `d0e041f`.
 This is the current status; the framework's milestone receipts are historical.
 
 **The complete framework is not finished.** All five feature areas have working
@@ -10,9 +10,9 @@ remain open. A milestone commit records a tested increment, not completion of
 every requirement in the expanded framework.
 
 The [completion and aesthetics plan](dashboard-completion-plan.md) now defines
-how to close these gaps. M8 is added as **planned** for design, layout and
-accessibility work; this planning update does not mark any implementation gate
-complete or change the verification receipts below.
+how to close these gaps. M8 has an implemented visual foundation; the full
+page/theme/accessibility review remains pending. The implementation receipts
+below distinguish completed increments from outstanding acceptance gates.
 
 Work stays in the GitHub Desktop checkout on `princeote/context-aware-agent`,
 based on the existing v2.5.8 branch history. Upstream main was not integrated.
@@ -108,10 +108,12 @@ scientific equivalence still requires the framework's remaining checks.
 ## Remaining exit checklist
 
 - Include the completed M1 context/draft-review flow in final integrated acceptance.
-- Finish the M4 export controls/preview and M6 residue/decision/component visuals.
-- Have the user perform normal Claude, Kimi and Gemini sign-in; test each actual
-  account's models, explanation response, cancellation, expiry and disconnect.
-  No account or subscription availability is assumed from a Connect button.
+- Include the implemented M4 export controls/preview and M6
+  residue/decision/component visuals in final integrated acceptance.
+- Verify OpenAI with the user's available subscription. The user confirmed they
+  have no Claude, Kimi or Gemini subscriptions: keep those providers' live model,
+  explanation, cancellation, expiry and disconnect gates explicitly unverified.
+  Their adapters and synthetic tests do not establish subscription availability.
 - Run the final integrated suite against the completed scope, document every
   skip/failure, and rebuild/check the latest wheel rather than reusing an older
   wheel's validation receipt.
@@ -151,3 +153,12 @@ unknown components remain other. Recorded-stage snapshot differences remain
 observations, not automatically recorded chemical causes. The user has only an
 OpenAI subscription, so live Claude/Kimi/Gemini verification is an explicit
 external dependency while their restricted adapters remain available.
+
+Current integrated receipt: 126 checks passed across dashboard coverage, Agent
+boundaries, exact draft review, MP4/GIF exports, preparation audit/recording,
+research views and bookmark bundles. This includes seeded Reference preparation
+equivalence; it does not establish equivalence on other platforms or fixtures.
+Three additional browser checks passed for Graphite, Ink and Paper across 1440,
+768 and 390 px on Overview, Analysis, Agent, Run and Settings. Bookmark panels
+fit each width and close with keyboard activation. This is shell/layout evidence,
+not a completed visual or accessibility review of every expanded feature state.

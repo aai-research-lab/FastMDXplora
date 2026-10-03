@@ -173,10 +173,14 @@ scientific datasets are accidentally included in portable bundles.
 3. Show the selected reasoning level beside its slider, supported endpoints and
    a concise speed/depth explanation. Models with fixed or unsupported effort
    expose that state rather than a fictitious adjustable range.
-4. Complete real Claude, Kimi and Gemini acceptance with user-performed normal
-   login: enumeration, harmless explanation, cancellation, expiry/refresh,
+4. Complete real provider acceptance with user-performed normal login:
+   enumeration, harmless explanation, cancellation, expiry/refresh,
    account switching and disconnect. Never copy another client's credentials,
    silently select API billing, or infer entitlement from successful login.
+   The user confirmed only OpenAI subscription access on 2026-10-02. Claude,
+   Kimi and Gemini live gates remain unavailable account dependencies; retain
+   their adapters and label their live status unverified. Continue all
+   independent implementation and acceptance work without requesting accounts.
 5. Recheck zero write/shell/tools, credential isolation, rejected/stale requests
    and error visibility. Preserve completed OpenAI acceptance as a regression case.
 
