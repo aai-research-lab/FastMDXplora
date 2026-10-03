@@ -145,8 +145,11 @@ def _playback_info_unlocked(
         # The topology is part of what was played: the same trajectory read
         # against a different one is a different playback, and the copy made
         # from the first was served after the second replaced it.
+        timing_record = dcd_path.parent / "simulation_parameters.json"
+        timing_signature = _file_signature(timing_record) if timing_record.is_file() else "missing"
         signature = (f"{dcd_path.parent.name}/{dcd_path.name}:{_file_signature(dcd_path)}:"
-                     f"{topology_path.name}:{_file_signature(topology_path)}:cap={cap}")
+                     f"{topology_path.name}:{_file_signature(topology_path)}:cap={cap}:timing=2:"
+                     f"{timing_signature}")
         cached = _cached_playback(companion_pdb, companion_idx, "production-dcd", signature, force)
         if cached is not None:
             return cached
@@ -320,21 +323,8 @@ def _generate_from_dcd(
     browser_traj.save_pdb(str(tmp))
     _replace_or_yield(tmp, companion_pdb)
 
-    times: list[float | None]
-    try:
-        raw_time = [float(value) / 1000.0 for value in browser_traj.time]
-        if len(raw_time) > 1 and max(raw_time) > min(raw_time):
-            times = raw_time
-        else:
-            raise ValueError
-    except Exception:
-        if simulation_time_ns_total is not None and n_total > 1:
-            times = [
-                float(simulation_time_ns_total) * (index / (n_total - 1))
-                for index in frame_indices
-            ]
-        else:
-            times = [None] * len(frame_indices)
+    # MDTraj's DCD time is a frame ordinal, not a physical timestamp.
+    times = _recorded_dcd_times(dcd_path, n_total, frame_indices)
 
     payload = _playback_payload(
         source_kind="production-dcd",
@@ -346,6 +336,26 @@ def _generate_from_dcd(
     )
     _atomic_json(companion_idx, payload)
     return payload
+
+
+def _recorded_dcd_times(path: Path, count: int, indices: list[int]) -> list[float | None]:
+    """Map sealed, fixed-step production samples; never infer time from ordinals."""
+    unknown = [None] * len(indices)
+    record = _load_json(path.parent / "simulation_parameters.json")
+    resolved, parameters = record.get("resolved") or {}, record.get("parameters") or {}
+    if not isinstance(resolved, dict) or not isinstance(parameters, dict):
+        return unknown
+    interval, steps = resolved.get("trajectory_interval_steps"), resolved.get("production_steps")
+    timestep = parameters.get("timestep_fs")
+    if (record.get("continues") or record.get("n_production_frames") != count
+            or type(interval) is not int or interval <= 0
+            or type(steps) is not int or steps <= 0 or steps // interval != count
+            or type(timestep) not in (int, float) or not np.isfinite(timestep) or timestep <= 0
+            or parameters.get("integrator") not in {
+                "langevin", "langevin_middle", "verlet", "brownian"}):
+        return unknown
+    # Production resets its step/time counters; the first reporter sample is at interval.
+    return [(index + 1) * interval * timestep / 1_000_000.0 for index in indices]
 
 
 def _playback_payload(
@@ -365,7 +375,8 @@ def _playback_payload(
         "source_signature": source_signature,
         "n_frames_total": int(n_total),
         "n_frames_browser": int(n_browser),
-        "frame_indices": [int(value) if value not in (None, "") else None for value in frame_indices],
+        "frame_indices": [
+            int(value) if value not in (None, "") else None for value in frame_indices],
         "frame_times_ns": clean_times,
         "simulation_time_ns_first": clean_times[0] if clean_times else None,
         "simulation_time_ns_last": clean_times[-1] if clean_times else None,

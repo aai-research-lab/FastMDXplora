@@ -16,6 +16,9 @@ Trajectory-export browser checks now cover simultaneous GIF/MP4 downloads,
 decoded output dimensions, artifact byte equality and preserved scientific files.
 Subscription model settings retain the saved model when its access receipt
 expires, clearly prompting an access check instead of displaying another model.
+Playback physical-time labels use consistent recorded fixed-step production
+sampling. MDTraj DCD frame ordinals are no longer presented as physical time;
+unsupported or inconsistent timing evidence remains unknown.
 
 The Agent composer now offers server-resolved evidence inspection and per-message
 view opt-out. Suggested configurations have an explicit before/after review;

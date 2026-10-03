@@ -437,3 +437,23 @@ production duration is 1 ns and resolved sampling is 250 steps at 2 fs. Playback
 currently trusts MDTraj time values. The discrepancy requires source/provenance
 reconciliation; media decoding does not prove these time labels correct. No
 scientific data or settings were changed to conceal it.
+
+### Playback timing correction from recorded sampling
+
+The discrepancy is traced to MDTraj's DCD `read_as_traj`, which constructs its
+time array from frame ordinals. Playback no longer treats those as picoseconds or
+interpolates timestamps from a total duration. For a non-continuation fixed-step
+production with recorded resolved interval, timestep and agreeing production/frame
+counts, it maps sample index k to (k+1)*interval*timestep in nanoseconds, matching
+the production reporter's first sample after one interval. Other cases retain
+unknown physical time. This includes joined/continued studies until their segment
+mapping is verified; live-history timestamps remain separately recorded evidence.
+The playback cache signature includes timing-record identity and a timing-version
+marker so old inferred labels cannot remain current.
+
+Read-only evaluation against 1L2Y records maps source frames 0, 30, 60 and 1999 to
+0.0005, 0.0155, 0.0305 and 1.0 ns. Fourteen timing/dashboard checks pass; the first
+broader run passed all 23 clip checks and failed one old interpolation expectation,
+which was corrected to require unknown time without sampling evidence. Lint passes.
+The live preview and re-export with corrected labels still need verification;
+existing clips and scientific artifacts have not been rewritten.

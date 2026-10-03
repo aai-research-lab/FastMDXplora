@@ -88,7 +88,8 @@ def test_playback_dcd_cache_fallback_and_helpers(tmp_path: Path, monkeypatch) ->
     monkeypatch.setattr(playback, "_import_mdtraj", lambda: _MD())
 
     result = playback.playback_info(out, max_browser_frames=3, simulation_time_ns_total=1.0)
-    assert result["source_kind"] == "production-dcd" and result["frame_times_ns"][-1] == 1.0
+    assert result["source_kind"] == "production-dcd"
+    assert result["frame_times_ns"] == [None] * result["n_frames_browser"]
     assert playback.playback_info(out) == json.loads((sim / "playback_index.json").read_text())
     assert playback._even_indices(10, 2) == [0, 9]
     assert playback._even_indices(3, 5) == [0, 1, 2]
