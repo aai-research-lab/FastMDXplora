@@ -355,3 +355,19 @@ clearing the comparison, Restore recovers frame 3, residue 2, pinned residue 1
 and the exact saved camera before Both-format export. Original fixture hashes
 and browser-error checks still pass. No inference is sent by selection/compare;
 live explanation and the user's actual-study workflow remain separate gates.
+
+### Current live OpenAI access and expired-receipt selector
+
+After restarting the current branch dashboard on the completed 1L2Y study,
+normal dashboard model checks succeeded through the connected ChatGPT subscription
+for GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna. Settings showed Astra, Sol 6.1, Sol 6,
+Luna 6, then the remaining catalog models, with the verified Luna model selected
+and its reasoning levels visible. No API-key fallback was used. These three
+tool-free access probes verify inference access, not a complete new study-context
+explanation or account-expiry lifecycle test.
+
+A visible discrepancy was fixed: when a saved model's one-hour access receipt
+expires and the catalog omits it, Settings keeps that saved model selected and
+labels it "not listed; check access" rather than displaying the first available
+model. Applying it stays disabled until access is verified. The 19 provider and
+reasoning checks pass, including the browser regression for this condition.

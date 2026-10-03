@@ -381,6 +381,14 @@ def test_dashboard_browser_sign_in_selects_subscription_without_api_key(service,
             page.wait_for_function("document.querySelector('#agent-model-current').textContent.includes('ChatGPT subscription')")
             assert service.snapshot()["selection"] == "subscription"
             assert page.locator("#agent-key").input_value() == ""
+            page.locator("#agent-connected-model").select_option("gpt-6-luna")
+            page.locator("#agent-connected-use").click()
+            page.wait_for_function("document.querySelector('#agent-model-current').textContent.includes('gpt-6-luna')")
+            service.catalog = lambda token: [{"id": "fixture-model", "label": "Fixture model"}]
+            page.locator("#agent-connected-refresh").click()
+            page.wait_for_function("document.querySelector('#agent-connected-model').value === 'gpt-6-luna' && document.querySelector('#agent-connected-use').disabled")
+            assert "not listed; check access" in page.locator('#agent-connected-model option:checked').inner_text()
+            assert service.snapshot()["accounts"][0]["model"] == "gpt-6-luna"
             assert not errors
             browser.close()
     finally:

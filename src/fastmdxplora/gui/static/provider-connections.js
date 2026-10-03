@@ -74,7 +74,7 @@
         [{id:"gpt-6.1-sol", label:"GPT-6.1 Sol"}, {id:"gpt-6-sol", label:"GPT-6 Sol"}, {id:"gpt-6-luna", label:"GPT-6 Luna"}].forEach(function(row) {
           if ((data.models || []).some(function(available){return available.id === row.id;})) return;
           var option = document.createElement("option"); option.value = row.id;
-          option.textContent = row.label + " — unavailable in this account's catalog"; option.disabled = true;
+          option.textContent = row.label + " — not listed; check access"; option.disabled = true;
           el("agent-connected-model").appendChild(option); missing.push(row.label);
         });
         el("agent-connected-model-help").textContent = missing.length
@@ -86,7 +86,9 @@
           return (left<0 ? order.length : left) - (right<0 ? order.length : right);
         }).forEach(function(option){el("agent-connected-model").appendChild(option);});
       }
-      if(saved && Array.from(el("agent-connected-model").options).some(function(option){return !option.disabled && option.value === saved.model;})) el("agent-connected-model").value=saved.model;
+      // Keep the saved choice visible even when its access receipt has expired.
+      // A disabled choice cannot be applied until the user verifies access.
+      if(saved && Array.from(el("agent-connected-model").options).some(function(option){return option.value === saved.model;})) el("agent-connected-model").value=saved.model;
       el("agent-connected-use").disabled = !el("agent-connected-model").value || el("agent-connected-model").selectedOptions[0].disabled;
       loadReasoning();
     }).catch(function(error) { if (generation === current) status(error.message); });
