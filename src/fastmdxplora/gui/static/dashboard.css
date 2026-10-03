@@ -3480,6 +3480,60 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 .viewer-canvas-frame { height: clamp(420px, 68vh, 780px); }
 
+/* The molecule always in view: on a page wide enough for two columns, the
+   canvas and what plays it fill the height the page leaves under its
+   header (--viewer-height, set by molecule-viewer.js), and the settings
+   beside them scroll on their own. Below that the two stack, as before. */
+.viewer-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+.side-section {
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    background: var(--panel-glass);
+    padding: 0 12px;
+}
+.side-section > summary {
+    cursor: pointer;
+    padding: 10px 0;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    list-style-position: inside;
+}
+.side-section[open] > summary { padding-bottom: 6px; }
+.side-section > :not(summary):last-child { margin-bottom: 12px; }
+.side-section:has(> #ligand-tools[hidden]) { display: none; }
+.side-section .info-panel { border: none; box-shadow: none; background: none; margin: 0 -12px; }
+.side-section .info-content { max-height: none; }
+.side-section .control-row { gap: 8px; }
+.side-section .select-field {
+    flex: 1 1 130px; display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+}
+.side-section .select-field select { width: 100%; }
+/* One box to a section: the groups inside it are rows, not boxes again. */
+.side-section .control-group,
+.side-section .icon-group.text-group { border: none; background: none; padding: 0; }
+.side-section .control-group { width: 100%; }
+.viewer-under .frame-interactions-chart { max-height: 130px; overflow-y: auto; }
+@container viewerpage (min-width: 901px) {
+    .viewer-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+        /* Until the page has measured its header: about what it takes. */
+        height: var(--viewer-height, calc(100vh - 150px));
+        min-height: 520px;
+    }
+    .viewer-canvas-wrap { min-height: 0; }
+    .viewer-canvas-wrap .viewer-canvas-frame { flex: 1 1 auto; height: auto; min-height: 280px; }
+    .viewer-under { flex: 0 1 auto; max-height: 38%; overflow-y: auto; }
+    .viewer-side { min-height: 0; overflow-y: auto; padding-right: 2px; }
+}
+
 /* ===========================================================================
    A phone.
 

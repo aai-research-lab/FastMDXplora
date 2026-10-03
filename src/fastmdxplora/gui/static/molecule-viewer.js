@@ -119,6 +119,8 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
+    // Sized before the engine is made, so its canvas is made at its size.
+    fitTheLayout();
     wireControls();
     wireTrajectoryControls();
     wireResidueFocus();
@@ -265,6 +267,7 @@
   }
 
   function onViewerPageOpened() {
+    fitTheLayout();
     void askForResidueValues();
     requestAnimationFrame(() => requestAnimationFrame(async () => {
       const engine = await mainEngine();
@@ -2297,7 +2300,21 @@
   /* ------------------------------------------------------------------ */
   /* Generic helpers                                                     */
   /* ------------------------------------------------------------------ */
+  /* The height the Viewer's two columns take: what the window leaves
+   * under the page's header, so the molecule and what plays it are in view
+   * together and the settings scroll beside them. */
+  function fitTheLayout() {
+    const layout = document.querySelector(".viewer-layout");
+    if (!layout || !isVisible(layout)) return;
+    const page = layout.closest(".page");
+    const header = page ? page.querySelector(".page-header") : null;
+    const top = header ? header.getBoundingClientRect().bottom : layout.getBoundingClientRect().top;
+    const room = Math.floor(window.innerHeight - Math.max(0, top) - 20);
+    layout.style.setProperty("--viewer-height", `${Math.max(520, room)}px`);
+  }
+
   function resizeViewers() {
+    fitTheLayout();
     const mainTarget = document.getElementById("viewer-canvas");
     const miniTarget = document.getElementById("mini-preview-canvas");
     [[mainTarget, STATE.engine], [miniTarget, STATE.miniEngine]].forEach(([target, engine]) => {

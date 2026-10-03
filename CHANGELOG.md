@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The molecule stays in view
+
+**The Viewer's settings are in a panel beside the molecule, scrolled on
+their own, and the molecule and what plays it fill the height of the
+window.** Representation, colouring, the parts shown, the ligand's tools,
+the views saved and what is known of the structure were rows under the
+canvas and a short panel beside it, so changing one scrolled the molecule
+off the screen. They are now sections of the panel on the right (View,
+Display, Ligand, Saved views, Information), each opened and closed on its
+own; under the molecule are only the transport, the series and what holds
+the ligand. On a page too narrow for two columns the panel goes under the
+molecule, as before.
+
 ### The zoom zooms, and the header stays
 
 **The Viewer's zoom buttons move the camera nearer or further.** They

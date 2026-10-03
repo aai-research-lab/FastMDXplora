@@ -27,8 +27,9 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "src" / "fastmdxplora" / "gu
 
 def _viewer_controls() -> str:
     page = TEMPLATE.read_text(encoding="utf-8")
-    start = page.index('<div class="viewer-controls">')
-    return page[start:page.index('<aside class="info-panel"', start)]
+    # Under the canvas, what plays the frames; beside it, the settings.
+    start = page.index('<div class="viewer-controls viewer-under">')
+    return page[start:page.index('<div class="info-panel">', start)]
 
 
 class TestTheMarkup:
