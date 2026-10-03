@@ -742,3 +742,18 @@ post-correction installed rendering and the final wheel remain to be verified.
 A `7e9f439` wheel built successfully using isolated build dependencies; an
 initial no-build-isolation attempt failed because this venv lacked bdist_wheel.
 That earlier wheel precedes this CSS correction and is not the final artifact.
+
+Post-correction installed receipt: the `ba61c20` wheel
+`fastmdxplora-2.5.9.dev196+gba61c2062-py3-none-any.whl` built with SHA256
+`8b8505737a956fa0e346dea5762f901e1d4c1a9c2ca8a2225783d6aa982bc96b`.
+It replaced the older package in the existing clean Windows acceptance venv
+without adding source-tree paths. `pip check` returned no broken requirements.
+The installed CLI was restarted outside the checkout against the disposable
+completed-study copy. Native Graphite review at 1480 x 668 confirmed title,
+note and search widths of 375.2 px, a 96 px note area, theme-aware rendering
+and a visible focus ring; the earlier narrow-field issue is corrected.
+All 309 baseline completed-study files still match their prior SHA256 hashes.
+The review server/tab remain available for the next integrated/native checks;
+they use the disposable copy, not the original user study. The pending/failure,
+import and draft matrices provide automated evidence; the native review remains
+partial for other themes/pages/states, and does not prove all dropdown popups.

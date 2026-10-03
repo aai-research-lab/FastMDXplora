@@ -9,6 +9,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+Research bookmark title, note and search fields fill the panel width with
+theme-aware styling, readable placeholders and clear keyboard focus. The note
+area is larger and can be resized vertically. Populated lists, missing images,
+import previews, draft-review and Agent pending/failure states have expanded
+theme, screen-width and text-size regression coverage.
+
 Preparation-audit stage selectors wrap on narrow screens with enlarged text.
 Browser regression coverage verifies saved comparison settings and camera views
 across all three themes without changing source structures.
