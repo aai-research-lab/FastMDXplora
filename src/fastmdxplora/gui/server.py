@@ -1635,13 +1635,14 @@ def make_handler(
                 # The frames superposed, by a name made from the request's
                 # words, written if they are not yet.
                 one = lambda key: ((query or {}).get(key) or [""])[0]  # noqa: E731
-                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0)
+                to = one("to") or "first"
+                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to)
                 if file is None:
                     self.send_error(404, reason)
                     return
                 if not (root / "simulation" / file).is_file():
                     said = superposed_frames(root, on, ligand=one("ligand"),
-                                             cutoff_angstrom=one("cutoff") or 5.0)
+                                             cutoff_angstrom=one("cutoff") or 5.0, to=to)
                     if not said.get("ok"):
                         self.send_error(404, said.get("reason"))
                         return
@@ -2233,15 +2234,18 @@ def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[
         return (query.get(key) or [""])[0]
 
     on, ligand, cutoff = one("on"), one("ligand"), one("cutoff") or "5"
-    said = superposed_frames(root, on, ligand=ligand or None, cutoff_angstrom=cutoff)
+    to = one("to") or "first"
+    said = superposed_frames(root, on, ligand=ligand or None, cutoff_angstrom=cutoff, to=to)
     if not said.get("ok"):
         return said
     # Asked for again under a new address once written again.
     version = (root / "simulation" / said["file"]).stat().st_mtime_ns
     asked = {"superposed": on, "v": version}
+    if to != "first":
+        asked["to"] = to
     if on == "pocket":
         asked.update(ligand=ligand, cutoff=cutoff)
-    return {"ok": True, "said": said["said"], "atoms": said["atoms"],
+    return {"ok": True, "said": said["said"], "atoms": said["atoms"], "to": to,
             "url": "/structure/frames.dcd?" + urlencode(asked)}
 
 

@@ -71,7 +71,7 @@ one tool that calls another AI model is `ask_agent` (below).
 | `read_study` | Where a study stands (its step and time left while it runs) and what it recorded: its config, what its analyses found with errors and units, the checks, why it stopped and what would fix it |
 | `methods_of_study` | A study's methods paragraphs as its report gives them: preparation, protocol, how each mean and its error were determined, any rule it ran until, an AI model's part, and the software; a preparation outside the workspace is not read |
 | `compare_studies` | The settings two studies differ in, and the means each recorded, a difference marked resolved only past twice its combined standard error, and one that cannot be judged (no error, or a mean not determined) said to be not assessed |
-| `write_scene` | A view of a study written as a scene file (MolViewSpec, `scenes/<name>.mvsx`), for you to open in the GUI or on molstar.org: a frame, a representation and colouring (a result such as `result:rmsf` among them), your selections, and atoms highlighted |
+| `write_scene` | A view of a study written as a scene file (MolViewSpec, `scenes/<name>.mvsx`), for you to open in the GUI or on molstar.org: a frame, a representation and colouring (a result such as `result:rmsf` among them), the frames superposed and fitted to the first frame, the starting structure or the deposited one, your selections, and atoms highlighted |
 | `ask_agent` | Optional: the FastMDXplora Agent's answer, for when you ask for the Agent (below) |
 
 A mean is given with its standard error, to the decimal place of the error's

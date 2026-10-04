@@ -85,7 +85,8 @@ def _frames(study: Path, name: str = "frames.dcd") -> md.Trajectory:
 def test_on_the_backbone_is_mdtrajs_fit_on_the_first_frame(study):
     said = superposed_frames(study, "backbone")
     assert said == {"ok": True, "file": "frames_superposed_backbone.dcd",
-                    "said": "the protein's backbone (48 atoms)", "atoms": 48}
+                    "said": "the protein's backbone (48 atoms), fitted to the first frame",
+                    "atoms": 48, "to": "first"}
     played = _frames(study)
     expected = played.superpose(played, frame=0,
                                 atom_indices=played.topology.select("protein and backbone"))
@@ -112,7 +113,8 @@ def test_on_the_pocket_is_the_fit_on_the_residues_near_the_ligand(study):
              if a.residue.index in residues and a.name in ("N", "CA", "C", "O")]
     assert said["ok"] and said["file"] == "frames_superposed_pocket_LIG_5.00.dcd"
     assert said["said"] == (f"the backbone of the {len(residues)} residues within 5 Å "
-                            f"of LIG in the first frame ({len(atoms)} atoms)")
+                            f"of LIG in the first frame ({len(atoms)} atoms), "
+                            "fitted to the first frame")
     expected = played.superpose(played, frame=0, atom_indices=atoms)
     assert _frames(study, said["file"]).xyz == pytest.approx(expected.xyz, abs=2e-4)
 

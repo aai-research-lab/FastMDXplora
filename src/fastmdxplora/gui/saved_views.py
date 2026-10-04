@@ -124,6 +124,8 @@ def _checked(view: Any) -> dict[str, Any] | None:
                           if isinstance(shown.get(key), bool)}
     if view.get("superposed") in ("none", "backbone", "pocket"):
         clean["superposed"] = view["superposed"]
+    if view.get("superposed_to") in ("first", "start", "deposited"):
+        clean["superposed_to"] = view["superposed_to"]
     cutoff = view.get("pocket_cutoff")
     if isinstance(cutoff, (int, float)) and not isinstance(cutoff, bool) and 3 <= cutoff <= 15:
         clean["pocket_cutoff"] = float(cutoff)

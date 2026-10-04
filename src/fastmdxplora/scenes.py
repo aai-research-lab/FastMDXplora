@@ -102,7 +102,8 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
     on = view.get("superposed") or "none"
     if on in ("backbone", "pocket"):
         said = superposed_frames(root, on, ligand=ligands[0] if ligands else None,
-                                 cutoff_angstrom=view.get("pocket_cutoff") or 5.0)
+                                 cutoff_angstrom=view.get("pocket_cutoff") or 5.0,
+                                 to=view.get("superposed_to") or "first")
         if said.get("ok"):
             coordinates = simulation / said["file"]
         else:

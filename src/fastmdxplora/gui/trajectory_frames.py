@@ -254,18 +254,28 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
 
 #: What the frames can be superposed on, and how a pocket is chosen.
 SUPERPOSED_ON = ("backbone", "pocket")
+#: What they are fitted to: the first frame played, the structure the run
+#: started from (as setup prepared it, the frames' own topology file), or
+#: the structure the study was given (``setup/input.pdb``, a deposited
+#: entry as it was downloaded).
+SUPERPOSED_TO = ("first", "start", "deposited")
 _LIGAND_NAME = re.compile(r"^[A-Za-z0-9]{1,4}$")
+_BACKBONE = ("N", "CA", "C", "O")
 
 
-def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any
+def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any, to: str = "first"
                     ) -> tuple[str | None, float | None, str | None]:
     """The file the frames superposed so are written to, made from the
     request's words alone (never a path), with the cutoff read; or why
     there is none."""
     if on not in SUPERPOSED_ON:
         return None, None, f"Frames are superposed on {' or '.join(SUPERPOSED_ON)}."
+    if to not in SUPERPOSED_TO:
+        return None, None, ("Frames are fitted to the first frame, the starting structure "
+                            "or the deposited structure.")
+    suffix = "" if to == "first" else f"_to_{to}"
     if on == "backbone":
-        return "frames_superposed_backbone.dcd", None, None
+        return f"frames_superposed_backbone{suffix}.dcd", None, None
     if not ligand or not _LIGAND_NAME.match(ligand):
         return None, None, "A pocket is the ligand's: no ligand was named."
     try:
@@ -274,25 +284,84 @@ def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any
         cutoff = float("nan")
     if not 1.0 <= cutoff <= 20.0:
         return None, None, "The pocket's cutoff is 1 to 20 \u00c5."
-    return f"frames_superposed_pocket_{ligand.upper()}_{cutoff:.2f}.dcd", cutoff, None
+    return f"frames_superposed_pocket_{ligand.upper()}_{cutoff:.2f}{suffix}.dcd", cutoff, None
+
+
+def deposited_structure(output_dir: str | Path) -> Path | None:
+    """The structure the study was given, as the B-factor comparison finds
+    it: ``setup/input.pdb`` (a deposited entry as it was downloaded), else
+    ``setup/structure.pdb``."""
+    out = Path(output_dir)
+    for candidate in (out / "setup" / "input.pdb", out / "setup" / "structure.pdb",
+                      out / "input.pdb"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _backbone_keys(lines: list[str]) -> dict[tuple[str, str, str], int]:
+    """Each backbone atom of the lines, by its chain, residue number with
+    insertion code, and name, to its place among them: the first of
+    alternate locations, and the first model."""
+    keys: dict[tuple[str, str, str], int] = {}
+    for place, line in enumerate(lines):
+        name = line[12:16].strip()
+        if name not in _BACKBONE or line[16:17] not in (" ", "A", ""):
+            continue
+        keys.setdefault((line[21:22], line[22:27].strip(), name), place)
+    return keys
+
+
+def _deposited_reference(output_dir: Path, topology_file: Path, atoms: Any
+                         ) -> tuple[Any, Any, str] | tuple[None, None, str]:
+    """The atoms of ``atoms`` the deposited structure has too, matched by
+    chain, residue number and name, with its coordinates for them in nm; or
+    why there are none."""
+    deposited = deposited_structure(output_dir)
+    if deposited is None:
+        return None, None, "The study has no deposited structure (setup/input.pdb) to fit to."
+    text = _read(deposited)
+    first_model = text.split("\nENDMDL", 1)[0]
+    theirs = [line for line in _atom_lines(first_model) if line.startswith("ATOM  ")]
+    ours = _atom_lines(_read(topology_file))
+    their_keys = _backbone_keys(theirs)
+    our_keys = {place: key for key, place in _backbone_keys(ours).items()}
+    matched = [(int(i), their_keys[our_keys[int(i)]]) for i in atoms
+               if int(i) in our_keys and our_keys[int(i)] in their_keys]
+    if len(matched) < 3:
+        return None, None, ("The deposited structure's backbone could not be matched to the "
+                            "frames' by chain, residue number and atom name.")
+    try:
+        xyz = np.array([[float(theirs[j][30:38]), float(theirs[j][38:46]),
+                         float(theirs[j][46:54])] for _, j in matched]) / 10.0
+    except ValueError:
+        return None, None, "The deposited structure's coordinates could not be read."
+    try:
+        named = str(deposited.relative_to(output_dir))
+    except ValueError:
+        named = deposited.name
+    said = f"the deposited structure ({named}, {len(matched):,} of {len(atoms):,} atoms matched)"
+    return np.array([i for i, _ in matched], dtype=int), xyz, said
 
 
 def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = None,
-                      cutoff_angstrom: float = 5.0) -> dict[str, Any]:
-    """The frames the viewer plays, each turned and moved onto the first.
+                      cutoff_angstrom: float = 5.0, to: str = "first") -> dict[str, Any]:
+    """The frames the viewer plays, each turned and moved onto a reference.
 
     ``on`` is ``"backbone"`` (N, CA, C and O of the protein) or ``"pocket"``
     (the same atoms of each protein residue with a heavy atom within
     ``cutoff_angstrom`` of the ligand's heavy atoms in the first frame), by
-    MDTraj's least-squares fit. Written once beside the frames, and again
-    when they are. Returns ``{"ok": True, "file", "said", "atoms"}``, or why
-    there is none.
+    MDTraj's least-squares fit. ``to`` is the reference: the first frame,
+    the structure the run started from, or the deposited structure, whose
+    atoms are matched to the frames' by chain, residue number and name.
+    Written once beside the frames, and again when they are. Returns
+    ``{"ok": True, "file", "said", "atoms", "to"}``, or why there is none.
     """
     import mdtraj as md
 
     out = Path(output_dir)
     simulation = out / "simulation"
-    name, cutoff, reason = superposed_name(on, ligand, cutoff_angstrom)
+    name, cutoff, reason = superposed_name(on, ligand, cutoff_angstrom, to)
     if name is None:
         return {"ok": False, "reason": reason}
     frames_file, topology_file = simulation / FRAMES_FILE, simulation / FRAMES_TOPOLOGY
@@ -329,14 +398,30 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
                 "The frames have no protein backbone to superpose on." if on == "backbone"
                 else f"No protein residue is within {cutoff:g} \u00c5 of {ligand.upper()} in "
                      "the first frame.")}
+        reference, reference_atoms = frames, atoms
+        if to == "start":
+            with suppress_native_output():
+                reference = md.load_pdb(str(topology_file))
+            said += ", fitted to the structure the run started from"
+        elif to == "deposited":
+            atoms, xyz, fitted = _deposited_reference(out, topology_file, atoms)
+            if atoms is None:
+                return {"ok": False, "reason": fitted}
+            reference = md.Trajectory(xyz[None].astype(np.float32),
+                                      frames.topology.subset(atoms))
+            reference_atoms = np.arange(len(atoms))
+            said += f", fitted to {fitted}"
+        else:
+            said += ", fitted to the first frame"
         fresh = target.is_file() and target.stat().st_mtime_ns >= frames_file.stat().st_mtime_ns
         if not fresh:
-            frames.superpose(frames, frame=0, atom_indices=atoms)
+            frames.superpose(reference, frame=0, atom_indices=atoms,
+                             ref_atom_indices=reference_atoms)
             # Each frame is turned as well as moved: its box is not the
             # first frame's, so none is written.
             frames.unitcell_vectors = None
             _write_dcd(frames, target)
-    return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms))}
+    return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms)), "to": to}
 
 
 def _write_topology(source: Path, kept: Any, target: Path) -> None:

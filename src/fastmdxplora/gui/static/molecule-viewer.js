@@ -68,6 +68,8 @@
     // The frames as played: "none", or superposed on "backbone" or
     // "pocket", and the address of the frames so.
     superposed: "none",
+    // What the frames are fitted to: "first", "start" or "deposited".
+    superposedTo: "first",
     superposedUrl: null,
     // A white ground and the highest quality, for a figure.
     publication: false,
@@ -424,12 +426,18 @@
     }
   }
 
+  /** Whether the frames played have moved from where the first frame was
+   * written: fitted to a structure other than the first frame. */
+  function environmentMoved() {
+    return STATE.superposed !== "none" && (STATE.appliedTo || "first") !== "first";
+  }
+
   async function ensurePlaybackEnvironment() {
     const generation = STATE.viewerGeneration;
     if (STATE.mode !== "playback") return false;
     const engine = await mainEngine();
     if (!engine) return false;
-    if (!needsFullTopology()) {
+    if (!needsFullTopology() || environmentMoved()) {
       if (STATE.environment) {
         await engine.removeEnvironment();
         STATE.environment = false;
@@ -1129,6 +1137,7 @@
         up: Array.from(camera.up), radius: camera.radius, fov: camera.fov, mode: camera.mode},
       representation: STATE.representation, colour: STATE.colorMode,
       shown: Object.assign({}, STATE.visibility), superposed: STATE.superposed,
+      superposed_to: STATE.superposedTo,
       pocket_cutoff: STATE.pocketCutoff, publication: !!STATE.publication,
       ground: STATE.ground,
     };
@@ -1170,9 +1179,13 @@
       await setPlaybackFrame(view.frame);
     }
     if (!isViewerGenerationCurrent(generation)) return false;
-    if (view.superposed && view.superposed !== STATE.superposed) {
+    const to = view.superposed_to || "first";
+    if (view.superposed && (view.superposed !== STATE.superposed || to !== STATE.superposedTo)) {
       const select = document.getElementById("traj-superpose");
       if (select) select.value = view.superposed;
+      STATE.superposedTo = to;
+      const fitted = document.getElementById("traj-superpose-to");
+      if (fitted) fitted.value = to;
       await superpose(view.superposed);
     }
     await restyleViewers();
@@ -1601,12 +1614,15 @@
     const select = document.getElementById("traj-superpose");
     const label = document.getElementById("traj-superpose-label");
     const previous = STATE.superposed;
+    const previousTo = STATE.appliedTo || "first";
     STATE.superposed = on;
+    const to = STATE.superposedTo;
     if (!STATE.framesCoordinatesUrl || !STATE.framesRendered || !STATE.engine) return;
     let url = STATE.framesCoordinatesUrl;
     let said = "as written";
     if (on !== "none") {
       const query = new URLSearchParams({on});
+      if (STATE.superposedTo !== "first") query.set("to", STATE.superposedTo);
       if (on === "pocket") {
         query.set("ligand", STATE.ligandResname || ligandResnames()[0] || "");
         query.set("cutoff", String(STATE.pocketCutoff));
@@ -1617,10 +1633,14 @@
       } catch (error) {
         answer = {ok: false, reason: "The server did not answer."};
       }
-      if (!isViewerGenerationCurrent(generation) || STATE.superposed !== on) return;
+      if (!isViewerGenerationCurrent(generation) || STATE.superposed !== on
+          || STATE.superposedTo !== to) return;
       if (!answer || !answer.ok) {
-        STATE.superposed = previous === on ? "none" : previous;
+        STATE.superposed = previous === on && previousTo === to ? "none" : previous;
+        STATE.superposedTo = previousTo;
         if (select) select.value = STATE.superposed;
+        const fitted = document.getElementById("traj-superpose-to");
+        if (fitted) fitted.value = previousTo;
         announce(`The frames could not be superposed: ${(answer && answer.reason) || "no reason given"}`);
         return;
       }
@@ -1634,15 +1654,23 @@
       return;
     }
     STATE.superposedUrl = on === "none" ? null : url;
+    STATE.appliedTo = to;
     if (STATE.visibility.box) await STATE.engine.showBox(on === "none");
+    // Water and ions are the first frame's: they sit where it does, and a
+    // first frame fitted to another structure has moved from them.
+    if (STATE.environment ? environmentMoved() : (!environmentMoved() && needsFullTopology())) {
+      await ensurePlaybackEnvironment();
+    }
     if (STATE.miniEngine && STATE.miniModel?.of === "frames") {
       await STATE.miniEngine.setFramesCoordinates(url);
     }
     if (select) select.value = on;
     if (label) label.setAttribute("data-said", said);
     announce(on === "none" ? "The frames are shown as they were written."
-      : `Each frame is ${said}, fitted to the first frame.`
-        + (STATE.visibility.box ? " The periodic box is not shown in frames turned to fit." : ""));
+      : `Each frame is ${said}.`
+        + (STATE.visibility.box ? " The periodic box is not shown in frames turned to fit." : "")
+        + (environmentMoved() && (STATE.visibility.water || STATE.visibility.ions)
+          ? " Water and ions are not shown: they are the first frame's, and it has moved." : ""));
   }
 
   /** The preview plays the same frames, where it is shown. */
@@ -1738,6 +1766,10 @@
     });
     document.getElementById("traj-superpose")?.addEventListener("change", (event) => {
       void superpose(event.target.value);
+    });
+    document.getElementById("traj-superpose-to")?.addEventListener("change", (event) => {
+      STATE.superposedTo = event.target.value;
+      if (STATE.superposed !== "none") void superpose(STATE.superposed);
     });
   }
 

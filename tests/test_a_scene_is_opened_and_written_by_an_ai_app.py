@@ -94,6 +94,7 @@ def test_a_saved_view_is_its_start(wire, workspace):
     ({"frame": True}, "`frame` is a whole number."),
     ({"representation": "ribbons"}, "`representation` is one of: cartoon,"),
     ({"superposed": "sideways"}, "`superposed` is one of: none, backbone, pocket"),
+    ({"superposed_to": "crystal"}, "`superposed_to` is one of: first, start, deposited"),
     ({"name": "../up"}, "A scene is named in 1 to 60"),
 ])
 def test_what_is_not_a_scene_is_said(wire, arguments, said):

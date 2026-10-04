@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Frames fitted to the starting or the deposited structure
+
+**Superposed frames are fitted to the first frame, to the structure the run
+started from, or to the deposited structure the study was given**, chosen
+beside Superposed in the Viewer. Fitted to the first frame, a trajectory
+shows how each frame differs from where production began; fitted to the
+deposited structure (`setup/input.pdb`), how it differs from the crystal,
+in the crystal's frame of reference. Its backbone atoms are matched to the
+frames' by chain, residue number and name, the first of alternate
+locations and the first model, and residues it lacks are left out of the
+fit, which says how many atoms matched. Saved views, scenes and an AI app's
+`write_scene` (`superposed_to`) carry the choice. Where the frames are
+fitted to another structure the first frame's water and ions are not shown,
+since they no longer sit where it does.
+
 ### A picture as wide as chosen, and on no ground
 
 **The camera button saves a picture as wide as the new Picture list says**:

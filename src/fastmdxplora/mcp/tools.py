@@ -689,7 +689,7 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
             raise ToolError(f"{ctx.workspace.shown(folder)} has no view named {args['view']!r}; "
                             f"its views: {', '.join(v['name'] for v in saved) or 'none'}.")
         view = {k: v for k, v in found[0].items() if k != "name"}
-    for key in ("frame", "representation", "colour", "superposed"):
+    for key in ("frame", "representation", "colour", "superposed", "superposed_to"):
         if args.get(key) is not None:
             view[key] = args[key]
     selections = selections_of(folder)["selections"]
@@ -1191,7 +1191,12 @@ TOOLS: tuple[Tool, ...] = (
               "of the study's per-residue results as result:<analysis>, such as "
               "result:rmsf.")},
           "superposed": {"type": "string", "enum": ["none", "backbone", "pocket"],
-                         "description": "Frames fitted to the first, on this."},
+                         "description": "Frames fitted to a reference, on this."},
+          "superposed_to": {"type": "string", "enum": ["first", "start", "deposited"],
+                            "description": (
+                                "What the frames are fitted to: the first frame (default), "
+                                "the structure the run started from, or the deposited "
+                                "structure the study was given.")},
           "highlight": {"type": "string", "description": (
               "An MDTraj selection to show as orange sticks, such as resSeq 189 to 195.")},
           "labels": {"type": "boolean", "description": (
