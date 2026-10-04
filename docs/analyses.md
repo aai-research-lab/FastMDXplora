@@ -277,6 +277,11 @@ against another tool.
   coordinates, or an MDS embedding of the pairwise RMSD), so its dendrogram
   and `hierarchical_linkage.npy` cut to the same clusters.
 
+- **SASA per residue** gives each residue's mean and its spread over the
+  frames, and the spread is the sample standard deviation, dividing by the
+  number of frames less one, both in `average_residue` mode and in the
+  `sasa_average_per_residue.csv` written beside a `residue` run.
+
 - **Contacts and hydrogen bonds** are computed across the periodic boundary where
   the trajectory carries a unit cell.
 

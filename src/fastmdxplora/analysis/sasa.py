@@ -131,6 +131,15 @@ def _areas_that_were_written(
     , code="analysis.data.absent")
 
 
+def _sample_std(values: np.ndarray) -> np.ndarray:
+    """Each column's sample standard deviation over the frames (ddof=1),
+    accumulated in double; NaN where there is a single frame, which has no
+    spread to estimate."""
+    if values.shape[0] < 2:
+        return np.full(values.shape[1:], np.nan)
+    return values.std(axis=0, ddof=1, dtype=np.float64)
+
+
 class SASA(Analysis):
     """Solvent-accessible surface area.
 
@@ -152,8 +161,14 @@ class SASA(Analysis):
     Output
     ------
     ``sasa.dat`` — CSV. Either ``frame, sasa_nm2`` (total) or
-    ``frame, residue, sasa_nm2`` (per residue, long format).
+    ``frame, residue, sasa_nm2`` (per residue, long format), or
+    ``residue, mean_sasa_nm2, std_sasa_nm2`` (average_residue).
+    ``sasa_average_per_residue.csv``: written beside a per-residue run, with
+    the same mean and spread columns as average_residue.
     ``sasa.png`` — Time series (total) or heatmap (residue).
+
+    ``std_sasa_nm2`` is the sample standard deviation over the frames,
+    dividing by n_frames - 1, in both places it is written.
     """
 
     name = "sasa"
@@ -245,8 +260,10 @@ class SASA(Analysis):
                 "mean_sasa_nm2": sasa.mean(axis=0, dtype=np.float64),
                 # The spread matters: a residue at 1.0 every frame and one
                 # alternating between 0 and 2 have the same mean and are not
-                # the same thing.
-                "std_sasa_nm2": sasa.std(axis=0, dtype=np.float64),
+                # the same thing. The sample standard deviation, dividing by
+                # n_frames - 1, as the per-residue run's summary computes it:
+                # the two had divided by n and by n - 1 under one name.
+                "std_sasa_nm2": _sample_std(sasa),
             })
 
         # Per-residue: build a long-form table. Residue labels = resSeq
@@ -322,6 +339,8 @@ class SASA(Analysis):
             # in a structure of several chains were averaged together, and
             # 184 and 184A of one chain with them.
             keys = [key for key in ("chain", "residue", "insertion") if key in result]
+            # pandas' std is the sample standard deviation (ddof=1), the
+            # same definition average_residue uses.
             summary = (
                 result.groupby(keys, dropna=False)["sasa_nm2"]
                 .agg(mean_sasa_nm2="mean", std_sasa_nm2="std")
