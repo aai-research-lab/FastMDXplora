@@ -650,7 +650,7 @@ def _scene_said(view: dict[str, Any], frame: Any) -> str:
 def _scenes_section(project_root: Path, report_dir: Path | None = None) -> str:
     """The scenes written with the study, each linked: a view kept as a
     MolViewSpec file, which opens as it was shown in any viewer built on
-    Mol\*. Linked rather than embedded, so the report stays a document and
+    Mol*. Linked rather than embedded, so the report stays a document and
     the scene a file that can be opened anywhere."""
     from fastmdxplora.scenes import SCENES_DIR, read_scene, scenes_of
 
@@ -660,7 +660,7 @@ def _scenes_section(project_root: Path, report_dir: Path | None = None) -> str:
         return ""
     lines = ["## Scenes", "",
              "Views of this study kept as MolViewSpec scene files (`.mvsx`). Each opens "
-             "as it was shown in any viewer built on Mol\*: drop the file on "
+             "as it was shown in any viewer built on Mol\\*: drop the file on "
              "[molstar.org/viewer](https://molstar.org/viewer/), or open it in the "
              "FastMDXplora GUI (Viewer, Saved views, Scenes).", ""]
     for name in found:

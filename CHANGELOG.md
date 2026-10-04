@@ -38,7 +38,9 @@ atoms to highlight, as `write_scene` in `fastmdx mcp` does.
 the results, each linked from the report and said in a line: its frame,
 representation, colouring and superposition. A scene opens as it was shown
 in any viewer built on Mol\*, dropped on molstar.org or opened in the GUI;
-the report links it rather than embedding a viewer.
+the report links it rather than embedding a viewer. **Fixed:** Python 3.12
+warned of an invalid escape sequence in `report/document.py` each time the
+package was imported (`Mol\*`, the Markdown for Mol*).
 
 ### Movies tested on every job
 
