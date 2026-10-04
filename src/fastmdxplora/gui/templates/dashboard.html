@@ -923,6 +923,25 @@
                     </div>
                   </div>
               </details>
+              <!-- Where the ligand and the water went over the frames
+                   played, and the water sites found (viewer-occupancy.js,
+                   occupancy.py). -->
+              <details class="side-section" id="side-occupancy" open hidden>
+                <summary>Over the frames</summary>
+                <div class="occ-row" id="occ-ligand-row" hidden>
+                  <label class="chip-toggle" title="Where the ligand's heavy atoms were over the frames played, fitted on its pocket: a surface where they were in at least the share of frames chosen"><input type="checkbox" id="occ-ligand">Where the ligand was</label>
+                  <label class="occ-level">in at least <input type="range" id="occ-ligand-level" min="5" max="100" step="5" value="30" aria-label="Share of frames for the ligand's surface"> <span id="occ-ligand-level-said">30%</span> of frames</label>
+                </div>
+                <div class="occ-row" id="occ-water-row" hidden>
+                  <label class="chip-toggle" title="Where water's oxygens were near the ligand over the frames played, fitted on its pocket; bulk water reads about 32%"><input type="checkbox" id="occ-water">Where water was</label>
+                  <label class="occ-level">in at least <input type="range" id="occ-water-level" min="5" max="100" step="5" value="60" aria-label="Share of frames for the water's surface"> <span id="occ-water-level-said">60%</span> of frames</label>
+                </div>
+                <div class="occ-row" id="occ-sites-row" hidden>
+                  <label class="chip-toggle" title="The sites the water_sites analysis found: vermilion where one molecule held it, sky blue where many passed through"><input type="checkbox" id="occ-sites">Water sites</label>
+                </div>
+                <ul class="occ-sites" id="occ-sites-list" aria-label="Water sites"></ul>
+                <p class="muted small" id="occ-note" role="status"></p>
+              </details>
               <!-- What holds the chains together: hydrogen bonds and salt
                    bridges between the protein's chains in the frames played
                    (chain-contacts.js, chain_contacts.py). -->
@@ -1466,5 +1485,6 @@
   <script src="/static/viewer-views.js"></script>
   <script src="/static/viewer-movie.js"></script>
   <script src="/static/chain-contacts.js"></script>
+  <script src="/static/viewer-occupancy.js"></script>
 </body>
 </html>

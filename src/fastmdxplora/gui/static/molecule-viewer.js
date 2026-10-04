@@ -1616,6 +1616,9 @@
         if (together) await engine.setRunsAside(!runsFitAsPlayed());
         sayTheColours();
         updatePlaybackButtons();
+        // What is placed on the first frame (viewer-occupancy.js) is placed
+        // again on the frames now loaded.
+        window.dispatchEvent(new CustomEvent("dashboard:frames-ready"));
         return true;
       } catch (error) {
         console.warn("trajectory playback load failed", error);
@@ -1691,6 +1694,8 @@
     STATE.appliedSmooth = over;
     const runs = STATE.engine.runsShown().length > 0;
     if (runs) await STATE.engine.setRunsAside(!runsFitAsPlayed());
+    const placed = STATE.engine.volumesShown().length > 0 || !!STATE.engine.sitesRef;
+    if (placed) await STATE.engine.setPlacedAside(!placedFitAsPlayed());
     if (STATE.visibility.box) await STATE.engine.showBox(on === "none");
     // Water and ions are the first frame's: they sit where it does, and a
     // first frame fitted to another structure has moved from them.
@@ -1709,7 +1714,16 @@
           ? " Water and ions are not shown: they are the first frame's, and it has moved." : "")
         + (over > 1 ? " An average shortens bonds a little: measure on frames as written." : ""))
       + (runs && !runsFitAsPlayed() ? " The other runs are hidden: they are fitted on the backbone"
-        + " to the first frame, and are shown again when these frames are." : ""));
+        + " to the first frame, and are shown again when these frames are." : "")
+      + (placed && !placedFitAsPlayed() ? " The maps and water sites are hidden: they are placed"
+        + " on the first frame, and are shown again when the frames are fitted to it." : ""));
+  }
+
+  /** Whether the frames played are fitted as the maps and water sites are
+   * placed: on the pocket or the backbone, to the first frame, unsmoothed. */
+  function placedFitAsPlayed() {
+    return (STATE.superposed === "pocket" || STATE.superposed === "backbone")
+      && (STATE.appliedTo || "first") === "first" && (STATE.appliedSmooth || 1) === 1;
   }
 
   /* ------------------------------------------------------------------ */
@@ -2757,6 +2771,11 @@
     onStructureUpdated,
     pollLiveFrame,
     loadPlayback,
+    // The frames superposed as asked, and whether what is placed on the
+    // first frame is fitted as they are (viewer-occupancy.js).
+    superpose,
+    placedFitAsPlayed,
+    ligandResnames,
     viewNow,
     showView,
     setPublication,

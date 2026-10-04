@@ -149,7 +149,8 @@
     "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
     "showPicks", "showSelected", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
     "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "still", "setCells",
-    "showRuns", "removeRuns", "setRunShown", "setRunsAside"]);
+    "showRuns", "removeRuns", "setRunShown", "setRunsAside", "showVolume", "setVolumeLevel",
+    "removeVolume", "showWaterSites", "removeWaterSites", "setPlacedAside"]);
 
   function oneAtATime(engine) {
     let last = Promise.resolve();
@@ -184,7 +185,8 @@
         // The periodic box's corners are not atoms of the structure.
         // Nor are another run's: what is clicked is the run played.
         const atom = SE.Loci.is(loci) && !SE.Loci.isEmpty(loci) && !this.isTheBox(loci.structure)
-          && !this.isARun(loci.structure) ? this.record(SE.Loci.getFirstLocation(loci)) : null;
+          && !this.isARun(loci.structure) && !this.isTheSites(loci.structure)
+          ? this.record(SE.Loci.getFirstLocation(loci)) : null;
         this.listeners[kind].forEach((listener) => listener(atom, modifiers || {}));
       };
       plugin.behaviors.interaction.click.subscribe(emit("click"));
@@ -370,6 +372,9 @@
 
     async clear() {
       this.runs = [];
+      this.volumes = {};
+      this.sitesRef = null;
+      this.sitesDataRef = null;
       this.interactions = new Map();
       this.interactionGroups = {ligand: this.interactions};
       this.boxDataRef = null;
@@ -385,7 +390,8 @@
       if (main) return main.cell;
       const runs = new Set((this.runs || []).map((run) => run.structureRef));
       const others = structures.filter((s) => s.cell.transform.ref !== this.environmentRef
-        && s.cell.transform.ref !== this.boxRef && !runs.has(s.cell.transform.ref));
+        && s.cell.transform.ref !== this.boxRef && s.cell.transform.ref !== this.sitesRef
+        && !runs.has(s.cell.transform.ref));
       return others.length ? others[others.length - 1].cell : null;
     }
 
@@ -1017,6 +1023,126 @@
       return (this.runs || []).map((run) => ({label: run.label, colour: run.colour,
         frames: run.frames, shown: run.shown, ended: !!run.ended,
         rendered: !!run.rendered}));
+    }
+
+    /* -------------------------------------------------------------- */
+    /* What is placed on the first frame                                */
+    /* -------------------------------------------------------------- */
+
+    /** A map of where something was over the frames (gui/occupancy.py), an
+     * OpenDX file, as a surface where the fraction of frames reaches
+     * ``level``, in ``colour``, under ``key``; one of a key at a time. */
+    async showVolume(key, url, level, colour, alpha) {
+      await this.removeVolume(key);
+      const plugin = this.plugin;
+      const data = await plugin.builders.data.download({url: absolute(url), isBinary: false});
+      const parsed = await plugin.dataFormats.get("dx").parse(plugin, data);
+      const volume = parsed.volume || (parsed.volumes && parsed.volumes[0]);
+      this.volumes = this.volumes || {};
+      this.volumes[key] = {dataRef: data.ref, volumeRef: volume.ref, level: Number(level),
+        colour, alpha: alpha == null ? 0.5 : alpha, rendered: false};
+      await this.renderVolume(key);
+      return this.volumesShown();
+    }
+
+    async renderVolume(key) {
+      const shown = (this.volumes || {})[key];
+      if (!shown || !this.plugin.state.data.cells.has(shown.volumeRef)) return;
+      await this.removeChildren(shown.volumeRef);
+      shown.rendered = false;
+      if (this.placedAside) return;
+      const R = this.lib.plugin.StateTransforms.Representation;
+      const params = R.VolumeRepresentation3DHelpers.getDefaultParamsStatic(this.plugin,
+        "isosurface", {isoValue: this.lib.volume.Volume.IsoValue.absolute(shown.level),
+          alpha: shown.alpha}, "uniform", {value: shown.colour});
+      await this.plugin.build().to(shown.volumeRef).apply(R.VolumeRepresentation3D, params)
+        .commit();
+      shown.rendered = true;
+    }
+
+    async setVolumeLevel(key, level) {
+      const shown = (this.volumes || {})[key];
+      if (!shown) return;
+      shown.level = Number(level);
+      await this.renderVolume(key);
+    }
+
+    async removeVolume(key) {
+      const shown = (this.volumes || {})[key];
+      if (!shown) return;
+      delete this.volumes[key];
+      if (this.plugin.state.data.cells.has(shown.dataRef)) {
+        await this.plugin.build().delete(shown.dataRef).commit();
+      }
+    }
+
+    volumesShown() {
+      return Object.entries(this.volumes || {}).map(([key, shown]) => ({key,
+        level: shown.level, rendered: shown.rendered}));
+    }
+
+    /** The water sites found (``/api/water-sites``), as spheres: a site one
+     * molecule held in vermilion, one many passed through in sky blue. */
+    async showWaterSites(sites) {
+      await this.removeWaterSites();
+      if (!Array.isArray(sites) || !sites.length) return 0;
+      const builders = this.plugin.builders;
+      const text = sites.map((site, i) => "HETATM" + String(i + 1).padStart(5) + "  O   "
+        + (site.bound ? "WBD" : "WXP") + " W" + String(i + 1).padStart(4) + "    "
+        + [site.x, site.y, site.z].map((v) => Number(v).toFixed(3).padStart(8)).join("")
+        + "  1.00" + Number(site.occupancy).toFixed(2).padStart(6) + "           O")
+        .join("\n") + "\nEND\n";
+      const data = await builders.data.rawData({data: text, label: "water sites"});
+      const model = await builders.structure.createModel(
+        await builders.structure.parseTrajectory(data, "pdb"));
+      const structure = await builders.structure.createStructure(model);
+      this.sitesDataRef = data.ref;
+      this.sitesRef = structure.ref;
+      this.sitesText = text;
+      await this.renderWaterSites();
+      return sites.length;
+    }
+
+    async renderWaterSites() {
+      const cells = this.plugin.state.data.cells;
+      if (!this.sitesRef || !cells.has(this.sitesRef)) return;
+      await this.removeChildren(this.sitesRef);
+      this.sitesRendered = false;
+      if (this.placedAside) return;
+      const builders = this.plugin.builders.structure;
+      const cell = cells.get(this.sitesRef);
+      for (const [name, colour] of [["WBD", 0xd55e00], ["WXP", 0x56b4e9]]) {
+        const component = await builders.tryCreateComponent(cell, {type: {name: "script",
+          params: {language: "pymol", expression: `resn ${name}`}}, nullIfEmpty: true,
+        label: name}, `fastmdx-sites-${name}`);
+        if (!component) continue;
+        await builders.representation.addRepresentation(component, {type: "spacefill",
+          typeParams: {sizeFactor: 0.6}, color: "uniform", colorParams: {value: colour}});
+        this.sitesRendered = true;
+      }
+    }
+
+    async removeWaterSites() {
+      const cells = this.plugin.state.data.cells;
+      const ref = this.sitesDataRef;
+      this.sitesDataRef = null;
+      this.sitesRef = null;
+      this.sitesRendered = false;
+      if (ref && cells.has(ref)) await this.plugin.build().delete(ref).commit();
+    }
+
+    isTheSites(structure) {
+      const cell = this.sitesRef ? this.plugin.state.data.cells.get(this.sitesRef) : null;
+      return !!(cell && cell.obj && structure
+        && (structure === cell.obj.data || structure.root === cell.obj.data));
+    }
+
+    /** What is placed on the first frame (the maps, the water sites) hidden
+     * while the frames are not fitted to it, and shown again once they are. */
+    async setPlacedAside(aside) {
+      this.placedAside = !!aside;
+      for (const key of Object.keys(this.volumes || {})) await this.renderVolume(key);
+      await this.renderWaterSites();
     }
 
     isARun(structure) {

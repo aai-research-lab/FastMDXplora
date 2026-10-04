@@ -147,12 +147,12 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
-    "/api/chain-contacts",
+    "/api/chain-contacts", "/api/occupancy", "/api/water-sites",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
     "/structure/topology.pdb", "/structure/live-frame.pdb", "/structure/live-frame.dcd",
-    "/structure/frames.dcd", "/structure/frames-topology.pdb",
+    "/structure/frames.dcd", "/structure/frames-topology.pdb", "/structure/occupancy.dx",
 })
 GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/", "/scenes/")
 
@@ -164,7 +164,8 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/api/secondary-structure", "/api/structure-info", "/api/ligands",
     "/api/viewer-atoms", "/api/chain-contacts", "/api/interactions-over-frames",
     "/api/frames-superposed", "/structure/topology.pdb", "/structure/frames.dcd",
-    "/structure/frames-topology.pdb",
+    "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
+    "/structure/occupancy.dx",
 })
 
 
@@ -895,6 +896,17 @@ def make_handler(
                 return
             if path == "/api/frames-superposed":
                 self._send_json(_frames_superposed_payload(root, parse_qs(parsed.query)))
+                return
+            if path == "/api/occupancy":
+                self._send_json(_occupancy_payload(root, parse_qs(parsed.query)))
+                return
+            if path == "/structure/occupancy.dx":
+                self._send_occupancy(root, parse_qs(parsed.query))
+                return
+            if path == "/api/water-sites":
+                from fastmdxplora.gui.occupancy import water_sites_placed
+
+                self._send_json(water_sites_placed(root))
                 return
             if path.startswith("/static/"):
                 self._send_static_asset(path.removeprefix("/static/"))
@@ -1710,6 +1722,24 @@ def make_handler(
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_occupancy(self, root: Path, query: dict[str, list[str]]) -> None:
+            """A map written beside the frames, named by the request's words."""
+            from fastmdxplora.gui.occupancy import occupancy_file
+
+            one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+            name, reason = occupancy_file(one("of"), one("ligand"), one("cutoff") or 5.0)
+            target = root / "simulation" / name if name else None
+            if target is None or not target.is_file():
+                self.send_error(404, reason or "No such map yet")
+                return
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def _send_run_frames(self, root: Path, run: str) -> None:
             """Another run's frames, fitted to the run shown's first frame:
             named by its place in the study, never a path."""
@@ -2319,6 +2349,25 @@ def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[
     return {"ok": True, "said": said["said"], "atoms": said["atoms"], "to": to,
             "smooth": said["smooth"],
             "url": "/structure/frames.dcd?" + urlencode(asked)}
+
+
+def _occupancy_payload(root: Path, query: dict[str, list[str]]) -> dict[str, Any]:
+    """A map of the ligand or the water over the frames played, written if
+    it is not yet, and the address the Viewer reads it from."""
+    from urllib.parse import urlencode
+
+    from fastmdxplora.gui.occupancy import occupancy
+
+    def one(key: str) -> str:
+        return (query.get(key) or [""])[0]
+
+    said = occupancy(root, one("of"), ligand=one("ligand"), cutoff_angstrom=one("cutoff") or 5.0)
+    if not said.get("ok"):
+        return said
+    version = (root / "simulation" / said["file"]).stat().st_mtime_ns
+    asked = {"of": said["of"], "ligand": said["ligand"], "cutoff": f"{said['cutoff']:g}",
+             "v": version}
+    return {**said, "url": "/structure/occupancy.dx?" + urlencode(asked)}
 
 
 def _live_coordinates_payload(root: Path) -> dict[str, Any]:

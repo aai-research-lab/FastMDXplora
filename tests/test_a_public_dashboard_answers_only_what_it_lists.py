@@ -271,6 +271,10 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # What holds the ligand, frame by frame, as the interactions
             # analysis recorded it.
             "/api/interactions-over-frames", "/api/chain-contacts",
+            # Where the ligand and the water went over the frames played,
+            # computed from them on request as the superposed frames are,
+            # and the water sites the study found, placed on the first.
+            "/api/occupancy", "/structure/occupancy.dx", "/api/water-sites",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",

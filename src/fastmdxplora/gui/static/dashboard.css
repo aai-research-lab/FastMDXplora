@@ -3664,6 +3664,16 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .viewer-run-swatch { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 3px; }
 .viewer-run-said { color: var(--text-muted); }
 #viewer-runs-note { margin: 6px 0 0; }
+.occ-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+           margin: 4px 0; }
+.occ-level { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs);
+             color: var(--text-muted); }
+.occ-level input[type="range"] { width: 110px; }
+.occ-sites { list-style: none; margin: 4px 0 0; padding: 0; display: flex;
+             flex-direction: column; gap: 4px; }
+.occ-site { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); }
+.occ-site-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; }
+#occ-note { margin: 6px 0 0; }
 #chain-contacts-note:empty { display: none; }
 
 /* A movie of the frames (viewer-movie.js). */

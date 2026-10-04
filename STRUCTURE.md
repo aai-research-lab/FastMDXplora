@@ -129,6 +129,7 @@ FastMDXplora/
 │       │   ├── chain_contacts.py  # What holds the chains together, frame by frame
 │       │   ├── runs_compared.py   # The runs of a study side by side, resolved differences marked
 │       │   ├── runs_together.py   # The runs of a study played together in one Viewer
+│       │   ├── occupancy.py       # Where the ligand and water went over the frames; water sites placed
 │       │   ├── measure.py         # A distance from the Viewer, over every frame
 │       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
 │       │   ├── stopping_view.py   # A study run until it is determined, for the Overview
@@ -158,7 +159,8 @@ FastMDXplora/
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
 │       │   │                      #   viewer-sequence.js, viewer-selections.js,
 │       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
-│       │   │                      #   frame-interactions.js, chain-contacts.js; scene-view.js
+│       │   │                      #   frame-interactions.js, chain-contacts.js,
+│       │   │                      #   viewer-occupancy.js; scene-view.js
 │       │   │                      #   (a scene on a page of its own)
 │       │   └── templates/         # dashboard.html, scene.html
 │       ├── remote/

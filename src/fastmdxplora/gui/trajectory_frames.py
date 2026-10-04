@@ -32,7 +32,8 @@ from typing import Any
 import numpy as np
 
 __all__ = ["BINARY_ATOM_FRAMES", "FRAMES_FILE", "FRAMES_TOPOLOGY", "SUPERPOSED_ON",
-           "frames_info", "frames_for_binary", "superposed_frames", "superposed_name"]
+           "frames_info", "frames_for_binary", "pocket_backbone", "superposed_frames",
+           "superposed_name"]
 
 FRAMES_FILE = "frames.dcd"
 FRAMES_TOPOLOGY = "frames_topology.pdb"
@@ -376,6 +377,28 @@ def _deposited_reference(output_dir: Path, topology_file: Path, atoms: Any
     return np.array([i for i, _ in matched], dtype=int), xyz, said
 
 
+def pocket_backbone(frames: Any, ligand: str, cutoff_angstrom: float) -> tuple[Any, list[int]]:
+    """The backbone atoms (N, CA, C, O) of each protein residue with a heavy
+    atom within ``cutoff_angstrom`` of the ligand's heavy atoms in the first
+    frame, and those residues; None for the atoms where the frames hold no
+    such ligand."""
+    import mdtraj as md
+
+    topology = frames.topology
+    heavy = topology.select(f"resname {ligand.upper()} and not element H")
+    if len(heavy) == 0:
+        return None, []
+    protein = topology.select("protein and not element H")
+    near = md.compute_neighbors(frames[0], float(cutoff_angstrom) / 10.0, heavy,
+                                haystack_indices=protein)[0]
+    residues = sorted({topology.atom(int(i)).residue.index for i in near})
+    chosen = set(residues)
+    backbone = topology.select("protein and backbone")
+    atoms = np.array([i for i in backbone if topology.atom(int(i)).residue.index in chosen],
+                     dtype=int)
+    return atoms, residues
+
+
 def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = None,
                       cutoff_angstrom: float = 5.0, to: str = "first",
                       smooth: Any = 1) -> dict[str, Any]:
@@ -419,16 +442,9 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
             atoms = backbone
             said = f"the protein's backbone ({len(atoms):,} atoms)"
         else:
-            heavy = topology.select(f"resname {ligand.upper()} and not element H")
-            if len(heavy) == 0:
+            atoms, residues = pocket_backbone(frames, ligand, cutoff)
+            if atoms is None:
                 return {"ok": False, "reason": f"There is no {ligand.upper()} in the frames."}
-            protein = topology.select("protein and not element H")
-            near = md.compute_neighbors(frames[0], cutoff / 10.0, heavy,
-                                        haystack_indices=protein)[0]
-            residues = sorted({topology.atom(int(i)).residue.index for i in near})
-            chosen = set(residues)
-            atoms = np.array([i for i in backbone if topology.atom(int(i)).residue.index
-                              in chosen], dtype=int)
             said = (f"the backbone of the {len(residues)} residues within {cutoff:g} \u00c5 "
                     f"of {ligand.upper()} in the first frame ({len(atoms):,} atoms)")
         if len(atoms) < 3:

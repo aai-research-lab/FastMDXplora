@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Where the ligand and the water went
+
+**The Viewer shows where the ligand and the water went over the frames
+played**, under **Over the frames**: an occupancy map of each, as VMD's
+VolMap gives one, the fraction of frames in which an atom is near each point
+of a half-angstrom grid, the frames fitted on the ligand's pocket to the
+first frame, rendered as a surface at the share of frames chosen (bulk water
+reads about 32%), and written with the study as OpenDX. **Water sites**
+places the sites the `water_sites` analysis found, as spheres coloured by
+whether one molecule held each. `GET /api/occupancy`, `/structure/occupancy.dx`
+and `/api/water-sites`.
+
 ### Fixed: a water site on a turning protein
 
 **`water_sites` finds a site where it is on the protein, however the protein
