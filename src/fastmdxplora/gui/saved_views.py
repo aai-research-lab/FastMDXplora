@@ -26,6 +26,8 @@ MOST_VIEWS = 50
 
 _NAME = re.compile(r"^[^\x00-\x1f\x7f]{1,60}$")
 _WORD = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+_NOTE_LIMIT = 2_000
+_TAG_LIMIT = 12
 # A colouring is a word, or one of the study's results ("result:rmsf").
 _COLOURING = re.compile(r"^(result:)?[A-Za-z0-9_-]{1,40}$")
 _SHOWN = ("protein", "ligand", "pocket", "water", "ions", "hydrogens", "box")
@@ -136,4 +138,24 @@ def _checked(view: Any) -> dict[str, Any] | None:
         clean["publication"] = view["publication"]
     if view.get("ground") in ("dark", "white"):
         clean["ground"] = view["ground"]
+    note = view.get("note")
+    if isinstance(note, str) and 0 < len(note) <= _NOTE_LIMIT and not any(
+            char in note for char in "\x00\r"):
+        clean["note"] = note
+    tags = view.get("tags")
+    if isinstance(tags, list):
+        clean_tags = []
+        for tag in tags:
+            if isinstance(tag, str) and _WORD.match(tag) and tag not in clean_tags:
+                clean_tags.append(tag)
+            if len(clean_tags) == _TAG_LIMIT:
+                break
+        if clean_tags:
+            clean["tags"] = clean_tags
+    graph = view.get("graph")
+    if isinstance(graph, dict) and isinstance(graph.get("analysis"), str) and _WORD.match(
+            graph["analysis"]):
+        range_values = _numbers(graph.get("range"), 2)
+        if range_values is not None and range_values[0] <= range_values[1]:
+            clean["graph"] = {"analysis": graph["analysis"], "range": range_values}
     return clean

@@ -70,6 +70,17 @@ def test_a_result_colouring_is_kept(tmp_path):
     assert kept == {"v": "result:rmsf", "w": None}
 
 
+def test_a_view_keeps_bounded_notes_tags_and_a_graph_range(tmp_path):
+    view = {"camera": CAMERA, "note": "Inspect the flexible loop.",
+            "tags": ["rmsf", "loop", "rmsf", "bad tag!"],
+            "graph": {"analysis": "rmsf", "range": [1.0, 3.0]}}
+    assert save_view(tmp_path, "Loop evidence", view)["ok"]
+    kept = views_of(tmp_path)["views"]
+    assert kept[0]["note"] == "Inspect the flexible loop."
+    assert kept[0]["tags"] == ["rmsf", "loop"]
+    assert kept[0]["graph"] == {"analysis": "rmsf", "range": [1.0, 3.0]}
+
+
 def test_a_study_keeps_so_many(tmp_path):
     for i in range(MOST_VIEWS):
         assert save_view(tmp_path, f"v{i}", {"camera": CAMERA})["ok"]

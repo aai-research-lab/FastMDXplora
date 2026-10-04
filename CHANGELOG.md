@@ -7,6 +7,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Saved views retain research annotations
+
+**Saved Viewer views can retain a bounded note, de-duplicated tags, and a named graph range.**
+These are view annotations only: they do not alter an analysis or its claims. Existing
+`viewer_views.json` files remain valid without them.
+
 ### Viewer frame times begin at the first recorded sample
 
 **The Viewer now maps a production DCD frame to its recorded reporting step.**
