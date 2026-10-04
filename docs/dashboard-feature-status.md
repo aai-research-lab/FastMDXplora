@@ -2,19 +2,25 @@
 
 Reviewed 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md). This is the current acceptance status; the lower receipts retain earlier evidence and limitations.
 
-**The framework is not fully complete.** Core additions are implemented and the corrected package has passed the combined suite and representative installed workflows. Remaining work is requirement-by-requirement acceptance reconciliation, the single coherent M7 integrated workflow and bounded recorder overhead/storage acceptance. Claude/Kimi/Gemini live accounts and OpenFF/backend coverage remain explicit dependencies or qualified limits. Do not describe these as universally verified.
+**Functional handoff is complete for the tested environment, with explicit limitations. Remaining M8 aesthetics are deferred by the user on 2026-10-03 and do not block this handoff.** Retain existing visual improvements; no further theme/spacing/typography/branding or broad visual acceptance is authorized. Historical M0–M8 receipts below preserve their original scope and may contain superseded pending statements.
 
-### Current checkpoint — 2026-10-03
+### Current functional checkpoint — 2026-10-03
 
-The authoritative checkout is `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Current behavior revision is `a06a214`; subsequent revisions change documentation only. Local and remote heads were verified equal at `2f5ea32` before this reconciliation. The working tree was clean. Retain the v2.5.8-based history; upstream main has not been integrated and no PR created. The user's dashboard on port 8783 was untouched; corrected installed-package review is on port 8787.
+Authoritative checkout: `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Frozen behavior revision: `a06a214`; later changes are documentation only. Existing v2.5.8-based history is retained; upstream main was not integrated and no PR was created. The user's dashboard was untouched.
 
-The current wheel is `fastmdxplora-2.5.9.dev218+g6d5407a86-py3-none-any.whl`, SHA-256 `4250c2d6fc42abcd4eb451eb033b5912e99fb328f94daf05223bd6ebc9c30a74`. It is installed outside the checkout in a separate environment reusing repository dependencies. This is not clean-machine dependency installation or a published release.
+Exact wheel: `fastmdxplora-2.5.9.dev228+ga06a214d2-py3-none-any.whl`, SHA-256 `46b7e468b8aed20824352a74185050257cb692d05e428ad7f0045f3868246a51`. Installed outside checkout in temporary `FastMDXplora-relocated-evidence-final/env`, reusing repository dependencies. `pip check` passed. Installed knowledge covers every registered error/disclosure; the wheel contains both Markdown resources, dashboard template/CSS, Agent/research/draft-review/clip/viewer assets and Gemini bridge. This is a development artifact, not a published release or clean-machine installation claim.
 
-The corrected-source ten-module combined suite passed **241 tests, 1 skipped**, in 765.66 seconds. OpenFF ligand preservation is skipped because `openff.toolkit` is unavailable. Five warnings concern Pillow clip-test assertions. CI Ruff F/B and diff checks pass. The disabled-Agent Send and docking fixes are included in this revision and suite.
+Final required ten-module combined suite: **243 passed, 1 skipped, 5 warnings in 799.87 seconds**. OpenFF ligand-preservation is skipped because its toolkit is unavailable; warnings are Pillow assertions. Final source CI Ruff F/B and diff checks pass. No product source changed after this run.
 
-The closeout diff since `b103dd8` is limited to GUI, tests and documentation. That comparison does not certify all inherited changes relative to the v2.5.8 tag. Scientific preservation checks remain fixture/backend-specific.
+Agent functional evidence includes study/view verification, opt-out, pinned comparison, stale-response refusal, disabled Send and exact human draft-review/invalidation. Current installed OpenAI comparison correctly reported both recorded residue values and scope without inventing chemical causes. Source combined tests prove the adversarial/non-execution boundaries; existing installed review receipts remain valid because the later change only centralizes verified relocated-topology resolution. OpenAI account/model/reasoning evidence is reused; no credentials copied or exposed.
 
-The receipts below retain their original revision and historical state. Statements such as “in progress”, “must rerun” or “native popup unverified” in an earlier receipt are superseded by the later corrected-source, OpenAI and Windows-menu receipts. Use this checkpoint and the operational checklist for current work.
+Bookmarks passed current-package capture, exact selection/comparison restoration across real server processes, JSON portability and collision handling. Screenshot-bundle/other collision/missing-source receipts are reused with their historical revision labels: the relocated-topology fix does not change those implementations, and their current source regressions passed in the final combined suite. Notes/images remain useful when restore is refused. QA records were removed.
+
+Clips passed current installed preview/export/download, two-frame 640x480 GIF and H.264 MP4 decode, metadata and frame/time mappings, with exact viewer-state restoration. Cancellation/failure/source-freeze guards passed in the combined suite. Preparation audit restored event/stages/overlay/linked cameras; identity ambiguity remains refused. All 320 non-output study hashes matched during media acceptance. No scientific setting or production simulation was applied.
+
+Preservation remains fixture/backend-qualified: Reference protein and seeded membrane equivalence evidence, baseline CPU-repeatability failures, aggregate solvent/ion recording limits, absent OpenFF, and bounded recorder timing/storage are retained below. The closeout diff since `b103dd8` changes GUI/tests/docs only; this does not certify inherited scientific changes against the v2.5.8 tag.
+
+Claude/Kimi/Gemini live accounts remain **unverified external dependencies**. The user has OpenAI only. This handoff does not claim live multi-provider acceptance, universal chemical validation or cross-platform equivalence. Remaining aesthetics, including enlarged-phone dialog presentation review, are deferred unless a reproducible issue blocks an authorized functional workflow.
 
 ### Exact-wheel integration receipts
 
@@ -102,7 +108,7 @@ On the same corrected package and completed-study copy, clip preview/export prod
 | M5 — provenance | Future-run observation and audit implemented; qualified scientific checks pass | Aggregate solvent/ion events do not identify each inserted molecule or retry. Broader backend/platform acceptance is open; do not claim universal chemical validation or deterministic CPU repeatability. |
 | M6 — audit visuals | Exact-wheel audit bookmark and Agent handoff passed | Overlay remains display-only and only describes the evidence available in saved study files. |
 | M7 — integrated release checks | Passed for the tested development environment and exact wheel | One OpenFF skip, external provider tests, and clean-machine installation remain unverified. |
-| M8 — aesthetics/interactions | Source suite and exact-wheel dropdown styles pass | Representative native option menus now visually pass on Windows in three themes; platform-wide acceptance remains scoped to this host. |
+| M8 — aesthetics/interactions | Remaining work deferred by user | Existing improvements retained; no further broad visual work. Does not block functional handoff. |
 
 ### Remaining follow-up
 

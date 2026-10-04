@@ -15,6 +15,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Dashboard research features on `context-aware-agent`
 
+Functional acceptance uses frozen source `a06a214`: 243 combined checks passed,
+one OpenFF dependency check skipped. The installed development wheel passed
+OpenAI residue comparison, bookmark restart/portability, GIF/MP4 decode and audit
+restoration. Other providers remain live-unverified. Remaining aesthetics are
+explicitly deferred by the user; existing improvements are retained.
+
+
 With enlarged text, the mobile header gives the study identity room to wrap
 below the brand. The appearance popup scrolls within the screen and wraps long
 engine/version metadata; viewer status labels stay within the molecular canvas.

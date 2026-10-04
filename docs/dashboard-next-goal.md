@@ -1,55 +1,30 @@
-# FastMDXplora dashboard closeout checklist
+# FastMDXplora functional closeout checklist
 
-Updated 2026-10-03. This is the only operational checklist for finishing M0–M8. Requirement contracts remain in [dashboard-feature-plan.md](dashboard-feature-plan.md) and [dashboard-completion-plan.md](dashboard-completion-plan.md). Evidence receipts and historical limitations remain in [dashboard-feature-status.md](dashboard-feature-status.md). Avoid duplicating the work order in those documents.
+Updated 2026-10-03 by explicit user direction. **Remaining M8 aesthetics: deferred by user.** Keep existing improvements. Do not perform theme polish, spacing, typography, branding, screenshot inspection, viewport/zoom matrices or broad visual/accessibility review. A UI change is permitted only for a reproduced defect that prevents a required functional workflow. Deferred aesthetics do not block functional handoff. The original M0–M8 contracts remain as historical requirements; this instruction supersedes their outstanding aesthetics gates.
 
-Continue in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent` tracking `princeote/context-aware-agent`. Retain the existing v2.5.8-based history; do not integrate upstream main. The current behavior revision is `a06a214`; subsequent commits change documentation only. Its combined suite passed 243 tests with one OpenFF dependency skip in 799.87 seconds. The current installed residue comparison and bookmark reload/JSON portability passed; see the latest status receipts. Older package-specific receipts retain their original scope. Its corrected wheel is installed outside the checkout and available for review on port 8787 against a disposable completed-study copy. Earlier 02917ed/port 8786 receipts are historical. Preserve the user's port 8783 and do not expose credentials. Detailed receipts are in the status record.
+Work in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Preserve its v2.5.8-based history. Do not integrate upstream main or create/merge a PR. Preserve the user's dashboard and credentials.
 
-**OpenAI route verified on corrected wheel `6d5407a`.** The connected subscription returned a fresh explanation without an API-key prompt, action or configuration. GPT-6 Luna/max and the subscription selection persisted after reload. The user's dashboard on port 8783 was left unchanged.
+## Functional order and acceptance
 
-## Revised execution order
+1. **Agent:** reconcile correct study/view evidence, opt-out, residue comparison, stale-response rejection, disabled-Agent behavior and exact human draft review/invalidation. Reuse valid OpenAI subscription/model/reasoning evidence. The Agent explains and proposes human-reviewed drafts only; it never applies scientific settings or runs simulations autonomously.
+2. **Bookmarks:** capture, actual restart persistence, JSON and screenshot-bundle export/import, collision handling, restoration and stale/missing-source refusal. Retain useful notes/screenshots on refusal. Remove temporary QA records.
+3. **Clips:** GIF/MP4 preview, export/download/decode, dimensions, source frame/time and hashes, cancellation/failure recovery and exact viewer-state restoration.
+4. **Preparation/scientific preservation:** exact identity, ambiguity refusal, display-only overlay and audit-bookmark restoration. Reconcile existing preservation evidence and known baseline/backend limits. Do not change physics, chemistry, algorithms, defaults, seeds, atom ordering, units, definitions or tolerances. Do not run production MD.
+5. **Final verification/handoff:** freeze final code, required combined functional/scientific suite and lint; build/install exact wheel outside checkout; verify packaged resources and integrated workflows. Update README/changelog/status accurately, commit/push only to princeote branch, and verify remote revision. Documentation-only updates do not require rebuilding unchanged code. Retain mandatory final verification and reuse checks unaffected by subsequent changes.
 
-1. Source regression coverage is in place: changed/missing bookmark sources, ambiguous preparation identity, residue comparison and draft-review invalidation are tested; audit-bookmark capture/restore passes in three themes. The exact wheel now passes the main Agent, bookmark portability, clip and audit-bookmark flows. Native Windows capture now visually verifies representative menus in Graphite/Ink/Paper and the model menu in Paper. Retain that host/menu scope.
-2. Preserve Gate C limits and the existing evidence receipts. Do not change scientific algorithms or run production MD.
-3. Source behavior was previously frozen at `02917ed`; the disabled-Agent Send guard now reopens final code acceptance. The corrected `6d5407a` wheel is installed and the final combined set passed 241/1 in 765.66 seconds. Continue remaining integration and evidence reconciliation. Historical evidence: the required combined source suite passed **241 tests, 1 skipped**. Any later code change reopens affected checks; documentation-only edits do not change behavior evidence.
-4. On the exact wheel outside the checkout, the OpenAI explanation route, model order/dark select styling, audit-bookmark restoration, bookmark JSON/PNG-bundle export/import and collision choices, and GIF/MP4 clip preview/download/decode passed. Clip export restored frame, selection, camera, display and playback controls; 315 non-output study files retained identical hashes.
-5. Update the status and changelog, review the complete branch diff and scientific-source hashes, commit the closeout receipts, push only to `princeote/context-aware-agent`, then verify the remote revision. Do not integrate upstream main or create/merge a PR. Keep live provider and native popup limitations explicit.
+## Current evidence to reuse
 
+- Behavior revision `a06a214`; later commits are documentation only. Combined ten-module suite: **243 passed, 1 skipped, 5 warnings in 799.87 seconds**. OpenFF toolkit unavailable; warnings are Pillow assertions. JUnit: temporary `FastMDXplora-relocated-evidence-final/combined-suite.xml`.
+- Exact wheel `fastmdxplora-2.5.9.dev228+ga06a214d2-py3-none-any.whl`, SHA-256 `46b7e468b8aed20824352a74185050257cb692d05e428ad7f0045f3868246a51`, installed outside checkout in temporary `FastMDXplora-relocated-evidence-final/env`, reusing repository dependencies. Not a clean-machine installation claim.
+- Current installed OpenAI comparison reports verified ASN A:1/LEU A:2 RMSF with recorded scope and honest chemical uncertainty. Shared relocation verifier refuses differing bytes.
+- Current installed bookmark flow restored both residues across actual processes 30812/30488, exported/imported JSON with skip-existing handling, deleted QA records and preserved scientific hashes. Earlier screenshot-bundle/collision/stale-source receipts remain scoped to their recorded revisions; reconcile whether relevant code changed before repeating.
+- Current installed GIF/MP4 export/download/decode and audit-bookmark restoration passed. All 320 non-output study hashes matched; frame/selection/camera/display/playback controls restored. Temporary QA audit record deleted.
+- Existing Agent opt-out, stale-response, disabled Send and precise draft-review/invalidation tests pass in the combined suite. Installed and historical receipts are in `dashboard-feature-status.md`; use their actual scope.
 
-## Gate A — visual and interaction acceptance
+## Genuine limitations
 
-**Representative native popup and layout checks pass; detailed state audit remains.** The 300-state matrix reports zero geometry issues; all 30 screenshots were visually inspected across Graphite, Ink and Paper. On the exact wheel, all 21 populated select lists/options compute to black backgrounds and white text; the closed controls were visually inspected. Three empty preparation selects have no options. Review reproduced clipped mobile-navigation focus at 390 px/200% text. The source now scrolls the focused link into view, and its three-theme regression passes. The current-source dashboard-boundary module passes 93/93 tests; six dialog/bookmark focus/Escape checks and eight Agent loading/refusal/draft/disable checks also pass. Windows desktop capture now exposes the actual native option popup. Representative Settings menus pass in all three themes, and the Paper model menu is readable in the accepted order.
+Claude/Kimi/Gemini live accounts remain unverified external dependencies; the user has OpenAI only. Do not loop on them or request purchases. OpenFF preservation is dependency-blocked; Reference and seeded membrane fixtures have qualified evidence. CPU repeatability baseline failures and aggregate solvent/ion provenance remain explicit. No universal chemical validation claim.
 
+## Exit rule
 
-## Gate B — installed feature integration
-
-**Core integration passed on the exact wheel; stale-source live refusal remains source-test verified.** Port 8786 ran the wheel from `02917ed` against the disposable completed study. The selected GPT-6 Luna/max ChatGPT subscription answered a page-aware audit explanation without an API-key prompt. The exact wheel exported JSON and a PNG screenshot bundle, previewed matching IDs, applied skip-existing and keep-both choices, persisted after reload, and restored the saved view. Its audit bookmark restored the Preparation tag, event, stage pair, overlay and linked state. Two original study bookmarks remain. Clip preview and GIF/MP4 download produced a two-frame 640×480 GIF and H.264 MP4; ffmpeg decoded both frames. The original frame, selected residue, camera, display and follow/playback/live-update/spin controls were restored. Hashes for all 315 non-output study files were identical before and after the clip test. Source tests cover changed and missing bookmark sources, ambiguous audit identity, residue comparison and draft invalidation; the missing-analysis-source refusal passes. The full source clip suite passes 26/26, including unavailable-playback recovery. Temporary bookmark QA rows were removed; the two original bookmarks remain.
-
-Remaining live acceptance is limited to any framework-required expanded/loading/error combinations not already covered by browser regression, and provider sign-in/inference for accounts the user can actually access. Do not repeat absent-account probes. Preserve scientific inputs and result hashes. Do not approve/apply a scientific setting autonomously or run production MD.
-
-
-## Gate C — scientific preservation and provenance
-
-**Partial — boundary reconciled; historical preservation limits remain.** The branch and working diffs since the documented baseline touch GUI, tests and docs only; no scientific computation module changed. Existing Reference/POPC/OpenFF preservation receipts remain qualified to their fixtures, environment and backends. The reproduced CPU-repeatability baseline failure, aggregate provenance gaps and auxiliary chemistry-environment conflicts remain explicit. Do not change algorithms or run production MD.
-
-
-
-## Gate D — frozen final build
-
-**Passed for corrected source commit `6d5407a`; declared environment limits remain.** The required ten-module combined set passed **241**, skipped **1**, in 765.66 seconds. The skip is the OpenFF ligand-preservation test because `openff.toolkit` is unavailable; five Pillow warnings came from clip-test assertions. Repository CI Ruff `F,B` and diff checks pass. The corrected wheel is `fastmdxplora-2.5.9.dev218+g6d5407a86-py3-none-any.whl`, SHA-256 `4250c2d6fc42abcd4eb451eb033b5912e99fb328f94daf05223bd6ebc9c30a74`. It was installed outside the checkout in a separate environment reusing repository dependencies. This is a development artifact, not a published release or clean-machine dependency-install claim. Documentation-only revisions do not invalidate behavior checks.
-
-The combined suite must include the dashboard-boundary, Agent-reasoning, provider-connections, research-bundle, clip-export, preparation-audit, preparation-recording, draft-review and analysis-number tests, plus repository-required release checks. Do not repeat the 300-state matrix or live OpenAI probe unless a relevant change or failure invalidates them.
-
-
-
-## Gate E — evidence and branch handoff
-
-**Complete for this branch handoff.** The source revisions and closeout receipts were pushed only to `princeote/context-aware-agent`; local and remote heads matched when verified. Upstream main was not integrated, and no pull request was created. The README points to the feature-status page; packaged Agent knowledge already contains the scientific and human-control limits. Claude, Kimi Code and Gemini live accounts remain UNVERIFIED_EXTERNAL_DEPENDENCY: retain their adapters and local/synthetic tests, do not request purchases or repeat absent-account probes, and do not claim unqualified all-provider completion.
-
-
-## Remaining acceptance reconciliation
-
-Retain the full original M0–M8 contract. Before closing M7, directly reconcile the exact-wheel graph/residue explanation flow, bookmark restart/restore UI beyond the newly verified HTTP process-restart receipt, stale/missing-source refusal, browser draft-review/study invalidation, stale-response isolation and Agent disabling. Earlier-build or source regression evidence must be labelled by scope. Installed HTTP draft review now verifies the pH before/after difference and rejection for changed draft/baseline, missing confirmation and changed purpose; 315 non-output study hashes remained unchanged. No setting was applied. Expanded/loading/error visual states still need requirement-by-requirement evidence matching.
-
-## Closeout rule
-
-Each continuation must complete an item, fix a reproduced defect, produce evidence that changes the next action, or wait on a specifically verified live handle. Do not spend turns restating status or writing another unexecuted plan. Report deltas by requirement, evidence and next action. The Agent explains and proposes human-reviewed drafts only; it never runs simulations or applies scientific settings autonomously. Preserve physics and chemistry.
+Close functional handoff only after each functional requirement has evidence or an explicitly documented genuine limitation. Deferred M8 must be reported, not treated as unfinished functional work. Each continuation completes a functional check, fixes a reproduced functional defect or advances final verification. Reuse environments, fixtures, study copies and valid evidence; repeat checks only after relevant changes/failures. No new plan or goal prompt.
