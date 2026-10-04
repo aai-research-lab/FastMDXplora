@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A free-energy landscape on PC 1 and PC 2
+
+**`dimred` with PCA now writes the free-energy landscape over the first two principal components, as data and a figure.** G = -kT ln P, with P the histogram over `landscape_bins` bins each way (40 by default) normalised over the bin area, bins no frame visited left empty rather than infinite, and the lowest bin set to zero. It is in kJ/mol at the production temperature the study recorded in `simulation/simulation_parameters.json`, read where the reweighting reads it; where none is recorded it is -ln P in units of kT, and the record and the colour bar say so rather than assume a temperature. On a biased run the record says it is the landscape of the biased ensemble. Written as `dimred_pca_landscape.npz` (free energy, bin edges in nm, density, counts, unit, temperature) and `dimred_pca_landscape.png`. Results do not change.
+
 ### Each cluster's representative, and the RMSD map
 
 **`cluster` now writes each cluster's medoid as a structure, a table of the clusters' shares, and the frame-to-frame RMSD it clustered on.** The RMSD matrix was computed and kept only for the dendrogram, and which structure a cluster is had to be found frame by frame. Now, for each method, `cluster_<method>_populations.csv` gives every cluster's frames, its fraction of the frames clustered, and its medoid (the member with the least summed RMSD to the others, in the distances the clustering used) with its frame and time; `cluster_<method>_medoid_<k>.pdb` is that frame without its water; and `cluster_rmsd_matrix.npz` holds the matrix in nm with each row's frame and time, plotted as `cluster_rmsd_matrix.png`, time against time. Frames DBSCAN calls noise are in no cluster. Results do not change.

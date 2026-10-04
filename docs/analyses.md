@@ -98,6 +98,16 @@ frame-to-frame RMSD it clustered on, with the frames' times, as
 `cluster_rmsd_matrix.npz` and as a map of time against time
 (`cluster_rmsd_matrix.png`).
 
+`dimred`, with PCA, writes the free-energy landscape on the first two
+components: G = -kT ln P, with P the histogram over `landscape_bins` bins
+each way normalised over the bin area, bins no frame visited left empty, and
+the lowest bin set to zero (`dimred_pca_landscape.npz` with the bin edges in
+nm, and `dimred_pca_landscape.png`). It is in kJ/mol at the production
+temperature the study recorded (`simulation/simulation_parameters.json`);
+where none is recorded, as for a trajectory brought from elsewhere, it is
+-ln P in units of kT and says so. On a biased run it is the landscape of the
+biased ensemble, and the record says that too.
+
 ### Folding
 
 | | |

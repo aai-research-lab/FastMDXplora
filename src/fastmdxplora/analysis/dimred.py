@@ -48,7 +48,7 @@ from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
-    close_figures_opened_since, figures_open, new_figure, save_figure)
+    close_figures_opened_since, figures_open, match_colorbar_font, new_figure, save_figure)
 from fastmdxplora.analysis.starting_frame import first_frame, start_as_given
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
@@ -77,6 +77,10 @@ class DimRed(Analysis):
         UMAP minimum distance between embedded points.
     random_state : int, default 42
         Random seed for stochastic methods (t-SNE, UMAP).
+    landscape_bins : int, default 40
+        Bins along each of PC 1 and PC 2 for the free-energy landscape
+        written beside the PCA projection. Fewer bins smooth it and more
+        resolve it, at the cost of more empty bins on a short run.
     start : float or "equilibrated", default 0
         Where in the trajectory the projection begins, in ns. At 0 every frame is
         projected, the equilibration from the starting structure included,
@@ -98,6 +102,10 @@ class DimRed(Analysis):
     Per method, in ``<output_dir>/dimred/``:
       - ``dimred_<method>.dat`` — CSV with frame + component columns.
       - ``dimred_<method>.png`` — 2-D scatter colored by frame index.
+    With PCA, also ``dimred_pca_landscape.npz`` and
+    ``dimred_pca_landscape.png``: the free energy -kT ln P over PC 1 and
+    PC 2 (see :func:`free_energy_landscape`), in kJ/mol at the study's
+    temperature where one is recorded and in units of kT where none is.
     """
 
     name = "dimred"
@@ -118,6 +126,7 @@ class DimRed(Analysis):
         n_neighbors: int = 15,
         min_dist: float = 0.1,
         random_state: int = 42,
+        landscape_bins: int = 40,
         start: float | str = 0.0,
         **kwargs: Any,
     ) -> None:
@@ -135,6 +144,11 @@ class DimRed(Analysis):
         self.n_neighbors: int = int(n_neighbors)
         self.min_dist: float = float(min_dist)
         self.random_state: int = int(random_state)
+        self.landscape_bins: int = int(landscape_bins)
+        if self.landscape_bins < 2:
+            raise StudyError(
+                f"`landscape_bins` must be at least 2 along each component; got "
+                f"{landscape_bins!r}.", code="analysis.option.out_of_range")
         self.options.update(
             methods=self.methods,
             n_components=self.n_components,
@@ -142,6 +156,7 @@ class DimRed(Analysis):
             n_neighbors=self.n_neighbors,
             min_dist=self.min_dist,
             random_state=self.random_state,
+            landscape_bins=self.landscape_bins,
         )
         self.start: float | str | None = start_as_given(start)
         if self.start is not None:
@@ -305,6 +320,10 @@ class DimRed(Analysis):
                 modes_path = self.output_dir / "dimred_pca_modes.npz"
                 np.savez(modes_path, **self._modes)
                 artifacts.append(modes_path)
+            if "pca" in self.result and self.result["pca"].shape[1] >= 2:
+                artifacts.extend(self._write_landscape(self.result["pca"]))
+                # Once more, so the landscape's record is kept with the rest.
+                self._write_options_manifest()
             finished = datetime.now(timezone.utc).isoformat()
             primary = self.methods[0]
             return AnalysisResult(
@@ -333,6 +352,62 @@ class DimRed(Analysis):
                 finished_at=finished,
             )
 
+    def _write_landscape(self, embedding: np.ndarray) -> list[Path]:
+        """The free-energy landscape on PC 1 and PC 2, as data and a figure.
+
+        ``dimred_pca_landscape.npz`` holds ``free_energy`` (bins along PC 1
+        by bins along PC 2, NaN where no frame fell), ``edges_pc1`` and
+        ``edges_pc2`` (nm), ``density`` (nm^-2), ``counts``, ``unit``
+        (``"kJ/mol"`` or ``"kT"``) and ``temperature_K`` (NaN where none
+        was found).
+        """
+        temperature, source = _study_temperature(self.output_dir)
+        landscape = free_energy_landscape(
+            embedding[:, 0], embedding[:, 1], bins=self.landscape_bins,
+            temperature_K=temperature)
+        n_empty = int(np.isnan(landscape["free_energy"]).sum())
+        record: dict[str, Any] = {
+            "unit": landscape["unit"],
+            "temperature_K": temperature,
+            "bins": self.landscape_bins,
+            "empty_bins": n_empty,
+            "frames": int(embedding.shape[0]),
+        }
+        if temperature is None:
+            record["said"] = (
+                "No study temperature was found beside these frames "
+                "(simulation/simulation_parameters.json), so the landscape is "
+                "-ln P in units of kT, with no value in kJ/mol given.")
+        else:
+            record["temperature_from"] = source
+            record["said"] = (
+                f"-kT ln P at the study's {temperature:g} K, in kJ/mol, its "
+                "lowest bin set to zero.")
+        biased = _biasing_method(self.output_dir)
+        if biased:
+            record["biased_by"] = biased
+            record["said"] += (
+                f" The run was biased by {biased}, so this is the landscape of "
+                "the biased ensemble, not of the unbiased system.")
+        self.findings["landscape"] = record
+
+        data_path = self.output_dir / "dimred_pca_landscape.npz"
+        np.savez(
+            data_path,
+            free_energy=landscape["free_energy"],
+            edges_pc1=landscape["edges_x"], edges_pc2=landscape["edges_y"],
+            density=landscape["density"], counts=landscape["counts"],
+            unit=np.array(landscape["unit"]),
+            temperature_K=np.float64(np.nan if temperature is None else temperature))
+        figure_path = self.output_dir / "dimred_pca_landscape.png"
+        fig, ax = new_figure(title="Free-energy landscape (PCA)", figsize=self._user_figsize)
+        _plot_landscape(ax, landscape, self._explained_variance)
+        save_figure(fig, figure_path)
+        written = [data_path, figure_path]
+        if figure_path.with_suffix(".svg").is_file():
+            written.append(figure_path.with_suffix(".svg"))
+        return written
+
     # Required by the ABC; used only when a caller draws onto their own axes.
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:
         primary = next(iter(result))
@@ -344,6 +419,77 @@ class DimRed(Analysis):
     _explained_variance: np.ndarray | None = None
     _modes: dict[str, np.ndarray] | None = None
     _first_frame: int = 0
+
+
+def free_energy_landscape(x: np.ndarray, y: np.ndarray, *, bins: int = 40,
+                          temperature_K: float | None = None) -> dict[str, Any]:
+    """The free energy over two coordinates, from how often each bin is visited.
+
+    G(x, y) = -kT ln P(x, y), with P the histogram normalised over the bin
+    area (so the sum of P times the area of each bin is one) and k
+    Boltzmann's constant in kJ/mol/K. Bins no frame visited have no free
+    energy and are NaN rather than infinite. The lowest bin is set to zero:
+    only differences are defined. Without a temperature the result is
+    G/kT = -ln P, in units of kT, and ``unit`` says so.
+    """
+    from fastmdxplora.analysis.reweight import KB_KJ_PER_MOL_K
+
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    counts, edges_x, edges_y = np.histogram2d(x, y, bins=int(bins))
+    area = np.outer(np.diff(edges_x), np.diff(edges_y))
+    density = counts / (counts.sum() * area)
+    with np.errstate(divide="ignore"):
+        reduced = np.where(counts > 0, -np.log(np.where(density > 0, density, 1.0)), np.nan)
+    reduced -= np.nanmin(reduced)
+    if temperature_K is None:
+        energy, unit = reduced, "kT"
+    else:
+        energy, unit = KB_KJ_PER_MOL_K * float(temperature_K) * reduced, "kJ/mol"
+    return {"free_energy": energy, "edges_x": edges_x, "edges_y": edges_y,
+            "density": density, "counts": counts.astype(np.int64), "unit": unit}
+
+
+def _study_temperature(output_dir: Path) -> tuple[float | None, str | None]:
+    """The production temperature the study recorded, and where, or None.
+
+    Read from ``simulation/simulation_parameters.json`` beside the analysis
+    folder, where the reweighting reads it. A trajectory carries no
+    temperature of its own.
+    """
+    from fastmdxplora.analysis.reweighted_averages import _find, _temperature
+
+    temperature, found = _temperature(Path(output_dir))
+    if not found:
+        return None, None
+    path = _find(Path(output_dir), "simulation_parameters.json")
+    return float(temperature), (str(path) if path is not None else None)
+
+
+def _biasing_method(output_dir: Path) -> str | None:
+    from fastmdxplora.analysis.reweighted_averages import biasing_method
+
+    try:
+        return biasing_method(Path(output_dir))
+    except Exception:  # noqa: BLE001 - a note, not a result
+        return None
+
+
+def _plot_landscape(ax: plt.Axes, landscape: dict[str, Any],
+                    explained_variance: np.ndarray | None) -> None:
+    """The landscape as a map over PC 1 and PC 2, empty bins left blank."""
+    energy = np.ma.masked_invalid(landscape["free_energy"])
+    mesh = ax.pcolormesh(landscape["edges_x"], landscape["edges_y"], energy.T,
+                         cmap="viridis", shading="flat")
+    bar = ax.figure.colorbar(mesh, ax=ax, shrink=0.85)
+    bar.set_label(f"Free energy ({landscape['unit']})")
+    match_colorbar_font(bar, ax)
+    if explained_variance is not None and len(explained_variance) >= 2:
+        ax.set_xlabel(f"PC 1 ({explained_variance[0] * 100:.1f}%), nm")
+        ax.set_ylabel(f"PC 2 ({explained_variance[1] * 100:.1f}%), nm")
+    else:
+        ax.set_xlabel("PC 1 (nm)")
+        ax.set_ylabel("PC 2 (nm)")
 
 
 def _tsne_perplexity(asked: float, n_frames: int) -> float:
