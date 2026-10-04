@@ -632,6 +632,50 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
 
 
 
+def _scene_said(view: dict[str, Any], frame: Any) -> str:
+    """What a scene shows, from the view it keeps for FastMDXplora."""
+    said = [f"frame {frame}" if isinstance(frame, int) else "the structure"]
+    if view.get("representation"):
+        said.append(str(view["representation"]).replace("ballAndStick", "ball and stick"))
+    colour = str(view.get("colour") or "")
+    if colour.startswith("result:"):
+        said.append(f"coloured by {colour.removeprefix('result:')}")
+    elif colour:
+        said.append(f"coloured by {colour.replace('_', ' ')}")
+    if view.get("superposed") in ("backbone", "pocket"):
+        said.append(f"superposed on the {view['superposed']}")
+    return ", ".join(_md_text(s, limit=100) for s in said)
+
+
+def _scenes_section(project_root: Path, report_dir: Path | None = None) -> str:
+    """The scenes written with the study, each linked: a view kept as a
+    MolViewSpec file, which opens as it was shown in any viewer built on
+    Mol\*. Linked rather than embedded, so the report stays a document and
+    the scene a file that can be opened anywhere."""
+    from fastmdxplora.scenes import SCENES_DIR, read_scene, scenes_of
+
+    report_dir = report_dir or project_root / "report"
+    found = sorted(scene["name"] for scene in scenes_of(project_root)["scenes"])
+    if not found:
+        return ""
+    lines = ["## Scenes", "",
+             "Views of this study kept as MolViewSpec scene files (`.mvsx`). Each opens "
+             "as it was shown in any viewer built on Mol\*: drop the file on "
+             "[molstar.org/viewer](https://molstar.org/viewer/), or open it in the "
+             "FastMDXplora GUI (Viewer, Saved views, Scenes).", ""]
+    for name in found:
+        try:
+            state = json.loads(read_scene(project_root, name) or b"{}")
+        except ValueError:
+            state = {}
+        ours = ((state.get("root") or {}).get("custom") or {}).get("fastmdxplora") or {}
+        view = ours.get("view") if isinstance(ours.get("view"), dict) else {}
+        frame = ours.get("frame") if ours.get("of") == "frames" else None
+        link = _link_from(report_dir, project_root / SCENES_DIR / f"{name}.mvsx")
+        lines.append(f"- [{_md_text(name, limit=60)}]({link}): {_scene_said(view, frame)}.")
+    return "\n".join(lines)
+
+
 def _last_numeric_column(path: Path) -> list[float]:
     """The numbers in a data file, whatever shape the analysis wrote.
 
@@ -1093,6 +1137,9 @@ def build_document(
         sections.append(_methods_section(project_root, phase_context, orchestrator))
 
     sections.append(_results_section(project_root, output_dir))
+    scenes = _scenes_section(project_root, output_dir)
+    if scenes:
+        sections.append(scenes)
     convergence = _convergence_section(project_root)
     if convergence:
         sections.append(convergence)

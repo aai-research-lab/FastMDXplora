@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The report lists the scenes
+
+**`report.md` lists the scenes written with the study under Scenes**, after
+the results, each linked from the report and said in a line: its frame,
+representation, colouring and superposition. A scene opens as it was shown
+in any viewer built on Mol\*, dropped on molstar.org or opened in the GUI;
+the report links it rather than embedding a viewer.
+
 ### Movies tested on every job
 
 The encoding of a movie is tested against a stand-in ffmpeg on every job:

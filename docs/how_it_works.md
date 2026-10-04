@@ -219,6 +219,11 @@ WeasyPrint; where it or the slide deck cannot be written, the run records which
 and why in `not_produced.json` (code `report.format.unavailable`) and writes the
 rest.
 
+Scenes written with the study (`scenes/*.mvsx`, from the GUI, `fastmdx
+scene` or an AI app) are listed in `report.md` under Scenes, each linked and
+said in a line; a scene opens as it was shown in any viewer built on Mol\*,
+dropped on molstar.org or opened in the GUI.
+
 `dashboard.html` is a self-contained file that opens in a browser with no
 server. It is not the [FastMDXplora GUI](gui.md), which is a live interface
 served by `fastmdx gui`.
