@@ -56,6 +56,10 @@ The corrected wheel completed a 300-state control-geometry matrix: ten routes, G
 
 The required ten-module combined suite completed on the corrected source at `6d5407a` (subsequent commits are documentation only): 241 passed, 1 skipped, 5 warnings in 765.66 seconds. The skip is unavailable OpenFF toolkit; warnings are Pillow deprecations in clip assertions. JUnit receipt: temporary `FastMDXplora-agent-docking-final/combined-suite.xml`. Repository CI Ruff F/B and diff checks pass. The 30 installed route/theme screenshots were reviewed as contact sheets for page structure, with three representative originals inspected directly; this does not prove fine-text contrast in every pixel or native popup rendering. The direct OpenAI diagnostic completed but its harness incorrectly required `ok=true`; explanation replies deliberately return `ok=false` and an answer, whereas `ok=true` denotes accepted configuration. That failed assertion is not provider/auth failure evidence. A corrected bounded probe is in progress.
 
+### Corrected-wheel OpenAI and persistence acceptance — 2026-10-03
+
+A fresh direct NDJSON request through the installed `6d5407a` dashboard returned an explanation in 11.19 seconds with no error, action or configuration. Its answer distinguished saved preparation operations from inventory evidence and chemical-cause claims. Explanation replies deliberately use `ok=false`; an earlier harness incorrectly interpreted that as failure. The browser subscription status separately confirmed `selection=subscription`, provider `openai-chatgpt`, and GPT-6 Luna/max persisted after reload. The real context inspector confirmed selected-view evidence exclusion when Use current view was off. One earlier browser probe was interrupted after a prolonged harness wait and remains inconclusive; these bounded HTTP/UI checks supply independent completed evidence without claiming that interrupted probe passed. No credentials or account labels were recorded, and no scientific settings were applied.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
