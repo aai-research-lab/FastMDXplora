@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Ligand RMSF across a periodic face
+
+**`ligand_rmsf` now follows the ligand across periodic faces before taking each atom's fluctuation, the same way `ligand_rmsd` does.** It read the fitted coordinates as stored, so an atom written on the far side of the box in some frames fluctuated by a box length: a bound ligand on a face of a 5 nm box, stored on the far side in 31 of 200 frames, read an RMSF of 1.80 nm against a true 0.035 nm. Both analyses now take the ligand from one shared function, so they read the same ligand. Results change: ligand RMSF where an atom of the ligand crossed a face of the box as stored.
+
 ### A ligand far from the first alpha carbon
 
 **`ligand_rmsd` now follows the ligand across periodic faces from the alignment atom nearest it in the first frame.** It started from the first alignment atom, the N-terminal alpha carbon, and the first frame's minimum image is the true separation only under half the box: on an elongated receptor with that atom 4.4 nm from the ligand in a 6.8 nm box, the first frame took the wrong copy and a rigid complex tumbling in its box read a ligand RMSD of up to 13.3 nm, in a cube and in a rhombic dodecahedron alike, and also after the loader's imaging. From the nearest atom the same complex reads under 0.001 nm. Results change: ligand RMSD of complexes whose first alignment atom is more than about half a box from the ligand.

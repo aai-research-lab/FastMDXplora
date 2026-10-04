@@ -234,3 +234,35 @@ def test_a_rigid_complex_far_from_its_first_alpha_carbon_has_a_still_ligand(cell
     result = LigandRMSD(ligand_resname="LIG", align_selection="name CA").compute(traj)
 
     assert result.max() < 1e-3
+
+
+def test_a_bound_ligand_on_a_face_has_its_own_fluctuation():
+    """The ligand RMSF reads the same ligand the RMSD does.
+
+    A bound ligand atom on the +x face of a 5 nm box, stored on the far side
+    in some frames as an engine writes it. Fitted coordinates alone carry
+    the stored copy, and this read 1.80 nm against a true 0.035 nm.
+    """
+    from fastmdxplora.analysis.ligand_rmsf import LigandRMSF
+
+    box = 5.0
+    rng = np.random.default_rng(0)
+    top = md.Topology()
+    chain = top.add_chain()
+    protein = top.add_residue("ALA", chain)
+    for _ in range(12):
+        top.add_atom("CA", md.element.carbon, protein)
+    top.add_atom("C1", md.element.carbon, top.add_residue("LIG", chain))
+    alphas = rng.normal(0, 0.4, (12, 3)) + [4.6, 2.5, 2.5]
+    truth = np.array([4.98, 2.5, 2.5]) + rng.normal(0, 0.02, (200, 3))
+    stored = truth.copy()
+    stored[:, 0] %= box
+    assert (stored[:, 0] < 1.0).sum() > 10, "the fixture must cross the face"
+    xyz = np.concatenate([np.tile(alphas, (200, 1, 1)), stored[:, None, :]], axis=1)
+    traj = md.Trajectory(xyz.astype(np.float32), top)
+    traj.unitcell_vectors = np.tile(np.eye(3) * box, (200, 1, 1)).astype(np.float32)
+
+    result = LigandRMSF(ligand_resname="LIG", align_selection="name CA").compute(traj)
+
+    true_rmsf = np.sqrt(((truth - truth.mean(axis=0)) ** 2).sum(axis=1).mean())
+    assert result[0, 1] == pytest.approx(true_rmsf, abs=1e-4)

@@ -124,7 +124,7 @@ of the method rather than a threshold to tune.
 | | |
 |---|---|
 | `ligand_rmsd` | How far the ligand has moved, after aligning on the protein. Where it leaves the site it started in (no heavy atom within 0.6 nm of it), that is said, the frames are shaded, its distance to the site is written to `ligand_site_distance.dat`, and no mean is given |
-| `ligand_rmsf` | Which parts of the ligand move |
+| `ligand_rmsf` | Which parts of the ligand move, after aligning on the protein, with the ligand followed across periodic faces as `ligand_rmsd` follows it |
 
 ### Protein and ligand together
 
