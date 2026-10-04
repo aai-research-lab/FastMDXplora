@@ -103,9 +103,22 @@ def test_wrong_upload_identity_cannot_cancel_another_export(runtime):
 @pytest.mark.parametrize("options", [{"frames": [1, 0]}, {"frames": [0, 500]}, {"fps": True},
                                      {"labels": {"execute": True}}, {"rotation": float("nan")},
                                      {"dimensions": [1920, 1080]}, {"dimensions": [True, 480]},
-                                     {"captions": {"caption": "x" * 241}}, {"captions": {"caption": "two\nlines"}}])
+                                     {"captions": {"caption": "x" * 241}}, {"captions": {"caption": "two\nlines"}},
+                                     {"camera_tracking": "translate-atoms"}, {"camera_reference_frame": True},
+                                     {"camera_reference_frame": 500}])
 def test_invalid_export_options_are_refused(runtime, options):
     assert not start(runtime, **options)["ok"]
+
+
+@pytest.mark.parametrize("camera", [None, [0] * 7, [False] * 8, [float("nan")] * 8])
+def test_following_camera_requires_a_valid_rendered_view(runtime, camera):
+    opened = start(runtime, camera_tracking="protein-centroid")
+    assert opened["ok"]
+    result = clip_endpoint(runtime, {"action": "frame", "study": str(runtime.active_root),
+                                    "id": opened["id"], "index": 0, "png": png("red"), "camera": camera})
+    assert not result["ok"] and "camera" in result["error"]
+    assert runtime._clip_upload is None
+    assert not (runtime.active_root / "exports").exists()
 
 
 @pytest.mark.parametrize("format", ["gif", "both"])
@@ -142,17 +155,13 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page,
     assert response.ok
     saved_gif = root / link.split("?", 1)[0].removeprefix("/artifacts/")
     assert response.body() == saved_gif.read_bytes()
-    with Image.open(io.BytesIO(response.body())) as image:
-        assert image.n_frames == 3
-        assert image.size == (640, 480)
-        scene = image.convert("RGB").crop((0, 0, 640, 300))
-        colored = sum(1 for red, green, blue in scene.getdata()
-                      if max(red, green, blue) - min(red, green, blue) > 30)
-        assert colored > 20, "Export must contain the colored molecular scene above captions"
+    assert_visible_gif(response.body(), 3)
     metadata_link = page.locator("#clip-metadata").get_attribute("href")
     metadata = page.request.get(page.url.split("/#")[0] + metadata_link).json()
     assert metadata["dimensions"] == metadata["render_size"] == [640, 480]
     assert metadata["captions"] == {"study": "Test study", "caption": "Saved molecular frames"}
+    assert metadata["camera_path"]["tracking"] == "protein-centroid"
+    assert len(metadata["camera_path"]["rendered_views"]) == 3
     if format == "both":
         mp4_link = page.locator("#clip-download-mp4").get_attribute("href")
         assert page.locator("#clip-download-mp4").is_visible()
@@ -175,6 +184,115 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page,
     assert not page.evaluate("document.querySelector('.viewer-layout').inert")
     assert not page.errors
     assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources} == original
+
+
+def assert_visible_gif(content, count):
+    import numpy as np
+
+    with Image.open(io.BytesIO(content)) as image:
+        assert image.n_frames == count
+        assert image.size == (640, 480)
+        for frame in range(count):
+            image.seek(frame)
+            scene = image.convert("RGB").crop((0, 0, 640, 300))
+            pixels = np.asarray(scene).astype(int)
+            colored = (pixels.max(axis=2) - pixels.min(axis=2) > 30).sum()
+            assert colored > 100, f"GIF frame {frame} must contain molecular geometry above captions"
+
+
+@pytest.mark.parametrize("format", ["gif", "both"])
+def test_clip_keeps_displaced_intermediate_frames_visible_without_changing_atoms(tmp_path, format):
+    """First/last previews must not hide an empty middle of a recorded clip."""
+    if format == "both" and not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    md = pytest.importorskip("mdtraj")
+    import numpy as np
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_the_drawing_scripts_run_in_a_browser import _open
+
+    root = _write_study(tmp_path / "origin-jumps")
+    trajectory_path = root / "simulation/production.dcd"
+    trajectory = md.load(str(trajectory_path), top=str(root / "simulation/trajectory_topology.pdb"))
+    trajectory.xyz[3:16] += [20.0, -25.0, 30.0]  # Fixture-only recorded origin jumps, in nm.
+    trajectory.save_dcd(str(trajectory_path))
+    sources = [path for folder in ("setup", "simulation")
+               for path in (root / folder).rglob("*") if path.is_file()]
+    before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        for page in _open(session, "#viewer"):
+            page.wait_for_function("window.FastMDXMoleculeViewer?.STATE.model", timeout=60000)
+            page.locator("#viewer-rep").select_option("ballAndStick")
+            page.get_by_role("button", name="Next frame", exact=True).click()
+            page.wait_for_function("document.querySelector('#traj-slider').value === '1'")
+            page.evaluate("""() => FastMDXMoleculeViewer.select(
+                FastMDXMoleculeViewer.STATE.model.selectedAtoms({atom: 'CA', resi: 2})[0])""")
+            original = page.evaluate("FastMDXResearch.capture()")
+            page.locator("#clip-export-open").click()
+            page.wait_for_function("document.querySelector('#clip-status').textContent.includes('saved browser frames available')")
+            page.locator("#clip-last").fill("18")
+            page.locator("#clip-stride").fill("3")
+            page.locator("#clip-resolution").select_option("640x480")
+            page.locator("#clip-format").select_option(format)
+            page.locator("#clip-rotation").fill("60")
+            page.locator("#clip-residues").check()
+            page.locator("#clip-atoms").check()
+            page.locator("#clip-export-start").click()
+            page.wait_for_function("document.querySelector('#clip-status').textContent.includes('metadata saved')", timeout=60000)
+            link = page.locator("#clip-download").get_attribute("href")
+            gif_response = page.request.get(session.url + link)
+            assert gif_response.ok
+            assert_visible_gif(gif_response.body(), 7)
+            metadata = page.request.get(session.url + page.locator("#clip-metadata").get_attribute("href")).json()
+            path = metadata["camera_path"]
+            assert path["tracking"] == "protein-centroid" and path["reference_frame"] == 1
+            assert metadata["frames"] == metadata["source_frames"] == list(range(0, 19, 3))
+            assert path["base_view"] == pytest.approx(original["camera"])
+            assert len(path["rendered_views"]) == 7
+            # Camera translation follows the recorded origin; zoom remains exactly the user's.
+            assert abs(path["rendered_views"][1][0] - path["rendered_views"][0][0]) > 190
+            assert all(view[3] == pytest.approx(original["camera"][3]) for view in path["rendered_views"])
+            if format == "both":
+                mp4_response = page.request.get(session.url + page.locator("#clip-download-mp4").get_attribute("href"))
+                assert mp4_response.ok
+                video = tmp_path / "displaced-trajectory.mp4"
+                video.write_bytes(mp4_response.body())
+                decoded_folder = tmp_path / "decoded"
+                decoded_folder.mkdir()
+                decoded = subprocess.run([shutil.which("ffmpeg"), "-nostdin", "-v", "error", "-i", str(video),
+                                          str(decoded_folder / "%03d.png")], capture_output=True, timeout=30)
+                assert decoded.returncode == 0, decoded.stderr.decode(errors="replace")
+                decoded_frames = sorted(decoded_folder.glob("*.png"))
+                assert len(decoded_frames) == 7
+                for frame, png_path in enumerate(decoded_frames):
+                    with Image.open(png_path) as image:
+                        assert image.size == (640, 480)
+                        pixels = np.asarray(image.convert("RGB").crop((0, 0, 640, 300))).astype(int)
+                        assert (pixels.max(axis=2) - pixels.min(axis=2) > 30).sum() > 100, f"MP4 frame {frame} is empty"
+            restored = page.evaluate("FastMDXResearch.capture()")
+            assert restored["camera"] == pytest.approx(original["camera"])
+            assert restored["frame"] == original["frame"] == 1
+            assert restored["selection"] == original["selection"]
+            assert not page.evaluate("document.querySelector('.viewer-layout').inert")
+            assert not page.errors
+            # Fixed-camera mode remains available; it must not translate saved atoms either.
+            fixed = page.evaluate("""async () => {
+              const viewer = FastMDXMoleculeViewer.STATE.viewer;
+              const clip = await FastMDXMoleculeViewer.clipSession({followMolecule: false});
+              try {
+                await clip.render(0, 0); const first = viewer.getView();
+                await clip.render(9, 0); const last = viewer.getView();
+                const atoms = FastMDXMoleculeViewer.STATE.model.selectedAtoms({resn: 'ALA'});
+                return {first, last, tracking: clip.cameraTracking, xyz: atoms.map(a => [a.x, a.y, a.z])};
+              } finally { await clip.restore(); }
+            }""")
+            assert fixed["tracking"] == "fixed" and fixed["first"] == pytest.approx(fixed["last"])
+            expected_xyz = trajectory.xyz[9, trajectory.topology.select("protein")] * 10
+            np.testing.assert_allclose(fixed["xyz"], expected_xyz, atol=0.0011, rtol=0)
+        assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources} == before
+    finally:
+        session.server.shutdown()
+        session.server.server_close()
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])

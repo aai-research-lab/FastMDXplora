@@ -21,7 +21,7 @@
     const captions={study:el("clip-study-title").value.trim(), caption:el("clip-caption").value.trim()};
     if (labels.study && !captions.study || labels.caption && !captions.caption) throw new Error("Enter text for the selected title/caption overlays.");
     const dimensions=el("clip-resolution").value.split("x").map(Number);
-    return {frames:Array.from({length}, (_, i) => first+i*stride), labels, captions, dimensions, fps, rotation, format:el("clip-format").value, scope:el("clip-label-scope").value};
+    return {frames:Array.from({length}, (_, i) => first+i*stride), labels, captions, dimensions, fps, rotation, followMolecule:el("clip-follow-molecule").checked, format:el("clip-format").value, scope:el("clip-label-scope").value};
   }
   function estimate(opts, info = playbackInfo) {
     const first=opts.frames[0], last=opts.frames[opts.frames.length-1];
@@ -78,18 +78,18 @@
     let session=null, upload=null, view=window.FastMDXResearch.capture();
     try {
       say("Loading saved trajectory frames…");
-      session=await window.FastMDXMoleculeViewer.clipSession({...labels, scope:opts.scope, dimensions:opts.dimensions});
+      session=await window.FastMDXMoleculeViewer.clipSession({...labels, scope:opts.scope, dimensions:opts.dimensions, followMolecule:opts.followMolecule});
       view.camera=session.camera;
       if (frames[frames.length-1] >= session.count) throw new Error("The last frame is outside this trajectory's browser frame range.");
       estimate(opts, session.payload);
-      upload=await post({action:"start", study:view.study, format:opts.format, frames, fps, rotation, labels, label_scope:opts.scope, dimensions:opts.dimensions, captions:opts.captions, signature:session.signature, view});
+      upload=await post({action:"start", study:view.study, format:opts.format, frames, fps, rotation, labels, label_scope:opts.scope, dimensions:opts.dimensions, captions:opts.captions, signature:session.signature, camera_tracking:session.cameraTracking, camera_reference_frame:session.cameraReferenceFrame, view});
       for (let i=0; i<frames.length; i++) {
         if (cancelled) throw new Error("Clip export cancelled.");
         say(`Rendering frame ${i+1} of ${frames.length}…`);
         const frame=frames[i], uri=await session.render(frame, rotation*i/(frames.length-1));
         const png=await imageFrame(uri, opts, session.payload.frame_indices[frame], session.payload.frame_times_ns?.[frame]);
         if (cancelled) throw new Error("Clip export cancelled.");
-        await post({action:"frame", study:view.study, id:upload.id, index:i, png:png});
+        await post({action:"frame", study:view.study, id:upload.id, index:i, png:png, camera:session.renderedCamera});
       }
       if (cancelled) throw new Error("Clip export cancelled.");
       say("Encoding and saving clip…");
@@ -118,7 +118,7 @@
     let session;
     try {
       say("Rendering the selected first and last frames…");
-      session=await window.FastMDXMoleculeViewer.clipSession({...opts.labels, scope:opts.scope, dimensions:opts.dimensions});
+      session=await window.FastMDXMoleculeViewer.clipSession({...opts.labels, scope:opts.scope, dimensions:opts.dimensions, followMolecule:opts.followMolecule});
       previewBytes=0;
       for(const [id,frame,angle] of [["clip-preview-first",opts.frames[0],0],["clip-preview-last",opts.frames[opts.frames.length-1],opts.rotation]]) {
         if(cancelled) throw new Error("Clip preview cancelled.");

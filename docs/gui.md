@@ -290,6 +290,21 @@ screen, and only one of them means something is wrong.
 
 ## Reading the results
 
+### Trajectory clip export
+
+**Export clip** in the molecular viewer renders selected saved frames as GIF,
+MP4, or both, with optional residue/atom labels, frame numbers, simulation time,
+titles and captions. MP4 requires ffmpeg. Preview the first and last frames
+before exporting; download the finished media and source/view metadata afterward.
+
+**Keep protein in view** is enabled initially. The camera follows the protein
+center when recorded frames move or change coordinate origin, retaining the
+chosen zoom, relative pan and viewing angle. Uncheck it for a fixed camera.
+Camera following and rotation affect only the display; saved atom coordinates
+are unchanged. The metadata records the camera mode, reference frame and actual
+camera view for every exported frame. Export restores the original viewer frame,
+camera, selection and playback controls, including after cancellation.
+
 ### Context-aware Agent and research bookmarks
 
 **Ask about this view** docks the existing Agent conversation beside the current

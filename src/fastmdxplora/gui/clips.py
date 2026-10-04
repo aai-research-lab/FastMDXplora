@@ -88,13 +88,21 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
                 scope = payload.get("label_scope", "selected")
                 if scope not in {"selected", "protein"}:
                     raise ValueError("Choose selected-residue or protein label scope.")
+                tracking = payload.get("camera_tracking", "fixed")
+                reference_frame = payload.get("camera_reference_frame", frames[0])
+                if tracking not in {"fixed", "protein-centroid"}:
+                    raise ValueError("Choose a fixed camera or protein camera following.")
+                if type(reference_frame) is not int or not 0 <= reference_frame < index["n_frames_browser"]:
+                    raise ValueError("The camera reference frame is outside the saved trajectory.")
                 session = {"id": uuid.uuid4().hex, "root": root, "temp": tempfile.TemporaryDirectory(prefix="fastmdx-clip-"),
                     "started": time.monotonic(), "format": fmt, "fps": fps, "frames": frames,
                     "view": view, "source": source, "rotation": rotation, "label_scope": scope, "count": 0, "bytes": 0,
                     "signature": index["source_signature"],
                     "source_frames": [index.get("frame_indices", [])[i] for i in frames],
                     "times_ns": [index.get("frame_times_ns", [])[i] if i < len(index.get("frame_times_ns", [])) else None for i in frames],
-                    "labels": labels, "dimensions": dimensions, "captions": captions}
+                    "labels": labels, "dimensions": dimensions, "captions": captions,
+                    "camera_tracking": tracking, "camera_reference_frame": reference_frame,
+                    "frame_cameras": []}
                 runtime._clip_upload = session
                 return {"ok": True, "id": session["id"]}
             if not session or payload.get("id") != session["id"] or session["root"] != root:
@@ -120,8 +128,12 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
                     raise ValueError("All frames must have the same dimensions.")
                 if session["dimensions"] and tuple(session["dimensions"]) != image.size:
                     raise ValueError("Rendered frame dimensions do not match the selected resolution.")
+                camera = clean_view({"camera": payload.get("camera")}).get("camera")
+                if (payload.get("camera") is not None or session["camera_tracking"] != "fixed") and camera is None:
+                    raise ValueError("Supply a finite eight-number camera view for this rendered frame.")
                 session["size"] = image.size
                 image.convert("RGB").save(folder / f"{session['count']:04d}.png")
+                session["frame_cameras"].append(camera)
                 session["count"] += 1
                 session["bytes"] += len(raw)
                 return {"ok": True, "count": session["count"]}
@@ -166,7 +178,10 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
             record["environment_overlay"] = "Solvent, ions and unit-cell overlays displayed by the browser may be static reference geometry. This clip does not represent their full trajectory dynamics."
             record["camera_path"] = {"axis": "y", "total_degrees": session["rotation"],
                                      "fractions": [i / (len(session["frames"]) - 1) for i in range(len(session["frames"]))],
-                                     "base_view": session["view"].get("camera")}
+                                     "base_view": session["view"].get("camera"),
+                                     "tracking": session["camera_tracking"],
+                                     "reference_frame": session["camera_reference_frame"],
+                                     "rendered_views": session["frame_cameras"]}
             record["notice"] = "Browser visualization of saved playback frames, which may be sampled and solvent-stripped. No coordinate interpolation. fps is presentation speed, not simulation time. Rendered images supplied by the local browser; metadata identifies its selected source."
             (destination / "view.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
             session["temp"].cleanup()

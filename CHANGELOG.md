@@ -7,6 +7,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+- Clip export can follow the protein center across saved frames, preventing empty
+  GIF/MP4 frames when the recorded coordinate origin changes. It preserves the
+  chosen zoom and viewing angle, offers a fixed-camera option, and records each
+  rendered camera view in the source metadata without changing coordinates.
+
 - Trajectory playback now attaches atom/residue click callbacks to each displayed frame, so direct selection and pinning work after stepping through the trajectory.
 
 - Restore documented dashboard Agent actions and modes; requested validated scientific settings load directly into the builder without an extra approval dialog. Saved conversations do not automatically overwrite its settings.

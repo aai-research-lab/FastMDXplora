@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from fastmdxplora.agent.knowledge import dashboard_knowledge, error_reference
-from fastmdxplora.gui.agent_panel import context_endpoint, propose_endpoint, run_endpoint
+from fastmdxplora.gui.agent_panel import context_endpoint, propose_endpoint
 from fastmdxplora.gui.research import context_for, residue_evidence
 from fastmdxplora.refusals import CODES
 

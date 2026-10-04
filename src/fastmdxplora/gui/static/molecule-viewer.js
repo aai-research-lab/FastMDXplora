@@ -2227,16 +2227,32 @@
       }
       STATE.clipExporting = true;
       const viewer = STATE.viewer, camera = captureView(viewer), labels = [];
+      const referenceFrame = Number(document.getElementById("traj-slider")?.value || 0);
+      const referenceCenter = proteinCenter(STATE.model);
+      const tracking = options.followMolecule !== false && referenceCenter ? "protein-centroid" : "fixed";
+      let renderedCamera = null;
       const check = () => { if (generation !== STATE.viewerGeneration || !STATE.clipExporting) throw new Error("The study changed during export."); };
       return {
         signature: STATE.playbackSignature, count: STATE.playbackFrames, payload: STATE.playbackPayload, camera: camera,
+        cameraTracking: tracking, cameraReferenceFrame: referenceFrame,
+        get renderedCamera() { return renderedCamera; },
         async render(frame, angle) {
           check(); labels.splice(0).forEach((label) => viewer.removeLabel(label));
           await setPlaybackFrame(frame); check();
           if (options.dimensions) {
             viewer.setWidth(options.dimensions[0]); viewer.setHeight(options.dimensions[1]);
           }
-          viewer.setView(camera); if (angle) viewer.rotate(angle, "y");
+          const frameCamera = camera.slice();
+          if (tracking === "protein-centroid") {
+            const center = proteinCenter(STATE.model);
+            if (!center?.every(Number.isFinite)) throw new Error("The saved frame has no finite protein center for camera following.");
+            // Saved frames can cross a periodic boundary or use different
+            // origins. Move only the camera to retain protein-relative pan,
+            // zoom and orientation; leave every saved atom exactly as recorded.
+            for (let axis = 0; axis < 3; axis++) frameCamera[axis] += referenceCenter[axis] - center[axis];
+          }
+          viewer.setView(frameCamera); if (angle) viewer.rotate(angle, "y");
+          renderedCamera = captureView(viewer);
           if (options.residues || options.atoms) {
             let selection = {resn: AMINO_ACIDS};
             if (options.scope === "selected") {

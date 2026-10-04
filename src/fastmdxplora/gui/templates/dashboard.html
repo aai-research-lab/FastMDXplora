@@ -1314,7 +1314,9 @@
     <h3 id="clip-camera-heading">Camera</h3>
     <div class="control-row">
       <label>Camera rotation (degrees)<input id="clip-rotation" type="number" min="-360" max="360" value="0"></label>
+      <label><input id="clip-follow-molecule" type="checkbox" checked> Keep protein in view (camera follows its center)</label>
     </div>
+    <p class="muted small">Camera following preserves your zoom, pan relative to the protein, and viewing angle when saved frames change position. Uncheck it for a fixed camera. Saved coordinates remain unchanged.</p>
     </section>
     <section class="clip-section" aria-labelledby="clip-labels-heading">
     <h3 id="clip-labels-heading">Labels</h3>

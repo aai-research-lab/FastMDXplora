@@ -1,5 +1,39 @@
 # Dashboard feature changes and milestone status
 
+### Clip origin changes and camera following - 2026-10-04
+
+The reported 1L2Y export contained molecular geometry near the beginning but
+mostly labels/background later. Recorded playback frames change coordinate
+origin; a fixed camera continued looking at the original location. Clip preview
+and export now offer **Keep protein in view**, initially enabled. It follows the
+protein centroid using camera translation only, retaining the chosen relative
+pan, zoom and rotation. A fixed-camera option remains available. Source metadata
+records the mode, reference frame and actual camera view for every rendered frame.
+
+A new regression fails with the preceding viewer script on a displaced middle
+frame, then passes with the correction for GIF and MP4. It checks every decoded
+frame, saved atom positions, original-camera/frame/selection restoration and
+unchanged source hashes. The focused clip/playback/physical-time/integrated
+research run passed **38 checks**, with six deferred appearance checks excluded.
+Eight targeted Agent knowledge/action/evidence checks also passed. Ruff F/B and
+JavaScript syntax checks passed. An overly broad Agent/UI invocation included
+deferred layout checks and was interrupted after a failure; it is not a passing
+acceptance gate. No aesthetic correction was made for that invocation.
+
+The real completed 1L2Y study exported 100 saved browser frames (0–198, stride 2),
+1280 × 960, 1 fps, 15-degree camera rotation and selected residue/atom overlays.
+All 100 GIF and decoded MP4 frames contain molecular geometry, excluding the
+orange label remnants that remained in the broken export. Both play for 100
+seconds. Downloaded bytes match the study's saved media/metadata; source frame
+indices and physical times match the original export. The viewer restores with
+no page errors. All **308 checked scientific input/result files** remain
+byte-identical. This check does not run a simulation or change preparation,
+coordinates, algorithms, seeds, units, analysis definitions or tolerances.
+
+Pull request #51 was closed at the user's request. The correction remains on
+`context-aware-agent`, tracking `princeote/context-aware-agent`; no upstream
+integration or replacement pull request is part of this fix.
+
 
 ### Live Agent workflow test and playback selection fix - 2026-10-04
 
