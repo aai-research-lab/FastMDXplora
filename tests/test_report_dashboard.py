@@ -83,8 +83,10 @@ def test_static_dashboard_discovers_sections_links_and_dark_assets(tmp_path: Pat
         "../analysis/cluster/cluster_kmeans_counts.png",
     ):
         assert link in html
-    # Every panel shows the analysis figure, tagged with its section.
-    assert '<span class="tag">' in html
+    # Every panel shows the analysis figure as the GUI's Analysis page does,
+    # in its card, named by its section.
+    assert '<article class="analysis-card"' in html
+    assert '<div class="ac-status">Clustering</div>' in html
     assert "Analysis/report workflow from existing trajectory." in html
 
 

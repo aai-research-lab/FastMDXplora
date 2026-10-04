@@ -1301,7 +1301,6 @@ def test_live_gui_and_static_report_share_one_theme(tmp_path: Path) -> None:
         phase_notice="",
         cards=[],
         sections=[],
-        links=[],
         phase_rows=[],
         metrics=[],
         output_folder=str(tmp_path),

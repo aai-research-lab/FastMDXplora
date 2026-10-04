@@ -7,6 +7,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The standalone dashboard is laid out as the GUI is
+
+**`report/dashboard.html` reads like the GUI**: the same sidebar (the study,
+its Progress, the settings menu with the three schemes) and the Overview,
+Analysis, Report and Files pages, written in the GUI's markup and styled by
+the GUI's own stylesheet, inlined, so the two cannot drift apart. Each series
+is plotted from its numbers by the GUI's chart script, its figure one click
+away; the report is shown as the Report page shows it, with what the report
+phase could not produce; every file is listed as the Files page lists it.
+The page had a layout of its own, with figure cards to resize. The Viewer,
+the Agent and the Config builder need the server and stay in `fastmdx gui`.
+
+**Fixed:** the phase in progress was always taken to be the simulation, so a
+run analysing or writing its report read "Simulation: report" with the
+analysis not yet done, on the GUI's Overview and on the page; and the page
+read its phases without the live record, so a first run's page said every
+phase was "Not run".
 ### A bilayer is packed from the setup seed, and packed again if it fails
 
 **A membrane study prepared twice with one `setup.random_seed` is the same

@@ -313,64 +313,43 @@ class TestDashboard:
         assert rmsd_png.read_bytes() == original_rmsd
         assert rg_png.read_bytes() == original_rg
 
-        assert '<aside class="sidebar">' in text
-        assert "Run Progress" in text
-        assert "Live Simulation" in text
+        # Laid out as the GUI is: its sidebar, its pages, its own stylesheet.
+        import fastmdxplora.gui as gui_pkg
+
+        sheet = (Path(gui_pkg.__file__).with_name("static") / "dashboard.css").read_text(
+            encoding="utf-8")
+        assert sheet in text
+        assert '<aside class="sidebar"' in text
+        assert 'class="sidebar-stages"' in text
+        for page in ("overview", "analysis", "report", "files", "cite"):
+            assert f'data-page="{page}"' in text
+        assert "Study Overview" in text
+        # No simulation ran in this workflow and none left a live record,
+        # so the health card, which is about a simulation, is not shown,
+        # as the GUI does not show it.
+        assert 'id="live-simulation"' not in text
         # The message used to advise starting the dashboard during a
         # simulation, which is what somebody reading it has just done, and
         # then said telemetry was off by default. It says what the live page
         # says: on by default, and the setting that turned it off.
-        assert "Live telemetry is on by default" in text
-        assert "<code>live_telemetry: false</code>" in text
-        assert "off by default" not in text and "--live-telemetry" not in text
-        assert "Top Metrics" in text
-        assert "Recent Outputs" in text
-        assert "Quick Actions" in text
-        assert 'class="plot-frame"' in text
-        assert 'class="plot-grid"' in text
-        assert "plot-card card-md" in text
-        assert "card-sm" in text
-        assert "card-lg" in text
-        assert "card-wide" in text
-        assert "resize-handle" in text
-        assert 'title="Drag to resize"' in text
-        assert 'data-card-size="sm"' in text
-        assert 'data-card-size="md"' in text
-        assert 'data-card-size="lg"' in text
-        assert 'data-card-size="wide"' in text
-        assert "Reset layout" in text
-        assert "data-reset-layout" in text
-        assert "grid-auto-flow: dense" in text
-        assert "grid-auto-rows: 8px" in text
-        assert "grid-column: span var(--col-span, 1)" in text
-        assert "grid-row: span var(--row-span, 20)" in text
-        assert "pointerdown" in text
-        assert "pointermove" in text
-        assert "setPointerCapture" in text
-        assert "localStorage" in text
-        assert "ResizeObserver" not in text
-        assert "resize: both" not in text
-        assert ".panels" not in text
-        assert "repeat(auto-fill, minmax(280px, 1fr))" in text
-        assert "min-height: 180px" in text
-        assert "overflow: hidden" in text
-        assert "max-height: 100%" in text
-        assert "object-fit: contain" in text
-        assert "plot-card large" not in text
-        assert ".plot-card.card-lg { --col-span: 2; --row-span: 38; }" in text
-        assert ".plot-card.card-wide { --col-span: 2; --row-span: 24; }" in text
-        assert '<span class="tag">' in text
+        from fastmdxplora.gui.report_dashboard import _render_static_live_panel
+
+        panel = _render_static_live_panel(project_with_analysis)
+        assert "Live telemetry is on by default" in panel
+        assert "<code>live_telemetry: false</code>" in panel
+        assert "off by default" not in panel and "--live-telemetry" not in panel
+        assert "Trajectory statistics" in text
+        assert "Std. dev." in text
+        # The figures as the GUI's Analysis page shows them; the resizable
+        # cards of the old page are not the GUI's and are gone.
+        assert '<article class="analysis-card"' in text
+        assert 'class="ac-frame"' in text
+        assert "data-card-size" not in text
         assert "analysis/rmsd/rmsd.png" in text
         assert "analysis/rg/rg.png" in text
-        assert "Open Markdown Report" in text
-        assert "Open Analysis Manifest" in text
-        assert "output-list" in text
-        assert "outputs-extra" in text
-        assert "repeat(auto-fit, minmax(220px, 1fr))" in text
-        assert "action-title" in text
-        assert "action-subtitle" in text
-        assert "artifact-path" in text
-        assert "Std. Dev." in text
+        # The report as the GUI's Report page shows it, with its downloads.
+        assert 'class="card report-document"' in text
+        assert '<a class="ghost-btn" href="report.md" download>Markdown</a>' in text
         assert "../analysis/analysis_manifest.json" in text
         assert "report.md" in text
         assert "slides.pptx" in text
@@ -425,15 +404,22 @@ class TestDashboard:
             "simulation were not run in this workflow."
         ) in text
         assert "Existing trajectory analysis" in text
-        assert "<span>Setup</span><span class=\"phase-detail\">Not run</span>" in text
-        assert "<span>Simulation</span><span class=\"phase-detail\">Not run</span>" in text
-        assert "<span>Analysis</span><span class=\"phase-detail\">Completed</span>" in text
-        assert "<span>Report</span><span class=\"phase-detail\">Completed</span>" in text
-        assert 'class="plot-frame"' in text
-        assert '<span class="tag">' in text
+        # The Phases table as the GUI's Overview gives it.
+        for name, status, detail in (("Setup", "not-run", "Not run"),
+                                     ("Simulation", "not-run", "Not run"),
+                                     ("Analysis", "ok", "Completed"),
+                                     ("Report", "ok", "Completed")):
+            assert (f'<tr><td>{name}</td><td><span class="stage-pill">{status}</span></td>'
+                    f'<td class="muted">{detail}</td></tr>') in text
+        # Only the stages this workflow reaches are listed, as in the GUI.
+        assert '<li class="stage-step" data-stage="nvt" data-state="waiting" hidden>' in text
+        assert ('<li class="stage-step" data-stage="analysis" data-state="completed">'
+                in text)
+        # No simulation here and no live record: no health card for one.
+        assert 'id="live-simulation"' not in text
+        assert 'class="ac-frame"' in text
         assert "dashboard_assets" not in text
-        assert "Quick Actions" in text
-        assert "Recent Outputs" in text
+        assert 'data-page="files"' in text
         assert "Simulation time" not in text
         assert "Temperature" not in text
         assert "Production MD completed" not in text
@@ -494,7 +480,7 @@ class TestDashboard:
         # SASA, secondary structure, and dimensionality reduction each keep
         # their own section now, rather than being pooled because they hold
         # a single figure apiece.
-        assert text.count('class="plot-grid"') == 3
+        assert text.count('class="analysis-grid"') == 3
         for section in ("Solvent Accessible Surface Area", "Secondary Structure",
                         "Dimensionality Reduction"):
             assert section in text
@@ -506,16 +492,10 @@ class TestDashboard:
         assert "Total SASA" in text
         assert "Secondary structure" in text
         assert "PCA" in text
-        assert text.count('class="plot-card card-md"') == len(artifacts)
-        assert text.count('class="resize-handle"') == len(artifacts)
-        assert text.count('class="plot-frame"') == len(artifacts)
-        assert "plot-card large" not in text
-        assert ".plot-card.card-lg { --col-span: 2; --row-span: 38; }" in text
-        assert ".plot-card.card-wide { --col-span: 2; --row-span: 24; }" in text
-        assert "section-secondary-structure-section { --plot-min" not in text
-        assert "section-sasa-section { --plot-min" not in text
-        assert '<span class="tag">' in text
-        assert "data-card-key=" in text
+        assert text.count('<article class="analysis-card"') == len(artifacts)
+        assert text.count('class="ac-frame"') == len(artifacts)
+        # Each analysis's first card answers to its name, as in the GUI.
+        assert 'data-analysis="sasa"' in text
 
     def test_dashboard_multi_method_dark_assets(self, project_with_multi_method: Path):
         original_pngs = {
@@ -541,7 +521,7 @@ class TestDashboard:
         ).read_text(encoding="utf-8")
         assert "Hierarchical dendrogram" in text
         assert "analysis/cluster/cluster_hierarchical_dendrogram.png" in text
-        assert '<span class="tag">' in text
+        assert '<article class="analysis-card"' in text
         with zipfile.ZipFile(
             project_with_multi_method / "report" / "project_bundle.zip"
         ) as zf:
@@ -611,18 +591,11 @@ class TestDashboard:
 
         assert result.status == "ok"
         text = (root / "report" / "dashboard.html").read_text(encoding="utf-8")
-        assert text.count('<div class="plot-frame">') == len(artifact_names)
-        assert text.count('class="plot-card card-md"') == len(artifact_names)
-        assert text.count('class="resize-handle"') == len(artifact_names)
-        assert text.count('class="plot-card card-md"') == len(artifact_names)
-        assert '<span class="tag">' in text
+        assert text.count('<div class="ac-frame">') == len(artifact_names)
+        assert text.count('<article class="analysis-card"') == len(artifact_names)
         assert "dashboard view" not in text
-        assert "output-list" in text
-        assert "outputs-extra" in text
-        assert "Show all outputs" in text
-        assert "plot-card large" not in text
-        assert ".plot-card.card-lg { --col-span: 2; --row-span: 38; }" in text
-        assert ".plot-card.card-wide { --col-span: 2; --row-span: 24; }" in text
+        # Every file on the Files page, the run record folded, as in the GUI.
+        assert '<details class="file-fold" data-fold="record">' in text
         for rel in artifact_names:
             assert f"../{rel}" in text
         for label in (

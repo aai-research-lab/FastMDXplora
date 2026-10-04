@@ -571,6 +571,11 @@ software automatically.
 ## Not the same thing: `report/dashboard.html`
 
 The report phase writes a **static** `dashboard.html` into the run directory.
-It opens in a browser tab with no server running, and travels inside
-`project_bundle.zip`. It is the thing to send somebody. `fastmdx gui` is the
-live interface, and they are not the same file.
+It is laid out as the GUI is: the same sidebar and settings menu, the
+Overview, Analysis, Report and Files pages, the three schemes, and each
+series plotted from its numbers as the Analysis page plots it. It is the
+study as the report phase found it, and does not update. It opens in a
+browser tab with no server running, and travels inside `project_bundle.zip`:
+it is the thing to send somebody. What needs the server (the Viewer, the
+Agent, the Config builder, live charts) is in `fastmdx gui`, the live
+interface.

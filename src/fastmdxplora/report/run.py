@@ -135,6 +135,7 @@ def run(
         output_dir=output_dir,
         title=title,
         include_bundle_link=bool(params["bundle"]),
+        not_produced=not_produced,
     )
     artifacts.extend(dashboard_artifacts)
     if presenter:
