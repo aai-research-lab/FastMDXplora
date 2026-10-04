@@ -35,10 +35,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-__all__ = ["MVS_VERSION", "SCENES_DIR", "build_scene", "read_scene", "scene_bytes",
-           "scenes_of", "write_scene"]
+__all__ = ["HIGHLIGHT_COLOUR", "MVS_VERSION", "SCENES_DIR", "build_scene", "highlighted",
+           "read_scene", "scene_bytes", "scenes_of", "write_scene"]
 
 SCENES_DIR = "scenes"
+#: The colour atoms are highlighted in when a scene is written to show them
+#: (Okabe and Ito's orange, apart from the Viewer's other colours).
+HIGHLIGHT_COLOUR = "#e69f00"
 MVS_VERSION = "1.8"
 MOST_LABELS = 300
 
@@ -569,6 +572,14 @@ def build_scene(root: str | Path, view: dict[str, Any] | None = None,
         files["colours.json"] = json.dumps(rows)
     return {"ok": True, "state": state, "files": files, "notes": notes, "of": of,
             "frame": frame if of == "frames" else None}
+
+
+def highlighted(expression: str, labelled: bool = False) -> dict[str, Any]:
+    """Atoms an MDTraj selection names, as a selection a scene shows: orange
+    sticks over whatever else is shown, their residues labelled if asked."""
+    return {"name": "highlight", "kind": "expression", "expression": expression,
+            "colour": HIGHLIGHT_COLOUR, "shown": True, "representation": "sticks",
+            "labelled": bool(labelled)}
 
 
 def scene_bytes(scene: dict[str, Any]) -> bytes:

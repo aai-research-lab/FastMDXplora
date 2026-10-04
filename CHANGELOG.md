@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent proposes a scene
+
+**An answer about something that can be seen may end with a scene the Agent
+proposes**: a frame, a colouring by one of the study's results, residues
+highlighted. It is shown under the answer in words, with a name and a **Write
+this scene** button; nothing is written until it is pressed, and the scene is
+then kept with the study and shown in the Viewer. The Agent's tools still only
+look. Its one `SHOW:` line is read by a strict pattern, and a part the pattern
+does not allow drops the proposal, never the answer. `POST /api/scenes` takes
+atoms to highlight, as `write_scene` in `fastmdx mcp` does.
+
 ### The report lists the scenes
 
 **`report.md` lists the scenes written with the study under Scenes**, after

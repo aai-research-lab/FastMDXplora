@@ -136,6 +136,10 @@ class Proposal:
     #: reply's one line by a strict pattern, checked again by the software
     #: and confirmed by the person before anything runs.
     arguments: dict[str, Any] | None = None
+    #: A scene the answer proposes, to show what it is about: read from one
+    #: `SHOW:` line by a strict pattern, and written only when the person
+    #: presses its button. The Agent's tools only look; this only offers.
+    scene: dict[str, Any] | None = None
 
     @property
     def accepted(self) -> bool:
@@ -259,6 +263,20 @@ record and figure); where an analysis says its mean is not
 determined, say that too. Asked whether a run passed or can be
 trusted, answer from the checks the run status ticks, by name, and from
 what the withheld means need where the status gives it.
+
+An answer about something in the open study that can be seen (a frame,
+residues that move or hold the ligand, a colouring by one of its results)
+may end with one more line proposing a scene that shows it. The person
+writes the scene with a button; you write nothing. The line is
+`SHOW: frame 40; colour result:rmsf; highlight resSeq 20 to 25; labels yes;
+name loop at 40`, any of these parts and each once: `frame` a frame of the
+trajectory as the Viewer plays it, from 0; `colour` one of chain, spectrum,
+residue, element, secondary_structure, monochrome, or `result:` and an
+analysis the study ran, such as result:rmsf; `representation` one of
+cartoon, backbone, sticks, ball and stick, surface, lines, spheres;
+`superposed` backbone or pocket; `highlight` an MDTraj selection;
+`labels` yes or no; `name` a few words. Propose one only where it shows
+what the answer says, and never for a general question.
 
 You can act, but only when told to, and one action at a time. When the
 person plainly instructs you -- "run it", "stop", "open the viewer" --
@@ -522,6 +540,55 @@ def _answer_in(raw: str) -> str | None:
         return None
     return None
 
+#: What a `SHOW:` line may say, each part once: `frame 40; colour
+#: result:rmsf; highlight resSeq 20 to 25; labels yes; name loop`.
+_SHOWN_REPRESENTATIONS = {"cartoon": "cartoon", "backbone": "backbone", "sticks": "sticks",
+                          "ball and stick": "ballAndStick", "ballandstick": "ballAndStick",
+                          "surface": "surface", "lines": "lines", "spheres": "spacefill",
+                          "spacefill": "spacefill"}
+_SHOWN_COLOURS = ("chain", "spectrum", "residue", "element", "secondary_structure",
+                  "monochrome")
+_RESULT_COLOUR = re.compile(r"^result:[a-z0-9_]{1,40}$")
+_SCENE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$")
+
+
+def _scene_in(answer: str) -> tuple[str, dict[str, Any] | None]:
+    """The answer without its `SHOW:` line, and the scene that line proposes.
+
+    The line is the answer's last and is read whole or not at all: a part
+    the pattern does not allow drops the proposal, never the answer, and
+    nothing is written until the person presses the button it becomes.
+    """
+    lines = (answer or "").rstrip().splitlines()
+    if not lines or not lines[-1].strip().upper().startswith("SHOW:"):
+        return answer, None
+    kept = "\n".join(lines[:-1]).strip() or "\u2026"
+    scene: dict[str, Any] = {}
+    for part in lines[-1].strip()[5:].split(";"):
+        key, _, value = part.strip().partition(" ")
+        key, value = key.lower(), " ".join(value.split())
+        if not value or key in scene:
+            return kept, None
+        if key == "frame" and value.isdigit():
+            scene[key] = int(value)
+        elif key == "representation" and value.lower() in _SHOWN_REPRESENTATIONS:
+            scene[key] = _SHOWN_REPRESENTATIONS[value.lower()]
+        elif key == "colour" and (value.lower() in _SHOWN_COLOURS
+                                  or _RESULT_COLOUR.match(value.lower())):
+            scene[key] = value.lower()
+        elif key == "superposed" and value.lower() in ("backbone", "pocket"):
+            scene[key] = value.lower()
+        elif key == "highlight" and len(value) <= 200 and all(c not in value for c in "`<>"):
+            scene[key] = value
+        elif key == "labels" and value.lower() in ("yes", "no"):
+            scene[key] = value.lower() == "yes"
+        elif key == "name" and _SCENE_NAME.match(value):
+            scene[key] = value
+        else:
+            return kept, None
+    return kept, scene or None
+
+
 def _question_in(raw: str) -> str | None:
     """The question a reply carries, if the reply is one.
 
@@ -658,8 +725,9 @@ def propose_config(
                             arguments=again, looks=looked())
         said = _answer_in(raw)
         if said:
+            said, scene = _scene_in(said)
             return Proposal(config=None, attempts=tuple(attempts), answer=said,
-                            looks=looked())
+                            scene=scene, looks=looked())
         asked = _question_in(raw)
         if asked:
             # The request is short of something an AI model cannot supply and

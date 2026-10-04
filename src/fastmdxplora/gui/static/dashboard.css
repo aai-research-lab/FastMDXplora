@@ -3862,6 +3862,21 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 .agent-plan[hidden] { display: none; }
 
+/* A scene an answer proposes (agent-panel.js), written with a button. */
+.agent-scene {
+    margin: 10px 0 4px; max-width: 720px; padding: 10px 12px;
+    border: 1px solid var(--border-primary); border-radius: 10px; background: var(--panel-glass);
+}
+.agent-scene-said { margin: 0 0 8px; font-size: var(--text-sm); }
+.agent-scene-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.agent-scene-row input {
+    flex: 1 1 160px; min-width: 0; padding: 5px 8px; border: 1px solid var(--border-primary);
+    border-radius: 8px; background: var(--background-secondary); color: var(--text-primary);
+    font-size: var(--text-xs);
+}
+.agent-scene-status { display: block; margin-top: 6px; }
+.agent-scene-status:empty { display: none; }
+
 /* What an answer drew on (citations.py): each analysis it names, the mean
    the study recorded, and a way to its figure. */
 .agent-cites {

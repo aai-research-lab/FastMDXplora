@@ -934,10 +934,18 @@ def make_handler(
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
                 ligands = payload.get("ligands")
+                selections = (selections_of(study)["selections"]
+                              if payload.get("selections", True) else [])
+                highlight = payload.get("highlight")
+                if isinstance(highlight, str) and highlight.strip():
+                    # Atoms to show, as a scene the Agent proposed names them.
+                    from fastmdxplora.scenes import highlighted
+
+                    selections = [*selections, highlighted(highlight.strip()[:500],
+                                                           payload.get("labels") is True)]
                 self._send_json(write_scene(
                     study, payload.get("name"), payload.get("view"),
-                    selections=selections_of(study)["selections"]
-                    if payload.get("selections", True) else None,
+                    selections=selections or None,
                     ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
                     else None))
                 return

@@ -260,8 +260,13 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
             cites = cited_findings(proposal.answer, getattr(runtime, "active_root", None))
         except Exception:  # noqa: BLE001 - the answer stands without them
             cites = []
-        return {"ok": False, "answer": proposal.answer, "cites": cites,
-                "attempts": attempts}
+        answer = {"ok": False, "answer": proposal.answer, "cites": cites,
+                  "attempts": attempts}
+        if proposal.scene and _is_study(getattr(runtime, "active_root", None)):
+            # A scene the answer proposes, written only when the person
+            # presses its button (`POST /api/scenes`).
+            answer["scene"] = proposal.scene
+        return answer
     if proposal.question:
         # Not a failure. The request is short of something only the person
         # can supply, and the honest answer is to say what.

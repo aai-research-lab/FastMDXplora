@@ -589,6 +589,19 @@ nothing it had written is kept. The next message goes on from yours. Both
 stream shapes the providers use are read, content-block events and the OpenAI
 chat shape, so a local or compatible server streams too.
 
+### Showing what an answer is about
+
+An answer about something in the open study that can be seen (a frame,
+residues that move or hold the ligand, a colouring by one of its results) may
+end with a proposed scene. It is shown under the answer in words ("A scene to
+show this: frame 40, coloured by rmsf, resSeq 20 to 25 highlighted"), with a
+name you can change and a **Write this scene** button. Nothing is written until
+you press it: the scene is then kept with the study (`scenes/<name>.mvsx`,
+MolViewSpec) and shown in the Viewer, and a thread opened again says it was
+written. The Agent writes the proposal as one line, `SHOW: frame 40; colour
+result:rmsf; highlight resSeq 20 to 25`, read by a strict pattern: a part it
+does not allow drops the proposal and keeps the answer.
+
 ### Acting
 
 **Your instruction is the click.** "Run it" typed into the thread does what

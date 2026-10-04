@@ -131,6 +131,120 @@
     return row;
   }
 
+  /* A scene an answer proposes, to show what it is about: said in words,
+   * named, and written with the study only when the button is pressed
+   * (POST /api/scenes); the Agent itself writes nothing. Once written it can
+   * be shown in the Viewer. Built as elements: every part is data. */
+  var SHOWN_AS = { ballAndStick: "ball and stick", spacefill: "spheres" };
+
+  function sceneSaid(scene) {
+    var parts = [];
+    if (scene.frame != null) parts.push("frame " + scene.frame);
+    if (scene.representation) parts.push(SHOWN_AS[scene.representation] || scene.representation);
+    if (scene.colour) {
+      parts.push("coloured by " + String(scene.colour).replace(/^result:/, "").replace(/_/g, " "));
+    }
+    if (scene.superposed) parts.push("superposed on the " + scene.superposed);
+    if (scene.highlight) {
+      parts.push(scene.highlight + " highlighted" + (scene.labels ? " and labelled" : ""));
+    }
+    return parts.join(", ") || "the study as it opens";
+  }
+
+  function sceneLigands() {
+    var state = window.FastMDXMoleculeViewer && window.FastMDXMoleculeViewer.STATE;
+    var names = state && state.structureInfo && Array.isArray(state.structureInfo.ligand_resnames)
+      ? state.structureInfo.ligand_resnames.filter(Boolean) : [];
+    return names.slice(0, 20);
+  }
+
+  function sceneCard(box, scene, entry) {
+    if (!scene) return null;
+    var card = document.createElement("div");
+    card.className = "agent-scene";
+    var lead = document.createElement("p");
+    lead.className = "agent-scene-said";
+    lead.textContent = "A scene to show this: " + sceneSaid(scene) + ".";
+    card.appendChild(lead);
+    var row = document.createElement("div");
+    row.className = "agent-scene-row";
+    var name = document.createElement("input");
+    name.type = "text";
+    name.maxLength = 60;
+    name.setAttribute("aria-label", "Name of the scene");
+    name.value = entry.scene_written || scene.name || "From the Agent";
+    var write = document.createElement("button");
+    write.type = "button";
+    write.className = "chip-btn";
+    write.textContent = "Write this scene";
+    write.title = "Write it with the study as a scene file (scenes/, MolViewSpec) and show it in the Viewer";
+    var show = document.createElement("button");
+    show.type = "button";
+    show.className = "chip-btn";
+    show.textContent = "Show it in the Viewer";
+    show.hidden = !entry.scene_written;
+    var said = document.createElement("span");
+    said.className = "agent-scene-status muted small";
+    said.setAttribute("role", "status");
+    row.append(name, write, show);
+    card.append(row, said);
+    function shown(written) {
+      window.location.hash = "#viewer";
+      var views = window.FastMDXViewerViews;
+      if (!views || !views.loadScenes || !views.showScene) return;
+      // Once the Viewer has a molecule: opened from here, it has none yet.
+      var tries = 0;
+      (function whenReady() {
+        var viewer = window.FastMDXMoleculeViewer;
+        if (viewer && viewer.STATE && viewer.STATE.engine && viewer.STATE.model) {
+          views.loadScenes(written).then(function () { return views.showScene(written); });
+        } else if (tries++ < 240) {
+          window.setTimeout(whenReady, 250);
+        }
+      }());
+    }
+    if (entry.scene_written) {
+      write.disabled = true;
+      write.textContent = "Written";
+      name.disabled = true;
+      said.textContent = "Written as scenes/" + entry.scene_written + ".mvsx.";
+    }
+    show.addEventListener("click", function () { shown(entry.scene_written); });
+    write.addEventListener("click", function () {
+      var named = name.value.trim();
+      write.disabled = true;
+      said.textContent = "Writing the scene\u2026";
+      var view = {};
+      ["frame", "representation", "colour", "superposed"].forEach(function (key) {
+        if (scene[key] != null) view[key] = scene[key];
+      });
+      fetch("/api/scenes", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: named, view: view, highlight: scene.highlight || "",
+                               labels: !!scene.labels, ligands: sceneLigands() }),
+      }).then(function (r) {
+        return r.json().catch(function () { return { ok: false, reason: "HTTP " + r.status }; });
+      }).catch(function () { return { ok: false, reason: "The server did not answer." }; })
+        .then(function (done) {
+          if (!done || !done.ok) {
+            write.disabled = false;
+            said.textContent = "The scene was not written: " + ((done && done.reason) || "no reason given");
+            return;
+          }
+          entry.scene_written = done.name;
+          persist();
+          write.textContent = "Written";
+          name.disabled = true;
+          show.hidden = false;
+          said.textContent = "Written as scenes/" + done.name + ".mvsx"
+            + (done.notes && done.notes.length ? ". " + done.notes.join(" ") : ".");
+          shown(done.name);
+        });
+    });
+    box.appendChild(card);
+    return card;
+  }
+
   /* What the Agent looked at with the software's own tools before it
    * answered: each look, what it asked and what the software said, folded
    * under one line so the answer stays first. The words are the software's,
@@ -681,8 +795,11 @@
         box.appendChild(p);
         cite(box, data.cites);
         history.push({ role: "agent", text: data.answer });
-        transcript.push({ role: "agent", kind: "answer", text: data.answer,
-                          cites: data.cites || [], looks: data.looks || [] });
+        var answered = { role: "agent", kind: "answer", text: data.answer,
+                         cites: data.cites || [], looks: data.looks || [] };
+        if (data.scene) answered.scene = data.scene;
+        transcript.push(answered);
+        sceneCard(box, data.scene, answered);
         persist();
         area.focus();
         scrollToEnd();
@@ -757,7 +874,8 @@
    * one, the reply's own marker is left off. */
   function writtenSoFar(raw) {
     if (/^\s*USE:/.test(raw)) return "Looking with the software\u2026";
-    return raw.replace(/^\s*(SAY|ASK):\s*/, "");
+    // A scene proposed on the last line is shown as its card once written.
+    return raw.replace(/^\s*(SAY|ASK):\s*/, "").replace(/\n\s*SHOW:[^\n]*$/i, "");
   }
 
   function propose(body, box) {
@@ -1276,6 +1394,7 @@
           p.innerHTML = prose(e.text);
           box.appendChild(p);
           cite(box, e.cites);
+          sceneCard(box, e.scene, e);
           history.push({ role: "agent", text: e.text });
         } else if (e.kind === "question") {
           note(box, e.text);

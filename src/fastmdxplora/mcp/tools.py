@@ -672,14 +672,11 @@ _MARKERS = frozenset({"exploration.yml", "resolved_config.yml"})
 # ---------------------------------------------------------------------------
 # Reading studies
 # ---------------------------------------------------------------------------
-#: The colour a scene's highlighted atoms are given: Okabe-Ito's orange.
-_HIGHLIGHT = "#e69f00"
-
 
 def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.gui.saved_views import views_of
     from fastmdxplora.gui.viewer_selections import selections_of
-    from fastmdxplora.scenes import SCENES_DIR, write_scene
+    from fastmdxplora.scenes import SCENES_DIR, highlighted, write_scene
 
     folder = _study(ctx, args["study"])
     view: dict[str, Any] = {}
@@ -696,9 +693,7 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
             view[key] = args[key]
     selections = selections_of(folder)["selections"]
     if args.get("highlight"):
-        selections.append({"name": "highlight", "kind": "expression",
-                           "expression": args["highlight"], "colour": _HIGHLIGHT, "shown": True,
-                           "representation": "sticks", "labelled": bool(args.get("labels"))})
+        selections.append(highlighted(args["highlight"], bool(args.get("labels"))))
     said = write_scene(folder, args["name"], view, selections=selections)
     if not said.get("ok"):
         raise ToolError(said.get("reason") or "The scene could not be made.")
