@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### One start for RMSF, clustering and the projections
+
+**RMSF takes `start` as clustering and dimred take it**: a time in ns, `0`
+for every frame, or `equilibrated`, its default, found on the RMSD of the
+fitted atoms by one rule (`analysis/starting_frame.py`), and what it left
+out is recorded as `findings["frames"]`, as for the others.
+
 ### Mass density across the bilayer
 
 **`bilayer_thickness` writes the mass density of each part of the system along the normal beside the thickness:** lipid heads, lipid hydrocarbon chains, water, protein and ions, in g/cm3, in 0.1 nm slabs centred on the bilayer centre in every frame and averaged over the frames analysed (`density_profile.dat`, `density_profile.png`). The density of a slab is its mass summed over frames over its volume summed over frames, `rho(z) = sum_f m_f(z) / sum_f A_f w_f(z)`, with each row's width inside the box written beside it so the density times the width, summed and times the box's area, is the component's mass. On OpenMM's POPC patch the water is 1.0 g/cm3 in bulk and none within 0.3 nm of the centre, and the heads peak 1.8 nm out, half of D_PP. Nothing computed before changes.
@@ -233,7 +240,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### RMSF over the equilibrated frames
 
-**RMSF is now computed over the frames after equilibration, found by the same detection every per-frame mean uses.** It averaged every frame, so a relaxation away from the starting structure was read as fluctuation: a loop of 3PTB relaxing 0.4 nm over the first 300 of 1000 frames read 0.0819 nm against 0.0514 after the discard and 0.052 by construction. The start is now detected on the RMSD of the fitted atoms from the reference frame (`statistics.summarise`), the fluctuations are taken over the frames after it, and the discard is recorded as `findings["discard"]` in frames and ns and said on the figure. The new option `equilibrated_from` gives the start instead, and `0` keeps every frame. Results change: RMSF of any run that relaxed from its starting structure is lower, and is the equilibrium fluctuation.
+**RMSF is now computed over the frames after equilibration, found by the same detection every per-frame mean uses.** It averaged every frame, so a relaxation away from the starting structure was read as fluctuation: a loop of 3PTB relaxing 0.4 nm over the first 300 of 1000 frames read 0.0819 nm against 0.0514 after the discard and 0.052 by construction. The start is now detected on the RMSD of the fitted atoms from the reference frame (`statistics.summarise`), the fluctuations are taken over the frames after it, and the frames used are recorded as `findings["frames"]` and said on the figure. The option `start` gives the start instead, as clustering and dimred take it (a time in ns, `0` for every frame). Results change: RMSF of any run that relaxed from its starting structure is lower, and is the equilibrium fluctuation.
 
 ### Per-residue RMSF as GROMACS gives it
 

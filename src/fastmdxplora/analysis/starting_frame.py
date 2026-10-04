@@ -1,4 +1,4 @@
-"""Which frames clustering and the projections read, and what that leaves in.
+"""Which frames clustering, the projections and RMSF read, and what that leaves in.
 
 Clustering and dimensionality reduction read every frame they are given, and
 the frames a run spends relaxing from its starting structure are among them.
@@ -67,17 +67,18 @@ def start_as_given(start: Any) -> float | str | None:
     return None if value == 0 else value
 
 
-def equilibration_by_rmsd(traj: md.Trajectory, atom_idx: np.ndarray) -> int:
-    """Frames the RMSD of ``atom_idx`` from the first frame spends
+def equilibration_by_rmsd(traj: md.Trajectory, atom_idx: np.ndarray,
+                          ref: int = 0) -> int:
+    """Frames the RMSD of ``atom_idx`` from frame ``ref`` spends
     equilibrating, by Chodera's method, as the RMSD analysis finds them."""
     from fastmdxplora.analysis.base import superposed
     from fastmdxplora.statistics import detect_equilibration
 
     if traj.n_frames < 2:
         return 0
-    aligned = superposed(traj, frame=0, atom_indices=atom_idx)
+    aligned = superposed(traj, frame=ref, atom_indices=atom_idx)
     xyz = np.asarray(aligned.xyz[:, atom_idx, :], dtype=np.float64)
-    series = np.sqrt(((xyz - xyz[0]) ** 2).sum(axis=2).mean(axis=1))
+    series = np.sqrt(((xyz - xyz[ref]) ** 2).sum(axis=2).mean(axis=1))
     return int(detect_equilibration(series)[0])
 
 
@@ -95,7 +96,8 @@ def _times_ns(traj: md.Trajectory) -> np.ndarray | None:
 
 
 def first_frame(traj: md.Trajectory, atom_idx: np.ndarray,
-                start: float | str | None) -> tuple[int, dict[str, Any]]:
+                start: float | str | None,
+                ref: int = 0) -> tuple[int, dict[str, Any]]:
     """The first frame to analyse, and the record of what that leaves in.
 
     The record gives the frames read and given, the first frame (and its
@@ -103,7 +105,7 @@ def first_frame(traj: md.Trajectory, atom_idx: np.ndarray,
     whether those frames are among the ones read.
     """
     n = int(traj.n_frames)
-    equilibrating = equilibration_by_rmsd(traj, atom_idx)
+    equilibrating = equilibration_by_rmsd(traj, atom_idx, ref)
     times = _times_ns(traj)
 
     if start is None:

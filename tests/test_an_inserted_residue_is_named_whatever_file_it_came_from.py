@@ -35,7 +35,7 @@ def _deposited(tmp_path, name):
 def _rmsf_labels(traj):
     from fastmdxplora.analysis.rmsf import RMSF
 
-    table = RMSF(equilibrated_from=0).compute(md.join([traj] * 3))
+    table = RMSF(start=0).compute(md.join([traj] * 3))
     assert hasattr(table, "columns"), "a structure with insertion codes is a table"
     return list(zip(table["residue"], table["insertion"]))
 

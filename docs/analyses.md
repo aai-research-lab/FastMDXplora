@@ -233,8 +233,9 @@ against another tool.
   A single frame is refused rather than reported as rigid.
   It is computed over the equilibrated frames only: the start is found on the
   RMSD of the fitted atoms by the same detection every per-frame mean uses,
-  recorded as `findings.discard` and said on the figure, and
-  `equilibrated_from` sets it (`0` for every frame). A loop relaxing 0.4 nm
+  recorded as `findings.frames` and said on the figure, and `start` sets it
+  as clustering and dimred take it (a time in ns, `0` for every frame,
+  `equilibrated` by default). A loop relaxing 0.4 nm
   in the first fifth of a run read 0.082 nm averaged over every frame, against
   0.052 nm once relaxed. Results change from earlier releases on any run that
   relaxed.

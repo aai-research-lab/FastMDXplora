@@ -36,7 +36,7 @@ def _mobile_hydrogens(frames=2000):
 
 def test_a_residue_is_the_mass_weighted_mean_of_its_atoms():
     traj = _mobile_hydrogens()
-    got = RMSF(selection="all", equilibrated_from=0).compute(traj)[:, 1]
+    got = RMSF(selection="all", start=0).compute(traj)[:, 1]
 
     aligned = traj[:]
     aligned.superpose(traj, 0)
@@ -103,21 +103,24 @@ def test_the_relaxation_is_left_out():
     analysis = RMSF()
     result = analysis.compute(traj)
 
-    discard = analysis.findings["discard"]
-    assert 150 < discard["frames"] < 500
-    assert discard["ns"] == pytest.approx(discard["frames"] * 0.01)
+    frames = analysis.findings["frames"]
+    assert 150 < frames["first_frame"] < 500
+    assert frames["start"] == "equilibrated"
+    # Frame k was written at (k + 1) saving intervals of 10 ps.
+    assert frames["first_time_ns"] == pytest.approx((frames["first_frame"] + 1) * 0.01)
     loop_rmsf = result[loop, 1].mean()
     assert loop_rmsf == pytest.approx(np.sqrt(3) * 0.03, abs=0.004)
-    assert RMSF(equilibrated_from=0).compute(traj)[loop, 1].mean() > 0.075
+    assert RMSF(start=0).compute(traj)[loop, 1].mean() > 0.075
 
 
 def test_the_start_can_be_given(tmp_path):
     traj, loop = _relaxing_loop()
-    analysis = RMSF(equilibrated_from=600, output_dir=tmp_path)
+    # Frame 600 was written at 6.01 ns.
+    analysis = RMSF(start=6.01, output_dir=tmp_path)
     result = analysis.compute(traj)
 
-    assert analysis.findings["discard"]["frames"] == 600
-    assert analysis.options["equilibrated_from"] == 600
+    assert analysis.findings["frames"]["first_frame"] == 600
+    assert analysis.options["start"] == 6.01
     expected = traj[600:]
     expected.superpose(traj, 0, atom_indices=np.arange(traj.n_atoms))
     deviation = expected.xyz - expected.xyz.mean(axis=0)
@@ -128,7 +131,8 @@ def test_the_start_can_be_given(tmp_path):
 def test_a_start_leaving_fewer_than_two_frames_is_refused():
     traj = _mobile_hydrogens(frames=5)
     with pytest.raises(StudyError) as raised:
-        RMSF(selection="all", equilibrated_from=4).compute(traj)
+        traj.time = np.arange(1, traj.n_frames + 1) * 10.0
+        RMSF(selection="all", start=0.05).compute(traj)
     assert raised.value.code == "analysis.option.out_of_range"
 
 
@@ -137,6 +141,6 @@ def test_the_figure_says_which_frames(tmp_path):
     analysis = RMSF(output_dir=tmp_path)
     assert analysis.run(traj).status == "ok"
     said = analysis._which_frames()
-    frames = analysis.findings["discard"]["frames"]
+    frames = analysis.findings["frames"]["first_frame"]
     assert said.startswith(f"over frames {frames:,} to 399")
     assert "left out as equilibration" in said
