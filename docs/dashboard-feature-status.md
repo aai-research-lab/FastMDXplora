@@ -28,6 +28,10 @@ The installed wheel on port 8786 returned the draft-review difference for `setup
 
 The exact wheel HTTP flow saved and restored a temporary RMSD graph bookmark. With its RMSD source temporarily absent in the disposable study, restore refused with a source-difference error while retaining the note. Returning the original source restored successful acceptance. The QA bookmark was removed and all 315 non-output study hashes matched. This checks endpoint behavior, not browser refusal rendering or screenshot retention. A real server restart remains unverified: automatic tool policy rejected the proposed QA-process stop before execution; no server was stopped.
 
+### Installed browser refusal and resource acceptance — 2026-10-03
+
+The exact wheel browser check displayed the missing-RMSD-source refusal, retained the bookmark note and loaded PNG, and left the current page/frame unchanged. The original source was returned and the temporary bookmark deleted; all 315 non-output study hashes matched and no page JavaScript errors occurred. This closes the browser-rendering and image-retention gaps left by the preceding HTTP receipt. Separately, imports from the installed environment outside the checkout verified all 127 registered error IDs and disclosure levels in Agent knowledge, exact equality of bundled `errors.md` to the generated reference, and the external/unclassified disclosure. No source code changed.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
