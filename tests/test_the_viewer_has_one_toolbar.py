@@ -171,3 +171,30 @@ def test_a_picture_is_saved_for_a_page_and_the_view_is_put_back(page) -> None:
     assert after == before
     assert "2,400 pixels" in page.get_attribute('[data-action="screenshot"]', "title")
     assert page.errors == []
+
+
+def test_a_picture_is_as_wide_as_chosen_and_on_no_ground_if_asked(page) -> None:
+    """A single column at 300 dpi is 1,200 pixels; a figure laid on a
+    coloured slide wants the molecule without the Viewer's ground."""
+    import io
+
+    from PIL import Image
+
+    page.select_option("#picture-width", "1200")
+    page.check("#picture-transparent")
+    with page.expect_download() as caught:
+        page.click('[data-action="screenshot"]')
+    picture = Image.open(io.BytesIO(Path(caught.value.path()).read_bytes()))
+    shape = page.evaluate("() => { const c = document.querySelector('#viewer-canvas canvas');"
+                          " return c.clientWidth / c.clientHeight; }")
+    assert picture.width == 1200 and abs(picture.width / picture.height - shape) < 0.01
+    assert picture.mode == "RGBA"
+    alpha = picture.getchannel("A")
+    assert alpha.getpixel((2, 2)) == 0
+    assert alpha.getextrema()[1] == 255
+    page.uncheck("#picture-transparent")
+    with page.expect_download() as caught:
+        page.click('[data-action="screenshot"]')
+    opaque = Image.open(io.BytesIO(Path(caught.value.path()).read_bytes())).convert("RGBA")
+    assert opaque.getchannel("A").getextrema() == (255, 255)
+    assert page.errors == []

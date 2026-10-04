@@ -1339,20 +1339,27 @@
     }
   }
 
-  /* A picture for a page, not for the screen: at least this many pixels
-   * across, which is a double-column figure (183 mm) at 300 dpi. */
+  /* A picture for a page, not for the screen: as many pixels across as
+   * chosen, 2,400 unless another width is, which is a double-column figure
+   * (183 mm) at 300 dpi; 1,200 is a single column (89 mm). The view's own
+   * shape, whatever the width. */
   const PICTURE_WIDTH_PX = 2400;
+
+  function pictureWidth() {
+    const chosen = Number(document.getElementById("picture-width")?.value);
+    return Number.isFinite(chosen) && chosen >= 300 && chosen <= 8000 ? Math.round(chosen) : PICTURE_WIDTH_PX;
+  }
 
   async function takeScreenshot() {
     const engine = STATE.engine;
     const canvas = document.querySelector("#viewer-canvas canvas");
     if (!engine || !canvas) return;
-    const ratio = Math.max(window.devicePixelRatio || 1, PICTURE_WIDTH_PX / Math.max(1, canvas.clientWidth));
-    const width = Math.round(canvas.clientWidth * ratio);
-    const height = Math.round(canvas.clientHeight * ratio);
+    const width = pictureWidth();
+    const height = Math.max(1, Math.round(width * canvas.clientHeight / Math.max(1, canvas.clientWidth)));
+    const transparent = !!document.getElementById("picture-transparent")?.checked;
     let uri = "";
     try {
-      uri = await engine.picture(width, height);
+      uri = await engine.picture(width, height, transparent);
     } catch (error) {
       console.warn("the picture could not be made", error);
       return;

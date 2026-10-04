@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A picture as wide as chosen, and on no ground
+
+**The camera button saves a picture as wide as the new Picture list says**:
+2,400 pixels across as before (two columns of a page at 300 dpi), or 1,200
+(one column), 3,600 or 4,800, in the view's own shape, rather than at least
+2,400 and wider on a wide screen. **Transparent** saves the molecule with no
+ground behind it, for a figure laid on another background.
+
 ### Movies of the frames
 
 **The Viewer makes a movie of a study's frames as they are shown**, from its

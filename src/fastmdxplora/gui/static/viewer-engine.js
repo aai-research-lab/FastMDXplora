@@ -1619,11 +1619,12 @@
       if (this.plugin.canvas3d) this.plugin.canvas3d.handleResize();
     }
 
-    /** The view as a PNG, `width` by `height` pixels. */
-    async picture(width, height) {
+    /** The view as a PNG, `width` by `height` pixels, on the ground or,
+     * `transparent`, on none. */
+    async picture(width, height, transparent) {
       const helper = this.plugin.helpers.viewportScreenshot;
       helper.behaviors.values.next({...helper.behaviors.values.value,
-        resolution: {name: "custom", params: {width, height}}});
+        resolution: {name: "custom", params: {width, height}}, transparent: !!transparent});
       return helper.getImageDataUri();
     }
 
@@ -1638,7 +1639,7 @@
       canvas3d.commit(true);
       const helper = this.plugin.helpers.viewportScreenshot;
       helper.behaviors.values.next({...helper.behaviors.values.value,
-        resolution: {name: "custom", params: {width, height}}});
+        resolution: {name: "custom", params: {width, height}}, transparent: false});
       if (typeof helper.draw === "function" && helper.canvas) {
         await helper.draw(QUIET_RUNTIME);
         return helper.canvas;
