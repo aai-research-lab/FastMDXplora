@@ -1,5 +1,42 @@
 # Dashboard feature changes and milestone status
 
+
+### Live Agent workflow test and playback selection fix - 2026-10-04
+
+Live browser testing found that trajectory models lacked the click callbacks
+attached to static structures. Revision `f3e09da` attaches display interaction
+callbacks when loading playback and switching frames. It changes no coordinates,
+scientific inputs, analysis definitions or simulation settings.
+
+Actual OpenAI subscription replies confirmed the current Analysis page and
+RMSD range 0.2–0.4 ns; the recorded radius-of-gyration sampling warning;
+ASN A:1 versus LEU A:2 RMSF evidence; browser frame 1/source frame 30/time
+0.0155 ns; and the observed ASN hydrogen inventory difference without inventing
+a preparation operation. A requested pH change loaded 6.5 into the builder,
+retaining random seed 20260926 and production duration 1 ns. A setting explanation
+distinguished the draft from the completed study's recorded pH 7.4. No simulation
+was started. A fresh context-opt-out conversation could not identify the unshared
+selection. Disabled Send preserved its text, and disabling persisted through reload;
+the enabled preference was restored afterward.
+
+The corrected installed package accepted an actual canvas click on oxygen O in
+LEU A:7 at playback frame 1. The live Agent identified that atom and distinguished
+its identity from per-residue RMSF evidence. Pinning LEU A:7 and selecting LEU A:2
+retained the pin and enabled Compare residues. The final live reply compared
+LEU A:2 (0.0686216503 nm) with LEU A:7 (0.0495112725 nm), retained the
+recorded CA/alignment/sampling scope, and did not invent uncertainty or a
+chemical cause.
+
+Final combined functional/scientific suite: **185 passed, 1 skipped**, 54 visual
+checks excluded as deferred, 5 Pillow deprecation warnings, 468.12 seconds.
+The skip is the unavailable OpenFF dependency. Ruff F/B and installed pip check
+passed. Wheel `fastmdxplora-2.5.9.dev235+gf3e09da40-py3-none-any.whl`, SHA-256
+`0b52560bf9b1519a20c47a600fff3bd9fcf4f1c8dcf6b0ceb90b949e55c523dc`, installed
+outside the checkout in the reused release environment. The served viewer script
+matches the branch, and all 309 non-output scientific file hashes are unchanged.
+The user's older dashboard on port 8783 was left untouched; the tested corrected
+package is served separately on port 54983.
+
 ### Agent actions and requested settings - 2026-10-04
 
 Behavior revision `45a5a00` restores the existing Agent modes and run/stop/fix/window actions while retaining independent human-instruction checks, action confirmations, budgets and scientific validation. Requested validated configurations load directly into the builder; there is no extra draft-approval checkbox. Reloading historical conversations does not overwrite current builder settings.

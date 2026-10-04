@@ -8,7 +8,13 @@ Work in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-
 
 ## Current Agent update
 
-Behavior revision `45a5a00` restores the documented actions and modes and removes the additional mandatory draft-approval step. The focused functional suite passed 210 checks. The rebuilt wheel installed outside the checkout and passed requested settings, exact run-payload retention, bookmarks/audit endpoints, packaged resources, and unchanged hashes for 309 scientific study files. The broader suite passed 156 checks with one OpenFF dependency skip and one graph-loading timeout; both affected graph cases passed on focused rerun. The complete graph module then passed 39/39.
+The live workflow test uncovered missing atom/residue callbacks in playback.
+Behavior revision `f3e09da` fixes selection on each displayed frame. The final
+combined suite passed 185 checks with one unavailable-OpenFF skip; 54 aesthetics
+checks were excluded as deferred. The exact installed wheel passed actual
+canvas selection, residue pinning, live OpenAI explanations, requested pH loading,
+context opt-out and persistent Agent disabling. Scientific hashes were unchanged.
+Detailed current and historical receipts are retained in the status document.
 
 ## Functional order and acceptance
 
