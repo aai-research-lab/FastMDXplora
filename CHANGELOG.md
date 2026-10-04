@@ -131,6 +131,20 @@ set aside and data deposits are left out of it. One reading of what
 each file is (`study_files.py`) serves the page, the bundle and the
 deposit.
 
+### A pull request's co-authors sign the contributor agreement too
+
+**Everyone a commit credits is asked to sign.** The contributor agreement's
+check read only each commit's author, so a pull request porting another
+person's work, with a `Co-authored-by:` line for them, passed with the
+porter's signature alone. A second job in `.github/workflows/cla.yml`
+(`scripts/cla_co_authors.py`) reads each commit's message for
+`Co-authored-by:` lines, a line written after a literal `\n` included, and
+for `(cherry picked from commit ...)`, finds each person's GitHub account
+from a commit GitHub has linked to their address, and asks those who have
+not signed, with the same sentence, recorded with the other signatures. Its
+verdict is the status `Contributor agreement / co-authors` on the pull
+request; one comment there says who is left.
+
 ### The demo study is fetched the first time it is opened
 
 **Changed:** the demo study (trypsin with benzamidine, 3PTB) is not in the

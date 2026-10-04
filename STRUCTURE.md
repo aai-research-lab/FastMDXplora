@@ -259,6 +259,7 @@ FastMDXplora/
 │   ├── gpu_shakedown.py           # What only a real GPU can answer: cost, segments, resuming
 │   ├── make_mark.py               # FastMDXplora's mark: the tab's icon and ICONS["mark"]
 │   ├── make_demo.py               # A finished 3PTB study packaged as the demo study
+│   ├── cla_co_authors.py          # A pull request's co-authors sign the contributor agreement
 │   └── make_benzene.py, compare_*.py, name_refusal*.py, measure_nli.py
 ├── container/                     # Apptainer definition, and Docker made from it
 ├── preregistration/               # Validation plans written before their results
@@ -273,7 +274,7 @@ FastMDXplora/
 │   ├── tests.yml                  # CI: OS × Python matrix, CLI smoke test, coverage
 │   ├── publish.yml                # PyPI trusted publishing on `v*` tag
 │   ├── container.yml              # The Apptainer image (.sif), for a release or a trial
-│   └── cla.yml                    # The contributor agreement, signed on a pull request
+│   └── cla.yml                    # The contributor agreement, signed by authors and co-authors
 ├── examples/                      # Example inputs (e.g. pdb_list.txt)
 ├── assets/
 ├── fastmdx                        # Launcher for an uninstalled checkout

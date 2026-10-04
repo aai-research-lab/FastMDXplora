@@ -258,6 +258,13 @@ other terms where that is needed.
   `I have read the FastMDXplora Contributor License Agreement and I hereby sign it`.
   The check records it in the `cla-signatures` branch, and later pull
   requests pass.
+- **Work that is not all yours.** Where a commit includes someone else's
+  work, end its message with a `Co-authored-by: Name <address>` line for
+  them (or keep the `(cherry picked from commit ...)` line
+  `git cherry-pick -x` writes). They sign the agreement too: a second check
+  asks each of them on the pull request, as the first asks the authors.
+  Someone with no GitHub account linked to that address signs a copy, which
+  the maintainer records.
 - **If you are under 18**, a parent or guardian also signs a copy of the
   agreement; the form is at its end.
 - **If you contributed before the agreement existed**, sign a copy of it too:

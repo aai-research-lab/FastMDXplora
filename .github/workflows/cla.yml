@@ -6,6 +6,11 @@
 # checks out or runs the pull request's code: the action reads only the
 # authors' names and the comments. The action is pinned by its commit, since
 # it runs with those permissions.
+#
+# The action asks each commit's author. The `co-authors` job asks the people
+# a commit credits who did not make it: a `Co-authored-by:` line, or a commit
+# cherry picked in (scripts/cla_co_authors.py). It runs the default branch's
+# copy of that script and reads the pull request only through the API.
 name: Contributor agreement
 
 on:
@@ -47,3 +52,30 @@ jobs:
             guardian also signs a copy, as the agreement says.
           custom-allsigned-prcomment: Every author of this pull request has signed the Contributor License Agreement.
           create-file-commit-message: Record signatures of the Contributor License Agreement
+
+  co-authors:
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.action != 'closed')
+      || (github.event.issue.pull_request && (github.event.comment.body == 'recheck'
+      || github.event.comment.body == 'I have read the FastMDXplora Contributor License Agreement and I hereby sign it'))
+    runs-on: ubuntu-latest
+    steps:
+      # The default branch's script, never the pull request's files.
+      # actions/checkout v5.1.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/cla_co_authors.py
+          sparse-checkout-cone-mode: false
+      - name: Check every co-author has signed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PULL_REQUEST: ${{ github.event.pull_request.number || github.event.issue.number }}
+          SENTENCE: I have read the FastMDXplora Contributor License Agreement and I hereby sign it
+          # As the action's allowlist above.
+          ALLOWLIST: bot*
+          # The agreement's Maintainer (CLA.md), by his commit addresses: he
+          # signs nothing to himself, so a commit crediting him asks nobody.
+          MAINTAINER: kunleaina@gmail.com, aaina@csudh.edu
+        run: python3 scripts/cla_co_authors.py

@@ -2,11 +2,12 @@
 
 The Contributor License Agreement (`CLA.md`) is signed by a comment on a pull
 request, which a workflow recognises and records. The sentence is written in
-four places: the agreement, the contributing guide, and twice in the
-workflow (the condition that runs it and the comment the action accepts). A
-sentence changed in one and not the others is a signature the check never
-sees. The workflow runs with write permissions on pull requests from forks,
-so it must never check out their code, and its action is pinned by commit.
+six places: the agreement, the contributing guide, and four times in the
+workflow (the condition that runs each job, the comment the action accepts,
+and the one the co-authors' check accepts). A sentence changed in one and
+not the others is a signature the check never sees. The workflow runs with
+write permissions on pull requests from forks, so it must never check out
+their code, and its actions are pinned by commit.
 """
 
 from __future__ import annotations
@@ -31,6 +32,23 @@ def test_the_sentence_is_the_same_everywhere():
     assert f"github.event.comment.body == '{SENTENCE}'" in step["if"]
     assert f"> {SENTENCE}\n" in (ROOT / "CLA.md").read_text(encoding="utf-8")
     assert f"`{SENTENCE}`" in (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    co_authors = _workflow()["jobs"]["co-authors"]
+    assert co_authors["steps"][1]["env"]["SENTENCE"] == SENTENCE
+    assert f"github.event.comment.body == '{SENTENCE}'" in co_authors["if"]
+
+
+def test_the_co_authors_are_checked_by_the_default_branch_s_script():
+    jobs = _workflow()["jobs"]
+    checkout, run = jobs["co-authors"]["steps"]
+    assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", checkout["uses"])
+    assert checkout["with"] == {
+        "ref": "${{ github.event.repository.default_branch }}",
+        "persist-credentials": False,
+        "sparse-checkout": "scripts/cla_co_authors.py",
+        "sparse-checkout-cone-mode": False}
+    assert run["run"] == "python3 scripts/cla_co_authors.py"
+    assert run["env"]["ALLOWLIST"] == jobs["cla"]["steps"][0]["with"]["allowlist"]
+    assert "github.event.action != 'closed'" in jobs["co-authors"]["if"]
 
 
 def test_the_check_reads_comments_and_never_runs_a_pull_request():
