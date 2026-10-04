@@ -276,3 +276,31 @@ class TestTheChainOrder:
             _run(LipidOrder, turned)
         assert refused.value.code == "analysis.system.inapplicable"
         assert "two layers normal to z" in str(refused.value)
+
+    def test_atoms_wrapped_one_by_one_into_the_box_give_the_same_order(self) -> None:
+        """A trajectory written with every atom wrapped splits C-H bonds
+        across the x and y faces as well as z."""
+        traj = _patch("DMPC")
+        wrapped = traj[:]
+        wrapped.xyz[0] = np.mod(wrapped.xyz[0], wrapped.unitcell_lengths[0])
+        chains, whole = _order(traj)
+        assert _order(wrapped)[0] == chains
+        assert np.allclose(_order(wrapped)[1], whole, atol=1e-5)
+
+    def test_in_a_triclinic_box_too(self) -> None:
+        """The patch sheared into a cell whose second vector leans 0.3 of
+        the first, then each atom wrapped in the cell's own coordinates."""
+        traj = _patch("DMPC")
+        length = traj.unitcell_lengths[0]
+        sheared = traj[:]
+        sheared.xyz[0, :, 0] += 0.3 * length[0] * sheared.xyz[0, :, 1] / length[1]
+        second = np.hypot(0.3 * length[0], length[1])
+        sheared.unitcell_lengths = np.array([[length[0], second, length[2]]])
+        sheared.unitcell_angles = np.array([[90.0, 90.0,
+                                             np.degrees(np.arccos(0.3 * length[0] / second))]])
+        cell = sheared.unitcell_vectors[0].astype(np.float64)
+        fractional = sheared.xyz[0].astype(np.float64) @ np.linalg.inv(cell)
+        wrapped = sheared[:]
+        wrapped.xyz[0] = (np.mod(fractional, 1.0) @ cell).astype(np.float32)
+        assert np.abs(wrapped.xyz[0] - sheared.xyz[0]).max() > 1.0
+        assert np.allclose(_order(wrapped)[1], _order(sheared)[1], atol=1e-5)

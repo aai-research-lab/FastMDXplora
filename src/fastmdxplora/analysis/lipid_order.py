@@ -29,7 +29,6 @@ from fastmdxplora.analysis.bilayer import (
     _BOND_TOLERANCE_NM,
     _COVALENT_NM,
     _symbol,
-    _wrapped,
     box_vectors,
     find_bilayer,
     leaflets,
@@ -47,6 +46,23 @@ class _Chain:
     label: str
     #: carbon number (2 upward) -> (carbon position, [hydrogen positions])
     carbons: list[tuple[int, int, list[int]]]
+
+
+def _minimum_image(delta: np.ndarray, vectors: np.ndarray) -> np.ndarray:
+    """Displacements ``(frames, n, 3)`` brought to their nearest periodic image.
+
+    In the cell's own fractional coordinates, so a triclinic box is handled
+    as an orthorhombic one is: ``f = d B^-1``, ``f -= round(f)``, ``d = f B``,
+    with the box vectors as the rows of ``B``, one per frame. Exact for a
+    displacement shorter than half the cell's narrowest width, which a
+    covalent bond always is. A trajectory written with each atom wrapped into
+    the box splits a lipid's C-H bonds across every face, in x and y as well
+    as z.
+    """
+    inverse = np.linalg.inv(vectors)
+    fractional = np.einsum("fnj,fjk->fnk", delta, inverse)
+    fractional -= np.round(fractional)
+    return np.einsum("fnj,fjk->fnk", fractional, vectors)
 
 
 def _bonds(xyz: np.ndarray, symbols: list[str], cell: np.ndarray | None) -> list[set[int]]:
@@ -234,7 +250,6 @@ class LipidOrder(Analysis):
                 "bonded to an ester or amide and to a carbon chain.",
                 code="analysis.system.inapplicable")
 
-        heights = vectors[:, 2, 2]
         rows = []
         for (lipid, label, carbon), entries in sorted(pairs.items()):
             carbons = np.array([c for c, hs, _ in entries for _ in hs])
@@ -243,9 +258,10 @@ class LipidOrder(Analysis):
             total = np.zeros(len(carbons))
             for start in range(0, traj.n_frames, self._CHUNK):
                 stop = min(start + self._CHUNK, traj.n_frames)
-                bond = (traj.xyz[start:stop, hydrogens]
-                        - traj.xyz[start:stop, carbons]).astype(np.float64)
-                bond[..., 2] = _wrapped(bond[..., 2], heights[start:stop, None])
+                bond = _minimum_image(
+                    (traj.xyz[start:stop, hydrogens]
+                     - traj.xyz[start:stop, carbons]).astype(np.float64),
+                    vectors[start:stop])
                 cosine2 = bond[..., 2] ** 2 / (bond ** 2).sum(axis=-1)
                 total += (1.5 * cosine2 - 0.5).sum(axis=0)
             per_bond = total / traj.n_frames

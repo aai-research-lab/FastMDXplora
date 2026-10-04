@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Chain order of a trajectory wrapped atom by atom
+
+**Each C-H bond is brought to its nearest periodic image in all three box directions, triclinic cells included, before its angle to the normal is taken.** Only z was corrected, so a trajectory written with every atom wrapped into the box (as GROMACS writes one by default) split the bonds of lipids crossing the x and y faces, each of which counted as a bond nearly in the plane: OpenMM's DMPC patch wrapped this way read sn-1 C2 -0.243 against -0.233 and the chain ends up to 0.015 more ordered than they are. The bond is now taken in the cell's fractional coordinates, `f = d B^-1`, `f -= round(f)`, `d = f B`. Results change: S_CD of trajectories saved with atoms wrapped one by one, by up to 0.015.
+
 ### The chain order checks the normal
 
 **`lipid_order` refuses a bilayer whose phosphates do not form two layers normal to z, as the area per lipid and the thickness do.** S_CD is the C-H bonds' angle to z, and the order analysis never checked that z was the normal: OpenMM's DMPC patch with x and z swapped gave an sn-1 C2 of +0.128 against the true -0.233, a profile of the wrong sign, with nothing refused. Results change: none for a bilayer in the xy plane; one on its side is now refused.
