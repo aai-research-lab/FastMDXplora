@@ -1,0 +1,49 @@
+# The contributor agreement (CLA.md), signed once by each author of a pull
+# request with a comment on it, and kept in the `cla-signatures` branch.
+#
+# It runs on `pull_request_target`, with the write permissions below, so
+# that a pull request from a fork can be checked and commented on. It never
+# checks out or runs the pull request's code: the action reads only the
+# authors' names and the comments. The action is pinned by its commit, since
+# it runs with those permissions.
+name: Contributor agreement
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the authors have signed
+        if: >-
+          github.event_name == 'pull_request_target'
+          || github.event.comment.body == 'recheck'
+          || github.event.comment.body == 'I have read the FastMDXplora Contributor License Agreement and I hereby sign it'
+        # contributor-assistant/github-action v2.6.1
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-signatures: signatures/version1/cla.json
+          path-to-document: https://github.com/aai-research-lab/FastMDXplora/blob/main/CLA.md
+          branch: cla-signatures
+          allowlist: bot*
+          custom-pr-sign-comment: I have read the FastMDXplora Contributor License Agreement and I hereby sign it
+          custom-notsigned-prcomment: >-
+            Thank you for this pull request. Before it can be merged, each author
+            signs the [FastMDXplora Contributor License Agreement](https://github.com/aai-research-lab/FastMDXplora/blob/main/CLA.md)
+            once: you keep the copyright in your work and grant a licence to use it.
+            To sign, post the comment below. If you are under 18, a parent or
+            guardian also signs a copy, as the agreement says.
+          custom-allsigned-prcomment: Every author of this pull request has signed the Contributor License Agreement.
+          create-file-commit-message: Record signatures of the Contributor License Agreement

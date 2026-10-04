@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A contributor agreement
+
+**Contributors sign the FastMDXplora Contributor License Agreement once**
+(`CLA.md`), with a comment on their first pull request, which a check asks
+for and records in the `cla-signatures` branch. A contributor keeps the
+copyright in their work and grants Adekunle Aina a licence to use it,
+including under their patents, so that FastMDXplora goes on being released
+under the MIT License and can be released under other terms where needed.
+It covers past contributions too; a contributor under 18 signs with a parent
+or guardian. `CONTRIBUTING.md` and the README say so.
+
 ### A movie of a structure without frames
 
 **A study without frames, set up and not yet run, makes a movie of its

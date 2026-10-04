@@ -177,7 +177,8 @@ decide numbers. A run directory is readable by somebody who was not there.
 
 ## Contributing
 
-Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). FastMDXplora
+Contributions welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Each
+contributor signs the [Contributor License Agreement](CLA.md) once. FastMDXplora
 follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## License
