@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A centre-of-mass distance in a dodecahedron
+
+**`pair_distance` with `measure: com` now takes the shortest periodic copy in a cell of any shape.** It folded each Cartesian component by its box length, which is right only for a rectangular box: in the rhombic dodecahedron the setup builds, 28% of random pairs came out on the wrong copy, by up to 4.68 nm, and two centres 0.5 nm apart across a slanted face read 5.416 nm. Now the fractional coordinates are rounded with the cell vectors and the 26 neighbouring translations are compared, keeping the shortest, and the warning that a pair is near the limit of the convention is set at half the shortest periodic repeat rather than half the smallest box length. `measure: closest` was already right. Results change: centre-of-mass distances from triclinic boxes.
+
 ### Shape descriptors
 
 **`moments_of_inertia` now also gives, per frame, the asphericity, acylindricity and relative shape anisotropy of the selection's gyration tensor.** The three principal moments separate a rod from a disc, but a reader comparing shapes wanted the descriptors polymer and protein papers quote. From the eigenvalues l1 <= l2 <= l3 of the mass-weighted gyration tensor, b = l3 - (l1 + l2)/2, c = l2 - l1 (nm^2) and kappa^2 = (b^2 + 3c^2/4)/(l1 + l2 + l3)^2, as Theodorou and Suter define them (Macromolecules 18, 1206, 1985), are written to `moments_of_inertia_shape.dat`, and each one's mean after equilibration is recorded in the findings under its name by the statistics every per-frame series uses. Checked against an independent computation and against shapes solvable on paper: a rod gives kappa^2 = 1, a cube 0, a spherical cloud under 0.005 and a flat square 1/4.

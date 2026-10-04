@@ -55,7 +55,7 @@ minimum in g(r) — never assumed, because the radius decides the number.
 
 | | |
 |---|---|
-| `pair_distance` | The separation of two selections, by centre of mass or closest approach, folded into the periodic cell |
+| `pair_distance` | The separation of two selections, by centre of mass or closest approach, by the minimum image in a periodic cell of any shape |
 | `end_to_end` | The distance between the two ends of a chain, the coarsest description of extension there is |
 | `moments_of_inertia` | The three principal moments, which separate a rod from a disc where the radius of gyration cannot, and the asphericity, acylindricity and relative shape anisotropy of the gyration tensor |
 
