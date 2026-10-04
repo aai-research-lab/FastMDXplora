@@ -249,6 +249,9 @@ against another tool.
 
 - **Hydrogen bonds** use Baker–Hubbard at 0.25 nm and 120° by default. Both are
   settings, because published criteria disagree — PLIP allows 4.1 Å and 100°.
+  `pl_hbonds` uses Wernet-Nilsson and `pl_interactions` a 3.5 Å donor to
+  acceptor distance, so the three count different bonds; each records its
+  criterion in `options.json` and names it on its axis.
   Bonds are counted in every frame they exist, including transient ones.
 
 - **Secondary structure** uses MDTraj's DSSP and excludes anything DSSP cannot

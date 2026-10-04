@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Each hydrogen-bond count says which criterion it is
+
+**`hbonds`, `pl_hbonds` and `pl_interactions` now record their hydrogen-bond criterion in `options.json` and name it on their axes.** The three use different criteria and count different bonds: `hbonds` Baker-Hubbard (H...A under 2.5 A), `pl_hbonds` Wernet-Nilsson, `pl_interactions` a donor to acceptor distance under 3.5 A, so an O-H...O 3.3 A apart at 180 degrees was a bond in `pl_interactions` and not in `pl_hbonds`, with nothing in either output to say why. The interactions rule's documentation credited its 3.5 A to Baker and Hubbard, whose criterion is the 2.5 A hydrogen distance; it now cites McDonald and Thornton. No count changes; the `hbonds` axis reads "Hydrogen bonds (Baker-Hubbard)" and the `pl_hbonds` axis "Protein-ligand H-bonds (Wernet-Nilsson)".
+
 ### `coordination_number` in seconds
 
 **`coordination_number` now finds the shell candidates with one neighbour search over the trajectory and counts each atom's neighbours among them, with the same counts as before.** It searched once per atom of `selection_a` per frame and sliced the trajectory each time, so 188 protein oxygens against the water took 80 s for two frames of a solvated 1BHL, about 11 hours per thousand frames; it now takes 0.5 s for those two frames and 3.3 s for all forty. The counts are identical to the per-atom search on that trajectory and in a test on cubic and triclinic boxes with overlapping selections. Results do not change.

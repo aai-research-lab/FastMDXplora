@@ -172,11 +172,26 @@ class HBonds(Analysis):
             )
         self.options.update(
             method=self.method,
+            criterion=self._criterion(),
             periodic=self.periodic,
             freq=self.freq,
             candidate_freq=self.candidate_freq,
             count_multiplier=self.count_multiplier,
         )
+
+    def _criterion(self) -> str:
+        """The hydrogen-bond criterion applied, by name and numbers.
+
+        Three are in use across the analyses and they count different
+        bonds, so each says which it is: this one, Baker-Hubbard on the
+        hydrogen to acceptor distance or Wernet-Nilsson's angle-dependent
+        distance; ``pl_hbonds`` Wernet-Nilsson; ``pl_interactions`` the
+        donor to acceptor distance of 3.5 A.
+        """
+        if self.method == "wernet_nilsson":
+            return "Wernet-Nilsson (angle-dependent D...A distance)"
+        return (f"Baker-Hubbard: H...A < {self.distance_cutoff * 10:g} A, "
+                f"D-H...A > {self.angle_cutoff:g} deg")
 
     def compute(self, traj: md.Trajectory) -> pd.DataFrame:
         """Compute per-frame H-bond counts.
@@ -284,7 +299,8 @@ class HBonds(Analysis):
         return label
 
     def default_ylabel(self) -> str | None:
-        return "Number of hydrogen bonds"
+        name = "Wernet-Nilsson" if self.method == "wernet_nilsson" else "Baker-Hubbard"
+        return f"Hydrogen bonds ({name})"
 
 
 def _involving_a_side_chain(topology: Any, bonds: np.ndarray) -> np.ndarray:

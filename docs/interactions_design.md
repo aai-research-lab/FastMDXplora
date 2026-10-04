@@ -104,7 +104,7 @@ interaction the result named would rest on a guess the caller could not see.
 
 | Interaction | Criterion | Source |
 |---|---|---|
-| Hydrogen bond | H···A < 3.5 Å, D-H···A > 120° | Baker & Hubbard (1984); McDonald & Thornton (1994) |
+| Hydrogen bond | D···A < 3.5 Å, D-H···A > 120° | McDonald & Thornton (1994) |
 | Hydrophobic | C···C < 4.0 Å, both bonded only to C or H | PLIP (Adasme et al. 2021) |
 | Salt bridge | charged group centres < 4.5 Å | ProLIF (Bouysset & Fiorucci 2021) |
 | π-stacking | ring centres < 5.5 Å, planes within 30° of parallel or perpendicular, offset < 2.0 Å | PLIP |

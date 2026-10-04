@@ -46,6 +46,10 @@ __all__ = [
 ]
 
 
+#: The hydrogen-bond criterion :func:`hydrogen_bonds` applies, by name.
+HBOND_CRITERION = ("donor-acceptor distance < 3.5 A and D-H...A angle > 120 deg "
+                   "(McDonald and Thornton 1994)")
+
 #: The two directions of a hydrogen bond, as the kind of its contact.
 HBOND_LIGAND_DONOR = "hydrogen_bond_ligand_donor"
 HBOND_PROTEIN_DONOR = "hydrogen_bond_protein_donor"
@@ -365,9 +369,16 @@ def hydrogen_bonds(
 ) -> list[Contact]:
     """Hydrogen bonds between ligand and protein, in every frame.
 
-    The criterion is the literature standard: donor to acceptor within 3.5 A,
-    and the donor-hydrogen-acceptor angle above 120 degrees (Baker & Hubbard
-    1984; McDonald & Thornton, J Mol Biol 238:777, 1994).
+    The criterion: donor heavy atom to acceptor within 3.5 A, and the
+    donor-hydrogen-acceptor angle above 120 degrees, the heavy-atom form
+    McDonald and Thornton use (J Mol Biol 238:777, 1994) and ProLIF's
+    distance. It is not Baker and Hubbard's (Prog Biophys Mol Biol 44:97,
+    1984), which bounds the hydrogen to acceptor distance at 2.5 A; that is
+    the ``hbonds`` analysis's default. ``pl_hbonds`` uses a third,
+    Wernet-Nilsson's angle-dependent distance. The three are recorded by
+    name in each analysis's options, because they do not count the same
+    bonds: an O-H...O at 3.3 A between the oxygens and 180 degrees is a bond
+    here and not under Wernet-Nilsson.
 
     PLIP uses 4.1 A and 100 degrees, which it says is deliberate -- refined
     against low-resolution crystal structures where hydrogen positions are not

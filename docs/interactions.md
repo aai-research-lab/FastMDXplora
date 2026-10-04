@@ -21,7 +21,7 @@ in the rule's own docstring.
 
 | Interaction | Criterion | Source |
 |---|---|---|
-| Hydrogen bond | H···A < 3.5 Å, D-H···A > 120° | Baker & Hubbard 1984; McDonald & Thornton 1994 |
+| Hydrogen bond | D···A < 3.5 Å, D-H···A > 120° | McDonald & Thornton 1994 |
 | Hydrophobic | C···C < 4.0 Å, both bonded only to carbon or hydrogen | PLIP |
 | Salt bridge | opposite charged groups < 4.5 Å, centre to centre | ProLIF |
 | π-stacking | ring centres < 5.5 Å, planes within 30° of parallel or perpendicular, offset < 2.0 Å | PLIP |
@@ -48,6 +48,12 @@ same rule.
 Every threshold is a setting, because the published values disagree and the
 disagreement is a real one rather than a rounding difference. PLIP allows a
 hydrogen bond at 4.1 Å and 100°; the literature standard is 3.5 Å and 120°.
+This is not the criterion of the `hbonds` analysis, which is Baker and
+Hubbard's 2.5 Å from the hydrogen to the acceptor, nor of `pl_hbonds`, which is
+Wernet and Nilsson's angle-dependent distance, and the three do not count the
+same bonds: an O-H···O 3.3 Å apart at 180° is a hydrogen bond here and not in
+`pl_hbonds`. Each analysis names its criterion in `options.json`
+(`hydrogen_bond_criterion` here, `criterion` in the other two) and on its axis.
 The stricter values are the default here, because a force field positions its
 hydrogens and a criterion written for structures with inferred hydrogens does
 not need to be as forgiving. PLIP's values remain reachable.
