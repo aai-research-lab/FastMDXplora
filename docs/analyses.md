@@ -101,6 +101,13 @@ held by one water throughout and a position a hundred waters pass through can
 share an occupancy and mean entirely different things: the first is a molecule
 to displace, the second is geometry the protein favours.
 
+Each frame is first put in the site's own frame: every water position found
+is moved and turned with the least-squares fit of the site's atoms onto the
+first frame's (moved only where the site has fewer than three atoms), and the
+sites are given in the first frame's coordinates. A protein turns in its box
+over a run, and a water held on it traced an arc in the box, which was
+rejected as a surface or split at part of its occupancy.
+
 It needs an explicitly solvated trajectory — set
 `simulation.save_selection: all`.
 

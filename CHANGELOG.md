@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed: a water site on a turning protein
+
+**`water_sites` finds a site where it is on the protein, however the protein
+turns.** It clustered water positions as the trajectory stored them, so a
+water held on a protein that turned in its box traced an arc, which was
+rejected as a surface or split into sites at part of their occupancy: a
+water held throughout a run on a residue turned through 180 degrees was
+reported as no site. Each position is now moved and turned with the fit of
+the site's atoms onto the first frame's, sites are given in the first
+frame's coordinates, and `fitted_on` in the findings says how. Results of
+studies whose protein turned change.
+
 ### Replicas coloured by their mean
 
 **A study of replicas is coloured by their mean** in the Viewer, which
