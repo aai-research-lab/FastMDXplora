@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Ligand RMSD over heavy atoms, with the ligand's symmetry
+
+**`ligand_rmsd` is now taken over the ligand's heavy atoms, at the relabelling of a symmetric ligand that fits each frame best.** It counted every ligand atom, hydrogens included, and took the atoms as labelled, so a benzene turned by 60 degrees about its axis, lying exactly where it was, read 0.200 nm (0.139 nm over its carbons). Now hydrogens are left out by default (`include_hydrogens: true` counts them), and each frame's RMSD is the smallest over the automorphisms of the ligand's bond graph from the topology, atoms matched to atoms of the same element with the same bonds, with no refitting (`symmetry_corrected: false` turns this off). The same benzene reads 0.000 nm. The search stops at 10,000 automorphisms and says so; a ligand whose topology records no bonds is measured as labelled, and that is said. Which atoms were used, how many automorphisms, and the largest correction are recorded in the findings. Results change: every ligand RMSD with hydrogens in the ligand, and those of symmetric ligands that turned onto themselves.
+
 ### Ligand RMSF across a periodic face
 
 **`ligand_rmsf` now follows the ligand across periodic faces before taking each atom's fluctuation, the same way `ligand_rmsd` does.** It read the fitted coordinates as stored, so an atom written on the far side of the box in some frames fluctuated by a box length: a bound ligand on a face of a 5 nm box, stored on the far side in 31 of 200 frames, read an RMSF of 1.80 nm against a true 0.035 nm. Both analyses now take the ligand from one shared function, so they read the same ligand. Results change: ligand RMSF where an atom of the ligand crossed a face of the box as stored.

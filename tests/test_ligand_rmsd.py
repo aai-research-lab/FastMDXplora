@@ -265,3 +265,108 @@ class TestAllLigandAnalysesAutoRoute:
         plan = ao._build_plan(None, None)
         for n in ("ligand_rmsd", "ligand_rmsf", "pl_contacts", "pl_hbonds"):
             assert n in plan
+
+
+def _benzene_beside_a_receptor(turn_degrees: float, *, bonds: bool = True):
+    """A receptor of fifteen alpha carbons and a benzene with its hydrogens,
+    the benzene turned about its own axis in the second frame and the whole
+    complex turned and moved, so only the ring's relabelling is left."""
+    top = md.Topology()
+    chain = top.add_chain()
+    protein = top.add_residue("ALA", chain)
+    for _ in range(15):
+        top.add_atom("CA", md.element.carbon, protein)
+    ring = top.add_residue("BNZ", chain)
+    carbons = [top.add_atom(f"C{k}", md.element.carbon, ring) for k in range(6)]
+    hydrogens = [top.add_atom(f"H{k}", md.element.hydrogen, ring) for k in range(6)]
+    if bonds:
+        for k in range(6):
+            top.add_bond(carbons[k], carbons[(k + 1) % 6])
+            top.add_bond(carbons[k], hydrogens[k])
+    rng = np.random.default_rng(0)
+    alphas = rng.normal(0, 0.8, (15, 3))
+    angles = np.arange(6) * np.pi / 3
+
+    def benzene(phase):
+        c = np.column_stack([0.139 * np.cos(angles + phase), 0.139 * np.sin(angles + phase), np.zeros(6)])
+        h = np.column_stack([0.247 * np.cos(angles + phase), 0.247 * np.sin(angles + phase), np.zeros(6)])
+        return np.vstack([c, h]) + [1.0, 0.0, 0.0]
+
+    from scipy.spatial.transform import Rotation
+    tumble = Rotation.from_rotvec([0.3, 0.2, 0.1]).as_matrix()
+    frames = [np.vstack([alphas, benzene(0.0)]),
+              np.vstack([alphas, benzene(np.deg2rad(turn_degrees))]) @ tumble.T + 0.5]
+    return md.Trajectory(np.array(frames, dtype=np.float32), top)
+
+
+class TestTheLigandsAtomsAndSymmetry:
+    def test_a_ring_turned_onto_itself_has_not_moved(self, tmp_path):
+        analysis = LigandRMSD(ligand_resname="BNZ", align_selection="name CA",
+                              output_dir=tmp_path)
+        result = analysis.compute(_benzene_beside_a_receptor(60.0))
+
+        assert result[1] == pytest.approx(0.0, abs=1e-4)          # read 0.200
+        assert analysis.findings["symmetry"]["automorphisms"] == 12
+        assert analysis.findings["atoms"]["n_atoms"] == 6
+
+    def test_hydrogens_are_left_out_unless_asked_for(self, tmp_path):
+        traj = _benzene_beside_a_receptor(60.0)
+        heavy = LigandRMSD(ligand_resname="BNZ", align_selection="name CA",
+                           symmetry_corrected=False, output_dir=tmp_path).compute(traj)
+        every = LigandRMSD(ligand_resname="BNZ", align_selection="name CA",
+                           symmetry_corrected=False, include_hydrogens=True,
+                           output_dir=tmp_path).compute(traj)
+
+        assert heavy[1] == pytest.approx(0.139, abs=1e-3)
+        assert every[1] == pytest.approx(0.200, abs=1e-3)
+
+    def test_with_hydrogens_the_symmetry_still_applies(self, tmp_path):
+        result = LigandRMSD(ligand_resname="BNZ", align_selection="name CA",
+                            include_hydrogens=True, output_dir=tmp_path).compute(
+                                _benzene_beside_a_receptor(60.0))
+
+        assert result[1] == pytest.approx(0.0, abs=1e-4)
+
+    def test_a_turn_that_is_not_a_symmetry_still_reads(self, tmp_path):
+        """30 degrees puts each carbon midway between two of the reference's:
+        the correction finds the nearer labelling, not zero."""
+        result = LigandRMSD(ligand_resname="BNZ", align_selection="name CA",
+                            output_dir=tmp_path).compute(_benzene_beside_a_receptor(30.0))
+
+        assert result[1] == pytest.approx(2 * 0.139 * np.sin(np.deg2rad(15.0)), abs=1e-3)
+
+    def test_a_ligand_without_bonds_is_measured_as_labelled_and_said_to_be(self, tmp_path):
+        analysis = LigandRMSD(ligand_resname="BNZ", align_selection="name CA",
+                              output_dir=tmp_path)
+        result = analysis.compute(_benzene_beside_a_receptor(60.0, bonds=False))
+
+        assert result[1] == pytest.approx(0.139, abs=1e-3)
+        assert analysis.findings["symmetry"]["applied"] is False
+
+    def test_the_options_are_recorded(self, tmp_path):
+        analysis = LigandRMSD(ligand_resname="BNZ", output_dir=tmp_path)
+
+        assert analysis.options["include_hydrogens"] is False
+        assert analysis.options["symmetry_corrected"] is True
+
+
+class TestTheAutomorphisms:
+    def test_they_are_capped_and_the_cap_is_said(self):
+        """Neopentane with its hydrogens has 24 x 6^4 = 31,104."""
+        from fastmdxplora.analysis.ligand_rmsd import automorphisms
+
+        top = md.Topology()
+        residue = top.add_residue("NEO", top.add_chain())
+        centre = top.add_atom("C", md.element.carbon, residue)
+        for i in range(4):
+            carbon = top.add_atom(f"C{i}", md.element.carbon, residue)
+            top.add_bond(centre, carbon)
+            for j in range(3):
+                top.add_bond(carbon, top.add_atom(f"H{i}{j}", md.element.hydrogen, residue))
+
+        everything, capped = automorphisms(top, np.arange(top.n_atoms))
+        heavy, heavy_capped = automorphisms(top, top.select("not element H"))
+
+        assert capped and len(everything) == 10_000
+        assert np.array_equal(everything[0], np.arange(top.n_atoms))
+        assert not heavy_capped and len(heavy) == 24

@@ -15,6 +15,20 @@ measurement (ligand) use different selections, which is the correct way to ask
 Output is a single-column ``ligand_rmsd.dat`` of RMSD values in nanometers,
 and a time-series figure.
 
+**Heavy atoms, and the ligand's symmetry.** By default the RMSD is taken over
+the ligand's heavy atoms, which is the convention docking and pose
+comparisons use: hydrogens add positions that follow their heavy atoms and
+weight a group by how many hydrogens it carries. And a symmetric ligand has
+more than one way to match its atoms to the reference, so a pose that is the
+same pose with its atoms relabelled is not a displacement: a benzene turned
+by 60 degrees about its axis lies exactly where it was, and read 0.200 nm
+over all atoms and 0.139 nm over its carbons. Each frame's RMSD is therefore
+the smallest over the automorphisms of the ligand's bond graph (atoms
+matched to atoms of the same element whose bonds match), with no refitting:
+the receptor fit stays the only superposition. The automorphisms come from
+the topology's bonds; a ligand with none recorded is compared with its atoms
+as labelled, and that is said.
+
 **A ligand that leaves the site has no pose.** Followed across the periodic
 boundary, as it must be, its RMSD from where it started is then the length of
 a path through solvent, which grows without bound however long the run is.
@@ -169,6 +183,179 @@ def _carried_by(source, destination, points):
                      points - source_centre, rotation) + destination_centre
 
 
+#: The most automorphisms of the ligand's graph a symmetry-corrected RMSD
+#: is taken over. A heavy-atom graph of a drug-like ligand has a handful (a
+#: phenyl ring 2, a tert-butyl group 6, benzene 12); with hydrogens included,
+#: every methyl multiplies them by six, and the count is capped and the cap
+#: recorded rather than letting the search run without bound.
+MAX_AUTOMORPHISMS = 10_000
+
+
+def _bond_graph(topology, atoms) -> list[set[int]] | None:
+    """Neighbours of each of ``atoms``, by position in ``atoms``, from the
+    topology's bonds among them; None where none of them is bonded."""
+    position = {int(a): k for k, a in enumerate(atoms)}
+    neighbours: list[set[int]] = [set() for _ in atoms]
+    any_bond = False
+    for first, second in topology.bonds:
+        i, j = position.get(first.index), position.get(second.index)
+        if i is None or j is None or i == j:
+            continue
+        neighbours[i].add(j)
+        neighbours[j].add(i)
+        any_bond = True
+    return neighbours if any_bond else None
+
+
+def automorphisms(topology, atoms, limit: int = MAX_AUTOMORPHISMS) -> tuple[np.ndarray, bool] | None:
+    """The permutations of ``atoms`` that preserve elements and bonds.
+
+    Returns ``(permutations, capped)``: an array of shape (n_found, n_atoms)
+    whose rows map position i to position ``row[i]``, the identity first,
+    and whether the search stopped at ``limit`` (or after ``200 * limit``
+    candidates tried). None where the atoms carry
+    no bonds, since every relabelling of an unbonded set would then count.
+
+    Atoms are first given classes by colour refinement (element, then the
+    multiset of the neighbours' classes, until nothing splits), which an
+    automorphism must preserve; a backtracking search then extends a partial
+    map one atom at a time, in breadth-first order so each new atom has a
+    mapped neighbour, keeping only maps under which every pair of mapped
+    atoms is bonded exactly when its image is.
+    """
+    atoms = [int(a) for a in atoms]
+    n = len(atoms)
+    neighbours = _bond_graph(topology, atoms)
+    if neighbours is None:
+        return None
+    elements = []
+    for a in atoms:
+        element = topology.atom(a).element
+        elements.append(getattr(element, "symbol", None) or topology.atom(a).name)
+
+    names = {name: k for k, name in enumerate(sorted(set(elements)))}
+    colour = [names[e] for e in elements]
+    while True:
+        signature = [(colour[i], tuple(sorted(colour[j] for j in neighbours[i])))
+                     for i in range(n)]
+        relabel = {sig: k for k, sig in enumerate(sorted(set(signature)))}
+        refined = [relabel[sig] for sig in signature]
+        if len(set(refined)) == len(set(colour)):
+            colour = refined
+            break
+        colour = refined
+
+    # Breadth-first from the atom of the rarest class, component by component.
+    order: list[int] = []
+    seen: set[int] = set()
+    by_rarity = sorted(range(n), key=lambda i: (colour.count(colour[i]), i))
+    for start in by_rarity:
+        if start in seen:
+            continue
+        queue = [start]
+        seen.add(start)
+        while queue:
+            i = queue.pop(0)
+            order.append(i)
+            for j in sorted(neighbours[i], key=lambda k: (colour.count(colour[k]), k)):
+                if j not in seen:
+                    seen.add(j)
+                    queue.append(j)
+
+    members: dict[int, list[int]] = {}
+    for i in range(n):
+        members.setdefault(colour[i], []).append(i)
+    found: list[list[int]] = []
+    image = [-1] * n
+    used = [False] * n
+    capped = False
+    # Candidates tried, bounded too, so a graph that refinement cannot split
+    # and that has few automorphisms cannot search without end.
+    budget = [200 * limit]
+
+    def extend(depth: int) -> bool:
+        nonlocal capped
+        if depth == n:
+            found.append(list(image))
+            if len(found) >= limit:
+                capped = True
+                return False
+            return True
+        i = order[depth]
+        # The images of i's mapped neighbours, which must be exactly the
+        # candidate's mapped neighbours for bonds to be kept both ways.
+        wanted = {image[j] for j in neighbours[i] if image[j] >= 0}
+        for candidate in members[colour[i]]:
+            if used[candidate]:
+                continue
+            budget[0] -= 1
+            if budget[0] < 0:
+                capped = True
+                return False
+            if {k for k in neighbours[candidate] if used[k]} != wanted:
+                continue
+            image[i] = candidate
+            used[candidate] = True
+            carry_on = extend(depth + 1)
+            used[candidate] = False
+            image[i] = -1
+            if not carry_on:
+                return False
+        return True
+
+    import sys
+    depth_needed = n + 100
+    previous = sys.getrecursionlimit()
+    if previous < depth_needed:
+        sys.setrecursionlimit(depth_needed)
+    try:
+        extend(0)
+    finally:
+        if previous < depth_needed:
+            sys.setrecursionlimit(previous)
+
+    permutations = np.asarray(found, dtype=np.int64).reshape(-1, n)
+    identity = np.arange(n)
+    is_identity = np.all(permutations == identity, axis=1)
+    if not is_identity.any():
+        permutations = np.vstack([identity, permutations[:-1]]) if capped else np.vstack([identity, permutations])
+    else:
+        first = int(np.argmax(is_identity))
+        rest = np.delete(permutations, first, axis=0)
+        permutations = np.vstack([identity, rest])
+    return permutations, capped
+
+
+def symmetric_rmsd(xyz: np.ndarray, reference: np.ndarray,
+                   permutations: np.ndarray) -> np.ndarray:
+    """Per frame, the smallest RMSD over relabellings of the reference.
+
+    RMSD_f = min over p of sqrt( (1/n) sum_i |x_f,i - r_p(i)|^2 ), with no
+    refitting: the coordinates are already in the receptor's frame. Taken
+    through the (n, n) matrix of squared distances between each frame's
+    atoms and the reference's, so each permutation costs a gather.
+    """
+    xyz = np.asarray(xyz, dtype=np.float64)
+    reference = np.asarray(reference, dtype=np.float64)
+    permutations = np.asarray(permutations, dtype=np.int64)
+    n_frames, n_atoms, _ = xyz.shape
+    rows = np.arange(n_atoms)
+    best = np.empty(n_frames)
+    # Chunks keep each gathered array near ten million numbers.
+    frames_at_once = max(1, int(1e7 // max(1, n_atoms * n_atoms)))
+    for first in range(0, n_frames, frames_at_once):
+        block = xyz[first:first + frames_at_once]
+        squared = ((block[:, :, None, :] - reference[None, None, :, :]) ** 2).sum(axis=-1)
+        lowest = np.full(len(block), np.inf)
+        maps_at_once = max(1, int(1e7 // max(1, len(block) * n_atoms)))
+        for start in range(0, len(permutations), maps_at_once):
+            maps = permutations[start:start + maps_at_once]
+            totals = squared[:, rows[None, :], maps].sum(axis=-1)
+            lowest = np.minimum(lowest, totals.min(axis=1))
+        best[first:first + len(block)] = lowest
+    return np.sqrt(best / n_atoms)
+
+
 #: Protein heavy atoms this close to the ligand in the reference frame are
 #: the site it started in.
 SITE_NM = 0.5
@@ -214,6 +401,21 @@ class LigandRMSD(Analysis):
         Cα atoms are the standard, robust choice.
     ref : int, default 0
         Reference frame. Negative indices count from the end.
+    include_hydrogens : bool, default False
+        Whether the RMSD is over every ligand atom rather than its heavy
+        atoms. Off by default, as in docking and pose comparisons: a
+        hydrogen follows the atom it is bonded to, and counting it weights a
+        group by how many hydrogens it carries. A benzene turned by 60
+        degrees reads 0.200 nm over all its atoms and 0.139 nm over its
+        carbons without the symmetry correction below.
+    symmetry_corrected : bool, default True
+        Whether each frame's RMSD is the smallest over the automorphisms of
+        the ligand's bond graph (relabellings that keep elements and bonds),
+        so a symmetric ligand that turned onto itself reads as unmoved. No
+        refitting is done. Taken over at most 10,000 automorphisms; where a
+        ligand has more, the cap and the count are recorded. A ligand with
+        no bonds in its topology is compared as labelled, and that is
+        recorded.
     **kwargs
         Standard base-class options.
 
@@ -242,6 +444,8 @@ class LigandRMSD(Analysis):
         ligand_resname: str | None = None,
         align_selection: str = "protein and name CA",
         ref: int = 0,
+        include_hydrogens: bool = False,
+        symmetry_corrected: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -254,10 +458,14 @@ class LigandRMSD(Analysis):
         self.ligand_resname: str = str(ligand_resname)
         self.align_selection: str = str(align_selection)
         self.ref: int = int(ref)
+        self.include_hydrogens: bool = bool(include_hydrogens)
+        self.symmetry_corrected: bool = bool(symmetry_corrected)
         self.options.update(
             ligand_resname=self.ligand_resname,
             align_selection=self.align_selection,
             ref=self.ref,
+            include_hydrogens=self.include_hydrogens,
+            symmetry_corrected=self.symmetry_corrected,
         )
 
     def compute(self, traj: md.Trajectory) -> np.ndarray:
@@ -299,20 +507,85 @@ class LigandRMSD(Analysis):
         # cannot be consulted by mistake.
         ligand_xyz = ligand_in_the_receptor_frame(traj, ligand_idx, align_idx, ref)
 
+        heavy = [int(i) for i in ligand_idx
+                 if traj.topology.atom(int(i)).element is None
+                 or traj.topology.atom(int(i)).element.symbol != "H"]
+        if self.include_hydrogens or not heavy:
+            measured_atoms = [int(i) for i in ligand_idx]
+        else:
+            measured_atoms = heavy
+        position = {int(a): k for k, a in enumerate(ligand_idx)}
+        columns = [position[a] for a in measured_atoms]
+        ligand_xyz = ligand_xyz[:, columns, :]
+
         # RMSD of the LIGAND atoms on the aligned coordinates, vs the
         # reference frame's ligand coordinates. No further alignment.
         ref_xyz = ligand_xyz[ref]
         disps = ligand_xyz - ref_xyz
         rmsd_nm = np.sqrt(np.mean(np.sum(disps * disps, axis=2), axis=1))
+        self._record_the_atoms(traj, measured_atoms, len(ligand_idx))
+        if self.symmetry_corrected:
+            rmsd_nm = self._corrected_for_symmetry(
+                traj, measured_atoms, ligand_xyz, ref_xyz, rmsd_nm)
 
         self._resolved_ref = ref
-        heavy = [int(i) for i in ligand_idx
-                 if traj.topology.atom(int(i)).element is None
-                 or traj.topology.atom(int(i)).element.symbol != "H"]
         measured = distance_to_the_site(traj, heavy or list(ligand_idx), ref)
         self._site_distance = None if measured is None else measured[0]
         self._record_where_the_ligand_was(traj, measured)
         return rmsd_nm.astype(np.float64)
+
+    def _record_the_atoms(self, traj: md.Trajectory, measured_atoms, n_ligand: int) -> None:
+        """Which ligand atoms the RMSD is over, in the findings."""
+        n_heavy = sum(1 for a in measured_atoms
+                      if getattr(traj.topology.atom(a).element, "symbol", None) != "H")
+        if len(measured_atoms) == n_ligand and not self.include_hydrogens and n_heavy < n_ligand:
+            said = ("The ligand has no heavy atoms, so the RMSD is over all of "
+                    f"its {n_ligand} atoms.")
+        elif len(measured_atoms) == n_ligand:
+            said = f"Over all {n_ligand} ligand atoms."
+        else:
+            said = (f"Over the ligand's {len(measured_atoms)} heavy atoms; its "
+                    f"{n_ligand - len(measured_atoms)} hydrogens are left out "
+                    "(include_hydrogens: true counts them).")
+        self.findings["atoms"] = {"n_atoms": len(measured_atoms),
+                                  "n_ligand_atoms": int(n_ligand), "said": said}
+
+    def _corrected_for_symmetry(self, traj, measured_atoms, ligand_xyz, ref_xyz,
+                                as_labelled: np.ndarray) -> np.ndarray:
+        """Each frame's RMSD at the best relabelling, with the record of it."""
+        found = automorphisms(traj.topology, measured_atoms)
+        if found is None:
+            self.findings["symmetry"] = {
+                "applied": False,
+                "said": ("The ligand's topology records no bonds between the "
+                         "atoms compared, so its symmetry is unknown and the "
+                         "RMSD is taken with its atoms as labelled. A "
+                         "symmetric ligand that turned onto itself reads as "
+                         "having moved.")}
+            return as_labelled
+        permutations, capped = found
+        corrected = symmetric_rmsd(ligand_xyz, ref_xyz, permutations)
+        record: dict[str, Any] = {
+            "applied": True,
+            "automorphisms": int(len(permutations)),
+            "capped": bool(capped),
+            "largest_correction_nm": float(np.max(as_labelled - corrected)),
+        }
+        if capped:
+            record["said"] = (
+                f"The ligand's graph has more than {MAX_AUTOMORPHISMS:,} "
+                "automorphisms, and the RMSD is the smallest over the first "
+                f"{MAX_AUTOMORPHISMS:,} found, so it may read high where the "
+                "ligand turned onto itself by one not among them.")
+        elif len(permutations) == 1:
+            record["said"] = "The ligand has no symmetry: one way to match its atoms."
+        else:
+            record["said"] = (
+                f"Each frame's RMSD is the smallest over the ligand's "
+                f"{len(permutations)} automorphisms, so a pose that is the "
+                "same pose with its atoms relabelled reads as unmoved.")
+        self.findings["symmetry"] = record
+        return corrected
 
     def _record_where_the_ligand_was(self, traj: md.Trajectory, measured) -> None:
         """Whether the ligand stayed at its site, in the findings."""
