@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### One set of water residue names
+
+**`water_sites` now finds water under every residue name MDTraj's `water` takes, and the names live in one set, `analysis/water_names.py`, for every module to use.** It kept six names (HOH, WAT, TIP, TIP3, SOL, H2O), so a run whose water was written TIP4, TIP2, OH2, HHO or OHH was refused as holding no water, and the Viewer's water map, which read the same list, found none. The set is MDTraj's eleven names with TIP5, TIP3P, SPC, T3P, T4P, T5P and DOD. Results change: water sites are found on systems whose water uses those names.
+
 ### Each hydrogen-bond count says which criterion it is
 
 **`hbonds`, `pl_hbonds` and `pl_interactions` now record their hydrogen-bond criterion in `options.json` and name it on their axes.** The three use different criteria and count different bonds: `hbonds` Baker-Hubbard (H...A under 2.5 A), `pl_hbonds` Wernet-Nilsson, `pl_interactions` a donor to acceptor distance under 3.5 A, so an O-H...O 3.3 A apart at 180 degrees was a bond in `pl_interactions` and not in `pl_hbonds`, with nothing in either output to say why. The interactions rule's documentation credited its 3.5 A to Baker and Hubbard, whose criterion is the 2.5 A hydrogen distance; it now cites McDonald and Thornton. No count changes; the `hbonds` axis reads "Hydrogen bonds (Baker-Hubbard)" and the `pl_hbonds` axis "Protein-ligand H-bonds (Wernet-Nilsson)".
