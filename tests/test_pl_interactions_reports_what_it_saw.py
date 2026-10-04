@@ -207,3 +207,38 @@ class TestADataFileSaysHowToReadIt:
         assert analysis._data_format["layout"] == (
             "whitespace-delimited, no header")
         assert analysis._data_format["read_with"] == "np.loadtxt(path)"
+
+
+class TestAMetalBetweenThem:
+    def test_a_zinc_between_the_ligand_and_a_histidine_is_found(self) -> None:
+        """An ion is its own residue, in neither the ligand's selection nor
+        `protein`, and the rule was given only those two: metal coordination
+        never fired, here with a zinc 0.20 nm from a ligand oxygen."""
+        topology = md.Topology()
+        xyz = []
+        lig = topology.add_residue("MOH", topology.add_chain())
+        for name, element, position in (
+                ("C1", "C", (-0.143, 0, 0)), ("O1", "O", (0, 0, 0)),
+                ("H1", "H", (-0.18, 0.1, 0)), ("H2", "H", (-0.18, -0.05, 0.09)),
+                ("H3", "H", (-0.18, -0.05, -0.09)), ("HO", "H", (0.03, 0.09, 0))):
+            topology.add_atom(name, md.element.get_by_symbol(element), lig)
+            xyz.append(position)
+        atoms = list(topology.atoms)
+        for i, j in ((0, 1), (0, 2), (0, 3), (0, 4), (1, 5)):
+            topology.add_bond(atoms[i], atoms[j])
+        zn = topology.add_residue("ZN", topology.add_chain())
+        topology.add_atom("ZN", md.element.zinc, zn)
+        xyz.append((0.20, 0, 0))
+        his = topology.add_residue("HIS", topology.add_chain())
+        for name, element, position in (("NE2", "N", (0.40, 0, 0)),
+                                        ("CE1", "C", (0.50, 0.1, 0))):
+            topology.add_atom(name, md.element.get_by_symbol(element), his)
+            xyz.append(position)
+        traj = md.Trajectory(np.array([xyz], dtype=float), topology)
+
+        analysis = ProteinLigandInteractions(
+            ligand_resname="MOH", kinds=("metal_coordination",))
+        table = analysis.compute(traj)
+        assert table["kind"].tolist() == ["metal_coordination"]
+        assert table["residue"].str.startswith("ZN").all()
+        assert table["ligand_atom_name"].tolist() == ["O1"]

@@ -239,8 +239,13 @@ class ProteinLigandInteractions(Analysis):
             traj, chemistry, ligand, protein, periodic=self.periodic))
         attempt("halogen_bond", lambda: rules.halogen_bonds(
             traj, chemistry, ligand, protein, periodic=self.periodic))
+        # The ions on the protein's side as well: an ion is its own residue
+        # and in neither selection, so the rule given the protein alone had
+        # no metal to find and never fired.
+        ions = rules.metal_ions(traj.topology, exclude=ligand)
         attempt("metal_coordination", lambda: rules.metal_coordination(
-            traj, ligand, protein, periodic=self.periodic))
+            traj, ligand, np.union1d(protein, ions).astype(int),
+            periodic=self.periodic))
         attempt("water_bridge", lambda: rules.water_bridges(
             traj, ligand, protein, water, periodic=self.periodic))
 

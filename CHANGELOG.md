@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Metal coordination looks at the ions
+
+**`pl_interactions` now finds a ligand donor coordinating a metal ion.** The rule was given the ligand and the protein selection, and an ion is its own residue in neither, so it had no metal to find: a zinc 0.20 nm from a ligand oxygen and from a histidine NE2 gave no metal coordination on any run. Every single-atom residue of a metal element is now passed as the metal side beside the protein. Results change: studies with a metal ion in the site now report its coordination by the ligand.
+
 ### A ligand group is charged only when it carries a charge
 
 **`pl_interactions` now takes a ligand group as charged only where its atoms carry a net formal charge of that sign.** Charged groups were found by pattern and by single formal charges, so neutral cyanoguanidine (the cimetidine core) and an acylguanidine were cations, a nitro group was both a cation and an anion, and nitromethane between an aspartate and a lysine formed a salt bridge to each, at 0.36 and 0.34 nm. A pattern match now needs a nonzero net charge of its sign, and a formal charge on an atom bonded to an opposite charge (nitro, N-oxide, azide) is left out. Results change: salt bridges and cation-pi contacts from nitro groups, N-oxides and neutral guanidine analogues are no longer reported.

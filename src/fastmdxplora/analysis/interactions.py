@@ -38,6 +38,7 @@ __all__ = [
     "ligand_aromatic_rings",
     "halogen_bonds",
     "metal_coordination",
+    "metal_ions",
     "water_bridges",
     "residues_not_covered",
 ]
@@ -1000,6 +1001,26 @@ def halogen_bonds(
             distance_nm=float(separations[frame, column]),
             angle_deg=float(angles[frame, column]),
         ))
+    return found
+
+
+def metal_ions(topology: Any, exclude: Any = ()) -> list[int]:
+    """Metal ions in the topology: single-atom residues of a metal element.
+
+    An ion is neither protein nor ligand, so neither selection holds it, and
+    a coordination search given only those two never saw a zinc between a
+    histidine and a ligand oxygen. These are the atoms to pass as the metal
+    side. Atoms in ``exclude`` (the ligand, where it is itself an ion) are
+    left out.
+    """
+    skip = set(int(i) for i in exclude)
+    found = []
+    for atom in topology.atoms:
+        if atom.index in skip or atom.residue.n_atoms != 1:
+            continue
+        symbol = (atom.element.symbol if atom.element is not None else "").upper()
+        if symbol in _METALS:
+            found.append(atom.index)
     return found
 
 
