@@ -2,7 +2,7 @@
 
 Reviewed 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md). This is the current acceptance status; the lower receipts retain earlier evidence and limitations.
 
-**The framework is not fully complete.** Two Agent disable/docking fixes have reopened final acceptance. The earlier branch wheel passed the configured combined suite plus integrated Agent, bookmark, clip and preparation-audit checks. Open items are bounded: live sign-in for Claude/Kimi/Gemini (the user has only OpenAI access), OS-native open-menu visual capture, and broader scientific/backend acceptance described below. No scientific engine, preparation, force-field or analysis implementation changed in this branch.
+**The framework is not fully complete.** Two Agent disable/docking fixes have reopened final acceptance. The earlier branch wheel passed the configured combined suite plus integrated Agent, bookmark, clip and preparation-audit checks. Open items are bounded: live sign-in for Claude/Kimi/Gemini (the user has only OpenAI access), OS-native open-menu visual capture, and broader scientific/backend acceptance described below. The closeout diff since documented baseline `b103dd8` changes GUI, tests and documentation; that scoped comparison does not certify all inherited changes relative to the v2.5.8 tag. Scientific preservation receipts retain their fixture/backend limits.
 
 ### Current checkpoint — 2026-10-03
 
@@ -51,6 +51,10 @@ The installed `6d5407a` wheel re-passed two-frame clip preview, GIF/MP4 download
 ### Corrected installed-wheel visual/context checks — 2026-10-03
 
 The corrected wheel completed a 300-state control-geometry matrix: ten routes, Graphite/Ink/Paper, widths 1440/1280/1024/768/390 and text sizes 100%/200%; no out-of-viewport ordinary controls or page JavaScript errors were reported. Thirty route/theme screenshots were captured; Graphite Agent, Ink Viewer and Paper Overview were inspected directly. This geometry check is not a native OS popup or complete contrast audit. Installed browser review also refused acceptance after a controlled actual dashboard study update through `applyAppState`, without an acceptance HTTP request. The earlier attempt mutated the copied `state` getter and did not change live state. Separately, an installed-module controlled completion switched the server study before returning; the old answer was withheld. That is synthetic boundary evidence, not live provider switching. No scientific settings were applied.
+
+### Frozen corrected-source combined gate — 2026-10-03
+
+The required ten-module combined suite completed on the corrected source at `6d5407a` (subsequent commits are documentation only): 241 passed, 1 skipped, 5 warnings in 765.66 seconds. The skip is unavailable OpenFF toolkit; warnings are Pillow deprecations in clip assertions. JUnit receipt: temporary `FastMDXplora-agent-docking-final/combined-suite.xml`. Repository CI Ruff F/B and diff checks pass. The 30 installed route/theme screenshots were reviewed as contact sheets for page structure, with three representative originals inspected directly; this does not prove fine-text contrast in every pixel or native popup rendering. The direct OpenAI diagnostic completed but its harness incorrectly required `ok=true`; explanation replies deliberately return `ok=false` and an answer, whereas `ok=true` denotes accepted configuration. That failed assertion is not provider/auth failure evidence. A corrected bounded probe is in progress.
 
 ### Milestone review
 
