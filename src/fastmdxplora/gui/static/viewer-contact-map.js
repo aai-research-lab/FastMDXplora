@@ -3,9 +3,10 @@
  *
  * The map gives each pair of residues the share of frames played they were
  * in contact in (heavy atoms within 4.5 Å), darker the more often; or, for
- * two states the cluster analysis found, the share in one state's frames
- * less the other's, red where the first holds the pair more and blue where
- * less. Pointing at a cell names the pair; a click follows it: the two
+ * two states the cluster analysis found ("State B vs A"), how much more
+ * often each pair was in contact in one than in the other: red where more
+ * often in B, blue where more often in A, said in a key under the map.
+ * Pointing at a cell names the pair; a click follows it: the two
  * residues are selected in the structure and a dashed line joins their
  * closest heavy atoms in the frame shown, as the frames play, with how far
  * apart they are. The map is computed when the section is first opened.
@@ -176,6 +177,22 @@
     return said + "in contact in " + percent(value) + " of frames";
   }
 
+  /* The key under the map, for what it shows now. */
+  function keyed() {
+    var key = byId("cmap-key");
+    if (!key) return;
+    key.hidden = !state.data;
+    if (!state.data) return;
+    var c = state.data.compared;
+    var ink = token("--text-primary", "#f2f2f4");
+    byId("cmap-key-bar").style.background = c
+      ? "linear-gradient(to right, rgb(0, 114, 178), transparent, rgb(213, 94, 0))"
+      : "linear-gradient(to right, transparent, " + ink + ")";
+    byId("cmap-key-low").textContent = c ? "More often in state " + c[0] : "Never in contact";
+    byId("cmap-key-high").textContent = c ? "More often in state " + c[1]
+      : "In contact in every frame";
+  }
+
   function loaded(said) {
     state.data = said;
     state.values = new Map();
@@ -185,6 +202,7 @@
     }
     picture();
     draw();
+    keyed();
     say(said.said);
     byId("cmap-all").hidden = !said.compared;
   }
@@ -308,7 +326,7 @@
       if (cell) follow(Math.min(cell[0], cell[1]), Math.max(cell[0], cell[1]));
     });
     byId("cmap-compare").addEventListener("click", function () {
-      // "State X less Y": the share in X's frames less the share in Y's.
+      // "State B vs A": the share in B's frames minus the share in A's.
       var query = new URLSearchParams({ first: byId("cmap-first").value,
         second: byId("cmap-second").value });
       if (state.states) query.set("method", state.states.method);
@@ -329,6 +347,7 @@
       state.pair = null;
       state.pairData = null;
       section.hidden = true;
+      keyed();
       say("");
     });
   }

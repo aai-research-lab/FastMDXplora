@@ -1021,13 +1021,19 @@
                   <label class="select-field">State
                     <select id="cmap-second" aria-label="State compared"></select>
                   </label>
-                  <label class="select-field">less
-                    <select id="cmap-first" aria-label="State compared with"></select>
+                  <label class="select-field">vs
+                    <select id="cmap-first" aria-label="State it is compared with"></select>
                   </label>
-                  <button type="button" class="chip-btn" id="cmap-compare" title="Colour each pair by the share of one state's frames played it was in contact in, less the other's">Compare</button>
+                  <button type="button" class="chip-btn" id="cmap-compare" title="Colour each pair by how much more often it was in contact in one state than in the other">Compare</button>
                   <button type="button" class="chip-btn" id="cmap-all" hidden>Every frame</button>
                 </div>
                 <canvas class="cmap-canvas" id="cmap-canvas" width="300" height="300" role="img" aria-label="Contact map of the protein's residues over the frames played"></canvas>
+                <!-- What the colours mean: the share of frames, or for two
+                     states compared, which state holds a pair more often. -->
+                <div class="plot-key cmap-key" id="cmap-key" hidden>
+                  <div class="cmap-key-bar" id="cmap-key-bar"></div>
+                  <div class="cmap-key-ends"><span id="cmap-key-low"></span><span id="cmap-key-high"></span></div>
+                </div>
                 <p class="muted small" id="cmap-hover" aria-live="off"></p>
                 <div class="occ-row" id="cmap-pair-row" hidden>
                   <button type="button" class="chip-btn" id="cmap-clear">Clear the pair</button>

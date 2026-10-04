@@ -61,7 +61,9 @@ MDTraj's closest-heavy contact; neighbours in a chain left out). Pointing at
 a cell names the pair; a click selects both residues and joins their closest
 heavy atoms in the frame shown with a dashed line, as the frames play, with
 how far apart they are. Two states the cluster analysis found are compared
-pair by pair, red where one holds a pair more and blue where less
+pair by pair (**State** B **vs** A), red where a pair is in contact more often
+in B and blue where more often in A, with a key under the map saying which
+colour is which
 (`GET /api/contact-map`, `/api/contact-pair`; `/api/states` now gives each
 frame played its state).
 

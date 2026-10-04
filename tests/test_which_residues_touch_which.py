@@ -83,8 +83,10 @@ def test_two_states_compared_pair_by_pair(study):
     assert len(changed) > 20
     # What changed is between the residues that moved and the rest.
     assert all((i in moving) != (j in moving) for i, j in changed)
-    assert said["said"].startswith("The share of frames each pair of residues was in contact "
-                                   "in, in state 1 (15 frames played) less in state 0 (15)")
+    assert said["said"].startswith("How much more often each pair of residues was in contact "
+                                   "in state 1 (15 frames played) than in state 0 (15)")
+    assert said["said"].endswith("red where more often in state 1, blue where more often in "
+                                 "state 0.")
 
 
 def test_one_pair_followed_frame_by_frame(study):
@@ -186,6 +188,13 @@ def test_the_viewer_maps_them_and_follows_a_pair(study):
             page.wait_for_function(f"() => {CMAP}.state.data && {CMAP}.state.data.compared")
             compared = page.evaluate(f"() => {CMAP}.state.data.compared")
             every = page.is_visible("#cmap-all")
+            key_compared = (page.text_content("#cmap-key-low"),
+                            page.text_content("#cmap-key-high"))
+            labels = page.eval_on_selector_all("#cmap-states-row label",
+                                               "l => l.map((x) => x.firstChild.textContent.trim())")
+            page.click("#cmap-all")
+            page.wait_for_function(f"() => {CMAP}.state.data && !{CMAP}.state.data.compared")
+            key_every = (page.text_content("#cmap-key-low"), page.text_content("#cmap-key-high"))
             browser.close()
     finally:
         session.server.shutdown()
@@ -194,3 +203,7 @@ def test_the_viewer_maps_them_and_follows_a_pair(study):
     assert selected == 2
     assert "in contact in" in note and note.endswith("in frame 0.")
     assert compared == [0, 1] and every
+    # "State 1 vs 0", and a key that says which colour is which state.
+    assert labels == ["State", "vs"]
+    assert key_compared == ("More often in state 0", "More often in state 1")
+    assert key_every == ("Never in contact", "In contact in every frame")

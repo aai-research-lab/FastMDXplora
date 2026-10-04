@@ -11,7 +11,7 @@ The frames are made whole and centred on the protein, so no contact is
 looked for across the periodic box.
 
 Two states the cluster analysis found are compared by the share of each
-state's frames played a pair was in contact in, the second's less the
+state's frames played a pair was in contact in, the second's minus the
 first's; and one pair is followed frame by frame, its closest heavy atoms
 and how far apart they are.
 """
@@ -117,7 +117,7 @@ def contact_map(root: str | Path, first: Any = None, second: Any = None,
     """Each pair of residues in contact in any frame played, with the share
     of frames it was in contact in; or, with two states the cluster
     analysis found (``first``, ``second``), the share in the second's frames
-    less the share in the first's. Or why there is none."""
+    minus the share in the first's. Or why there is none."""
     out = Path(root)
     compare = first is not None or second is not None
     if not compare:
@@ -159,11 +159,11 @@ def contact_map(root: str | Path, first: Any = None, second: Any = None,
         return {**common, "compared": [a, b], "method": states["method"],
                 "frames_of": [shares[a][1], shares[b][1]],
                 "pairs": _pairs(union, difference, n),
-                "said": (f"The share of frames each pair of residues was in contact in, in "
-                         f"state {b} ({shares[b][1]:,} frames played) less in state {a} "
+                "said": (f"How much more often each pair of residues was in contact in "
+                         f"state {b} ({shares[b][1]:,} frames played) than in state {a} "
                          f"({shares[a][1]:,}), as the cluster analysis's {states['method']} "
-                         f"found them: red where state {b} holds the pair more, blue where "
-                         "less.")}
+                         f"found them: red where more often in state {b}, blue where more "
+                         f"often in state {a}.")}
     keys, counts = _counts(frames, np.arange(frames.n_frames))
     said = {**common, "pairs": _pairs(keys, counts / frames.n_frames, n),
             "said": (f"Pairs of the {n:,} protein residues in contact (heavy atoms within "
