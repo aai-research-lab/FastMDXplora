@@ -97,8 +97,9 @@ FastMDXplora/
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
 │       │   │                      #   viewer-sequence.js, viewer-selections.js,
 │       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
-│       │   │                      #   frame-interactions.js, chain-contacts.js
-│       │   └── templates/         # dashboard.html
+│       │   │                      #   frame-interactions.js, chain-contacts.js; scene-view.js
+│       │   │                      #   (a scene on a page of its own)
+│       │   └── templates/         # dashboard.html, scene.html
 │       ├── remote/
 │       │   ├── probe.py           # The read-only inspection script, and reading its answer
 │       │   ├── identity.py        # Which code an installation holds: a release's version, a checkout's commit

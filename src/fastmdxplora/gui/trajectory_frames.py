@@ -455,13 +455,15 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
             said += f", smoothed over {window} frames"
         fresh = target.is_file() and target.stat().st_mtime_ns >= frames_file.stat().st_mtime_ns
         if not fresh:
-            frames.superpose(reference, frame=0, atom_indices=atoms,
-                             ref_atom_indices=reference_atoms)
-            frames.xyz = smoothed(frames.xyz, window)
-            # Each frame is turned as well as moved: its box is not the
-            # first frame's, so none is written.
-            frames.unitcell_vectors = None
-            _write_dcd(frames, target)
+            from fastmdxplora.analysis.base import superposed
+
+            # Fitted as the analyses fit, by one function: each frame is
+            # turned as well as moved, so its box is no longer its own, and
+            # none is written.
+            fitted = superposed(frames, atom_indices=atoms, reference=reference,
+                                ref_atom_indices=reference_atoms)
+            fitted.xyz = smoothed(fitted.xyz, window)
+            _write_dcd(fitted, target)
     return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms)), "to": to,
             "smooth": window}
 

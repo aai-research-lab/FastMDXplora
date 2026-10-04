@@ -96,6 +96,23 @@ class TestSuperpositionIsNotContagious:
         assert traj.unitcell_vectors is not None
         assert aligned.unitcell_vectors is None
 
+    def test_fitted_to_another_structure_its_atoms_matched(self):
+        """The Viewer fits frames to the structure a study started from or
+        to the deposited one by the same function: the reference's atoms
+        named one by one against the trajectory's, neither changed."""
+        from fastmdxplora.analysis.base import superposed
+
+        traj = _system()
+        alpha = traj.topology.select("name CA")
+        reference = md.Trajectory(traj.xyz[5:6, alpha] + 1.0, traj.topology.subset(alpha))
+        before, kept = traj.xyz.copy(), reference.xyz.copy()
+        aligned = superposed(traj, atom_indices=alpha, reference=reference,
+                             ref_atom_indices=np.arange(len(alpha)))
+        assert np.array_equal(traj.xyz, before) and np.array_equal(reference.xyz, kept)
+        assert aligned.unitcell_vectors is None
+        # Frame 5 is the reference moved, so it is fitted onto it exactly.
+        assert np.abs(aligned.xyz[5, alpha] - reference.xyz[0]).max() < 1e-4
+
 
 class TestAnAnalysisGivesTheSameAnswerInCompany:
     """The behavioural test, at the level a user would notice."""

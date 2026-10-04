@@ -884,7 +884,7 @@ class Analysis(ABC):
         return path
 
 
-def superposed(traj, *, frame=0, atom_indices=None):
+def superposed(traj, *, frame=0, atom_indices=None, reference=None, ref_atom_indices=None):
     """Align a copy, and drop the box that no longer describes it.
 
     Two hazards, both silent, both met on the same run.
@@ -907,8 +907,14 @@ def superposed(traj, *, frame=0, atom_indices=None):
     distances must take them from the unaligned trajectory, where the box
     is still true. Absent is better than stale, because stale is the one
     a caller cannot detect.
+
+    ``reference`` is the trajectory whose ``frame`` the copy is fitted to,
+    itself by default, with ``ref_atom_indices`` its atoms matched to
+    ``atom_indices`` (the Viewer fits frames to the structure a study
+    started from, or to the deposited one, the same way).
     """
     aligned = traj[:]
-    aligned.superpose(traj, frame=frame, atom_indices=atom_indices)
+    aligned.superpose(traj if reference is None else reference, frame=frame,
+                      atom_indices=atom_indices, ref_atom_indices=ref_atom_indices)
     aligned.unitcell_vectors = None
     return aligned
