@@ -48,6 +48,10 @@ Candidate `6d5407a` built as `fastmdxplora-2.5.9.dev218+g6d5407a86-py3-none-any.
 
 The installed `6d5407a` wheel re-passed two-frame clip preview, GIF/MP4 download and metadata with all label options and rotation. GIF decoding returned 640×480 and two frames. System ffprobe confirmed H.264, 640×480 and two MP4 frames; ffmpeg fully decoded the MP4 with exit 0. Frame, selected residue, camera, display and Follow/playback/live-update/spin controls restored; all 315 non-output study hashes matched and no browser page errors occurred. Audit-bookmark restoration re-passed Preparation tag, event, stage pair, overlay, linked state and both cameras; its temporary QA row was deleted. These receipts apply to the corrected installed wheel, independently of the final combined suite still running.
 
+### Corrected installed-wheel visual/context checks — 2026-10-03
+
+The corrected wheel completed a 300-state control-geometry matrix: ten routes, Graphite/Ink/Paper, widths 1440/1280/1024/768/390 and text sizes 100%/200%; no out-of-viewport ordinary controls or page JavaScript errors were reported. Thirty route/theme screenshots were captured; Graphite Agent, Ink Viewer and Paper Overview were inspected directly. This geometry check is not a native OS popup or complete contrast audit. Installed browser review also refused acceptance after a controlled actual dashboard study update through `applyAppState`, without an acceptance HTTP request. The earlier attempt mutated the copied `state` getter and did not change live state. Separately, an installed-module controlled completion switched the server study before returning; the old answer was withheld. That is synthetic boundary evidence, not live provider switching. No scientific settings were applied.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
