@@ -45,9 +45,10 @@ def _renamed(traj, rename):
                          unitcell_angles=traj.unitcell_angles)
 
 
-def _lipid21(traj, names=("PA", "PC", "OL")):
+def _lipid21(traj, names=("PA", "PC", "OL"), bonds=True):
     """Each POPC as AMBER Lipid21 writes it: sn-1 tail, head, sn-2 tail as
-    three residues, the carbonyls in the head, the phosphorus named P31."""
+    three residues, the carbonyls in the head, the phosphorus named P31.
+    Without ``bonds``, as a PDB written without CONECT records loads."""
     top = md.Topology()
     chain = top.add_chain()
     mapping: dict[int, Any] = {}
@@ -71,7 +72,7 @@ def _lipid21(traj, names=("PA", "PC", "OL")):
                 mapping[atom.index] = top.add_atom(
                     "P31" if atom.name == "P" else atom.name, atom.element, new)
                 order.append(atom.index)
-    for bond in traj.topology.bonds:
+    for bond in traj.topology.bonds if bonds else ():
         top.add_bond(mapping[bond[0].index], mapping[bond[1].index])
     return md.Trajectory(traj.xyz[:, order], top, unitcell_lengths=traj.unitcell_lengths,
                          unitcell_angles=traj.unitcell_angles)
@@ -304,3 +305,17 @@ class TestTheChainOrder:
         wrapped.xyz[0] = (np.mod(fractional, 1.0) @ cell).astype(np.float32)
         assert np.abs(wrapped.xyz[0] - sheared.xyz[0]).max() > 1.0
         assert np.allclose(_order(wrapped)[1], _order(sheared)[1], atol=1e-5)
+
+    def test_a_split_lipid_without_bonds_in_its_topology_is_one_lipid(self) -> None:
+        """Lipid21's POPC from a PDB with no CONECT records: the head and its
+        two tails are joined by distance, and the order is the whole lipid's."""
+        traj = _patch("POPC")
+        bare = _lipid21(traj, bonds=False)
+        assert bare.topology.n_bonds == 0
+        table, _ = _run(LipidOrder, bare)
+        assert set(table["lipid"]) == {"PA-PC-OL"}
+        assert set(table["chain"]) == {"sn-1 (16:0)", "sn-2 (18:1)"}
+        assert (table["lipids"] == 128).all()
+        chains, whole = _order(traj)
+        assert _order(bare)[0] == chains
+        assert np.allclose(_order(bare)[1], whole, atol=1e-5)

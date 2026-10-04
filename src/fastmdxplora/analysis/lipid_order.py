@@ -34,10 +34,19 @@ from fastmdxplora.analysis.bilayer import (
     leaflets,
 )
 from fastmdxplora.analysis.orchestrator import register_analysis
-from fastmdxplora.lipids import BUILT_LIPIDS, is_lipid, is_sterol
+from fastmdxplora.lipids import (
+    BUILT_LIPIDS,
+    SPLIT_HEADS,
+    TAIL_RESIDUES,
+    is_lipid,
+    is_sterol,
+)
 from fastmdxplora.refusals import StudyError
 
 __all__ = ["LipidOrder"]
+
+#: The residues AMBER's Lipid17 and Lipid21 split a lipid into.
+_SPLIT = SPLIT_HEADS | TAIL_RESIDUES
 
 
 @dataclass
@@ -79,6 +88,26 @@ def _bonds(xyz: np.ndarray, symbols: list[str], cell: np.ndarray | None) -> list
     hydrogen = np.array([s == "H" for s in symbols])
     bonded &= ~(hydrogen[:, None] & hydrogen[None, :])
     return [set(np.flatnonzero(row).tolist()) for row in bonded]
+
+
+def _covalently_joined(first: Any, second: Any, xyz: np.ndarray,
+                       cell: np.ndarray | None) -> bool:
+    """Whether a heavy atom of one residue is within covalent distance of
+    one of the other's: the bond between a split lipid's head and tail."""
+    one = [a for a in first.atoms if _symbol(a) != "H"]
+    other = [a for a in second.atoms if _symbol(a) != "H"]
+    if not one or not other:
+        return False
+    delta = (xyz[[a.index for a in one]][:, None, :]
+             - xyz[[a.index for a in other]][None, :, :])
+    if cell is not None:
+        fractional = delta @ np.linalg.inv(cell)
+        delta = (fractional - np.round(fractional)) @ cell
+    distance = np.sqrt((delta ** 2).sum(axis=-1))
+    radius_one = np.array([_COVALENT_NM.get(_symbol(a), 0.076) for a in one])
+    radius_other = np.array([_COVALENT_NM.get(_symbol(a), 0.076) for a in other])
+    limit = radius_one[:, None] + radius_other[None, :] + _BOND_TOLERANCE_NM
+    return bool((distance < limit).any())
 
 
 def _lipid_label(names: tuple[str, ...], symbols: list[str],
@@ -184,8 +213,17 @@ class LipidOrder(Analysis):
     #: Frames at a time, to bound memory on a long run of a large bilayer.
     _CHUNK = 256
 
-    def _molecules(self, topology: md.Topology) -> list[list[Any]]:
-        """Lipid molecules as lists of residues, joined across split lipids."""
+    def _molecules(self, topology: md.Topology, xyz: np.ndarray | None = None,
+                   cell: np.ndarray | None = None) -> list[list[Any]]:
+        """Lipid molecules as lists of residues, joined across split lipids.
+
+        AMBER's Lipid17 and Lipid21 make each chain a residue bonded to its
+        head. The bonds join them where the topology has them; a PDB written
+        without CONECT records has none, and then a split lipid's residues,
+        which follow one another, are joined where a heavy atom of one lies
+        within covalent distance of one of the other in ``xyz`` (one frame,
+        nm, with the box vectors ``cell`` for the nearest image).
+        """
         residues = [r for r in topology.residues if is_lipid(r.name)]
         parent = {r.index: r.index for r in residues}
 
@@ -195,10 +233,18 @@ class LipidOrder(Analysis):
                 key = parent[key]
             return key
 
+        joined = False
         for bond in topology.bonds:
             first, second = bond[0].residue.index, bond[1].residue.index
             if first != second and first in parent and second in parent:
                 parent[root(first)] = root(second)
+                joined = True
+        if not joined and xyz is not None:
+            for first, second in zip(residues, residues[1:]):
+                split = {first.name.strip().upper(), second.name.strip().upper()}
+                if (second.index == first.index + 1 and split & _SPLIT
+                        and _covalently_joined(first, second, xyz, cell)):
+                    parent[root(first.index)] = root(second.index)
         groups: dict[int, list[Any]] = {}
         for residue in residues:
             groups.setdefault(root(residue.index), []).append(residue)
@@ -214,7 +260,8 @@ class LipidOrder(Analysis):
         pairs: dict[tuple[str, str, int], list[tuple[int, list[int], int]]] = {}
         no_hydrogen: set[str] = set()
         no_chain: set[str] = set()
-        for number, molecule in enumerate(self._molecules(topology)):
+        molecules = self._molecules(topology, traj.xyz[0].astype(np.float64), vectors[0])
+        for number, molecule in enumerate(molecules):
             if all(is_sterol(r.name) for r in molecule):
                 continue  # a sterol has no acyl chain to order
             atoms = [a for residue in molecule for a in residue.atoms]

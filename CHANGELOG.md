@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A Lipid21 bilayer from a PDB without bonds
+
+**`lipid_order` joins a Lipid17 or Lipid21 lipid's head and tail residues by covalent distance when the topology records no bonds between lipid residues.** They were joined only through the topology's bonds, and a PDB written without CONECT records has none, so each tail stood alone with no carbonyl to start a chain from and the analysis refused with "No acyl chain was found". Neighbouring split-lipid residues are now joined where a heavy atom of one lies within covalent distance of the other's, at the nearest periodic image. Results change: such bilayers now get an order profile, the same as with bonds.
+
 ### Chain order of a trajectory wrapped atom by atom
 
 **Each C-H bond is brought to its nearest periodic image in all three box directions, triclinic cells included, before its angle to the normal is taken.** Only z was corrected, so a trajectory written with every atom wrapped into the box (as GROMACS writes one by default) split the bonds of lipids crossing the x and y faces, each of which counted as a bond nearly in the plane: OpenMM's DMPC patch wrapped this way read sn-1 C2 -0.243 against -0.233 and the chain ends up to 0.015 more ordered than they are. The bond is now taken in the cell's fractional coordinates, `f = d B^-1`, `f -= round(f)`, `d = f B`. Results change: S_CD of trajectories saved with atoms wrapped one by one, by up to 0.015.
