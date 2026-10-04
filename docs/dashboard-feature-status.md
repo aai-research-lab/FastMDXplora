@@ -44,6 +44,10 @@ Installed-package testing reproduced a HierarchyRequestError when disabling the 
 
 Candidate `6d5407a` built as `fastmdxplora-2.5.9.dev218+g6d5407a86-py3-none-any.whl`, SHA-256 `4250c2d6fc42abcd4eb451eb033b5912e99fb328f94daf05223bd6ebc9c30a74`. Installed outside the checkout in a separate environment reusing repository dependencies; this is not clean-machine installation evidence. Browser testing of this candidate passed visible disabled-Agent refusal, retained composer, zero inference requests, disable persistence after reload and zero page errors. The docking source regression passed 3/3 themes. Bookmark HTTP persistence also passed a genuine process restart: harness-owned Python processes 31348 and 28020 each started an installed-package server, exited normally, and loaded the identical saved record; graph range restoration passed and the temporary record was deleted. Existing dashboard servers were untouched. A preceding same-process server recreation preserved all 315 non-output study hashes. The final combined suite must be rerun at this candidate after the earlier in-flight run ends, because the docking fix postdates its boundary checks.
 
+### Corrected-wheel clip/audit regression — 2026-10-03
+
+The installed `6d5407a` wheel re-passed two-frame clip preview, GIF/MP4 download and metadata with all label options and rotation. GIF decoding returned 640×480 and two frames. System ffprobe confirmed H.264, 640×480 and two MP4 frames; ffmpeg fully decoded the MP4 with exit 0. Frame, selected residue, camera, display and Follow/playback/live-update/spin controls restored; all 315 non-output study hashes matched and no browser page errors occurred. Audit-bookmark restoration re-passed Preparation tag, event, stage pair, overlay, linked state and both cameras; its temporary QA row was deleted. These receipts apply to the corrected installed wheel, independently of the final combined suite still running.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
