@@ -432,21 +432,40 @@ class TestMetalCoordination:
 
 
 class TestWaterBridges:
-    def _complex(self, *, water_at, ligand_gap=None):
+    """PLIP's first-degree water bridge: an acceptor on one side, a donor
+    D-H on the other, both 2.5 to 4.1 A from the water O, the donor's H
+    pointing at the water (theta > 100), and the angle at the water between
+    the acceptor and that H inside 71 to 140 degrees."""
+
+    def _complex(self, *, water_at, hydrogen_towards_water=True, donor=True):
         b = _Builder()
-        lig = b.residue("LIG", [("O1", "O", (0, 0, 0))])
-        pro = b.residue("SER", [("OG", "O", (0.60, 0, 0))], chain=True)
-        hoh = b.residue("HOH", [("O", "O", water_at),
-                                ("H1", "H", (water_at[0] + 0.1, water_at[1], 0)),
-                                ("H2", "H", (water_at[0] - 0.1, water_at[1], 0))],
-                        chain=True)
-        return b.trajectory(), lig, pro, [hoh[0]]
+        lig = b.residue("LIG", [("C1", "C", (-0.12, 0, 0)), ("O1", "O", (0, 0, 0))])
+        b.bond(lig[0], lig[1])
+        og = np.array([0.60, 0.0, 0.0])
+        towards = np.asarray(water_at, float) - og
+        towards /= np.linalg.norm(towards)
+        hg = og + 0.096 * (towards if hydrogen_towards_water else -towards)
+        atoms = [("CB", "C", (0.72, 0.05, 0)), ("OG", "O", tuple(og))]
+        if donor:
+            atoms.append(("HG", "H", tuple(hg)))
+        pro = b.residue("SER", atoms, chain=True)
+        b.bond(pro[0], pro[1])
+        if donor:
+            b.bond(pro[1], pro[2])
+        w = np.asarray(water_at, float)
+        hoh = b.residue("HOH", [("O", "O", tuple(w)),
+                                ("H1", "H", tuple(w + (0, 0, 0.096))),
+                                ("H2", "H", tuple(w + (0, 0.09, -0.03)))], chain=True)
+        b.bond(hoh[0], hoh[1]); b.bond(hoh[0], hoh[2])
+        return b.trajectory(), lig, pro, hoh
 
     def test_a_water_between_both_sides_bridges(self) -> None:
-        """Off the line, so the angle at the water sits inside 71-140."""
+        """Off the line, so omega at the water sits inside 71-140."""
         traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0))
         found = water_bridges(traj, lig, pro, water)
         assert len(found) == 1 and found[0].kind == "water_bridge"
+        assert (found[0].ligand_atom, found[0].protein_atom) == (lig[1], pro[1])
+        assert 71.0 < found[0].angle_deg < 140.0
 
     def test_a_water_in_line_is_between_not_bridging(self) -> None:
         """The lower angle bound is the point of the criterion: a water on
@@ -457,6 +476,49 @@ class TestWaterBridges:
     def test_a_water_near_one_side_only_is_nothing(self) -> None:
         traj, lig, pro, water = self._complex(water_at=(0.02, 0.25, 0.0))
         assert water_bridges(traj, lig, pro, water) == []
+
+    def test_a_donor_whose_hydrogen_points_away_does_not_bridge(self) -> None:
+        traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0),
+                                              hydrogen_towards_water=False)
+        assert water_bridges(traj, lig, pro, water) == []
+
+    def test_two_acceptors_are_not_a_bridge(self) -> None:
+        """A carbonyl on each side and no donor: PLIP pairs an acceptor with
+        a donor, and two lone pairs facing one water are not that."""
+        traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0),
+                                              donor=False)
+        assert water_bridges(traj, lig, pro, water) == []
+
+    def test_only_the_waters_near_the_ligand_are_measured(self, monkeypatch) -> None:
+        """A box of water far from the ligand changes nothing and costs
+        nothing: the distances taken are those of the waters within reach,
+        not of every water against every polar atom (3.77 million pairs a
+        frame on a solvated 1BHL)."""
+        import fastmdxplora.analysis.interactions as rules
+
+        traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0))
+        far = np.array([[2.0 + 0.3 * i, 2.0 + 0.3 * j, 2.0]
+                        for i in range(20) for j in range(20)])
+        top = traj.topology.copy()
+        chain = top.add_chain()
+        for _ in far:
+            residue = top.add_residue("HOH", chain)
+            top.add_atom("O", md.element.oxygen, residue)
+        xyz = np.concatenate([traj.xyz[0], far])[None]
+        big = md.Trajectory(xyz, top)
+        waters = list(water) + list(range(traj.n_atoms, big.n_atoms))
+
+        largest = []
+        real = rules._distances
+
+        def counted(t, pairs, periodic):
+            largest.append(len(pairs))
+            return real(t, pairs, periodic)
+
+        monkeypatch.setattr(rules, "_distances", counted)
+        found = water_bridges(big, lig, pro, waters)
+        assert len(found) == 1
+        assert max(largest) < len(far)
 
 
 class TestResiduesNotCovered:

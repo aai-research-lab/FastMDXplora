@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Water bridges are PLIP's
+
+**A water bridge in `pl_interactions` is now PLIP's first-degree bridge: a water 2.5 to 4.1 A from an acceptor on one side and from a donor on the other, the donor's D-H pointing at it (above 100 degrees at the H), and the angle at the water between the acceptor and that H between 71 and 140 degrees.** The rule was labelled PLIP's but took any two polar atoms and the angle between them at the water oxygen, with no donor hydrogen and no pairing, so two acceptors either side of a water bridged and an amide N whose hydrogen pointed away from the water bridged a ligand carbonyl. It also computed the distance from every water oxygen to every polar atom in every frame, 3.77 million pairs a frame on a solvated 1BHL; only the waters within reach of the ligand are examined now, which took one serine's five frames from 3.6 s and 0.48 GB to 0.9 s and 0.29 GB. On eight residues of that trajectory the bridges agree with an independent transcription of PLIP's loop, 6 of 6. Results change: water bridges without a donor hydrogen pointing at the water are no longer reported.
+
 ### Occupancy errors from the statistical inefficiency
 
 **The `standard_error` of each interaction's occupancy is now `sqrt(p(1-p) g / N)`, with `g` the statistical inefficiency of its present-or-absent series over `N` frames.** It was `sqrt(p(1-p)/episodes)`, too large by `1/sqrt(2p(1-p))`, at least 1.41 times: on a two-state contact with known rates it was 1.4 to 2.4 times the spread of the occupancy over 120 independent replicas, where the new error is 0.86 to 0.96 of it. The inefficiency is the package's own (`statistics.statistical_inefficiency`), as every other error the analyses report uses. A contact that formed fewer than twice still has no error. Results change: occupancy error bars in `pl_interactions.dat` and its figure shrink, by about a third for a contact present half the time and by more for rarer or more persistent ones.

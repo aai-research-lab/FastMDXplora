@@ -28,7 +28,7 @@ in the rule's own docstring.
 | π-cation | charge to ring centre < 6.0 Å, offset < 2.0 Å | PLIP |
 | Halogen bond | X···A < 3.5 Å, C-X···A between 130° and 180° | ProLIF |
 | Metal coordination | metal to donor < 3.0 Å; the metal is the ligand or any single-atom metal residue in the system | PLIP |
-| Water bridge | one water 2.5–4.1 Å from each side, angle at the water 71–140° | PLIP |
+| Water bridge | one water 2.5 to 4.1 Å from an acceptor on one side and from a donor on the other, the donor's D-H···O above 100°, the angle at the water between the acceptor and the donor's H 71 to 140° | PLIP |
 
 A hydrogen bond is reported in the direction it was found, as
 `hydrogen_bond_ligand_donor` or `hydrogen_bond_protein_donor` in the `kind`
