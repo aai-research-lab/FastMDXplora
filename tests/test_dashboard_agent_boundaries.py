@@ -1326,3 +1326,21 @@ def test_graph_residue_selection_can_be_pinned_and_compared_without_inference(tm
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_relocated_residue_evidence_requires_identical_recorded_topology(tmp_path):
+    root = tmp_path / "study"
+    (root / "setup").mkdir(parents=True)
+    topology = root / "setup" / "topology.pdb"
+    topology.write_text("ATOM      1  CA  GLU A  57       0.000   0.000   0.000  1.00  0.00           C\n")
+    recorded = tmp_path / "recorded.pdb"
+    recorded.write_bytes(topology.read_bytes())
+    folder = root / "analysis" / "rmsf"
+    folder.mkdir(parents=True)
+    (folder / "options.json").write_text('{"options":{"per_residue":true}}')
+    (folder / "rmsf.dat").write_text("57 0.8\n")
+    (folder.parent / "analysis_manifest.json").write_text(json.dumps({"resolved":{"topology":str(recorded)}}))
+    selected = {"chain":"A", "resseq":57, "resname":"GLU"}
+    assert residue_evidence(root, selected)["rmsf"]["value"] == 0.8
+    recorded.write_bytes(recorded.read_bytes().replace(b"GLU", b"ALA", 1))
+    assert "rmsf" not in residue_evidence(root, selected)

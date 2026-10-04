@@ -307,9 +307,9 @@ def residue_evidence(root: Path, selected: dict) -> dict:
 
 def _residue_identity(root: Path, selected: dict, *, unqualified: bool = False) -> bool:
     """Reject chain/name/number/insertion ambiguities before using analysis tables."""
-    from fastmdxplora.gui.selection import topology_the_analyses_read
+    from fastmdxplora.gui.selection import verified_local_analysis_topology
 
-    path = topology_the_analyses_read(root)
+    path = verified_local_analysis_topology(root)
     if path is None or not path.resolve().is_relative_to(root.resolve()):
         return False
     try:

@@ -41,6 +41,30 @@ def topology_the_analyses_read(root: Path | str) -> Path | None:
     return None
 
 
+def verified_local_analysis_topology(root: Path | str) -> Path | None:
+    """Use a relocated local topology only when it matches the recorded bytes."""
+    root = Path(root)
+    topology = topology_the_analyses_read(root)
+    # A copied study may retain an existing absolute manifest path. Never
+    # resolve identities from that other study; accept a bounded local copy
+    # only when its bytes prove it is the same recorded topology.
+    if topology is not None and not topology.resolve().is_relative_to(root.resolve()):
+        recorded = topology
+        topology = None
+        try:
+            if recorded.stat().st_size <= 32_000_000:
+                for local in (root / "simulation" / "trajectory_topology.pdb",
+                              root / "setup" / "topology.pdb"):
+                    if (local.is_file() and local.resolve().is_relative_to(root.resolve())
+                            and local.stat().st_size == recorded.stat().st_size
+                            and local.read_bytes() == recorded.read_bytes()):
+                        topology = local
+                        break
+        except OSError:
+            pass
+    return topology
+
+
 def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
                   atom: str) -> dict[str, Any]:
     """The selections for a residue and one of its atoms, each checked.
