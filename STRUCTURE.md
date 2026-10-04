@@ -18,6 +18,14 @@ FastMDXplora/
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
+│       ├── advisories.py          # What is worth knowing before a run starts, not after
+│       ├── cost.py                # How long a study will take, on this machine
+│       ├── naming.py              # One rule for the name of a study's output folder
+│       ├── refusals.py            # What a refusal is, in a word a program can read
+│       ├── remedies.py            # What would fix a refusal, and what the fix costs here
+│       ├── marking.py             # Marking what nothing checked, where the mark has to survive
+│       ├── uncertainty.py         # An error bar on a quantity that is not a mean
+│       ├── __main__.py            # `python -m fastmdxplora`: the `fastmdx` command
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
@@ -28,6 +36,15 @@ FastMDXplora/
 │       │   ├── content.py         # Its guides, study records and prompts
 │       │   ├── tools.py           # Its tools: look, check, save, run, read; the Agent
 │       │   └── workspace.py       # The one folder the tools may use
+│       ├── agent/                 # The Agent: an AI model writing and answering about studies
+│       │   ├── propose.py         # Propose a study, have it refused, repair it, try again
+│       │   ├── tools.py           # What the Agent looks at with the software's own tools
+│       │   ├── models.py          # A stored provider choice, as the function the Agent calls
+│       │   ├── evaluate.py        # How well an AI model writes a study, counted on a set of asks
+│       │   ├── queue.py           # A waiting line for one card, and a budget it keeps to
+│       │   ├── worker.py          # One process taking work off the line, one job at a time
+│       │   ├── staged.py          # Running a study the Agent wrote, with the estimate first
+│       │   └── run.py             # Running a queued job as a real study
 │       ├── setup/
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
 │       │   ├── prepare.py         # Modeller assembly, ligand merge, clash checks
@@ -38,7 +55,11 @@ FastMDXplora/
 │       │   ├── ccd.py             # Chemical Component Dictionary lookups
 │       │   ├── protonation.py     # Protonation states at the run's pH
 │       │   ├── membrane.py        # Placing the protein for its bilayer, and the checks the build needs
-│       │   └── membrane_fit.py    # The membrane normal, centre and thickness, fitted to the protein
+│       │   ├── membrane_fit.py    # The membrane normal, centre and thickness, fitted to the protein
+│       │   ├── assembly.py        # Which biological assembly a deposited structure is simulated as
+│       │   ├── ensemble.py        # One model of a structure file that holds several
+│       │   ├── mmcif.py           # A deposited mmCIF file, as the PDB records setup reads
+│       │   └── estimate.py        # What setup will build from a structure, before it runs
 │       ├── simulation/
 │       │   ├── pipeline.py        # Phase driver
 │       │   ├── runner.py          # minimize → NVT → NPT → production, reporters, platforms
@@ -48,7 +69,15 @@ FastMDXplora/
 │       │   ├── umbrella.py        # Window planning, and the PMF stitched from them
 │       │   ├── steered.py         # A pull along a coordinate, and the work done
 │       │   ├── restraints.py      # Positional restraints and the release ladder
-│       │   └── diagnose.py        # What a failed simulation can be told from its state
+│       │   ├── diagnose.py        # What a failed simulation can be told from its state
+│       │   ├── stopping.py        # Run until what was asked is determined, and no longer
+│       │   ├── sampling_ask.py    # How much longer a study has to run for the means it withheld
+│       │   ├── lengths.py         # How long each stage runs when a config does not say
+│       │   ├── ensembles.py       # Which ensemble production runs in
+│       │   ├── resume.py          # Whether a run may be stopped and picked up again
+│       │   ├── seeding.py         # Umbrella windows' starting structures, from a steered pull
+│       │   ├── binding.py         # A binding free energy from a potential of mean force
+│       │   └── reference_state.py # Whether that free energy's reference state holds here
 │       ├── analysis/
 │       │   ├── orchestrator.py    # Analysis-phase orchestrator + auto-detection
 │       │   ├── analyze.py         # Top-level analyze() entry point
@@ -58,6 +87,12 @@ FastMDXplora/
 │       │   ├── plotting.py        # Shared figure style
 │       │   ├── rmsd.py rmsf.py rg.py qvalue.py sasa.py ss.py
 │       │   ├── hbonds.py dihedrals.py cluster.py dimred.py water_sites.py
+│       │   ├── pair_distance.py end_to_end.py moments_of_inertia.py rdf.py
+│       │   ├── coordination_number.py order_parameters.py bfactor_comparison.py
+│       │   ├── thermodynamics.py  # Density, energy and temperature, from the run's own record
+│       │   ├── interaction_summary.py  # How often an interaction was there, and over how much
+│       │   ├── joining.py         # A study's pieces put back together, refused where they do not fit
+│       │   ├── residues.py        # How a residue is named in what the analyses write
 │       │   ├── contacts.py ligand_rmsd.py ligand_rmsf.py pl_hbonds.py   # protein-ligand
 │       │   ├── pl_interactions.py interactions.py ligand_chemistry.py   # what holds the ligand
 │       │   ├── pmf.py metad_surface.py steered_work.py   # the result of a biased run
@@ -74,13 +109,14 @@ FastMDXplora/
 │       │   ├── region_highlights.py  # Per-region annotations for the report
 │       │   ├── context.py         # Shared report context
 │       │   ├── methods.py         # The methods section, including what a biased run is not
-│       │   ├── convergence.py     # Whether the run had settled by the time it was measured
+│       │   ├── convergence.py     # Whether the run had equilibrated before the frames analysed
 │       │   ├── reweighted.py      # Equilibrium averages recovered from a biased run
 │       │   ├── pdf.py             # Markdown → PDF
+│       │   ├── markdown_html.py   # Markdown as HTML that carries no markup of its own
 │       │   └── bundle.py          # Self-contained .zip project archive
 │       ├── gui/                   # All user-interface code: server, views, assets
 │       │   ├── exploration.py     # Study builder, config export, run control
-│       │   ├── server.py          # Dependency-free ThreadingHTTPServer (127.0.0.1 only)
+│       │   ├── server.py          # Dependency-free ThreadingHTTPServer, on loopback unless bound elsewhere
 │       │   ├── telemetry.py       # Phase/progress telemetry feed
 │       │   ├── trajectory_frames.py, live_frames.py   # Frame streaming
 │       │   ├── protein_preview.py, structure_info.py, ligand_detection.py
@@ -91,9 +127,34 @@ FastMDXplora/
 │       │   ├── saved_views.py     # Views of the Viewer saved with the study
 │       │   ├── interactions_over_frames.py  # What holds the ligand, frame by frame
 │       │   ├── chain_contacts.py  # What holds the chains together, frame by frame
+│       │   ├── runs_compared.py   # The runs of a study side by side, resolved differences marked
+│       │   ├── runs_together.py   # The runs of a study played together in one Viewer
+│       │   ├── measure.py         # A distance from the Viewer, over every frame
+│       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
+│       │   ├── stopping_view.py   # A study run until it is determined, for the Overview
+│       │   ├── fixes_view.py      # What would fix the study on screen
+│       │   ├── figure_provenance.py  # What made each figure, and the command that makes it again
+│       │   ├── report_page.py     # The report as a document, in the page
+│       │   ├── browse.py          # Walking the filesystem from the page; what is a study
+│       │   ├── directory_inspect.py  # What is in a folder, and what can be done with it
+│       │   ├── config_builder.py  # What the page holds as a config file, checked
+│       │   ├── run_from_config.py # Run what the page describes, from the file it would give
+│       │   ├── schema_payload.py  # The settings, described for the browser to lay out
+│       │   ├── starters.py        # Studies to start from, in the builder
+│       │   ├── preview.py         # What the builder's study will build and cost, before it runs
+│       │   ├── agent_panel.py     # The browser's two calls into the Agent
+│       │   ├── records_answer.py  # The Agent's questions about a study, answered from its records
+│       │   ├── citations.py       # What an Agent's answer drew on, as the study recorded it
+│       │   ├── stream.py          # Telling an open page when the study it shows has changed
+│       │   ├── hosting.py         # The GUI served to someone else, behind a signing-in proxy
+│       │   ├── route_imports.py   # The package's modules the GUI's routes can reach
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
-│       │   ├── static/            # theme.css (shared tokens), dashboard.css/js,
-│       │   │                      #   molecule-viewer.js, charts.js, and the viewer:
+│       │   ├── static/            # theme.css (shared tokens), dashboard.css, dashboard.js,
+│       │   │                      #   frame.js (columns, side panel, theme), studies.js,
+│       │   │                      #   run-builder.js, file-picker.js, report-page.js,
+│       │   │                      #   series-chart.js, runs-compared.js, stopping.js,
+│       │   │                      #   fixes.js, agent-panel.js, charts.js,
+│       │   │                      #   molecule-viewer.js, and the viewer:
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
 │       │   │                      #   viewer-sequence.js, viewer-selections.js,
 │       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
@@ -115,20 +176,37 @@ FastMDXplora/
 │       ├── batch/
 │       │   ├── explorer.py        # Multi-run driver (sequential/parallel)
 │       │   ├── sweep.py           # Parameter cross-product expansion
-│       │   └── compare.py         # Cross-run comparison report
+│       │   ├── compare.py         # Cross-run comparison report
+│       │   └── aggregate.py       # One table from a campaign's members, and what their spread means
 │       ├── config/
 │       │   ├── schema.py          # Config schema (single source of truth for options)
 │       │   ├── loader.py          # YAML load, merge, strict validation
-│       │   └── generate.py        # `fastmdx init-config` templates
+│       │   ├── generate.py        # `fastmdx init-config` templates
+│       │   ├── describe.py        # The config language, described for an AI model
+│       │   ├── languages.py       # One study as a config file, a command and a script
+│       │   ├── diff.py            # What differs between two studies' settings
+│       │   ├── phase_settings.py, phase_settings_types.py  # Each phase's settings, from the schema
+│       │   └── agent_modes.py     # Which phases a model wrote, and which were checked
+│       ├── validation/            # Checks of the software against independent references
+│       │   ├── corpus.py          # Guardrails tried on a corpus of structures
+│       │   ├── cross_tool.py      # A run compared with independent reference implementations
+│       │   ├── environments.py    # One study run in several places, compared field by field
+│       │   ├── replica_calibration.py   # Whether one run's stated error agrees with replicas
+│       │   ├── stopping_calibration.py  # Whether a study stopped by `stop_when` states an honest error
+│       │   └── agent_looks.py, agent_looks_v2.py  # Whether the Agent's looking helps, on a real AI model
 │       └── utils/
 │           ├── logging.py         # Structured logging
 │           ├── presenter.py       # Terminal presentation layer (banner, phase output)
 │           └── native_output.py   # Terminal capability detection
-├── tests/                         # 32 modules, ~705 test functions
+├── tests/                         # About 410 modules and 6,600 test functions;
+│                                  #   validation/ checks the docs and methods hold
 ├── docs/                          # Sphinx + MyST sources (Read the Docs)
-├── scripts/
+├── scripts/                       # Development, benchmarking and release helpers (README.md)
 │   ├── run_pdb_smoke_campaign.py  # Multi-PDB smoke campaign
-│   └── make_benzene.py
+│   ├── gpu_shakedown.py           # What only a real GPU can answer: cost, segments, resuming
+│   └── make_benzene.py, compare_*.py, name_refusal*.py, measure_nli.py
+├── container/                     # Apptainer definition, and Docker made from it
+├── preregistration/               # Validation plans written before their results
 ├── shim-package/                  # `fastmdx` alias on PyPI
 │   ├── pyproject.toml
 │   ├── README.md
@@ -138,7 +216,9 @@ FastMDXplora/
 │   └── fastmdx-alias/meta.yaml
 ├── .github/workflows/
 │   ├── tests.yml                  # CI: OS × Python matrix, CLI smoke test, coverage
-│   └── publish.yml                # PyPI trusted publishing on `v*` tag
+│   ├── publish.yml                # PyPI trusted publishing on `v*` tag
+│   ├── container.yml              # The Apptainer image (.sif), for a release or a trial
+│   └── cla.yml                    # The contributor agreement, signed on a pull request
 ├── examples/                      # Example inputs (e.g. pdb_list.txt)
 ├── assets/
 ├── fastmdx                        # Launcher for an uninstalled checkout
@@ -151,6 +231,7 @@ FastMDXplora/
 ├── CITATION.cff
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
+├── CLA.md                         # The contributor licence agreement
 ├── CODE_OF_CONDUCT.md
 ├── STRUCTURE.md                   # (this file)
 └── .gitignore
