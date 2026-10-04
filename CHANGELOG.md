@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The frames arrive in pieces
+
+**The Viewer plays the frames from the first piece while the rest arrive**,
+which waited for the whole trajectory, up to 120 MB, before it showed a
+frame: over a tunnel or from a hosted GUI, a large system waited for all of
+it. The frames are sent as XTC, about a third of a DCD's size, each
+coordinate to a hundredth of an angstrom, in pieces of up to two million
+atoms times frames, and how many have arrived is said beside the transport.
+The frames superposed are read as XTC too. The DCD stays for what reads the
+frames on the server. `GET /api/frames-pieces`.
+
 ### Another study beside this one
 
 **The Viewer plays another study beside this one**, under **Beside another

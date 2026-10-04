@@ -144,7 +144,8 @@
    * frame arriving while the frames load, or a click while the last pick
    * is still being rendered, each replaced the other's half-built scene. The
    * engine's own calls to itself are not queued, so none waits on itself. */
-  const QUEUED = new Set(["loadFrames", "setFramesCoordinates", "loadStructure",
+  const QUEUED = new Set(["loadFrames", "loadFramesFromBytes", "appendFrames",
+    "setFramesCoordinates", "loadStructure",
     "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame",
     "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
     "showPicks", "showSelected", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
@@ -223,6 +224,46 @@
       return {frames: this.frameCount(), atoms: this.atomCount()};
     }
 
+    /** A topology and its frames as bytes already fetched (the first
+     * pieces of `/api/frames-pieces`, XTC), so the frames can be played
+     * before the rest arrive; ``appendFrames`` gives the frames so far. */
+    async loadFramesFromBytes(topologyUrl, bytes, format) {
+      await this.clear();
+      const plugin = this.plugin;
+      const builders = plugin.builders;
+      const topology = await builders.data.download({url: absolute(topologyUrl), isBinary: false});
+      const model = await builders.structure.createModel(
+        await builders.structure.parseTrajectory(topology, "pdb"));
+      const raw = await builders.data.rawData({data: bytes, label: "frames"});
+      const coordinates = await plugin.dataFormats.get(format).parse(plugin, raw);
+      this.framesRef = raw.ref;
+      this.framesBytes = format;
+      this.framesWhole = false;
+      const trajectory = await plugin.build().toRoot()
+        .apply(this.lib.plugin.StateTransforms.Model.TrajectoryFromModelAndCoordinates,
+          {modelRef: model.ref, coordinatesRef: coordinates.ref},
+          {dependsOn: [model.ref, coordinates.ref]})
+        .commit();
+      await builders.structure.hierarchy.applyPreset(trajectory, "default",
+        {representationPreset: "empty", showUnitcell: false});
+      await this.build();
+      return {frames: this.frameCount(), atoms: this.atomCount()};
+    }
+
+    /** The frames loaded from bytes, given all of them so far: the frame
+     * shown, the representations and the camera kept. */
+    async appendFrames(bytes) {
+      const cells = this.plugin.state.data.cells;
+      // Given whole meanwhile (superposed): the pieces are not needed.
+      if (!this.framesBytes || this.framesWhole || !this.framesRef
+        || !cells.has(this.framesRef)) return 0;
+      const frame = this.frame();
+      await this.plugin.build().to(this.framesRef)
+        .update((old) => ({...old, data: bytes})).commit();
+      if (this.frame() !== frame) await this.setFrame(frame);
+      return this.frameCount();
+    }
+
     /** The frames shown read from other coordinates of the same atoms (the
      * frames superposed, or not): the frame shown, the representations,
      * the measurements and the camera are kept. False where no frames are
@@ -234,13 +275,29 @@
       const atoms = this.atomCount();
       const frame = this.frame();
       try {
-        await this.plugin.build().to(this.framesRef)
-          .update((old) => ({...old, url: absolute(coordinatesUrl)})).commit();
+        if (this.framesBytes) {
+          // Loaded in pieces: the other coordinates fetched in the same
+          // format and given as they are.
+          const asked = absolute(coordinatesUrl);
+          const url = asked + (asked.includes("?") ? "&" : "?") + `as=${this.framesBytes}`;
+          const response = await fetch(url, {cache: "no-store"});
+          if (!response.ok) return false;
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          await this.plugin.build().to(this.framesRef)
+            .update((old) => ({...old, data: bytes})).commit();
+        } else {
+          await this.plugin.build().to(this.framesRef)
+            .update((old) => ({...old, url: absolute(coordinatesUrl)})).commit();
+        }
       } catch (error) {
         console.debug("frames not read again", error);
         return false;
       }
-      if (this.frameCount() !== frames || this.atomCount() !== atoms) return false;
+      // Frames loaded in pieces may be given whole: more frames, not fewer.
+      const counted = this.frameCount();
+      if (this.atomCount() !== atoms
+        || (this.framesBytes ? counted < frames : counted !== frames)) return false;
+      this.framesWhole = true;
       if (this.frame() !== frame) await this.setFrame(frame);
       await this.followThePocket();
       return true;
@@ -385,6 +442,8 @@
       this.boxRef = null;
       this.coordinatesRef = null;
       this.framesRef = null;
+      this.framesBytes = null;
+      this.framesWhole = false;
       await this.plugin.clear();
     }
 

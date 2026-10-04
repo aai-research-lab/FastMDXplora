@@ -1582,7 +1582,7 @@
         const [topology, coordinates] = framesUrls(available);
         // Each frame's box, centred as the frames were made whole.
         engine.setCells(available.cells, "diagonal");
-        const loaded = await engine.loadFrames(topology, coordinates);
+        const loaded = await loadTheFrames(engine, topology, coordinates, generation);
         if (!isViewerGenerationCurrent(generation)) return false;
         if (!loaded.frames) throw new Error("the viewer made no frames of the trajectory");
         // Frames written again are superposed again, as they were asked.
@@ -1635,6 +1635,68 @@
     })();
     STATE.playbackLoadPromise = loadPromise;
     return loadPromise;
+  }
+
+  /** The frames fetched in pieces (`/api/frames-pieces`, XTC: about a
+   * third of a DCD) and played from the first while the rest arrive, the
+   * frames loaded so far said; as one DCD where there are no pieces. */
+  async function loadTheFrames(engine, topology, coordinates, generation) {
+    let pieces = null;
+    try {
+      pieces = await (await fetch("/api/frames-pieces", {cache: "no-store"})).json();
+    } catch (error) {
+      pieces = null;
+    }
+    STATE.framesPieces = null;
+    if (!pieces || !pieces.ok || !Array.isArray(pieces.pieces) || !pieces.pieces.length) {
+      return engine.loadFrames(topology, coordinates);
+    }
+    const version = Date.now();
+    const fetched = async (piece) => new Uint8Array(await (await fetch(
+      `${piece.url}&v=${version}`, {cache: "no-store"})).arrayBuffer());
+    const parts = [await fetched(pieces.pieces[0])];
+    const loaded = await engine.loadFramesFromBytes(topology, joinedBytes(parts), "xtc");
+    STATE.framesPieces = {total: pieces.total, loaded: loaded.frames, pieces: pieces.pieces.length};
+    sayFramesLoaded();
+    if (pieces.pieces.length > 1) {
+      announce(`Playing the first ${loaded.frames} of ${pieces.total} frames while the rest arrive.`);
+      void (async () => {
+        for (const piece of pieces.pieces.slice(1)) {
+          const bytes = await fetched(piece);
+          if (!isViewerGenerationCurrent(generation) || STATE.engine !== engine) return;
+          parts.push(bytes);
+          const count = await engine.appendFrames(joinedBytes(parts));
+          // Given whole meanwhile (the frames superposed), or loaded again.
+          if (!count || !STATE.framesPieces) return;
+          STATE.framesPieces.loaded = count;
+          STATE.playbackFrames = count;
+          if (STATE.model && STATE.model.of === "frames") STATE.model.frames = count;
+          sayFramesLoaded();
+        }
+        announce(`All ${pieces.total} frames have arrived.`);
+      })().catch((error) => console.debug("the rest of the frames did not arrive", error));
+    }
+    return loaded;
+  }
+
+  function joinedBytes(parts) {
+    const whole = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+    let at = 0;
+    parts.forEach((part) => { whole.set(part, at); at += part.length; });
+    return whole;
+  }
+
+  /** How many of the frames have arrived, beside the transport. */
+  function sayFramesLoaded() {
+    const row = document.getElementById("trajectory-row");
+    const pieces = STATE.framesPieces;
+    if (!row || !pieces) return;
+    row.setAttribute("data-frames-loaded", String(pieces.loaded));
+    const said = document.getElementById("traj-loaded");
+    if (said) {
+      said.hidden = pieces.loaded >= pieces.total;
+      said.textContent = `${pieces.loaded} of ${pieces.total} frames here`;
+    }
   }
 
   /** The frames played superposed on the first, on the protein's backbone
@@ -1691,6 +1753,12 @@
     if (!moved) {
       announce("The frames could not be read again; they are shown as they were.");
       return;
+    }
+    // Frames still arriving in pieces are now here whole.
+    STATE.playbackFrames = STATE.engine.frameCount();
+    if (STATE.framesPieces) {
+      STATE.framesPieces.loaded = STATE.playbackFrames;
+      sayFramesLoaded();
     }
     STATE.superposedUrl = on === "none" ? null : url;
     STATE.appliedTo = to;

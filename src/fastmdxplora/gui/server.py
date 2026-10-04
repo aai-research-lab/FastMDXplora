@@ -147,6 +147,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
+    "/api/frames-pieces", "/structure/frames-piece.xtc",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
     "/api/states", "/api/state-difference",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
@@ -168,6 +169,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
     "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
+    "/api/frames-pieces", "/structure/frames-piece.xtc",
 })
 
 
@@ -847,6 +849,27 @@ def make_handler(
                 return
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
                 self._send_frames(root, path.rsplit("/", 1)[1], parse_qs(parsed.query))
+                return
+            if path == "/api/frames-pieces":
+                from fastmdxplora.gui.trajectory_frames import frames_pieces
+
+                self._send_json(frames_pieces(root))
+                return
+            if path == "/structure/frames-piece.xtc":
+                from fastmdxplora.gui.trajectory_frames import PIECES
+
+                k = (parse_qs(parsed.query).get("k") or [""])[0]
+                target = root / "simulation" / PIECES / f"piece_{k}.xtc"
+                if not k.isdigit() or not target.is_file():
+                    self.send_error(404, "No such piece of the frames")
+                    return
+                data = target.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             if path == "/api/views":
                 from fastmdxplora.gui.saved_views import views_of
@@ -1758,6 +1781,12 @@ def make_handler(
                         self.send_error(404, said.get("reason"))
                         return
                 target = root / "simulation" / file
+            if ((query or {}).get("as") or [""])[0] == "xtc" and name.endswith(".dcd"):
+                # As the frames were loaded in pieces: XTC, read in place of
+                # them without loading them again.
+                from fastmdxplora.gui.trajectory_frames import as_xtc
+
+                target = as_xtc(target)
             try:
                 data = target.read_bytes()
             except OSError:

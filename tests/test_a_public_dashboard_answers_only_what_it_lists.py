@@ -268,6 +268,8 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # the same frames superposed: computed from them on request, as
             # the frames are.
             "/api/frames-info", "/api/frames-superposed",
+            # The same frames as XTC, in pieces, played from the first.
+            "/api/frames-pieces", "/structure/frames-piece.xtc",
             # What holds the ligand, frame by frame, as the interactions
             # analysis recorded it.
             "/api/interactions-over-frames", "/api/chain-contacts",

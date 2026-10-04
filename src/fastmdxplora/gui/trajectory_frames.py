@@ -31,9 +31,9 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["BINARY_ATOM_FRAMES", "FRAMES_FILE", "FRAMES_TOPOLOGY", "SUPERPOSED_ON",
-           "frames_info", "frames_for_binary", "pocket_backbone", "superposed_frames",
-           "superposed_name"]
+__all__ = ["BINARY_ATOM_FRAMES", "FRAMES_FILE", "FRAMES_TOPOLOGY", "PIECE_ATOM_FRAMES",
+           "SUPERPOSED_ON", "as_xtc", "frames_for_binary", "frames_info", "frames_pieces",
+           "pocket_backbone", "superposed_frames", "superposed_name"]
 
 FRAMES_FILE = "frames.dcd"
 FRAMES_TOPOLOGY = "frames_topology.pdb"
@@ -482,6 +482,75 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
             _write_dcd(fitted, target)
     return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms)), "to": to,
             "smooth": window}
+
+
+#: The most atoms times frames in one piece of the frames sent as XTC:
+#: about 24 MB as a DCD, about a third of that as XTC.
+PIECE_ATOM_FRAMES = 2_000_000
+PIECES = "frames_pieces"
+
+
+def frames_pieces(output_dir: str | Path) -> dict[str, Any]:
+    """The frames written as XTC in pieces, for the Viewer to play from the
+    first while the rest arrive: each piece's address, first frame and
+    count. XTC keeps a coordinate to a thousandth of a nanometre (0.01
+    angstrom), about a third of a DCD's size; the DCD stays for whatever
+    reads the frames here. Written once for the frames as they are."""
+    import mdtraj as md
+
+    from fastmdxplora.utils.native_output import suppress_native_output
+
+    out = Path(output_dir)
+    simulation = out / "simulation"
+    index = _load_json(simulation / FRAMES_INDEX)
+    if not index.get("available") or not (simulation / FRAMES_FILE).is_file():
+        return {"ok": False, "reason": "There are no frames yet."}
+    folder = simulation / PIECES
+    with _LOCKS_GUARD:
+        lock = _LOCKS.setdefault(str(out.resolve()), threading.RLock())
+    with lock:
+        said = _load_json(folder / "index.json")
+        if said.get("signature") == index.get("signature") and all(
+                (folder / f"piece_{k}.xtc").is_file() for k in range(len(said.get("pieces", [])))):
+            return said
+        with suppress_native_output():
+            frames = md.load_dcd(str(simulation / FRAMES_FILE),
+                                 top=str(simulation / FRAMES_TOPOLOGY))
+        size = max(1, min(frames.n_frames, PIECE_ATOM_FRAMES // max(1, frames.n_atoms)))
+        folder.mkdir(exist_ok=True)
+        pieces = []
+        for k, start in enumerate(range(0, frames.n_frames, size)):
+            piece = frames[start:start + size]
+            temporary = _temporary(folder / f"piece_{k}.xtc")
+            piece.save_xtc(str(temporary))
+            temporary.replace(folder / f"piece_{k}.xtc")
+            pieces.append({"start": start, "frames": int(piece.n_frames),
+                           "url": f"/structure/frames-piece.xtc?k={k}"})
+        said = {"ok": True, "signature": index.get("signature"), "pieces": pieces,
+                "total": int(frames.n_frames), "atoms": int(frames.n_atoms),
+                "bytes": sum((folder / f"piece_{k}.xtc").stat().st_size
+                             for k in range(len(pieces))),
+                "dcd_bytes": (simulation / FRAMES_FILE).stat().st_size}
+        _write_json(folder / "index.json", said)
+        return said
+
+
+def as_xtc(dcd: Path) -> Path:
+    """A DCD of the frames (the frames superposed) as XTC beside it, written
+    once for it as it is."""
+    import mdtraj as md
+
+    from fastmdxplora.utils.native_output import suppress_native_output
+
+    target = dcd.with_suffix(".xtc")
+    if target.is_file() and target.stat().st_mtime_ns >= dcd.stat().st_mtime_ns:
+        return target
+    with suppress_native_output():
+        frames = md.load_dcd(str(dcd), top=str(dcd.parent / FRAMES_TOPOLOGY))
+    temporary = _temporary(target)
+    frames.save_xtc(str(temporary))
+    temporary.replace(target)
+    return target
 
 
 def _write_topology(source: Path, kept: Any, target: Path) -> None:
