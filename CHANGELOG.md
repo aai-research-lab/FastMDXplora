@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Each leaflet's area per lipid
+
+**`area_per_lipid` gives each leaflet's own area per lipid, `A / N_upper` and `A / N_lower`, beside the bilayer's `2 A / (N_upper + N_lower)`**, with `A` the box's area in xy less the protein's cross section and the leaflets counted every frame. In an asymmetric bilayer the leaflets share one area, so the one with fewer lipids is the more stretched, and the bilayer's value is neither: OpenMM's DMPC patch with eight lipids taken from the upper leaflet reads 0.664 nm2 for the bilayer, 0.711 for the upper leaflet and 0.622 for the lower. `area_per_lipid.dat` now has three columns, upper, lower and the bilayer's, the bilayer's last so every reader that takes the last column (the dashboard, the comparison of runs, reweighting) reads what it read before; the findings carry both leaflets' means (`per_leaflet`) and, where the counts differ, say so (`asymmetric`). The figure adds both leaflets' series when they differ. Results change: the data file gains two columns; the bilayer's area per lipid is unchanged.
+
 ### A sterol changing leaflet is not a damaged bilayer
 
 **The warning that flip-flop takes hours counts only phospholipids; sterols changing leaflet get a note of their own.** It counted every head, so a cholesterol moving to the other leaflet, which it does in microseconds or faster, was reported as a bilayer that had come apart. Now `leaflet_changes` gives the range of phospholipids in the upper leaflet, and `sterol_leaflet_changes` says that sterols (and other lipids without a phosphate) changing leaflet is expected in a long run. Results change: findings only.

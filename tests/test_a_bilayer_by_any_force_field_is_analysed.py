@@ -365,3 +365,47 @@ class TestALeafletChangeIsReadForWhatChanged:
         _, findings = _run(BilayerThickness, self._two_frames("phospholipid"))
         assert "63 to 64" in findings["leaflet_changes"]
         assert "sterol_leaflet_changes" not in findings
+
+
+class TestEachLeafletHasItsOwnArea:
+
+    @staticmethod
+    def _asymmetric():
+        """OpenMM's DMPC patch with eight lipids taken from the upper leaflet."""
+        traj = _patch("DMPC")
+        top = traj.topology
+        middle = float(np.median(traj.xyz[0, top.select("name P"), 2]))
+        upper = [r for r in top.residues if r.name == "DMP" and traj.xyz[
+            0, next(a.index for a in r.atoms if a.name == "P"), 2] > middle]
+        gone = {a.index for r in upper[:8] for a in r.atoms}
+        kept = [a.index for a in top.atoms if a.index not in gone]
+        return traj, traj.atom_slice(kept)
+
+    def test_an_asymmetric_bilayer(self, tmp_path) -> None:
+        traj, asymmetric = self._asymmetric()
+        box = traj.unitcell_lengths[0, 0] * traj.unitcell_lengths[0, 1]
+        both = md.join([asymmetric, asymmetric])
+        analysis = AreaPerLipid(output_dir=tmp_path)
+        result = analysis.run(both)
+        assert result.status == "ok", result.message
+        assert result.data[0] == pytest.approx(box / 60, rel=1e-6)
+        found = analysis.findings
+        assert found["per_leaflet"]["upper_nm2_mean"] == pytest.approx(box / 56, rel=1e-6)
+        assert found["per_leaflet"]["lower_nm2_mean"] == pytest.approx(box / 64, rel=1e-6)
+        assert "56 upper and 64 lower" in found["asymmetric"]
+        table = np.loadtxt(result.data_path)
+        assert table.shape == (2, 3)
+        assert np.allclose(table[0], [box / 56, box / 64, box / 60], rtol=1e-6)
+        assert analysis._data_format["columns"] == [
+            "upper_leaflet_nm2", "lower_leaflet_nm2", "area_per_lipid_nm2"]
+        # The bilayer's value is the last column, the one readers of the file take.
+        from fastmdxplora.batch.compare import _load_series
+
+        assert np.allclose(_load_series(result.data_path), result.data)
+
+    def test_a_symmetric_bilayer_has_one_area_in_both(self) -> None:
+        traj = _patch("DMPC")
+        area, found = _run(AreaPerLipid, traj)
+        assert found["per_leaflet"]["upper_nm2_mean"] == pytest.approx(area[0], rel=1e-9)
+        assert found["per_leaflet"]["lower_nm2_mean"] == pytest.approx(area[0], rel=1e-9)
+        assert "asymmetric" not in found

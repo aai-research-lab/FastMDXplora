@@ -165,7 +165,7 @@ is checked against before anything about the protein in it is believed.
 
 | Analysis | What it computes |
 |---|---|
-| `area_per_lipid` | The box's area in xy, less the protein's cross section in the hydrophobic core, per lipid of one leaflet. nm², per frame |
+| `area_per_lipid` | The box's area in xy, less the protein's cross section in the hydrophobic core, per lipid of one leaflet, and each leaflet's own beside it. nm², per frame |
 | `bilayer_thickness` | The distance between the two leaflets' phosphate planes, D_PP. nm, per frame |
 | `lipid_order` | The deuterium order parameter S_CD of every acyl-chain carbon, by chain. −S_CD is plotted |
 
@@ -183,6 +183,16 @@ the hydrophobic core, averaged. Every protein correction to an area per lipid
 is a convention, because lipids next to a protein do not pack as those in bulk
 do; the findings give the protein's share of the box, so it is clear how much
 the value depends on it.
+
+**Each leaflet has its own area per lipid.** The area per lipid is the area
+shared among the lipids of one leaflet, `2 A / (N_upper + N_lower)` with `A`
+the box's area less the protein's. Beside it, `area_per_lipid.dat` gives each
+leaflet's, `A / N_upper` and `A / N_lower`, counted every frame, and the
+findings give their means. They are equal in a symmetric bilayer. In an
+asymmetric one the leaflets share one area, so the leaflet with fewer lipids
+has more area per lipid, and the bilayer's value is neither leaflet's: compare
+each leaflet's with experiment on its own lipid. The file's columns are the
+upper leaflet's, the lower leaflet's and the bilayer's, in that order.
 
 **The chains are found from the bonds**, not from atom names, so any force
 field's naming works: a chain starts at a carbonyl bonded to an ester oxygen,
