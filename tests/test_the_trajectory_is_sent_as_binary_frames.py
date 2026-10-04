@@ -21,8 +21,12 @@ import pandas as pd
 import pytest
 
 from fastmdxplora.gui.by_residue import secondary_structure
-from fastmdxplora.gui.trajectory_frames import (BINARY_ATOM_FRAMES, frames_for_binary,
-                                                frames_info)
+from fastmdxplora.gui.trajectory_frames import (
+    BINARY_ATOM_FRAMES,
+    _times,
+    frames_for_binary,
+    frames_info,
+)
 from tests.test_the_cartoon_is_dssp_of_each_frame import _helical_study
 from tests.test_the_playback_shows_molecules_whole import _wrapped_study
 
@@ -93,13 +97,36 @@ def test_a_long_trajectory_is_thinned_evenly(tmp_path):
     trajectory = md.Trajectory(xyz, topology)
     trajectory[0].save_pdb(str(root / "simulation" / "trajectory_topology.pdb"))
     trajectory.save_dcd(str(root / "simulation" / "production.dcd"))
+    (root / "simulation" / "simulation_parameters.json").write_text(json.dumps({
+        "n_production_frames": 2500,
+        "parameters": {"timestep_fs": 2000, "integrator": "langevin_middle"},
+        "resolved": {"production_steps": 2500, "trajectory_interval_steps": 1},
+    }), encoding="utf-8")
     said = frames_info(root, most_frames=100, simulation_time_ns_total=5.0)
     assert said["n_frames_total"] == 2500 and said["n_frames_browser"] == 100
     assert said["frame_indices"][0] == 0 and said["frame_indices"][-1] == 2499
+    assert said["frame_times_ns"][0] == pytest.approx(0.002)
     assert said["frame_times_ns"][-1] == pytest.approx(5.0)
     sent = md.load_dcd(str(root / "simulation" / "frames.dcd"),
                        top=str(root / "simulation" / "frames_topology.pdb"))
     assert np.allclose(sent.xyz[:, 0, 0], np.array(said["frame_indices"]) * 1e-3, atol=1e-6)
+
+
+def test_recorded_dcd_times_start_after_the_first_reporting_interval(tmp_path):
+    record = tmp_path / "simulation_parameters.json"
+    record.write_text(json.dumps({
+        "n_production_frames": 4,
+        "parameters": {"timestep_fs": 2, "integrator": "verlet"},
+        "resolved": {"production_steps": 40, "trajectory_interval_steps": 10},
+    }), encoding="utf-8")
+    assert _times([0, 2, 3], 4, None, record) == [0.00002, 0.00006, 0.00008]
+
+
+def test_dcd_times_fall_back_only_when_the_record_cannot_describe_the_frames(tmp_path):
+    record = tmp_path / "simulation_parameters.json"
+    record.write_text(json.dumps({"n_production_frames": 3}), encoding="utf-8")
+    assert _times([0, 2], 3, 1.0, record) == [0.0, 1.0]
+    assert _times([0, 2], 3, None, record) == [None, None]
 
 
 def test_the_topology_keeps_what_the_source_said(tmp_path):

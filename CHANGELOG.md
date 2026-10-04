@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Viewer frame times begin at the first recorded sample
+
+**The Viewer now maps a production DCD frame to its recorded reporting step.**
+OpenMM writes frame zero after one trajectory reporting interval, not at 0 ns.
+Where the sealed simulation record matches the DCD, frame `k` is labelled
+`(k + 1) * interval * timestep`; older and synthetic trajectories retain the
+previous total-duration fallback when it is explicitly supplied.
+
 ### The standalone dashboard is laid out as the GUI is
 
 **`report/dashboard.html` reads like the GUI**: the same sidebar (the study,

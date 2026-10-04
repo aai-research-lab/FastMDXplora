@@ -27,7 +27,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -107,10 +107,13 @@ def _source(out: Path) -> dict[str, Any] | None:
                 "signature": f"history:{len(history)}:{history[-1].get('sequence')}:"
                              f"{history[-1].get('mtime_ns')}"}
     if topology.is_file() and trajectory.is_file() and trajectory.stat().st_size > 0:
+        timing_record = trajectory.parent / "simulation_parameters.json"
         return {"kind": "trajectory", "trajectory": trajectory, "topology": topology,
                 "records": history, "simulation": simulation,
                 "signature": f"{trajectory.parent.name}/{trajectory.name}:"
-                             f"{_stamp(trajectory)}:{topology.name}:{_stamp(topology)}"}
+                             f"{_stamp(trajectory)}:{topology.name}:{_stamp(topology)}:timing=2:"
+                             f"{_stamp(timing_record) if timing_record.is_file() else 'missing'}",
+                "timing_record": timing_record}
     if len(history) >= 2:
         return {"kind": "live-history", "records": history, "simulation": simulation,
                 "signature": f"history:{len(history)}:{history[-1].get('sequence')}:"
@@ -136,7 +139,7 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
         if source["kind"] == "trajectory":
             try:
                 said = _from_trajectory(source, simulation, most_frames,
-                                        simulation_time_ns_total)
+                                        simulation_time_ns_total, source["timing_record"])
             except Exception:  # noqa: BLE001 - the snapshots stand in, or it is said
                 # A trajectory that cannot be read now (being written, or
                 # cut short) is played from the snapshots the run wrote.
@@ -166,7 +169,7 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
 
 
 def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
-                     total_ns: float | None) -> dict[str, Any]:
+                     total_ns: float | None, timing_record: Path) -> dict[str, Any]:
     import mdtraj as md
 
     from fastmdxplora.analysis.loading import _made_whole
@@ -215,7 +218,8 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
               for length, angle in zip(lengths, angles)] if boxed else None)
     return {"available": True, "reason": None, "n_atoms": int(len(shown)),
             "n_frames_total": int(total), "n_frames_browser": len(indices),
-            "frame_indices": indices, "frame_times_ns": _times(indices, total, total_ns),
+            "frame_indices": indices,
+            "frame_times_ns": _times(indices, total, total_ns, timing_record),
             "made_whole": bool(boxed), "source_topology": source_topology, "shown": kept,
             "cells": cells}
 
@@ -606,9 +610,34 @@ def _write_dcd(frames: Any, target: Path) -> None:
     temporary.replace(target)
 
 
-def _times(indices: list[int], total: int, total_ns: float | None) -> list[float | None]:
+def _times(indices: list[int], total: int, total_ns: float | None,
+           timing_record: Path) -> list[float | None]:
+    """Map DCD samples to their recorded production steps when possible.
+
+    OpenMM's DCD reporter writes its first sample one reporting interval into
+    production.  The old interpolation labelled that sample 0 ns.  A sealed
+    run records the interval and timestep, which are the only evidence needed
+    to map a frame ordinal to physical time.  Older or synthetic trajectories
+    retain the legacy fallback when their caller supplied a total duration.
+    """
+    unknown: list[float | None] = [None] * len(indices)
+    record = _load_json(timing_record)
+    resolved, parameters = record.get("resolved") or {}, record.get("parameters") or {}
+    if isinstance(resolved, dict) and isinstance(parameters, dict):
+        interval = resolved.get("trajectory_interval_steps")
+        steps = resolved.get("production_steps")
+        timestep = parameters.get("timestep_fs")
+        timestep_fs = (float(cast(float | int, timestep))
+                       if type(timestep) in (int, float) else None)
+        if (not record.get("continues") and record.get("n_production_frames") == total
+                and type(interval) is int and interval > 0
+                and type(steps) is int and steps > 0 and steps // interval == total
+                and timestep_fs is not None and np.isfinite(timestep_fs) and timestep_fs > 0
+                and parameters.get("integrator") in {
+                    "langevin", "langevin_middle", "verlet", "brownian"}):
+            return [(index + 1) * interval * timestep_fs / 1_000_000.0 for index in indices]
     if total_ns is None or total < 2:
-        return [None] * len(indices)
+        return unknown
     return [float(total_ns) * index / (total - 1) for index in indices]
 
 
