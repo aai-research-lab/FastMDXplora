@@ -40,6 +40,10 @@ Installed-wheel interception reproduced a request from the Agent page Send butto
 
 Installed-package testing reproduced a HierarchyRequestError when disabling the Agent on its own page. Navigation sets `data-page=agent` on the HTML root as well as the Agent section; the broad selector chose the root and attempted to move it after a descendant. Both docking selectors now explicitly target `section.page[data-page=agent]`. Regression coverage toggles the preference on that route, confirms the root marker, checks no browser error and a visible Agent section. The prior package is not the final candidate; this correction requires a new frozen build and combined acceptance.
 
+### New wheel and process-restart acceptance — 2026-10-03
+
+Candidate `6d5407a` built as `fastmdxplora-2.5.9.dev218+g6d5407a86-py3-none-any.whl`, SHA-256 `4250c2d6fc42abcd4eb451eb033b5912e99fb328f94daf05223bd6ebc9c30a74`. Installed outside the checkout in a separate environment reusing repository dependencies; this is not clean-machine installation evidence. Browser testing of this candidate passed visible disabled-Agent refusal, retained composer, zero inference requests, disable persistence after reload and zero page errors. The docking source regression passed 3/3 themes. Bookmark HTTP persistence also passed a genuine process restart: harness-owned Python processes 31348 and 28020 each started an installed-package server, exited normally, and loaded the identical saved record; graph range restoration passed and the temporary record was deleted. Existing dashboard servers were untouched. A preceding same-process server recreation preserved all 315 non-output study hashes. The final combined suite must be rerun at this candidate after the earlier in-flight run ends, because the docking fix postdates its boundary checks.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |

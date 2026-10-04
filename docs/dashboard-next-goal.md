@@ -48,7 +48,7 @@ The combined suite must include the dashboard-boundary, Agent-reasoning, provide
 
 ## Remaining acceptance reconciliation
 
-Retain the full original M0–M8 contract. Before closing M7, directly reconcile the exact-wheel graph/residue explanation flow, actual server-restart bookmark persistence, stale/missing-source refusal, browser draft-review/study invalidation, stale-response isolation and Agent disabling. Earlier-build or source regression evidence must be labelled by scope. Installed HTTP draft review now verifies the pH before/after difference and rejection for changed draft/baseline, missing confirmation and changed purpose; 315 non-output study hashes remained unchanged. No setting was applied. Expanded/loading/error visual states still need requirement-by-requirement evidence matching.
+Retain the full original M0–M8 contract. Before closing M7, directly reconcile the exact-wheel graph/residue explanation flow, bookmark restart/restore UI beyond the newly verified HTTP process-restart receipt, stale/missing-source refusal, browser draft-review/study invalidation, stale-response isolation and Agent disabling. Earlier-build or source regression evidence must be labelled by scope. Installed HTTP draft review now verifies the pH before/after difference and rejection for changed draft/baseline, missing confirmation and changed purpose; 315 non-output study hashes remained unchanged. No setting was applied. Expanded/loading/error visual states still need requirement-by-requirement evidence matching.
 
 ## Closeout rule
 
