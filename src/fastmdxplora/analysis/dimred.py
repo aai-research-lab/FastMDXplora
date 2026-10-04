@@ -193,7 +193,10 @@ class DimRed(Analysis):
                 # different two conformations are.
                 distances = _pairwise_rmsd(traj, self.select_atoms(traj))
                 embedding = _classical_mds(distances, self.n_components)
-                self._explained_variance = None
+                # PCA's variance shares stay where PCA put them: MDS has
+                # none of its own, and clearing the one attribute both
+                # shared took "(98.5%)" off the PCA axes whenever MDS ran
+                # after it.
             elif method == "tsne":
                 # t-SNE requires perplexity < n_samples
                 p = min(self.perplexity, max(5.0, traj.n_frames / 4))
