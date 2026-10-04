@@ -9,7 +9,10 @@ atoms beside it, each in a colour of its own.
 
 Each other run is read at the source frames the first run's frames were
 taken from, so frame k of every run is the same step of its simulation; a
-run with fewer frames ends sooner. Each is made whole as the first run's
+run with fewer frames ends sooner. A run still running is read from the
+snapshots it has written, at the times of the first run's frames (the
+snapshot written last by each), and grows as it writes more; while no run
+has finished, the first to have written snapshots is played. Each is made whole as the first run's
 frames are, and fitted on the protein's backbone to the first run's first
 frame, the frame the first run's own frames are fitted to when superposed
 on the backbone: the runs are then superposed on one shared structure. A run
@@ -47,23 +50,28 @@ def _colour(index: int) -> str:
 
 def run_shown(root: Path | str) -> Path | None:
     """The run the Viewer plays for a study of several runs: the first, in
-    the order the study planned them, with a trajectory to read. None for a
-    study of one run, or one whose runs have no trajectory yet."""
+    the order the study planned them, with a trajectory to read; while none
+    has one, the first that has written snapshots. None for a study of one
+    run, or one whose runs have written nothing yet."""
     from fastmdxplora.gui.exploration import runs_of_a_study
     from fastmdxplora.gui.trajectory_frames import _source
 
+    running = None
     for run in runs_of_a_study(Path(root)) or []:
         folder = Path(run["path"])
         source = _source(folder) if folder.is_dir() else None
         if source is not None and source["kind"] == "trajectory":
             return folder
-    return None
+        if source is not None and running is None:
+            running = folder
+    return running
 
 
 def runs_of_the_same_atoms(root: Path | str) -> list[dict[str, Any]]:
     """The runs of a study whose atoms are the run played's, the run played
     first, each as the study lists it: the runs whose results can be set
-    beside its own. Empty where no run has a trajectory."""
+    beside its own. Runs still running have no results, and are not among
+    them. Empty where no run has written anything."""
     from fastmdxplora.gui.exploration import runs_of_a_study
     from fastmdxplora.gui.trajectory_frames import _source
 
@@ -71,9 +79,8 @@ def runs_of_the_same_atoms(root: Path | str) -> list[dict[str, Any]]:
     if played is None:
         return []
     source = _source(played)
-    ours = _shown_atoms(source["topology"])[0] if source else None
-    if ours is None:
-        return []
+    ours = (_shown_atoms(source["topology"])[0] if source and source["kind"] == "trajectory"
+            else None)
     same = []
     for run in runs_of_a_study(Path(root)) or []:
         folder = Path(run["path"])
@@ -81,7 +88,8 @@ def runs_of_the_same_atoms(root: Path | str) -> list[dict[str, Any]]:
             same.insert(0, run)
             continue
         other = _source(folder) if folder.is_dir() else None
-        if other is not None and _shown_atoms(other["topology"])[0] == ours:
+        if (ours is not None and other is not None and other["kind"] == "trajectory"
+                and _shown_atoms(other["topology"])[0] == ours):
             same.append(run)
     return same
 
@@ -105,8 +113,10 @@ def runs_together(root: Path | str, *, most_frames: int, force: bool = False
 
 def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
               force: bool) -> dict[str, Any]:
+    import hashlib
+
     from fastmdxplora.gui.runs_compared import _axes_that_differ, _label
-    from fastmdxplora.gui.trajectory_frames import _source, _unavailable, frames_info
+    from fastmdxplora.gui.trajectory_frames import _source, _unavailable, _write_text, frames_info
 
     main = run_shown(base)
     if main is None:
@@ -125,48 +135,73 @@ def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
         shown = dict(shown)
         shown["runs_together"] = {"runs": [], "excluded": []}
         return shown
-    sources = {}
-    for run in runs:
-        folder = Path(run["path"])
-        if run["run_id"] != main_id and folder.is_dir():
-            sources[run["run_id"]] = _source(folder)
-    # A run still writing its frames is not played, so its new frames are
-    # not a reason to fit the others again.
-    signature = json.dumps([shown.get("signature"),
-                            sorted((key, (value or {}).get("signature")
-                                    if (value or {}).get("kind") == "trajectory"
-                                    else (value or {}).get("kind"))
-                                   for key, value in sources.items())])
     out = base / TOGETHER
     cached = _load_json(out / _INDEX)
-    if (not force and cached.get("signature") == signature
-            and all((out / entry["file"]).is_file() for entry in cached.get("written", []))):
-        together = cached["together"]
-    else:
-        together = _written(base, main, shown, runs, sources, labels, order)
-        together_index = {"signature": signature, "together": together,
-                          "written": [{"file": f"run_{entry['index']}.dcd"}
-                                      for entry in together["runs"] if not entry.get("main")]}
-        out.mkdir(exist_ok=True)
-        from fastmdxplora.gui.trajectory_frames import _write_text
-
-        _write_text(out / _INDEX, json.dumps(together_index))
+    # Each run written again only where it, or the run played, changed: a
+    # running run's new snapshots are its own.
+    keep = {} if force or cached.get("main") != shown.get("signature") else \
+        cached.get("runs") or {}
+    entries = [{"run_id": main_id, "label": labels.get(main_id, main_id),
+                "colour": _colour(order[main_id]), "frames": int(shown["n_frames_browser"]),
+                "main": True, "index": order[main_id],
+                "running": shown.get("source_kind") == "live-history"}]
+    excluded = []
+    fitted_on = None
+    written: dict[str, Any] = {}
+    context = None
+    for run in runs:
+        run_id = run["run_id"]
+        if run_id == main_id:
+            continue
+        label = labels.get(run_id, run_id)
+        folder = Path(run["path"])
+        source = _source(folder) if folder.is_dir() else None
+        if source is None:
+            excluded.append({"run_id": run_id, "label": label,
+                             "reason": "It has no trajectory yet."})
+            continue
+        before = keep.get(run_id) or {}
+        target = out / f"run_{order[run_id]}.dcd"
+        if before.get("signature") == source["signature"] and (
+                before.get("entry") is None or target.is_file()):
+            said = before
+        else:
+            if context is None:
+                context = _context(main, shown)
+            said = _one_run(base, source, context, order[run_id])
+            said["signature"] = source["signature"]
+        written[run_id] = said
+        if said.get("entry") is None:
+            excluded.append({"run_id": run_id, "label": label, "reason": said["reason"]})
+            continue
+        fitted_on = said.get("fitted_on") or fitted_on
+        entries.append(dict(said["entry"], run_id=run_id, label=label,
+                            colour=_colour(order[run_id]), main=False, index=order[run_id]))
+    if fitted_on is None:
+        fitted_on = (keep.get("_fitted") if keep else None) or (
+            _context(main, shown)["fitted"] if len(entries) > 1 else None)
+    out.mkdir(exist_ok=True)
+    index = {"main": shown.get("signature"), "runs": {**written, "_fitted": fitted_on}}
+    if json.loads(json.dumps(index)) != cached:
+        # Written where something changed, not at every look.
+        _write_text(out / _INDEX, json.dumps(index))
+    signature = hashlib.sha1(json.dumps(
+        [shown.get("signature"), sorted((k, v.get("signature")) for k, v in written.items())])
+        .encode("utf-8")).hexdigest()[:16]
+    together = {"runs": entries, "excluded": excluded, "signature": signature,
+                "fitted": (f"on the protein's backbone ({fitted_on} atoms) to the first frame of "
+                           f"{labels.get(main_id, main_id)}" if fitted_on else None),
+                "first": labels.get(main_id, main_id)}
     said = dict(shown)
-    # The page reloads the frames when this changes: a run finishing, or one
-    # written again, is a new set of frames to play together.
-    said["source_signature"] = f"{shown.get('source_signature')}|{signature}"
     said["runs_together"] = together
     return said
 
 
-def _written(base: Path, main: Path, shown: dict[str, Any], runs: list[dict[str, Any]],
-             sources: dict[str, Any], labels: dict[str, str], order: dict[str, int]
-             ) -> dict[str, Any]:
-    """Each other run's frames fitted to the first run's first frame and
-    written beside the study, with what was left out and why."""
+def _context(main: Path, shown: dict[str, Any]) -> dict[str, Any]:
+    """What every other run is set beside: the run played's first frame,
+    its atoms by name, its backbone, and its frames' places and times."""
     import mdtraj as md
 
-    from fastmdxplora.analysis.base import superposed
     from fastmdxplora.gui.trajectory_frames import FRAMES_FILE, FRAMES_TOPOLOGY, _atom_lines, _read
     from fastmdxplora.utils.native_output import suppress_native_output
 
@@ -174,46 +209,104 @@ def _written(base: Path, main: Path, shown: dict[str, Any], runs: list[dict[str,
     with suppress_native_output():
         first = md.load_dcd(str(simulation / FRAMES_FILE), top=str(simulation / FRAMES_TOPOLOGY),
                             frame=0)
-    ours = [_named(line) for line in _atom_lines(_read(simulation / FRAMES_TOPOLOGY))]
+    lines = _atom_lines(_read(simulation / FRAMES_TOPOLOGY))
     backbone = first.topology.select("protein and backbone")
-    indices = [int(i) for i in shown.get("frame_indices") or []]
-    main_id = main.name
-    entries = [{"run_id": main_id, "label": labels.get(main_id, main_id),
-                "colour": _colour(order[main_id]), "frames": len(indices), "main": True,
-                "index": order[main_id]}]
-    excluded = []
-    for run in runs:
-        run_id = run["run_id"]
-        if run_id == main_id:
-            continue
-        label = labels.get(run_id, run_id)
-        source = sources.get(run_id)
-        if source is None or source["kind"] != "trajectory":
-            excluded.append({"run_id": run_id, "label": label, "reason": (
-                "It is still running: it is shown once it has finished." if source is not None
-                else "It has no trajectory yet.")})
-            continue
+    return {"first": first, "ours": [_named(line) for line in lines], "backbone": backbone,
+            "indices": [int(i) for i in shown.get("frame_indices") or []],
+            "times": list(shown.get("frame_times_ns") or []),
+            "fitted": f"{len(backbone):,}" if len(backbone) >= 3 else None}
+
+
+def _one_run(base: Path, source: dict[str, Any], context: dict[str, Any], index: int
+             ) -> dict[str, Any]:
+    """One other run's frames fitted beside the run played and written, as
+    its entry; or why it is left out."""
+    from fastmdxplora.analysis.base import superposed
+    from fastmdxplora.gui.trajectory_frames import _write_dcd, _write_text
+
+    first, backbone = context["first"], context["backbone"]
+    target = base / TOGETHER / f"run_{index}.dcd"
+    target.parent.mkdir(exist_ok=True)
+    if source["kind"] == "trajectory":
         try:
-            frames, why = _frames_of(source, ours, indices)
+            frames, why = _frames_of(source, context["ours"], context["indices"])
         except Exception as exc:  # noqa: BLE001 - the run is left out, and why is said
             frames, why = None, f"Its trajectory could not be read: {exc}"
         if frames is None:
-            excluded.append({"run_id": run_id, "label": label, "reason": why})
-            continue
+            return {"entry": None, "reason": why}
         if len(backbone) >= 3:
             frames = superposed(frames, atom_indices=backbone, reference=first,
                                 ref_atom_indices=backbone)
-        target = base / TOGETHER / f"run_{order[run_id]}.dcd"
-        target.parent.mkdir(exist_ok=True)
-        from fastmdxplora.gui.trajectory_frames import _write_dcd
-
         _write_dcd(frames, target)
-        entries.append({"run_id": run_id, "label": label, "colour": _colour(order[run_id]),
-                        "frames": int(frames.n_frames), "main": False, "index": order[run_id]})
-    fitted = (f"on the protein's backbone ({len(backbone):,} atoms) to the first frame of "
-              f"{labels.get(main_id, main_id)}" if len(backbone) >= 3 else None)
-    return {"runs": entries, "excluded": excluded, "fitted": fitted,
-            "first": labels.get(main_id, main_id)}
+        return {"entry": {"frames": int(frames.n_frames), "running": False},
+                "fitted_on": context["fitted"]}
+    try:
+        frames, lines, why = _snapshots_of(source, context)
+    except Exception as exc:  # noqa: BLE001 - the run is left out, and why is said
+        frames, lines, why = None, None, f"Its snapshots could not be read: {exc}"
+    if frames is None:
+        return {"entry": None, "reason": why}
+    _write_dcd(frames, target)
+    _write_text(target.with_suffix(".pdb"), "\n".join(lines) + "\nEND\n")
+    return {"entry": {"frames": int(frames.n_frames), "running": True,
+                      "topology": f"/structure/frames-topology.pdb?run={index}"},
+            "fitted_on": context["fitted"]}
+
+
+def _snapshots_of(source: dict[str, Any], context: dict[str, Any]
+                  ) -> tuple[Any, list[str] | None, str | None]:
+    """A running run's snapshots at the times of the run played's frames,
+    each the snapshot written last by then, fitted on the backbone atoms
+    the two share (by name) to the run played's first frame; with the
+    snapshots' own atoms, or why there are none."""
+    import mdtraj as md
+
+    from fastmdxplora.gui.trajectory_frames import _atom_lines, _read
+
+    times = context["times"]
+    if not times or any(t is None for t in times):
+        return None, None, ("The run played has no clock, so a run still running cannot be set "
+                            "beside it in time.")
+    simulation = source["simulation"]
+    records = sorted((r for r in source["records"] if r.get("simulation_time_ns") is not None),
+                     key=lambda r: float(r["simulation_time_ns"]))
+    if not records:
+        return None, None, "Its snapshots have no times yet."
+    lines = _atom_lines(_read(simulation / str(records[-1].get("path") or "")))
+    ours = context["ours"]
+    backbone = context["backbone"]
+    where = {_named(line): place for place, line in enumerate(lines)}
+    pairs = [(int(b), where[ours[int(b)]]) for b in backbone if ours[int(b)] in where]
+    if len(pairs) < 3:
+        return None, None, "Its atoms share no backbone with the run shown."
+    taken = []
+    written = [float(r["simulation_time_ns"]) for r in records]
+    spacing = float(np.median(np.diff(written))) if len(written) > 1 else 0.0
+    for t in times:
+        if float(t) > written[-1] + spacing / 2:
+            break
+        before = [k for k, w in enumerate(written) if w <= float(t) + 1e-9]
+        taken.append(before[-1] if before else 0)
+    xyz = []
+    for k in taken:
+        atoms = _atom_lines(_read(simulation / str(records[k].get("path") or "")))
+        if len(atoms) != len(lines):
+            return None, None, "Its snapshots do not all hold the same atoms."
+        xyz.append([(float(a[30:38]), float(a[38:46]), float(a[46:54])) for a in atoms])
+    if not xyz:
+        return None, None, "It has written no snapshot yet."
+    topology = md.Topology()
+    chain = topology.add_chain()
+    residue = topology.add_residue("UNK", chain)
+    for _ in lines:
+        topology.add_atom("X", md.element.carbon, residue)
+    frames = md.Trajectory(np.asarray(xyz, dtype=np.float32) / 10.0, topology)
+    ours_at = np.array([a for a, _ in pairs])
+    theirs_at = np.array([b for _, b in pairs])
+    reference = md.Trajectory(context["first"].xyz[:, ours_at], topology.subset(theirs_at))
+    frames.superpose(reference, atom_indices=theirs_at, ref_atom_indices=np.arange(len(pairs)))
+    frames.unitcell_vectors = None
+    return frames, lines, None
 
 
 def _named(line: str) -> str:

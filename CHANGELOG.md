@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Runs together while they run
+
+**A run still running is played beside the others**, from the snapshots it
+has written: each frame beside the snapshot it had written last by that
+frame's time, fitted on the backbone as the finished runs are, said to be
+running, and rendered again as it writes more without the frames played
+being loaded again. While no run has finished, the first to have written
+snapshots is played. A run still running had been left out until it
+finished.
+
+**Fixed:** frames asked for while the structure was still on its way were
+replaced by it when it arrived.
+
 ### The frames arrive in pieces
 
 **The Viewer plays the frames from the first piece while the rest arrive**,

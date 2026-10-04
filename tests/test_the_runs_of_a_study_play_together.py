@@ -154,8 +154,8 @@ def test_a_study_of_one_run_and_runs_without_frames(replicas, tmp_path):
                 for entry in runs_together(copy, most_frames=2000)["runs_together"]["excluded"]}
     assert excluded["s1__random-seed-3"] == "Its atoms are not those of the run shown."
     assert excluded["s1__random-seed-4"].startswith("Its trajectory could not be read: ")
-    # A run still writing its frames is said to be running, and the frames
-    # it writes are no reason to fit the others again.
+    # A run still writing its frames is played from its snapshots, at the
+    # times of the run shown's frames; without a clock it cannot be.
     from fastmdxplora.gui.runs_together import TOGETHER
 
     running = copy / "runs" / "s1__random-seed-2" / "simulation"
@@ -164,25 +164,47 @@ def test_a_study_of_one_run_and_runs_without_frames(replicas, tmp_path):
     from fastmdxplora.gui.live_frames import read_live_frame_history
 
     pdb = (running / "trajectory_topology.pdb").read_text()
-    for i in range(2):
-        (snapshots / f"frame_{i}.pdb").write_text(pdb)
-    (running / "live_frame_history.json").write_text(json.dumps({"frames": [
-        {"path": f"live_frames/frame_{i}.pdb", "sequence": i, "frame_index": i,
-         "mtime_ns": i} for i in range(2)]}))
+
+    def written(count):
+        for i in range(count):
+            (snapshots / f"frame_{i}.pdb").write_text(pdb)
+        (running / "live_frame_history.json").write_text(json.dumps({"frames": [
+            {"path": f"live_frames/frame_{i}.pdb", "sequence": i, "frame_index": i,
+             "mtime_ns": i, "simulation_time_ns": 0.25 * i} for i in range(count)]}))
+
+    written(2)
     (running / "live_status.json").write_text(json.dumps({"status": "running",
                                                           "stage": "production"}))
     assert len(read_live_frame_history(running)["frames"]) == 2
     said = runs_together(copy, most_frames=2000)
     assert {"run_id": "s1__random-seed-2", "label": "random_seed 2",
-            "reason": "It is still running: it is shown once it has finished."} in (
-        said["runs_together"]["excluded"])
-    stamp = (copy / TOGETHER / "index.json").stat().st_mtime_ns
-    (snapshots / "frame_2.pdb").write_text(pdb)
-    (running / "live_frame_history.json").write_text(json.dumps({"frames": [
-        {"path": f"live_frames/frame_{i}.pdb", "sequence": i, "frame_index": i,
-         "mtime_ns": i} for i in range(3)]}))
-    assert runs_together(copy, most_frames=2000)["source_signature"] == said["source_signature"]
-    assert (copy / TOGETHER / "index.json").stat().st_mtime_ns == stamp
+            "reason": "The run played has no clock, so a run still running cannot be set "
+                      "beside it in time."} in said["runs_together"]["excluded"]
+    played = copy / "runs" / "s1__random-seed-1" / "simulation"
+    (played / "simulation_parameters.json").write_text(json.dumps({"duration_ns_actual": 1.0}))
+    said = runs_together(copy, most_frames=2000, force=True)
+    entry = next(r for r in said["runs_together"]["runs"] if r["run_id"] == "s1__random-seed-2")
+    # Frames at 0, 0.2, ... 1.0 ns: the snapshots at 0 and 0.25 ns reach 0.2.
+    assert entry["running"] and entry["frames"] == 2
+    assert entry["topology"] == "/structure/frames-topology.pdb?run=1"
+    fitted = md.load_dcd(str(copy / TOGETHER / "run_1.dcd"), top=str(copy / TOGETHER / "run_1.pdb"))
+    first = md.load_dcd(str(played / "frames.dcd"), top=str(played / "frames_topology.pdb"),
+                        frame=0)
+    backbone = first.topology.select("protein and backbone")
+    # The snapshot was turned and moved apart: fitted, it is on the first frame.
+    assert np.sqrt(((fitted.xyz[0, backbone] - first.xyz[0, backbone]) ** 2)
+                   .sum(axis=1).mean()) < 0.06
+    # It writes more: it is written again, and grows.
+    stamp = (copy / TOGETHER / "run_1.dcd").stat().st_mtime_ns
+    same = runs_together(copy, most_frames=2000)
+    assert same["runs_together"]["signature"] == said["runs_together"]["signature"]
+    assert (copy / TOGETHER / "run_1.dcd").stat().st_mtime_ns == stamp
+    written(3)
+    grown = runs_together(copy, most_frames=2000)
+    assert grown["runs_together"]["signature"] != said["runs_together"]["signature"]
+    assert next(r for r in grown["runs_together"]["runs"]
+                if r["run_id"] == "s1__random-seed-2")["frames"] == 4
+    assert grown["source_signature"] == said["source_signature"]
     # The run shown's frames cannot be written: nothing is played.
     (copy / "runs" / "s1__random-seed-1" / "simulation" / "production.dcd").write_bytes(b"x")
     unread = runs_together(copy, most_frames=2000)
@@ -325,3 +347,127 @@ def test_an_ai_app_writes_a_scene_of_the_run_played(replicas, monkeypatch, tmp_p
     assert ("The study is of several runs: the scene is of s1__random-seed-1, the run the "
             "GUI plays, alone.") in text
     assert (replicas / "scenes" / "by an app.mvsx").is_file()
+
+
+def test_while_no_run_has_finished_the_first_running_is_played(replicas, tmp_path):
+    import shutil
+
+    from fastmdxplora.gui.runs_together import run_shown, runs_together
+
+    study = tmp_path / "running"
+    shutil.copytree(replicas, study)
+    for run in sorted((study / "runs").iterdir())[:2]:
+        simulation = run / "simulation"
+        pdb = (simulation / "trajectory_topology.pdb").read_text()
+        (simulation / "live_frames").mkdir()
+        for k in range(3):
+            (simulation / "live_frames" / f"frame_{k}.pdb").write_text(pdb)
+        (simulation / "live_frame_history.json").write_text(json.dumps({"frames": [
+            {"path": f"live_frames/frame_{k}.pdb", "sequence": k, "frame_index": k,
+             "mtime_ns": k, "simulation_time_ns": 0.1 * k} for k in range(3)]}))
+        (simulation / "production.dcd").unlink()
+        (simulation / "live_status.json").write_text(json.dumps({"status": "running"}))
+    for run in sorted((study / "runs").iterdir())[2:]:
+        shutil.rmtree(run / "simulation")
+    assert run_shown(study) == study / "runs" / "s1__random-seed-1"
+    said = runs_together(study, most_frames=2000)
+    assert said["available"] and said["source_kind"] == "live-history"
+    runs = said["runs_together"]["runs"]
+    assert [(r["run_id"], r["running"], r["frames"]) for r in runs] == [
+        ("s1__random-seed-1", True, 3), ("s1__random-seed-2", True, 3)]
+
+
+def test_the_viewer_follows_a_run_still_running(replicas, tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    import shutil
+
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = tmp_path / "growing"
+    shutil.copytree(replicas, study)
+    played = study / "runs" / "s1__random-seed-1" / "simulation"
+    (played / "simulation_parameters.json").write_text(json.dumps({"duration_ns_actual": 1.0}))
+    for name in ("frames_index.json", "frames.dcd"):
+        (played / name).unlink(missing_ok=True)
+    running = study / "runs" / "s1__random-seed-2" / "simulation"
+    pdb = (running / "trajectory_topology.pdb").read_text()
+    (running / "live_frames").mkdir()
+    (running / "production.dcd").unlink()
+
+    def written(count):
+        for i in range(count):
+            (running / "live_frames" / f"frame_{i}.pdb").write_text(pdb)
+        (running / "live_frame_history.json").write_text(json.dumps({"frames": [
+            {"path": f"live_frames/frame_{i}.pdb", "sequence": i, "frame_index": i,
+             "mtime_ns": i, "simulation_time_ns": 0.25 * i} for i in range(count)]}))
+
+    written(2)
+    (running / "live_status.json").write_text(json.dumps({"status": "running"}))
+    state = "window.FastMDXMoleculeViewer.STATE"
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(120000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function("() => !document.getElementById('side-runs').hidden")
+            page.evaluate("() => window.dispatchEvent(new CustomEvent("
+                          "'dashboard:trajectory-seek', {detail: {frame: 0}}))")
+            page.wait_for_function(f"() => {state}.engine.runsShown().length === 2")
+            before = page.evaluate(f"() => {state}.engine.runsShown().map((r) => r.frames)")
+            said = page.locator('#viewer-runs-list li[data-run="s1__random-seed-2"]').inner_text()
+            written(3)
+            page.wait_for_function(f"() => {state}.engine.runsShown().length === 2"
+                                   f" && {state}.engine.runsShown()"
+                                   ".some((r) => r.frames === 4)", timeout=60000)
+            after = page.evaluate(f"() => {state}.engine.runsShown().map((r) => r.frames)")
+            frames = page.evaluate(f"() => {state}.engine.frameCount()")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert before == [2, 6]
+    assert "running, 2 frames so far" in said
+    assert after == [4, 6] and frames == 6
+
+
+def test_snapshots_that_cannot_be_set_beside_say_why(replicas, tmp_path):
+    from fastmdxplora.gui.runs_together import _context, _snapshots_of, run_shown, runs_together
+    from fastmdxplora.gui.trajectory_frames import frames_info
+
+    played = run_shown(replicas)
+    shown = frames_info(played, simulation_time_ns_total=1.0, force=True)
+    assert runs_together(replicas, most_frames=2000) is not None
+    context = _context(played, shown)
+    simulation = tmp_path / "simulation"
+    (simulation / "live_frames").mkdir(parents=True)
+    pdb = (played / "simulation" / "trajectory_topology.pdb").read_text()
+
+    def source(records, texts):
+        for name, text in texts.items():
+            (simulation / "live_frames" / name).write_text(text)
+        return {"kind": "live-history", "simulation": simulation, "records": records,
+                "signature": "x"}
+
+    untimed = source([{"path": "live_frames/a.pdb"}], {"a.pdb": pdb})
+    assert _snapshots_of(untimed, context)[2] == "Its snapshots have no times yet."
+    water = "HETATM    1  O   HOH W   1       0.000   0.000   0.000  1.00  0.00           O\n"
+    other = source([{"path": "live_frames/w.pdb", "simulation_time_ns": 0.0}], {"w.pdb": water})
+    assert _snapshots_of(other, context)[2] == "Its atoms share no backbone with the run shown."
+    shorter = "\n".join(pdb.splitlines()[:-40]) + "\n"
+    uneven = source([{"path": "live_frames/a.pdb", "simulation_time_ns": 0.0},
+                     {"path": "live_frames/b.pdb", "simulation_time_ns": 0.5}],
+                    {"a.pdb": shorter, "b.pdb": pdb})
+    assert _snapshots_of(uneven, context)[2] == "Its snapshots do not all hold the same atoms."
+    late = source([{"path": "live_frames/a.pdb", "simulation_time_ns": 5.0},
+                   {"path": "live_frames/b.pdb", "simulation_time_ns": 6.0}],
+                  {"a.pdb": pdb, "b.pdb": pdb})
+    frames, _, _ = _snapshots_of(late, context)
+    assert frames.n_frames == 6

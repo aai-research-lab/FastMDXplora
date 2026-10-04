@@ -141,3 +141,45 @@ def test_the_viewer_plays_from_the_first_piece(study, small_pieces):
     assert pieces == {"total": 6, "loaded": 6, "pieces": 3}
     assert loaded == "6"
     assert after == [6, 5, 6]
+
+
+def test_frames_asked_for_before_the_structure_arrives_keep_the_canvas(study):
+    """Play pressed while the structure was on its way: the structure
+    arrived after the frames and was rendered in their place."""
+    pytest.importorskip("playwright.sync_api")
+    import time
+
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    state = "window.FastMDXMoleculeViewer.STATE"
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(120000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+
+            def slowly(route):
+                time.sleep(4)
+                route.continue_()
+
+            page.route("**/structure/topology.pdb*", slowly)
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function("() => window.FastMDXMoleculeViewer"
+                                   f" && {state}.structureInfo")
+            page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                          "await (await fetch('/api/frames-info')).json())")
+            page.wait_for_function(f"() => {state}.structurePdb", timeout=60000)
+            page.wait_for_timeout(1500)
+            after = page.evaluate(f"() => [{state}.mode, {state}.engine.frameCount()]")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert after == ["playback", 6]

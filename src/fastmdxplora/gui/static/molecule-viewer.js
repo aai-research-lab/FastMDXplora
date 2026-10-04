@@ -197,6 +197,7 @@
     STATE.runsFittedOnce = false;
     STATE.runsHidden = new Set();
     STATE.extraResults = {};
+    STATE.runsShownSignature = null;
     sayTheRuns(null);
     offerResultColours();
     sayTheSecondaryStructure();
@@ -355,6 +356,9 @@
       }
       STATE.structureUrl = url;
       STATE.structurePdb = pdb;
+      // The frames were asked for while the structure was on its way: they
+      // own the canvas, and the structure is kept for when they no longer do.
+      if (STATE.mode === "playback") return;
       // Solvent wins over the live frame: frames are written with water and
       // ions already stripped, so live mode cannot show them at all.
       if (STATE.liveFrameIndex != null && STATE.liveTopology && !needsFullTopology()) {
@@ -1507,6 +1511,16 @@
       && payload?.source_kind === "live-history";
     STATE.playbackPayload = payload || null;
     sayTheRuns(payload);
+    // The other runs changed (one wrote more snapshots, or finished): they
+    // are rendered again, and the frames played are left as they are.
+    const runsNow = runsTogether(payload);
+    if (runsNow && STATE.playbackLoaded && STATE.engine && STATE.runsShownSignature
+        && runsNow.signature && runsNow.signature !== STATE.runsShownSignature) {
+      void showTheRuns(STATE.engine, payload).then((shown) => {
+        if (shown) return STATE.engine.setRunsAside(!runsFitAsPlayed());
+        return null;
+      });
+    }
     // A running job appends to its history, so the signature changes on
     // every poll. That is not a new trajectory: keep the frames playing and
     // the new payload for the next explicit reload.
@@ -1836,11 +1850,14 @@
         if (select) select.value = "backbone";
       }
     }
-    // Asked for afresh: a run finishing writes its frames again.
+    // Asked for afresh: a run finishing writes its frames again. A run still
+    // running has atoms of its own (its snapshots').
     const version = Date.now();
+    STATE.runsShownSignature = together.signature || null;
     await engine.showRuns(others.map((run) => ({label: run.label, colour: run.colour,
       shown: !STATE.runsHidden.has(run.run_id),
-      topology: `/structure/frames-topology.pdb?v=${version}`,
+      topology: `${run.topology || "/structure/frames-topology.pdb?"}`
+        + `${run.topology ? "&" : ""}v=${version}`,
       coordinates: `/structure/frames.dcd?run=${run.index}&v=${version}`})), STATE.runColour);
     sayTheRuns(payload);
     return together;
@@ -1883,7 +1900,8 @@
       const said = document.createElement("span");
       said.className = "viewer-run-said";
       if (run.main) {
-        said.textContent = `played, ${run.frames} frames`;
+        said.textContent = run.running ? `played, running, ${run.frames} frames so far`
+          : `played, ${run.frames} frames`;
         said.title = "What is clicked, the ruler, the pocket and colours by a result are this run's";
         item.append(swatch, name, said);
       } else {
@@ -1899,7 +1917,8 @@
           if (STATE.engine) await STATE.engine.setRunShown(at, box.checked);
         });
         label.append(box, swatch, name);
-        said.textContent = `${run.frames} frames`;
+        said.textContent = run.running ? `running, ${run.frames} frames so far`
+          : `${run.frames} frames`;
         item.append(label, said);
       }
       list.append(item);

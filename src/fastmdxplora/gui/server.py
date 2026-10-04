@@ -519,8 +519,10 @@ def make_handler(
             if path in _READ_FROM_THE_RUN_SHOWN:
                 from fastmdxplora.gui.runs_together import run_shown
 
-                if path == "/structure/frames.dcd" and "run" in parse_qs(parsed.query):
-                    self._send_run_frames(root, parse_qs(parsed.query)["run"][0])
+                if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb") \
+                        and "run" in parse_qs(parsed.query):
+                    self._send_run_frames(root, parse_qs(parsed.query)["run"][0],
+                                          path.endswith(".pdb"))
                     return
                 root = run_shown(root) or root
             if path in {"/", "/index", "/results", "/live"}:
@@ -1818,18 +1820,20 @@ def make_handler(
             self.end_headers()
             self.wfile.write(data)
 
-        def _send_run_frames(self, root: Path, run: str) -> None:
-            """Another run's frames, fitted to the run shown's first frame:
-            named by its place in the study, never a path."""
+        def _send_run_frames(self, root: Path, run: str, topology: bool = False) -> None:
+            """Another run's frames, fitted to the run shown's first frame,
+            or the atoms of a run still running: named by its place in the
+            study, never a path."""
             from fastmdxplora.gui.runs_together import TOGETHER
 
-            target = root / TOGETHER / f"run_{run}.dcd"
+            target = root / TOGETHER / f"run_{run}.{'pdb' if topology else 'dcd'}"
             if not run.isdigit() or not target.is_file():
                 self.send_error(404, "No such run's frames")
                 return
             data = target.read_bytes()
             self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8" if topology
+                             else "application/octet-stream")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
