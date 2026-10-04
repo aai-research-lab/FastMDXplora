@@ -259,12 +259,16 @@ SUPERPOSED_ON = ("backbone", "pocket")
 #: the structure the study was given (``setup/input.pdb``, a deposited
 #: entry as it was downloaded).
 SUPERPOSED_TO = ("first", "start", "deposited")
+#: Windows the superposed frames can be smoothed over, in frames played: a
+#: centred moving average of each atom's position, for watching a motion
+#: through the jitter of thermal noise.
+SMOOTHED_OVER = (1, 3, 5, 9, 15)
 _LIGAND_NAME = re.compile(r"^[A-Za-z0-9]{1,4}$")
 _BACKBONE = ("N", "CA", "C", "O")
 
 
-def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any, to: str = "first"
-                    ) -> tuple[str | None, float | None, str | None]:
+def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any, to: str = "first",
+                    smooth: Any = 1) -> tuple[str | None, float | None, str | None]:
     """The file the frames superposed so are written to, made from the
     request's words alone (never a path), with the cutoff read; or why
     there is none."""
@@ -273,7 +277,11 @@ def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any, to: str =
     if to not in SUPERPOSED_TO:
         return None, None, ("Frames are fitted to the first frame, the starting structure "
                             "or the deposited structure.")
-    suffix = "" if to == "first" else f"_to_{to}"
+    window = _window(smooth)
+    if window is None:
+        return None, None, ("Frames are smoothed over "
+                            + ", ".join(str(w) for w in SMOOTHED_OVER[1:]) + " frames, or not.")
+    suffix = ("" if to == "first" else f"_to_{to}") + ("" if window == 1 else f"_smooth{window}")
     if on == "backbone":
         return f"frames_superposed_backbone{suffix}.dcd", None, None
     if not ligand or not _LIGAND_NAME.match(ligand):
@@ -285,6 +293,30 @@ def superposed_name(on: str, ligand: str | None, cutoff_angstrom: Any, to: str =
     if not 1.0 <= cutoff <= 20.0:
         return None, None, "The pocket's cutoff is 1 to 20 \u00c5."
     return f"frames_superposed_pocket_{ligand.upper()}_{cutoff:.2f}{suffix}.dcd", cutoff, None
+
+
+def _window(smooth: Any) -> int | None:
+    try:
+        window = int(str(smooth).strip() or 1)
+    except (TypeError, ValueError):
+        return None
+    return window if window in SMOOTHED_OVER else None
+
+
+def smoothed(xyz: Any, window: int) -> Any:
+    """Each frame's coordinates averaged with the ``window // 2`` frames on
+    either side, over fewer at the ends where there are fewer: a centred
+    moving average, which moves no feature in time."""
+    if window <= 1 or len(xyz) < 2:
+        return xyz
+    half = window // 2
+    running = np.concatenate([np.zeros((1,) + xyz.shape[1:], dtype=np.float64),
+                              np.cumsum(xyz, axis=0, dtype=np.float64)])
+    n = len(xyz)
+    starts = np.clip(np.arange(n) - half, 0, n)
+    ends = np.clip(np.arange(n) + half + 1, 0, n)
+    counts = (ends - starts)[:, None, None]
+    return ((running[ends] - running[starts]) / counts).astype(xyz.dtype)
 
 
 def deposited_structure(output_dir: str | Path) -> Path | None:
@@ -345,7 +377,8 @@ def _deposited_reference(output_dir: Path, topology_file: Path, atoms: Any
 
 
 def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = None,
-                      cutoff_angstrom: float = 5.0, to: str = "first") -> dict[str, Any]:
+                      cutoff_angstrom: float = 5.0, to: str = "first",
+                      smooth: Any = 1) -> dict[str, Any]:
     """The frames the viewer plays, each turned and moved onto a reference.
 
     ``on`` is ``"backbone"`` (N, CA, C and O of the protein) or ``"pocket"``
@@ -354,14 +387,19 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
     MDTraj's least-squares fit. ``to`` is the reference: the first frame,
     the structure the run started from, or the deposited structure, whose
     atoms are matched to the frames' by chain, residue number and name.
-    Written once beside the frames, and again when they are. Returns
-    ``{"ok": True, "file", "said", "atoms", "to"}``, or why there is none.
+    ``smooth``, a window of frames from ``SMOOTHED_OVER``, averages each
+    atom's fitted position over that many frames centred on each (the fit
+    first: an average of a molecule turning is a molecule shrunk). Written
+    once beside the frames, and again when they are. Returns
+    ``{"ok": True, "file", "said", "atoms", "to", "smooth"}``, or why there
+    is none.
     """
     import mdtraj as md
 
     out = Path(output_dir)
     simulation = out / "simulation"
-    name, cutoff, reason = superposed_name(on, ligand, cutoff_angstrom, to)
+    name, cutoff, reason = superposed_name(on, ligand, cutoff_angstrom, to, smooth)
+    window = _window(smooth) or 1
     if name is None:
         return {"ok": False, "reason": reason}
     frames_file, topology_file = simulation / FRAMES_FILE, simulation / FRAMES_TOPOLOGY
@@ -413,15 +451,19 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
             said += f", fitted to {fitted}"
         else:
             said += ", fitted to the first frame"
+        if window > 1:
+            said += f", smoothed over {window} frames"
         fresh = target.is_file() and target.stat().st_mtime_ns >= frames_file.stat().st_mtime_ns
         if not fresh:
             frames.superpose(reference, frame=0, atom_indices=atoms,
                              ref_atom_indices=reference_atoms)
+            frames.xyz = smoothed(frames.xyz, window)
             # Each frame is turned as well as moved: its box is not the
             # first frame's, so none is written.
             frames.unitcell_vectors = None
             _write_dcd(frames, target)
-    return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms)), "to": to}
+    return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms)), "to": to,
+            "smooth": window}
 
 
 def _write_topology(source: Path, kept: Any, target: Path) -> None:

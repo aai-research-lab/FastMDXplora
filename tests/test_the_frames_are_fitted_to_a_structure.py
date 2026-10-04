@@ -54,11 +54,14 @@ def _helix() -> tuple[md.Topology, np.ndarray]:
 
 @pytest.fixture(scope="module")
 def study(tmp_path_factory) -> Path:
+    return made_study(tmp_path_factory.mktemp("fitted") / "study")
+
+
+def made_study(root: Path) -> Path:
     """A helix of twelve alanines tumbling from frame to frame; the structure
     the run started from turned another way again, and a deposited file of
     eleven of its residues, with alternate locations, a water and a second
     model."""
-    root = tmp_path_factory.mktemp("fitted") / "study"
     (root / "simulation").mkdir(parents=True)
     (root / "setup").mkdir()
     topology, base = _helix()
@@ -106,7 +109,8 @@ def test_fitted_to_the_starting_structure(study):
     said = superposed_frames(study, "backbone", to="start")
     assert said == {"ok": True, "file": "frames_superposed_backbone_to_start.dcd",
                     "said": "the protein's backbone (48 atoms), fitted to the structure the "
-                            "run started from", "atoms": 48, "to": "start"}
+                            "run started from", "atoms": 48, "to": "start",
+                    "smooth": 1}
     played = _frames(study)
     start = md.load_pdb(str(study / "simulation" / "frames_topology.pdb"))
     backbone = played.topology.select("protein and backbone")

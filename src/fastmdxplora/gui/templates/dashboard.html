@@ -765,6 +765,15 @@
                       <option value="deposited">the deposited structure</option>
                     </select>
                   </label>
+                  <label class="chip-toggle micro" id="traj-smooth-label" title="Each atom's fitted position averaged over this many frames centred on the one shown, for watching a motion through thermal jitter; frames are fitted on the backbone first if they are not fitted already. An average shortens bonds a little, so measure on frames as written">Smoothed
+                    <select id="traj-smooth">
+                      <option value="1" selected>no</option>
+                      <option value="3">over 3 frames</option>
+                      <option value="5">over 5 frames</option>
+                      <option value="9">over 9 frames</option>
+                      <option value="15">over 15 frames</option>
+                    </select>
+                  </label>
                   <label class="chip-toggle micro" title="Jump to the newest frame as the run writes it" data-while-running hidden><input type="checkbox" id="traj-follow" checked>Follow</label>
                 </div>
                 <!-- One of the study's series over time, the frame shown

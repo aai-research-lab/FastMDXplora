@@ -70,6 +70,8 @@
     superposed: "none",
     // What the frames are fitted to: "first", "start" or "deposited".
     superposedTo: "first",
+    // The frames' positions averaged over this many, once fitted.
+    smoothedOver: 1,
     superposedUrl: null,
     // A white ground and the highest quality, for a figure.
     publication: false,
@@ -429,7 +431,8 @@
   /** Whether the frames played have moved from where the first frame was
    * written: fitted to a structure other than the first frame. */
   function environmentMoved() {
-    return STATE.superposed !== "none" && (STATE.appliedTo || "first") !== "first";
+    return STATE.superposed !== "none"
+      && ((STATE.appliedTo || "first") !== "first" || (STATE.appliedSmooth || 1) > 1);
   }
 
   async function ensurePlaybackEnvironment() {
@@ -1137,7 +1140,7 @@
         up: Array.from(camera.up), radius: camera.radius, fov: camera.fov, mode: camera.mode},
       representation: STATE.representation, colour: STATE.colorMode,
       shown: Object.assign({}, STATE.visibility), superposed: STATE.superposed,
-      superposed_to: STATE.superposedTo,
+      superposed_to: STATE.superposedTo, smoothed_over: STATE.smoothedOver,
       pocket_cutoff: STATE.pocketCutoff, publication: !!STATE.publication,
       ground: STATE.ground,
     };
@@ -1180,12 +1183,17 @@
     }
     if (!isViewerGenerationCurrent(generation)) return false;
     const to = view.superposed_to || "first";
-    if (view.superposed && (view.superposed !== STATE.superposed || to !== STATE.superposedTo)) {
+    const over = view.superposed && view.superposed !== "none" ? (view.smoothed_over || 1) : 1;
+    if (view.superposed && (view.superposed !== STATE.superposed || to !== STATE.superposedTo
+        || over !== STATE.smoothedOver)) {
       const select = document.getElementById("traj-superpose");
       if (select) select.value = view.superposed;
       STATE.superposedTo = to;
       const fitted = document.getElementById("traj-superpose-to");
       if (fitted) fitted.value = to;
+      STATE.smoothedOver = over;
+      const smooth = document.getElementById("traj-smooth");
+      if (smooth) smooth.value = String(over);
       await superpose(view.superposed);
     }
     await restyleViewers();
@@ -1615,14 +1623,17 @@
     const label = document.getElementById("traj-superpose-label");
     const previous = STATE.superposed;
     const previousTo = STATE.appliedTo || "first";
+    const previousOver = STATE.appliedSmooth || 1;
     STATE.superposed = on;
     const to = STATE.superposedTo;
+    const over = on === "none" ? 1 : STATE.smoothedOver;
     if (!STATE.framesCoordinatesUrl || !STATE.framesRendered || !STATE.engine) return;
     let url = STATE.framesCoordinatesUrl;
     let said = "as written";
     if (on !== "none") {
       const query = new URLSearchParams({on});
       if (STATE.superposedTo !== "first") query.set("to", STATE.superposedTo);
+      if (over > 1) query.set("smooth", String(over));
       if (on === "pocket") {
         query.set("ligand", STATE.ligandResname || ligandResnames()[0] || "");
         query.set("cutoff", String(STATE.pocketCutoff));
@@ -1634,13 +1645,17 @@
         answer = {ok: false, reason: "The server did not answer."};
       }
       if (!isViewerGenerationCurrent(generation) || STATE.superposed !== on
-          || STATE.superposedTo !== to) return;
+          || STATE.superposedTo !== to || STATE.smoothedOver !== over) return;
       if (!answer || !answer.ok) {
-        STATE.superposed = previous === on && previousTo === to ? "none" : previous;
+        STATE.superposed = previous === on && previousTo === to && previousOver === over
+          ? "none" : previous;
         STATE.superposedTo = previousTo;
+        STATE.smoothedOver = STATE.superposed === "none" ? 1 : previousOver;
         if (select) select.value = STATE.superposed;
         const fitted = document.getElementById("traj-superpose-to");
         if (fitted) fitted.value = previousTo;
+        const smooth = document.getElementById("traj-smooth");
+        if (smooth) smooth.value = String(STATE.smoothedOver);
         announce(`The frames could not be superposed: ${(answer && answer.reason) || "no reason given"}`);
         return;
       }
@@ -1655,6 +1670,7 @@
     }
     STATE.superposedUrl = on === "none" ? null : url;
     STATE.appliedTo = to;
+    STATE.appliedSmooth = over;
     if (STATE.visibility.box) await STATE.engine.showBox(on === "none");
     // Water and ions are the first frame's: they sit where it does, and a
     // first frame fitted to another structure has moved from them.
@@ -1670,7 +1686,8 @@
       : `Each frame is ${said}.`
         + (STATE.visibility.box ? " The periodic box is not shown in frames turned to fit." : "")
         + (environmentMoved() && (STATE.visibility.water || STATE.visibility.ions)
-          ? " Water and ions are not shown: they are the first frame's, and it has moved." : ""));
+          ? " Water and ions are not shown: they are the first frame's, and it has moved." : "")
+        + (over > 1 ? " An average shortens bonds a little: measure on frames as written." : ""));
   }
 
   /** The preview plays the same frames, where it is shown. */
@@ -1765,7 +1782,25 @@
       STATE.playbackLoop = !!event.target.checked;
     });
     document.getElementById("traj-superpose")?.addEventListener("change", (event) => {
+      // Smoothing averages fitted frames: frames as written are not smoothed.
+      if (event.target.value === "none" && STATE.smoothedOver > 1) {
+        STATE.smoothedOver = 1;
+        const smooth = document.getElementById("traj-smooth");
+        if (smooth) smooth.value = "1";
+      }
       void superpose(event.target.value);
+    });
+    document.getElementById("traj-smooth")?.addEventListener("change", (event) => {
+      STATE.smoothedOver = Number(event.target.value) || 1;
+      // An average of a molecule turning is a molecule shrunk: the frames are
+      // fitted on the backbone first where they are not fitted already.
+      let on = STATE.superposed;
+      if (on === "none" && STATE.smoothedOver > 1) {
+        on = "backbone";
+        const select = document.getElementById("traj-superpose");
+        if (select) select.value = on;
+      }
+      if (on !== "none") void superpose(on);
     });
     document.getElementById("traj-superpose-to")?.addEventListener("change", (event) => {
       STATE.superposedTo = event.target.value;

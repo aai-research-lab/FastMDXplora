@@ -86,7 +86,7 @@ def test_on_the_backbone_is_mdtrajs_fit_on_the_first_frame(study):
     said = superposed_frames(study, "backbone")
     assert said == {"ok": True, "file": "frames_superposed_backbone.dcd",
                     "said": "the protein's backbone (48 atoms), fitted to the first frame",
-                    "atoms": 48, "to": "first"}
+                    "atoms": 48, "to": "first", "smooth": 1}
     played = _frames(study)
     expected = played.superpose(played, frame=0,
                                 atom_indices=played.topology.select("protein and backbone"))

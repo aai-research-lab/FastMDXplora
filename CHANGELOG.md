@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Frames smoothed for watching
+
+**Smoothed, beside Superposed under the transport, averages each atom's
+fitted position over 3, 5, 9 or 15 frames centred on the one shown**, over
+fewer at the ends: thermal jitter hides a slow motion, a hinge closing or a
+loop folding over, and the average shows it. The frames are fitted first,
+on the backbone where they were shown as written, since an average of a
+molecule turning is a molecule shrunk; a centred average moves no feature in
+time. An average shortens bonds a little, which the Viewer says, so
+measurements are for frames as written. Movies, saved views, scenes and
+`write_scene` (`smoothed_over`) carry it.
+
 ### What holds the chains together
 
 **The Viewer shows the hydrogen bonds and salt bridges between a protein's

@@ -93,8 +93,9 @@ class Tool:
             if kind == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
                 raise ToolError(f"`{name}` is a whole number.")
             allowed_values = self.properties[name].get("enum")
-            if kind == "string" and allowed_values and value not in allowed_values:
-                raise ToolError(f"`{name}` is one of: {', '.join(allowed_values)}.")
+            if kind in ("string", "integer") and allowed_values and value not in allowed_values:
+                raise ToolError(f"`{name}` is one of: "
+                                f"{', '.join(str(v) for v in allowed_values)}.")
             if kind == "array":
                 allowed = self.properties[name].get("items", {}).get("enum")
                 if not isinstance(value, list) or (
@@ -689,7 +690,8 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
             raise ToolError(f"{ctx.workspace.shown(folder)} has no view named {args['view']!r}; "
                             f"its views: {', '.join(v['name'] for v in saved) or 'none'}.")
         view = {k: v for k, v in found[0].items() if k != "name"}
-    for key in ("frame", "representation", "colour", "superposed", "superposed_to"):
+    for key in ("frame", "representation", "colour", "superposed", "superposed_to",
+                "smoothed_over"):
         if args.get(key) is not None:
             view[key] = args[key]
     selections = selections_of(folder)["selections"]
@@ -1197,6 +1199,9 @@ TOOLS: tuple[Tool, ...] = (
                                 "What the frames are fitted to: the first frame (default), "
                                 "the structure the run started from, or the deposited "
                                 "structure the study was given.")},
+          "smoothed_over": {"type": "integer", "enum": [1, 3, 5, 9, 15], "description": (
+              "Each atom's fitted position averaged over this many frames centred on the "
+              "one shown (default 1, not smoothed); only with `superposed`.")},
           "highlight": {"type": "string", "description": (
               "An MDTraj selection to show as orange sticks, such as resSeq 189 to 195.")},
           "labels": {"type": "boolean", "description": (

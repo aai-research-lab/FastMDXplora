@@ -1641,14 +1641,16 @@ def make_handler(
                 # The frames superposed, by a name made from the request's
                 # words, written if they are not yet.
                 one = lambda key: ((query or {}).get(key) or [""])[0]  # noqa: E731
-                to = one("to") or "first"
-                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to)
+                to, smooth = one("to") or "first", one("smooth") or "1"
+                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to,
+                                                  smooth)
                 if file is None:
                     self.send_error(404, reason)
                     return
                 if not (root / "simulation" / file).is_file():
                     said = superposed_frames(root, on, ligand=one("ligand"),
-                                             cutoff_angstrom=one("cutoff") or 5.0, to=to)
+                                             cutoff_angstrom=one("cutoff") or 5.0, to=to,
+                                             smooth=smooth)
                     if not said.get("ok"):
                         self.send_error(404, said.get("reason"))
                         return
@@ -2241,7 +2243,9 @@ def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[
 
     on, ligand, cutoff = one("on"), one("ligand"), one("cutoff") or "5"
     to = one("to") or "first"
-    said = superposed_frames(root, on, ligand=ligand or None, cutoff_angstrom=cutoff, to=to)
+    smooth = one("smooth") or "1"
+    said = superposed_frames(root, on, ligand=ligand or None, cutoff_angstrom=cutoff, to=to,
+                             smooth=smooth)
     if not said.get("ok"):
         return said
     # Asked for again under a new address once written again.
@@ -2249,9 +2253,12 @@ def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[
     asked = {"superposed": on, "v": version}
     if to != "first":
         asked["to"] = to
+    if said["smooth"] > 1:
+        asked["smooth"] = said["smooth"]
     if on == "pocket":
         asked.update(ligand=ligand, cutoff=cutoff)
     return {"ok": True, "said": said["said"], "atoms": said["atoms"], "to": to,
+            "smooth": said["smooth"],
             "url": "/structure/frames.dcd?" + urlencode(asked)}
 
 
