@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Halogen bonds check the acceptor side
+
+**A halogen bond in `pl_interactions` now also needs the angle X...A-R at the acceptor, with R a heavy atom bonded to it, between 80 and 140 degrees (ProLIF's window, after Auffinger et al. 2004), a new `acceptor_angle_deg` setting of the rule.** Only the C-X...A angle at the halogen was checked, so a chlorine 0.32 nm beyond a backbone carbonyl oxygen on the line of its C=O bond, X...O=C at 180 degrees, was reported as a halogen bond. Results change: halogen contacts that approach an acceptor along its bond axis are no longer reported.
+
 ### Water bridges are PLIP's
 
 **A water bridge in `pl_interactions` is now PLIP's first-degree bridge: a water 2.5 to 4.1 A from an acceptor on one side and from a donor on the other, the donor's D-H pointing at it (above 100 degrees at the H), and the angle at the water between the acceptor and that H between 71 and 140 degrees.** The rule was labelled PLIP's but took any two polar atoms and the angle between them at the water oxygen, with no donor hydrogen and no pairing, so two acceptors either side of a water bridged and an amide N whose hydrogen pointed away from the water bridged a ligand carbonyl. It also computed the distance from every water oxygen to every polar atom in every frame, 3.77 million pairs a frame on a solvated 1BHL; only the waters within reach of the ligand are examined now, which took one serine's five frames from 3.6 s and 0.48 GB to 0.9 s and 0.29 GB. On eight residues of that trajectory the bridges agree with an independent transcription of PLIP's loop, 6 of 6. Results change: water bridges without a donor hydrogen pointing at the water are no longer reported.

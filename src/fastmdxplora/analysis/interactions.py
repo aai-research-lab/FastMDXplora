@@ -960,6 +960,7 @@ def halogen_bonds(
     *,
     distance_nm: float = 0.35,
     donor_angle_deg: tuple[float, float] = (130.0, 180.0),
+    acceptor_angle_deg: tuple[float, float] = (80.0, 140.0),
     include_fluorine: bool = False,
     periodic: bool = True,
 ) -> list[Contact]:
@@ -970,6 +971,16 @@ def halogen_bonds(
     ProLIF requires 130 to 180 degrees within 3.5 A; PLIP uses 165 plus or
     minus 30 within 4.0 A. The narrower distance is used because it is the one
     the sigma-hole picture supports, and both are settings.
+
+    The acceptor side is directional too: the halogen approaches the
+    acceptor's lone pair, off its R-A axis, so the angle X...A-R at the
+    acceptor, with R a heavy atom bonded to it, has to lie between 80 and
+    140 degrees (ProLIF's XAR angle, after Auffinger et al., PNAS 101:16789,
+    2004; PLIP uses 90 to 150). Without it a chlorine aimed along a carbonyl's
+    C=O axis from beyond the oxygen, X...O=C at 180 degrees, was a halogen
+    bond. Where the acceptor has several heavy neighbours any one inside the
+    window suffices, as ProLIF's matching of every R allows; an acceptor with
+    no heavy neighbour has no axis and is not taken.
 
     Fluorine is not counted unless asked for. See ``_HALOGENS`` for why, and
     for which tool disagrees.
@@ -995,6 +1006,15 @@ def halogen_bonds(
     if not donors or not acceptors:
         return []
 
+    heavy_neighbours: dict[int, list[int]] = {}
+    for bond in traj.topology.bonds:
+        for one, other in ((bond[0], bond[1]), (bond[1], bond[0])):
+            if other.element is not None and other.element.symbol != "H":
+                heavy_neighbours.setdefault(one.index, []).append(other.index)
+    acceptors = [a for a in acceptors if heavy_neighbours.get(a)]
+    if not acceptors:
+        return []
+
     triples = [(carbon, halogen, acceptor)
                for carbon, halogen in donors for acceptor in acceptors]
     pairs = [(halogen, acceptor) for _c, halogen in donors for acceptor in acceptors]
@@ -1003,9 +1023,23 @@ def halogen_bonds(
     angles = _angles(traj, np.array(triples), periodic)
     low, high = donor_angle_deg
 
+    # X...A-R for every heavy neighbour R of each acceptor; a column is
+    # inside the window where any of its R is.
+    far_side = [(halogen, acceptor, r) for halogen, acceptor in pairs
+                for r in heavy_neighbours[acceptor]]
+    owner = np.array([column for column, (halogen, acceptor) in enumerate(pairs)
+                      for _r in heavy_neighbours[acceptor]])
+    at_acceptor = _angles(traj, np.array(far_side), periodic)
+    a_low, a_high = acceptor_angle_deg
+    inside = (at_acceptor >= a_low) & (at_acceptor <= a_high)
+    acceptor_ok = np.zeros_like(separations, dtype=bool)
+    for column in range(len(pairs)):
+        acceptor_ok[:, column] = inside[:, owner == column].any(axis=1)
+
     found: list[Contact] = []
     for frame, column in zip(*np.where(
         (separations < distance_nm) & (angles > low) & (angles <= high)
+        & acceptor_ok
     )):
         halogen, acceptor = pairs[column]
         found.append(Contact(

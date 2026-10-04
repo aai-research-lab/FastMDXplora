@@ -26,7 +26,7 @@ in the rule's own docstring.
 | Salt bridge | opposite charged groups < 4.5 Å, centre to centre | ProLIF |
 | π-stacking | ring centres < 5.5 Å, planes within 30° of parallel or perpendicular, offset < 2.0 Å | PLIP |
 | π-cation | charge to ring centre < 6.0 Å, offset < 2.0 Å | PLIP |
-| Halogen bond | X···A < 3.5 Å, C-X···A between 130° and 180° | ProLIF |
+| Halogen bond | X···A < 3.5 Å, C-X···A between 130° and 180°, X···A-R between 80° and 140° for a heavy atom R bonded to the acceptor | ProLIF |
 | Metal coordination | metal to donor < 3.0 Å; the metal is the ligand or any single-atom metal residue in the system | PLIP |
 | Water bridge | one water 2.5 to 4.1 Å from an acceptor on one side and from a donor on the other, the donor's D-H···O above 100°, the angle at the water between the acceptor and the donor's H 71 to 140° | PLIP |
 

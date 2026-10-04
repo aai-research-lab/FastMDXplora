@@ -385,9 +385,15 @@ class TestHalogenBonds:
             ("H1", "H", (-0.25, 0.1, 0)), ("H2", "H", (-0.25, -0.1, 0)),
             ("H3", "H", (-0.25, 0, 0.1)),
         ])
-        pro = b.residue("ASN", [
-            ("OD1", "O", (gap_nm * np.cos(theta), gap_nm * np.sin(theta), 0)),
-        ], chain=True)
+        od1 = np.array([gap_nm * np.cos(theta), gap_nm * np.sin(theta), 0.0])
+        # The carbonyl carbon, placed so X...O=C is 120 degrees: inside the
+        # acceptor-side window, so these cases test the donor side alone.
+        back = -od1 / np.linalg.norm(od1)
+        cg = od1 + 0.123 * (np.cos(np.radians(120)) * back
+                            + np.sin(np.radians(120)) * np.array([0, 0, 1.0]))
+        pro = b.residue("ASN", [("OD1", "O", tuple(od1)), ("CG", "C", tuple(cg))],
+                        chain=True)
+        b.bond(pro[0], pro[1])
         return b.trajectory(), _chemistry(smiles), lig, pro
 
     def test_a_straight_close_contact_is_a_halogen_bond(self) -> None:
@@ -400,6 +406,27 @@ class TestHalogenBonds:
         """Same separation; the sigma-hole points elsewhere."""
         traj, chemistry, lig, pro = self._complex(angle_deg=90.0)
         assert halogen_bonds(traj, chemistry, lig, pro) == []
+
+    def test_an_approach_along_the_acceptor_axis_is_not_one(self) -> None:
+        """C-Cl...O=C all in line: the donor side is straight, and the
+        chlorine meets the oxygen from behind its C=O bond rather than at a
+        lone pair. ProLIF's X...A-R window is 80 to 140 degrees."""
+        b = _Builder()
+        lig = b.residue("LIG", [("C1", "C", (-0.18, 0, 0)), ("CL1", "Cl", (0, 0, 0))])
+        b.bond(lig[0], lig[1])
+        pro = b.residue("GLY", [("O", "O", (0.32, 0, 0)), ("C", "C", (0.443, 0, 0))],
+                        chain=True)
+        b.bond(pro[0], pro[1])
+        chemistry = ResolvedChemistry(mol=Chem.MolFromSmiles("CCl"), source="supplied",
+                                      detail="", resname="LIG", n_atoms=2)
+        traj = b.trajectory()
+        assert halogen_bonds(traj, chemistry, lig, pro, periodic=False) == []
+        # Turn the carbonyl to 120 degrees at the oxygen and it is one.
+        bent = traj.xyz.copy()
+        bent[0, pro[1]] = (0.32 + 0.123 * np.cos(np.radians(60)),
+                           0.123 * np.sin(np.radians(60)), 0)
+        traj.xyz = bent
+        assert len(halogen_bonds(traj, chemistry, lig, pro, periodic=False)) == 1
 
     def test_fluorine_does_not_count_unless_asked(self) -> None:
         """Politzer's case: C-F has no sigma-hole worth the name. PLIP counts
