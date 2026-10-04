@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A ligand file is read onto the right atoms
+
+**An SDF given for the ligand, or written by setup, is now matched to the trajectory by its graph of elements and bonds and used only where it is this ligand.** It was checked by atom count and mapped by position, so an acetate SDF listing C, H, H, H, C, O, O against a trajectory written C, C, O, O, H, H, H put the carboxylate's charge on two methyl hydrogens and lost the salt bridge to an arginine 0.44 nm away. The match now decides which file atom is which trajectory atom; where the topology has no bonds for the ligand the elements must agree in order, and a file that fails either test falls through to the next route. The Chemical Component Dictionary route is removed: it called the setup phase's fetch without the entry, chain and residue number it needs, so it failed on every run and the failure was swallowed. Results change: ligands whose chemistry file lists atoms in a different order from the trajectory now get their donors, charges and rings on the right atoms.
+
 ### Protein charges from the protonation, not the residue name
 
 **A side chain's charge in `pl_interactions` and the chain-contacts view now follows the hydrogens the setup phase placed.** OpenMM and PDBFixer write every protonation variant under its parent's name, and the charge was read from the name: a histidine with HD1 and HE2 (written HIS) formed no salt bridge, a lysine with two hydrogens on NZ (written LYS) formed one at 0.43 nm from an acetate, and an aspartate carrying HD2 was an anion. A histidine is now a cation only with both HD1 and HE2, an aspartate or glutamate an anion only with no hydrogen on its carboxylate, a lysine a cation only with HZ1 to HZ3, and an arginine a cation unless a guanidinium hydrogen is missing; a residue with no hydrogens falls back to its name. Results change: salt bridges and cation-pi contacts on systems prepared by OpenMM gain every doubly protonated histidine and lose neutral lysines and protonated acids.

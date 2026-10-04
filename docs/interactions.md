@@ -52,8 +52,15 @@ first of these that works:
 
 1. an SDF you supply with `ligand_chemistry`
 2. the run's own `setup/ligands/<resname>.sdf`, written when setup prepared it
-3. the Chemical Component Dictionary, by residue name
-4. inference from the coordinates with RDKit
+   from the Chemical Component Dictionary
+3. inference from the coordinates with RDKit
+
+A file is used only where its atoms are this ligand's: its graph of elements
+and bonds must match the topology's, and the match decides which file atom is
+which trajectory atom, so a file listing the hydrogens in another order is read
+correctly. Where the topology carries no bonds for the ligand the elements must
+agree atom by atom in order. A file that fails is not used, and the next route
+is tried.
 
 The protein's charges are read the same way, from what the topology says
 rather than from a residue name. OpenMM and PDBFixer name every protonation
