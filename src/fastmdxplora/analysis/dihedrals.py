@@ -7,7 +7,7 @@ phi/psi pairs coloured by frequency.
 
 Omega is the peptide bond itself, near 180 degrees in almost every
 residue; the exceptions are the finding, a cis bond most often before a
-proline. Which angles are measured is a setting.
+proline. Which angles are computed is a setting.
 
 Output ``dihedrals.dat`` is a CSV with one row per (frame, residue)
 combination plus columns for phi and psi (degrees). Output figure is
@@ -36,9 +36,53 @@ from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
 
 
-#: Which backbone torsions can be measured. Named here so a form can offer
+#: Which backbone torsions can be computed. Named here so a form can offer
 #: them: the same constant the analysis validates against.
 VALID_ANGLES = ("phi", "psi", "omega")
+
+#: The longest C(i-1)-N(i) distance, in nm, still taken as a peptide bond.
+#: The bond is 0.133 nm and stays within a few hundredths of that in any
+#: simulation; residues either side of a gap in the chain sit much further
+#: apart (1.68 nm across trypsin's 50 to 54, deleted).
+PEPTIDE_BOND_MAX_NM = 0.2
+
+#: Where each torsion's C(i-1) and N(i) sit in MDTraj's quartet: phi is
+#: C(i-1), N, CA, C; psi is N, CA, C, N(i+1); omega is CA(i-1), C(i-1), N, CA.
+_PEPTIDE_BOND_IN_QUARTET = {"phi": (0, 1), "psi": (2, 3), "omega": (1, 2)}
+
+
+def _peptide_bonds(topology: md.Topology) -> "set[frozenset[int]] | None":
+    """The C-N bonds between residues, or None where the topology has none.
+
+    A topology built without bonds says nothing about where the chain is
+    broken, so the bond test is skipped for it rather than failing every
+    quartet; the distance test still applies."""
+    bonds = {
+        frozenset((a.index, b.index)) for a, b in topology.bonds
+        if a.residue.index != b.residue.index and {a.name, b.name} == {"C", "N"}}
+    return bonds or None
+
+
+def _across_a_break(traj: md.Trajectory, quartets: np.ndarray, angle: str,
+                    bonds: "set[frozenset[int]] | None") -> np.ndarray:
+    """Which quartets span a gap in the chain rather than a peptide bond.
+
+    MDTraj joins consecutive residues of a chain by index without asking
+    whether they are bonded, so the residue after a gap was given a phi
+    and an omega through atoms 1.68 nm apart (trypsin with 50 to 54
+    removed: phi -61.8, omega -110.4 degrees at residue 55). A quartet is
+    taken as spanning a break where the topology records peptide bonds
+    and has none between its C(i-1) and N(i), or where those two atoms are
+    more than :data:`PEPTIDE_BOND_MAX_NM` apart in the first frame."""
+    if quartets.size == 0:
+        return np.zeros(0, dtype=bool)
+    first, second = _PEPTIDE_BOND_IN_QUARTET[angle]
+    pairs = quartets[:, [first, second]]
+    distance = md.compute_distances(traj[0], pairs)[0]
+    broken = distance > PEPTIDE_BOND_MAX_NM
+    if bonds is not None:
+        broken |= np.array([frozenset((int(c), int(n))) not in bonds for c, n in pairs])
+    return broken
 
 
 class Dihedrals(Analysis):
@@ -53,7 +97,7 @@ class Dihedrals(Analysis):
         is better for short trajectories or when you want to see each
         sample.
     angles : sequence of {"phi", "psi", "omega"}, default all three
-        Which backbone torsions to measure. Phi and psi are the Ramachandran
+        Which backbone torsions to compute. Phi and psi are the Ramachandran
         pair. Omega is the peptide bond itself, close to 180 degrees in almost
         every residue -- and the exceptions are the finding: a cis peptide
         bond near zero, most often before a proline, and the departures from
@@ -70,6 +114,11 @@ class Dihedrals(Analysis):
     ------
     ``dihedrals.dat`` — CSV with columns ``frame, residue, phi_deg, psi_deg``.
     ``dihedrals.png`` — Ramachandran plot (density heatmap by default).
+
+    A torsion that would span a gap in the chain is not reported: one whose
+    C(i-1) and N(i) are not bonded in the topology (where it records peptide
+    bonds) or are more than 0.2 nm apart in the first frame. How many were
+    left out is in the findings under ``chain_breaks``.
     """
 
     name = "dihedrals"
@@ -107,9 +156,9 @@ class Dihedrals(Analysis):
         Returns
         -------
         pandas.DataFrame
-            Long format with columns: ``frame, residue, phi_deg, psi_deg``.
-            Residues where either phi or psi cannot be computed (first/last
-            residues, chain breaks) are dropped from the table.
+            Long format with columns: ``frame, residue`` and one column per
+            angle chosen. Residues where either phi or psi cannot be computed
+            (first/last residues, chain breaks) are dropped from the table.
         """
         phi_idx, phi_rad = md.compute_phi(traj)
         psi_idx, psi_rad = md.compute_psi(traj)
@@ -117,6 +166,41 @@ class Dihedrals(Analysis):
             md.compute_omega(traj) if "omega" in self.angles
             else (np.zeros((0, 4), dtype=int), np.zeros((traj.n_frames, 0)))
         )
+
+        # A quartet across a gap in the chain is not a torsion of the chain.
+        bonds = _peptide_bonds(traj.topology)
+        dropped: dict[str, int] = {}
+        after: set[int] = set()
+        kept = []
+        for angle, idx, rad in (("phi", phi_idx, phi_rad), ("psi", psi_idx, psi_rad),
+                                ("omega", omega_idx, omega_rad)):
+            broken = _across_a_break(traj, idx, angle, bonds)
+            dropped[angle] = int(broken.sum())
+            # The residue after the break is the one whose N(i) is cut off.
+            n_of = _PEPTIDE_BOND_IN_QUARTET[angle][1]
+            after.update(int(traj.topology.atom(int(a)).residue.index)
+                         for a in idx[broken, n_of])
+            kept.append((idx[~broken], rad[:, ~broken]))
+        (phi_idx, phi_rad), (psi_idx, psi_rad), (omega_idx, omega_rad) = kept
+        if "omega" not in self.angles:
+            dropped.pop("omega")
+        record: dict[str, Any] = {"quartets_dropped": dropped}
+        if after:
+            from fastmdxplora.analysis.residues import label, several_chains
+
+            qualified = several_chains(traj.topology)
+            record["residues_after_a_break"] = [
+                str(label(traj.topology.residue(i), qualified=qualified))
+                for i in sorted(after)]
+            record["note"] = (
+                f"{sum(dropped.values())} torsions span a gap in the chain, "
+                "where the C of one residue and the N of the next are not "
+                f"bonded or are more than {PEPTIDE_BOND_MAX_NM} nm apart, and "
+                "are not reported: they are angles between residues that are "
+                "not joined, and a phi or omega across a gap is a number "
+                "with no meaning."
+            )
+        self.findings["chain_breaks"] = record
 
         if phi_rad.size == 0 or psi_rad.size == 0:
             raise StudyError(

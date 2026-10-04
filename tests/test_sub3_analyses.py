@@ -63,12 +63,32 @@ def protein_traj() -> md.Trajectory:
     return _build_protein_traj()
 
 
+def _chained(traj: md.Trajectory) -> md.Trajectory:
+    """The same peptide with its backbone N, CA, C a zigzag 0.15 nm a step
+    and O and CB beside it, so that C(i-1) and N(i) are as close as a
+    peptide bond. In ``_build_protein_traj`` every atom is on one line and
+    they are 0.45 nm apart, which the dihedrals read as a gap in the chain;
+    the noise of each frame is kept."""
+    xyz = np.array(traj.xyz)
+    step = 0
+    for atom in traj.topology.atoms:
+        noise = xyz[:, atom.index] - xyz[0, atom.index]
+        if atom.name in ("N", "CA", "C"):
+            place = [0.15 * step, 0.05 * (step % 2), 0.0]
+            step += 1
+        else:
+            place = [0.15 * (step - 1), -0.12 if atom.name == "O" else 0.12, 0.05]
+        xyz[:, atom.index] = np.asarray(place) + noise
+    return md.Trajectory(xyz=xyz, topology=traj.topology, time=traj.time)
+
+
 @pytest.fixture
 def protein_traj_files(tmp_path: Path, protein_traj: md.Trajectory):
     pdb = tmp_path / "top.pdb"
     dcd = tmp_path / "traj.dcd"
-    protein_traj[0].save_pdb(str(pdb))
-    protein_traj.save_dcd(str(dcd))
+    chained = _chained(protein_traj)
+    chained[0].save_pdb(str(pdb))
+    chained.save_dcd(str(dcd))
     return dcd, pdb
 
 

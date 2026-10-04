@@ -72,12 +72,33 @@ def backbone_traj() -> md.Trajectory:
 
 
 @pytest.fixture
-def backbone_traj_files(tmp_path: Path, backbone_traj: md.Trajectory):
-    """Save the backbone trajectory as DCD + PDB files."""
+def peptide_traj() -> md.Trajectory:
+    """The backbone trajectory with each O moved off the line beside its C,
+    so that C(i-1) and N(i) are 0.15 nm apart as a peptide bond is. In
+    ``backbone_traj`` the O sits between them and they are 0.30 nm apart,
+    which a dihedral reads as a gap in the chain."""
+    traj = _build_backbone_traj()
+    xyz = np.array(traj.xyz)
+    on_line = 0
+    for atom in traj.topology.atoms:
+        noise = xyz[:, atom.index] - [atom.index * 0.15, 0.0, 0.0]
+        if atom.name == "O":
+            place = [(on_line - 1) * 0.15, 0.12, 0.0]
+        else:
+            place = [on_line * 0.15, 0.0, 0.0]
+            on_line += 1
+        xyz[:, atom.index] = np.asarray(place) + noise
+    return md.Trajectory(xyz=xyz, topology=traj.topology, time=traj.time)
+
+
+@pytest.fixture
+def backbone_traj_files(tmp_path: Path, peptide_traj: md.Trajectory):
+    """Save the backbone trajectory as DCD + PDB files, with its peptide
+    bonds as long as peptide bonds so that dihedrals has a chain to read."""
     pdb = tmp_path / "top.pdb"
     dcd = tmp_path / "traj.dcd"
-    backbone_traj[0].save_pdb(str(pdb))
-    backbone_traj.save_dcd(str(dcd))
+    peptide_traj[0].save_pdb(str(pdb))
+    peptide_traj.save_dcd(str(dcd))
     return dcd, pdb
 
 
@@ -290,28 +311,28 @@ class TestRg:
 # Dihedrals
 # ===========================================================================
 class TestDihedrals:
-    def test_compute_returns_dataframe(self, backbone_traj: md.Trajectory):
-        out = Dihedrals().compute(backbone_traj)
+    def test_compute_returns_dataframe(self, peptide_traj: md.Trajectory):
+        out = Dihedrals().compute(peptide_traj)
         assert isinstance(out, pd.DataFrame)
         assert set(out.columns) >= {"frame", "residue", "phi_deg", "psi_deg"}
 
-    def test_angles_in_valid_range(self, backbone_traj: md.Trajectory):
-        out = Dihedrals().compute(backbone_traj)
+    def test_angles_in_valid_range(self, peptide_traj: md.Trajectory):
+        out = Dihedrals().compute(peptide_traj)
         assert ((out["phi_deg"] >= -180) & (out["phi_deg"] <= 180)).all()
         assert ((out["psi_deg"] >= -180) & (out["psi_deg"] <= 180)).all()
 
     def test_n_rows_equals_n_frames_times_n_inner_residues(
-        self, backbone_traj: md.Trajectory
+        self, peptide_traj: md.Trajectory
     ):
         """For a 5-residue peptide, residues 2-4 have both phi and psi (3 res)."""
-        out = Dihedrals().compute(backbone_traj)
+        out = Dihedrals().compute(peptide_traj)
         # Inner residues = those with both phi (needs prev residue C) and
         # psi (needs next residue N). For a 5-residue chain: residues 2,3,4.
         n_inner = 3
-        assert len(out) == backbone_traj.n_frames * n_inner
+        assert len(out) == peptide_traj.n_frames * n_inner
 
-    def test_run_writes_outputs(self, tmp_path: Path, backbone_traj: md.Trajectory):
-        result = Dihedrals(output_dir=tmp_path).run(backbone_traj)
+    def test_run_writes_outputs(self, tmp_path: Path, peptide_traj: md.Trajectory):
+        result = Dihedrals(output_dir=tmp_path).run(peptide_traj)
         assert result.status == "ok"
         assert result.data_path.exists()
         assert result.figure_path.exists()
@@ -336,9 +357,9 @@ class TestDihedrals:
         with pytest.raises(ValueError, match="backbone dihedrals"):
             dh.compute(traj)
 
-    def test_scatter_mode_runs(self, tmp_path: Path, backbone_traj):
+    def test_scatter_mode_runs(self, tmp_path: Path, peptide_traj):
         """Density=False switches to scatter plot."""
-        result = Dihedrals(output_dir=tmp_path, density=False).run(backbone_traj)
+        result = Dihedrals(output_dir=tmp_path, density=False).run(peptide_traj)
         assert result.status == "ok"
 
 
@@ -2287,7 +2308,10 @@ class TestOmegaAndMDS:
     """
 
     @staticmethod
-    def _peptide(n_residues=6):
+    def _peptide(n_residues=6, chained=False):
+        """Random frames for MDS; ``chained`` lays the backbone on a zigzag
+        0.14 nm a step, so a peptide bond is as long as one and a dihedral
+        is not read as crossing a gap in the chain."""
         top = md.Topology()
         chain = top.add_chain()
         previous_c = None
@@ -2304,19 +2328,30 @@ class TestOmegaAndMDS:
                 top.add_bond(previous_c, n)
             previous_c = c
         rng = np.random.RandomState(5)
+        if chained:
+            place = np.zeros((top.n_atoms, 3))
+            step = 0
+            for atom in top.atoms:
+                if atom.name in ("N", "CA", "C"):
+                    place[atom.index] = [0.14 * step, 0.05 * (step % 2), 0.0]
+                    step += 1
+                else:
+                    place[atom.index] = [0.14 * (step - 1), -0.12, 0.05]
+            xyz = (place + rng.normal(scale=0.01, size=(8, top.n_atoms, 3))).astype(np.float32)
+            return md.Trajectory(xyz=xyz, topology=top)
         xyz = rng.normal(scale=0.2, size=(8, top.n_atoms, 3)).astype(np.float32)
         return md.Trajectory(xyz=xyz, topology=top)
 
     def test_omega_is_computed_by_default(self) -> None:
         from fastmdxplora.analysis.dihedrals import Dihedrals
 
-        result = Dihedrals().compute(self._peptide())
+        result = Dihedrals().compute(self._peptide(chained=True))
         assert "omega_deg" in result.columns
 
     def test_it_can_be_left_out(self) -> None:
         from fastmdxplora.analysis.dihedrals import Dihedrals
 
-        result = Dihedrals(angles=["phi", "psi"]).compute(self._peptide())
+        result = Dihedrals(angles=["phi", "psi"]).compute(self._peptide(chained=True))
         assert "omega_deg" not in result.columns
         assert {"phi_deg", "psi_deg"} <= set(result.columns)
 

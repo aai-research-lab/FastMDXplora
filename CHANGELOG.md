@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Dihedrals across a chain break
+
+**A phi, psi or omega is no longer computed between residues that are not joined.** MDTraj pairs consecutive residues of a chain by index without checking the peptide bond, so on trypsin with residues 50 to 54 deleted residue 55 read a phi of -61.8 and an omega of -110.4 degrees through a C49-N55 distance of 1.68 nm. A torsion is now left out when its C(i-1) and N(i) have no bond in the topology (where the topology records peptide bonds) or are more than 0.2 nm apart in the first frame; how many were left out per angle, and the residues after each break, are recorded under `chain_breaks` in the findings. Results change: on a structure with a missing loop, the residues either side of the gap lose their rows in `dihedrals.dat` and their points on the Ramachandran plot.
+
 ### Order parameters of a second chain
 
 **The N-terminal NH3+ of every chain is left out of the N-H order parameters, not only the first chain's.** Only the topology's first residue was excluded, and OpenMM names the three terminal hydrogens H, H2 and H3, so on haemoglobin (1HHO) chain B's VAL1 was counted as an amide through the one named H. A residue is now left out when it is first in its chain, when its nitrogen carries H2 or H3 (or AMBER's H1 to H3, CHARMM's HT1 to HT3), or when the topology records peptide bonds and it has none to the residue before it. Results change: on a structure of several chains, each later chain loses one row, its first residue, and the mean S2 no longer includes it.

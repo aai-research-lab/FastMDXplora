@@ -354,6 +354,14 @@ against another tool.
   constant-pressure run: at fixed volume it is a constant the setup chose, and
   a mean with an error on it would describe arithmetic.
 
+- **Dihedrals** are not computed across a gap in a chain. MDTraj joins
+  consecutive residues of a chain without asking whether they are bonded, so
+  a phi, psi or omega whose C(i-1) and N(i) have no bond in the topology, or
+  sit more than 0.2 nm apart in the first frame, is left out and counted under
+  `chain_breaks` in the findings. Across trypsin's residues 50 to 54, deleted,
+  the residue after the gap had read a phi of -61.8 degrees through atoms
+  1.68 nm apart.
+
 - **g(r)** stops at half the smallest box dimension. Past that the
   minimum-image convention supplies only part of each shell, so the curve falls
   away for a reason belonging to the box rather than the liquid — and it falls
