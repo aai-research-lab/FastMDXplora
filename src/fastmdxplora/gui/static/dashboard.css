@@ -4221,9 +4221,12 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     font-size: var(--text-sm); outline: none;
 }
 .studies-search:focus { border-color: color-mix(in srgb, var(--accent-cyan) 62%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-cyan) 8%, transparent); }
-.studies-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+/* Two studies a row, so each card's figure is wide enough to read; one
+   on a narrow window. */
+.studies-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 760px) { .studies-grid { grid-template-columns: minmax(0, 1fr); } }
 .study-card { display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 12px; overflow: hidden; background: var(--panel-glass); box-shadow: var(--shadow-card); }
-.study-thumb { height: 120px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--text-primary) 4%, transparent); border-bottom: 1px solid var(--border-subtle); }
+.study-thumb { height: 180px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--text-primary) 4%, transparent); border-bottom: 1px solid var(--border-subtle); }
 .study-thumb img { width: 100%; height: 100%; object-fit: contain; background: #ffffff; }
 .study-thumb-none { font-family: var(--font-mono); font-size: var(--text-lg); color: var(--text-muted); }
 .study-body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px 14px; font-size: var(--text-xs); }

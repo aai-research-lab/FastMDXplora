@@ -623,12 +623,22 @@ def make_handler(
                 # `is_study` is the module's: imported here, it would be a
                 # local of the whole handler, unbound on every other route.
                 figure = workspace.thumbnail_of(named) if is_study(Path(named)) else None
-                if figure is None:
-                    self.send_error(404, "Not found")
-                    return
-                data = figure.read_bytes()
+                kind = "image/png"
+                if figure is not None:
+                    data = figure.read_bytes()
+                else:
+                    # No figure yet: a picture of the study's backbone.
+                    from fastmdxplora.gui.backbone_picture import backbone_svg
+
+                    picture = backbone_svg(named) if is_study(Path(named)) else None
+                    if picture is None:
+                        self.send_error(404, "Not found")
+                        return
+                    data, kind = picture.encode("utf-8"), "image/svg+xml"
                 self.send_response(200)
-                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Type", kind)
+                if kind == "image/svg+xml":
+                    self.send_header("Content-Security-Policy", "default-src 'none'")
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Content-Length", str(len(data)))

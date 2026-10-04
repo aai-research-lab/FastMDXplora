@@ -19,6 +19,18 @@ each study's tags and note and lists those with a tag, and `tag_study`
 adds tags; removing one and writing the note stay with the person, and a
 read-only server writes neither.
 
+### A study's card before it has a figure
+
+**All studies shows two cards a row**, each figure wide enough to read (one
+a row on a narrow window), and **a study that has plotted no figure yet
+shows its protein's backbone**: the Cα trace (a nucleic acid's phosphorus
+atoms) from the structure the Viewer renders first, seen face on, coloured
+from the N terminus (purple) to the C terminus (green), the nearer part
+darker, broken where a chain ends or a loop is missing. It was a grey box
+with the study's name, which is still shown where there is no structure.
+Read from the PDB's own lines on the server, kept in memory and never
+written into the study.
+
 ### A pocket's volume over the frames
 
 **The Viewer's Pocket volume section** plots, for a study with a ligand, how

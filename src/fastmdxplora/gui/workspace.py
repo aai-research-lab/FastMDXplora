@@ -111,7 +111,8 @@ def card_of(folder: Path | str) -> dict[str, Any]:
         "state": _state_of(base, batch, manifest),
         "when": _when(base, manifest),
         "means": [],
-        "thumbnail": bool(thumbnail_of(base)),
+        # A figure it plotted, else a picture of its backbone, else none.
+        "thumbnail": _picture_of(base),
     }
     from fastmdxplora.study_tags import tags_of
 
@@ -141,6 +142,14 @@ def card_of(folder: Path | str) -> dict[str, Any]:
         card["free_energy"] = ({"refused": refused.split(". ")[0].rstrip(".") + "."}
                                if refused else {"recombined": True})
     return card
+
+
+def _picture_of(base: Path) -> str | None:
+    if thumbnail_of(base) is not None:
+        return "figure"
+    from fastmdxplora.gui.backbone_picture import structure_for_picture
+
+    return "backbone" if structure_for_picture(base) is not None else None
 
 
 def thumbnail_of(folder: Path | str) -> Path | None:

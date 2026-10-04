@@ -210,14 +210,25 @@
     item.dataset.path = study.path;
     item.dataset.state = study.state;
     var frame = make("div", "study-thumb");
+    var named = function () {
+      frame.replaceChildren(make("span", "study-thumb-none", study.system || study.name));
+    };
     if (study.thumbnail) {
+      // A figure the study plotted, else its backbone rendered from its
+      // structure; its name where neither can be had.
       var img = make("img");
       img.loading = "lazy";
       img.alt = "";
       img.src = "/api/study-thumbnail?" + new URLSearchParams({ path: study.path });
+      img.addEventListener("error", named);
+      frame.dataset.picture = study.thumbnail;
+      if (study.thumbnail === "backbone") {
+        frame.title = "No figure yet: the protein's backbone, coloured from its N terminus " +
+          "(purple) to its C terminus (green)";
+      }
       frame.appendChild(img);
     } else {
-      frame.appendChild(make("span", "study-thumb-none", study.system || study.name));
+      named();
     }
     item.appendChild(frame);
     var body = make("div", "study-body");
