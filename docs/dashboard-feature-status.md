@@ -24,6 +24,10 @@ The required combined test set passed **241 tests, with 1 skip**, in 856.07 seco
 
 The installed wheel on port 8786 returned the draft-review difference for `setup.ph` (7.4 â†’ 6.5), including schema help. It refused acceptance after a changed draft, changed builder baseline, absent human confirmation, or changed review purpose. This exercised the real HTTP endpoint, not an imported source function. No valid acceptance was submitted and no scientific setting was applied. SHA-256 inventories for all 315 non-output study files were identical before and after. Study-revision invalidation, browser review interaction and expiry remain separately covered by source tests; this receipt does not claim their installed end-to-end acceptance.
 
+### Installed missing-source acceptance — 2026-10-03
+
+The exact wheel HTTP flow saved and restored a temporary RMSD graph bookmark. With its RMSD source temporarily absent in the disposable study, restore refused with a source-difference error while retaining the note. Returning the original source restored successful acceptance. The QA bookmark was removed and all 315 non-output study hashes matched. This checks endpoint behavior, not browser refusal rendering or screenshot retention. A real server restart remains unverified: automatic tool policy rejected the proposed QA-process stop before execution; no server was stopped.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
