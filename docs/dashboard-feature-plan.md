@@ -1,5 +1,7 @@
 # FastMDXplora dashboard implementation framework
 
+> Updated user direction (2026-10-04): preserve the documented Agent actions and modes. Requested validated scientific settings load directly into the builder, without a second draft-approval dialog. Changing settings does not start a simulation; run/stop/fix actions keep the documented instruction, confirmation and budget rules. Earlier draft-only and mandatory-review restrictions below are historical and superseded. Aesthetics remain deferred. The user reports successful Claude and Gemini live testing; Kimi live access remains unverified.
+
 Status reviewed 2026-10-02: **the full framework is not complete**.
 The current requirement-by-requirement assessment and change description are in
 [Dashboard feature changes and milestone status](dashboard-feature-status.md).

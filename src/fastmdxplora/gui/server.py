@@ -896,12 +896,6 @@ def make_handler(
                     path_for=hosting.inside if hosting is not None else None))
                 return
             if path == "/api/run":
-                from fastmdxplora.gui.draft_review import verify_run_review
-
-                refused = verify_run_review(payload or {}, app_runtime)
-                if refused:
-                    self._send_json(refused)
-                    return
                 # Runs what the config describes rather than what a form was
                 # wired for, which is how an analysis of an existing
                 # trajectory can be started at all.

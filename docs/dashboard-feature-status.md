@@ -1,5 +1,9 @@
 # Dashboard feature changes and milestone status
 
+> Agent update checks: 210 functional checks passed; 59 unrelated visual checks excluded because aesthetics are deferred. Combined scientific/research regressions and the rebuilt installed package are being checked for this update.
+
+> Updated user direction (2026-10-04): preserve the documented Agent actions and modes. Requested validated scientific settings load directly into the builder, without a second draft-approval dialog. Changing settings does not start a simulation; run/stop/fix actions keep the documented instruction, confirmation and budget rules. Earlier draft-only and mandatory-review restrictions below are historical and superseded. Aesthetics remain deferred. The user reports successful Claude and Gemini live testing; Kimi live access remains unverified.
+
 Reviewed 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md). This is the current acceptance status; the lower receipts retain earlier evidence and limitations.
 
 **Functional handoff is complete for the tested environment, with explicit limitations. Remaining M8 aesthetics are deferred by the user on 2026-10-03 and do not block this handoff.** Retain existing visual improvements; no further theme/spacing/typography/branding or broad visual acceptance is authorized. Historical M0–M8 receipts below preserve their original scope and may contain superseded pending statements.

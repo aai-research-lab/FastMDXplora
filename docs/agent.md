@@ -667,3 +667,25 @@ out:
 - **[The FastMDXplora Manifest](manifest.md)** — where the provenance lands
 - **[Production runs and GPUs](production.md)** — budgets, calibration and campaigns
 - **[How FastMDXplora is validated](validation.md)** — how well a model actually does at this, evaluated rather than assumed
+
+
+## Research dashboard additions
+
+Browser subscription connections add OpenAI/Codex, Claude, Gemini and Kimi Code
+choices alongside the existing API/local models. Supported inference controls
+appear in the model reasoning slider.
+
+The sidebar explains the current page, graph/range, warning, molecular selection,
+trajectory frame, preparation change or selected setting using server-verified
+study records and the packaged Markdown knowledge reference. Current-view context
+can be excluded and the sidebar disabled. Pin a residue to compare recorded
+per-residue evidence; unavailable or ambiguous mappings are reported rather than
+assigned a measurement.
+
+Requested valid configuration changes load directly into the builder and display
+the plan and full configuration. No extra draft checkbox is required. This retains
+the Agent's existing schema validation, modes and dashboard actions: changing a
+setting does not launch a simulation, and running uses an explicit instruction or
+Run here. Stop, runnable fixes and window reruns retain their confirmations;
+autonomous mode retains its required budget. Reopening a saved conversation does
+not overwrite the builder until its configuration is explicitly opened.

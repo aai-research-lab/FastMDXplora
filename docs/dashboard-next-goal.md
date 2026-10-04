@@ -1,5 +1,7 @@
 # FastMDXplora functional closeout checklist
 
+> Updated user direction (2026-10-04): preserve the documented Agent actions and modes. Requested validated scientific settings load directly into the builder, without a second draft-approval dialog. Changing settings does not start a simulation; run/stop/fix actions keep the documented instruction, confirmation and budget rules. Earlier draft-only and mandatory-review restrictions below are historical and superseded. Aesthetics remain deferred. The user reports successful Claude and Gemini live testing; Kimi live access remains unverified.
+
 Updated 2026-10-03 by explicit user direction. **Remaining M8 aesthetics: deferred by user.** Keep existing improvements. Do not perform theme polish, spacing, typography, branding, screenshot inspection, viewport/zoom matrices or broad visual/accessibility review. A UI change is permitted only for a reproduced defect that prevents a required functional workflow. Deferred aesthetics do not block functional handoff. The original M0–M8 contracts remain as historical requirements; this instruction supersedes their outstanding aesthetics gates.
 
 Work in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Preserve its v2.5.8-based history. Do not integrate upstream main or create/merge a PR. Preserve the user's dashboard and credentials.

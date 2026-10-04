@@ -168,8 +168,8 @@ def propose_endpoint(payload: dict[str, Any],
                 "code": "config.option.missing_companion"}
 
     mode = str(payload.get("agent") or "assisted")
-    if mode != "assisted":
-        return {"ok": False, "error": "The dashboard Agent explains and drafts only. Review scientific decisions in the builder.",
+    if mode not in {"assisted", "autonomous", "unvalidated"}:
+        return {"ok": False, "error": "Choose assisted, autonomous or unvalidated mode.",
                 "code": "config.option.not_permitted"}
     receipt = context_endpoint(payload, runtime, path_for=path_for)
     if not receipt["ok"]:
@@ -273,9 +273,6 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
         for attempt in proposal.attempts
     ]
     if proposal.action:
-        if proposal.action in {"run", "stop", "run the fix", "rerun windows"}:
-            return {"ok": False, "answer": "The Agent cannot execute this action. Review the configuration and use the dashboard's human-controlled run controls.",
-                    "attempts": attempts}
         # An instruction. The browser carries it out through the same
         # door the button uses; the server only names it. For "stop" it
         # adds where the run is, so the confirmation can say what would
@@ -364,9 +361,76 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
 
 def run_endpoint(payload: dict[str, Any], runtime: Any,
                  *, dashboard_url: str | None = None) -> dict[str, Any]:
-    """The legacy Agent execution route is closed; the builder owns review."""
-    return {"ok": False, "code": "config.option.not_permitted",
-            "error": "The Agent cannot launch a study. Add the suggestion to a draft, review it in the builder, and explicitly run it there."}
+    """Start the study the panel just drafted, on this machine.
+
+    The GUI runs on the user's own hardware, so there is no reason a mode
+    that runs should be a command-line-only workflow. `assisted` still
+    loads into the form, because the point of that mode is that a person
+    reads it first; the other two start here.
+
+    `autonomous` needs a budget, for the same reason the CLI does: it runs
+    without being shown to anybody, so a ceiling is the only thing left
+    that can stop it. The check happens after setup, where the solvated
+    particle count -- and so the cost -- is first known.
+
+    Through `launch_from_config`, which is the GUI's own door for running
+    what a config describes rather than what a form was wired for. Nothing
+    here is a second way of starting a study.
+    """
+    config = payload.get("config")
+    if not isinstance(config, dict) or not config:
+        return {"ok": False, "code": "config.option.missing_companion",
+                "error": "No config to run. Write one first."}
+
+    mode = str(config.get("agent") or "assisted")
+    # The panel's field first; else a ceiling the config itself carries, as
+    # the command line reads it, so an Agent that wrote `budget_hours` is
+    # not refused for the field being empty.
+    hours = 0.0
+    for given in (payload.get("budget_hours"), config.get("budget_hours")):
+        try:
+            hours = float(given)
+        except (TypeError, ValueError):
+            continue
+        if hours > 0:
+            break
+
+    # Required for `autonomous`, honoured in every mode. A budget stands in
+    # for a human, which is why the mode with nobody watching must have
+    # one -- and a ceiling is never the wrong thing to have on a study that
+    # will run for days, so it is offered whether or not it is demanded.
+    if mode == "autonomous" and hours <= 0:
+        return _with_its_fix({
+            "ok": False,
+            "code": "environment.budget.absent",
+            "error": ("An autonomous run is not shown to you before it "
+                      "starts, so a GPU-hour budget is the only thing left "
+                      "that can stop it. Give one above."),
+        })
+    if hours > 0:
+        # Carried on the config so it reaches resolved_config.yml and the
+        # manifest, rather than living only in this request.
+        config = dict(config)
+        config["budget_hours"] = hours
+
+    # The config goes to the launch as itself. It used to be translated
+    # into the builder's form state first, and the translation and the
+    # builder disagreed about where phase settings lived, so every run
+    # from here ran with defaults. One source of truth: the config the
+    # Agent wrote is the config that launches, rendered by the same
+    # render_config the form's own path ends in.
+    if payload.get("output_dir"):
+        config = dict(config)
+        config["output"] = str(payload["output_dir"])
+    try:
+        return _with_its_fix(runtime.launch_from_config(None, config=config,
+                                                        dashboard_url=dashboard_url))
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        from fastmdxplora.gui.config_builder import refused
+
+        said = refused(exc)
+        return {"ok": False, "error": said["refusal"]["message"],
+                "code": said["refusal"]["code"], **said}
 
 
 def _with_its_fix(answer: dict[str, Any]) -> dict[str, Any]:
@@ -495,7 +559,7 @@ def _remedies_summary(root: Any) -> str:
         return ""
     return ("what would fix it (within what each refusal lets be said; a value "
             "not given here is not the software's to suggest; one marked "
-            "[runs here] requires a human action in the dashboard):\n"
+            "[runs here] can be requested with DO: run the fix, then confirmed):\n"
             + "\n".join(f"  {'[runs here] ' if runnable(remedy) else ''}{remedy.as_text()}"
                          for remedy in found[:8]))
 

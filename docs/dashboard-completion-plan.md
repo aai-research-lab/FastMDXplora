@@ -1,5 +1,7 @@
 # Dashboard completion and aesthetics plan
 
+> Updated user direction (2026-10-04): preserve the documented Agent actions and modes. Requested validated scientific settings load directly into the builder, without a second draft-approval dialog. Changing settings does not start a simulation; run/stop/fix actions keep the documented instruction, confirmation and budget rules. Earlier draft-only and mandatory-review restrictions below are historical and superseded. Aesthetics remain deferred. The user reports successful Claude and Gemini live testing; Kimi live access remains unverified.
+
 Updated 2026-10-03 from the [current milestone audit](dashboard-feature-status.md),
 the [original framework](dashboard-feature-plan.md), code inspection and the
 running completed-study dashboard. This is a completion plan, not a claim that

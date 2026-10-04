@@ -56,7 +56,7 @@ def test_explanation_receives_packaged_reference(model):
     assert result["answer"]
     assert "Knowledge contract version: 1" in prompts[0]
     assert "setup.chemistry.protonation_undetermined" in prompts[0]
-    assert "Never launch/stop/resume" in prompts[0]
+    assert "Changing a configuration does not itself start" in prompts[0]
 
 
 def test_context_opt_out_excludes_view_but_keeps_study_isolation(tmp_path, model):
@@ -144,7 +144,6 @@ def test_agent_loading_and_provider_failure_layouts(tmp_path, monkeypatch, model
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             page.locator("#agent-request").fill("Explain the available evidence without running a simulation.")
             page.locator("#agent-propose").click()
@@ -190,7 +189,6 @@ def test_context_inspector_opt_out_and_toolbar_layout_in_browser(tmp_path, monke
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1280, "height": 900})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             page.locator("#agent-context-review summary").click()
             page.locator("#agent-use-context").uncheck()
@@ -245,7 +243,6 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page()
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             for width in (1440, 1280, 1024, 768, 390):
                 page.set_viewport_size({"width": width, "height": 900})
                 for view in ("studies", "overview", "viewer", "analysis", "report", "files", "agent", "run", "settings", "cite"):
@@ -288,7 +285,6 @@ def test_analysis_grid_has_no_mobile_page_overflow_at_large_text(tmp_path, theme
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": viewport_width, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#analysis")
             page.wait_for_selector(".analysis-grid .analysis-card")
             for zoom in (100, 200):
@@ -348,7 +344,6 @@ def test_files_cards_stay_within_mobile_content_at_large_text(tmp_path, theme, v
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": viewport_width, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#files")
             page.wait_for_selector("#file-groups .file-row")
             for zoom in (100, 200):
@@ -403,7 +398,6 @@ def test_studies_location_wraps_without_mobile_page_overflow(tmp_path, theme, vi
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": viewport_width, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#studies")
             page.wait_for_function("document.getElementById('studies-where').textContent.includes('workspace-')")
             for zoom in (100, 200):
@@ -441,7 +435,6 @@ def test_phone_header_keeps_short_study_identity_readable_at_large_text(tmp_path
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#overview")
             page.wait_for_function("document.getElementById('topbar-run-title').textContent === '1L2Y'")
             for zoom in (100, 200):
@@ -473,7 +466,6 @@ def test_expanded_appearance_popup_keeps_long_metadata_and_actions_in_bounds(tmp
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.route("**/api/agent/connections", lambda route: route.fulfill(json={
                 "ok": True, "selection": "subscription", "active": "fixture",
                 "accounts": [{"id": "fixture", "provider": "openai-chatgpt", "connected": True,
@@ -518,7 +510,6 @@ def test_viewer_status_labels_wrap_inside_canvas_with_large_text(tmp_path, theme
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#viewer")
             for zoom in (100, 200):
                 page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
@@ -558,7 +549,6 @@ def test_mobile_scrolling_keeps_research_actions_clear_of_study_navigation(tmp_p
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#viewer")
             page.wait_for_function("document.getElementById('topbar-run-title').textContent !== 'No active study'")
             page.wait_for_function("document.body.classList.contains('state-ready')")
@@ -602,7 +592,6 @@ def test_mobile_nav_keyboard_focus_reveals_full_link_at_large_text(tmp_path, the
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 844})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#overview")
             page.wait_for_function("document.documentElement.dataset.page === 'overview'")
             page.wait_for_function("document.body.classList.contains('state-ready')")
@@ -721,7 +710,6 @@ def test_subscription_apply_does_not_save_api_route(tmp_path, monkeypatch, theme
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page()
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.route("**/api/agent/connections", connection)
             page.route("**/api/agent/model", api)
             page.goto(url + "/#agent")
@@ -867,7 +855,6 @@ def test_research_controls_follow_double_text_size_without_losing_actions(tmp_pa
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 900})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             base = page.locator("#research-bookmarks-toggle").evaluate("el => parseFloat(getComputedStyle(el).fontSize)")
             page.add_style_tag(content="html {font-size: 200% !important;}")
@@ -908,7 +895,6 @@ def test_agent_settings_native_dialog_keyboard_and_scaled_layout(tmp_path, theme
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 900})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             page.add_style_tag(content="html {font-size: 200% !important;}")
             page.locator("#agent-settings-open").click()
@@ -960,7 +946,6 @@ def test_dashboard_text_palette_and_primary_actions_have_readable_contrast(tmp_p
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page()
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             page.wait_for_function("document.body.dataset.theme === " + json.dumps(theme))
             tokens = page.evaluate("""() => {const style=getComputedStyle(document.body); const names=['text-primary','text-secondary','text-muted','background-primary','background-secondary','background-elevated','accent-cyan','accent-blue','accent-orange','accent-red','accent-green','on-accent']; return Object.fromEntries(names.map(name=>[name,style.getPropertyValue('--'+name).trim()]));}""")
@@ -981,32 +966,28 @@ def test_dashboard_text_palette_and_primary_actions_have_readable_contrast(tmp_p
         server.server_close()
 
 
-@pytest.mark.parametrize("mode", ["autonomous", "unvalidated", "unexpected"])
-def test_dashboard_cannot_select_unreviewed_modes(model, mode):
+def test_dashboard_rejects_unknown_modes_before_calling_model(model):
     prompts, _ = model
-    result = propose_endpoint({"request": "Run it", "agent": mode})
+    result = propose_endpoint({"request": "Run it", "agent": "unexpected"})
     assert result["code"] == "config.option.not_permitted"
     assert not prompts
 
 
 @pytest.mark.parametrize("action", ["run", "stop", "run the fix", "rerun windows"])
-def test_model_execution_actions_become_explanations(model, action):
+def test_documented_dashboard_actions_are_preserved(model, action):
     _, replies = model
     replies[0] = "DO: " + ("rerun windows 2 at 6000" if action == "rerun windows" else action)
     result = propose_endpoint({"request": "Do it now"})
-    assert result["answer"]
-    assert "action" not in result
+    assert result["action"] == action
+    if action != "stop":
+        assert result["confirm"] is True
 
 
-def test_legacy_agent_launch_route_never_reaches_the_runtime():
-    class Runtime:
-        def launch_from_config(self, *args, **kwargs):
-            pytest.fail("An Agent request must not reach launch")
-    for mode in ("assisted", "autonomous", "unvalidated"):
-        result = run_endpoint({"config": {"agent": mode, "systems": [{"system": "1UAO"}]},
-                               "budget_hours": 1}, Runtime())
-        assert not result["ok"]
-        assert result["code"] == "config.option.not_permitted"
+def test_requested_run_is_distinguished_from_unrequested_model_action(model):
+    _, replies = model
+    replies[0] = "DO: run"
+    assert propose_endpoint({"request": "run it"})["confirm"] is False
+    assert propose_endpoint({"request": "Explain this graph"})["confirm"] is True
 
 
 def test_recorded_warning_frame_and_setting_are_evidence(tmp_path):
@@ -1106,8 +1087,7 @@ def test_chainless_residue_table_requires_globally_unique_identity_and_records_s
     assert "rmsf" not in residue_evidence(tmp_path, selected)
 
 
-@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
-def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_path, monkeypatch, model, theme):
+def test_requested_settings_load_without_extra_approval_and_sidebar_can_be_disabled(tmp_path, monkeypatch, model):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server
     from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
@@ -1121,62 +1101,31 @@ def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_pat
         with playwright.sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             page.goto(url + "/#agent")
             page.locator("#agent-request").fill("Suggest a study at pH 6.5")
-            loads = []
-            page.on("request", lambda req: loads.append(req.url) if req.url.endswith("/api/agent/review-draft") and req.post_data_json.get("action") == "accept" else None)
-            page.locator("#agent-propose").click()
-            page.locator("[data-role=load]").wait_for()
-            assert not loads, "A reply must not overwrite the builder's draft"
-            assert not page.locator("[data-role=run]").is_visible()
-            page.locator("[data-role=load]").click()
-            page.locator("#draft-review-dialog").wait_for(state="visible")
-            assert not loads
-            assert page.locator("#draft-review-accept").is_disabled()
-            assert "setup.ph" in page.locator("#draft-review-rows").inner_text()
-            # Review stays usable before human approval in every supported
-            # layout; field differences may scroll locally inside their table.
-            for zoom in (100, 200):
-                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
-                for width in (1440, 1280, 1024, 768, 390):
-                    page.set_viewport_size({"width": width, "height": 1000})
-                    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-                    outside = page.locator("#draft-review-dialog").evaluate("""el =>
-                        Array.from(el.querySelectorAll('button,input,select,textarea'))
-                        .filter(node => node.checkVisibility() && !node.closest('table'))
-                        .filter(node => {const r=node.getBoundingClientRect(); return r.x < -1 || r.right > innerWidth+1;})
-                        .map(node => node.id)""")
-                    assert not outside, (theme, zoom, width, outside)
-                    assert page.locator("#draft-review-accept").is_disabled()
-                    assert "setup.ph" in page.locator("#draft-review-rows").inner_text()
-                    assert not loads
-            page.evaluate("document.documentElement.style.fontSize = '100%'")
-            page.set_viewport_size({"width": 1440, "height": 1000})
-            page.locator("#draft-review-confirmed").check()
-            page.locator("#draft-review-accept").click()
-            page.wait_for_function("FastMDXDashboard.state.activePage === 'run'")
-            assert loads
-            assert page.evaluate("FastMDXRun.currentState().study.agent") == "assisted"
             runs = []
             def intercepted_run(route):
                 runs.append(route.request.post_data_json)
                 route.fulfill(json={"ok": False, "error": "Test intercepted the human run; no simulation starts."})
             page.route("**/api/run", intercepted_run)
-            page.locator("#run-output").fill(str(tmp_path / "reviewed-output"))
+            page.route("**/api/agent/run", intercepted_run)
+            page.locator("#agent-propose").click()
+            page.wait_for_function("FastMDXRun.currentState().setup?.ph === 6.5")
+            assert not runs, "Applying settings must not start a simulation"
+            assert page.locator("#draft-review-dialog").is_hidden()
+            assert page.locator("[data-role=run]").is_visible()
+            assert page.evaluate("FastMDXRun.currentState().study.agent") == "assisted"
+            # Reloading a saved conversation must not apply its old config.
+            page.reload()
+            page.locator("[data-role=load]").wait_for()
+            assert page.evaluate("FastMDXRun.currentState().setup?.ph") != 6.5
+            page.locator("[data-role=load]").click()
+            page.wait_for_function("FastMDXRun.currentState().setup?.ph === 6.5")
+            page.locator("#run-output").fill(str(tmp_path / "requested-output"))
             page.locator("#run-start-button").click()
-            page.locator("#draft-review-dialog").wait_for(state="visible")
-            assert not runs
-            page.locator("#draft-review-cancel").click()
-            assert not runs
-            page.locator("#run-start-button").click()
-            page.locator("#draft-review-confirmed").check()
-            page.locator("#draft-review-accept").click()
             page.wait_for_function("document.getElementById('run-note').textContent.includes('Test intercepted')")
-            from types import SimpleNamespace
-
-            from fastmdxplora.gui.draft_review import verify_run_review
-            assert runs and verify_run_review(runs[0], SimpleNamespace(active_root=root)) is None
+            assert len(runs) == 1
+            assert runs[0]["setup"]["ph"] == 6.5
             # Preference persists and closes the sidebar without navigation.
             page.evaluate("document.getElementById('research-agent-enabled').checked=false; document.getElementById('research-agent-enabled').dispatchEvent(new Event('change'))")
             page.reload()

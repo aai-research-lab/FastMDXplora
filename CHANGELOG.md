@@ -7,6 +7,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+- Restore documented dashboard Agent actions and modes; requested validated scientific settings load directly into the builder without an extra approval dialog. Saved conversations do not automatically overwrite its settings.
+
 - Copied studies resolve graph residues and Agent evidence through a local topology only when its bytes exactly match the recorded original. Changed bytes remain refused.
 
 - Agent docking targets its page section explicitly, preventing a DOM hierarchy error when disabling the Agent on its own page.

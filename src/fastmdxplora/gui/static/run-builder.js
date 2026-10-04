@@ -2393,12 +2393,6 @@
     let started;
     try {
       let payload = currentState();
-      if (payload.study?.agent) {
-        const reviewed = await window.FastMDXReview.review(null, "run");
-        if (!reviewed) { button.disabled = false; text(el("run-note"), "Run cancelled; the draft remains available."); return; }
-        if (JSON.stringify(reviewed.builder_state) !== JSON.stringify(currentState())) throw new Error("The draft changed. Review it again before running.");
-        payload = {...reviewed.builder_state, review_token: reviewed.review_token, review_confirmed: true};
-      }
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
