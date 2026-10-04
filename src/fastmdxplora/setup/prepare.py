@@ -826,9 +826,10 @@ def prepare_system(
             lipid, (" With CHARMM36 on a CPU this can take tens of minutes."
                     if slow else ""))
         try:
-            modeller.addMembrane(
+            packed = _pack_the_bilayer(
+                modeller,
                 ff,
-                lipidType=lipid,
+                lipid,
                 membraneCenterZ=0.0 * unit.nanometer,
                 minimumPadding=solvent_padding_nm * unit.nanometer,
                 positiveIon=ion_positive,
@@ -836,6 +837,8 @@ def prepare_system(
                 ionicStrength=ion_concentration_M * unit.molar,
                 neutralize=neutralize,
             )
+        except StudyError:
+            raise
         except ValueError as exc:
             if "HOH" in str(exc) and "extra site" in str(exc):
                 # OpenMM's patches carry three-site water, and a four-site
@@ -858,6 +861,7 @@ def prepare_system(
             raise _explain_unparameterized(exc, ff, modeller.topology) from exc
         n_atoms_solvated = modeller.topology.getNumAtoms()
         membrane_record.update(_bilayer_built(modeller, unit))
+        membrane_record.update(packed)
         logger.info(
             "Membrane system: %d atoms, %d %s lipids (%d and %d per leaflet).",
             n_atoms_solvated, membrane_record["lipids"], lipid,
@@ -1068,6 +1072,109 @@ def prepare_system(
                if stated[name] is None},
         },
     }
+
+
+#: Packings tried before a bilayer is refused. Each draws its own seed, so
+#: one that blew up is not repeated; three cost three packings, which for
+#: 2POR on a CPU is about 40 minutes.
+PACKING_ATTEMPTS = 3
+
+
+def _seeded_packing(seed: int):
+    """OpenMM's bilayer packing, with its dynamics on `seed`, while in use.
+
+    `Modeller.addMembrane` relaxes the lipids round the protein with a
+    Langevin integrator it makes itself and never seeds, and it takes no
+    seed to pass on. Unseeded, four preparations of 2POR with one
+    `setup.random_seed` gave four systems, 279,726 to 279,807 atoms, the
+    water it keeps following where the lipids ended. The integrator is
+    made through the name `modeller.py` imported, so that name gives a
+    seeded one for as long as the packing runs, and is put back after.
+
+    Returns a context manager whose value is a list that holds the seed
+    once an integrator has been made with it: empty, OpenMM made its
+    integrator some other way and the packing was not seeded.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def seeded():
+        from openmm.app import modeller as module
+
+        made: list[int] = []
+        original = getattr(module, "LangevinIntegrator", None)
+        if original is None:
+            yield made
+            return
+
+        def langevin(*args: Any, **kwargs: Any) -> Any:
+            integrator = original(*args, **kwargs)
+            integrator.setRandomNumberSeed(int(seed))
+            made.append(int(seed))
+            return integrator
+
+        module.LangevinIntegrator = langevin
+        try:
+            yield made
+        finally:
+            module.LangevinIntegrator = original
+
+    return seeded()
+
+
+def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
+                      **packing: Any) -> dict[str, Any]:
+    """Pack the bilayer, seeded from setup's stream, trying again on a NaN.
+
+    The relaxation grows the protein back from half its width through the
+    lipids, and now and then a lipid is caught and the forces run away:
+    2POR, a trimer of barrels, packed on the nights before and stopped on
+    2026-10-04 with "Particle coordinate is NaN" after 14 minutes. The seeds
+    come from Python's stream, which setup seeds (`setup.random_seed`),
+    so the packing, and any packing tried again, repeats with the rest of
+    the preparation. A failed packing leaves the Modeller as it was: OpenMM
+    writes the bilayer to it only once the relaxation is done.
+
+    Returns what the record keeps: the seed the bilayer was packed with
+    (None where OpenMM's integrator could not be seeded) and how many
+    packings it took.
+    """
+    import random
+
+    tried: list[int] = []
+    for _ in range(PACKING_ATTEMPTS):
+        seed = random.randint(1, 2**31 - 1)
+        tried.append(seed)
+        try:
+            with _seeded_packing(seed) as made:
+                modeller.addMembrane(ff, lipidType=lipid, **packing)
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - OpenMM's own exception type
+            if "nan" not in str(exc).lower():
+                raise
+            logger.warning(
+                "Packing the %s bilayer with seed %d failed (%s); %s", lipid, seed,
+                str(exc).strip(),
+                "trying again with the next seed." if len(tried) < PACKING_ATTEMPTS
+                else "that was the last packing tried.")
+            continue
+        if not made:
+            logger.warning(
+                "OpenMM made the bilayer's relaxation without the integrator "
+                "this setup seeds, so the packing used random numbers of its "
+                "own and will not repeat exactly.")
+        return {"packing_seed": made[0] if made else None,
+                "packing_attempts": len(tried)}
+    raise StudyError(
+        f"The {lipid} bilayer could not be packed round this structure: "
+        f"OpenMM's relaxation, which grows the protein back through the "
+        f"lipids from half its width, ran away to a NaN in each of "
+        f"{len(tried)} packings (seeds {', '.join(str(s) for s in tried)}). "
+        f"A protein not oriented across the slab runs away this way every "
+        f"time; one that packs now and then is packed again from other "
+        f"random numbers by another `setup.random_seed`.",
+        code="setup.membrane.packing_failed", lipid=lipid, seeds=tried)
 
 
 def _bilayer_built(modeller: Any, unit: Any) -> dict[str, Any]:

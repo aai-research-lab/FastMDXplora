@@ -500,8 +500,7 @@ SETUP = PhaseSchema(
               "become ions. With it, preparing the same structure again gives "
               "the same atoms in the same box. Left unset, a seed is drawn "
               "and recorded, so any preparation can be repeated from its "
-              "resolved config. A bilayer is packed by OpenMM with dynamics "
-              "of its own random stream, and is not repeated exactly.",
+              "resolved config. A bilayer's packing is seeded from it too.",
               example=42),
         Field("nonbonded_method", str, "PME",
               "Nonbonded method: NoCutoff, CutoffNonPeriodic, "

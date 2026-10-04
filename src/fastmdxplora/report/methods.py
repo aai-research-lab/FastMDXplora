@@ -462,13 +462,22 @@ def methods_paragraphs(
         if seed is not None:
             # The one thing a reader needs to repeat the preparation rather
             # than make an equivalent one: hydrogens and ions are placed at
-            # random, and a bilayer's packing is not seeded at all.
-            solvation.append(
-                f"Hydrogens and ions were placed with random seed {int(seed)} "
-                "(`setup.random_seed`)"
-                + (", which reproduces the solvated system except the bilayer's "
-                   "packing" if bilayer else ", which reproduces the solvated system")
-                + ".")
+            # random, and so is a bilayer's packing. A bilayer prepared
+            # before its packing was seeded records no packing seed.
+            packed = bilayer.get("packing_seed") if bilayer else None
+            if bilayer and packed is not None:
+                solvation.append(
+                    f"Hydrogens, ions and the bilayer's packing were placed with "
+                    f"random seed {int(seed)} (`setup.random_seed`; the packing "
+                    f"with seed {int(packed)} taken from it), which reproduces "
+                    "the solvated system.")
+            else:
+                solvation.append(
+                    f"Hydrogens and ions were placed with random seed {int(seed)} "
+                    "(`setup.random_seed`)"
+                    + (", which reproduces the solvated system except the bilayer's "
+                       "packing" if bilayer else ", which reproduces the solvated system")
+                    + ".")
 
         method = _get(setup, "nonbonded_method", default="PME")
         cutoff = _get(setup, "nonbonded_cutoff_nm")

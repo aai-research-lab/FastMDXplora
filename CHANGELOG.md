@@ -7,6 +7,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A bilayer is packed from the setup seed, and packed again if it fails
+
+**A membrane study prepared twice with one `setup.random_seed` is the same
+system.** OpenMM packs a bilayer with a short simulation whose integrator it
+makes itself and never seeds, so four preparations of 2POR with one seed gave
+four systems, 279,726 to 279,807 atoms. The packing is now seeded from the
+setup seed and the seed it used is recorded (`bilayer.packing_seed` in
+`setup_parameters.json`); the methods paragraph and the report's
+Reproducibility section say a bilayer prepared so repeats, and say a bilayer
+prepared before does not.
+
+**A packing that runs away to a NaN is packed again with the next seed**, up
+to three times, each attempt in the log and the number of packings recorded
+(`bilayer.packing_attempts`). 2POR's packing stopped the network validation
+corpus on 2026-10-04 with "Particle coordinate is NaN" after 14 minutes,
+having packed the night before. After the third, setup refuses with
+`setup.membrane.packing_failed`, naming the lipid and the seeds tried, where
+it said only OpenMM's message and that the software did not know the answer.
+
 ### Runs together while they run
 
 **A run still running is played beside the others**, from the snapshots it

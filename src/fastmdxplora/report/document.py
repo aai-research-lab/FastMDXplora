@@ -1028,8 +1028,8 @@ def _what_a_rerun_repeats(root: Path) -> str:
     Setup places hydrogens and ions at random and records the seed it used
     (`setup.random_seed`, drawn where none was given), and minimises on one
     CPU thread, so the same structure and settings prepare the same atoms
-    again; a bilayer is packed by OpenMM with a random stream of its own.
-    This said once that solvation could not be seeded at all, which was the
+    again, a bilayer included where its packing seed is recorded (studies
+    prepared before the packing was seeded have none). This said once that solvation could not be seeded at all, which was the
     unseeded hydrogens and ions, and stayed wrong after they were seeded.
     The dynamics repeat their start only where `simulation.random_seed` was
     given, and step for step only as far as the platform's arithmetic does.
@@ -1050,7 +1050,10 @@ def _what_a_rerun_repeats(root: Path) -> str:
     simulation = (config.get("simulation")
                   if isinstance(config.get("simulation"), dict) else {})
     bilayer = bool(setup.get("membrane")) or bool(
-        isinstance(record, dict) and record.get("membrane"))
+        isinstance(record, dict) and (record.get("membrane") or record.get("bilayer")))
+    packing = (record.get("bilayer") if isinstance(record, dict) else None) or {}
+    unseeded_bilayer = bilayer and not (
+        isinstance(packing, dict) and packing.get("packing_seed") is not None)
 
     if isinstance(seeded, dict) and seeded.get("seed") is not None:
         text = (
@@ -1060,8 +1063,8 @@ def _what_a_rerun_repeats(root: Path) -> str:
             f"({int(seeded['seed'])}{', drawn for this study' if seeded.get('drawn') else ''}), "
             "and setup minimises on one CPU thread, so the same structure and "
             "settings give the same atoms in the same places"
-            + (", except the bilayer, which OpenMM packs with a random stream of "
-               "its own" if bilayer else "")
+            + (", except the bilayer, which OpenMM packed with a random stream of "
+               "its own" if unseeded_bilayer else "")
             + ".")
     else:
         text = (

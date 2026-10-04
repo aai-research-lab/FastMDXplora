@@ -71,6 +71,8 @@ SETTINGS: dict[str, tuple[str, ...]] = {
     "setup.membrane.no_belt": ("setup.membrane",),
     "setup.membrane.orientation_unchecked": ("setup.membrane",),
     "setup.membrane.lipid_unparameterized": ("setup.membrane",),
+    "setup.membrane.packing_failed": ("setup.random_seed", "setup.membrane",
+                                      "setup.membrane_orient"),
     "environment.budget.absent": ("budget_hours",),
     "environment.budget.exhausted": ("budget_hours",),
 }

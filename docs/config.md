@@ -442,10 +442,12 @@ hydrogens set the solute's extent, so the box and its water follow: unseeded,
 one decapeptide came out at 4,265 to 4,556 atoms in six preparations. Setup
 therefore seeds those choices with `setup.random_seed`, draws a seed where none
 is given, and records it, so the resolved config carries it and the
-preparation repeats: the same atoms, at the same positions. (A bilayer is
-packed by OpenMM with dynamics of its own random stream, and is not repeated
-exactly.) Setup's minimisations run on one CPU thread for this, since several
-threads add forces in whatever order they finish.
+preparation repeats: the same atoms, at the same positions. A bilayer is
+packed by a short simulation OpenMM runs itself, and setup seeds it from the
+same stream; the seed it was packed with is recorded in `setup_parameters.json`
+(`bilayer.packing_seed`), and a packing that runs away to a NaN is tried again with
+the next seed, up to three times. Setup's minimisations run on one CPU thread
+for this, since several threads add forces in whatever order they finish.
 
 The dynamics repeat only with a fixed integrator seed, on the same platform:
 

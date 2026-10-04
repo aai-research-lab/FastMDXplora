@@ -2733,10 +2733,20 @@ class TestReproducibilitySaysWhatItReproduces:
         assert "(42, drawn for this study)" in text
         assert "cannot be seeded" not in text and "bilayer" not in text
 
-    def test_a_bilayer_is_the_exception(self, tmp_path) -> None:
+    def test_a_bilayer_packed_before_its_packing_was_seeded_is_the_exception(
+            self, tmp_path) -> None:
         text = _reproducibility_of(tmp_path, prepared=True, seed={"seed": 7, "drawn": False},
-                                   config={"setup": {"membrane": "POPC"}})
+                                   config={"setup": {"membrane": "POPC"}},
+                                   bilayer={"lipid": "POPC", "lipids": 442})
         assert "(7)" in text and "except the bilayer" in text
+
+    def test_a_bilayer_with_its_packing_seed_is_prepared_again(self, tmp_path) -> None:
+        text = _reproducibility_of(tmp_path, prepared=True, seed={"seed": 7, "drawn": False},
+                                   config={"setup": {"membrane": "POPC"}},
+                                   bilayer={"lipid": "POPC", "packing_seed": 1234,
+                                            "packing_attempts": 1})
+        assert "(7)" in text and "prepares the same system" in text
+        assert "except the bilayer" not in text
 
     def test_a_study_prepared_before_the_seed_was_recorded(self, tmp_path) -> None:
         text = _reproducibility_of(tmp_path, prepared=True)
@@ -3018,10 +3028,11 @@ def _methods_of_a_study(root):
     return _methods_section(root, load_phase_context(root))
 
 
-def _reproducibility_of(root, *, prepared, seed=None, config=None):
+def _reproducibility_of(root, *, prepared, seed=None, config=None, bilayer=None):
     """The reproducibility section of a study that prepared its own system,
     or of an analysis of a trajectory it was given; ``seed`` is what setup
-    recorded, and ``config`` the study's resolved config."""
+    recorded, ``bilayer`` its record of a packed bilayer, and ``config`` the
+    study's resolved config."""
     from types import SimpleNamespace
 
     import yaml
@@ -3033,7 +3044,9 @@ def _reproducibility_of(root, *, prepared, seed=None, config=None):
         (root / phase).mkdir(parents=True)
     if seed is not None:
         (root / "setup" / "setup_parameters.json").write_text(
-            json.dumps({"random_seed": seed}), encoding="utf-8")
+            json.dumps({"random_seed": seed,
+                        **({"bilayer": bilayer} if bilayer is not None else {})}),
+            encoding="utf-8")
     if config is not None:
         (root / "resolved_config.yml").write_text(yaml.safe_dump(config), encoding="utf-8")
     return _reproducibility_section(SimpleNamespace(system="181L", output_dir=root),

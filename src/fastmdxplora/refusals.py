@@ -524,6 +524,11 @@ CODES: tuple[Code, ...] = (
          "The force field files given do not describe the chosen lipid.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
          detail_keys=("lipid",)),
+    Code("setup.membrane.packing_failed",
+         "OpenMM's packing of the bilayer round the structure ran away to a "
+         "NaN in every packing tried.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("lipid", "seeds")),
 
     # -- simulation: collective variables -----------------------------------
     Code("simulation.cone.unmeasured",

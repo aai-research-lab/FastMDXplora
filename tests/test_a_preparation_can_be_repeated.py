@@ -93,6 +93,22 @@ def test_the_methods_say_it(tmp_path):
     assert "Hydrogens and ions were placed with random seed 11 (`setup.random_seed`)" in text
 
 
+def test_the_methods_say_a_seeded_bilayer_repeats(tmp_path):
+    from fastmdxplora.report.methods import methods_paragraphs
+
+    setup = {"_random_seed": 11, "membrane": "POPC",
+             "bilayer": {"lipid": "POPC", "lipids": 442, "lipids_per_leaflet": [221, 221],
+                         "placed_by": "fitted normal", "packing_seed": 99,
+                         "packing_attempts": 1}}
+    text = methods_paragraphs(tmp_path, setup, {})
+    assert ("Hydrogens, ions and the bilayer's packing were placed with random "
+            "seed 11 (`setup.random_seed`; the packing with seed 99 taken from "
+            "it), which reproduces the solvated system.") in text
+    unseeded = methods_paragraphs(tmp_path, {**setup, "bilayer": {
+        k: v for k, v in setup["bilayer"].items() if not k.startswith("packing")}}, {})
+    assert "except the bilayer's packing" in unseeded
+
+
 def test_it_is_a_setting_and_a_seed_axis():
     from fastmdxplora.batch.aggregate import SEED_AXES
     from fastmdxplora.config.loader import validate_config
