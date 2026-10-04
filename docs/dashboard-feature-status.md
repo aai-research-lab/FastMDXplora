@@ -6,7 +6,7 @@ Reviewed 2026-10-03 against the [full implementation framework](dashboard-featur
 
 ### Current checkpoint — 2026-10-03
 
-The authoritative checkout is `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Current behavior revision is `6d5407a`; subsequent revisions are documentation only. Local and remote heads were verified equal at `2f5ea32` before this reconciliation. The working tree was clean. Retain the v2.5.8-based history; upstream main has not been integrated and no PR created. The user's dashboard on port 8783 was untouched; corrected installed-package review is on port 8787.
+The authoritative checkout is `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Current behavior revision is `a06a214`; subsequent revisions change documentation only. Local and remote heads were verified equal at `2f5ea32` before this reconciliation. The working tree was clean. Retain the v2.5.8-based history; upstream main has not been integrated and no PR created. The user's dashboard on port 8783 was untouched; corrected installed-package review is on port 8787.
 
 The current wheel is `fastmdxplora-2.5.9.dev218+g6d5407a86-py3-none-any.whl`, SHA-256 `4250c2d6fc42abcd4eb451eb033b5912e99fb328f94daf05223bd6ebc9c30a74`. It is installed outside the checkout in a separate environment reusing repository dependencies. This is not clean-machine dependency installation or a published release.
 
@@ -76,9 +76,13 @@ This is one paired small-protein preparation, not production MD or a statistical
 
 ### Shared relocated-topology installed acceptance — 2026-10-03
 
-Behavior revision `a06a214` supersedes `6d5407a`; its final 244-case combined suite is running. A shared bounded verifier accepts the known local topology of a moved study only when its bytes exactly match the recorded original. Graph selection and server-side Agent evidence use this rule. Equal-sized changed bytes remain refused. Forty analysis/graph checks and four focused shared-verifier checks passed.
+Behavior revision `a06a214` supersedes `6d5407a`; its final 244-case combined suite passed 243 tests with one OpenFF dependency skip in 799.87 seconds. A shared bounded verifier accepts the known local topology of a moved study only when its bytes exactly match the recorded original. Graph selection and server-side Agent evidence use this rule. Equal-sized changed bytes remain refused. Forty analysis/graph checks and four focused shared-verifier checks passed.
 
 Installed wheel `fastmdxplora-2.5.9.dev228+ga06a214d2-py3-none-any.whl` has SHA-256 `46b7e468b8aed20824352a74185050257cb692d05e428ad7f0045f3868246a51`. A new temporary environment reused repository dependencies; no clean-machine claim. The completed-study browser selected ASN A:1, pinned it, selected LEU A:2 and sent a fresh-conversation OpenAI comparison. The reply correctly reported RMSF 0.131109476 and 0.0686216503 nm, CA scope, frame-0 alignment, 2,000 frames and missing uncertainty; chemical causes remained unproven. No browser errors occurred and scientific hashes matched, excluding expected conversation/bookmark/media outputs. No settings or simulation were applied. Receipt: temporary `FastMDXplora-relocated-evidence-final/graph-agent-receipt.json`. The remaining coherent bookmark/restart/media/audit chain is still open.
+
+### Current installed residue-bookmark portability — 2026-10-03
+
+The `a06a214` installed browser saved the LEU A:2 selection and pinned ASN A:1 comparison, reloaded, restored both exact identities, exported 4,281 bytes of JSON, previewed/imported it with skip-existing collision handling, and removed its QA bookmark. Earlier diagnostic QA rows were also removed. Scientific hashes matched and no page errors occurred. The harness now waits for the exact active study path before Restore; its earlier premature click was correctly refused by study isolation. This receipt proves reload restoration and JSON portability, not a new process restart or the remaining media/audit chain. Receipt: temporary `FastMDXplora-relocated-evidence-final/bookmark-flow-receipt.json`.
 
 ### Milestone review
 
