@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A ligand far from the first alpha carbon
+
+**`ligand_rmsd` now follows the ligand across periodic faces from the alignment atom nearest it in the first frame.** It started from the first alignment atom, the N-terminal alpha carbon, and the first frame's minimum image is the true separation only under half the box: on an elongated receptor with that atom 4.4 nm from the ligand in a 6.8 nm box, the first frame took the wrong copy and a rigid complex tumbling in its box read a ligand RMSD of up to 13.3 nm, in a cube and in a rhombic dodecahedron alike, and also after the loader's imaging. From the nearest atom the same complex reads under 0.001 nm. Results change: ligand RMSD of complexes whose first alignment atom is more than about half a box from the ligand.
+
 ### A centre-of-mass distance in a dodecahedron
 
 **`pair_distance` with `measure: com` now takes the shortest periodic copy in a cell of any shape.** It folded each Cartesian component by its box length, which is right only for a rectangular box: in the rhombic dodecahedron the setup builds, 28% of random pairs came out on the wrong copy, by up to 4.68 nm, and two centres 0.5 nm apart across a slanted face read 5.416 nm. Now the fractional coordinates are rounded with the cell vectors and the 26 neighbouring translations are compared, keeping the shortest, and the warning that a pair is near the limit of the convention is set at half the shortest periodic repeat rather than half the smallest box length. `measure: closest` was already right. Results change: centre-of-mass distances from triclinic boxes.

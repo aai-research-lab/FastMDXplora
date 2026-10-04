@@ -77,13 +77,25 @@ def _followed_across_the_boundary(traj, ligand_idx, anchor_idx):
     from the *unaligned* trajectory, as ``superposed`` requires: alignment
     rotates coordinates and not the box.
 
+    **The anchor is the alignment atom nearest the ligand in the first
+    frame**, by minimum image. The first frame's displacement is the one
+    thing the walk cannot correct, so it must be the true one, and the
+    minimum image is the true one only for a separation under half the box.
+    The first alignment atom was used before: on an elongated receptor that
+    is the N-terminal alpha carbon, 4.4 nm from a ligand in a 6.8 nm box, so
+    the first frame took the wrong copy of the ligand and a rigid complex
+    tumbling in its box read a ligand RMSD of up to 13.3 nm. From the
+    nearest atom, a ligand in contact with its receptor is a few tenths of a
+    nanometre away and the first frame is right, with each of its atoms
+    placed whole beside that atom however the file wrapped them.
+
     Returns ``None`` where the trajectory carries no unit cell.
     """
     if traj.unitcell_vectors is None:
         return None
 
     ligand_idx = np.asarray(ligand_idx)
-    anchor = int(np.asarray(anchor_idx)[0])
+    anchor = _nearest_anchor(traj, ligand_idx, anchor_idx)
 
     pairs = np.column_stack([np.full(ligand_idx.size, anchor), ligand_idx])
     disp = np.asarray(
@@ -100,6 +112,35 @@ def _followed_across_the_boundary(traj, ligand_idx, anchor_idx):
 
     anchor_xyz = np.asarray(traj.xyz[:, anchor, :], dtype=np.float64)
     return anchor_xyz[:, None, :] + disp
+
+
+def _nearest_anchor(traj, ligand_idx, anchor_idx) -> int:
+    """The anchor atom closest to any ligand atom in the first frame, by
+    minimum image."""
+    anchors = np.asarray(anchor_idx, dtype=int)
+    ligand = np.asarray(ligand_idx, dtype=int)
+    pairs = np.column_stack([np.repeat(anchors, ligand.size),
+                             np.tile(ligand, anchors.size)])
+    distances = md.compute_distances(traj[0], pairs, periodic=True)[0]
+    return int(pairs[int(np.argmin(distances)), 0])
+
+
+def ligand_in_the_receptor_frame(traj, ligand_idx, align_idx, ref: int) -> np.ndarray:
+    """The ligand's coordinates after fitting each frame's receptor onto the
+    reference frame's, followed across periodic faces, in nm.
+
+    The ligand is followed first, while the box still describes the frame
+    (:func:`_followed_across_the_boundary`), and then carried by the rigid
+    transform that fitted the receptor. Without a unit cell the fitted
+    coordinates are taken as written. Shared by the ligand's RMSD and RMSF,
+    so the two read the same ligand.
+    """
+    followed = _followed_across_the_boundary(traj, ligand_idx, align_idx)
+    aligned = superposed(traj, frame=ref, atom_indices=align_idx)
+    if followed is None:
+        return np.asarray(aligned.xyz[:, ligand_idx, :], dtype=np.float64)
+    return _carried_by(traj.xyz[:, align_idx, :],
+                       aligned.xyz[:, align_idx, :], followed)
 
 
 def _carried_by(source, destination, points):
@@ -256,16 +297,7 @@ class LigandRMSD(Analysis):
         # describes the frame. After alignment it does not: superposed()
         # rotates coordinates and discards the cell precisely so a stale box
         # cannot be consulted by mistake.
-        followed = _followed_across_the_boundary(traj, ligand_idx, align_idx)
-
-        aligned = superposed(traj, frame=ref, atom_indices=align_idx)
-
-        if followed is None:
-            ligand_xyz = np.asarray(
-                aligned.xyz[:, ligand_idx, :], dtype=np.float64)
-        else:
-            ligand_xyz = _carried_by(traj.xyz[:, align_idx, :],
-                                     aligned.xyz[:, align_idx, :], followed)
+        ligand_xyz = ligand_in_the_receptor_frame(traj, ligand_idx, align_idx, ref)
 
         # RMSD of the LIGAND atoms on the aligned coordinates, vs the
         # reference frame's ligand coordinates. No further alignment.
