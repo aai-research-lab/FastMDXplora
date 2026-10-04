@@ -164,11 +164,19 @@ def clip_endpoint(runtime, payload: dict, *, path_for=None) -> dict:
                 else:
                     result = subprocess.run([shutil.which("ffmpeg"), "-nostdin", "-loglevel", "error",
                         "-framerate", str(session["fps"]), "-i", str(folder / "%04d.png"),
-                        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(encoded)],
+                        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-fps_mode", "cfr",
+                        "-r", str(session["fps"]),
+                        "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "baseline",
+                        "-level:v", "4.1", "-bf", "0", "-g", str(max(1, round(session["fps"]))),
+                        "-pix_fmt", "yuv420p", "-video_track_timescale", "90000",
+                        "-movflags", "+faststart", str(encoded)],
                         capture_output=True, timeout=90, check=False)
                     if result.returncode != 0:
                         raise ValueError("ffmpeg could not encode this clip. Try GIF or check your ffmpeg installation.")
-                    encoders[fmt] = {"name": "ffmpeg/libx264", "pixel_format": "yuv420p", "effective_fps": session["fps"]}
+                    encoders[fmt] = {"name": "ffmpeg/libx264", "pixel_format": "yuv420p",
+                                     "effective_fps": session["fps"], "frame_timing": "constant",
+                                     "profile": "baseline", "b_frames": 0,
+                                     "preset": "veryfast", "faststart": True}
             destination.mkdir(parents=True, exist_ok=False)
             for fmt in formats:
                 shutil.copyfile(folder / ("trajectory." + fmt), destination / ("trajectory." + fmt))

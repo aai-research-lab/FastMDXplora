@@ -73,9 +73,57 @@ def test_encoded_clip_and_source_metadata_preserve_scientific_artifacts(runtime,
     assert metadata["source_frames"] == runtime.index["frame_indices"][:2]
     assert metadata["times_ns"] == runtime.index["frame_times_ns"][:2]
     assert metadata["rotation"] == 30 and metadata["label_scope"] == "protein"
+    if format in {"mp4", "both"}:
+        if not shutil.which("ffprobe"):
+            pytest.skip("ffprobe not installed")
+        probe = subprocess.run([
+            shutil.which("ffprobe"), "-v", "error", "-select_streams", "v:0",
+            "-show_entries",
+            "stream=avg_frame_rate,nb_frames,profile,has_b_frames,pix_fmt",
+            "-of", "json", str(encoded)
+        ], capture_output=True, text=True, check=True)
+        stream = json.loads(probe.stdout)["streams"][0]
+        assert stream["avg_frame_rate"] == "10/1" and int(stream["nb_frames"]) == 2
+        assert stream["profile"] == "Constrained Baseline"
+        assert stream["has_b_frames"] == 0
+        assert stream["pix_fmt"] == "yuv420p"
+        assert metadata["encoders"]["mp4"]["frame_timing"] == "constant"
+        assert metadata["encoders"]["mp4"]["profile"] == "baseline"
+        assert metadata["encoders"]["mp4"]["b_frames"] == 0
+        assert metadata["encoders"]["mp4"]["preset"] == "veryfast"
+        assert metadata["encoders"]["mp4"]["faststart"] is True
     assert metadata["source"]["evidence"]["trajectory"]
     assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in sources] == before
     assert runtime._clip_upload is None
+
+
+def test_one_fps_mp4_uses_windows_compatible_no_reorder_stream(runtime):
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg and ffprobe are required")
+    opened = start(runtime, format="mp4", fps=1)
+    assert opened["ok"]
+    assert upload(runtime, opened["id"], 0, "red")["ok"]
+    assert upload(runtime, opened["id"], 1, "blue")["ok"]
+    result = clip_endpoint(runtime, {
+        "action": "finish", "study": str(runtime.active_root), "id": opened["id"]
+    })
+    assert result["ok"]
+    encoded = runtime.active_root / result["url"].removeprefix("/artifacts/")
+    probe = subprocess.run([
+        shutil.which("ffprobe"), "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=avg_frame_rate,duration,nb_frames,profile,has_b_frames,pix_fmt",
+        "-of", "json", str(encoded)
+    ], capture_output=True, text=True, check=True)
+    stream = json.loads(probe.stdout)["streams"][0]
+    assert stream["avg_frame_rate"] == "1/1" and int(stream["nb_frames"]) == 2
+    assert stream["profile"] == "Constrained Baseline"
+    assert stream["has_b_frames"] == 0
+    assert stream["pix_fmt"] == "yuv420p"
+    decoded = subprocess.run([
+        shutil.which("ffmpeg"), "-nostdin", "-v", "error", "-i", str(encoded),
+        "-f", "null", "-"
+    ], capture_output=True, timeout=15)
+    assert decoded.returncode == 0
 
 
 def test_changed_trajectory_refuses_finish_and_cleans_upload(runtime):
@@ -132,8 +180,12 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page,
     original = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
     page.locator("#clip-export-open").click()
     page.wait_for_function("document.querySelector('#clip-status').textContent.includes('saved browser frames available')")
-    page.locator("#clip-last").fill("2")
+    frame_count = 9 if format == "both" else 3
+    page.locator("#clip-last").fill(str(frame_count - 1))
     page.locator("#clip-format").select_option(format)
+    if format == "both":
+        # Exercise continuous playback across the six-second point from the user recording.
+        page.locator("#clip-fps").fill("1")
     page.locator("#clip-rotation").fill("60")
     page.locator("#clip-residues").check()
     page.locator("#clip-label-scope").select_option("protein")
@@ -155,13 +207,15 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page,
     assert response.ok
     saved_gif = root / link.split("?", 1)[0].removeprefix("/artifacts/")
     assert response.body() == saved_gif.read_bytes()
-    assert_visible_gif(response.body(), 3)
+    assert_visible_gif(response.body(), frame_count)
+    install_save_picker_stub(page)
+    assert_download_button_saves(page, "clip-download", "trajectory.gif", response.body())
     metadata_link = page.locator("#clip-metadata").get_attribute("href")
     metadata = page.request.get(page.url.split("/#")[0] + metadata_link).json()
     assert metadata["dimensions"] == metadata["render_size"] == [640, 480]
     assert metadata["captions"] == {"study": "Test study", "caption": "Saved molecular frames"}
     assert metadata["camera_path"]["tracking"] == "protein-centroid"
-    assert len(metadata["camera_path"]["rendered_views"]) == 3
+    assert len(metadata["camera_path"]["rendered_views"]) == frame_count
     if format == "both":
         mp4_link = page.locator("#clip-download-mp4").get_attribute("href")
         assert page.locator("#clip-download-mp4").is_visible()
@@ -169,6 +223,8 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page,
         assert mp4_response.ok
         saved_mp4 = root / mp4_link.split("?", 1)[0].removeprefix("/artifacts/")
         assert mp4_response.body() == saved_mp4.read_bytes()
+        assert_download_button_saves(
+            page, "clip-download-mp4", "trajectory.mp4", mp4_response.body())
         encoded = tmp_path / "browser-trajectory.mp4"
         encoded.write_bytes(mp4_response.body())
         decoded = subprocess.run(
@@ -179,11 +235,84 @@ def test_browser_exports_real_rotating_labeled_clip_and_restores_view(clip_page,
         assert decoded.returncode == 0, decoded.stderr.decode(errors="replace")
         with Image.open(io.BytesIO(decoded.stdout)) as first_frame:
             assert first_frame.size == (640, 480)
-        assert len(metadata["source_frames"]) == len(metadata["times_ns"]) == 3
+        if format == "both":
+            playback = page.evaluate("""async encodedBase64 => {
+              const bytes = Uint8Array.from(atob(encodedBase64), c => c.charCodeAt(0));
+              const video = document.createElement('video');
+              video.muted = true;
+              video.playsInline = true;
+              video.src = URL.createObjectURL(new Blob([bytes], {type: 'video/mp4'}));
+              document.body.append(video);
+              let unexpectedPauses = 0;
+              video.addEventListener('pause', () => { if (!video.ended) unexpectedPauses += 1; });
+              await video.play();
+              await new Promise((resolve, reject) => {
+                video.addEventListener('ended', resolve, {once: true});
+                setTimeout(() => reject(new Error('MP4 playback did not reach the end')), 15000);
+              });
+              const result = {ended: video.ended, duration: video.duration,
+                              currentTime: video.currentTime, unexpectedPauses};
+              video.remove();
+              return result;
+            }""", base64.b64encode(mp4_response.body()).decode("ascii"))
+            assert playback["ended"] and playback["unexpectedPauses"] == 0, playback
+            assert playback["currentTime"] >= playback["duration"] - 0.1, playback
+        assert len(metadata["source_frames"]) == len(metadata["times_ns"]) == frame_count
     assert page.evaluate("FastMDXMoleculeViewer.STATE.mode") == "structure"
     assert not page.evaluate("document.querySelector('.viewer-layout').inert")
     assert not page.errors
     assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources} == original
+
+
+@pytest.mark.parametrize(("control", "filename", "content_type", "body"), [
+    ("clip-download", "trajectory.gif", "image/gif", b"GIF89a test clip"),
+    ("clip-download-mp4", "trajectory.mp4", "video/mp4", b"fake MP4 test clip"),
+])
+def test_clip_download_buttons_save_the_file_to_the_chosen_location(
+        clip_page, control, filename, content_type, body):
+    page = clip_page
+    page.locator("#clip-export-open").click()
+    page.wait_for_function("document.querySelector('#clip-export-dialog').open")
+    requested = []
+
+    def serve_file(route):
+        requested.append(route.request.url)
+        route.fulfill(status=200, content_type=content_type, body=body)
+
+    page.route("**/artifacts/download-button-test/*", serve_file)
+    page.evaluate("""() => {
+      window.__clipSavePickerTest = {options: null, file: null};
+      window.showSaveFilePicker = async options => {
+        window.__clipSavePickerTest.options = options;
+        const chunks = [];
+        return {createWritable: async () => new WritableStream({
+          write: chunk => chunks.push(chunk),
+          close: () => { window.__clipSavePickerTest.file = new Blob(chunks); }
+        })};
+      };
+    }""")
+    page.locator(f"#{control}").evaluate(
+        "(el, href) => { el.href = href; el.hidden = false; }",
+        f"/artifacts/download-button-test/{filename}?download=1")
+    page.locator(f"#{control}").click()
+    page.wait_for_function("window.__clipSavePickerTest.file !== null")
+    saved = page.evaluate("""async () => {
+      const test = window.__clipSavePickerTest;
+      const bytes = await test.file.arrayBuffer();
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return {
+        name: test.options.suggestedName,
+        accepted: test.options.types[0].accept,
+        size: test.file.size,
+        sha256: Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
+      };
+    }""")
+    assert saved["name"] == filename
+    assert f".{filename.rsplit('.', 1)[-1]}" in saved["accepted"][content_type]
+    assert saved["size"] == len(body)
+    assert saved["sha256"] == hashlib.sha256(body).hexdigest()
+    assert requested and "download=1" in requested[0]
+    assert f"{filename} saved to the chosen location." in page.locator("#clip-status").inner_text()
 
 
 def assert_visible_gif(content, count):
@@ -198,6 +327,35 @@ def assert_visible_gif(content, count):
             pixels = np.asarray(scene).astype(int)
             colored = (pixels.max(axis=2) - pixels.min(axis=2) > 30).sum()
             assert colored > 100, f"GIF frame {frame} must contain molecular geometry above captions"
+
+
+def install_save_picker_stub(page):
+    page.evaluate("""() => {
+      window.__clipSavedFiles = {};
+      window.showSaveFilePicker = async options => {
+        const chunks = [];
+        return {createWritable: async () => new WritableStream({
+          write: chunk => chunks.push(chunk),
+          close: () => { window.__clipSavedFiles[options.suggestedName] = new Blob(chunks); }
+        })};
+      };
+    }""")
+
+
+def assert_download_button_saves(page, control, filename, body):
+    page.locator(f"#{control}").click()
+    page.wait_for_function(
+        "filename => Boolean(window.__clipSavedFiles?.[filename])", arg=filename)
+    saved = page.evaluate("""async filename => {
+      const bytes = await window.__clipSavedFiles[filename].arrayBuffer();
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return {
+        size: bytes.byteLength,
+        sha256: Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
+      };
+    }""", filename)
+    assert saved["size"] == len(body)
+    assert saved["sha256"] == hashlib.sha256(body).hexdigest()
 
 
 @pytest.mark.parametrize("format", ["gif", "both"])
