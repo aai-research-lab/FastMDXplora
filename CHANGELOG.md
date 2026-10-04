@@ -7,6 +7,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A preparation repeats to the last velocity, and a runaway packing is caught both ways
+
+**`state.xml` is the same file from the same seed.** The velocities setup
+saves were drawn on whatever platform the machine offered, and the CPU and
+GPU platforms do not draw the same velocities twice from one seed: two
+preparations of a bilayer matched in every position and in no velocity (up
+to 8e-8 nm/ps apart), and four of 2POR on an RTX 4090 gave four different
+`state.xml` files beside one `solvated.pdb`. They are drawn on the Reference
+platform, which drew the same bytes every time; for 26,000 atoms it takes
+about two seconds. A study that minimises first, the default, draws its
+velocities again from `simulation.random_seed` and was not affected.
+
+**A packing that runs away is packed again however it says so.** Where the
+relaxation ended on NaN positions without stopping, OpenMM met them placing
+the water and Python said "cannot convert float NaN to integer", which the
+retry let through: 2POR stopped on it once in four on an RTX 4090.
+
 ### The standalone dashboard is laid out as the GUI is
 
 **`report/dashboard.html` reads like the GUI**: the same sidebar (the study,

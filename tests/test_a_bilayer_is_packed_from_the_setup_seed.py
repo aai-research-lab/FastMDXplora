@@ -81,6 +81,35 @@ def test_a_packing_that_runs_away_is_tried_again_with_the_next_seed(caplog):
     assert packed == {"packing_seed": drawn[1], "packing_attempts": 2}
 
 
+def test_a_runaway_that_surfaces_as_python_s_nan_is_packed_again():
+    """Where the relaxation ends on NaN positions without stopping, OpenMM
+    meets them sorting atoms into cells and Python says "cannot convert
+    float NaN to integer". 2POR on an RTX 4090 stopped on it, once in four,
+    where the retry let it through as an ordinary ValueError."""
+    from fastmdxplora.setup.prepare import _pack_the_bilayer
+
+    random.seed(9)
+    nan_as_python = ValueError("cannot convert float NaN to integer")
+    modeller = _Modeller([nan_as_python, None])
+    packed = _pack_the_bilayer(modeller, None, "POPC")
+    assert packed["packing_attempts"] == 2
+    assert packed["packing_seed"] == modeller.seeds[1]
+
+
+def test_a_missing_template_is_not_packed_again():
+    """A ValueError that is not a runaway, a residue the force field cannot
+    describe, goes straight to the person: packing again would fail the same
+    way. "nanometer" in it is not a NaN."""
+    from fastmdxplora.setup.prepare import _pack_the_bilayer
+
+    template = ValueError("No template found for residue 7 (XYZ) within "
+                          "0.1 nanometer of the patch")
+    modeller = _Modeller([template, None])
+    with pytest.raises(ValueError, match="No template found"):
+        _pack_the_bilayer(modeller, None, "POPC")
+    assert len(modeller.seeds) == 1
+
+
 def test_every_packing_running_away_is_refused_with_the_seeds_tried():
     from fastmdxplora.refusals import StudyError
     from fastmdxplora.setup.prepare import PACKING_ATTEMPTS, _pack_the_bilayer
@@ -172,9 +201,10 @@ def test_a_refusal_goes_through_preparation_as_itself(tmp_path, monkeypatch):
 @pytest.mark.slow
 def test_one_seed_packs_the_same_bilayer_twice(tmp_path):
     """Setup for real, twice, on a tripeptide in OPM's frame with one
-    `setup.random_seed`: the same system, byte for byte, and the packing seed
-    in the record. Before the packing was seeded, three such preparations
-    gave three different files."""
+    `setup.random_seed`: the same system and state, byte for byte, and the
+    packing seed in the record. Before the packing was seeded, three such
+    preparations gave three different files; before the velocities were
+    drawn on the Reference platform, `state.xml` still differed."""
     pytest.importorskip("pdbfixer")
     from fastmdxplora import FastMDXplora
     from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
@@ -194,7 +224,8 @@ def test_one_seed_packs_the_same_bilayer_twice(tmp_path):
         assert results[0].status == "ok", results[0].message
         setup = tmp_path / name / "setup"
         record = json.loads((setup / "setup_parameters.json").read_text(encoding="utf-8"))
-        return hashlib.sha256((setup / "solvated.pdb").read_bytes()).hexdigest(), record
+        return hashlib.sha256((setup / "solvated.pdb").read_bytes()
+                              + (setup / "state.xml").read_bytes()).hexdigest(), record
 
     first, record = prepared("first")
     second, _ = prepared("second")
