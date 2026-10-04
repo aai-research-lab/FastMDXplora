@@ -12,7 +12,8 @@ All methods operate on the pairwise RMSD distance matrix (computed via
 MDTraj's QCP algorithm), which is the standard featurization for
 conformational clustering. Outputs per method:
 
-  - ``cluster_<method>.dat`` — per-frame integer cluster labels.
+  - ``cluster_<method>.dat``: per-frame integer cluster labels, by the
+    frame of the trajectory given.
   - ``cluster_<method>.png`` — cluster labels as a function of time.
   - ``cluster_<method>_counts.png`` — cluster population bar chart.
   - ``cluster_hierarchical_dendrogram.png`` — hierarchical dendrogram
@@ -21,6 +22,11 @@ conformational clustering. Outputs per method:
     reproducibility data for dashboard/report-native dendrogram rendering.
     The linkage is the hierarchy that labelled the frames: for Ward, built
     on the same points (recorded under ``findings.hierarchical``).
+
+Every frame is clustered by default, the equilibration from the starting
+structure included; ``start`` begins later, and the record says how many
+frames were clustered and whether the equilibration the RMSD detects is
+among them (:mod:`fastmdxplora.analysis.starting_frame`).
 
 Because this analysis produces multiple files per run, it overrides the
 base class's :meth:`save_data` and :meth:`_do_plot` methods.
@@ -48,6 +54,7 @@ from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
     category_style, close_figures_opened_since, figures_open, new_figure, save_figure)
+from fastmdxplora.analysis.starting_frame import first_frame, start_as_given
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
 
@@ -115,6 +122,15 @@ class Cluster(Analysis):
         an RMSD matrix a classical MDS embedding in up to ten dimensions
         stands in for them. The saved dendrogram and linkage are built on
         the same points as the labels.
+    start : float or "equilibrated", default 0
+        Where in the trajectory the clustering begins, in ns. At 0 every frame is
+        clustered, the equilibration from the starting structure included,
+        as before; a relaxation can then come out as a cluster of its own. A
+        time in ns begins at the first frame at or after it, and
+        ``"equilibrated"`` at the end of the equilibration Chodera's method
+        detects in the RMSD of the selected atoms from the first frame. How
+        many frames were clustered, from where, and whether the equilibration
+        is among them is recorded under ``findings.frames`` either way.
     selection : str, optional
         MDTraj atom selection for the RMSD calculation. Defaults to
         ``"protein and name CA"`` (CA-only is fast and capture the global fold well).
@@ -151,6 +167,7 @@ class Cluster(Analysis):
         linkage: str = "average",
         random_state: int = 42,
         n_init: int = 10,
+        start: float | str = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -188,6 +205,9 @@ class Cluster(Analysis):
             random_state=self.random_state,
             n_init=self.n_init,
         )
+        self.start: float | str | None = start_as_given(start)
+        if self.start is not None:
+            self.options["start"] = self.start
 
     def compute(self, traj: md.Trajectory) -> dict[str, np.ndarray]:
         """Run all requested clustering methods.
@@ -199,6 +219,11 @@ class Cluster(Analysis):
             DBSCAN's ``-1`` label indicates "noise" (unclustered frames).
         """
         atom_idx = self.select_atoms(traj)
+        first, record = first_frame(traj, atom_idx, self.start)
+        self.findings["frames"] = record
+        self._first_frame = first
+        if first:
+            traj = traj[first:]
         if self.features == "coordinates":
             embedding = _superposed_coordinates(traj, atom_idx)
             distances = _euclidean_matrix(embedding)
@@ -271,8 +296,11 @@ class Cluster(Analysis):
             for method, labels in self.result.items():
                 # Data file: frame, cluster
                 data_path = self.output_dir / f"cluster_{method}.dat"
+                # The frame in the trajectory given, so a clustering begun
+                # later than the first frame says which frames it labelled.
                 df = pd.DataFrame(
-                    {"frame": np.arange(len(labels)), "cluster": labels}
+                    {"frame": self._first_frame + np.arange(len(labels)),
+                     "cluster": labels}
                 )
                 df.to_csv(data_path, index=False)
                 artifacts.append(data_path)
@@ -283,7 +311,7 @@ class Cluster(Analysis):
                     title=f"{self.figure_title()} ({method})",
                     figsize=self._user_figsize,
                 )
-                _plot_cluster_timeline(ax, labels, method)
+                _plot_cluster_timeline(ax, labels, method, first=self._first_frame)
                 xlabel = self._user_xlabel or "Frame"
                 ylabel = self._user_ylabel or "Cluster"
                 ax.set_xlabel(xlabel)
@@ -381,6 +409,8 @@ class Cluster(Analysis):
                 started_at=started,
                 finished_at=finished,
             )
+
+    _first_frame: int = 0
 
     # Required by the ABC but not used (run() is overridden)
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:
@@ -527,9 +557,11 @@ def _classical_mds(distances: np.ndarray, n_components: int) -> np.ndarray:
     return eigvecs[:, idx] * np.sqrt(keep_vals)
 
 
-def _plot_cluster_timeline(ax: plt.Axes, labels: np.ndarray, method: str) -> None:
-    """Plot per-frame cluster labels as a scatter / step plot."""
-    frames = np.arange(len(labels))
+def _plot_cluster_timeline(ax: plt.Axes, labels: np.ndarray, method: str,
+                           first: int = 0) -> None:
+    """Plot per-frame cluster labels as a scatter / step plot, against the
+    frame of the trajectory given (``first`` onward)."""
+    frames = first + np.arange(len(labels))
     unique = sorted(set(labels))
     # The figures' own palette, so a greyscale copy is grey: Tableau's
     # colours were written in here and came out in colour in both. Noise

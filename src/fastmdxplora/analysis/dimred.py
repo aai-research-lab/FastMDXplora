@@ -17,6 +17,11 @@ RMSD.
     Non-linear, generally faster than t-SNE, also preserves global
     structure better. Requires the optional ``umap-learn`` package.
 
+Every frame is projected by default, the equilibration from the starting
+structure included; ``start`` begins later, and the record says how many
+frames were projected and whether the equilibration the RMSD detects is
+among them (:mod:`fastmdxplora.analysis.starting_frame`).
+
 Each method produces one 2-D scatter ``dimred_<method>.png`` colored
 by frame index (the "trajectory trace" visualization), plus a data file
 ``dimred_<method>.dat`` with the projected coordinates.
@@ -44,6 +49,7 @@ from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
     close_figures_opened_since, figures_open, new_figure, save_figure)
+from fastmdxplora.analysis.starting_frame import first_frame, start_as_given
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
 
@@ -71,6 +77,15 @@ class DimRed(Analysis):
         UMAP minimum distance between embedded points.
     random_state : int, default 42
         Random seed for stochastic methods (t-SNE, UMAP).
+    start : float or "equilibrated", default 0
+        Where in the trajectory the projection begins, in ns. At 0 every frame is
+        projected, the equilibration from the starting structure included,
+        as before; a relaxation can then take a principal component of its
+        own. A time in ns begins at the first frame at or after it, and
+        ``"equilibrated"`` at the end of the equilibration Chodera's method
+        detects in the RMSD of the selected atoms from the first frame. How
+        many frames were projected, from where, and whether the equilibration
+        is among them is recorded under ``findings.frames`` either way.
     selection : str, optional
         MDTraj atom selection used to flatten coordinates. Defaults to
         ``"protein and name CA"`` (CA-only is a standard featurization for protein
@@ -103,6 +118,7 @@ class DimRed(Analysis):
         n_neighbors: int = 15,
         min_dist: float = 0.1,
         random_state: int = 42,
+        start: float | str = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -127,6 +143,9 @@ class DimRed(Analysis):
             min_dist=self.min_dist,
             random_state=self.random_state,
         )
+        self.start: float | str | None = start_as_given(start)
+        if self.start is not None:
+            self.options["start"] = self.start
 
     def compute(self, traj: md.Trajectory) -> dict[str, np.ndarray]:
         """Run all requested DimRed methods.
@@ -137,6 +156,11 @@ class DimRed(Analysis):
             Maps method name → (n_frames, n_components) embedding array.
         """
         atom_idx = self.select_atoms(traj)
+        first, record = first_frame(traj, atom_idx, self.start)
+        self.findings["frames"] = record
+        self._first_frame = first
+        if first:
+            traj = traj[first:]
 
         # Superpose the trajectory onto frame 0 using the selected atoms,
         # then flatten each frame's coordinates into a feature vector.
@@ -250,7 +274,9 @@ class DimRed(Analysis):
             for method, embedding in self.result.items():
                 # Data file
                 data_path = self.output_dir / f"dimred_{method}.dat"
-                cols = {"frame": np.arange(len(embedding))}
+                # The frame in the trajectory given, so a projection begun
+                # later than the first frame says which frames it holds.
+                cols = {"frame": self._first_frame + np.arange(len(embedding))}
                 for i in range(embedding.shape[1]):
                     cols[f"component_{i + 1}"] = embedding[:, i]
                 pd.DataFrame(cols).to_csv(data_path, index=False)
@@ -317,6 +343,7 @@ class DimRed(Analysis):
 
     _explained_variance: np.ndarray | None = None
     _modes: dict[str, np.ndarray] | None = None
+    _first_frame: int = 0
 
 
 def _tsne_perplexity(asked: float, n_frames: int) -> float:

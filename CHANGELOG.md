@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Which frames a clustering read
+
+**`cluster` and `dimred` now record how many frames they read and whether the run's equilibration is among them, and `start` can begin them later.** Both read every frame, the relaxation from the starting structure included, and said nothing about it, though a relaxation can come out as a cluster or a principal component of its own. The default is unchanged, so results already analysed stay as they were; `findings.frames` in `options.json` now gives the frames read, the first, and the equilibration Chodera's method detects in the RMSD of the selected atoms from the first frame. `start` (in ns, 0 by default) begins at the first frame at or after a time, and `start: equilibrated` after that equilibration; a later time on a trajectory with no clock is refused. The `frame` column of their data files is the frame of the trajectory analysed, so it begins where they began. Results do not change unless `start` is set.
+
 ### t-SNE on a short trajectory
 
 **`dimred` with `methods: [tsne]` now runs on a trajectory of five frames or fewer.** The perplexity was min(perplexity, max(5, n/4)), whose floor of 5 is not below the number of frames when there are five or fewer, and t-SNE refused to run. It is now min(perplexity, max(1, (n - 1)/3)), which stays below the frame count, and the value used is recorded under `findings.tsne`. Results change: t-SNE embeddings of trajectories under 120 frames at the default perplexity of 30.

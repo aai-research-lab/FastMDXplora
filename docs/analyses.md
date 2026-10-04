@@ -80,6 +80,16 @@ computes, and what to compare it with.
 | `cluster` | k-means, hierarchical and DBSCAN over the trajectory |
 | `dimred` | PCA, MDS, t-SNE and UMAP projections |
 
+Both read every frame they are given by default, the run's relaxation from
+its starting structure included, and a relaxation can come out as a cluster
+or a principal component of its own. The default is kept so results already
+analysed stay as they were; `options.json` says how many frames were read
+and whether the equilibration detected in the RMSD of the selected atoms is
+among them (`findings.frames`). `start: equilibrated` begins after that
+equilibration, and `start: 5` at the first frame at or after 5 ns. The `frame`
+column of their data files is the frame of the trajectory analysed, so it
+begins where they began.
+
 ### Folding
 
 | | |
