@@ -94,31 +94,62 @@ _AROMATIC_RINGS = {
 }
 
 
-#: Charged side chains, by the atoms that carry the charge. Known rather than
-#: perceived: a protein is made of these twenty residues, and asking a
-#: perception routine which arginine is positive would be inviting it to be
-#: wrong about something already settled.
+#: Charged side chains, by the atoms that carry the charge, keyed by the
+#: residue family rather than by one residue name.
 #:
-#: Histidine is left out. It titrates near physiological pH, so whether it is
-#: charged depends on the pH and its environment -- which the setup phase
-#: decides when it protonates, and which is therefore visible in the topology
-#: as whether HD1 and HE2 are both present. Guessing here would contradict a
-#: decision already made with more information.
-_POSITIVE_GROUPS = {
-    "ARG": ("NH1", "NH2", "NE"),
-    "LYS": ("NZ",),
-    # The docstring above defers on HIS because whether it is charged depends
-    # on pH and environment, and the setup phase decides that when it
-    # protonates. HIP and HSP *are* that decision, written into the residue
-    # name: doubly protonated imidazole, +1. Leaving them out did not defer
-    # to the setup phase, it discarded what the setup phase concluded.
-    "HIP": ("ND1", "NE2"),
-    "HSP": ("ND1", "NE2"),
+#: The name does not say the charge. OpenMM and PDBFixer write every
+#: protonation variant under its parent's name: a histidine with both HD1
+#: and HE2 is still HIS, an aspartate carrying HD2 is still ASP, and a
+#: lysine with two hydrogens on NZ is still LYS. Keyed on the name, a
+#: doubly protonated histidine was never a cation, a neutral lysine was
+#: always one, and a protonated aspartate was an anion. Which hydrogens
+#: are present is the decision the setup phase made at the simulated pH,
+#: so that is what is read; see :func:`_charge_from_hydrogens`.
+_CHARGE_FAMILIES: dict[str, str] = {
+    **{name: "HIS" for name in ("HIS", "HIE", "HID", "HIP", "HSD", "HSE",
+                                "HSP", "HISD", "HISE", "HISH", "HSH")},
+    **{name: "ASP" for name in ("ASP", "ASH", "ASPH", "ASPP")},
+    **{name: "GLU" for name in ("GLU", "GLH", "GLUH", "GLUP")},
+    **{name: "LYS" for name in ("LYS", "LYN", "LSN", "LYSN")},
+    **{name: "ARG" for name in ("ARG", "ARN")},
 }
-_NEGATIVE_GROUPS = {
-    "ASP": ("OD1", "OD2"),
-    "GLU": ("OE1", "OE2"),
+
+#: The atoms each family's charge sits on, and its sign when charged.
+_CHARGED_ATOMS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "ARG": ("+", ("NH1", "NH2", "NE")),
+    "LYS": ("+", ("NZ",)),
+    "HIS": ("+", ("ND1", "NE2")),
+    "ASP": ("-", ("OD1", "OD2")),
+    "GLU": ("-", ("OE1", "OE2")),
 }
+
+#: For a residue that carries no hydrogens at all, the name is all there
+#: is, and the names that state a charge are these.
+_CHARGED_BY_NAME = frozenset({
+    "ARG", "LYS", "HIP", "HSP", "HISH", "HSH", "ASP", "GLU",
+})
+
+
+def _charge_from_hydrogens(family: str, hydrogens: set[str]) -> bool:
+    """Whether a residue of ``family`` is charged, from its hydrogen names.
+
+    Histidine is a cation only with both HD1 and HE2; aspartate an anion
+    only with neither HD1 nor HD2 on its carboxylate, glutamate only with
+    neither HE1 nor HE2; lysine a cation only with all of HZ1, HZ2 and HZ3;
+    arginine a cation unless one of HE, HH11, HH12, HH21, HH22 is missing,
+    which is how a neutral arginine (ARN) is written.
+    """
+    if family == "HIS":
+        return {"HD1", "HE2"} <= hydrogens
+    if family == "ASP":
+        return not hydrogens & {"HD1", "HD2"}
+    if family == "GLU":
+        return not hydrogens & {"HE1", "HE2"}
+    if family == "LYS":
+        return {"HZ1", "HZ2", "HZ3"} <= hydrogens
+    if family == "ARG":
+        return {"HE", "HH11", "HH12", "HH21", "HH22"} <= hydrogens
+    return False
 
 
 #: Elements that donate and accept hydrogen bonds. Carbon is excluded: C-H
@@ -369,6 +400,11 @@ def protein_charged_groups(
     centre, not to whichever atom happens to be nearest. Measuring to the
     nearest atom would make the same salt bridge look shorter from one side
     than the other.
+
+    Whether a residue is charged is read from the hydrogens it carries,
+    because the residue name does not say it (see ``_CHARGE_FAMILIES``).
+    Only a residue with no hydrogens at all falls back to its name: ARG,
+    LYS, HIP, HSP, ASP and GLU are charged, ASH, GLH, LYN and HID are not.
     """
     wanted = set(int(i) for i in atom_indices)
     positive: list[list[int]] = []
@@ -378,16 +414,24 @@ def protein_charged_groups(
         names = {a.name: a.index for a in residue.atoms if a.index in wanted}
         if not names:
             continue
-        for table, out in ((_POSITIVE_GROUPS, positive),
-                           (_NEGATIVE_GROUPS, negative)):
-            wanted_names = table.get(residue.name)
-            if not wanted_names:
-                continue
-            group = [names[n] for n in wanted_names if n in names]
-            # A side chain missing half its charged atoms is a truncated
-            # residue, and its centre would be somewhere the charge is not.
-            if len(group) == len(wanted_names):
-                out.append(group)
+        family = _CHARGE_FAMILIES.get(residue.name.upper())
+        if family is None:
+            continue
+        # The whole residue's hydrogens, not only those selected: the charge
+        # is a property of the residue, and a heavy-atom selection should
+        # not turn every histidine into one carrying no protons.
+        hydrogens = {a.name.upper() for a in residue.atoms
+                     if a.element is not None and a.element.symbol == "H"}
+        charged = (_charge_from_hydrogens(family, hydrogens) if hydrogens
+                   else residue.name.upper() in _CHARGED_BY_NAME)
+        if not charged:
+            continue
+        sign, wanted_names = _CHARGED_ATOMS[family]
+        group = [names[n] for n in wanted_names if n in names]
+        # A side chain missing half its charged atoms is a truncated
+        # residue, and its centre would be somewhere the charge is not.
+        if len(group) == len(wanted_names):
+            (positive if sign == "+" else negative).append(group)
     return positive, negative
 
 
@@ -1080,7 +1124,7 @@ def residues_not_covered(topology: Any, atom_indices: Any) -> dict[str, int]:
     a large protein is a footnote, and a selection made entirely of nucleotides
     is not.
     """
-    known = set(_POSITIVE_GROUPS) | set(_NEGATIVE_GROUPS) | set(_AROMATIC_RINGS)
+    known = set(_CHARGE_FAMILIES) | set(_AROMATIC_RINGS)
     #: Residues with neither a charge nor a ring, which the tables leave out
     #: because they have nothing to contribute rather than because they are
     #: unknown.

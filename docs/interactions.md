@@ -55,6 +55,15 @@ first of these that works:
 3. the Chemical Component Dictionary, by residue name
 4. inference from the coordinates with RDKit
 
+The protein's charges are read the same way, from what the topology says
+rather than from a residue name. OpenMM and PDBFixer name every protonation
+variant by its parent, so a histidine with both HD1 and HE2 is written HIS and
+a neutral lysine LYS. A histidine is a cation only with both HD1 and HE2, an
+aspartate or glutamate an anion only without a hydrogen on its carboxylate,
+a lysine a cation only with HZ1, HZ2 and HZ3, and an arginine a cation unless
+a guanidinium hydrogen is missing. A residue carrying no hydrogens at all
+falls back to its name.
+
 Which route succeeded is recorded in `options.json` and stated in the report,
 because an interaction computed from inferred bond orders is a weaker claim
 than one computed from chemistry that was resolved. A wrong bond order moves a

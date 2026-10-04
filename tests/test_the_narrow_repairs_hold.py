@@ -106,20 +106,35 @@ class TestEveryHistidineKeepsItsChemistry:
 
         assert resname in _AROMATIC_RINGS
 
+    @staticmethod
+    def _bare_imidazole(resname: str):
+        """The ring's heavy atoms only: no hydrogens, so the name is all
+        there is to go on."""
+        top = md.Topology()
+        residue = top.add_residue(resname, top.add_chain())
+        for name in ("CG", "ND1", "CD2", "CE1", "NE2"):
+            element = md.element.nitrogen if name.startswith("N") else md.element.carbon
+            top.add_atom(name, element, residue)
+        return top
+
     @pytest.mark.parametrize("resname", ["HIP", "HSP"])
     def test_the_doubly_protonated_ones_are_positive(self, resname) -> None:
-        """The residue name *is* the setup phase's protonation decision, so
-        leaving them out did not defer to it -- it discarded it."""
-        from fastmdxplora.analysis.interactions import _POSITIVE_GROUPS
+        """The residue name *is* the setup phase's protonation decision
+        where there are no hydrogens to read it from."""
+        from fastmdxplora.analysis.interactions import protein_charged_groups
 
-        assert resname in _POSITIVE_GROUPS
+        top = self._bare_imidazole(resname)
+        positive, _negative = protein_charged_groups(top, range(top.n_atoms))
+        assert len(positive) == 1
 
     @pytest.mark.parametrize("resname", ["HIS", "HIE", "HID", "HSD", "HSE"])
     def test_the_singly_protonated_ones_are_not(self, resname) -> None:
         """Still deferred to the setup phase, as the table's docstring says."""
-        from fastmdxplora.analysis.interactions import _POSITIVE_GROUPS
+        from fastmdxplora.analysis.interactions import protein_charged_groups
 
-        assert resname not in _POSITIVE_GROUPS
+        top = self._bare_imidazole(resname)
+        positive, _negative = protein_charged_groups(top, range(top.n_atoms))
+        assert positive == []
 
     @pytest.mark.parametrize("resname", ["HIE", "HID", "HIP"])
     def test_a_ring_is_found_on_a_real_topology(self, resname: str) -> None:

@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Protein charges from the protonation, not the residue name
+
+**A side chain's charge in `pl_interactions` and the chain-contacts view now follows the hydrogens the setup phase placed.** OpenMM and PDBFixer write every protonation variant under its parent's name, and the charge was read from the name: a histidine with HD1 and HE2 (written HIS) formed no salt bridge, a lysine with two hydrogens on NZ (written LYS) formed one at 0.43 nm from an acetate, and an aspartate carrying HD2 was an anion. A histidine is now a cation only with both HD1 and HE2, an aspartate or glutamate an anion only with no hydrogen on its carboxylate, a lysine a cation only with HZ1 to HZ3, and an arginine a cation unless a guanidinium hydrogen is missing; a residue with no hydrogens falls back to its name. Results change: salt bridges and cation-pi contacts on systems prepared by OpenMM gain every doubly protonated histidine and lose neutral lysines and protonated acids.
+
 ### Relative and polar surface
 
 **Per-residue SASA now gives each residue's surface as a fraction of its theoretical maximum, and a total run splits the surface into hydrophobic and polar.** An area alone does not say how exposed a residue is (0.5 nm² is about a sixth of a tryptophan's maximum and nearly all of a glycine's), and the total alone does not say whether a change is in exposed hydrophobic or polar surface. Both per-residue summaries gain `mean_relative_sasa`, the mean area over the theoretical maximum of Tien et al. 2013 (PLoS ONE 8, e80635), with the table of maxima in the code; a `total` run writes `sasa_polar_split.csv`, carbon and sulfur atoms' area as hydrophobic and nitrogen and oxygen atoms' as polar, each hydrogen with the atom it is bonded to, and records the mean of each after equilibration. Existing columns are unchanged.
