@@ -1182,6 +1182,18 @@ def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_pat
             page.reload()
             assert page.locator("#research-agent-toggle").is_hidden()
             assert page.evaluate("FastMDXResearch.enabled()") is False
+            page.goto(url + "/#agent")
+            disabled_requests = []
+            page.on("request", lambda req: disabled_requests.append(req.url)
+                    if "/api/agent/propose" in req.url else None)
+            page.locator("#agent-request").fill("Explain the disabled Agent study")
+            page.locator("#agent-propose").click()
+            assert "before sending a request" in page.locator("#research-status").inner_text()
+            assert page.locator("#agent-thread").get_by_text(
+                "Enable the Agent sidebar in Settings before sending a request.", exact=True
+            ).is_visible()
+            assert page.locator("#agent-request").input_value() == "Explain the disabled Agent study"
+            assert not disabled_requests
             browser.close()
     finally:
         server.shutdown()

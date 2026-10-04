@@ -590,6 +590,12 @@
   }
 
   function draft() {
+    if (window.FastMDXResearch && !window.FastMDXResearch.enabled()) {
+      var disabledMessage = "Enable the Agent sidebar in Settings before sending a request.";
+      el("research-status").textContent = disabledMessage;
+      note(reply().part("attempts"), disabledMessage);
+      return;
+    }
     var area = el("agent-request");
     var typed = area.value.trim();
     if (!typed || writing) return;
