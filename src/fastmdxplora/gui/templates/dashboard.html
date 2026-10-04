@@ -906,6 +906,18 @@
                     </div>
                   </div>
               </details>
+              <!-- What holds the chains together: hydrogen bonds and salt
+                   bridges between the protein's chains in the frames played
+                   (chain-contacts.js, chain_contacts.py). -->
+              <details class="side-section" id="side-chains" open hidden>
+                <summary>Between chains</summary>
+                <div class="control-row">
+                  <label class="chip-toggle" title="The contacts present in the frame shown, as dashed lines: blue a hydrogen bond, orange a salt bridge"><input type="checkbox" id="chain-contacts-shown" checked>In the structure</label>
+                  <span class="muted small" id="chain-contacts-now" role="status"></span>
+                </div>
+                <ul class="chain-contacts" id="chain-contacts-list" aria-label="Contacts between chains"></ul>
+                <p class="muted small" id="chain-contacts-note"></p>
+              </details>
               <details class="side-section" open>
                 <summary>Saved views</summary>
                 <div class="control-row">
@@ -1435,5 +1447,6 @@
   <script src="/static/frame-interactions.js"></script>
   <script src="/static/viewer-views.js"></script>
   <script src="/static/viewer-movie.js"></script>
+  <script src="/static/chain-contacts.js"></script>
 </body>
 </html>

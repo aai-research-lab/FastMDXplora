@@ -45,6 +45,7 @@ def test_no_explanation_says_it():
                                   "gui/static/frame-interactions.js",
                                   "gui/static/viewer-views.js", "gui/static/viewer-sequence.js",
                                   "gui/static/viewer-selections.js", "gui/static/viewer-movie.js",
+                                  "gui/static/chain-contacts.js",
                                   "gui/static/scene-view.js", "gui/templates/scene.html"])
 def test_no_page_shows_it(page):
     # What is shown is written as a string; names in the code (a function

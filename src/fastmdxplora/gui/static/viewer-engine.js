@@ -368,6 +368,7 @@
 
     async clear() {
       this.interactions = new Map();
+      this.interactionGroups = {ligand: this.interactions};
       this.boxDataRef = null;
       this.boxRef = null;
       this.coordinatesRef = null;
@@ -1384,29 +1385,40 @@
      * between their atoms ({a, b, colour}), kept apart from the person's
      * measurements: those already shown stay, those gone are removed, and
      * they follow the atoms as the frames play. */
-    async showInteractions(pairs) {
+    async showInteractions(pairs, group) {
+      // The ligand's (frame-interactions.js) and the chains' (chain-contacts.js)
+      // are kept apart, so showing one set leaves the other.
       if (!this.interactions) this.interactions = new Map();
+      if (!this.interactionGroups) this.interactionGroups = {ligand: this.interactions};
+      const shown = this.interactionGroups[group || "ligand"]
+        || (this.interactionGroups[group] = new Map());
       const cells = this.plugin.state.data.cells;
       const wanted = new Map((pairs || []).map((pair) => [`${pair.a}:${pair.b}:${pair.colour}`,
         pair]));
       const update = this.plugin.build();
       let gone = false;
-      for (const [key, ref] of this.interactions) {
+      for (const [key, ref] of shown) {
         if (wanted.has(key) && cells.has(ref)) continue;
         if (cells.has(ref)) { update.delete(ref); gone = true; }
-        this.interactions.delete(key);
+        shown.delete(key);
       }
       if (gone) await update.commit();
       const measurement = this.plugin.managers.structure.measurement;
       for (const [key, pair] of wanted) {
-        if (this.interactions.has(key)) continue;
+        if (shown.has(key)) continue;
         const made = await measurement.addDistance(this.lociOf([pair.a]), this.lociOf([pair.b]), {
           lineParams: {linesColor: pair.colour, linesSize: 0.2, dashLength: 0.25},
           visualParams: {visuals: ["lines"]},
           selectionTags: [INTERACTION], reprTags: [INTERACTION]});
-        if (made && made.selection) this.interactions.set(key, made.selection.ref);
+        if (made && made.selection) shown.set(key, made.selection.ref);
       }
-      return this.interactions.size;
+      return shown.size;
+    }
+
+    /** How many lines of a group of interactions are held. */
+    interactionsHeld(group) {
+      const shown = this.interactionGroups && this.interactionGroups[group || "ligand"];
+      return shown ? shown.size : (group && group !== "ligand" ? 0 : (this.interactions || new Map()).size);
     }
 
     /** How many of the study's interactions are shown. */

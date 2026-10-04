@@ -90,13 +90,14 @@ FastMDXplora/
 │       │   ├── viewer_selections.py  # Selections typed in MDTraj's language, and named ones
 │       │   ├── saved_views.py     # Views of the Viewer saved with the study
 │       │   ├── interactions_over_frames.py  # What holds the ligand, frame by frame
+│       │   ├── chain_contacts.py  # What holds the chains together, frame by frame
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css/js,
 │       │   │                      #   molecule-viewer.js, charts.js, and the viewer:
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
 │       │   │                      #   viewer-sequence.js, viewer-selections.js,
 │       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
-│       │   │                      #   frame-interactions.js
+│       │   │                      #   frame-interactions.js, chain-contacts.js
 │       │   └── templates/         # dashboard.html
 │       ├── remote/
 │       │   ├── probe.py           # The read-only inspection script, and reading its answer

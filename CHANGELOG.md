@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### What holds the chains together
+
+**The Viewer shows the hydrogen bonds and salt bridges between a protein's
+chains**, in a Between chains section of its panel: a dimer's interface, an
+antibody and its antigen, the strands of a fibril. They are found in the
+frames played by the criteria the interactions analysis applies to a ligand,
+so a contact is the same contact whichever partner it holds: donor and
+acceptor in different chains within 3.5 Å, the angle at the hydrogen above
+120°; the centres of charged groups (Arg, Lys, a histidine setup protonated
+twice; Asp, Glu) within 4.5 Å. Each is listed with the share of frames it was
+present in, those of the frame shown marked, and shown in the structure as
+dashed lines, blue for a hydrogen bond and orange for a salt bridge, kept
+apart from the ligand's. Frames without hydrogens are said to have no
+hydrogen bonds found, rather than none present (`/api/chain-contacts`).
+
 ### Frames fitted to the starting or the deposited structure
 
 **Superposed frames are fitted to the first frame, to the structure the run

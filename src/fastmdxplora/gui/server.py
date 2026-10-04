@@ -147,6 +147,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
+    "/api/chain-contacts",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
@@ -856,6 +857,11 @@ def make_handler(
                 # One file of a scene written with the study, so a viewer
                 # given the scene's address finds the files it names.
                 self._send_scene_member(root, path.removeprefix("/scenes/"))
+                return
+            if path == "/api/chain-contacts":
+                from fastmdxplora.gui.chain_contacts import chain_contacts
+
+                self._send_json(chain_contacts(root))
                 return
             if path == "/api/interactions-over-frames":
                 from fastmdxplora.gui.interactions_over_frames import interactions_over_frames

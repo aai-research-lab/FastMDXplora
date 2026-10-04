@@ -270,7 +270,7 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/frames-info", "/api/frames-superposed",
             # What holds the ligand, frame by frame, as the interactions
             # analysis recorded it.
-            "/api/interactions-over-frames",
+            "/api/interactions-over-frames", "/api/chain-contacts",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",
