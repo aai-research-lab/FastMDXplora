@@ -31,6 +31,16 @@ with the study's name, which is still shown where there is no structure.
 Read from the PDB's own lines on the server, kept in memory and never
 written into the study.
 
+### Every page's heading on one small line
+
+**A page's heading is one line, as a chat's title is**: the page's name at
+body size, what the page is beside it in smaller muted type, cut short with
+an ellipsis rather than wrapped, and the page's actions at the right in
+compact controls, at one height on every page (39 px under the shell's
+padding; the title had been 20 px bold, and the subtitle and actions
+wrapped onto a second line where space was short). On a phone the name
+alone, with the actions beside it where they fit.
+
 ### A pocket's volume over the frames
 
 **The Viewer's Pocket volume section** plots, for a study with a ligand, how
