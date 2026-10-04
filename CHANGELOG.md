@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `coordination_number` in seconds
+
+**`coordination_number` now finds the shell candidates with one neighbour search over the trajectory and counts each atom's neighbours among them, with the same counts as before.** It searched once per atom of `selection_a` per frame and sliced the trajectory each time, so 188 protein oxygens against the water took 80 s for two frames of a solvated 1BHL, about 11 hours per thousand frames; it now takes 0.5 s for those two frames and 3.3 s for all forty. The counts are identical to the per-atom search on that trajectory and in a test on cubic and triclinic boxes with overlapping selections. Results do not change.
+
 ### `pl_contacts` is a heavy-atom contact
 
 **`pl_contacts` now counts a residue as touching the ligand when one of its heavy atoms is within the cutoff of a ligand heavy atom, as its documentation and its 0.4 nm threshold say.** It used every atom, hydrogens included, so a leucine whose nearest carbon was 0.48 nm from the ligand was in contact because two hydrogens pointing at each other were 0.22 nm apart. A test now also holds the residue names `protein` now covers: seven residues around a ligand, five named as AMBER writes them (HIE, HID, HSP, CYX, ASH), give seven contacts. Results change: per-frame contact counts and per-residue contact frequencies fall where hydrogens alone brought a residue within the cutoff.

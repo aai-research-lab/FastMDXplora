@@ -50,6 +50,42 @@ SHELL_BIN_WIDTH = 0.005
 #: this caps only the curve the cutoff is read from.
 MAX_PAIRS_FOR_SHELL = 200_000
 
+#: Distances computed at once when counting, so a large ``selection_a``
+#: against a large shell is taken in pieces rather than in one array.
+PAIRS_PER_PASS = 2_000_000
+
+
+def _shell_counts(traj: md.Trajectory, cutoff: float, a: np.ndarray,
+                  b: np.ndarray) -> np.ndarray:
+    """Atoms of ``b`` within ``cutoff`` of each atom of ``a``, summed over
+    ``a``, per frame, under the minimum image.
+
+    One neighbour search over the whole trajectory finds the atoms of ``b``
+    within the cutoff of any atom of ``a`` in any frame; the count per atom
+    of ``a`` is then taken over those alone, with MDTraj's minimum-image
+    distances, which hold for triclinic cells and use each frame's own box.
+    The search per atom of ``a`` per frame that this replaces gave the same
+    counts and took 80 s for 188 atoms over two frames of a solvated
+    protein. An atom in both selections is not its own neighbour.
+    """
+    near = md.compute_neighbors(traj, cutoff, a, haystack_indices=b)
+    candidates = (np.unique(np.concatenate([np.asarray(n, dtype=int) for n in near]))
+                  if near else np.zeros(0, dtype=int))
+    counts = np.zeros(traj.n_frames, dtype=np.float64)
+    if candidates.size == 0:
+        return counts
+    step = max(1, PAIRS_PER_PASS // (candidates.size * max(1, traj.n_frames)))
+    for start in range(0, len(a), step):
+        chunk = np.asarray(a[start:start + step], dtype=int)
+        pairs = np.column_stack([np.repeat(chunk, candidates.size),
+                                 np.tile(candidates, chunk.size)])
+        pairs = pairs[pairs[:, 0] != pairs[:, 1]]
+        if len(pairs) == 0:
+            continue
+        distances = md.compute_distances(traj, pairs)
+        counts += np.count_nonzero(distances < cutoff, axis=1)
+    return counts
+
 
 def _scatter_at(radius: float, radii: np.ndarray, g: np.ndarray) -> float:
     """The noise g(r) carries at ``radius``, scaled from the bulk.
@@ -321,23 +357,11 @@ class CoordinationNumber(Analysis):
                 code="analysis.option.out_of_range",
             )
 
-        counts = np.zeros(traj.n_frames, dtype=np.float64)
-        # `compute_neighbors` takes one frame's worth of query atoms at a
-        # time and applies the box of that frame, which is what a constant-
-        # pressure run needs -- the cell moves, and a shell measured against
-        # frame zero's box would drift with it.
-        b_set = set(int(i) for i in b)
-        for frame in range(traj.n_frames):
-            total = 0
-            for atom in a:
-                neighbours = md.compute_neighbors(
-                    traj[frame], cutoff, np.array([int(atom)]),
-                    haystack_indices=b)[0]
-                # An atom in both selections is its own neighbour at zero
-                # separation; it is not coordinating itself.
-                total += int(sum(1 for n in neighbours
-                                 if int(n) != int(atom) and int(n) in b_set))
-            counts[frame] = total
+        # Each frame against its own box, which is what a constant-pressure
+        # run needs: the cell moves, and a shell counted against frame
+        # zero's box would drift with it.
+        counts = _shell_counts(traj, cutoff, np.asarray(a, dtype=int),
+                               np.asarray(b, dtype=int))
 
         if self.per_atom:
             counts = counts / float(len(a))

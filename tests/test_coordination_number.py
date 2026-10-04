@@ -310,3 +310,38 @@ class TestItJoinsTheRegisters:
     def test_it_declares_itself_a_time_series(self):
         """One value per frame, so the mean gets its equilibration check."""
         assert CoordinationNumber.time_series is True
+
+
+def _per_atom_loop(traj, cutoff, a, b):
+    """The count as it was taken before: one neighbour search per atom of
+    ``a`` per frame."""
+    counts = np.zeros(traj.n_frames)
+    for frame in range(traj.n_frames):
+        for atom in a:
+            near = md.compute_neighbors(traj[frame], cutoff, np.array([int(atom)]),
+                                        haystack_indices=b)[0]
+            counts[frame] += sum(1 for n in near if int(n) != int(atom))
+    return counts
+
+
+@pytest.mark.parametrize("angles", [(90.0, 90.0, 90.0), (70.0, 80.0, 100.0)])
+def test_the_counts_are_those_of_a_search_per_atom(angles, monkeypatch) -> None:
+    """B-D14: one neighbour search per frame for the whole selection, then
+    distances to the atoms it found, gives the counts the per-atom search
+    gave, on a cubic and a triclinic box, with the selections overlapping
+    so an atom must not count itself."""
+    import fastmdxplora.analysis.coordination_number as module
+
+    traj = _gas(n_a=12, n_b=150, box=2.0, frames=4, seed=9)
+    traj.unitcell_angles = np.tile(angles, (traj.n_frames, 1))
+    a = traj.topology.select("all")[:20]           # 12 solute atoms, 8 waters
+    b = traj.topology.select("resname HOH")
+    calls = []
+    real = md.compute_neighbors
+    monkeypatch.setattr(module.md, "compute_neighbors",
+                        lambda *args, **kw: calls.append(1) or real(*args, **kw))
+    got = module._shell_counts(traj, 0.45, a, b)
+    assert len(calls) == 1
+    monkeypatch.setattr(module.md, "compute_neighbors", real)
+    assert got.tolist() == _per_atom_loop(traj, 0.45, a, b).tolist()
+    assert got.sum() > 0
