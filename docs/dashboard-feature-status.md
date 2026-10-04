@@ -1,6 +1,16 @@
 # Dashboard feature changes and milestone status
 
-> Agent update checks: 210 functional checks passed; 59 unrelated visual checks excluded because aesthetics are deferred. Combined scientific/research regressions and the rebuilt installed package are being checked for this update.
+### Agent actions and requested settings - 2026-10-04
+
+Behavior revision `45a5a00` restores the existing Agent modes and run/stop/fix/window actions while retaining independent human-instruction checks, action confirmations, budgets and scientific validation. Requested validated configurations load directly into the builder; there is no extra draft-approval checkbox. Reloading historical conversations does not overwrite current builder settings.
+
+- Focused functional suite: **210 passed**, with 59 visual checks excluded because aesthetics are deferred.
+- Combined scientific/research suite: **156 passed, 1 skipped**, with one graph-loading browser timeout. Both non-residue profile cases passed on focused rerun; the complete graph-module rerun passed **39/39**. No scientific engine or analysis implementation was changed by this update.
+- Exact installed wheel: `fastmdxplora-2.5.9.dev233+g45a5a00b5-py3-none-any.whl`, SHA-256 `97d9c61c7355cddd9a1dd9873a9a5e7d3ef83f457321177998323609ffe2fc70`. Installed outside the checkout in the reused release environment. This is not a clean-machine installation claim.
+- Installed browser workflow applied pH 6.5 without an extra approval dialog and retained 6.5 in the explicit `run it` request. Run execution was intercepted, not simulated. Bookmarks/audit endpoints and packaged resources passed; hashes for 309 scientific files remained unchanged and there were no page errors.
+- Source Ruff F/B, JavaScript syntax checks and installed `pip check` passed. Existing OpenAI subscription evidence is reused. Claude and Gemini live operation is user-reported; Kimi remains externally unverified.
+
+The earlier receipts below retain their historical revision and scope.
 
 > Updated user direction (2026-10-04): preserve the documented Agent actions and modes. Requested validated scientific settings load directly into the builder, without a second draft-approval dialog. Changing settings does not start a simulation; run/stop/fix actions keep the documented instruction, confirmation and budget rules. Earlier draft-only and mandatory-review restrictions below are historical and superseded. Aesthetics remain deferred. The user reports successful Claude and Gemini live testing; Kimi live access remains unverified.
 

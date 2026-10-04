@@ -4,17 +4,21 @@
 
 Updated 2026-10-03 by explicit user direction. **Remaining M8 aesthetics: deferred by user.** Keep existing improvements. Do not perform theme polish, spacing, typography, branding, screenshot inspection, viewport/zoom matrices or broad visual/accessibility review. A UI change is permitted only for a reproduced defect that prevents a required functional workflow. Deferred aesthetics do not block functional handoff. The original M0–M8 contracts remain as historical requirements; this instruction supersedes their outstanding aesthetics gates.
 
-Work in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Preserve its v2.5.8-based history. Do not integrate upstream main or create/merge a PR. Preserve the user's dashboard and credentials.
+Work in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Preserve its v2.5.8-based history. Do not integrate upstream main or merge a PR. The user has authorized submitting the feature PR with a concise changes-only description. Preserve the user's dashboard and credentials.
+
+## Current Agent update
+
+Behavior revision `45a5a00` restores the documented actions and modes and removes the additional mandatory draft-approval step. The focused functional suite passed 210 checks. The rebuilt wheel installed outside the checkout and passed requested settings, exact run-payload retention, bookmarks/audit endpoints, packaged resources, and unchanged hashes for 309 scientific study files. The broader suite passed 156 checks with one OpenFF dependency skip and one graph-loading timeout; both affected graph cases passed on focused rerun. The complete graph module then passed 39/39.
 
 ## Functional order and acceptance
 
-1. **Agent:** reconcile correct study/view evidence, opt-out, residue comparison, stale-response rejection, disabled-Agent behavior and exact human draft review/invalidation. Reuse valid OpenAI subscription/model/reasoning evidence. The Agent explains and proposes human-reviewed drafts only; it never applies scientific settings or runs simulations autonomously.
+1. **Agent:** retain correct study/view evidence, opt-out, residue comparison, stale-response rejection and disabled-Agent behavior. Requested validated settings apply directly to the builder; preserve documented Agent actions, modes, scientific validation, explicit run instructions and action confirmations. Reuse valid OpenAI subscription/model/reasoning evidence.
 2. **Bookmarks:** capture, actual restart persistence, JSON and screenshot-bundle export/import, collision handling, restoration and stale/missing-source refusal. Retain useful notes/screenshots on refusal. Remove temporary QA records.
 3. **Clips:** GIF/MP4 preview, export/download/decode, dimensions, source frame/time and hashes, cancellation/failure recovery and exact viewer-state restoration.
 4. **Preparation/scientific preservation:** exact identity, ambiguity refusal, display-only overlay and audit-bookmark restoration. Reconcile existing preservation evidence and known baseline/backend limits. Do not change physics, chemistry, algorithms, defaults, seeds, atom ordering, units, definitions or tolerances. Do not run production MD.
 5. **Final verification/handoff:** freeze final code, required combined functional/scientific suite and lint; build/install exact wheel outside checkout; verify packaged resources and integrated workflows. Update README/changelog/status accurately, commit/push only to princeote branch, and verify remote revision. Documentation-only updates do not require rebuilding unchanged code. Retain mandatory final verification and reuse checks unaffected by subsequent changes.
 
-## Current evidence to reuse
+## Historical evidence to reuse
 
 - Behavior revision `a06a214`; later commits are documentation only. Combined ten-module suite: **243 passed, 1 skipped, 5 warnings in 799.87 seconds**. OpenFF toolkit unavailable; warnings are Pillow assertions. JUnit: temporary `FastMDXplora-relocated-evidence-final/combined-suite.xml`.
 - Exact wheel `fastmdxplora-2.5.9.dev228+ga06a214d2-py3-none-any.whl`, SHA-256 `46b7e468b8aed20824352a74185050257cb692d05e428ad7f0045f3868246a51`, installed outside checkout in temporary `FastMDXplora-relocated-evidence-final/env`, reusing repository dependencies. Not a clean-machine installation claim.
