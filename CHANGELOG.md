@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Insertion codes from any structure file
+
+**Insertion codes are now read from whichever file gave the topology, PDB or mmCIF.** They were read only from an external `.pdb` topology, so a PDB loaded as the trajectory itself, or a trajectory given an mmCIF topology, lost them: trypsin's GLY 184A and TYR 184 came out as two residues numbered 184 in one chain, and the per-residue tables held a duplicated row. The loader now reads the codes from the trajectory file where it carries the topology, and mmCIF files are read for `_atom_site.pdbx_PDB_ins_code`, keyed by atom id and author residue name and number as MDTraj names the atoms. Results change: per-residue tables of such loads gain their `insertion` column and lose the duplicated rows.
+
 ### Stride across several trajectory files
 
 **Frames loaded with a stride from several files now carry the times they were written.** MDTraj strides each file on its own from its first frame, and the loader timed the frames as one stream: two files of five frames at stride 2, saved every 10 ps, are frames 0, 2, 4, 5, 7, 9 of the run, written at 10, 30, 50, 60, 80 and 100 ps, and read 10 to 110 ps. The loader now reads each file's length and builds every frame's index in the run (`loading.written_frames`), and the clock is set from those. Files whose lengths are multiples of the stride, and single files, read as before. Results change: time axes, and durations taken from them, of multi-file loads with a stride where a file's length is not a multiple of it.

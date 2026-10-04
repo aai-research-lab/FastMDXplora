@@ -18,9 +18,10 @@ was right changes. With several chains:
 The same holds for insertion codes. Trypsin is numbered 184A, 184, 188A,
 188, 221A, 221, and MDTraj keeps the number and drops the code, so two
 residues answered to 184 in a single chain and per-residue SASA failed on
-every trypsin run. The loader reads the codes from the topology file; a
-structure that has any gains an ``insertion`` column, and single labels
-read ``184A``.
+every trypsin run. The loader reads the codes from the file the topology
+came from, PDB or mmCIF, whether given as the topology or loaded as the
+trajectory itself; a structure that has any gains an ``insertion`` column,
+and single labels read ``184A``.
 
 One definition, so the modules cannot drift apart again: six of them had
 each written their own, and one had got it right.
@@ -60,11 +61,21 @@ _INSERTION_CODES: dict[tuple[int, str, int], str] = {}
 
 
 def remember_insertion_codes(topology_path: Any) -> int:
-    """Read a PDB topology's insertion codes; returns how many residues had one."""
+    """Read a PDB or mmCIF topology's insertion codes; returns how many
+    residues had one.
+
+    Called for whichever file gave the topology: an external topology, or a
+    PDB or mmCIF loaded as the trajectory itself. Reading only an external
+    ``.pdb`` lost the codes of both, and trypsin's 184A and 184 came out as
+    two residues numbered 184.
+    """
     from pathlib import Path
 
     path = Path(str(topology_path))
-    if path.suffix.lower() not in (".pdb", ".ent"):
+    suffix = path.suffix.lower()
+    if suffix in (".cif", ".pdbx", ".mmcif"):
+        return _remember_mmcif_insertion_codes(path)
+    if suffix not in (".pdb", ".ent"):
         return 0
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -81,6 +92,89 @@ def remember_insertion_codes(topology_path: Any) -> int:
         except ValueError:
             continue
         _INSERTION_CODES[key] = line[26]
+        if residue not in seen:
+            seen.add(residue)
+            found += 1
+    return found
+
+
+def _mmcif_atom_sites(lines: list[str]) -> tuple[list[str], list[list[str]]]:
+    """The ``_atom_site`` loop of an mmCIF file: its column names and rows.
+
+    Tokenised as the format quotes: a value with a space in it is wrapped in
+    single or double quotes, and a quote only closes where whitespace or the
+    end of the line follows it, so ``"O5'"`` is one value.
+    """
+    import re
+
+    token = re.compile(r"""'(?:[^']|'(?=\S))*'(?=\s|$)|"(?:[^"]|"(?=\S))*"(?=\s|$)|\S+""")
+    columns: list[str] = []
+    rows: list[list[str]] = []
+    pending: list[str] = []
+    in_loop = reading = False
+    for raw in lines:
+        line = raw.strip()
+        if line == "loop_":
+            if reading:
+                break
+            in_loop, columns = True, []
+            continue
+        if in_loop and line.startswith("_atom_site."):
+            columns.append(line.split()[0][len("_atom_site."):])
+            continue
+        if in_loop and columns and not reading:
+            reading = True
+        if not reading:
+            in_loop = in_loop and (not line or line.startswith("_"))
+            continue
+        if not line or line.startswith("#") or line.startswith(("_", "loop_", "data_")):
+            break
+        pending.extend(value[1:-1] if value[:1] in "'\"" and len(value) > 1 else value
+                       for value in token.findall(line))
+        while len(pending) >= len(columns):
+            rows.append(pending[:len(columns)])
+            pending = pending[len(columns):]
+    return columns, rows
+
+
+def _remember_mmcif_insertion_codes(path: Any) -> int:
+    """Insertion codes from ``_atom_site.pdbx_PDB_ins_code``, keyed as the
+    atoms MDTraj reads from the file are: the atom's ``id``, the residue name
+    and number by author (``auth_comp_id``, ``auth_seq_id``), first model."""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return 0
+    columns, rows = _mmcif_atom_sites(lines)
+    where = {name: i for i, name in enumerate(columns)}
+    if "pdbx_PDB_ins_code" not in where or "id" not in where:
+        return 0
+
+    def given(row: list[str], *names: str) -> str:
+        for name in names:
+            if name in where and row[where[name]] not in ("?", "."):
+                return row[where[name]]
+        return ""
+
+    model = None
+    found = 0
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        here = given(row, "pdbx_PDB_model_num") or "1"
+        model = here if model is None else model
+        if here != model:
+            continue
+        code = given(row, "pdbx_PDB_ins_code")
+        if not code:
+            continue
+        name = given(row, "auth_comp_id", "label_comp_id")
+        number = given(row, "auth_seq_id", "label_seq_id")
+        try:
+            key = (int(given(row, "id")), name, int(number))
+        except ValueError:
+            continue
+        _INSERTION_CODES[key] = code[:1]
+        residue = (given(row, "auth_asym_id", "label_asym_id"), number, code)
         if residue not in seen:
             seen.add(residue)
             found += 1
