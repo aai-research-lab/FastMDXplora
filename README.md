@@ -190,7 +190,7 @@ FastMDXplora is released under the MIT License. See [LICENSE](LICENSE).
 
 Built in the [AAI Research Lab](https://aai-research-lab.github.io) on MDTraj,
 OpenMM, PDBFixer, OpenFF, RDKit, NumPy, SciPy, scikit-learn, Matplotlib and
-[Mol\*](https://molstar.org).
+Mol\*.
 
 © Copyright 2026, Adekunle Aina, Derrick Kwan, and FastMDXplora contributors.
 
