@@ -1988,21 +1988,22 @@ class TestOccupancyCarriesItsObservation:
         assert settled.episodes == 1, "it formed once and stayed"
         assert moving.episodes == 450
 
-    def test_the_error_counts_episodes_not_frames(self) -> None:
-        """Consecutive frames are correlated. A contact present in 450
-        consecutive frames has not been measured 450 times, and using the
-        frame count would give an error several times too small."""
+    def test_the_error_counts_independent_samples_not_frames(self) -> None:
+        """Consecutive frames are correlated. The error divides the frames
+        by their statistical inefficiency, sqrt(p(1-p) g / N), so a contact
+        whose frames are independent gets the frame-count error and one
+        that formed once gets none."""
         import numpy as np
 
         from fastmdxplora.analysis.interaction_summary import occupancies
+        from fastmdxplora.statistics import statistical_inefficiency
 
         flickering = [self._contact(f) for f in range(0, 900, 2)]
         moving = occupancies(flickering, 900)[0]
-        by_episodes = moving.uncertainty
-        by_frames = np.sqrt(0.5 * 0.5 / 450)
-        assert np.isclose(by_episodes, by_frames, rtol=0.05), (
-            "here they agree because every frame is its own episode"
-        )
+        present = np.zeros(900)
+        present[::2] = 1.0
+        g = statistical_inefficiency(present)
+        assert np.isclose(moving.uncertainty, np.sqrt(0.5 * 0.5 * g / 900))
 
         steady = [self._contact(f) for f in range(450)]
         settled = occupancies(steady, 900)[0]

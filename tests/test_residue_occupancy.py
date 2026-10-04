@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pytest
 
 from fastmdxplora.analysis.interaction_summary import (
@@ -118,3 +119,41 @@ class TestTheTableItself:
     def test_no_contacts_is_an_empty_table_not_an_error(self):
         assert residue_occupancies([], 100, _label) == []
         assert residue_occupancies([], 0, _label) == []
+
+
+class TestTheErrorOfAnOccupancy:
+    """B-D6: the error of a contact's occupancy against the spread of that
+    occupancy over independent replicas of a two-state contact with known
+    rates. The episode formula sqrt(p(1-p)/episodes) was 1.4 to 2.3 times
+    the spread; sqrt(p(1-p) g / N) is within a fifth of it."""
+
+    @staticmethod
+    def _telegraph(rng, n, on, off):
+        out = np.empty(n, dtype=bool)
+        state = rng.random() < on / (on + off)
+        at = 0
+        while at < n:
+            stay = int(rng.geometric(off if state else on))
+            out[at:at + stay] = state
+            at += stay
+            state = not state
+        return out
+
+    @pytest.mark.parametrize("on,off", [(0.02, 0.02), (0.002, 0.018), (0.05, 0.005)])
+    def test_the_error_is_the_spread_over_replicas(self, on, off) -> None:
+        from fastmdxplora.analysis.interactions import Contact
+
+        rng = np.random.default_rng(11)
+        n_frames, replicas = 4000, 120
+        fractions, errors = [], []
+        for _ in range(replicas):
+            present = self._telegraph(rng, n_frames, on, off)
+            contacts = [Contact("hydrophobic", int(f), 1, 2, 0.35)
+                        for f in np.flatnonzero(present)]
+            found = occupancies(contacts, n_frames)
+            if not found:
+                continue
+            fractions.append(found[0].fraction)
+            errors.append(found[0].uncertainty)
+        ratio = np.nanmedian(errors) / np.std(fractions, ddof=1)
+        assert 0.8 <= ratio <= 1.2, ratio

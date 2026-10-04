@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Occupancy errors from the statistical inefficiency
+
+**The `standard_error` of each interaction's occupancy is now `sqrt(p(1-p) g / N)`, with `g` the statistical inefficiency of its present-or-absent series over `N` frames.** It was `sqrt(p(1-p)/episodes)`, too large by `1/sqrt(2p(1-p))`, at least 1.41 times: on a two-state contact with known rates it was 1.4 to 2.4 times the spread of the occupancy over 120 independent replicas, where the new error is 0.86 to 0.96 of it. The inefficiency is the package's own (`statistics.statistical_inefficiency`), as every other error the analyses report uses. A contact that formed fewer than twice still has no error. Results change: occupancy error bars in `pl_interactions.dat` and its figure shrink, by about a third for a contact present half the time and by more for rarer or more persistent ones.
+
 ### A hydrogen bond keeps its direction
 
 **`pl_interactions` now names each hydrogen bond by its donor, `hydrogen_bond_ligand_donor` or `hydrogen_bond_protein_donor`, in the `kind` column of its tables and of `pl_interactions_frames.json`.** Both directions were the kind `hydrogen_bond` and were keyed by the two heavy atoms, so a ligand O-H donating to a serine OG in one frame and the serine OG-H donating back in the next were one row at occupancy 1.0 with one episode, where each direction held for half the run. The Viewer colours both as a hydrogen bond, the ligand panel counts both, and the cross-tool comparison takes the larger as a bound on their union. Results change: hydrogen-bond rows split by direction, and a bond that reversed now shows the occupancy of each direction.

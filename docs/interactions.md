@@ -129,9 +129,11 @@ So each interaction is reported with:
 
 - **occupancy** — the fraction of frames it was present
 - **episodes** — how many separate times it formed
-- **standard error** — computed from episodes, not frames, because
-  consecutive frames are correlated and using the frame count gives a number
-  several times too small
+- **standard error**: `sqrt(p(1 − p) g / N)` for occupancy `p` over `N`
+  frames, with `g` the statistical inefficiency of the present-or-absent
+  series: consecutive frames are correlated, and using the frame count alone
+  gives a number several times too small. Left empty where the contact formed
+  fewer than twice
 - **well sampled** — whether it rests on enough independent observation to
   average
 

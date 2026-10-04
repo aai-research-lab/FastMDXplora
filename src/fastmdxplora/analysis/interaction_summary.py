@@ -16,9 +16,9 @@ Two further cautions are built in rather than left to the reader.
 **Frames are not independent.** Consecutive frames of a trajectory are
 correlated -- a contact present at 10 ps is very likely present at 10.1 ps --
 so the naive standard error of a mean over frames is too small, often by a
-large factor. The number of *independent* observations is closer to the number
-of times the contact formed or broke than to the number of frames, and that is
-what is reported.
+large factor. The error reported divides the frames by their statistical
+inefficiency, the number of frames per independent sample of the contact's
+present-or-absent series, which is what the rest of the package's errors do.
 
 **A transition rate needs transitions.** A matrix built from three observed
 switches is arithmetic, not kinetics. Where too few were seen, the count is
@@ -53,10 +53,13 @@ class Occupancy:
     #: Frames in which it was present, of the frames examined.
     frames_present: int
     frames_total: int
-    #: How many times it appeared after being absent. Consecutive frames are
-    #: correlated, so this is much closer to the number of independent
-    #: observations than the frame count is.
+    #: How many times it appeared after being absent. A contact that formed
+    #: once has been seen to form once, however long it then stayed.
     episodes: int
+    #: Frames per independent sample of the 0/1 presence series
+    #: (:func:`fastmdxplora.statistics.statistical_inefficiency`); NaN where
+    #: it was not computed.
+    inefficiency: float = float("nan")
 
     @property
     def fraction(self) -> float:
@@ -73,15 +76,27 @@ class Occupancy:
 
     @property
     def uncertainty(self) -> float:
-        """Standard error of the fraction, counting episodes not frames.
+        """Standard error of the fraction: ``sqrt(p (1 - p) g / N)``.
 
-        Using frames would give a number several times too small: a contact
-        present in 450 consecutive frames has not been measured 450 times.
+        ``p (1 - p)`` is the variance of the 0/1 presence series, ``N`` the
+        frames and ``g`` their statistical inefficiency, so ``N / g`` is the
+        number of independent samples. Dividing by the frames alone gives a
+        number several times too small: a contact present in 450 consecutive
+        frames has not been observed 450 times. Dividing by the episodes, as
+        this did, gave one too large by ``1 / sqrt(2 p (1 - p))``, at least
+        1.41 times: on a two-state contact with known rates, 1.4 to 2.3
+        times the spread of the fraction over independent replicas, where
+        this gives 0.86 to 0.97 of it.
+
+        NaN where the contact formed fewer than twice, or where the
+        inefficiency was not computed: a contact seen to form once carries
+        no fluctuation to estimate a correlation time from.
         """
-        if self.episodes < 2:
+        if self.episodes < 2 or not np.isfinite(self.inefficiency):
             return float("nan")
         p = self.fraction
-        return float(np.sqrt(max(p * (1.0 - p), 0.0) / self.episodes))
+        return float(np.sqrt(
+            max(p * (1.0 - p), 0.0) * self.inefficiency / self.frames_total))
 
     def as_record(self) -> dict[str, Any]:
         return {
@@ -123,17 +138,23 @@ def occupancies(contacts: Any, n_frames: int) -> list[Occupancy]:
             seen[key] = np.zeros(n_frames, dtype=bool)
         seen[key][contact.frame] = True
 
-    found = [
-        Occupancy(
+    from fastmdxplora.statistics import statistical_inefficiency
+
+    found = []
+    for (kind, ligand_atom, protein_atom), present in seen.items():
+        episodes = _episodes(present)
+        found.append(Occupancy(
             kind=kind,
             ligand_atom=ligand_atom,
             protein_atom=protein_atom,
             frames_present=int(present.sum()),
             frames_total=n_frames,
-            episodes=_episodes(present),
-        )
-        for (kind, ligand_atom, protein_atom), present in seen.items()
-    ]
+            episodes=episodes,
+            # Only where it will be used, so a table of thousands of
+            # one-off contacts does not pay for correlations it discards.
+            inefficiency=(statistical_inefficiency(present.astype(float))
+                          if episodes >= 2 else float("nan")),
+        ))
     found.sort(key=lambda o: (-o.frames_present, o.kind))
     return found
 
