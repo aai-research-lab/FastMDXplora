@@ -1,37 +1,12 @@
-# One person, one line.
-#
-# Git records whatever `user.name` and `user.email` were set to on the
-# machine that made the commit, so a project worked on from several
-# machines accumulates several identities for the same person. This file
-# is git's own mechanism for saying which are the same, and it changes
-# nothing about the commits -- `git shortlog`, `git log --use-mailmap`
-# and `git blame` read it; the history is untouched.
-#
-# Note what it does NOT do: GitHub's contributors graph is built by
-# matching a commit's author email against the emails registered on a
-# GitHub account, and GitHub's documentation for that graph makes no
-# mention of .mailmap. Addresses that can never be registered --
-# `review@localhost`, and the `user@hostname` form git invents when
-# `user.email` is unset -- therefore stay unlinked on GitHub until the
-# commits themselves are rewritten. See MAILMAP-NOTES.md.
+# One person, one name: git shortlog, git log --use-mailmap and git blame
+# read this file. It changes nothing in the history.
 
-# Canonical name for every commit made under this address.
 Adekunle Aina <kunleaina@gmail.com>
-
-# The university address. Real and deliverable, so adding it to the GitHub
-# account links its commits there as well as here.
 Adekunle Aina <kunleaina@gmail.com> <aaina@csudh.edu>
-
-# Git's fallback when `user.email` was not configured on the Mac: it
-# invents `user@hostname`. Not a deliverable address.
 Adekunle Aina <kunleaina@gmail.com> <aaina@Adekunles-MBP.lan>
 
-# A misconfigured environment -- `user.name=Review`, `user.email=review@localhost`.
-# It authored five commits in August and committed four more that Derrick
-# authored; under this mapping those four keep Derrick as their author and
-# gain Adekunle Aina as their committer, which is what running the commit
-# means.
+# A misconfigured environment. The commits it made for Derrick keep him as
+# their author.
 Adekunle Aina <kunleaina@gmail.com> Review <review@localhost>
 
-# Two display names on one GitHub account.
 Derrick K <91711641+Paradoxicaly@users.noreply.github.com>
