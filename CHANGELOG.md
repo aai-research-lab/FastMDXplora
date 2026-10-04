@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A folder that holds no study is not shown as one
+
+**`fastmdx` typed alone opens the GUI with no study, as `fastmdx gui`
+does.** It opened the folder it was typed in as the study, so a repository
+checkout was shown with "No live record", as of a run that stopped before
+its simulation, and its files were listed as the run's. A folder that holds
+files and nothing FastMDXplora wrote, however it comes to be opened
+(`--output` included), is now said to hold no study ("No study here"), with
+All studies and a new study offered; a folder a run has begun in, or an
+empty one about to be a study, is opened as before.
+
 ### A contributor agreement
 
 **Contributors sign the FastMDXplora Contributor License Agreement once**

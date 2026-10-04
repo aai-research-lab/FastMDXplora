@@ -809,6 +809,15 @@
    * and offer to start one. */
   function liveAbsence(app) {
     app = app || {};
+    if (app.no_study_in) {
+      const name = String(app.no_study_in).split(/[\\/]/).filter(Boolean).pop() || app.no_study_in;
+      return {
+        title: "No study here",
+        body: `${name} holds no study: nothing in it was written by FastMDXplora. `
+          + "Open one under All studies, or start one.",
+        offerToStart: true,
+      };
+    }
     if (!app.active_run) {
       return {title: "Nothing running", body: "", offerToStart: true};
     }

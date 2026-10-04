@@ -539,9 +539,25 @@ class DashboardRuntime:
             self.active_root = self.active_root.expanduser().resolve()
             self._adopt_if_running(self.active_root)
 
+    def _no_study_open(self) -> bool:
+        """Whether the folder open holds no study: files, none of them
+        FastMDXplora's, and no run of this GUI's in it. However it came to be
+        opened, it is then shown as no study rather than as an empty one."""
+        root = self.active_root
+        if root is None or self.data_stale or root == self.running_root:
+            return False
+        if self.process is not None and self.running_root is None:
+            # A process with no folder of its own is the open folder's.
+            return False
+        if self.log_path is not None and Path(self.log_path).parent == root:
+            return False
+        from fastmdxplora.gui.browse import holds_no_study
+
+        return holds_no_study(root)
+
     def data_root(self) -> Path:
         with self.lock:
-            if self.data_stale or self.active_root is None:
+            if self.data_stale or self.active_root is None or self._no_study_open():
                 # Preserve the old run on disk, but do not expose its
                 # telemetry when no current run is active. The path is
                 # deliberately never created: every handler under it reads
@@ -805,10 +821,14 @@ class DashboardRuntime:
                 status = "completed"
             elif self.process is not None and self.process_returncode is not None and viewing_running:
                 status = "failed"
+            no_study = self._no_study_open()
+            open_root = None if no_study or self.data_stale else self.active_root
             return {
-                "mode": "home" if self.active_root is None or self.data_stale else "run",
+                "mode": "home" if open_root is None else "run",
                 "status": status,
-                "active_run": str(self.active_root) if self.active_root and not self.data_stale else None,
+                "active_run": str(open_root) if open_root else None,
+                # A folder opened that holds no study, said as such.
+                "no_study_in": str(self.active_root) if no_study else None,
                 "workspace": str(self.workspace_root),
                 "exploration_root": str(self.exploration_root),
                 "process_running": running and viewing_running,
@@ -823,10 +843,8 @@ class DashboardRuntime:
                 "log_path": str(self.log_path) if self.log_path else None,
                 # The runs of a study of several, each with its state, so the
                 # page can list them and open one. None for a study of one.
-                "runs": (runs_of_a_study(self.active_root)
-                         if self.active_root and not self.data_stale else None),
-                "run_of": (study_a_run_belongs_to(self.active_root)
-                           if self.active_root and not self.data_stale else None),
+                "runs": runs_of_a_study(open_root) if open_root else None,
+                "run_of": study_a_run_belongs_to(open_root) if open_root else None,
                 "command": list(self.command),
                 "can_launch": not running,
             }

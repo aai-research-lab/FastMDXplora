@@ -2614,6 +2614,15 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     # the GUI open on the overview of that run -- an overview of nothing.
     watching_a_run = bool(getattr(args, "output", None))
     output = Path(args.output) if watching_a_run else Path.cwd()
+    if watching_a_run:
+        from fastmdxplora.gui.browse import holds_no_study
+
+        if holds_no_study(output.expanduser().resolve()):
+            # A folder of other things named by mistake: opened as a study it
+            # showed an overview of nothing and listed its files as a run's.
+            print(f"{output} holds no FastMDXplora study; the GUI opens with no "
+                  "study, and lists any studies inside it under All studies.")
+            watching_a_run = False
     hosting = None
     if getattr(args, "hosted", False):
         from fastmdxplora.gui.hosting import Hosting, HostingError
@@ -2752,13 +2761,19 @@ def _startup_dashboard_details(argv: Sequence[str]) -> tuple[str, bool]:
 
 
 def _cmd_dashboard_home() -> int:
-    """Start the dashboard home screen for an empty CLI invocation."""
+    """Start the dashboard home screen for an empty CLI invocation.
+
+    `fastmdx` alone opens the GUI on the folder it was typed in, as
+    `fastmdx gui` does: with no study open, the folder its workspace. It
+    opened that folder as the study, so a repository checkout was shown as
+    a study with no live record and its files listed as the run's."""
     from fastmdxplora.gui.server import serve_dashboard
 
     serve_dashboard(
         output=Path.cwd(),
         host="127.0.0.1",
         port=8765,
+        home_mode=True,
     )
     return 0
 

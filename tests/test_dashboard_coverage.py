@@ -654,6 +654,7 @@ def test_cli_dashboard_remaining_lifecycle_and_startup_branches(
         "output": Path.cwd(),
         "host": "127.0.0.1",
         "port": 8765,
+        "home_mode": True,
     }
 
     stopped = []

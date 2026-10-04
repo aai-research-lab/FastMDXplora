@@ -153,6 +153,30 @@ def is_study(directory: Path) -> bool:
 
 _is_study = is_study
 
+#: What FastMDXplora writes into a folder that the rule above does not
+#: count: setup's folder, the log of a run the GUI started, and the record
+#: of a study run until it is determined.
+_BEGUN = ("setup", "exploration.log", "stopping.json")
+
+
+def holds_no_study(directory: Path) -> bool:
+    """Whether a folder holds files and none that FastMDXplora wrote: a
+    repository checkout, a home folder, a folder of papers. Opened as a
+    study it showed an overview of nothing and listed its files as a run's.
+    An empty folder, or one a run has begun in, is not this: it is where a
+    study is about to be. Nor is a folder of studies, which the Overview
+    says holds runs and names them."""
+    try:
+        if not directory.is_dir() or is_study(directory):
+            return False
+        if any((directory / name).exists() for name in _BEGUN):
+            return False
+        entries = [entry for entry in directory.iterdir() if not entry.name.startswith(".")]
+        return bool(entries) and not any(entry.is_dir() and is_study(entry)
+                                          for entry in entries)
+    except OSError:
+        return False
+
 
 def study_of_runs(directory: Path) -> dict[str, Any] | None:
     """What a study of several runs is, from its batch manifest: how many
