@@ -158,3 +158,55 @@ def test_a_scene_opens_on_a_page_of_its_own(workspace):
     assert atoms == md.load_topology(str(study / "simulation" / "frames_topology.pdb")).n_atoms
     assert "Scene not found" in body
     assert errors == []
+
+
+def test_a_scene_is_shown_in_the_viewer_again(workspace):
+    """Chosen in the list, a scene is shown in this Viewer as it was written:
+    its frame, camera, representation and colouring; written without a
+    camera, as an AI app writes one, it keeps the camera shown."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = workspace / "haemoglobin"
+    camera = {"position": [10.0, 20.0, 90.0], "target": [1.0, 2.0, 3.0], "up": [0.0, 1.0, 0.0]}
+    assert write_scene(study, "back again", {"frame": 4, "colour": "chain",
+                                             "representation": "sticks", "camera": camera})["ok"]
+    assert write_scene(study, "no camera", {"frame": 1, "colour": "element"})["ok"]
+    state = "window.FastMDXMoleculeViewer.STATE"
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(90000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {state}.model")
+            page.wait_for_function("() => document.querySelectorAll('#viewer-scenes option')"
+                                   ".length > 2")
+            assert page.is_disabled("#viewer-scene-show")
+            page.select_option("#viewer-scenes", "back again")
+            page.click("#viewer-scene-show")
+            page.wait_for_function(f"() => {state}.colorMode === 'chain'"
+                                   f" && {state}.representation === 'sticks'"
+                                   f" && {state}.engine.frame() === 4")
+            page.wait_for_function("() => document.getElementById('sr-live').textContent"
+                                   " === 'Showing the scene back again.'")
+            shown = page.evaluate(f"() => {state}.engine.cameraSnapshot()")
+            page.select_option("#viewer-scenes", "no camera")
+            page.click("#viewer-scene-show")
+            page.wait_for_function(f"() => {state}.colorMode === 'element'"
+                                   f" && {state}.engine.frame() === 1")
+            kept = page.evaluate(f"() => {state}.engine.cameraSnapshot()")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    for key in ("position", "target", "up"):
+        assert shown[key] == pytest.approx(camera[key], abs=1e-3), key
+        assert kept[key] == pytest.approx(shown[key], abs=1e-3), key
+    assert errors == []

@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A scene shown in the Viewer again
+
+**The eye beside the Scenes list shows the scene chosen in this Viewer
+again**, from the view it keeps for FastMDXplora: its frame, camera,
+representation, colouring, parts shown and superposition, so a scene an AI
+app wrote to show what an answer is about can be turned and played from
+there. A scene written without a camera, from the command line or by an AI
+app, keeps the camera shown.
+
 ### Frames smoothed for watching
 
 **Smoothed, beside Superposed under the transport, averages each atom's

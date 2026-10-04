@@ -86,6 +86,37 @@
           ? chosen : "";
         var open = byId("viewer-scene-open");
         if (open) open.disabled = !select.value;
+        var here = byId("viewer-scene-show");
+        if (here) here.disabled = !select.value;
+      });
+  }
+
+  /** A scene written with the study shown in this Viewer again, from the
+   * view it keeps for FastMDXplora (custom.fastmdxplora in index.mvsj): a
+   * scene written without a camera (from the command line or an AI app)
+   * keeps the camera shown. */
+  function showScene(name) {
+    return fetch("/scenes/" + encodeURIComponent(name) + "/index.mvsj", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (scene) {
+        var ours = scene && scene.root && scene.root.custom && scene.root.custom.fastmdxplora;
+        if (!ours || !ours.view || !viewer() || !viewer().showView) {
+          say("The scene " + name + " does not say how the Viewer showed it.");
+          return false;
+        }
+        var view = Object.assign({}, ours.view);
+        if (ours.of === "frames" && typeof ours.frame === "number") view.frame = ours.frame;
+        else delete view.frame;
+        if (!view.camera) {
+          var now = viewer().viewNow ? viewer().viewNow() : null;
+          if (now) view.camera = now.camera;
+        }
+        return viewer().showView(view).then(function (shown) {
+          say(shown ? "Showing the scene " + name + "." : "The scene " + name
+            + " could not be shown here.");
+          return shown;
+        });
       });
   }
 
@@ -212,6 +243,10 @@
     if (scenesList) {
       scenesList.addEventListener("change", function () {
         byId("viewer-scene-open").disabled = !scenesList.value;
+        byId("viewer-scene-show").disabled = !scenesList.value;
+      });
+      byId("viewer-scene-show").addEventListener("click", function () {
+        if (scenesList.value) showScene(scenesList.value);
       });
       byId("viewer-scene-open").addEventListener("click", function () {
         if (!scenesList.value) return;
@@ -236,5 +271,6 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
   else wire();
 
-  window.FastMDXViewerViews = { load: load, keepScene: keepScene, loadScenes: loadScenes };
+  window.FastMDXViewerViews = { load: load, keepScene: keepScene, loadScenes: loadScenes,
+    showScene: showScene };
 }());
