@@ -26,6 +26,7 @@ app = pytest.importorskip("openmm.app")
 
 from fastmdxplora.analysis.area_per_lipid import AreaPerLipid  # noqa: E402
 from fastmdxplora.analysis.bilayer_thickness import BilayerThickness  # noqa: E402
+from fastmdxplora.analysis.lipid_order import LipidOrder  # noqa: E402
 
 
 def _patch(lipid: str):
@@ -255,3 +256,23 @@ class TestWaterByAnyNameIsWater:
             for index, element in enumerate(elements):
                 top.add_atom(f"X{index}", element, residue)
             assert not _is_water(residue, list(residue.atoms))
+
+
+def _order(traj):
+    table = _run(LipidOrder, traj)[0].sort_values(["chain", "carbon"])
+    return table["chain"].to_list(), table["s_cd"].to_numpy()
+
+
+class TestTheChainOrder:
+
+    def test_a_bilayer_whose_normal_is_not_z_is_refused(self) -> None:
+        """The order is the C-H bonds' angle to z. With x and z swapped the
+        sn-1 C2 read +0.128 against -0.233, and nothing was refused."""
+        traj = _patch("DMPC")
+        turned = traj[:]
+        turned.xyz = turned.xyz[..., [2, 1, 0]]
+        turned.unitcell_lengths = traj.unitcell_lengths[:, [2, 1, 0]]
+        with pytest.raises(StudyError) as refused:
+            _run(LipidOrder, turned)
+        assert refused.value.code == "analysis.system.inapplicable"
+        assert "two layers normal to z" in str(refused.value)

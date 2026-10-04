@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The chain order checks the normal
+
+**`lipid_order` refuses a bilayer whose phosphates do not form two layers normal to z, as the area per lipid and the thickness do.** S_CD is the C-H bonds' angle to z, and the order analysis never checked that z was the normal: OpenMM's DMPC patch with x and z swapped gave an sn-1 C2 of +0.128 against the true -0.233, a profile of the wrong sign, with nothing refused. Results change: none for a bilayer in the xy plane; one on its side is now refused.
+
 ### Water is water whatever it is called
 
 **The bilayer analyses read a residue as water by its name, by MDTraj's test, or by being one oxygen and two hydrogens with any massless sites.** The name list lacked OPC, TIP3P, TP3, SPCE, TIP4P and others, and water under those names was read as protein: on OpenMM's POPC patch with its water renamed OPC, the water among the head groups gave a "protein" cross section of 0.16 nm2 and an area per lipid of 0.663 against 0.666 nm2, and the error grows with water that reaches further into a thinner or more disordered bilayer. Results change: systems whose water is not named HOH, WAT, SOL, TIP3 or SPC lose a protein correction that was water, and a bilayer with no protein in it is again its box per lipid.

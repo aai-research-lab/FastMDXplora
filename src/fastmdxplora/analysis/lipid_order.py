@@ -32,6 +32,7 @@ from fastmdxplora.analysis.bilayer import (
     _wrapped,
     box_vectors,
     find_bilayer,
+    leaflets,
 )
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.lipids import BUILT_LIPIDS, is_lipid, is_sterol
@@ -188,7 +189,9 @@ class LipidOrder(Analysis):
         return list(groups.values())
 
     def compute(self, traj: md.Trajectory) -> pd.DataFrame:
-        find_bilayer(traj.topology)
+        # The order is taken against z, so a bilayer whose normal is not z
+        # is refused here as the area and the thickness refuse it.
+        leaflets(traj, find_bilayer(traj.topology))
         vectors = box_vectors(traj)
         topology = traj.topology
         templates: dict[tuple, tuple[list[_Chain], str]] = {}
