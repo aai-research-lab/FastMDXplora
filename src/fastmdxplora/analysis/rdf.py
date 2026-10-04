@@ -43,6 +43,46 @@ from fastmdxplora.refusals import StudyError
 MAX_PAIRS = 400_000
 
 
+def _pairs_between(a: np.ndarray, b: np.ndarray, rng: np.random.Generator,
+                   limit: int | None = None) -> tuple[np.ndarray, int]:
+    """Atom pairs (i, j), i from ``a`` and j from ``b`` and i != j, at most
+    ``limit`` (default :data:`MAX_PAIRS`) of them; returns the pairs and how
+    many there were in all.
+
+    The pairs are in ``a``-major order. Where there are more than ``limit``,
+    ``limit`` positions in that order are drawn without replacement by
+    ``rng.choice`` and kept in order, and only those pairs are built: a
+    protein of 3,000 atoms against 10,000 water oxygens is 3e7 pairs, and
+    listing them all as Python tuples before drawing took about 25 s and
+    gigabytes for a draw of 400,000. Position k is turned into its pair
+    arithmetically, skipping the one i == j in each row whose atom is in
+    both selections, so the pairs drawn are the ones the full list gave.
+    """
+    limit = MAX_PAIRS if limit is None else int(limit)
+    a = np.asarray(a, dtype=np.int64)
+    b = np.asarray(b, dtype=np.int64)
+    in_b = np.isin(a, b)
+    per_row = np.where(in_b, len(b) - 1, len(b))
+    total = int(per_row.sum())
+    if total <= limit:
+        i = np.repeat(a, len(b))
+        j = np.tile(b, len(a))
+        keep = i != j
+        return np.column_stack([i[keep], j[keep]]), total
+
+    flat = np.sort(rng.choice(total, limit, replace=False))
+    ends = np.cumsum(per_row)
+    row = np.searchsorted(ends, flat, side="right")
+    offset = flat - (ends[row] - per_row[row])
+    # Where row's atom is also in b, the column at its own place in b is the
+    # i == j pair left out, so offsets at or past it move one along.
+    sorted_b = np.argsort(b, kind="stable")
+    place = np.searchsorted(b[sorted_b], a[row])
+    own = np.where(in_b[row], sorted_b[np.minimum(place, len(b) - 1)], len(b))
+    column = offset + (offset >= own)
+    return np.column_stack([a[row], b[column]]), total
+
+
 def _what_would_fix_it(selection: str, traj: md.Trajectory) -> str:
     """The setting to change, where the empty selection has a known cause.
 
@@ -221,15 +261,8 @@ class RadialDistribution(Analysis):
         r_max = min(requested, half_box)
         capped = self.r_max is not None and self.r_max > half_box
 
-        rng = np.random.default_rng(0)
-        pairs = np.array(
-            [(int(i), int(j)) for i in a for j in b if int(i) != int(j)],
-            dtype=int)
-        subsampled = False
-        if len(pairs) > MAX_PAIRS:
-            keep = rng.choice(len(pairs), MAX_PAIRS, replace=False)
-            pairs = pairs[np.sort(keep)]
-            subsampled = True
+        pairs, available = _pairs_between(a, b, np.random.default_rng(0))
+        subsampled = available > len(pairs)
 
         radii, g = md.compute_rdf(
             traj, pairs, r_range=(0.0, r_max), bin_width=self.bin_width)
@@ -251,7 +284,7 @@ class RadialDistribution(Analysis):
             )
         if subsampled:
             record["subsampled_note"] = (
-                f"{MAX_PAIRS} pairs of the {len(a) * len(b)} available, "
+                f"{MAX_PAIRS} pairs of the {available} available, "
                 "drawn once and held fixed across frames so the curve is "
                 "not a different estimator in every frame."
             )

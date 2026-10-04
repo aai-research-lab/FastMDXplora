@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Pairs for g(r) on a solvated protein
+
+**The pairs a g(r) is computed from are chosen in under a second for a protein against every water oxygen.** Every pair was built as a Python tuple before 400,000 were drawn from them, so the default protein against water oxygens on a solvated 3,000-atom protein in 10,000 waters listed 3e7 pairs, about 25 s and gigabytes before the first distance. The positions are now drawn from the same generator with the same seed and turned into pairs arithmetically, leaving out the one i == j pair of each atom in both selections, so the pairs are exactly those the full list gave; below the limit every pair is used, as before. The subsampling note now counts the pairs available without those i == j pairs. Results are unchanged.
+
 ### Mean SASA bars by residue
 
 **The per-residue mean SASA figure of a single chain has one bar for each residue, labelled with its number and insertion code.** The bars stood at the residue number, so trypsin's 184A and 184 (and 188A, 221A) were plotted at the same x and the taller hid the other. Bars now stand at their position in the table, with the residue labels on the axis. The data files are unchanged.
