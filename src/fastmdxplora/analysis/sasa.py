@@ -155,6 +155,18 @@ class SASA(Analysis):
         Number of points on the unit sphere for the Shrake-Rupley rolling
         ball. Higher is more accurate but slower. 960 is MDTraj's default
         and provides ~1% precision.
+    ligand_resname : str, optional
+        The ligand's residue name. Supplied by the analysis phase where the
+        study has a ligand. With ``with_ligand`` false it only lets the
+        findings say that the surface reported is the protein's without it.
+    with_ligand : bool, default False
+        Compute the surface of the selection in the presence of the ligand:
+        Shrake-Rupley is run on the selection and the ligand together, and
+        only the selection's atoms are reported, so a residue the ligand
+        covers reads as buried. False gives the selection's surface on its
+        own, the apo surface where the selection is the protein: on trypsin
+        with benzamidine bound, SER190 reads 0.110 nm2 without the ligand
+        and 0.001 nm2 with it. Needs ``ligand_resname``.
     **kwargs
         Standard base-class options.
 
@@ -191,9 +203,21 @@ class SASA(Analysis):
         mode: str = "total",
         probe_radius: float = 0.14,
         n_sphere_points: int = 960,
+        ligand_resname: str | None = None,
+        with_ligand: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        self.ligand_resname: str | None = (
+            str(ligand_resname).strip() or None if ligand_resname else None)
+        self.with_ligand: bool = bool(with_ligand)
+        if self.with_ligand and not self.ligand_resname:
+            raise StudyError(
+                "SASA with `with_ligand: true` computes the surface in the "
+                "presence of the ligand, and needs `ligand_resname` to know "
+                "which residue that is. None was given or detected."
+            , code="analysis.option.missing_companion",
+                analysis="sasa", requires="ligand_resname")
         mode = str(mode).lower()
         if mode not in VALID_MODES:
             raise StudyError(
@@ -206,7 +230,39 @@ class SASA(Analysis):
             mode=self.mode,
             probe_radius=self.probe_radius,
             n_sphere_points=self.n_sphere_points,
+            ligand_resname=self.ligand_resname,
+            with_ligand=self.with_ligand,
         )
+
+    def _ligand_atoms(self, traj: md.Trajectory, selected: np.ndarray) -> np.ndarray:
+        """The ligand's atoms that are not already in the selection."""
+        if not self.ligand_resname:
+            return np.empty(0, dtype=int)
+        try:
+            ligand = traj.topology.select(f"resname {self.ligand_resname}")
+        except Exception:  # noqa: BLE001 - a name the language cannot parse
+            ligand = np.empty(0, dtype=int)
+        return np.setdiff1d(ligand, selected)
+
+    def _say_which_surface(self, ligand: np.ndarray) -> None:
+        """Record whether the surface reported is with the ligand or without."""
+        if self.with_ligand:
+            self.findings["ligand"] = (
+                f"The surface is of the selection ({self.selection!r}) in the "
+                f"presence of the ligand {self.ligand_resname} ({ligand.size} "
+                "atoms): Shrake-Rupley was run on both together and only the "
+                "selection's atoms are reported, so residues the ligand covers "
+                "read as buried."
+            )
+        elif ligand.size:
+            self.findings["ligand"] = (
+                f"The surface is of the selection ({self.selection!r}) without "
+                f"the ligand {self.ligand_resname} ({ligand.size} atoms), which "
+                "was left out of the calculation, so residues the ligand covers "
+                "read as exposed: the apo surface in the bound conformation. "
+                "Set `with_ligand: true` for the surface in the presence of "
+                "the ligand."
+            )
 
     def compute(self, traj: md.Trajectory) -> pd.DataFrame:
         """Compute SASA per frame.
@@ -221,16 +277,48 @@ class SASA(Analysis):
         # computing SASA — solvent should not contribute to the solute's
         # accessible surface area.
         atom_idx = self.select_atoms(traj)
-        if len(atom_idx) < traj.n_atoms:
-            traj = traj.atom_slice(atom_idx)
+        ligand = self._ligand_atoms(traj, atom_idx)
+        if self.with_ligand and ligand.size == 0:
+            raise StudyError(
+                f"SASA with `with_ligand: true` found no atoms of the ligand "
+                f"{self.ligand_resname!r} outside the selection "
+                f"{self.selection!r}, so there is no ligand to compute the "
+                "surface in the presence of."
+            , code="analysis.selection.empty",
+                expression=f"resname {self.ligand_resname}", role="ligand")
+        self._say_which_surface(ligand)
 
-        mode_arg = "atom" if self.mode == "total" else "residue"
-        sasa, retried = _areas_that_were_written(
-            traj,
-            probe_radius=self.probe_radius,
-            n_sphere_points=self.n_sphere_points,
-            mode=mode_arg,
-        )
+        if self.with_ligand:
+            # Shrake-Rupley on the selection and the ligand together, keeping
+            # the selection's atoms: an atom's area is what the probe reaches
+            # with the ligand in place. Summed by residue here, as MDTraj's
+            # residue mode sums its atoms.
+            both = np.union1d(atom_idx, ligand)
+            areas, retried = _areas_that_were_written(
+                traj.atom_slice(both),
+                probe_radius=self.probe_radius,
+                n_sphere_points=self.n_sphere_points,
+                mode="atom",
+            )
+            areas = areas[:, np.isin(both, atom_idx)]
+            traj = traj.atom_slice(atom_idx)
+            if self.mode == "total":
+                sasa = areas
+            else:
+                owner = np.array([a.residue.index for a in traj.topology.atoms])
+                sasa = np.zeros((traj.n_frames, traj.n_residues), dtype=areas.dtype)
+                np.add.at(sasa.T, owner, areas.T)
+        else:
+            if len(atom_idx) < traj.n_atoms:
+                traj = traj.atom_slice(atom_idx)
+
+            mode_arg = "atom" if self.mode == "total" else "residue"
+            sasa, retried = _areas_that_were_written(
+                traj,
+                probe_radius=self.probe_radius,
+                n_sphere_points=self.n_sphere_points,
+                mode=mode_arg,
+            )
         if retried:
             self.findings["recomputed"] = retried
 

@@ -282,6 +282,14 @@ against another tool.
   number of frames less one, both in `average_residue` mode and in the
   `sasa_average_per_residue.csv` written beside a `residue` run.
 
+- **SASA beside a ligand** is the protein's surface without it by default,
+  because the selection is the protein: residues lining the pocket read as
+  exposed, as in the apo protein held in the bound conformation. The findings
+  say so where a ligand is present. `with_ligand: true` computes the surface
+  in the presence of the ligand instead (Shrake-Rupley on protein and ligand
+  together, the protein's atoms reported). In trypsin with benzamidine bound,
+  SER190 reads 0.110 nm² without the ligand and 0.001 nm² with it.
+
 - **Contacts and hydrogen bonds** are computed across the periodic boundary where
   the trajectory carries a unit cell.
 

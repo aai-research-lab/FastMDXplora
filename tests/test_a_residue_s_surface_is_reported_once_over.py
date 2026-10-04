@@ -158,3 +158,84 @@ class TestEveryResidueHasItsOwnBar:
         assert len(set(centres)) == 5, "five residues, five places"
         np.testing.assert_allclose(heights, AREAS.astype(np.float64).mean(axis=0), rtol=1e-6)
         assert labels == ["183", "184A", "184", "185", "186"]
+
+
+def _trypsin_with_benzamidine(tmp_path) -> md.Trajectory:
+    import gzip
+    from pathlib import Path
+
+    source = tmp_path / "3PTB.pdb"
+    source.write_bytes(gzip.decompress(
+        (Path(__file__).parent / "data" / "assemblies" / "3PTB.pdb.gz").read_bytes()))
+    complex_ = md.load(str(source))
+    return complex_.atom_slice(complex_.topology.select("protein or resname BEN"))
+
+
+@pytest.mark.xfail(sys.platform == "win32", strict=False,
+                   reason="MDTraj's surface areas on Windows; see test_concrete_analyses.")
+class TestTheSurfaceSaysWhetherTheLigandWasThere:
+    """The default selection is the protein, so the surface reported beside
+    a bound ligand is the protein's without it: in trypsin's S1 pocket
+    SER190 read 0.110 nm2, against 0.001 nm2 with benzamidine in place."""
+
+    def test_without_the_ligand_the_findings_say_so(self, tmp_path) -> None:
+        from fastmdxplora.analysis.sasa import SASA
+
+        traj = _trypsin_with_benzamidine(tmp_path)
+        analysis = SASA(mode="average_residue", ligand_resname="BEN", n_sphere_points=240)
+        table = analysis.compute(traj)
+        assert "without the ligand BEN" in analysis.findings["ligand"]
+        assert "with_ligand" in analysis.findings["ligand"]
+        apo = md.shrake_rupley(traj.atom_slice(traj.topology.select("protein")),
+                               mode="residue", n_sphere_points=240)[0]
+        np.testing.assert_allclose(table["mean_sasa_nm2"].to_numpy(), apo, rtol=1e-6)
+
+    def test_no_ligand_present_says_nothing(self, tmp_path) -> None:
+        from fastmdxplora.analysis.sasa import SASA
+
+        traj = _trypsin_with_benzamidine(tmp_path)
+        protein = traj.atom_slice(traj.topology.select("protein"))
+        analysis = SASA(mode="total", ligand_resname="BEN", n_sphere_points=240)
+        analysis.compute(protein)
+        assert "ligand" not in analysis.findings
+
+    @pytest.mark.parametrize("mode", ["total", "residue", "average_residue"])
+    def test_with_the_ligand_the_protein_atoms_of_the_complex_are_reported(
+            self, tmp_path, mode) -> None:
+        from fastmdxplora.analysis.sasa import SASA
+
+        traj = _trypsin_with_benzamidine(tmp_path)
+        analysis = SASA(mode=mode, ligand_resname="BEN", with_ligand=True,
+                        n_sphere_points=240)
+        table = analysis.compute(traj)
+        assert "in the presence of the ligand BEN" in analysis.findings["ligand"]
+
+        # Independently: every atom of the complex, then the protein's
+        # atoms summed by residue.
+        atoms = md.shrake_rupley(traj, mode="atom", n_sphere_points=240)[0]
+        protein = traj.topology.select("protein")
+        if mode == "total":
+            assert table["sasa_nm2"].iloc[0] == pytest.approx(atoms[protein].sum(), rel=1e-5)
+            return
+        by_residue = np.zeros(traj.n_residues)
+        np.add.at(by_residue, [traj.topology.atom(i).residue.index for i in protein],
+                  atoms[protein])
+        expected = by_residue[[r.index for r in traj.topology.residues if r.is_protein]]
+        column = "sasa_nm2" if mode == "residue" else "mean_sasa_nm2"
+        np.testing.assert_allclose(table[column].to_numpy(), expected, rtol=1e-5, atol=1e-7)
+        serine = table.index[table["residue"] == 190][0]
+        assert table[column].iloc[serine] < 0.01
+
+    def test_with_the_ligand_needs_its_name(self) -> None:
+        from fastmdxplora.analysis.sasa import SASA
+
+        with pytest.raises(ValueError, match="needs `ligand_resname`"):
+            SASA(with_ligand=True)
+
+    def test_with_the_ligand_needs_it_present(self, tmp_path) -> None:
+        from fastmdxplora.analysis.sasa import SASA
+
+        traj = _trypsin_with_benzamidine(tmp_path)
+        protein = traj.atom_slice(traj.topology.select("protein"))
+        with pytest.raises(ValueError, match="no atoms of the ligand"):
+            SASA(ligand_resname="BEN", with_ligand=True).compute(protein)

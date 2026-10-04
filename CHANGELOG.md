@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### SASA beside a bound ligand
+
+**SASA on a complex now says that the surface reported is the protein's without the ligand, and `with_ligand: true` gives the surface with the ligand in place.** The selection is the protein by default, so the residues lining a pocket read as exposed: in trypsin with benzamidine bound, SER190 reads 0.110 nm² rather than the 0.001 nm² it has with the ligand present, with nothing in the record to say which. Where the study has a ligand the findings now say the surface is the apo surface in the bound conformation. The new option `with_ligand` runs Shrake-Rupley on the selection and the ligand together and reports the selection's atoms, summed by residue; it needs `ligand_resname`, which the analysis phase supplies. Results are unchanged unless `with_ligand` is set.
+
 ### Pairs for g(r) on a solvated protein
 
 **The pairs a g(r) is computed from are chosen in under a second for a protein against every water oxygen.** Every pair was built as a Python tuple before 400,000 were drawn from them, so the default protein against water oxygens on a solvated 3,000-atom protein in 10,000 waters listed 3e7 pairs, about 25 s and gigabytes before the first distance. The positions are now drawn from the same generator with the same seed and turned into pairs arithmetically, leaving out the one i == j pair of each atom in both selections, so the pairs are exactly those the full list gave; below the limit every pair is used, as before. The subsampling note now counts the pairs available without those i == j pairs. Results are unchanged.
