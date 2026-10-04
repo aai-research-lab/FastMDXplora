@@ -50,6 +50,7 @@ site/
 
 # FastMDXplora run outputs (do not commit user data)
 fastmdxplora_output_*/
+.fastmdxplora-*
 local_pdbs/
 local_runs/
 private_reports/
