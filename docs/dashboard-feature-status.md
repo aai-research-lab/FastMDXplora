@@ -6,7 +6,7 @@ Reviewed 2026-10-03 against the [full implementation framework](dashboard-featur
 
 ### Current checkpoint — 2026-10-03
 
-The active checkout is `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Source commits `a24dacb7d0968615e89228b91ac879a18eed2c04` and `02917edc82ceb61f31eb0bec351d245daa016497` are local. Keep the existing v2.5.8-based history; upstream main is not integrated. Port 8783, the user's dashboard, was not restarted or changed. The exact candidate wheel on port 8786 and all QA study records/artifacts are outside the repository; temporary QA bookmarks were removed and the two original bookmarks remain.
+The active checkout is `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Tested source revisions are `a24dacb7d0968615e89228b91ac879a18eed2c04` and `02917edc82ceb61f31eb0bec351d245daa016497`; the documentation closeout is committed as well. The branch was pushed to `princeote/context-aware-agent`, and local/remote heads matched at `c8da605` before this final status note. Keep the existing v2.5.8-based history; upstream main is not integrated. Port 8783, the user's dashboard, was not restarted or changed. The exact candidate wheel on port 8786 and all QA study records/artifacts are outside the repository; temporary QA bookmarks were removed and the two original bookmarks remain.
 
 The tested wheel is `fastmdxplora-2.5.9.dev210+g02917edc8-py3-none-any.whl`, SHA-256 `7b3fc91a47b4627485ccc1e2a6640f86aad548dd61a78c1bdf65ca14106aee39`. It was installed in a temporary isolated environment, `pip check` passed, key dashboard/Agent/research/viewer resources were present, and its dashboard served HTTP 200. This is a development wheel, not a published release or a clean-machine dependency-install claim.
 
@@ -34,12 +34,13 @@ The required combined test set passed **241 tests, with 1 skip**, in 856.07 seco
 | M7 — integrated release checks | Passed for the tested development environment and exact wheel | One OpenFF skip, external provider tests, and clean-machine installation remain unverified. |
 | M8 — aesthetics/interactions | Source suite and exact-wheel dropdown styles pass | Native OS popup visual remains unverified; no other reproduced contrast or geometry defect is open. |
 
-### Revised finish plan
+### Remaining follow-up
 
-1. Commit the updated acceptance receipts and state provider account boundaries clearly in the current documentation.
-2. Review the full branch diff and verify no scientific implementation files changed; rerun documentation/diff checks.
-3. Push the reviewed commits only to `princeote/context-aware-agent`; confirm the remote head. Do not merge upstream main or create a pull request.
-4. Treat external provider live testing and broader scientific/backend acceptance as explicit follow-up items if suitable accounts/dependencies become available. Do not claim the whole framework is complete until those boundaries are resolved or the acceptance contract is narrowed with the user.
+1. If access becomes available, live-test Claude, Kimi and Gemini through their documented authentication flows. The user currently has OpenAI access only.
+2. Verify the native Windows dropdown popup if a capture can expose the OS menu. The in-page controls and available option styles pass black/white contrast checks.
+3. Broaden scientific/backend acceptance only when the required dependencies and fixtures are available. Preserve the known CPU-repeatability and aggregate-provenance limits; do not alter scientific algorithms to hide them.
+
+The source, tests and closeout receipts were pushed to `princeote/context-aware-agent`. Local and remote heads matched when verified. No upstream main integration or pull request was created.
 
 README already points to this status page. The packaged Agent knowledge already contains the current scientific interpretation and human-control limits; no package-knowledge edit is needed. See [dashboard-next-goal.md](dashboard-next-goal.md) for the single operational checklist.
 

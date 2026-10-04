@@ -43,7 +43,7 @@ The combined suite must include the dashboard-boundary, Agent-reasoning, provide
 
 ## Gate E — evidence and branch handoff
 
-**Open.** Source commits `a24dacb` and `02917ed` are local and not pushed. The README already points to the branch status; the packaged Agent knowledge already contains the current scientific/human-control limits, so no content edit is needed there. Remove obsolete provider mentions from the changelog/feature contract, refresh the status receipts, review the full diff and scientific-source hashes, commit this documentation closeout, push only to `princeote/context-aware-agent`, and verify the remote revision. Do not integrate upstream main or create/merge a PR. Claude, Kimi Code and Gemini live accounts remain UNVERIFIED_EXTERNAL_DEPENDENCY: retain their adapters and local/synthetic tests, do not request purchases or repeat absent-account probes, and do not claim unqualified all-provider completion.
+**Complete for this branch handoff.** The source revisions and closeout receipts were pushed only to `princeote/context-aware-agent`; local and remote heads matched when verified. Upstream main was not integrated, and no pull request was created. The README points to the feature-status page; packaged Agent knowledge already contains the scientific and human-control limits. Claude, Kimi Code and Gemini live accounts remain UNVERIFIED_EXTERNAL_DEPENDENCY: retain their adapters and local/synthetic tests, do not request purchases or repeat absent-account probes, and do not claim unqualified all-provider completion.
 
 
 ## Closeout rule
