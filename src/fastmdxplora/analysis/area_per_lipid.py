@@ -103,7 +103,7 @@ class AreaPerLipid(BilayerSeries):
         per_leaflet = len(bilayer.heads) / 2.0
         result = (area - protein) / per_leaflet
 
-        self._note_composition(bilayer, sides)
+        self._note_composition(traj, bilayer, sides)
         self.findings["area"] = {
             "box_area_nm2_mean": float(area.mean()),
             "protein_cross_section_nm2_mean": float(protein.mean()),

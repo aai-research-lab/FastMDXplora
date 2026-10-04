@@ -97,3 +97,106 @@ class TestTheHeadIsThePhosphorus:
             _run(AreaPerLipid, traj)
         assert refused.value.code == "analysis.system.inapplicable"
         assert "head" in str(refused.value)
+
+
+class TestALipidByAnyNameIsALipid:
+
+    @pytest.mark.parametrize("name", ["DSPE", "PLPC", "SOPE", "DLPG", "DAPC", "POPI15",
+                                      "TOCL1", "PSM"])
+    def test_it_is_counted_as_a_lipid_not_a_protein(self, name) -> None:
+        """A third of the lipids renamed: CHARMM36 has templates for each,
+        and the short list kept by hand had none of these."""
+        traj = _patch("POPC")
+        mixed = _renamed(traj, lambda top: [
+            setattr(r, "name", name)
+            for r in [r for r in top.residues if r.name == "POP"][::3]])
+        area, findings = _run(AreaPerLipid, mixed)
+        assert findings["bilayer"]["lipids"] == 128
+        assert findings["area"]["protein_cross_section_nm2_mean"] == 0.0
+        assert "protein_share" not in findings and "unread_lipids" not in findings
+        assert area[0] == pytest.approx(_run(AreaPerLipid, traj)[0][0], rel=1e-6)
+
+    def test_lipid21_s_stearoyl_and_docosahexaenoyl_tails_are_tails(self) -> None:
+        """SDPC as Lipid21 writes it: SA, PC, DHA."""
+        traj = _patch("POPC")
+        split = _lipid21(traj, names=("SA", "PC", "DHA"))
+        area, findings = _run(AreaPerLipid, split)
+        assert findings["bilayer"]["lipids"] == 128
+        assert findings["area"]["protein_cross_section_nm2_mean"] == 0.0
+        assert area[0] == pytest.approx(_run(AreaPerLipid, traj)[0][0], rel=1e-6)
+
+    def test_a_phosphorus_among_the_heads_under_another_name_is_said(self) -> None:
+        """A lipid under a name no force field uses is counted as protein,
+        and the findings say a residue with a phosphorus is among the heads."""
+        traj = _patch("POPC")
+        mixed = _renamed(traj, lambda top: [
+            setattr(r, "name", "XLIP")
+            for r in [r for r in top.residues if r.name == "POP"][::8]])
+        _, findings = _run(AreaPerLipid, mixed)
+        assert findings["bilayer"]["lipids"] == 112
+        assert findings["unread_lipids"].startswith("16 XLIP residue(s)")
+        assert "unread_lipids" not in _run(AreaPerLipid, traj)[1]
+
+
+class TestTheLipidNamesAreOpenMMs:
+
+    def test_the_names_kept_here_hold_every_lipid_template_openmm_ships(self) -> None:
+        """Read from OpenMM's force field files where it is installed; the
+        copy kept for an install without it must not fall behind."""
+        from fastmdxplora import lipids
+
+        read = lipids.openmm_lipid_templates()
+        assert read is not None
+        templates, without_phosphate, sterols = read
+        assert templates - lipids._SHIPPED_LIPIDS == set()
+        assert without_phosphate - lipids._SHIPPED_WITHOUT_PHOSPHATE == set()
+        assert sterols - lipids._SHIPPED_STEROLS == set()
+        assert {"DSPE", "PLPC", "SOPE", "DAPC", "POPI15", "TOCL1", "CER160", "ERG",
+                "SITO", "PSM", "DOPC", "CHL1"} <= templates
+        assert {"ERG", "SITO", "CHL1"} <= sterols and not {"DSPE", "PSM"} & sterols
+        assert {"CER160", "ERG"} <= without_phosphate and "PSM" not in without_phosphate
+        # Detergents and free fatty acids have one chain, and are not
+        # bilayer lipids; a protein residue is not one either.
+        assert not {"SDS", "DPC", "PAL", "OLE", "ALA", "LYS", "HEME"} & templates
+
+    def test_without_openmm_the_same_names_are_read(self) -> None:
+        import subprocess
+        import sys
+
+        from fastmdxplora.lipids import LIPID_RESIDUE_NAMES, STEROLS, WITHOUT_PHOSPHATE
+
+        code = (
+            "import sys, importlib.abc\n"
+            "class Block(importlib.abc.MetaPathFinder):\n"
+            "    def find_spec(self, name, path=None, target=None):\n"
+            "        if name.split('.')[0] == 'openmm': raise ImportError(name)\n"
+            "sys.meta_path.insert(0, Block())\n"
+            "import fastmdxplora.lipids as lipids\n"
+            "assert lipids._READ_FROM_OPENMM is None\n"
+            "print(sorted(lipids.LIPID_RESIDUE_NAMES)); print(sorted(lipids.STEROLS))\n"
+            "print(sorted(lipids.WITHOUT_PHOSPHATE))\n")
+        done = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                              text=True, timeout=120)
+        assert done.returncode == 0, done.stderr[-2000:]
+        names, sterols, without_phosphate = done.stdout.strip().splitlines()
+        assert names == str(sorted(LIPID_RESIDUE_NAMES))
+        assert sterols == str(sorted(STEROLS))
+        assert without_phosphate == str(sorted(WITHOUT_PHOSPHATE))
+
+    def test_the_lipid21_split_names_are_lipids(self) -> None:
+        from fastmdxplora.lipids import TAIL_RESIDUES, is_lipid, lipid_count
+
+        for name in ("SA", "DHA", "AR", "LAL", "PGS", "PH-", "SPM", "CHL"):
+            assert is_lipid(name)
+        assert {"SA", "DHA", "AR", "LAL", "OL", "PA", "MY", "ST"} <= TAIL_RESIDUES
+        assert lipid_count(["SA", "PC", "DHA", "AR", "PE", "OL"]) == 2
+
+    def test_every_name_can_be_selected(self) -> None:
+        """Lipid21's PH- and CHARMM36's 23SM are not words MDTraj reads bare."""
+        from fastmdxplora.lipids import lipid_selection
+
+        top = md.Topology()
+        chain = top.add_chain()
+        for name in ("PH-", "23SM", "POP", "WAT"):
+            top.add_atom("C1", md.element.carbon, top.add_residue(name, chain))
+        assert list(top.select(lipid_selection())) == [0, 1, 2]

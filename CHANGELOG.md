@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Every lipid name is a lipid
+
+**A residue is a lipid when OpenMM has a lipid template of its name: CHARMM36's, as CHARMM-GUI writes them, and AMBER Lipid17's and Lipid21's.** The list kept by hand held about forty names, and every other lipid was counted as protein: with a third of a POPC bilayer renamed DSPE, PLPC, SOPE, DLPG or DAPC, the area per lipid read 10% large and the findings said a protein took 27% of the box. The names are now read from OpenMM's force field files where OpenMM is installed (295 templates, from DSPE to the cardiolipins, ceramides and phytosterols), and otherwise from a copy of that list kept in `lipids.py`, so an install without OpenMM reads the same names; a test checks the copy holds every template OpenMM ships. Lipid21's stearoyl (SA), docosahexaenoyl (DHA), arachidonoyl (AR) and lauroyl (LAL) tails are tails, and its PGS, PH- and SPM heads are heads. A ceramide's head is its hydroxyl oxygen, as a sterol's is. When a residue read as protein has a phosphorus among the lipid heads, the findings say so (`unread_lipids`). The default bilayer of `membrane_depth`, the membrane barostat and the crash diagnosis read the same names. Results change: mixed bilayers with lipids outside the old list get the right area per lipid and thickness, and lose a protein correction that was never there.
+
 ### A Lipid21 bilayer has its heads
 
 **The bilayer analyses find each lipid's phosphorus by its element, not by the name P.** AMBER's Lipid17 and Lipid21 name it P31, so on a Lipid21 POPC bilayer no head was found: the area per lipid was infinite with status ok, and the thickness was refused as having no phosphate. Where a lipid has several (a cardiolipin, a phosphoinositide) the one named P is taken, else the first. `area_per_lipid` now refuses a bilayer in which no head atom is found, rather than dividing by zero. Results change: Lipid21 and Lipid17 bilayers get an area per lipid and a thickness (0.666 nm2 and 3.66 nm on OpenMM's POPC patch split as Lipid21 writes it, as for the patch itself).

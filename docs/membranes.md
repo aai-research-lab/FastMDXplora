@@ -207,9 +207,13 @@ and not the same quantity.
 
 - **Mixtures, cholesterol and asymmetric bilayers.** OpenMM builds one lipid.
   A mixed or asymmetric membrane built elsewhere (CHARMM-GUI, for instance)
-  can still be analysed: the three bilayer analyses read CHARMM36's lipid
-  names and AMBER Lipid21's, which makes each chain a residue of its own, and
-  count a sterol as a lipid.
+  can still be analysed: the three bilayer analyses read every lipid name
+  OpenMM has a template for, CHARMM36's (about 300, from DSPE to the
+  cardiolipins, ceramides and phytosterols) and AMBER Lipid17's and
+  Lipid21's, which make each chain a residue of its own, and count a sterol
+  as a lipid. A lipid under a name none of them uses is counted as protein,
+  and the findings say so when a residue read as protein has a phosphorus
+  among the lipid heads.
 - **Four-site water.** OpenMM's patches carry three-site water, and AMBER
   Lipid17 and CHARMM36 lipids were developed with TIP3P; a force field given
   with TIP4P-Ew or OPC is refused with a membrane rather than failing inside

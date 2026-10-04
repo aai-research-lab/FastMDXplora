@@ -31,8 +31,8 @@ import numpy as np
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.lipids import (
     BILAYER_MINIMUM_LIPIDS,
+    has_no_phosphate,
     is_lipid,
-    is_sterol,
     lipid_count,
 )
 from fastmdxplora.refusals import StudyError
@@ -99,7 +99,7 @@ class Bilayer:
 
     #: One head atom per lipid: the phosphorus of a phospholipid (found by
     #: its element, since force fields name it P, P31 or P8), the hydroxyl
-    #: oxygen of a sterol.
+    #: oxygen of a sterol or a ceramide.
     heads: np.ndarray
     #: Whether each head is a phosphorus.
     phosphate: np.ndarray
@@ -109,6 +109,9 @@ class Bilayer:
     occupants: np.ndarray
     #: How many of each lipid, by residue name.
     composition: dict[str, int] = field(default_factory=dict)
+    #: The phosphorus of each occupant residue that has one, by residue name.
+    #: A lipid under a name not read as a lipid is one of these.
+    occupant_phosphorus: dict[str, list[int]] = field(default_factory=dict)
 
 
 def _phosphorus(atoms: list[Any]) -> Any | None:
@@ -139,6 +142,7 @@ def find_bilayer(topology: md.Topology) -> Bilayer:
     lipid_atoms: list[int] = []
     occupants: list[int] = []
     composition: dict[str, int] = {}
+    occupant_phosphorus: dict[str, list[int]] = {}
     for residue in topology.residues:
         atoms = list(residue.atoms)
         if is_lipid(residue.name):
@@ -147,20 +151,27 @@ def find_bilayer(topology: md.Topology) -> Bilayer:
             if head is not None:
                 heads.append(head.index)
                 phosphate.append(True)
-            elif is_sterol(residue.name):
+            elif has_no_phosphate(residue.name):
+                # A sterol or a ceramide: its hydroxyl oxygen on C3 (O3 in
+                # CHARMM36), else its first oxygen.
                 oxygens = [a for a in atoms if _symbol(a) == "O"]
                 named = [a for a in oxygens if a.name.upper() == "O3"]
-                if named or oxygens:
-                    heads.append((named or oxygens)[0].index)
-                    phosphate.append(False)
+                if not oxygens:
+                    continue
+                heads.append((named or oxygens)[0].index)
+                phosphate.append(False)
             else:
                 continue
             composition[residue.name] = composition.get(residue.name, 0) + 1
         elif residue.name.upper() not in _WATER and len(atoms) > 1:
             occupants.extend(a.index for a in atoms)
+            head = _phosphorus(atoms)
+            if head is not None:
+                occupant_phosphorus.setdefault(residue.name, []).append(head.index)
     return Bilayer(np.asarray(heads, dtype=int), np.asarray(phosphate, dtype=bool),
                    np.asarray(lipid_atoms, dtype=int),
-                   np.asarray(occupants, dtype=int), composition)
+                   np.asarray(occupants, dtype=int), composition,
+                   occupant_phosphorus)
 
 
 def _wrapped(dz: np.ndarray, length: np.ndarray | float) -> np.ndarray:
@@ -352,7 +363,8 @@ class BilayerSeries(Analysis):
             return "Frame"
         return self.frame_axis(self._traj_for_plot)[1]
 
-    def _note_composition(self, bilayer: Bilayer, sides: Leaflets) -> None:
+    def _note_composition(self, traj: md.Trajectory, bilayer: Bilayer,
+                          sides: Leaflets) -> None:
         upper = sides.upper.sum(axis=1)
         lower = (~sides.upper).sum(axis=1)
         self.findings["bilayer"] = {
@@ -361,6 +373,7 @@ class BilayerSeries(Analysis):
             "per_leaflet_first_frame": [int(upper[0]), int(lower[0])],
             "normal": "z",
         }
+        self._note_unread_lipids(traj, bilayer, sides)
         if np.any(upper != upper[0]):
             self.findings["leaflet_changes"] = (
                 f"The number of lipids in the upper leaflet ranges from "
@@ -369,3 +382,34 @@ class BilayerSeries(Analysis):
                 "experimental clock, so a change within a simulation is a "
                 "head group wandering near the middle, a bilayer that has "
                 "come apart, or a lipid that has left it.")
+
+    def _note_unread_lipids(self, traj: md.Trajectory, bilayer: Bilayer,
+                            sides: Leaflets) -> None:
+        """Say so when something read as protein has a phosphorus among the
+        lipid heads: a lipid under a residue name not read as one.
+
+        It is counted as protein, so it takes area from the lipids and is
+        left out of their number. A phosphoserine or a bound nucleotide
+        carries a phosphorus too, which is why this is said, not acted on.
+        """
+        if not bilayer.occupant_phosphorus or not len(bilayer.heads):
+            return
+        # As far from the centre as the lipids' heads reach in the first
+        # frame, and a little more for a head under a name not read here.
+        reach = float(np.abs(sides.dz[0]).max()) + 0.3
+        height = box_vectors(traj)[0, 2, 2]
+        found = []
+        for name, atoms in sorted(bilayer.occupant_phosphorus.items()):
+            dz = _wrapped(traj.xyz[0, atoms, 2].astype(np.float64) - sides.centre[0],
+                          height)
+            inside = int(np.count_nonzero(np.abs(dz) <= reach))
+            if inside:
+                found.append(f"{inside} {name}")
+        if found:
+            self.findings["unread_lipids"] = (
+                f"{', '.join(found)} residue(s) carry a phosphorus within "
+                f"{reach:.1f} nm of the bilayer centre, among the lipids' "
+                "heads, and are not under a lipid name read here, so they are "
+                "counted as protein. If they are lipids, the "
+                "area per lipid is too large and the protein's share too "
+                "large: rename them to the lipid's CHARMM36 or AMBER name.")

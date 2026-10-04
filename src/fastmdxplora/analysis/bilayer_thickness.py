@@ -56,7 +56,7 @@ class BilayerThickness(BilayerSeries):
         upper = np.where(sides.upper, dz, np.nan)
         lower = np.where(~sides.upper, dz, np.nan)
         result = np.nanmean(upper, axis=1) - np.nanmean(lower, axis=1)
-        self._note_composition(bilayer, sides)
+        self._note_composition(traj, bilayer, sides)
         if len(bilayer.occupants):
             self.findings["near_a_protein"] = (
                 "This is the mean over every lipid. Lipids next to a protein "
