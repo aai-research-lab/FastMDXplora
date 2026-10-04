@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `sidechain_only` keeps bonds involving a side chain
+
+**`hbonds` with `sidechain_only: true` now counts every bond whose donor or acceptor heavy atom is in a side chain, as its documentation says.** It passed the option to MDTraj, which keeps a bond only when donor, hydrogen and acceptor are all side-chain atoms, so a serine OG-H donating to a backbone carbonyl was dropped: on a solvated 1BHL run it reported 16.1 bonds a frame where 40.3 involve a side chain. The bonds are now found over the whole selection and filtered on the donor or the acceptor, for Baker-Hubbard and Wernet-Nilsson alike. Results change: side-chain hydrogen-bond counts rise to include side chain to backbone bonds.
+
 ### Halogen bonds check the acceptor side
 
 **A halogen bond in `pl_interactions` now also needs the angle X...A-R at the acceptor, with R a heavy atom bonded to it, between 80 and 140 degrees (ProLIF's window, after Auffinger et al. 2004), a new `acceptor_angle_deg` setting of the rule.** Only the C-X...A angle at the halogen was checked, so a chlorine 0.32 nm beyond a backbone carbonyl oxygen on the line of its C=O bond, X...O=C at 180 degrees, was reported as a halogen bond. Results change: halogen contacts that approach an acceptor along its bond axis are no longer reported.

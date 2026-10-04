@@ -2263,6 +2263,31 @@ class TestSettingsThatWereFixedInPlace:
         side_only = HBonds(sidechain_only=True).compute(traj)["n_hbonds"].sum()
         assert side_only <= everything
 
+    @pytest.mark.parametrize("method", ["baker_hubbard", "wernet_nilsson"])
+    def test_a_side_chain_donating_to_the_backbone_is_kept(self, method) -> None:
+        """B-D11: a serine OG-HG donating to a glycine's backbone carbonyl
+        involves a side chain, and was dropped because MDTraj's own
+        `sidechain_only` wants the acceptor in a side chain as well."""
+        from fastmdxplora.analysis.hbonds import HBonds
+
+        top = md.Topology()
+        chain = top.add_chain()
+        ser = top.add_residue("SER", chain, resSeq=1)
+        atoms = [top.add_atom(name, md.element.get_by_symbol(element), ser)
+                 for name, element in (("N", "N"), ("CA", "C"), ("CB", "C"),
+                                       ("OG", "O"), ("HG", "H"))]
+        gly = top.add_residue("GLY", chain, resSeq=2)
+        atoms += [top.add_atom(name, md.element.get_by_symbol(element), gly)
+                  for name, element in (("N", "N"), ("CA", "C"), ("C", "C"), ("O", "O"))]
+        for i, j in ((0, 1), (1, 2), (2, 3), (3, 4), (5, 6), (6, 7), (7, 8)):
+            top.add_bond(atoms[i], atoms[j])
+        xyz = np.array([[(5, 5, 5), (5.15, 5, 5), (0, 0, -0.15), (0, 0, 0),
+                         (0.097, 0, 0), (3, 3, 3), (3.15, 3, 3), (0.4, 0, 0),
+                         (0.28, 0, 0)]], dtype=float)
+        traj = md.Trajectory(xyz, top)
+        found = HBonds(method=method, sidechain_only=True).compute(traj)
+        assert found["n_hbonds"].tolist() == [1]
+
 
 def _peptide_with_side_chain_donors():
     """A short peptide with backbone and side-chain donors.
