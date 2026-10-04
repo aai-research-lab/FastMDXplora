@@ -360,7 +360,9 @@ against another tool.
   sit more than 0.2 nm apart in the first frame, is left out and counted under
   `chain_breaks` in the findings. Across trypsin's residues 50 to 54, deleted,
   the residue after the gap had read a phi of -61.8 degrees through atoms
-  1.68 nm apart.
+  1.68 nm apart. The figure is the Ramachandran plot when `angles` includes
+  both phi and psi, and a histogram of each angle otherwise; the angles
+  chosen are written to `options.json`.
 
 - **g(r)** stops at half the smallest box dimension. Past that the
   minimum-image convention supplies only part of each shell, so the curve falls

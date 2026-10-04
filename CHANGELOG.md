@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Dihedrals without phi and psi
+
+**A dihedrals run asked for omega alone, or any set without both phi and psi, now completes with a histogram of each angle computed.** The figure read the phi and psi columns whatever had been asked for, so `angles: [omega]` computed every omega and then failed with no figure and no data file. The Ramachandran plot is made only when both phi and psi are computed, and the `angles` chosen are now written to `options.json`, where they were missing; an empty choice is refused at construction.
+
 ### Dihedrals across a chain break
 
 **A phi, psi or omega is no longer computed between residues that are not joined.** MDTraj pairs consecutive residues of a chain by index without checking the peptide bond, so on trypsin with residues 50 to 54 deleted residue 55 read a phi of -61.8 and an omega of -110.4 degrees through a C49-N55 distance of 1.68 nm. A torsion is now left out when its C(i-1) and N(i) have no bond in the topology (where the topology records peptide bonds) or are more than 0.2 nm apart in the first frame; how many were left out per angle, and the residues after each break, are recorded under `chain_breaks` in the findings. Results change: on a structure with a missing loop, the residues either side of the gap lose their rows in `dihedrals.dat` and their points on the Ramachandran plot.

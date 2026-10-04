@@ -10,8 +10,9 @@ residue; the exceptions are the finding, a cis bond most often before a
 proline. Which angles are computed is a setting.
 
 Output ``dihedrals.dat`` is a CSV with one row per (frame, residue)
-combination plus columns for phi and psi (degrees). Output figure is
-the 2-D Ramachandran scatter/density plot.
+combination plus a column for each angle computed (degrees). Output figure
+is the 2-D Ramachandran scatter/density plot, or a histogram of each angle
+where phi and psi are not both computed.
 
 References
 ----------
@@ -101,7 +102,9 @@ class Dihedrals(Analysis):
         pair. Omega is the peptide bond itself, close to 180 degrees in almost
         every residue -- and the exceptions are the finding: a cis peptide
         bond near zero, most often before a proline, and the departures from
-        planarity that a strained fold produces.
+        planarity that a strained fold produces. With phi and psi both
+        chosen the figure is the Ramachandran plot; otherwise it is a
+        histogram of each angle chosen.
     bins : int, default 72
         Number of bins along each axis for the density plot. The
         Ramachandran range is 360°, so the default 72 bins → 5° resolution.
@@ -112,8 +115,10 @@ class Dihedrals(Analysis):
 
     Output
     ------
-    ``dihedrals.dat`` — CSV with columns ``frame, residue, phi_deg, psi_deg``.
-    ``dihedrals.png`` — Ramachandran plot (density heatmap by default).
+    ``dihedrals.dat``: CSV with columns ``frame, residue`` and one of
+    ``phi_deg, psi_deg, omega_deg`` for each angle chosen.
+    ``dihedrals.png``: the Ramachandran plot (density heatmap by default)
+    where phi and psi are both chosen, otherwise a histogram of each angle.
 
     A torsion that would span a gap in the chain is not reported: one whose
     C(i-1) and N(i) are not bonded in the topology (where it records peptide
@@ -146,9 +151,15 @@ class Dihedrals(Analysis):
             raise StudyError(
                 f"Unknown dihedral(s) {unknown}. Valid: {VALID_ANGLES}"
             , code="analysis.option.not_permitted")
+        if not chosen:
+            raise StudyError(
+                f"No dihedral was chosen, so there is nothing to compute. "
+                f"Choose one or more of {VALID_ANGLES}."
+            , code="analysis.option.not_permitted")
         self.angles: tuple[str, ...] = chosen
         self.bins: int = int(bins)
-        self.options.update(density=self.density, bins=self.bins)
+        self.options.update(density=self.density, angles=list(self.angles),
+                            bins=self.bins)
 
     def compute(self, traj: md.Trajectory) -> pd.DataFrame:
         """Compute backbone phi/psi for every (frame, residue) pair.
@@ -259,7 +270,25 @@ class Dihedrals(Analysis):
             columns["omega_deg"] = omega_deg.flatten()
         return pd.DataFrame(columns)
 
+    def _ramachandran(self) -> bool:
+        return "phi" in self.angles and "psi" in self.angles
+
     def plot(self, result: pd.DataFrame, ax: plt.Axes) -> None:
+        if not self._ramachandran():
+            # Without both phi and psi there is no Ramachandran plot, so each
+            # angle computed is shown as its own distribution.
+            edges = np.linspace(-180.0, 180.0, self.bins + 1)
+            for angle in self.angles:
+                values = result[f"{angle}_deg"].to_numpy(dtype=float)
+                values = values[np.isfinite(values)]
+                ax.hist(values, bins=edges, histtype="step", linewidth=1.2,
+                        label=angle)
+            ax.set_xlim(-180, 180)
+            ax.set_xticks([-180, -90, 0, 90, 180])
+            if len(self.angles) > 1:
+                ax.legend(fontsize="small")
+            return
+
         phi = result["phi_deg"].to_numpy()
         psi = result["psi_deg"].to_numpy()
 
@@ -292,7 +321,7 @@ class Dihedrals(Analysis):
         ax.set_yticks([-180, -90, 0, 90, 180])
 
     def save_data(self, result: pd.DataFrame, path) -> Any:
-        """CSV with frame, residue, phi_deg, psi_deg columns."""
+        """CSV with frame, residue and a column for each angle computed."""
         from pathlib import Path
 
         path = Path(path)
@@ -302,9 +331,13 @@ class Dihedrals(Analysis):
         return path
 
     def default_xlabel(self) -> str | None:
+        if not self._ramachandran():
+            return "Angle (degrees)"
         return "φ (degrees)"
 
     def default_ylabel(self) -> str | None:
+        if not self._ramachandran():
+            return "Count"
         return "ψ (degrees)"
 
 

@@ -4,7 +4,9 @@ MDTraj joins consecutive residues of a chain by index and never asks
 whether they are bonded, so the residue after a gap was given a phi and an
 omega through atoms that are not joined: trypsin with residues 50 to 54
 deleted read phi -61.8 and omega -110.4 degrees at residue 55, through a
-C49-N55 distance of 1.68 nm.
+C49-N55 distance of 1.68 nm. And asking for omega alone computed the
+angles and then failed to plot them, because the figure read phi and psi
+whether they had been computed or not.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from pathlib import Path
 
 import mdtraj as md
 import numpy as np
+import pandas as pd
 import pytest
 
 from fastmdxplora.analysis.dihedrals import Dihedrals
@@ -134,3 +137,28 @@ class TestAGapIsNotATorsion:
         assert 55 not in set(table["residue"])
         assert 49 not in set(table["residue"])
         assert 56 in set(table["residue"])
+
+
+class TestAnyChoiceOfAnglesIsPlotted:
+    @pytest.mark.parametrize("angles", [("omega",), ("phi",), ("psi", "omega")])
+    def test_a_run_without_both_phi_and_psi_completes(self, tmp_path, angles) -> None:
+        analysis = Dihedrals(angles=angles, output_dir=tmp_path)
+        result = analysis.run(_chain())
+        assert result.status == "ok", result.message
+        assert result.figure_path.exists()
+        written = pd.read_csv(result.data_path)
+        assert [c for c in written.columns if c.endswith("_deg")] == [f"{a}_deg" for a in angles]
+        assert analysis.default_ylabel() == "Count"
+
+    def test_the_angles_chosen_are_recorded(self) -> None:
+        assert Dihedrals(angles=("omega",)).options["angles"] == ["omega"]
+        assert Dihedrals().options["angles"] == ["phi", "psi", "omega"]
+
+    def test_both_phi_and_psi_still_give_the_ramachandran_plot(self, tmp_path) -> None:
+        analysis = Dihedrals(angles=("phi", "psi"), output_dir=tmp_path)
+        assert analysis.run(_chain()).status == "ok"
+        assert analysis.default_xlabel() == "φ (degrees)"
+
+    def test_no_angle_at_all_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="No dihedral was chosen"):
+            Dihedrals(angles=())
