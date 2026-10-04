@@ -24,15 +24,15 @@ The required combined test set passed **241 tests, with 1 skip**, in 856.07 seco
 
 The installed wheel on port 8786 returned the draft-review difference for `setup.ph` (7.4 â†’ 6.5), including schema help. It refused acceptance after a changed draft, changed builder baseline, absent human confirmation, or changed review purpose. This exercised the real HTTP endpoint, not an imported source function. No valid acceptance was submitted and no scientific setting was applied. SHA-256 inventories for all 315 non-output study files were identical before and after. Study-revision invalidation, browser review interaction and expiry remain separately covered by source tests; this receipt does not claim their installed end-to-end acceptance.
 
-### Installed missing-source acceptance — 2026-10-03
+### Installed missing-source acceptance â€” 2026-10-03
 
 The exact wheel HTTP flow saved and restored a temporary RMSD graph bookmark. With its RMSD source temporarily absent in the disposable study, restore refused with a source-difference error while retaining the note. Returning the original source restored successful acceptance. The QA bookmark was removed and all 315 non-output study hashes matched. This checks endpoint behavior, not browser refusal rendering or screenshot retention. A real server restart remains unverified: automatic tool policy rejected the proposed QA-process stop before execution; no server was stopped.
 
-### Installed browser refusal and resource acceptance — 2026-10-03
+### Installed browser refusal and resource acceptance â€” 2026-10-03
 
 The exact wheel browser check displayed the missing-RMSD-source refusal, retained the bookmark note and loaded PNG, and left the current page/frame unchanged. The original source was returned and the temporary bookmark deleted; all 315 non-output study hashes matched and no page JavaScript errors occurred. This closes the browser-rendering and image-retention gaps left by the preceding HTTP receipt. Separately, imports from the installed environment outside the checkout verified all 127 registered error IDs and disclosure levels in Agent knowledge, exact equality of bundled `errors.md` to the generated reference, and the external/unclassified disclosure. No source code changed.
 
-### Reopened source acceptance — disabled Agent Send boundary
+### Reopened source acceptance â€” disabled Agent Send boundary
 
 Installed-wheel interception reproduced a request from the Agent page Send button while the sidebar preference was disabled; selection-based Ask already refused. A source guard now refuses Send before modifying the composer/history or initiating inference. The three-theme regression passed 3/3, checking no propose request, preserved composer text and a visible refusal in the Agent transcript. CI Ruff F/B and diff checks pass. This code change reopens the combined suite and final-wheel build/integration gates: the earlier 02917ed wheel receipts remain historical evidence and do not verify this fix. The prior installed browser check also confirmed the review confirmation gate, controlled changed-baseline refusal before HTTP acceptance, cancellation, and sidebar-disable persistence on reload; actual study-switch interaction remains unverified.
 

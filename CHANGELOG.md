@@ -7,6 +7,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+- Disabled Agent preference now blocks Send on the Agent page as well as selection questions, with a visible explanation and preserved composer text.
+
 ### Dashboard research features on `context-aware-agent`
 
 With enlarged text, the mobile header gives the study identity room to wrap
