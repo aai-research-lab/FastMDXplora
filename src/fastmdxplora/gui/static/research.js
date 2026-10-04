@@ -396,10 +396,18 @@
       if (change) { auditEvent = change.dataset.researchAudit; updateContext(); }
       const bookmark = event.target.closest("[data-research-bookmark]");
       if (bookmark) {
+        const preparationBookmark = bookmark.id === "preparation-bookmark";
         if (bookmark.dataset.researchBookmark) analysis = bookmark.dataset.researchBookmark;
         if (docked) setDock(false);
         setBookmarks(true);
-        refresh().then(suggestTags).catch(() => status("Could not load bookmarks."));
+        if (preparationBookmark && !editing) {
+          renderTags(Array.from(new Set([...selectedTags(), "Preparation"])));
+        }
+        refresh().then(() => {
+          if (preparationBookmark && !editing) {
+            renderTags(Array.from(new Set([...selectedTags(), "Preparation"])));
+          } else suggestTags();
+        }).catch(() => status("Could not load bookmarks."));
         if (editing) status("Finish editing or press Clear before saving a new view.");
         el("research-title").focus();
       }

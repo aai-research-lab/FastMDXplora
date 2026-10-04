@@ -97,6 +97,17 @@
       });
     }
 
+    const sidebarNav = $(".sidebar-nav");
+    if (sidebarNav) {
+      sidebarNav.addEventListener("focusin", (event) => {
+        const link = event.target.closest(".nav-link");
+        if (!link || !sidebarNav.contains(link)) return;
+        if (sidebarNav.scrollWidth > sidebarNav.clientWidth + 1) {
+          link.scrollIntoView({block: "nearest", inline: "nearest", behavior: "auto"});
+        }
+      });
+    }
+
     $$('[data-view-link]').forEach((element) => {
       element.addEventListener("click", (event) => {
         event.preventDefault();

@@ -225,6 +225,70 @@ def test_browser_cancel_restores_view_and_does_not_save_clip(clip_page):
     assert not page.errors
 
 
+def test_browser_clip_preview_and_export_restore_playback_controls(clip_page):
+    page = clip_page
+    page.get_by_role("button", name="Next frame", exact=True).click()
+    page.wait_for_function("FastMDXMoleculeViewer.STATE.mode === 'playback' && FastMDXMoleculeViewer.STATE.playbackLoaded")
+    page.evaluate("window.dispatchEvent(new CustomEvent('dashboard:trajectory-action', {detail: {action: 'first'}}))")
+    page.wait_for_function("document.querySelector('#traj-slider').value === '0'")
+    page.locator("#traj-follow").check()
+    if not page.evaluate("FastMDXMoleculeViewer.STATE.spinning"):
+        page.locator('[data-cam="spin"]').click()
+    original = page.evaluate("({view: FastMDXResearch.capture(), liveUpdates: FastMDXMoleculeViewer.STATE.liveUpdates})")
+
+    page.locator("#clip-export-open").click()
+    page.wait_for_function("document.querySelector('#clip-status').textContent.includes('saved browser frames available')")
+    page.locator("#clip-preview").click()
+    page.wait_for_function("document.querySelector('#clip-status').textContent.includes('Preview ready')", timeout=60000)
+
+    def assert_restored():
+        restored = page.evaluate("({view: FastMDXResearch.capture(), controls: FastMDXMoleculeViewer.STATE, follow: document.querySelector('#traj-follow').checked})")
+        assert restored["view"].get("frame") == original["view"].get("frame") == 0
+        assert restored["follow"] is True
+        assert restored["controls"]["spinning"] is True
+        assert restored["controls"]["playbackPlaying"] is False
+        assert restored["controls"]["liveUpdates"] is original["liveUpdates"]
+
+    assert_restored()
+    page.locator("#clip-export-start").click()
+    page.wait_for_function("document.querySelector('#clip-status').textContent.includes('metadata saved')", timeout=60000)
+    assert_restored()
+    assert not page.errors
+
+
+def test_browser_clip_unavailable_playback_restores_viewer_controls(clip_page):
+    page = clip_page
+    if not page.evaluate("FastMDXMoleculeViewer.STATE.spinning"):
+        page.locator('[data-cam="spin"]').click()
+    page.locator("#traj-follow").check()
+    original = page.evaluate("({view: FastMDXResearch.capture(), liveUpdates: FastMDXMoleculeViewer.STATE.liveUpdates})")
+    page.evaluate("FastMDXMoleculeViewer.STATE.playbackPayload = null")
+    page.route("**/api/playback-info*", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps({"playback_available": False, "reason": "test unavailable"})))
+
+    error = page.evaluate("""async () => {
+      try { await FastMDXMoleculeViewer.clipSession({}); return null; }
+      catch (failure) { return failure.message; }
+    }""")
+    assert "unavailable" in error.lower()
+    restored = page.evaluate("""() => ({view: FastMDXResearch.capture(), state: {
+      mode: FastMDXMoleculeViewer.STATE.mode,
+      spinning: FastMDXMoleculeViewer.STATE.spinning,
+      playbackPlaying: FastMDXMoleculeViewer.STATE.playbackPlaying,
+      liveUpdates: FastMDXMoleculeViewer.STATE.liveUpdates,
+      clipExporting: FastMDXMoleculeViewer.STATE.clipExporting,
+      follow: document.querySelector('#traj-follow').checked
+    }})""")
+    assert restored["view"]["mode"] == original["view"]["mode"] == "structure"
+    assert restored["state"]["spinning"] is True
+    assert restored["state"]["playbackPlaying"] is False
+    assert restored["state"]["liveUpdates"] is original["liveUpdates"]
+    assert not restored["state"]["clipExporting"]
+    assert restored["state"]["follow"] is True
+    assert not page.errors
+
+
 def test_clip_preview_maps_a_different_structure_origin_and_restores_camera(tmp_path):
     """A centred static structure must stay visible when playback uses another origin."""
     md = pytest.importorskip("mdtraj")

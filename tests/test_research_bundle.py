@@ -106,6 +106,17 @@ def test_changed_data_refuses_restore_but_keeps_notes_and_images(study):
     assert screenshot_endpoint(study, row["id"])["ok"]
 
 
+def test_missing_bookmarked_data_refuses_restore_but_keeps_notes_and_images(study):
+    row = graph(study, screenshot=png_data())["bookmarks"][0]
+    source = study.active_root / "analysis/rmsd/rmsd.dat"
+    source.unlink()
+
+    result = restore_endpoint(study, row["id"])
+    assert not result["ok"] and "differs" in result["error"]
+    assert bookmarks_endpoint(study)["bookmarks"][0]["note"] == row["note"]
+    assert screenshot_endpoint(study, row["id"])["ok"]
+
+
 def test_original_trajectory_changes_invalidate_cached_playback_bookmarks(study):
     simulation = study.active_root / "simulation"
     simulation.mkdir()

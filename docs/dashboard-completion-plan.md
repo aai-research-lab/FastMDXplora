@@ -5,10 +5,7 @@ the [original framework](dashboard-feature-plan.md), code inspection and the
 running completed-study dashboard. This is a completion plan, not a claim that
 the remaining features or redesign have been implemented.
 
-The [2026-10-03 execution checkpoint and next goal prompt](dashboard-next-goal.md)
-now identify the implemented features, remaining acceptance work and exact next
-sequence. They retain all milestone requirements below and distinguish local
-OpenAI release acceptance from unverified external provider/backend gates.
+The [2026-10-03 closeout checklist](dashboard-next-goal.md) is the only operational work order. This document remains the requirements contract and distinguishes local OpenAI acceptance from unverified external provider/backend gates.
 
 ## Outcome and scope
 
@@ -32,19 +29,18 @@ separately from this feature work.
 
 ## Milestone sequence and completion tracking
 
-| Milestone | Current state | Remaining deliverable | Dependency |
-| --- | --- | --- | --- |
-| M0 | Reconciled | Maintain requirement/evidence map and reconcile newly found gaps | Start |
-| M8a | Foundation implemented | Full contrast, text-zoom and expanded-state visual acceptance | M0 |
-| M1 | Specified controls implemented | Final integration of context inspection/opt-out, draft diff and exact-review boundary | M8a |
-| M2 | Core implemented/verified | Polish bookmark workflow and complete regression acceptance | M8a; M1/M6 context changes |
-| M3 | Adapters implemented; live tests partial | Provider acceptance matrix, supported-model controls and real account tests | Can proceed alongside other work |
-| M4 | Specified controls implemented | Integrated acceptance of resolution, title/caption, preview/estimate and exports | M8a |
-| M5 | Full controlled POPC and installed-wheel OpenFF peptide/ethanol preservation verified; broader preservation limited | CPU repeatability remains a separate failed baseline gate; wider chemistry/platform scope and auxiliary environment conflicts remain documented | M0; before M6 |
-| M6 | Specified visuals implemented | Final integrated component/residue/decision/overlay acceptance | M5; M8a |
-| M8b | Foundation applied; responsive shell checks pass | Full expanded-state, contrast, text-zoom and visual review | Functional increments |
-| M7 | Partial; Windows core/Agent clean-wheel and completed-study viewer/bookmark/media/restart verified | Remaining installed context/provider/chemistry acceptance, scientific and expanded-state visual gates | All preceding gates |
-
+| Milestone | Acceptance contract | Depends on |
+| --- | --- | --- |
+| M0 | Baseline, scope, requirements and scientific boundaries are traceable | Start |
+| M8a | Shared dashboard visual system, contrast, readable text, responsive layout and accessible components | M0 |
+| M1 | Evidence-aware Agent context, opt-out, exact human draft review and no autonomous scientific action | M8a |
+| M2 | Study-local bookmarks with screenshots, tags, import/export, collision handling and safe restoration | M1; M8a |
+| M3 | Provider connections, correct model order, supported reasoning controls and isolated credentials | Parallel |
+| M4 | Grouped clip controls, faithful preview, GIF/MP4 export, provenance and viewer restoration | M8a |
+| M5 | Bounded observational provenance and source/chemistry preservation evidence with explicit scope limits | M0; before M6 |
+| M6 | Preparation audit inventories, traceable decisions, identity-safe comparisons and display-only overlays | M5; M8a |
+| M8b | Visual and interaction acceptance across pages, themes, widths, zoom, dialogs and keyboard/focus states | Functional increments |
+| M7 | Exact-revision tests, installed package, integrated workflows, accurate handoff and branch publication | All previous contracts |
 Track each requirement as `planned`, `implemented`, `verified`, or
 `blocked/deferred with reason`. A milestone becomes complete only when all its
 required controls and acceptance checks are verified. A skipped test, synthetic
@@ -323,59 +319,9 @@ provider/backend dependency prevents an unqualified whole-framework completion
 claim. The branch is clean, remote matches the reviewed commit, documentation
 describes the final behavior and remaining limitations honestly.
 
-## Working rules and obvious improvements
+## Operational closeout checklist
 
-## Execution order after the OpenAI-only account clarification
-
-The user has only OpenAI subscription access. Complete the locally testable
-release scope and OpenAI live acceptance; retain Claude, Kimi Code and Gemini
-adapters with explicitly unverified live-account status. Do not require purchases
-or additional accounts to finish independent dashboard work. Do not describe
-synthetic provider coverage as live subscription verification.
-
-1. **Reconcile the current revision.** Check the GitHub Desktop checkout and
-   branch, update the requirement table from the latest receipts, and identify
-   the exact build under review. Keep earlier baseline failures separate from
-   new feature failures. Deliver an up-to-date requirement/evidence map.
-2. **Close the OpenAI model increment.** Verify the rebuilt installed dashboard
-   shows Astra, Sol 6.1, Sol 6 and Luna 6 in order with plain labels and working
-   supported reasoning controls. Preserve the chosen model on access failure.
-   Record successful live replies separately from response-protocol failures;
-   restore the user's model preference after testing. Deliver installed/native
-   acceptance evidence, not only passing source tests.
-3. **Finish native visual acceptance.** Inspect every surface in the M8b table,
-   all three themes, narrow layouts and enlarged text. Prioritize unreadable
-   dropdowns, overlapping controls, cramped forms, modal scrolling/focus and
-   warning legibility. Correct verified issues using the shared design tokens;
-   rerun only the affected checks after each correction. Deliver representative
-   before/after views and a surface/state acceptance record.
-4. **Close feature integration.** Exercise context inspection/opt-out and exact
-   draft review, bookmark capture/import/restore, viewer export and audit links
-   together on an installed completed-study copy. Include cancellation, stale
-   evidence, missing screenshots and disabled Agent states. Deliver an integrated
-   flow receipt with source checksums unchanged.
-5. **Reconcile scientific preservation.** Review the observational recorder diff
-   and its coverage map against the protein, POPC and OpenFF receipts. Retain
-   historical missing causes and aggregate-only events as explicit limits.
-   Report the reproduced pre-existing CPU repeatability failure and auxiliary
-   chemistry environment conflicts without changing scientific behavior to
-   obtain a pass. Deliver a precise preservation scope and limitation record.
-6. **Run the final release gate.** Freeze the feature revision, run the required
-   combined suite without concurrent edits, build/install its wheel outside the
-   checkout and verify resources plus the integrated flow. Any subsequent code
-   correction invalidates the affected receipt and requires a new final build.
-   Deliver revision, wheel hash, test results, skips and live provider matrix.
-7. **Publish the reviewable branch description.** Reconcile M0–M8, README,
-   changelog, packaged knowledge and feature status. Describe user-visible changes,
-   scientific safeguards and remaining dependencies. Commit/push to the user's
-   branch; prepare the upstream PR description when requested. Do not merge or
-   integrate upstream main. Mark only evidenced milestones complete and clearly
-   qualify the release while other-provider live tests remain unavailable.
-
-Each work package ends with a reviewable result and an updated status record;
-it does not introduce a milestone stop. The full milestone sections above remain
-the acceptance contract for these work packages.
-
+The only live work order is [dashboard-next-goal.md](dashboard-next-goal.md). Current receipts and milestone status belong in [dashboard-feature-status.md](dashboard-feature-status.md). The acceptance contract above and the [original feature framework](dashboard-feature-plan.md) remain authoritative; do not maintain a second execution sequence here.
 ## Implementation rules
 
 - Implement design foundation first, then functional gaps, then final visual

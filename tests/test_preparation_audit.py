@@ -195,6 +195,31 @@ def test_browser_restores_audit_selection_without_modifying_structures(tmp_path,
                 "Explain this saved preparation change"
                 in page.locator("#agent-request").input_value()
             )
+            page.locator("#preparation-bookmark").click()
+            page.wait_for_function("!document.querySelector('#research-bookmarks').hidden")
+            assert page.locator("#research-tags input[value='Preparation']").is_checked()
+            assert page.evaluate("FastMDXResearch.capture().audit_event") == "view-prepared"
+            display = page.evaluate("FastMDXPreparationAudit.capture()")
+            page.locator("#research-title").fill("Prepared audit view")
+            page.locator("#research-note").fill("Observed preparation evidence; cause remains unproven.")
+            page.locator("#research-save").click()
+            page.wait_for_function("Array.from(document.querySelectorAll('.research-bookmark strong'))"
+                                   ".some(node => node.textContent === 'Prepared audit view')")
+            card = page.locator(".research-bookmark").filter(has_text="Prepared audit view")
+            assert "Preparation" in card.inner_text()
+            page.locator("#preparation-event").select_option("view-input")
+            card.get_by_role("button", name="Restore").click()
+            page.wait_for_function(
+                "FastMDXResearch.capture().audit_event === 'view-prepared' && "
+                "FastMDXPreparationAudit.capture()?.overlay === true && "
+                "FastMDXPreparationAudit.capture()?.linked === true"
+            )
+            restored_display = page.evaluate("FastMDXPreparationAudit.capture()")
+            assert restored_display["before"] == display["before"]
+            assert restored_display["after"] == display["after"]
+            assert restored_display["overlay"] == display["overlay"]
+            assert restored_display["linked"] == display["linked"]
+            page.locator("#research-bookmarks-close").click()
             page.evaluate("""async () => {
                 await FastMDXResearch.restore({page:'overview',audit_event:'view-input',
                   audit_source:'input',audit_selection:{chain:'A',resseq:1,resname:'ALA',atom:'CA'}});
@@ -216,7 +241,8 @@ def test_browser_restores_audit_selection_without_modifying_structures(tmp_path,
             assert restored["overlay"] is True and restored["linked"] is True
             np.testing.assert_allclose(restored["before_camera"], saved["before_camera"], atol=1e-6)
             np.testing.assert_allclose(restored["after_camera"], saved["after_camera"], atol=1e-6)
-            page.locator("#research-agent-close").click()
+            if page.locator("#research-agent-close").is_visible():
+                page.locator("#research-agent-close").click()
             page.locator("#preparation-details").locator("..").locator("summary").click()
             for zoom in (100, 200):
                 page.add_style_tag(content=f"html {{font-size: {zoom}% !important;}}")

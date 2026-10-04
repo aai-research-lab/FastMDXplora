@@ -2182,9 +2182,40 @@
     async clipSession(options) {
       if (STATE.clipExporting) throw new Error("A clip export is already active.");
       const original = window.FastMDXResearch.capture(), generation = STATE.viewerGeneration;
+      const originalControls = {
+        follow: !!document.getElementById("traj-follow")?.checked,
+        liveUpdates: STATE.liveUpdates,
+        playbackPlaying: STATE.playbackPlaying,
+        spinning: STATE.spinning,
+      };
+      const restoreControls = async () => {
+        if (generation !== STATE.viewerGeneration) return;
+        const follow = document.getElementById("traj-follow");
+        if (follow) follow.checked = originalControls.follow;
+        if (originalControls.playbackPlaying && STATE.mode === "playback" && STATE.playbackLoaded) {
+          await startPlayback();
+        } else {
+          pausePlayback();
+        }
+        STATE.liveUpdates = originalControls.liveUpdates;
+        const updates = document.querySelector('[data-action="pause-toggle"]');
+        if (updates) {
+          updates.textContent = originalControls.liveUpdates ? "Pause Updates" : "Resume Updates";
+          updates.classList.toggle("active", !originalControls.liveUpdates);
+        }
+        setSpinning(STATE.viewer, originalControls.spinning);
+      };
       pausePlayback(); stopFollowing(); setSpinning(STATE.viewer, false);
-      if (!(await loadPlayback(await ensurePlaybackPayload()))) throw new Error("Saved trajectory playback is unavailable.");
-      if (generation !== STATE.viewerGeneration) throw new Error("The study changed before export.");
+      try {
+        if (!(await loadPlayback(await ensurePlaybackPayload()))) throw new Error("Saved trajectory playback is unavailable.");
+        if (generation !== STATE.viewerGeneration) throw new Error("The study changed before export.");
+      } catch (error) {
+        if (generation === STATE.viewerGeneration) {
+          try { await window.FastMDXMoleculeViewer.restoreResearchView(original); }
+          finally { await restoreControls(); }
+        }
+        throw error;
+      }
       STATE.clipExporting = true;
       const viewer = STATE.viewer, camera = captureView(viewer), labels = [];
       const check = () => { if (generation !== STATE.viewerGeneration || !STATE.clipExporting) throw new Error("The study changed during export."); };
@@ -2222,7 +2253,10 @@
           labels.splice(0).forEach((label) => { try { viewer.removeLabel(label); } catch (_) {} });
           STATE.clipExporting = false;
           viewer.resize();
-          if (generation === STATE.viewerGeneration) await window.FastMDXMoleculeViewer.restoreResearchView(original);
+          if (generation === STATE.viewerGeneration) {
+            try { await window.FastMDXMoleculeViewer.restoreResearchView(original); }
+            finally { await restoreControls(); }
+          }
         },
       };
     },

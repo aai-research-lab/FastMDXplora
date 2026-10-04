@@ -273,6 +273,164 @@ def test_dashboard_shell_and_bookmarks_fit_each_theme(tmp_path, theme):
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+@pytest.mark.parametrize("viewport_width", [390, 768])
+def test_analysis_grid_has_no_mobile_page_overflow_at_large_text(tmp_path, theme, viewport_width):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _analysis, _manifest, _series
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    study = _write_study(tmp_path / "study")
+    _manifest(study, saving_interval_ps=2.0)
+    _analysis(study, "rmsd", _series(12))
+    server, url = start_test_server(study)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": viewport_width, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#analysis")
+            page.wait_for_selector(".analysis-grid .analysis-card")
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                metrics = page.evaluate("""() => {
+                    const body = document.body;
+                    const grid = document.querySelector('.analysis-grid');
+                    const card = grid.querySelector('.analysis-card');
+                    const ranges = [...grid.querySelectorAll('.series-range')].map(row => {
+                        const bounds = row.getBoundingClientRect();
+                        return {
+                            width: row.clientWidth,
+                            scrollWidth: row.scrollWidth,
+                            left: bounds.left,
+                            right: bounds.right,
+                            controls: [...row.querySelectorAll('input, button')].map(control => {
+                                const rect = control.getBoundingClientRect();
+                                return {left: rect.left, right: rect.right};
+                            }),
+                        };
+                    });
+                    return {
+                        viewport: innerWidth,
+                        bodyWidth: body.clientWidth,
+                        bodyScrollWidth: body.scrollWidth,
+                        gridWidth: grid.clientWidth,
+                        gridScrollWidth: grid.scrollWidth,
+                        cardWidth: card.getBoundingClientRect().width,
+                        ranges,
+                    };
+                }""")
+                assert metrics["bodyScrollWidth"] <= metrics["viewport"] + 1, (theme, zoom, metrics)
+                assert metrics["gridScrollWidth"] <= metrics["gridWidth"] + 1, (theme, zoom, metrics)
+                assert metrics["ranges"]
+                assert all(row["scrollWidth"] <= row["width"] + 1 for row in metrics["ranges"]), (theme, zoom, metrics)
+                assert all(control["left"] >= row["left"] - 1 and control["right"] <= row["right"] + 1
+                           for row in metrics["ranges"] for control in row["controls"]), (theme, zoom, metrics)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+@pytest.mark.parametrize("viewport_width", [390, 768])
+def test_files_cards_stay_within_mobile_content_at_large_text(tmp_path, theme, viewport_width):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _analysis, _manifest, _series
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    study = _write_study(tmp_path / "study")
+    _manifest(study, saving_interval_ps=2.0)
+    _analysis(study, "rmsd", _series(12))
+    server, url = start_test_server(study)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": viewport_width, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#files")
+            page.wait_for_selector("#file-groups .file-row")
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                metrics = page.evaluate("""() => {
+                    const lists = [...document.querySelectorAll('#file-groups .files-list')];
+                    const shell = document.querySelector('.page[data-page=files]');
+                    const actions = [...document.querySelectorAll('#file-groups .file-meta .file-actions')].map(el => {
+                        const box = el.getBoundingClientRect();
+                        const parent = el.parentElement.getBoundingClientRect();
+                        return {width: el.clientWidth, scrollWidth: el.scrollWidth,
+                            left: box.left, right: box.right, parentRight: parent.right,
+                            buttons: [...el.children].map(button => {
+                                const rect = button.getBoundingClientRect();
+                                return {left: rect.left, right: rect.right};
+                            })};
+                    });
+                    return {
+                        viewport: innerWidth,
+                        bodyWidth: document.body.clientWidth,
+                        bodyScrollWidth: document.body.scrollWidth,
+                        shellWidth: shell.clientWidth,
+                        shellScrollWidth: shell.scrollWidth,
+                        lists: lists.map(list => ({width: list.clientWidth, scrollWidth: list.scrollWidth})),
+                        actions,
+                    };
+                }""")
+                assert metrics["bodyScrollWidth"] <= metrics["viewport"] + 1, (theme, zoom, metrics)
+                assert metrics["shellScrollWidth"] <= metrics["shellWidth"] + 1, (theme, zoom, metrics)
+                assert all(row["scrollWidth"] <= row["width"] + 1 for row in metrics["lists"]), (theme, zoom, metrics)
+                assert metrics["actions"]
+                assert all(action["right"] <= action["parentRight"] + 1 for action in metrics["actions"]), (theme, zoom, metrics)
+                assert all(action["scrollWidth"] <= action["width"] + 1 for action in metrics["actions"]), (theme, zoom, metrics)
+                assert all(button["left"] >= action["left"] - 1 and button["right"] <= action["right"] + 1
+                           for action in metrics["actions"] for button in action["buttons"]), (theme, zoom, metrics)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+@pytest.mark.parametrize("viewport_width", [390, 768])
+def test_studies_location_wraps_without_mobile_page_overflow(tmp_path, theme, viewport_width):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+
+    root = tmp_path / ("workspace-" + "x" * 44) / ("studies-" + "y" * 44)
+    root.mkdir(parents=True)
+    server, url = start_test_server(root)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": viewport_width, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#studies")
+            page.wait_for_function("document.getElementById('studies-where').textContent.includes('workspace-')")
+            for zoom in (100, 200):
+                page.evaluate("size => document.documentElement.style.fontSize = size + '%'", zoom)
+                metrics = page.evaluate("""() => {
+                    const body = document.body;
+                    const html = document.documentElement;
+                    const location = document.getElementById('studies-where');
+                    return {
+                        viewport: innerWidth,
+                        bodyWidth: body.clientWidth,
+                        bodyScrollWidth: body.scrollWidth,
+                        htmlScrollWidth: html.scrollWidth,
+                        locationWidth: location.clientWidth,
+                        locationScrollWidth: location.scrollWidth,
+                    };
+                }""")
+                assert metrics["bodyScrollWidth"] <= metrics["viewport"] + 1, (theme, zoom, metrics)
+                assert metrics["htmlScrollWidth"] <= metrics["viewport"] + 1, (theme, zoom, metrics)
+                assert metrics["locationScrollWidth"] <= metrics["locationWidth"] + 1, (theme, zoom, metrics)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
 def test_phone_header_keeps_short_study_identity_readable_at_large_text(tmp_path, theme):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server
@@ -433,6 +591,60 @@ def test_mobile_scrolling_keeps_research_actions_clear_of_study_navigation(tmp_p
         server.server_close()
 
 
+@pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
+def test_mobile_nav_keyboard_focus_reveals_full_link_at_large_text(tmp_path, theme):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_test_server
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    server, url = start_test_server(_write_study(tmp_path / "study"))
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
+            page.goto(url + "/#overview")
+            page.wait_for_function("document.documentElement.dataset.page === 'overview'")
+            page.wait_for_function("document.body.classList.contains('state-ready')")
+            page.evaluate("document.documentElement.style.fontSize = '200%'")
+            expected = page.locator(".sidebar-nav a.nav-link").count()
+            assert expected > 0
+            page.locator("body").focus()
+
+            seen = set()
+            for _ in range(120):
+                page.keyboard.press("Tab")
+                focused = page.evaluate("""() => {
+                    const nav = document.querySelector('.sidebar-nav');
+                    const links = [...nav.querySelectorAll('a.nav-link')];
+                    const index = links.indexOf(document.activeElement);
+                    if (index < 0) return null;
+                    const r = document.activeElement.getBoundingClientRect();
+                    const n = nav.getBoundingClientRect();
+                    return {
+                        index,
+                        visible: document.activeElement.matches(':focus-visible'),
+                        fullyVisible: r.left >= n.left - 1 && r.right <= n.right + 1,
+                        outline: getComputedStyle(document.activeElement).outlineStyle,
+                        scrollLeft: nav.scrollLeft
+                    };
+                }""")
+                if focused is None:
+                    if seen:
+                        break
+                    continue
+                assert focused["visible"], (theme, focused)
+                assert focused["outline"] != "none", (theme, focused)
+                assert focused["fullyVisible"], (theme, focused)
+                seen.add(focused["index"])
+
+            assert seen == set(range(expected)), (theme, seen, expected)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("connected", [True, False])
 def test_settings_engine_tracks_selected_subscription_and_refreshes_on_open(tmp_path, monkeypatch, connected):
     playwright = pytest.importorskip("playwright.sync_api")
@@ -585,7 +797,8 @@ def test_column_and_file_splitters_resize_with_keyboard_and_keep_sources(tmp_pat
 
 
 @pytest.mark.parametrize("theme", ["graphite", "ink", "paper"])
-def test_sidebar_brand_and_collapse_fit_resized_columns_and_large_text(tmp_path, theme):
+@pytest.mark.parametrize("viewport_width", [1280, 1440])
+def test_sidebar_brand_and_collapse_fit_resized_columns_and_large_text(tmp_path, theme, viewport_width):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_test_server
     from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
@@ -595,27 +808,47 @@ def test_sidebar_brand_and_collapse_fit_resized_columns_and_large_text(tmp_path,
     try:
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1280, "height": 900})
-            page.add_init_script("localStorage.setItem('fmx.theme', " + json.dumps(theme) + ")")
             for width in (180, 232, 320):
-                page.add_init_script(f"localStorage.setItem('fmx.sidebarWidth', '{width}')")
+                context = browser.new_context(viewport={"width": viewport_width, "height": 900})
+                context.add_init_script(
+                    "localStorage.setItem('fmx.theme', "
+                    + json.dumps(theme)
+                    + "); localStorage.setItem('fmx.sidebarWidth', "
+                    + json.dumps(str(width))
+                    + ");"
+                )
+                page = context.new_page()
                 for zoom in (100, 200):
                     page.goto(url + "/#overview")
                     page.wait_for_function("document.body.dataset.theme === " + json.dumps(theme))
-                    page.add_style_tag(content=f"html {{font-size: {zoom}% !important;}}")
+                    # Headless Chromium uses overlay scrollbars; reserve the
+                    # classic Windows gutter that reduces the native sidebar's
+                    # usable width by about 10 px.
+                    page.add_style_tag(
+                        content=f"html {{font-size: {zoom}% !important;}} .sidebar {{scrollbar-gutter: stable;}}"
+                    )
                     product = page.locator(".sidebar .brand-product")
                     assert product.inner_text() == "FastMDXplora"
+                    assert page.locator(".sidebar").bounding_box()["width"] == pytest.approx(width)
                     assert product.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), (theme, width, zoom)
                     if zoom == 100:
                         assert product.evaluate("el => el.clientHeight <= parseFloat(getComputedStyle(el).lineHeight) + 1"), (theme, width)
                     bounds = page.locator(".sidebar").bounding_box()
                     button = page.locator("#sidebar-collapse").bounding_box()
+                    brand = product.bounding_box()
                     assert button and bounds and button["x"] >= bounds["x"]
                     assert button["x"] + button["width"] <= bounds["x"] + bounds["width"] + 1
+                    assert brand
+                    if width == 180 and zoom == 200:
+                        line_height = float(product.evaluate("el => getComputedStyle(el).lineHeight.replace('px', '')"))
+                        assert product.evaluate("el => el.scrollHeight <= el.clientHeight + 1")
+                        assert brand["height"] <= 2 * line_height + 1
+                        assert button["y"] >= brand["y"] + brand["height"] - 1
                     page.locator("#sidebar-collapse").click()
                     assert page.locator(".sidebar-expand").is_visible()
                     page.locator(".sidebar-expand").click()
                     assert product.is_visible()
+                context.close()
             browser.close()
     finally:
         server.shutdown()

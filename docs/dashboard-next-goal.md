@@ -1,138 +1,43 @@
-# Dashboard release checkpoint and next goal
+# FastMDXplora dashboard closeout checklist
 
-Updated 2026-10-03 against the current branch and latest installed wheel. This
-checkpoint orders the remaining work in the
-[completion plan](dashboard-completion-plan.md); it does not replace or reduce its
-M0–M8 requirements. Detailed implementation and test receipts remain in the
-[status record](dashboard-feature-status.md).
+Updated 2026-10-03. This is the only operational checklist for finishing M0–M8. Requirement contracts remain in [dashboard-feature-plan.md](dashboard-feature-plan.md) and [dashboard-completion-plan.md](dashboard-completion-plan.md). Evidence receipts and historical limitations remain in [dashboard-feature-status.md](dashboard-feature-status.md). Avoid duplicating the work order in those documents.
 
-## Current state
+Continue in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent` tracking `princeote/context-aware-agent`. Retain the existing v2.5.8-based history; do not integrate upstream main. Verify current branch and candidate identity before acting. Reuse the installed v7 candidate on port 8785 and the existing disposable completed-study copy. Preserve the user's port 8783, credentials and active preferences. Detailed evidence is in the status record.
 
-Work is in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch
-`context-aware-agent`, tracking `princeote/context-aware-agent`. Current revision
-is `201cc3686216eb45a5e9ae6807cb0f20c900dc2f`; the checkout was clean and the
-remote tip matched when checked. The development wheel is
-`2.5.9.dev207+g201cc3686`, SHA256
-`2f488a5e7970cb526ed5dfcfbf256f2ed131a886764e6d61affc4e0a9ec45aab`. It is
-installed in an isolated acceptance environment, passes `pip check`, and includes
-all 127 packaged error references and required UI assets. The completed 1L2Y
-study loads there. The user's separate port 8783 dashboard was preserved.
-
-| Milestone | What exists | What remains |
-| --- | --- | --- |
-| M0 | Branch scope, architecture, scientific boundaries and requirement map are reconciled | Keep exact-revision evidence current through final handoff |
-| M1 | Persistent Agent, eight context types, packaged Markdown, context inspector/opt-out, draft diff and human review guards | Latest installed integrated acceptance, including disabled/stale/error states and exact review invalidation |
-| M2 | Study-local bookmarks with screenshots, titles/tags/notes, dates, search, import/export and source-aware restoration | Latest installed restart/import/restore flow, including stale and missing sources |
-| M3 | OpenAI/Claude/Kimi/Gemini adapters, provider dropdown, requested Codex order and reasoning controls; live OpenAI inference already succeeded | Recheck connected OpenAI Agent route/model/reasoning after restart; other provider live gates remain unavailable without accounts |
-| M4 | GIF/MP4/Both, frame range/stride/fps, rotation, labels, resolution, preview/sidecar and grouped controls | Latest installed preview/download/hash and cancel/failure restoration as an integrated flow |
-| M5 | Bounded observational provenance; controlled POPC and installed-wheel OpenFF preservation evidence | Reconcile exact fixture/platform coverage; retain the separate CPU repeatability failure and platform/chemistry limits |
-| M6 | Optional preparation audit with inventories, affected-residue track, decisions, guarded comparison/overlay and Agent/bookmark links | Latest installed selection, ambiguity refusal, overlay and bookmark restoration |
-| M8 | Visual foundation, three themes, dark dropdowns, responsive panels, text scaling, keyboard splitters and latest mobile toolbar fix | Installed native review of all listed surfaces/themes/widths/expanded states, including 200% text and focus/contrast |
-| M7 | Latest wheel installs and starts; resource, mobile regression, and earlier feature receipts pass | Freeze one final revision; complete broad visual/integrated checks and final combined suite on it |
-
-The latest mobile-toolbar regression passes in all three themes at 390/768 px and
-100%/200% text. It checks actual body scrolling, identity hit-testing, bookmark
-opening, Escape and focus return (3 checks, 18.59 s). This source-level regression
-and successful wheel startup do not replace the outstanding native review at
-those sizes or the full M7 gate.
-
-The Agent API-key error has a known route explanation: the earlier connected
-OpenAI session was using the API/local route. Selecting the connected subscription
-model restored successful Agent replies without entering or copying an API key.
-The final regression must verify the selected route, model and reasoning persist
-after restart and a harmless explanation uses the connected OpenAI subscription;
-the explicit API-key/local-server action remains separate. Prior error text in the
-conversation history is not evidence of a current failure.
-
-The accepted model order remains Astra, Sol 6.1, Sol 6, Luna 6, then the rest.
-Do not repeat already-passing model probes without a route change or new failure.
-The user has only OpenAI subscription access. Preserve Claude, Kimi Code and Gemini
-adapters and report their real-account gates as unverified.
+**OpenAI route verified on v7; key error is historical on port 8783.** Port 8783 is `2.5.9.dev198+gd0b2a3bbb`; v7 on 8785 is `2.5.9.dev208+ge0d9796d3`. Settings on both show the active ChatGPT subscription model and reasoning; Anthropic/Claude appear under the separately labeled API-key/local-server section and do not by themselves indicate the active route. The 8783 thread shows an earlier `API key required` error followed by a later successful `Hello.` response. On 8785, explicitly applying **Use this account and model** and asking a fresh UI-explanation question with current-view context disabled returned an answer through GPT-6 Luna/max without requesting a key. The first meta-style test was misrouted into config drafting and refused; it was not counted as success. No further changes are needed for this symptom unless the exact final-wheel request fails. Repeat the clean subscription request in Gate D; leave port 8783 running and unchanged.
 
 ## Revised execution order
 
-1. **Finish latest-build native acceptance.** Use the already installed 201cc
-   wheel in the isolated port 8784 review environment. Verify the mobile toolbar
-   at 390/768 px and 200% text, current bookmark cards and grouped clip dialog,
-   saved OpenAI route/model/reasoning, packaged knowledge and a harmless Agent
-   reply. Keep the user's port 8783 session and credentials untouched; avoid
-   restarting a live server just because one browser observation fails.
-2. **Close M8 with a finite visual matrix.** Review Overview, Config, Analysis,
-   Viewer, Agent, Bookmarks, audit, Report, Files and Settings in Graphite, Ink
-   and Paper at 1440/1280/1024/768/390 px and 200% text. Cover expanded panels,
-   dialogs, warnings, empty/error/stale states, long text, missing images/models,
-   native dropdown options, keyboard navigation, Escape and focus return. Record
-   reviewed combinations and fix observed defects only. Reset temporary viewport,
-   theme and zoom changes after review.
-3. **Complete the integrated feature flow.** Check graph/residue identity and
-   comparison, server-resolved context and opt-out, exact draft review with no
-   autonomous apply/run, bookmark save/restart/import/restore, preview and actual
-   GIF/MP4 downloads, decoded dimensions/hash, cancel/failure restoration, and
-   audit selection/overlay guards. Verify source hashes; use controlled identity
-   fixtures where the historical study lacks unambiguous residue mapping.
-4. **Reconcile science and provider boundaries.** Tie each preservation result to
-   its exact fixture/backend/platform. Do not change algorithms, force fields,
-   protonation, defaults, seeds, atom order, units, analysis definitions or
-   numerical tolerances to satisfy a gate. Keep the reproduced baseline CPU
-   repeatability failure and aggregate provenance limits separate. Do not ask the
-   user to purchase other provider subscriptions.
-5. **Freeze and run the final gate.** Stop code/test edits during the required
-   combined run. Record every pass, failure, skip and environment. Build/install
-   the exact final revision outside the checkout, verify resources/dependencies,
-   rerun changed-area checks and perform the installed integrated flow. Any later
-   code edit requires affected checks and a new final wheel.
-6. **Finish the branch handoff.** Reconcile this checklist and the status map,
-   review the final diff for scientific files, update README/changelog/packaged
-   knowledge as needed, then commit and push only to `princeote/context-aware-agent`.
-   Give a concise account of behavior, evidence and limits. Do not integrate
-   upstream main or create/merge a PR unless requested.
+1. Source regression coverage is in place: changed/missing bookmark sources, ambiguous preparation identity, residue comparison and draft review invalidation are tested; audit bookmark capture/restore passes in three themes. Focus the remaining feature work on integrated acceptance, native popup/expanded-state review and any defect those checks reproduce.
+2. Record Gate C preservation receipts from the final diff and existing qualified scientific tests. Keep known CPU-repeatability, aggregate-provenance and unavailable-backend limits explicit; do not change scientific algorithms or run production MD.
+3. Freeze one code revision only after source fixes stop. Run the specified complete combined test/lint gate without concurrent edits; any code change after this point reopens the affected checks.
+4. Build and install that exact wheel outside the checkout. On disposable study data and port 8785, verify the repaired focus, clip-state restoration, audit bookmark restore, remaining bookmark/Agent interactions and OpenAI route. Do not restart or modify the user's port 8783 dashboard.
+5. Update README, changelog, packaged Agent knowledge and closeout receipts once. Review the full branch diff and scientific-source hashes, commit and push only `princeote/context-aware-agent`, then verify the remote revision. Do not integrate upstream main or create/merge a PR.
 
-Do not add cosmetic scope without a requirement or observed defect. Do not repeat
-passing checks without a new change, failure or required final gate. Continue
-across milestones; there is no milestone-stop requirement.
+## Gate A — visual and interaction acceptance
 
-## Completion rule
+**Partial — full source suite passes; packaged and visual gates remain.** The 300-state matrix reports zero geometry issues; all 30 screenshots were visually inspected across Graphite, Ink and Paper. The 750 available-select control/option styles compute black/white; three empty preparation selects have no options. Review reproduced clipped mobile-navigation focus at 390 px/200% text. The source now scrolls the focused link into view, and its three-theme regression passes. The complete current-source dashboard-boundary module now passes 93/93 tests in 418.76 seconds on Python 3.11.9; six dialog/bookmark focus/Escape checks and eight Agent loading/refusal/draft/disable checks also pass. Still open: visually verify native open-menu rendering if the platform permits and review remaining expanded/empty/loading/error states against the contract. The installed v7 wheel predates the navigation fix, so the exact final package still needs acceptance.
 
-Report local/OpenAI release acceptance separately from whole-framework acceptance.
-Missing Claude/Kimi/Gemini accounts are external unverified gates, not synthetic
-passes. Scientific platform and chemistry limits remain qualified by their
-verified scope. Do not mark the full framework complete unless every required
-gate has evidence; if only external gates remain, give a finite dependency
-handoff rather than looping on completed work.
+## Gate B — installed feature integration
 
-## Ready-to-use continuation goal prompt
+**Partial — OpenAI routes, bookmark core and audit overlay/handoff slices passed on v7.** OpenAI inference, model/reasoning persistence, context evidence with per-message opt-out and matching-source bookmark restore passed on 8785. The 8783 history has an earlier API-key error followed by a successful reply; that older dev198 server remains untouched. On the existing disposable completed study, screenshot bookmark capture, JSON export, PNG screenshot-bundle export/import, collision preview with skip-existing and keep-both, imported-view restore and screenshot/persistence after a 8785 process restart passed. The two original study bookmarks remain and all 320 non-`.research` file hashes matched the pre-test manifest. The preparation audit selected observed ASN A:1, compared Saved setup input with Prepared solute and drew its display-only overlay; it reported 154 exact heavy-atom matches and an unchanged aggregate hash across 326 non-`.research` files. Asking the connected GPT-6 Luna Agent to explain that selected change succeeded without an API-key prompt; the answer did not claim a chemical cause or apply settings. The latest 8785 clip export produced downloadable GIF/MP4 plus metadata and both files decoded, but closing export changed frame 0 to 1 and unchecked Follow. Source now restores the complete viewer state; the full clip suite passes 26/26, including unavailable-playback recovery. The installed wheel predates that correction, so exact-wheel export/restoration remains open. Source tests cover changed and missing bookmark sources, ambiguous audit identity, residue comparison and draft invalidation; the missing-analysis-source refusal now passes (1/1). The source audit-bookmark test passes in all three themes and verifies the Preparation tag, event, stage pair, overlay and linked state. Remaining: final-wheel integrated acceptance of those flows and exact-wheel audit/clip acceptance.
 
-Continue the active FastMDXplora dashboard completion goal using the current live
-state. Work only in
-`C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch
-`princeote/context-aware-agent`, currently at `201cc3686216eb45a5e9ae6807cb0f20c900dc2f`.
-Follow `docs/dashboard-completion-plan.md`, `docs/dashboard-feature-plan.md`,
-`docs/dashboard-feature-status.md` and this checkpoint. Preserve every M0–M8
-requirement. Do not work in the Downloads copy or integrate upstream main.
+On the existing disposable completed-study copy, remaining live acceptance covers graph/residue selection and comparison; exact human draft review/invalidation, stale replies and disabled-Agent behavior; stale or missing bookmark sources; actual v7 GIF/MP4 preview, download, decode/hash, cancellation/failure and viewer restoration; and preparation-audit identity, ambiguity, display-only overlay, bookmark restoration and Agent handoff. Preserve scientific inputs and result hashes. Do not approve/apply a scientific setting autonomously or run production MD.
 
-First finish installed native acceptance of wheel
-`2.5.9.dev207+g201cc3686` in the isolated port 8784 review environment. Complete
-the M8 visual matrix across all ten dashboard surfaces, Graphite/Ink/Paper,
-1440/1280/1024/768/390 px, expanded/empty/error/stale states and 200% text.
-Then verify the integrated Agent, exact human draft-review boundary, OpenAI
-subscription route/model/reasoning persistence, bookmark portability/restoration,
-GIF/MP4 decode/download and preparation-audit identity/overlay guards. Preserve
-the user's separate port 8783 dashboard and all credentials.
+## Gate C — scientific preservation and provenance
 
-Never allow the Agent to run simulations or autonomously apply scientific
-settings. Do not change scientific algorithms, force fields, protonation,
-defaults, seeds, atom ordering, units or analysis definitions. Do not copy or
-disclose credentials. The user has OpenAI subscription access only; retain Claude,
-Kimi Code and Gemini adapters but label real-account testing unverified. Preserve
-Codex model order Astra, Sol 6.1, Sol 6, Luna 6, then the rest, and their supported
-reasoning controls. Do not repeatedly retest accepted models without a route
-change or new failure.
+**Partial — boundary reconciled; historical preservation limits remain.** The branch and working diffs since the documented baseline touch GUI, tests and docs only; no scientific computation module changed. Existing Reference/POPC/OpenFF preservation receipts remain qualified to their fixtures, environment and backends. The reproduced CPU-repeatability baseline failure, aggregate provenance gaps and auxiliary chemistry-environment conflicts remain explicit. Do not change algorithms or run production MD.
 
-Keep scientific preservation claims tied to the exact tested fixture, backend
-and platform; retain known skips, the baseline CPU repeatability failure and
-provenance coverage limits without changing tolerances. Freeze the final code,
-run the required combined checks without concurrent edits, build/install that
-exact revision outside the checkout, and record the wheel hash and exact results.
-Update the plan/status/changelog, commit and push reviewable changes only to the
-user's branch. Report local/OpenAI acceptance separately from whole-framework
-acceptance. Do not create or merge a PR unless asked.
+## Gate D — frozen final build
+
+**Partial — combined source suite passed; exact wheel/integration remain.** The required combined test set passed **241**, skipped **1**, in 856.07 seconds; the skip is the OpenFF ligand-preservation test because `openff.toolkit` is not installed. Five Pillow `Image.getdata()` deprecation warnings came from clip-test assertions. Repository CI Ruff `F,B`, affected-test Ruff, JavaScript syntax and diff checks pass. Build/install the exact committed source wheel outside the checkout; verify package resources and the remaining integrated smoke flow, including repaired viewer and audit restoration plus the OpenAI route. Record source revision, wheel SHA-256, environment and exact results. Any later code change invalidates the affected release checks; documentation-only updates do not change the behavior evidence.
+
+The combined suite must include the dashboard-boundary, Agent-reasoning, provider-connections, research-bundle, clip-export, preparation-audit, preparation-recording, draft-review and analysis-number tests, plus repository-required release checks. Do not repeat the 300-state matrix or live OpenAI probe unless a relevant change or failure invalidates them.
+
+## Gate E — evidence and branch handoff
+
+**Open.** Update README/changelog, packaged knowledge, this checklist and the status record once for final behavior and limitations. Review the complete diff and scientific-source hashes. Commit and push only to `princeote/context-aware-agent` under the existing goal authorization; verify local and remote revisions. Do not integrate upstream main or create/merge a PR. Claude, Kimi Code and Gemini live accounts remain UNVERIFIED_EXTERNAL_DEPENDENCY: retain adapters and local/synthetic tests, do not request purchases or repeat absent-account probes, and do not claim unqualified all-provider completion.
+
+## Closeout rule
+
+Each continuation must complete an item, fix a reproduced defect, produce evidence that changes the next action, or wait on a specifically verified live handle. Do not spend turns restating status or writing another unexecuted plan. Report deltas by requirement, evidence and next action. The Agent explains and proposes human-reviewed drafts only; it never runs simulations or applies scientific settings autonomously. Preserve physics and chemistry.

@@ -1141,9 +1141,8 @@ button {
 
 .files-list {
     display: grid;
-    /* Two across, always. auto-fill packed three on a wide screen at
-       266px each, where a name and four buttons cannot both fit, and
-       one on a narrow one. Two is the width a row needs. */
+    /* Two across on a wide screen; the phone breakpoint gives each row the
+       width its title and actions need at enlarged text sizes. */
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
@@ -1186,7 +1185,7 @@ button {
     color: var(--text-muted);
     margin-top: 4px;
 }
-.file-row .file-meta .file-actions { flex-basis: 100%; margin-top: 4px; }
+.file-row .file-meta .file-actions { flex-basis: 100%; min-width: 0; margin-top: 4px; }
 /* The buttons stay whole -- "Copy path" is never "Copy" over "path" --
    but the row of them may wrap to a second line in a narrow cell, rather
    than run out of it. */
@@ -3106,8 +3105,8 @@ body.research-agent-open.sidebar-collapsed .app-shell { grid-template-columns: 0
 .research-bookmark { padding: 14px 0; border-top: 1px solid var(--border-primary); overflow-wrap: anywhere; }
 .research-bookmark p { white-space: pre-wrap; }
 .research-bookmark button { margin-right: 8px; }
-.series-range { display: flex; gap: 8px; align-items: center; font-size: var(--text-xs); margin-bottom: 6px; }
-.series-range input { width: 90px; }
+.series-range { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--text-xs); margin-bottom: 6px; }
+.series-range input { width: 90px; max-width: 100%; }
 @media (max-width: 900px) {
     .research-agent-dock { width: min(420px, 100vw); }
     body.research-agent-open .app-shell { grid-template-columns: var(--sidebar-width) var(--handle-width) minmax(0, 1fr) 0 0; }
@@ -3272,8 +3271,8 @@ body.sidebar-collapsed .col-handle[data-handle="sidebar"] {
     overflow: hidden; visibility: hidden; width: 0; min-width: 0; padding: 0; border: 0;
 }
 body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
-.sidebar-brand { display: flex; align-items: flex-start; gap: 8px; }
-.sidebar-brand .brand-text { flex: 1; min-width: 0; }
+.sidebar-brand { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.sidebar-brand .brand-text { flex: 1; min-width: min(6rem, 100%); }
 .sidebar .brand-product {
     /* A resized column or enlarged text must keep the complete name visible. */
     overflow-wrap: anywhere;
@@ -3283,7 +3282,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .sidebar .brand-product {
         /* Fit the name at ordinary text size; the rem floor still follows
            enlarged text, which may wrap instead of becoming clipped. */
-        font-size: clamp(1rem, calc((var(--sidebar-width) - 84px) * 0.15), var(--text-3xl));
+        font-size: clamp(0.875rem, calc((var(--sidebar-width) - 84px) * 0.15), var(--text-3xl));
     }
 }
 .sidebar-collapse { order: 2; padding: 4px 7px; font-size: var(--text-2xs); margin-top: 4px; }
@@ -3558,6 +3557,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .page-shell { padding: 16px; max-width: none; }
     .page-header { flex-wrap: wrap; gap: 10px; }
     .viewer-canvas-frame { height: 62vh; min-height: 320px; }
+    .files-list { grid-template-columns: minmax(0, 1fr); }
+    .analysis-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ===========================================================================
@@ -3918,6 +3919,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .starters-note:empty { display: none; }
 
 /* Every study in the workspace (studies.js, workspace.py). */
+#studies-where { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .studies-search {
     min-width: 280px; min-height: 36px; padding: 7px 10px;
     color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 8px;
