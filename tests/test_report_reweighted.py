@@ -76,7 +76,7 @@ class TestTheEquilibriumNumberLeads:
 class TestTheSampleSizeTravelsWithTheNumber:
     def test_the_section_states_it(self, tmp_path: Path) -> None:
         text = reweighted_section(_project(tmp_path, _record()))
-        assert "115 effective frames of 500" in text
+        assert "115 weight-concentration effective frames of 500" in text
 
     def test_every_per_analysis_line_states_it(self) -> None:
         """A reader who goes straight to the RMSD heading and never reads the
@@ -93,6 +93,52 @@ class TestTheSampleSizeTravelsWithTheNumber:
     def test_a_healthy_average_is_not_hedged(self, tmp_path: Path) -> None:
         text = reweighted_section(_project(tmp_path, _record()))
         assert "very few independent frames" not in text
+
+
+class TestTheIndependentSamplesAreNotTheWeightCount:
+    """Kish's count says how evenly the weight is spread, frame by frame, as
+    though each frame were independent. On a well-tempered run with a bias
+    factor of 8 it read 2445 of 6000 frames where the collective variable
+    decorrelated once every 91, about 27 independent samples."""
+
+    def _record(self, **item):
+        quantity = {"analysis": "rmsd", "label": "RMSD (nm)",
+                    "raw_mean": 0.2066, "raw_std": 0.0703,
+                    "reweighted_mean": 0.2813, "reweighted_std": 0.0182,
+                    "reweighted_standard_error": 0.0031,
+                    "shift_percent": 36.14, **item}
+        return _record(effective_sample_size=2445.4, n_frames=6000,
+                       independent_samples=27.0, quantities=[quantity])
+
+    def test_the_section_gives_both_counts(self, tmp_path: Path) -> None:
+        text = reweighted_section(_project(tmp_path, self._record()))
+        assert "2445 weight-concentration effective frames of 6000" in text
+        assert "about 27 independent samples" in text
+
+    def test_the_line_gives_both_counts(self) -> None:
+        line = reweighted_line(self._record(), "rmsd")
+        assert "weight-concentration effective frames of 6000" in line
+        assert "about 27 independent samples" in line
+
+    def test_the_mean_carries_its_standard_error(self, tmp_path: Path) -> None:
+        text = reweighted_section(_project(tmp_path, self._record()))
+        assert "0.2813 ± 0.0031 (s.d. 0.018)" in text
+        assert "paired block bootstrap" in text
+
+    def test_a_withheld_error_says_why(self, tmp_path: Path) -> None:
+        record = self._record(reweighted_standard_error=None,
+                              not_a_measurement="9.0 independent samples.")
+        text = reweighted_section(_project(tmp_path, record))
+        assert "±" not in text.split("| RMSD (nm) |")[1].split("\n")[0]
+        assert "No error on RMSD (nm): 9.0 independent samples." in text
+        assert "No error is given: 9.0 independent samples." in (
+            reweighted_line(record, "rmsd"))
+
+    def test_few_independent_samples_are_cautioned(self, tmp_path: Path) -> None:
+        record = self._record()
+        record["independent_samples"] = 6.0
+        text = reweighted_section(_project(tmp_path, record))
+        assert "rest on very few independent frames" in text
 
 
 class TestItSaysWhatWasNotCorrected:

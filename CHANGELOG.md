@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A reweighted mean says how many independent samples it rests on
+
+**Each reweighted mean now carries a standard error, and the report gives the independent samples it rests on beside Kish's count, which is named for what it is: weight-concentration effective frames.** Kish's (sum w)^2 / sum w^2 was printed as the frames an average rested on, but it counts every frame as independent: on a well-tempered metadynamics run with a bias factor of 8 it read 2445 of 6000 frames while the collective variable decorrelated once every 91, about 27 independent samples. The record now has `independent_samples` (Kish's count divided by the statistical inefficiency of the collective variable, and per quantity the larger of that and the quantity's own) and `cv_statistical_inefficiency`, and each quantity a `reweighted_standard_error` from the paired block bootstrap over values and weights in blocks of twice that inefficiency. The error is withheld, with `not_a_measurement` and its `refusal` code, below 10 independent samples or where the run is shorter than 25 inefficiencies. `effective_sample_size` keeps its name and value. Results change: reweighted tables now show a ± where an error is supported and say why where it is not, and a run with few independent samples is cautioned even when its weights are evenly spread.
+
 ### The live temperature counts only particles with mass
 
 **The temperature shown while a run is going counts the degrees of freedom of particles with mass only, as OpenMM's StateDataReporter does.** The massless M site of a four-point water was counted as three degrees of freedom: a TIP4P-Ew box at 300 K read 197.5 K against OpenMM's 296.4 K, and the GUI's telemetry flagged it as far from its target. A constraint between two massless particles is not counted either, and the count is made once per simulation rather than at every sample. Results change: live telemetry of runs with virtual sites (TIP4P-Ew, TIP5P, OPC) now reads the true temperature; the recorded state data, written by OpenMM, was always right.

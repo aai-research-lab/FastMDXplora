@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from fastmdxplora.refusals import StudyError
@@ -53,12 +54,16 @@ class Weights:
     """One weight per frame, normalised to sum to the frame count."""
 
     effective_sample_size: float
-    """How many independent frames the weighted average really rests on.
+    """Weight-concentration effective frames: Kish's (sum w)^2 / sum w^2.
 
-    The Kish estimate: (sum w)^2 / sum w^2. A weighted mean over a thousand
-    frames whose weight is concentrated in five of them is a mean over five,
-    and quoting it as a thousand overstates it by a factor of fourteen. This
-    is the number that says whether a reweighted average means anything.
+    A weighted mean over a thousand frames whose weight is concentrated in
+    five of them is a mean over five, and quoting it as a thousand overstates
+    it by a factor of fourteen. It counts frames as though each were
+    independent, which frames of a trajectory are not: on a well-tempered
+    metadynamics run with a bias factor of 8 it read 2445 of 6000 frames
+    while the collective variable's statistical inefficiency was 91, so the
+    average rested on about 27 independent samples. That count, this one
+    divided by the inefficiency, is :func:`independent_samples`.
     """
 
     converged: bool
@@ -171,6 +176,7 @@ def weighted_uncertainty(
     *,
     resamples: int = 200,
     seed: int = 0,
+    block_length: int | None = None,
 ) -> "dict[str, object]":
     """A standard error on a reweighted average, and whether to trust it.
 
@@ -184,7 +190,9 @@ def weighted_uncertainty(
     The estimate is a moving-block bootstrap over the frames, resampling
     values and weights together -- the pairing is the whole content of a
     reweighted average, and shuffling them apart would put one frame's
-    value with another's weight.
+    value with another's weight. The block length is taken from the values
+    unless ``block_length`` is given; a caller that knows the collective
+    variable decorrelates more slowly passes ``ceil(2 g)`` of it.
 
     **It is reported as a floor where the weights concentrate.** Against the
     spread of the estimator over 200 independent realisations it holds to
@@ -210,7 +218,8 @@ def weighted_uncertainty(
         return float(np.sum(a * b) / total) if total else float("nan")
 
     result = paired_block_bootstrap([v, w], _mean, resamples=resamples,
-                                    seed=seed).as_dict()
+                                    seed=seed,
+                                    block_length=block_length).as_dict()
     ess = float(weights.effective_sample_size)
     fraction = ess / float(v.size) if v.size else 0.0
     result["effective_sample_size"] = ess
@@ -228,6 +237,119 @@ def weighted_uncertainty(
         result["note"] = (f"{result['note']} {floor_note}" if result.get("note")
                           else floor_note)
     return result
+
+
+def independent_samples(
+    weights: Weights, *series: np.ndarray, inefficiency: float = 1.0,
+) -> tuple[float, float]:
+    """Independent samples a weighted average rests on, and the inefficiency
+    used to count them.
+
+    ``n_independent = n_Kish / g``, where ``n_Kish`` is the weights'
+    :attr:`Weights.effective_sample_size` and ``g`` the largest statistical
+    inefficiency among the given per-frame series and ``inefficiency``.
+    Kish's count says how evenly the weight is spread over the frames and
+    treats every frame as independent; consecutive frames are not, and a
+    weighted mean is correlated through both its values and its weights, so
+    the slower of the observable and the collective variable the weights
+    depend on sets ``g``. On a well-tempered run with a bias factor of 8,
+    2445 weight-concentration effective frames held about 27 independent
+    samples.
+    """
+    from fastmdxplora.statistics import statistical_inefficiency
+
+    g = float(inefficiency) if np.isfinite(inefficiency) else 1.0
+    for values in series:
+        array = np.asarray(values, dtype=float)
+        if array.ndim == 2:
+            columns = [array[:, k] for k in range(array.shape[1])]
+        else:
+            columns = [array.ravel()]
+        for column in columns:
+            column = column[np.isfinite(column)]
+            if column.size >= 3:
+                g = max(g, statistical_inefficiency(column))
+    g = max(g, 1.0)
+    return float(weights.effective_sample_size) / g, g
+
+
+def reweighted_estimate(
+    values: np.ndarray,
+    weights: Weights,
+    *,
+    inefficiency: float = 1.0,
+    resamples: int = 200,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """A reweighted mean with its standard error, or the reason it has none.
+
+    The error is :func:`weighted_uncertainty`'s paired block bootstrap. It is
+    withheld (``standard_error`` None, ``not_a_measurement`` the reason,
+    ``refusal`` its code) where the observable or the collective variable,
+    whose inefficiency is passed as ``inefficiency``, is not long against its
+    own correlation time (``analysis.sampling.correlation_unresolved``: at
+    least 25 inefficiencies, as :func:`fastmdxplora.statistics.summarise`
+    asks), or where :func:`independent_samples` is below
+    :data:`fastmdxplora.statistics.MINIMUM_EFFECTIVE_SAMPLES`
+    (``analysis.sampling.too_few_independent``).
+    """
+    from fastmdxplora.statistics import (
+        MINIMUM_EFFECTIVE_SAMPLES,
+        RESOLVED_SAMPLES,
+        Withholding,
+        correlation_is_resolved,
+    )
+
+    array = np.asarray(values, dtype=float).ravel()
+    independent, g = independent_samples(weights, array, inefficiency=inefficiency)
+    record: dict[str, Any] = {
+        "mean": weighted_mean(array, weights),
+        "standard_error": None,
+        "weight_concentration_effective_frames": float(weights.effective_sample_size),
+        "statistical_inefficiency": g,
+        "independent_samples": independent,
+    }
+    n = int(array.size)
+    cv_resolved = (not np.isfinite(inefficiency) or inefficiency < 2.0
+                   or n / float(inefficiency) >= RESOLVED_SAMPLES)
+    reason = None
+    if n < 3 or not (correlation_is_resolved(array) and cv_resolved):
+        reason = Withholding(
+            f"{n} frames are not long against their own correlation time "
+            f"(one independent sample every {g:.0f} frames, and "
+            f"{RESOLVED_SAMPLES:g} of them resolve it), so a resampling error "
+            "on this reweighted mean would be too small by an unknown factor. "
+            "The remedy is a longer run.",
+            code="analysis.sampling.correlation_unresolved",
+            frames=n, independent=independent, statistical_inefficiency=g,
+            needed=float(RESOLVED_SAMPLES))
+    elif independent < MINIMUM_EFFECTIVE_SAMPLES:
+        reason = Withholding(
+            f"{weights.effective_sample_size:.0f} weight-concentration "
+            f"effective frames, correlated over {g:.0f} frames, hold "
+            f"{independent:.1f} independent samples. Below "
+            f"{MINIMUM_EFFECTIVE_SAMPLES:g} an error on a reweighted mean "
+            "describes how this run happened to go rather than the system. "
+            "The remedy is a longer run, or replicas.",
+            code="analysis.sampling.too_few_independent",
+            independent=independent, frames=n, statistical_inefficiency=g,
+            needed=float(MINIMUM_EFFECTIVE_SAMPLES))
+    if reason is not None:
+        record["not_a_measurement"] = str(reason)
+        record["refusal"] = reason.refusal.code
+        return record
+
+    # Blocks of 2g of the slower series, as `block_length_for` would choose
+    # from the values alone: the weights carry the collective variable's
+    # correlation, and blocks shorter than it break what is really there.
+    block = max(1, min(n, int(np.ceil(2.0 * g))))
+    bootstrap = weighted_uncertainty(array, weights, resamples=resamples,
+                                     seed=seed, block_length=block)
+    record["standard_error"] = float(bootstrap["standard_error"])
+    record["is_a_floor"] = bool(bootstrap["is_a_floor"])
+    if bootstrap.get("note"):
+        record["note"] = bootstrap["note"]
+    return record
 
 
 def weighted_standard_deviation(values: np.ndarray, weights: Weights) -> float:

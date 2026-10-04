@@ -427,6 +427,22 @@ with it rather than in a footnote. A reweighted mean over a thousand frames
 whose weight sits in five of them is a mean over five, and there is no
 arrangement of a document in which that should be readable without the five.
 
+Two counts are given. **Weight-concentration effective frames** is Kish's
+`(sum w)^2 / sum w^2`: how evenly the weight is spread, counting every frame
+as independent. **Independent samples** is that count divided by the
+statistical inefficiency `g` of the collective variable (the larger of it and
+the quantity's own, per quantity), because consecutive frames are correlated:
+on a well-tempered run with a bias factor of 8, 2445 effective frames of 6000
+were about 27 independent samples at `g = 91`. Each reweighted mean carries a
+standard error (`reweighted_standard_error`) from a paired block bootstrap
+over values and weights in blocks of `2g`, withheld with its reason
+(`not_a_measurement`, `refusal`) below 10 independent samples or where the run
+is shorter than 25 inefficiencies. The bootstrap resamples one run's frames, so
+it cannot see how the deposited bias, and so the weights, would differ in
+another run; where the weights concentrate it is marked a floor, and
+independent replicas are the check on it. The `s.d.` beside the mean is the
+width of the reweighted distribution, not an error.
+
 **What is corrected:** the analyses reporting one value per frame — RMSD,
 radius of gyration, hydrogen bonds, SASA, the fraction of native contacts,
 ligand RMSD, the coordination number, the end-to-end distance, the distance
