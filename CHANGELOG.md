@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The PMF figure marks the minimum the summary gives
+
+**The potential of mean force figure marks its minimum inside the range the umbrella windows covered, where the summary already took it.** The figure took the lowest bin over the whole grid, which runs past the last window into bins few samples reached: on a profile whose well was at 0.5 nm inside a covered 0.35 to 1.6 nm, it marked 2.2 nm. Results change: PMF figures of studies whose grid extends past the windows may mark a different minimum; the recorded summary is unchanged.
+
 ### A missing value no longer makes the frames independent
 
 **The statistical inefficiency, the error of a mean, the resolution check, equilibration detection and the bootstrap block length all leave values that are not finite out before they read a correlation.** One NaN made every autocorrelation NaN, and `max(1.0, nan)` is 1.0: an AR(1) series whose inefficiency was 41 read 1, and the bootstrap block built on it was 2 frames instead of 83, so a free energy's error bar from it came out 0.032 against 0.131. `summarise` already dropped such values; these functions are also called directly, by the bootstrap and the reweighting among others. Results change: series with a missing value now get the inefficiency and error their finite values support.
