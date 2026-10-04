@@ -90,6 +90,14 @@ equilibration, and `start: 5` at the first frame at or after 5 ns. The `frame`
 column of their data files is the frame of the trajectory analysed, so it
 begins where they began.
 
+`cluster` also writes, for each method, every cluster's share of the frames
+clustered and its medoid (the member with the least summed RMSD to the
+others) as `cluster_<method>_populations.csv`, and each medoid as a
+structure without its water (`cluster_<method>_medoid_<k>.pdb`); and the
+frame-to-frame RMSD it clustered on, with the frames' times, as
+`cluster_rmsd_matrix.npz` and as a map of time against time
+(`cluster_rmsd_matrix.png`).
+
 ### Folding
 
 | | |

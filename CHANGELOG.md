@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Each cluster's representative, and the RMSD map
+
+**`cluster` now writes each cluster's medoid as a structure, a table of the clusters' shares, and the frame-to-frame RMSD it clustered on.** The RMSD matrix was computed and kept only for the dendrogram, and which structure a cluster is had to be found frame by frame. Now, for each method, `cluster_<method>_populations.csv` gives every cluster's frames, its fraction of the frames clustered, and its medoid (the member with the least summed RMSD to the others, in the distances the clustering used) with its frame and time; `cluster_<method>_medoid_<k>.pdb` is that frame without its water; and `cluster_rmsd_matrix.npz` holds the matrix in nm with each row's frame and time, plotted as `cluster_rmsd_matrix.png`, time against time. Frames DBSCAN calls noise are in no cluster. Results do not change.
+
 ### Which frames a clustering read
 
 **`cluster` and `dimred` now record how many frames they read and whether the run's equilibration is among them, and `start` can begin them later.** Both read every frame, the relaxation from the starting structure included, and said nothing about it, though a relaxation can come out as a cluster or a principal component of its own. The default is unchanged, so results already analysed stay as they were; `findings.frames` in `options.json` now gives the frames read, the first, and the equilibration Chodera's method detects in the RMSD of the selected atoms from the first frame. `start` (in ns, 0 by default) begins at the first frame at or after a time, and `start: equilibrated` after that equilibration; a later time on a trajectory with no clock is refused. The `frame` column of their data files is the frame of the trajectory analysed, so it begins where they began. Results do not change unless `start` is set.

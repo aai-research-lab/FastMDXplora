@@ -18,7 +18,14 @@ conformational clustering. Outputs per method:
   - ``cluster_<method>_counts.png`` — cluster population bar chart.
   - ``cluster_hierarchical_dendrogram.png`` — hierarchical dendrogram
     when hierarchical clustering is requested and SciPy is available.
-  - ``hierarchical_distance_matrix.npy`` and ``hierarchical_linkage.npy`` —
+  - ``cluster_<method>_populations.csv``: each cluster's frames, its
+    fraction of the frames clustered, and its medoid's frame and time.
+  - ``cluster_<method>_medoid_<k>.pdb``: each cluster's medoid, the member
+    with the least summed RMSD to the others, without its water.
+  - ``cluster_rmsd_matrix.npz`` and ``cluster_rmsd_matrix.png``: the
+    frame-to-frame RMSD the clustering used, with the frames' times, and
+    as a map of time against time.
+  - ``hierarchical_distance_matrix.npy`` and ``hierarchical_linkage.npy``:
     reproducibility data for dashboard/report-native dendrogram rendering.
     The linkage is the hierarchy that labelled the frames: for Ward, built
     on the same points (recorded under ``findings.hierarchical``).
@@ -53,7 +60,8 @@ from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
-    category_style, close_figures_opened_since, figures_open, new_figure, save_figure)
+    category_style, close_figures_opened_since, figures_open, match_colorbar_font,
+    new_figure, save_figure)
 from fastmdxplora.analysis.starting_frame import first_frame, start_as_given
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
@@ -142,6 +150,9 @@ class Cluster(Analysis):
     Per method, in ``<output_dir>/cluster/``:
       - ``cluster_<method>.dat`` — CSV with ``frame, cluster`` columns.
       - ``cluster_<method>.png`` — Cluster timeline figure.
+      - ``cluster_<method>_populations.csv`` and one
+        ``cluster_<method>_medoid_<k>.pdb`` per cluster.
+    Once per run: ``cluster_rmsd_matrix.npz`` and ``cluster_rmsd_matrix.png``.
     """
 
     name = "cluster"
@@ -224,6 +235,8 @@ class Cluster(Analysis):
         self._first_frame = first
         if first:
             traj = traj[first:]
+        # Kept for the medoids and the frame times written beside the labels.
+        self._clustered = traj
         if self.features == "coordinates":
             embedding = _superposed_coordinates(traj, atom_idx)
             distances = _euclidean_matrix(embedding)
@@ -334,6 +347,8 @@ class Cluster(Analysis):
                 if counts_svg_path.is_file():
                     artifacts.append(counts_svg_path)
 
+                artifacts.extend(self._write_states(method, labels))
+
                 if method == "hierarchical":
                     dendro_path = self.output_dir / "cluster_hierarchical_dendrogram.png"
                     skip_path = self.output_dir / "cluster_hierarchical_dendrogram_skipped.json"
@@ -378,6 +393,7 @@ class Cluster(Analysis):
                         )
                         artifacts.append(skip_path)
 
+            artifacts.extend(self._write_distance_matrix())
             finished = datetime.now(timezone.utc).isoformat()
 
             # Use the first method's outputs as the "primary" data/figure
@@ -411,6 +427,93 @@ class Cluster(Analysis):
             )
 
     _first_frame: int = 0
+    _clustered: md.Trajectory | None = None
+
+    def _times_ns(self) -> np.ndarray | None:
+        """The clustered frames' times in ns, or None where there is no clock."""
+        traj = self._clustered
+        if traj is None:
+            return None
+        time_ps = np.asarray(traj.time, dtype=float)
+        if time_ps.size != traj.n_frames or not np.all(np.isfinite(time_ps)):
+            return None
+        if time_ps.size > 1 and not np.all(np.diff(time_ps) > 0):
+            return None
+        return time_ps / 1000.0
+
+    def _distance_name(self) -> str:
+        return ("RMSD after superposing each pair" if self.features == "rmsd"
+                else "RMSD under one superposition onto the first frame")
+
+    def _write_distance_matrix(self) -> list[Path]:
+        """The frame-to-frame distances the clustering used, as data and a map.
+
+        ``cluster_rmsd_matrix.npz`` holds ``rmsd_nm`` (n x n, nm, float32),
+        ``frames`` (each row's frame in the trajectory given) and ``time_ns``
+        (NaN where the trajectory has no clock), and ``distance`` naming
+        which RMSD it is. Compressed: it is the largest thing this writes.
+        """
+        distances = getattr(self, "_distances", None)
+        if distances is None:
+            return []
+        n = distances.shape[0]
+        frames = self._first_frame + np.arange(n)
+        times = self._times_ns()
+        data_path = self.output_dir / "cluster_rmsd_matrix.npz"
+        np.savez_compressed(
+            data_path, rmsd_nm=distances.astype(np.float32),
+            frames=frames.astype(np.int64),
+            time_ns=(times if times is not None else np.full(n, np.nan)),
+            distance=np.array(self._distance_name()))
+        written = [data_path]
+
+        figure_path = self.output_dir / "cluster_rmsd_matrix.png"
+        fig, ax = new_figure(title="RMSD between frames", figsize=(5.6, 4.8))
+        _plot_distance_matrix(ax, distances, frames, times)
+        save_figure(fig, figure_path)
+        written.append(figure_path)
+        if figure_path.with_suffix(".svg").is_file():
+            written.append(figure_path.with_suffix(".svg"))
+        return written
+
+    def _write_states(self, method: str, labels: np.ndarray) -> list[Path]:
+        """Each cluster's share, its medoid, and the medoid as a structure.
+
+        The medoid is the member with the least summed distance to the
+        cluster's other members, in the distances the clustering used. Frames
+        DBSCAN calls noise belong to no cluster and have no row. The
+        structure is that frame of the trajectory given, without its water.
+        """
+        distances = getattr(self, "_distances", None)
+        traj = self._clustered
+        if distances is None or traj is None:
+            return []
+        times = self._times_ns()
+        n = len(labels)
+        rows = []
+        written: list[Path] = []
+        solute = traj.topology.select("not water")
+        if solute.size == 0:
+            solute = np.arange(traj.n_atoms)
+        for label in sorted(set(int(k) for k in labels) - {-1}):
+            members = np.nonzero(labels == label)[0]
+            summed = distances[np.ix_(members, members)].sum(axis=1)
+            medoid = int(members[int(np.argmin(summed))])
+            structure_path = self.output_dir / f"cluster_{method}_medoid_{label}.pdb"
+            traj[medoid].atom_slice(solute).save_pdb(str(structure_path))
+            written.append(structure_path)
+            rows.append({
+                "cluster": label,
+                "frames": int(members.size),
+                "fraction": float(members.size / n),
+                "medoid_frame": int(self._first_frame + medoid),
+                "medoid_time_ns": float(times[medoid]) if times is not None else float("nan"),
+            })
+        table_path = self.output_dir / f"cluster_{method}_populations.csv"
+        pd.DataFrame(rows, columns=["cluster", "frames", "fraction", "medoid_frame",
+                                    "medoid_time_ns"]).to_csv(table_path, index=False)
+        written.insert(0, table_path)
+        return written
 
     # Required by the ABC but not used (run() is overridden)
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:
@@ -581,6 +684,31 @@ def _plot_cluster_timeline(ax: plt.Axes, labels: np.ndarray, method: str,
     ax.set_yticks(unique)
     if len(unique) <= 10:
         ax.legend(loc="best", fontsize=8, ncol=2)
+
+
+def _plot_distance_matrix(ax: plt.Axes, distances: np.ndarray, frames: np.ndarray,
+                          times_ns: np.ndarray | None) -> None:
+    """The frame-to-frame RMSD as a map, time against time, in nm.
+
+    Each cell is one pair of frames, so blocks along the diagonal are spells
+    the structure held, and an off-diagonal block that is dark is a return
+    to a structure visited before.
+    """
+    if times_ns is not None and len(times_ns) > 1:
+        step = float(np.median(np.diff(times_ns)))
+        low, high = float(times_ns[0]) - step / 2, float(times_ns[-1]) + step / 2
+        label = "Time (ns)"
+    else:
+        low, high = float(frames[0]) - 0.5, float(frames[-1]) + 0.5
+        label = "Frame"
+    image = ax.imshow(distances, origin="lower", cmap="viridis",
+                      interpolation="nearest", aspect="equal",
+                      extent=(low, high, low, high), vmin=0.0)
+    bar = ax.figure.colorbar(image, ax=ax, shrink=0.85)
+    bar.set_label("RMSD (nm)")
+    match_colorbar_font(bar, ax)
+    ax.set_xlabel(label)
+    ax.set_ylabel(label)
 
 
 def _plot_cluster_counts(ax: plt.Axes, labels: np.ndarray) -> None:
