@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A constant-volume run's volume is said as fixed
+
+**The thermodynamics record gives a constant-volume run's box volume as the value the ensemble held, with that reason, as it already did for the density.** Read as a series, a volume that never changes is one observation however long the run, so it was refused as "not long against its own correlation time" with a longer run named as the remedy, which would never have changed it. Results change: `volume` in an NVT run's thermodynamics record now carries `value` and a reason in place of the refusal and its equilibration fields.
+
 ### The PMF figure marks the minimum the summary gives
 
 **The potential of mean force figure marks its minimum inside the range the umbrella windows covered, where the summary already took it.** The figure took the lowest bin over the whole grid, which runs past the last window into bins few samples reached: on a profile whose well was at 0.5 nm inside a covered 0.35 to 1.6 nm, it marked 2.2 nm. Results change: PMF figures of studies whose grid extends past the windows may mark a different minimum; the recorded summary is unchanged.

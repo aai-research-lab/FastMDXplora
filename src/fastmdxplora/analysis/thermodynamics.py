@@ -193,6 +193,22 @@ class Thermodynamics(Analysis):
                     "units": units,
                 }
                 continue
+            if key == "volume" and constant_volume:
+                # Read through `summarise`, a series that never changes is
+                # one observation, and was refused as "not long against its
+                # own correlation time": the remedy it named, a longer run,
+                # would never have changed it.
+                record["volume"] = {
+                    "not_a_measurement": (
+                        "The box volume did not change over this run: the "
+                        "ensemble held it constant, so it is a value the "
+                        "setup fixed rather than something the simulation "
+                        "sampled, and it has no mean or error to report."
+                    ),
+                    "value": float(np.mean(values)),
+                    "units": units,
+                }
+                continue
 
             equilibrated, reason = summarise(values)
             entry: dict[str, Any] = {"units": units}

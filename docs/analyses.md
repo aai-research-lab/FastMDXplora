@@ -382,9 +382,10 @@ against another tool.
   matched by order and `findings.chains_matched_by_order` says so.
 
 - **Thermodynamics** reads the state record the simulation wrote and treats
-  each column as a correlated series. Density is reported only from a
-  constant-pressure run: at fixed volume it is a constant the setup chose, and
-  a mean with an error on it would describe arithmetic.
+  each column as a correlated series. Density and volume are reported as
+  means only from a constant-pressure run: at fixed volume each is a constant
+  the setup chose, recorded as its `value` with the reason, since a mean with
+  an error on it would describe arithmetic.
 
 - **Dihedrals** are not computed across a gap in a chain. MDTraj joins
   consecutive residues of a chain without asking whether they are bonded, so
