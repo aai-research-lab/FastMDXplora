@@ -54,9 +54,20 @@ def values_by_residue(root: str | Path) -> dict[str, Any]:
     span, what a residue the table does not list stands for (zero, or no
     value), a sentence saying what the number is, and the values as
     ``[chain, number, insertion code, value]`` with the chain None where
-    the study has one chain and the analyses name none."""
+    the study has one chain and the analyses name none.
+
+    For a study of several runs, the results of the runs of the run
+    played's atoms: replicas' as their mean, each residue's row followed
+    by the standard error across them and each run's value; runs that
+    differ by more than their seed, the run played's alone."""
     base = Path(root)
-    frames = _frames_analysed(base)
+    of_runs = _of_the_runs(base)
+    if of_runs is not None:
+        return of_runs
+    return {"properties": _properties(base, _frames_analysed(base))}
+
+
+def _properties(base: Path, frames: int | None) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     for options in sorted((base / "analysis").glob("*/options.json")):
         try:
@@ -80,7 +91,106 @@ def values_by_residue(root: str | Path) -> dict[str, Any]:
         said["source"] = f"analysis/{options.parent.name}"
         found.append(said)
     _one_scale_for_fluctuations(found)
-    return {"properties": found}
+    return found
+
+
+#: Results of the structure the study was given, not of a run: the same in
+#: every replica, so taken from the run played rather than averaged.
+_OF_THE_STRUCTURE = ("bfactor_comparison",)
+#: Results on a fixed range, which a mean keeps.
+_FIXED_RANGE = ("pl_contacts", "order_parameters")
+
+
+def _of_the_runs(base: Path) -> dict[str, Any] | None:
+    """The per-residue results of a study of several runs, or None where it
+    is a study of one."""
+    from fastmdxplora.batch.aggregate import SEED_AXES
+    from fastmdxplora.gui.exploration import runs_of_a_study
+    from fastmdxplora.gui.runs_compared import _axes_that_differ, _label
+    from fastmdxplora.gui.runs_together import runs_of_the_same_atoms
+
+    runs = runs_of_a_study(base)
+    if runs is None:
+        return None
+    same = runs_of_the_same_atoms(base)
+    if not same:
+        return {"properties": []}
+    axes = _axes_that_differ(runs)
+    label = {run["run_id"]: _label(run, axes) for run in runs}
+    replicas = bool(axes) and set(axes) <= SEED_AXES
+    each = [(run, _properties(Path(run["path"]), None))
+            for run in (same if replicas else same[:1])]
+    each = [(run, found) for run, found in each if found]
+    if not each:
+        return {"properties": []}
+    played = same[0]
+    keys: list[str] = []
+    for _, found in each:
+        keys += [entry["key"] for entry in found if entry["key"] not in keys]
+    properties = []
+    for key in keys:
+        entries = [(run, next(e for e in found if e["key"] == key))
+                   for run, found in each if any(e["key"] == key for e in found)]
+        first = entries[0][1]
+        if len(entries) == 1 or first["analysis"] in _OF_THE_STRUCTURE:
+            run, entry = entries[0]
+            entry = dict(entry, source=f"runs/{run['run_id']}/{entry['source']}")
+            if run["run_id"] == played["run_id"]:
+                why = ("the runs differ by more than their seed, so their values are not "
+                       "averaged" if not replicas else
+                       "the same for every run" if first["analysis"] in _OF_THE_STRUCTURE
+                       else "no other run has this result yet")
+                entry["about"] += f" Of {label[run['run_id']]}, the run played: {why}."
+            else:
+                entry["about"] += (f" Of {label[run['run_id']]} alone: no other run has "
+                                   "this result yet.")
+            properties.append(entry)
+            continue
+        properties.append(_mean_of(key, entries, label))
+    _one_scale_for_fluctuations(properties)
+    return {"properties": properties}
+
+
+def _mean_of(key: str, entries: list[tuple[dict[str, Any], dict[str, Any]]],
+             label: dict[str, str]) -> dict[str, Any]:
+    """One result's mean over replicas, each residue's row followed by the
+    standard error across them and each run's value (None where a run has
+    none). A residue a run does not list counts as the run's ``absent``
+    value where the result says what that is."""
+    import numpy as np
+
+    first = entries[0][1]
+    chained = any(row[0] is not None for _, entry in entries for row in entry["values"])
+    by_run = []
+    order: list[tuple[Any, int, str]] = []
+    for _, entry in entries:
+        values = {}
+        for chain, number, code, value in entry["values"]:
+            residue = (chain if chained else None, number, code or "")
+            values[residue] = value
+            if residue not in order:
+                order.append(residue)
+        by_run.append(values)
+    rows = []
+    for residue in order:
+        said = [values.get(residue, entry["absent"])
+                for values, (_, entry) in zip(by_run, entries)]
+        known = np.array([value for value in said if value is not None], dtype=float)
+        if not len(known):
+            continue
+        error = (float(known.std(ddof=1) / np.sqrt(len(known))) if len(known) > 1 else None)
+        rows.append([residue[0], residue[1], residue[2], float(known.mean()), error, said])
+    if first["analysis"] in _FIXED_RANGE:
+        low, high = first["low"], first["high"]
+    else:
+        low, high = _span(rows)
+    names = ", ".join(label[run["run_id"]] for run, _ in entries)
+    return dict(first, key=key, label=f"{first['label']}, mean of {len(entries)} runs",
+                low=low, high=high, values=rows, runs=[label[run["run_id"]] for run, _ in entries],
+                source="runs/*/" + first["source"],
+                about=(f"{first['about']} The mean over {len(entries)} replicas ({names}); "
+                       "the Selection tab gives a residue's standard error across them and "
+                       "each run's value."))
 
 
 def _frames_analysed(base: Path) -> int | None:

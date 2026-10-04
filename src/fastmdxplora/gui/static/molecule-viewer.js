@@ -833,6 +833,10 @@
     const chained = property.values.some((row) => row[0] != null);
     const values = new Map(property.values.map(
       (row) => [residueKey(chained ? row[0] : "", row[1], row[2]), Number(row[3])]));
+    // A mean over replicas: each residue's standard error across them, and
+    // each run's own value (runs_together.py, by_residue.py).
+    const spread = new Map(property.values.filter((row) => row.length > 4).map(
+      (row) => [residueKey(chained ? row[0] : "", row[1], row[2]), {error: row[4], each: row[5]}]));
     const residues = new Map();
     const runs = STATE.engine && rendered ? STATE.engine.residues() : [];
     runs.forEach((run, position) => {
@@ -848,7 +852,7 @@
       if (shared.has(key) || (!values.has(key) && property.absent == null)) unnamed += seen.size;
       else named += seen.size;
     });
-    const lookup = {rendered, chained, values, shared, named, unnamed};
+    const lookup = {rendered, chained, values, spread, shared, named, unnamed};
     STATE.residueLookups.set(property.key, lookup);
     return lookup;
   }
@@ -2621,10 +2625,21 @@
     if (!STATE.model || !AMINO_ACIDS.includes(String(atom.resn || "").toUpperCase())) return "";
     let rows = `<tr><th>Secondary structure</th><td>${escapeHTML(secondaryStructureOf(atom))}</td></tr>`;
     (STATE.residueValues || []).forEach((property) => {
-      const value = valueOfResidue(property, lookupFor(property), atom);
-      const said = value == null ? "\u2014"
-        : `${formatValue(value)}${property.unit ? ` ${property.unit}` : ""}`;
+      const lookup = lookupFor(property);
+      const value = valueOfResidue(property, lookup, atom);
+      const unit = property.unit ? ` ${property.unit}` : "";
+      const spread = value == null ? null
+        : lookup.spread.get(residueKey(lookup.chained ? atom.chain : "", atom.resi, atom.icode));
+      let said = value == null ? "\u2014" : `${formatValue(value)}${unit}`;
+      if (spread && Number.isFinite(spread.error)) {
+        said = `${formatValue(value)} \u00b1 ${formatValue(spread.error)}${unit}`;
+      }
       rows += `<tr><th>${escapeHTML(property.label)}</th><td>${escapeHTML(said)}</td></tr>`;
+      if (spread && Array.isArray(spread.each) && Array.isArray(property.runs)) {
+        const each = property.runs.map((run, i) => `${run}: ${spread.each[i] == null ? "\u2014"
+          : formatValue(Number(spread.each[i]))}`).join("; ");
+        rows += `<tr><th>Each run</th><td>${escapeHTML(each)}</td></tr>`;
+      }
     });
     return rows;
   }

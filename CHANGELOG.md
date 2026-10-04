@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Replicas coloured by their mean
+
+**A study of replicas is coloured by their mean** in the Viewer, which
+offered no result for a study of several runs: "RMSF, mean of 3 runs" over
+the runs of the run played's atoms, and the same for the other per-residue
+results, each residue's standard error across the runs and each run's own
+value in the Selection tab. Runs that differ by more than their seed are not
+averaged: the run played's own values are offered, and said to be. A scene
+written from such a study is coloured by the same mean.
+
 ### The runs of a study, played together
 
 **A study of several runs plays its runs together in the Viewer**, which had

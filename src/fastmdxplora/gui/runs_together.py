@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["RUN_COLOURS", "TOGETHER", "run_shown", "runs_together"]
+__all__ = ["RUN_COLOURS", "TOGETHER", "run_shown", "runs_of_the_same_atoms", "runs_together"]
 
 #: Okabe and Ito's palette without its black and yellow, in the order the
 #: Analysis page colours the runs (runs-compared.js), so a run is one colour
@@ -58,6 +58,32 @@ def run_shown(root: Path | str) -> Path | None:
         if source is not None and source["kind"] == "trajectory":
             return folder
     return None
+
+
+def runs_of_the_same_atoms(root: Path | str) -> list[dict[str, Any]]:
+    """The runs of a study whose atoms are the run played's, the run played
+    first, each as the study lists it: the runs whose results can be set
+    beside its own. Empty where no run has a trajectory."""
+    from fastmdxplora.gui.exploration import runs_of_a_study
+    from fastmdxplora.gui.trajectory_frames import _source
+
+    played = run_shown(root)
+    if played is None:
+        return []
+    source = _source(played)
+    ours = _shown_atoms(source["topology"])[0] if source else None
+    if ours is None:
+        return []
+    same = []
+    for run in runs_of_a_study(Path(root)) or []:
+        folder = Path(run["path"])
+        if folder == played:
+            same.insert(0, run)
+            continue
+        other = _source(folder) if folder.is_dir() else None
+        if other is not None and _shown_atoms(other["topology"])[0] == ours:
+            same.append(run)
+    return same
 
 
 def runs_together(root: Path | str, *, most_frames: int, force: bool = False
@@ -195,6 +221,26 @@ def _named(line: str) -> str:
     return line[12:27]
 
 
+def _shown_atoms(topology_path: Path) -> tuple[list[str] | None, Any, Any]:
+    """The atoms of a topology the Viewer shows (all but water), each named
+    by its PDB line, with their indices and the whole topology; None where
+    the file's lines and its atoms do not agree."""
+    import mdtraj as md
+
+    from fastmdxplora.gui.trajectory_frames import _atom_lines, _read
+    from fastmdxplora.utils.native_output import suppress_native_output
+
+    with suppress_native_output():
+        whole = md.load_topology(str(topology_path))
+    kept = whole.select("not water")
+    if len(kept) == 0:
+        kept = np.arange(whole.n_atoms)
+    lines = _atom_lines(_read(topology_path).split("\nENDMDL", 1)[0])
+    if len(lines) != whole.n_atoms:
+        return None, kept, whole
+    return [_named(lines[int(i)]) for i in kept], kept, whole
+
+
 def _frames_of(source: dict[str, Any], ours: list[str], indices: list[int]
                ) -> tuple[Any, str | None]:
     """A run's frames at the first run's source frames, made whole, with
@@ -202,19 +248,10 @@ def _frames_of(source: dict[str, Any], ours: list[str], indices: list[int]
     import mdtraj as md
 
     from fastmdxplora.analysis.loading import _made_whole
-    from fastmdxplora.gui.trajectory_frames import _atom_lines, _read
     from fastmdxplora.utils.native_output import suppress_native_output
 
-    topology_path: Path = source["topology"]
-    with suppress_native_output():
-        whole = md.load_topology(str(topology_path))
-    kept = whole.select("not water")
-    if len(kept) == 0:
-        kept = np.arange(whole.n_atoms)
-    lines = _atom_lines(_read(topology_path).split("\nENDMDL", 1)[0])
-    if len(lines) != whole.n_atoms or len(kept) != len(ours):
-        return None, "Its atoms are not those of the run shown."
-    if [_named(lines[int(i)]) for i in kept] != ours:
+    named, kept, whole = _shown_atoms(source["topology"])
+    if named != ours:
         return None, "Its atoms are not those of the run shown."
     with suppress_native_output():
         with md.formats.DCDTrajectoryFile(str(source["trajectory"])) as handle:

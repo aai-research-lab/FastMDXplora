@@ -409,7 +409,8 @@ def _view(view: Any) -> dict[str, Any]:
 
 def build_scene(root: str | Path, view: dict[str, Any] | None = None,
                 selections: list[dict[str, Any]] | None = None, *,
-                ligands: list[str] | None = None, title: str | None = None) -> dict[str, Any]:
+                ligands: list[str] | None = None, title: str | None = None,
+                results: str | Path | None = None) -> dict[str, Any]:
     """The scene of a view of the study at ``root``: ``{"ok": True,
     "state": <MVS state>, "files": {name: text}, "notes": [...]}``, or why
     there is none.
@@ -418,7 +419,9 @@ def build_scene(root: str | Path, view: dict[str, Any] | None = None,
     representation, colouring, parts shown, superposition, pocket cutoff,
     look and ground); ``selections`` the selections named, as they are kept;
     ``ligands`` the ligand's residue names, found in the structure where not
-    given."""
+    given; ``results`` the study whose per-residue results colour it, where
+    that is not ``root`` (a study of several runs, whose run played is
+    ``root``)."""
     from fastmdxplora.gui.by_residue import residue_runs
 
     base = Path(root)
@@ -445,7 +448,8 @@ def build_scene(root: str | Path, view: dict[str, Any] | None = None,
     xyz = _xyz(lines)
     topology = _topology(lines)
     colour = view.get("colour") or "spectrum"
-    rows = _residue_colours(base, colour, runs, notes) if colour.startswith("result:") else None
+    rows = (_residue_colours(Path(results) if results is not None else base, colour, runs,
+                             notes) if colour.startswith("result:") else None)
     if colour.startswith("result:") and rows is None:
         colour = "chain"
 
@@ -605,7 +609,8 @@ def write_scene(root: str | Path, name: Any, view: dict[str, Any] | None = None,
         return {"ok": False, "reason": "A scene is named in 1 to 60 letters, digits, spaces, "
                                        "dots, dashes and underscores, from a letter or digit."}
     try:
-        scene = build_scene(source or root, view, selections, ligands=ligands, title=name)
+        scene = build_scene(source or root, view, selections, ligands=ligands, title=name,
+                            results=root if source is not None else None)
     except Exception as exc:  # noqa: BLE001 - said, not raised
         return {"ok": False, "reason": f"The scene could not be made: {exc}"}
     if not scene.get("ok"):
