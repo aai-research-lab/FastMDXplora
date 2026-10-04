@@ -455,7 +455,7 @@ class TestTheDeclarationsAreWiredUp:
 
     @pytest.mark.parametrize("module,name,column", [
         ("rmsd", "RMSD", None),
-        ("rg", "RadiusOfGyration", None),
+        ("rg", "RadiusOfGyration", "total"),
         ("hbonds", "HBonds", "n_hbonds"),
         ("sasa", "SASA", "sasa_nm2"),
     ])

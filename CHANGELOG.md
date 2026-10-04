@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Radius of gyration weights and chains
+
+**A radius of gyration is now weighted as `options.json` says it is, and a virtual site weighs nothing.** One atom without a mass, such as a TIP4P water's charge site, turned the whole radius unweighted while the options still read `mass_weighted: true`. A virtual site (element VS, which MDTraj also gives any atom whose element it cannot read) now has zero weight and a finding names such atoms; where no atom has a mass or one carries no element at all, every atom is weighted equally, `mass_weighted` is recorded as false and a finding says why. `by_chain` wrote bare columns numbered by position with no header, against a docstring promising a frame column; it now writes a table with `total` and one `chain <ID>` column per chain, named by chain ID as `end_to_end` does, and the legend names the chains the same way. Results change: the radius of gyration of a selection holding a virtual site, which was unweighted, is now mass-weighted.
+
 ### RMSF over the equilibrated frames
 
 **RMSF is now computed over the frames after equilibration, found by the same detection every per-frame mean uses.** It averaged every frame, so a relaxation away from the starting structure was read as fluctuation: a loop of 3PTB relaxing 0.4 nm over the first 300 of 1000 frames read 0.0819 nm against 0.0514 after the discard and 0.052 by construction. The start is now detected on the RMSD of the fitted atoms from the reference frame (`statistics.summarise`), the fluctuations are taken over the frames after it, and the discard is recorded as `findings["discard"]` in frames and ns and said on the figure. The new option `equilibrated_from` gives the start instead, and `0` keeps every frame. Results change: RMSF of any run that relaxed from its starting structure is lower, and is the equilibrium fluctuation.

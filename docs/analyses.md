@@ -212,7 +212,12 @@ against another tool.
   relaxed.
 
 - **Radius of gyration** is mass-weighted by default, which is the physical
-  definition; `mass_weighted: false` gives the geometric one.
+  definition; `mass_weighted: false` gives the geometric one. A virtual site
+  (a TIP4P water's charge site, or any atom MDTraj reads without an element)
+  has no mass and no weight, and a finding names them. Where no atom has a
+  mass, or one carries no element, every atom is weighted equally and
+  `options.json` records `mass_weighted: false` with the reason. `by_chain`
+  writes a table with a `total` column and one `chain <ID>` column per chain.
 
 - **Hydrogen bonds** use Baker–Hubbard at 0.25 nm and 120° by default. Both are
   settings, because published criteria disagree — PLIP allows 4.1 Å and 100°.

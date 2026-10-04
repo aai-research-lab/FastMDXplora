@@ -21,6 +21,15 @@ Weighting equally counts each hydrogen for as much as each carbon, which on a
 protein is a few per cent away from the mass-weighted value and enough to
 disagree with a number someone is comparing against. Pass
 ``mass_weighted=False`` for the unweighted quantity.
+
+A virtual site (element ``VS``, such as a TIP4P water's charge site) has no
+mass and is given no weight. MDTraj gives that element to every atom whose
+element it cannot read, so the atoms given no weight are named in a
+finding. Where no atom has a mass (a bead model built without elements), or
+an atom carries no element at all, the radius is computed with every atom
+weighted equally, ``mass_weighted`` is recorded as false, and a finding says
+why: one such atom had turned the whole radius unweighted while the option
+still read true.
 """
 
 from __future__ import annotations
@@ -35,16 +44,25 @@ from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 
 
-def _atom_weights(topology) -> "np.ndarray | None":
-    """Atomic masses, or None where the topology does not carry them."""
+def _atom_weights(topology) -> "tuple[np.ndarray | None, list[str], list[str]]":
+    """Atomic masses with a virtual site weighing nothing, or None; the names
+    of the atoms whose mass is not known; the names of the virtual sites."""
     masses = []
+    unknown: list[str] = []
+    virtual: list[str] = []
     for atom in topology.atoms:
         element = getattr(atom, "element", None)
         mass = getattr(element, "mass", None)
-        if not mass:
-            return None
-        masses.append(float(mass))
-    return np.asarray(masses, dtype=np.float64)
+        if getattr(element, "symbol", None) == "VS":
+            masses.append(0.0)
+            virtual.append(atom.name)
+        elif not mass:
+            unknown.append(atom.name)
+        else:
+            masses.append(float(mass))
+    if unknown or not any(masses):
+        return None, unknown or virtual, virtual
+    return np.asarray(masses, dtype=np.float64), [], virtual
 
 
 class Rg(Analysis):
@@ -68,13 +86,18 @@ class Rg(Analysis):
 
     Output
     ------
-    Single-column ``rg.dat`` (Rg in nm per frame), or multi-column when
-    ``by_chain=True``: ``frame, total, chain0, chain1, ...``.
+    Single-column ``rg.dat`` (Rg in nm per frame). With ``by_chain=True``
+    and several chains, a comma-separated table with a header, one row per
+    frame: ``total``, then ``chain A``, ``chain B``, ... named by chain ID
+    (by place among the polymer chains where the topology carries none), as
+    ``end_to_end`` writes its chains.
     """
 
     name = "rg"
     time_series = True
-    reweightable = (None, "Radius of gyration (nm)")
+    #: The column is read only from the table ``by_chain`` writes; the
+    #: one-column default is the series itself.
+    reweightable = ("total", "Radius of gyration (nm)")
     description = "Radius of gyration"
     default_selection = None  # use all atoms by default
 
@@ -92,12 +115,46 @@ class Rg(Analysis):
             by_chain=self.by_chain, mass_weighted=self.mass_weighted
         )
 
-    def _rg(self, traj: md.Trajectory) -> np.ndarray:
-        """Radius of gyration per frame, by the definition above."""
-        xyz = traj.xyz.astype(np.float64)
-        weights = _atom_weights(traj.topology) if self.mass_weighted else None
+    def _weights(self, topology) -> np.ndarray:
+        """Each atom's weight, decided once for the whole selection and
+        recorded: its mass, a virtual site's zero, or one for every atom
+        where masses are not known."""
+        self.findings.pop("weights", None)
+        self.options["mass_weighted"] = self.mass_weighted
+        n = topology.n_atoms
+        if not self.mass_weighted:
+            return np.ones(n, dtype=np.float64)
+        weights, unknown, virtual = _atom_weights(topology)
         if weights is None:
-            weights = np.ones(xyz.shape[1], dtype=np.float64)
+            self.options["mass_weighted"] = False
+            named = sorted(set(unknown))
+            self.findings["weights"] = (
+                f"The masses of {len(unknown)} atom(s) are not known (no element "
+                f"for {', '.join(named[:8])}{' and others' if len(named) > 8 else ''}), "
+                "so every atom is weighted equally and the radius of gyration is "
+                "the geometric one, not the mass-weighted one asked for. A "
+                "topology read from a PDB usually carries elements; one built by "
+                "hand often does not."
+            )
+            return np.ones(n, dtype=np.float64)
+        if virtual:
+            named = sorted(set(virtual))
+            self.findings["weights"] = (
+                f"{len(virtual)} atom(s) have no mass and are given no "
+                f"weight: {', '.join(named[:8])}"
+                f"{' and others' if len(named) > 8 else ''}. MDTraj reads "
+                "a virtual site this way, such as a TIP4P water's charge "
+                "site, and also any atom whose element it does not know."
+            )
+        return weights
+
+    @staticmethod
+    def _rg(traj: md.Trajectory, weights: np.ndarray) -> np.ndarray:
+        """Radius of gyration per frame, by the definition above. A part of
+        the selection whose atoms all weigh nothing is weighted equally."""
+        xyz = traj.xyz.astype(np.float64)
+        if weights.sum() <= 0.0:
+            weights = np.ones_like(weights)
         weights = weights / weights.sum()
 
         centre = (xyz * weights[None, :, None]).sum(axis=1)
@@ -109,10 +166,11 @@ class Rg(Analysis):
 
         Returns
         -------
-        np.ndarray
-            If ``by_chain=False``: shape (n_frames,), Rg in nm.
-            If ``by_chain=True``: shape (n_frames, 1+n_chains), columns are
-            ``[Rg_total, Rg_chain0, Rg_chain1, ...]``.
+        np.ndarray or pandas.DataFrame
+            If ``by_chain=False``: shape (n_frames,), Rg in nm. If
+            ``by_chain=True`` with several chains: a table with columns
+            ``total`` and ``chain <ID>`` for each chain, one row per frame;
+            with one chain, shape (n_frames, 1), the total.
         """
         atom_idx = self.select_atoms(traj)
 
@@ -122,7 +180,8 @@ class Rg(Analysis):
         else:
             sub = traj
 
-        rg_total = self._rg(sub)
+        weights = self._weights(sub.topology)
+        rg_total = self._rg(sub, weights)
 
         if not self.by_chain:
             return rg_total
@@ -133,29 +192,36 @@ class Rg(Analysis):
             # No useful breakdown; still return the column for consistency.
             return rg_total.reshape(-1, 1)
 
-        columns = [rg_total]
-        for chain_idx in range(n_chains):
-            chain_atoms = [
-                a.index for a in sub.topology.chain(chain_idx).atoms
-            ]
+        import pandas as pd
+
+        from fastmdxplora.analysis.residues import chain_name
+
+        table = {"total": rg_total}
+        for chain in sub.topology.chains:
+            chain_atoms = [a.index for a in chain.atoms]
             if not chain_atoms:
                 continue
-            chain_traj = sub.atom_slice(chain_atoms)
-            columns.append(self._rg(chain_traj))
+            residues = list(chain.residues)
+            label = f"chain {chain_name(residues[0]) if residues else chain.index}"
+            if label in table:
+                label = f"{label} ({chain.index})"
+            table[label] = self._rg(sub.atom_slice(chain_atoms), weights[chain_atoms])
 
-        self._n_chains = len(columns) - 1
-        return np.column_stack(columns)
+        self._n_chains = len(table) - 1
+        return pd.DataFrame(table)
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         x, _ = self.frame_axis_for_plot(self._traj_for_plot, result)
 
-        if result.ndim == 1:
+        if hasattr(result, "columns"):
+            for label in result.columns:
+                ax.plot(x, result[label].to_numpy(),
+                        linewidth=1.6 if label == "total" else 1.0, label=label)
+            ax.legend(loc="best")
+        elif result.ndim == 1:
             ax.plot(x, result, linewidth=1.4, label="total")
         else:
             ax.plot(x, result[:, 0], linewidth=1.6, label="total")
-            for i in range(1, result.shape[1]):
-                ax.plot(x, result[:, i], linewidth=1.0, label=f"chain {i - 1}")
-            ax.legend(loc="best")
 
     # Same trajectory caching pattern as RMSD so the plot can read it.
     _traj_for_plot: md.Trajectory | None = None
