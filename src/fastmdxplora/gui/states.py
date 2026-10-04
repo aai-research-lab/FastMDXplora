@@ -93,7 +93,8 @@ def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     if noise:
         said += f" {noise:,} frames belonged to no state."
     return {"ok": True, "method": chosen, "methods": found, "states": states,
-            "unclustered": noise, "said": said}
+            "unclustered": noise, "said": said,
+            "of_played": [int(label) for label in of_played]}
 
 
 def state_difference(root: str | Path, first: Any, second: Any,

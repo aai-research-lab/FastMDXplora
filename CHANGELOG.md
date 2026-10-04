@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A contact map tied to the structure
+
+**The Viewer's Contact map** gives each pair of the protein's residues the
+share of frames played they were in contact in (heavy atoms within 4.5 Å,
+MDTraj's closest-heavy contact; neighbours in a chain left out). Pointing at
+a cell names the pair; a click selects both residues and joins their closest
+heavy atoms in the frame shown with a dashed line, as the frames play, with
+how far apart they are. Two states the cluster analysis found are compared
+pair by pair, red where one holds a pair more and blue where less
+(`GET /api/contact-map`, `/api/contact-pair`; `/api/states` now gives each
+frame played its state).
+
 ### Backbone angles tied to the frame
 
 **The Viewer's Backbone angles section is a Ramachandran plot of the frames

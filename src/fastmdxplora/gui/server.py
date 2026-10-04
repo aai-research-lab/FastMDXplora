@@ -150,6 +150,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/frames-pieces", "/structure/frames-piece.xtc",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
     "/api/states", "/api/state-difference", "/api/backbone-angles",
+    "/api/contact-map", "/api/contact-pair",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
@@ -170,6 +171,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
     "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
     "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/backbone-angles",
+    "/api/contact-map", "/api/contact-pair",
 })
 
 
@@ -967,6 +969,16 @@ def make_handler(
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+                return
+            if path in ("/api/contact-map", "/api/contact-pair"):
+                from fastmdxplora.gui.contact_map import contact_map, contact_pair
+
+                asked = parse_qs(parsed.query)
+                one = lambda key: (asked.get(key) or [None])[0]  # noqa: E731
+                self._send_json(contact_pair(root, one("a"), one("b"))
+                                if path == "/api/contact-pair"
+                                else contact_map(root, one("first"), one("second"),
+                                                 one("method")))
                 return
             if path == "/api/backbone-angles":
                 from fastmdxplora.gui.backbone_angles import backbone_angles

@@ -999,6 +999,28 @@
                 <p class="muted small" id="rama-key">Grey: every residue in every frame played. Dots: each residue in the frame shown (hollow, glycine). Line: the residue chosen over the frames, lighter later; the ring is the frame shown. A click on the line shows that frame; a click on a dot follows that residue.</p>
                 <p class="muted small" id="rama-note" role="status"></p>
               </details>
+              <!-- Which residues touch which over the frames played, a pair
+                   followed in the structure (viewer-contact-map.js,
+                   contact_map.py). -->
+              <details class="side-section" id="side-cmap" hidden>
+                <summary>Contact map</summary>
+                <div class="occ-row" id="cmap-states-row" hidden>
+                  <label class="select-field">State
+                    <select id="cmap-second" aria-label="State compared"></select>
+                  </label>
+                  <label class="select-field">less
+                    <select id="cmap-first" aria-label="State compared with"></select>
+                  </label>
+                  <button type="button" class="chip-btn" id="cmap-compare" title="Colour each pair by the share of one state's frames played it was in contact in, less the other's">Compare</button>
+                  <button type="button" class="chip-btn" id="cmap-all" hidden>Every frame</button>
+                </div>
+                <canvas class="cmap-canvas" id="cmap-canvas" width="300" height="300" role="img" aria-label="Contact map of the protein's residues over the frames played"></canvas>
+                <p class="muted small" id="cmap-hover" aria-live="off"></p>
+                <div class="occ-row" id="cmap-pair-row" hidden>
+                  <button type="button" class="chip-btn" id="cmap-clear">Clear the pair</button>
+                </div>
+                <p class="muted small" id="cmap-note" role="status"></p>
+              </details>
               <!-- Another study's frames beside this one's: its residues
                    paired by sequence, fitted and timed to these
                    (viewer-beside.js, beside.py). -->
@@ -1572,6 +1594,7 @@
   <script src="/static/viewer-motion.js"></script>
   <script src="/static/viewer-states.js"></script>
   <script src="/static/viewer-ramachandran.js"></script>
+  <script src="/static/viewer-contact-map.js"></script>
   <script src="/static/viewer-beside.js"></script>
 </body>
 </html>

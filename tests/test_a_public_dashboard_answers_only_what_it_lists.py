@@ -284,6 +284,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/states", "/api/state-difference",
             # Each residue's backbone dihedrals over the frames played.
             "/api/backbone-angles",
+            # Which residues touch which over the frames played, and one
+            # pair followed frame by frame.
+            "/api/contact-map", "/api/contact-pair",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",
