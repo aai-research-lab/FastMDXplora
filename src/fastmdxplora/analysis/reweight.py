@@ -20,12 +20,18 @@ wrong early in a run, where the bias the frame actually experienced was much
 smaller. This uses the bias as it stood when each frame was written, summing
 only the hills deposited before it.
 
-**Well-tempered runs converge to a scaled free energy**, not to -F: the bias
-approaches -(1 - 1/gamma) F. Tiwary and Parrinello's estimator handles this
-with a time-dependent offset c(t); what is implemented here is the simpler
-form that holds once the bias has converged, and the caller is told when
-not. A surface still filling gives weights that are only approximately right,
-which is worth having and worth saying.
+**The bias grows everywhere, not only where the system is.** Weighted by
+exp(V/kT) alone, frames are ranked by when they were written, and a
+well-tempered run's bias approaches -(1 - 1/gamma) F rather than -F. Tiwary
+and Parrinello's time-dependent offset c(t) removes both, and PLUMED's stored
+hill heights carry a factor gamma/(gamma - 1) that has to be undone first.
+That is done in :mod:`fastmdxplora.analysis.reweighted_averages`, whose
+``weights_for_run`` is the one way the package weights a run's frames: it
+passes ``V - c(t)`` to :func:`weights_from_bias` here. This module holds the
+arithmetic that does not depend on PLUMED's conventions. (A second
+``weights_for_run`` here, with neither c(t) nor the gamma factor undone, read
+P(x < 0) as 0.965 against an exact 0.893 on a well-tempered test run, and
+nothing called it; it was removed.)
 
     Tiwary, P.; Parrinello, M. A time-independent free energy estimator for
     metadynamics. *J Phys Chem B* **2015**, 119, 736.
@@ -36,7 +42,6 @@ which is worth having and worth saying.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -367,61 +372,3 @@ def weighted_standard_deviation(values: np.ndarray, weights: Weights) -> float:
     correction = weights.effective_sample_size / (
         weights.effective_sample_size - 1.0)
     return float(np.sqrt(variance * correction))
-
-
-def read_colvar(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
-    """Times and collective-variable values, from a PLUMED COLVAR."""
-    columns = np.atleast_2d(np.loadtxt(path, comments="#"))
-    if columns.shape[1] < 2:
-        raise StudyError(
-            f"{Path(path).name} holds {columns.shape[1]} column(s); the "
-            "collective variable is the second, after the time.", code="simulation.bias.dimension_mismatch")
-    return columns[:, 0], columns[:, 1]
-
-
-def weights_for_run(
-    simulation_dir: str | Path,
-    frame_times_ps: np.ndarray,
-    *,
-    temperature_K: float = 300.0,
-) -> Weights | None:
-    """Weights for a run's trajectory frames, or None where there are none.
-
-    ``frame_times_ps`` are the trajectory's own times, which is what makes
-    this correct rather than approximately correct: the collective variable
-    is recorded on PLUMED's stride and the trajectory on its own, and the two
-    need not coincide. The variable is interpolated onto the frame times
-    rather than assumed to line up with them.
-    """
-    directory = Path(simulation_dir)
-    hills_path = directory / "HILLS"
-    colvar_path = directory / "COLVAR"
-    if not hills_path.is_file() or not colvar_path.is_file():
-        return None
-
-    from fastmdxplora.simulation.metad_surface import read_hills
-
-    hills = read_hills(hills_path)
-    if not len(hills.time_ps):
-        return None
-    colvar_times, colvar_values = read_colvar(colvar_path)
-    if not len(colvar_times):
-        return None
-
-    frames = np.asarray(frame_times_ps, dtype=float)
-    at_frames = np.interp(frames, colvar_times, colvar_values)
-
-    bias = bias_at_each_frame(
-        hills.time_ps, hills.centre, hills.sigma, hills.height,
-        frames, at_frames)
-
-    # Converged where the last hills are a small fraction of the first, the
-    # same test the surface uses to decide whether to report one.
-    from fastmdxplora.simulation.metad_surface import SETTLED_HEIGHT_FRACTION
-
-    first = float(np.mean(hills.height[:max(1, len(hills.height) // 20)]))
-    last = float(np.mean(hills.height[-max(1, len(hills.height) // 20):]))
-    converged = bool(first > 0 and last <= SETTLED_HEIGHT_FRACTION * first)
-
-    return weights_from_bias(
-        bias, temperature_K=temperature_K, converged=converged)

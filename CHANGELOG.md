@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### One way to weight a metadynamics run
+
+**`fastmdxplora.analysis.reweight` no longer offers a `weights_for_run` of its own; `reweighted_averages.weights_for_run` is the one way the package weights a run's frames.** The removed function applied neither the Tiwary-Parrinello c(t) offset nor undid PLUMED's gamma/(gamma - 1) factor on stored hill heights: on a well-tempered run it read P(x < 0) as 0.965 against an exact 0.893. Nothing in the package called it, but it was documented and importable. The positional `reweight.read_colvar` it alone used is removed too, and the module's description, which said only the converged-bias form was implemented, now says where c(t) is applied.
+
 ### A reweighted mean says how many independent samples it rests on
 
 **Each reweighted mean now carries a standard error, and the report gives the independent samples it rests on beside Kish's count, which is named for what it is: weight-concentration effective frames.** Kish's (sum w)^2 / sum w^2 was printed as the frames an average rested on, but it counts every frame as independent: on a well-tempered metadynamics run with a bias factor of 8 it read 2445 of 6000 frames while the collective variable decorrelated once every 91, about 27 independent samples. The record now has `independent_samples` (Kish's count divided by the statistical inefficiency of the collective variable, and per quantity the larger of that and the quantity's own) and `cv_statistical_inefficiency`, and each quantity a `reweighted_standard_error` from the paired block bootstrap over values and weights in blocks of twice that inefficiency. The error is withheld, with `not_a_measurement` and its `refusal` code, below 10 independent samples or where the run is shorter than 25 inefficiencies. `effective_sample_size` keeps its name and value. Results change: reweighted tables now show a ± where an error is supported and say why where it is not, and a run with few independent samples is cautioned even when its weights are evenly spread.
