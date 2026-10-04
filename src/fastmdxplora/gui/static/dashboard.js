@@ -469,7 +469,7 @@
     state.appState = payload || {};
     if (runChanged) {
       resetRunDependentState();
-      emit("run-changed", {previousRun, activeRun});
+      emit("run-changed", {previousRun, activeRun, first: firstAppState});
     }
     if (activeRun) state.outputDir = activeRun;
     // Why there is no live record follows the study's state, which changes

@@ -229,6 +229,20 @@ simulated, and the movie's record says they were interpolated; since a
 straight line between two places of a molecule turning is a molecule
 shrunk, frames shown as written are superposed on the backbone first.
 
+### A colour chosen in the Viewer stays chosen
+
+**A study's first state no longer resets the Viewer.** The page treated the
+first state it was sent as a change of study and cleared what the Viewer had
+already loaded for that same study: a colour chosen in the first seconds (a
+result's, say) fell back to the spectrum, with its bar hidden.
+
+**"Run" no longer takes back a colour the person chose.** In a study of
+replicas the colour by run is chosen the first time the runs played together
+are offered. On a slow machine they arrive after the person has chosen, and
+the choice was replaced by "Run". It is now chosen only where nobody chose a
+colour (in the list, by a saved view or a scene). CI's browser leg failed
+on both, waiting for the mean RMSF's bar.
+
 ### A preparation repeats to the last velocity, and a runaway packing is caught both ways
 
 **`state.xml` is the same file from the same seed.** The velocities setup

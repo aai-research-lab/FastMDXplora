@@ -53,6 +53,9 @@
     mode: "structure",
     representation: "cartoon",
     colorMode: "spectrum",
+    // A colour the person chose (the list, a saved view, a scene), which
+    // the colour by run offered later does not take back.
+    colourChosen: false,
     // A study of several runs: the runs played together, the colour of the
     // run played, and the runs the person hid (runs_together.py).
     runsTogether: null,
@@ -154,7 +157,11 @@
     );
   }
 
-  function onRunChanged() {
+  function onRunChanged(change) {
+    // The first app state names the study the server was already serving:
+    // what the Viewer loaded and what the person chose before it came are
+    // of that study, and are kept.
+    if (change && change.first) return;
     // Requests started for the previous run are not safe to apply after this
     // reset; each async path captures and checks this generation.
     STATE.viewerGeneration += 1;
@@ -1027,6 +1034,7 @@
     });
     document.getElementById("viewer-color")?.addEventListener("change", (event) => {
       STATE.colorMode = event.target.value || "spectrum";
+      STATE.colourChosen = true;
       void restyleViewers();
     });
     document.querySelectorAll(".chip-toggle input[data-vis]").forEach((checkbox) => {
@@ -1181,6 +1189,7 @@
     const colour = document.getElementById("viewer-color");
     if (view.colour && colour && [...colour.options].some((o) => o.value === view.colour)) {
       STATE.colorMode = view.colour;
+      STATE.colourChosen = true;
       colour.value = view.colour;
     }
     if (Number.isFinite(view.pocket_cutoff)) {
@@ -1944,8 +1953,9 @@
   }
 
   /** Coloured by run, offered while runs are played together and chosen
-   * the first time they are; taken away, with the colour it stood in for
-   * kept, when they are not. */
+   * the first time they are, unless the person chose a colour before they
+   * came; taken away, with the colour it stood in for kept, when they are
+   * not. */
   function offerTheRunColour(offered) {
     const select = document.getElementById("viewer-color");
     if (!select) return;
@@ -1955,7 +1965,7 @@
       option.value = "run";
       option.textContent = "Run";
       select.insertBefore(option, select.firstChild);
-      if (!STATE.runColourChosen) {
+      if (!STATE.runColourChosen && !STATE.colourChosen) {
         STATE.runColourChosen = true;
         STATE.colorMode = "run";
         select.value = "run";
@@ -2969,6 +2979,7 @@
     },
     colourBy: (mode) => {
       STATE.colorMode = mode;
+      STATE.colourChosen = true;
       const select = document.getElementById("viewer-color");
       if (select) select.value = mode;
       return restyleViewers();
