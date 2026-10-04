@@ -3674,6 +3674,13 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .occ-site { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); }
 .occ-site-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; }
 #occ-note { margin: 6px 0 0; }
+.states-list { list-style: none; margin: 4px 0; padding: 0; display: flex;
+               flex-direction: column; gap: 4px; }
+.state-row { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); }
+.state-share { flex: 0 0 auto; width: 48px; height: 8px; border-radius: 4px;
+               background: var(--border-subtle); overflow: hidden; }
+.state-share > span { display: block; height: 100%; background: var(--accent-blue); }
+#states-note { margin: 6px 0 0; }
 #chain-contacts-note:empty { display: none; }
 
 /* A movie of the frames (viewer-movie.js). */

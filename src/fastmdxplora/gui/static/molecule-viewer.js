@@ -196,6 +196,7 @@
     STATE.runsTogether = null;
     STATE.runsFittedOnce = false;
     STATE.runsHidden = new Set();
+    STATE.extraResults = {};
     sayTheRuns(null);
     offerResultColours();
     sayTheSecondaryStructure();
@@ -766,7 +767,9 @@
       if (!response.ok || !isViewerGenerationCurrent(generation)) return;
       const said = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
-      STATE.residueValues = Array.isArray(said?.properties) ? said.properties : [];
+      // With what the page has added (two states compared, viewer-states.js).
+      STATE.residueValues = (Array.isArray(said?.properties) ? said.properties : [])
+        .concat(Object.values(STATE.extraResults || {}));
     } catch (error) {
       console.debug("per-residue results unavailable", error);
       return;
@@ -2777,6 +2780,32 @@
     superpose,
     placedFitAsPlayed,
     ligandResnames,
+    // How the frames are shown, in the words the server is asked in.
+    superposition: () => ({on: STATE.superposed, to: STATE.appliedTo || "first",
+      smooth: String(STATE.appliedSmooth || 1), ligand: STATE.ligandResname
+        || ligandResnames()[0] || "", cutoff: String(STATE.pocketCutoff || 5)}),
+    // A result the page made (two states compared), coloured by as the
+    // study's own are, and taken away again.
+    addResult: (property) => {
+      STATE.extraResults = Object.assign({}, STATE.extraResults, {[property.key]: property});
+      STATE.residueValues = (STATE.residueValues || []).filter((p) => p.key !== property.key)
+        .concat([property]);
+      STATE.residueLookups = new Map();
+      offerResultColours();
+    },
+    removeResult: (key) => {
+      if (STATE.extraResults) delete STATE.extraResults[key];
+      STATE.residueValues = (STATE.residueValues || []).filter((p) => p.key !== key);
+      STATE.residueLookups = new Map();
+      offerResultColours();
+      return restyleViewers();
+    },
+    colourBy: (mode) => {
+      STATE.colorMode = mode;
+      const select = document.getElementById("viewer-color");
+      if (select) select.value = mode;
+      return restyleViewers();
+    },
     viewNow,
     showView,
     setPublication,

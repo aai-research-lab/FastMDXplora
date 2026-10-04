@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The states a study visited
+
+**The Viewer lists the states the cluster analysis found**, under
+**States**: each with its share of the frames and a representative, its
+medoid among the frames played, shown with a click. **Compare** sets one
+state's representative in grey beside another's, fitted on the alpha
+carbons, and colours the protein by how far each residue moved between
+them. `GET /api/states` and `/api/state-difference`.
+
 ### A study's main motion
 
 **The Viewer shows a study's main motions** under **Main motions**: its

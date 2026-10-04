@@ -961,6 +961,29 @@
                 </div>
                 <p class="muted small" id="motion-note" role="status"></p>
               </details>
+              <!-- The states the cluster analysis found, each with its
+                   representative frame, and two compared
+                   (viewer-states.js, states.py). -->
+              <details class="side-section" id="side-states" open hidden>
+                <summary>States</summary>
+                <div class="occ-row" id="states-method-row" hidden>
+                  <label class="select-field">Found by
+                    <select id="states-method" aria-label="Which clustering"></select>
+                  </label>
+                </div>
+                <ul class="states-list" id="states-list" aria-label="States"></ul>
+                <div class="occ-row" id="states-compare-row" hidden>
+                  <label class="select-field">Compare
+                    <select id="states-first" aria-label="First state"></select>
+                  </label>
+                  <label class="select-field">with
+                    <select id="states-second" aria-label="Second state"></select>
+                  </label>
+                  <button type="button" class="chip-btn" id="states-compare" title="Show the second state's representative in grey beside the first's, fitted on the alpha carbons, and colour the protein by how far each residue moved">Compare</button>
+                  <button type="button" class="chip-btn" id="states-stop" hidden>Stop comparing</button>
+                </div>
+                <p class="muted small" id="states-note" role="status"></p>
+              </details>
               <!-- What holds the chains together: hydrogen bonds and salt
                    bridges between the protein's chains in the frames played
                    (chain-contacts.js, chain_contacts.py). -->
@@ -1506,5 +1529,6 @@
   <script src="/static/chain-contacts.js"></script>
   <script src="/static/viewer-occupancy.js"></script>
   <script src="/static/viewer-motion.js"></script>
+  <script src="/static/viewer-states.js"></script>
 </body>
 </html>

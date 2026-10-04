@@ -148,6 +148,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
+    "/api/states", "/api/state-difference",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
@@ -165,7 +166,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/api/viewer-atoms", "/api/chain-contacts", "/api/interactions-over-frames",
     "/api/frames-superposed", "/structure/topology.pdb", "/structure/frames.dcd",
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
-    "/structure/occupancy.dx", "/api/motion",
+    "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
 })
 
 
@@ -909,6 +910,15 @@ def make_handler(
                 query = parse_qs(parsed.query)
                 self._send_json(motion(root, (query.get("mode") or ["1"])[0],
                                        (query.get("scale") or ["1"])[0]))
+                return
+            if path == "/api/states":
+                from fastmdxplora.gui.states import states_of
+
+                self._send_json(states_of(root, (parse_qs(parsed.query).get("method")
+                                                 or [None])[0]))
+                return
+            if path == "/api/state-difference":
+                self._send_json(_state_difference_payload(root, parse_qs(parsed.query)))
                 return
             if path == "/api/water-sites":
                 from fastmdxplora.gui.occupancy import water_sites_placed
@@ -2356,6 +2366,31 @@ def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[
     return {"ok": True, "said": said["said"], "atoms": said["atoms"], "to": to,
             "smooth": said["smooth"],
             "url": "/structure/frames.dcd?" + urlencode(asked)}
+
+
+def _state_difference_payload(root: Path, query: dict[str, list[str]]) -> dict[str, Any]:
+    """Two states' representatives compared, the second placed on the first
+    as the Viewer shows the frames: superposed as its words say, or not."""
+    from fastmdxplora.gui.states import state_difference
+    from fastmdxplora.gui.trajectory_frames import superposed_frames, superposed_name
+
+    def one(key: str) -> str:
+        return (query.get(key) or [""])[0]
+
+    on = one("on") or "none"
+    frames_file = None
+    if on != "none":
+        to, smooth = one("to") or "first", one("smooth") or "1"
+        frames_file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to,
+                                                 smooth)
+        if frames_file is None:
+            return {"ok": False, "reason": reason}
+        if not (root / "simulation" / frames_file).is_file():
+            said = superposed_frames(root, on, ligand=one("ligand"),
+                                     cutoff_angstrom=one("cutoff") or 5.0, to=to, smooth=smooth)
+            if not said.get("ok"):
+                return said
+    return state_difference(root, one("a"), one("b"), frames_file)
 
 
 def _occupancy_payload(root: Path, query: dict[str, list[str]]) -> dict[str, Any]:

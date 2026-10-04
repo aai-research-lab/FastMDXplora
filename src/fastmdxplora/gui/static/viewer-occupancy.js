@@ -202,6 +202,7 @@
       sayWhat();
     });
     window.addEventListener("dashboard:viewer-rendered", function () { offer(); });
+    window.addEventListener("dashboard:frames-ready", function () { offer(); });
     window.addEventListener("dashboard:frames-ready", function () { again(); });
     window.addEventListener("dashboard:run-changed", function () {
       state.said = {};

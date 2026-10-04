@@ -151,7 +151,7 @@
     "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "still", "setCells",
     "showRuns", "removeRuns", "setRunShown", "setRunsAside", "showVolume", "setVolumeLevel",
     "removeVolume", "showWaterSites", "removeWaterSites", "setPlacedAside", "showMotion",
-    "setMotionFrame", "setMotionParts", "removeMotion"]);
+    "setMotionFrame", "setMotionParts", "removeMotion", "showCompared", "removeCompared"]);
 
   function oneAtATime(engine) {
     let last = Promise.resolve();
@@ -187,7 +187,7 @@
         // Nor are another run's: what is clicked is the run played.
         const atom = SE.Loci.is(loci) && !SE.Loci.isEmpty(loci) && !this.isTheBox(loci.structure)
           && !this.isARun(loci.structure) && !this.isTheSites(loci.structure)
-          && !this.isTheMotion(loci.structure)
+          && !this.isTheMotion(loci.structure) && !this.isTheCompared(loci.structure)
           ? this.record(SE.Loci.getFirstLocation(loci)) : null;
         this.listeners[kind].forEach((listener) => listener(atom, modifiers || {}));
       };
@@ -378,6 +378,7 @@
       this.sitesRef = null;
       this.sitesDataRef = null;
       this.motion = null;
+      this.compared = null;
       this.interactions = new Map();
       this.interactionGroups = {ligand: this.interactions};
       this.boxDataRef = null;
@@ -394,7 +395,9 @@
       const runs = new Set((this.runs || []).map((run) => run.structureRef));
       const others = structures.filter((s) => s.cell.transform.ref !== this.environmentRef
         && s.cell.transform.ref !== this.boxRef && s.cell.transform.ref !== this.sitesRef
-        && !this.isTheMotionRef(s.cell.transform.ref) && !runs.has(s.cell.transform.ref));
+        && !this.isTheMotionRef(s.cell.transform.ref)
+        && !(this.compared && s.cell.transform.ref === this.compared.structureRef)
+        && !runs.has(s.cell.transform.ref));
       return others.length ? others[others.length - 1].cell : null;
     }
 
@@ -528,6 +531,7 @@
       await this.showBox(!!show.box && !s.mini);
       await this.paintSelections(named);
       for (const run of this.runs || []) await this.renderRun(run);
+      if (this.compared) await this.renderCompared();
       this.rendered = rendered;
       if (view) this.restoreCamera(view);
       else this.fit();
@@ -924,6 +928,7 @@
       if (main && main.model && main.model.cell.obj) return main.model.cell;
       const runs = new Set((this.runs || []).map((run) => run.modelRef));
       if (this.motion) runs.add(this.motion.modelRef);
+      if (this.compared) runs.add(this.compared.modelRef);
       const models = hierarchy.models.filter((model) => !runs.has(model.cell.transform.ref));
       const info = this.lib.structure.Model.TrajectoryInfo;
       const moving = models.find((model) => model.cell.obj && info.get(model.cell.obj.data).size > 1);
@@ -953,6 +958,10 @@
       await update.commit();
       // A run with fewer frames is not shown past its last.
       for (const run of ended) await this.renderRun(run);
+      // A state compared is beside the frame it was placed on, and only it.
+      if (this.compared && (frame === this.compared.frame) !== this.compared.rendered) {
+        await this.renderCompared();
+      }
       await this.followThePocket();
       await this.followTheBox();
     }
@@ -1238,6 +1247,59 @@
           const cell = cells.get(ref);
           return cell && cell.obj && (structure === cell.obj.data || structure.root === cell.obj.data);
         }));
+    }
+
+    /** Another state's representative (gui/states.py), placed on the frame
+     * ``frame``, beside it while that frame is shown, in ``colour``. */
+    async showCompared(pdb, frame, colour) {
+      await this.removeCompared();
+      const builders = this.plugin.builders;
+      const data = await builders.data.rawData({data: pdb, label: "state compared"});
+      const model = await builders.structure.createModel(
+        await builders.structure.parseTrajectory(data, "pdb"));
+      const structure = await builders.structure.createStructure(model);
+      this.compared = {dataRef: data.ref, modelRef: model.ref, structureRef: structure.ref,
+        frame: Number(frame), colour, rendered: false};
+      await this.renderCompared();
+    }
+
+    async renderCompared() {
+      const shown = this.compared;
+      const cells = this.plugin.state.data.cells;
+      if (!shown || !cells.has(shown.structureRef)) return;
+      await this.removeChildren(shown.structureRef);
+      shown.rendered = false;
+      if (this.frame() !== shown.frame) return;
+      const builders = this.plugin.builders.structure;
+      const polymer = await builders.tryCreateComponentStatic(cells.get(shown.structureRef),
+        "polymer");
+      if (!polymer) return;
+      const type = REPRESENTATIONS[this.representation] || "cartoon";
+      await builders.representation.addRepresentation(polymer, {
+        type: type === "molecular-surface" ? "cartoon" : type,
+        typeParams: type === "cartoon" ? {} : {ignoreHydrogens: true},
+        color: "uniform", colorParams: {value: shown.colour}});
+      shown.rendered = true;
+    }
+
+    async removeCompared() {
+      const shown = this.compared;
+      this.compared = null;
+      if (shown && this.plugin.state.data.cells.has(shown.dataRef)) {
+        await this.plugin.build().delete(shown.dataRef).commit();
+      }
+    }
+
+    comparedShown() {
+      return this.compared ? {frame: this.compared.frame, rendered: this.compared.rendered}
+        : null;
+    }
+
+    isTheCompared(structure) {
+      const cell = this.compared ? this.plugin.state.data.cells.get(this.compared.structureRef)
+        : null;
+      return !!(cell && cell.obj && structure
+        && (structure === cell.obj.data || structure.root === cell.obj.data));
     }
 
     /** What is placed on the first frame (the maps, the water sites) hidden

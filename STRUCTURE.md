@@ -131,6 +131,7 @@ FastMDXplora/
 │       │   ├── runs_together.py   # The runs of a study played together in one Viewer
 │       │   ├── occupancy.py       # Where the ligand and water went over the frames; water sites placed
 │       │   ├── motion.py          # A study's main motions, swung and shown as lines on the first frame
+│       │   ├── states.py          # The states the cluster analysis found, and two compared
 │       │   ├── measure.py         # A distance from the Viewer, over every frame
 │       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
 │       │   ├── stopping_view.py   # A study run until it is determined, for the Overview
@@ -161,7 +162,8 @@ FastMDXplora/
 │       │   │                      #   viewer-sequence.js, viewer-selections.js,
 │       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
 │       │   │                      #   frame-interactions.js, chain-contacts.js,
-│       │   │                      #   viewer-occupancy.js, viewer-motion.js; scene-view.js
+│       │   │                      #   viewer-occupancy.js, viewer-motion.js,
+│       │   │                      #   viewer-states.js; scene-view.js
 │       │   │                      #   (a scene on a page of its own)
 │       │   └── templates/         # dashboard.html, scene.html
 │       ├── remote/
