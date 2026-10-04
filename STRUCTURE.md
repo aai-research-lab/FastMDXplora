@@ -88,6 +88,7 @@ FastMDXplora/
 │       │   ├── base.py            # Analysis base class and shared I/O
 │       │   ├── loading.py         # Trajectory/topology loading, scope and selection
 │       │   ├── imaging.py         # Molecules made whole, MDTraj's imaging for every frame at once
+│       │   ├── protein_names.py   # `protein` covers every amino acid a force field writes
 │       │   ├── plotting.py        # Shared figure style
 │       │   ├── rmsd.py rmsf.py rg.py qvalue.py sasa.py ss.py
 │       │   ├── hbonds.py dihedrals.py cluster.py dimred.py water_sites.py

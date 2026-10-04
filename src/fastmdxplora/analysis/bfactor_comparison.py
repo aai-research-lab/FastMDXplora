@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
@@ -103,7 +104,7 @@ class BFactorComparison(Analysis):
     structure : str, optional
         The deposited file to read B-factors from. Discovered from the run
         directory when not given.
-    align_selection : str, default "name CA"
+    align_selection : str, default "protein and name CA"
         Atoms used to remove rigid-body motion before fluctuations are
         measured, as in the RMSF analysis.
     **kwargs
@@ -134,7 +135,7 @@ class BFactorComparison(Analysis):
         self,
         *,
         structure: str | None = None,
-        align_selection: str = "name CA",
+        align_selection: str = ALPHA_CARBONS,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)

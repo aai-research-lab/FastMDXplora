@@ -28,6 +28,7 @@ import mdtraj as md
 import numpy as np
 
 from fastmdxplora.analysis.plotting import colour
+from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
@@ -47,7 +48,7 @@ class RMSD(Analysis):
         result includes rigid-body rotation/translation which is rarely
         the quantity of interest.
     selection : str, optional
-        MDTraj atom selection string. Defaults to ``"name CA"`` (alpha
+        MDTraj atom selection string. Defaults to ``"protein and name CA"`` (alpha
         carbons) for protein analysis. For all atoms, pass
         ``selection="all"``.
     **kwargs
@@ -77,7 +78,7 @@ class RMSD(Analysis):
     time_series = True
     reweightable = (None, "RMSD (nm)")
     description = "Root-mean-square deviation"
-    default_selection = "name CA"
+    default_selection = ALPHA_CARBONS
     #: A superposition needs three atoms to be defined.
     min_atoms_to_align = 3
 

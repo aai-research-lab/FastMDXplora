@@ -39,6 +39,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
+from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
@@ -70,7 +71,7 @@ class DimRed(Analysis):
         Random seed for stochastic methods (t-SNE, UMAP).
     selection : str, optional
         MDTraj atom selection used to flatten coordinates. Defaults to
-        ``"name CA"`` (CA-only is a standard featurization for protein
+        ``"protein and name CA"`` (CA-only is a standard featurization for protein
         DimRed).
     **kwargs
         Standard base-class options.
@@ -84,7 +85,7 @@ class DimRed(Analysis):
 
     name = "dimred"
     description = "Dimensionality reduction"
-    default_selection = "name CA"
+    default_selection = ALPHA_CARBONS
     #: A superposition needs three atoms to be defined. Without this,
     #: MDTraj returns identity rotations and the frames are compared
     #: unaligned -- a real run clustered a capped alanine and found one

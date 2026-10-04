@@ -51,6 +51,12 @@ import matplotlib as _matplotlib
 
 _matplotlib.use("Agg")
 
+# `protein` covers every amino acid the force fields write, CYX and HIE
+# among them, before anything here selects atoms (protein_names.py).
+from fastmdxplora.analysis.protein_names import recognise_variants as _recognise
+
+_recognise()
+
 from fastmdxplora.analysis.base import Analysis, AnalysisResult
 from fastmdxplora.analysis.loading import TrajectoryLoadError, load_trajectory
 from fastmdxplora.analysis.orchestrator import (

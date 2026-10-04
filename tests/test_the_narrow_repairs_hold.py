@@ -150,8 +150,10 @@ class TestEveryHistidineKeepsItsChemistry:
         assert residues_not_covered(top, range(top.n_atoms)) == {}
 
 
-class TestASelectionThatDropsProteinSaysSo:
-    """AUD9's other half: MDTraj's `protein` excludes HIE, HID and HSP."""
+class TestAProteinSelectionKeepsEveryAminoAcid:
+    """AUD9's other half: MDTraj's `protein` excluded HIE, HID and HSP. They
+    are now protein to it (analysis/protein_names.py), so nothing is left
+    out and there is nothing to say."""
 
     def _peptide(self, middle: str):
         top = md.Topology()
@@ -165,25 +167,14 @@ class TestASelectionThatDropsProteinSaysSo:
         xyz[:] = np.arange(top.n_atoms)[None, :, None] * 0.15
         return md.Trajectory(xyz, top)
 
-    @pytest.mark.parametrize("resname", ["HIE", "HID"])
-    def test_the_finding_names_the_residue(self, resname: str) -> None:
+    @pytest.mark.parametrize("resname", ["HIE", "HID", "HSP", "CYX", "ASH"])
+    def test_the_residue_is_selected(self, resname: str) -> None:
         from fastmdxplora.analysis.sasa import SASA
 
+        peptide = self._peptide(resname)
         analysis = SASA()
-        analysis.select_atoms(self._peptide(resname))
-
-        note = analysis.findings.get("selection_dropped_residues")
-        assert note is not None, (
-            f"{resname} is outside MDTraj's 'protein' and nothing said so"
-        )
-        assert resname in note
-
-    def test_nothing_is_said_when_nothing_is_dropped(self) -> None:
-        from fastmdxplora.analysis.sasa import SASA
-
-        analysis = SASA()
-        analysis.select_atoms(self._peptide("HIS"))
-        assert "selection_dropped_residues" not in analysis.findings
+        assert len(analysis.select_atoms(peptide)) == peptide.n_atoms
+        assert analysis.findings == {}
 
 
 class TestABondAngleIsNotACircle:

@@ -31,6 +31,7 @@ MOST_FOR_A_MEDOID = 300
 def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     """Each state the cluster analysis found, with its frames played, its
     share and its representative; or why there are none."""
+    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
     import mdtraj as md
     import pandas as pd
 
@@ -60,13 +61,13 @@ def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     nearest = np.abs(played[:, None] - analysed[None, :]).argmin(axis=1)
     of_played = labels[nearest]
     record = _load_json(folder / "options.json")
-    selection = str(record.get("selection") or "name CA")
+    selection = str(record.get("selection") or ALPHA_CARBONS)
     with suppress_native_output():
         frames = md.load_dcd(str(simulation / "frames.dcd"),
                              top=str(simulation / "frames_topology.pdb"))
     atoms = frames.topology.select(selection)
     if len(atoms) < 3:
-        atoms = frames.topology.select("name CA")
+        atoms = frames.topology.select(ALPHA_CARBONS)
     times = index.get("frame_times_ns") or []
     states = []
     for label in sorted(set(labels.tolist()) - {-1}):
@@ -104,6 +105,7 @@ def state_difference(root: str | Path, first: Any, second: Any,
     residue's alpha carbon's displacement in angstroms, as the Viewer's
     results are given. ``frames_file`` names the frames as the Viewer shows
     them (superposed or not), so the second is placed on the first as shown."""
+    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
     import mdtraj as md
 
     from fastmdxplora.gui.trajectory_frames import FRAMES_FILE, FRAMES_TOPOLOGY, _atom_lines, _read
@@ -125,7 +127,7 @@ def state_difference(root: str | Path, first: Any, second: Any,
         frames = md.load_dcd(str(path), top=str(simulation / FRAMES_TOPOLOGY))
     if not (0 <= a < frames.n_frames and 0 <= b < frames.n_frames):
         return {"ok": False, "reason": f"The frames played are 0 to {frames.n_frames - 1}."}
-    alphas = frames.topology.select("name CA")
+    alphas = frames.topology.select(ALPHA_CARBONS)
     if len(alphas) < 3:
         return {"ok": False, "reason": "A comparison needs three alpha carbons."}
     one, other = frames[a], frames[b]

@@ -53,6 +53,7 @@ import mdtraj as md
 import numpy as np
 
 from fastmdxplora.analysis.plotting import colour
+from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
@@ -207,7 +208,7 @@ class OrderParameters(Analysis):
 
     Parameters
     ----------
-    align_selection : str, default "name CA"
+    align_selection : str, default "protein and name CA"
         Atoms used to remove global tumbling. Recorded with the result,
         because it is a choice that changes the answer.
     ref : int, default 0
@@ -254,7 +255,7 @@ class OrderParameters(Analysis):
     def __init__(
         self,
         *,
-        align_selection: str = "name CA",
+        align_selection: str = ALPHA_CARBONS,
         ref: int = 0,
         reference: "str | None" = None,
         reference_exclude: "str | None" = None,

@@ -7,6 +7,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `protein` is the whole protein
+
+**`protein` now covers every amino acid the force fields write.** MDTraj
+decides a residue is protein by its name, and its list lacked AMBER's
+disulfide cysteine CYX, protonated aspartate ASH, histidines HID, HIE and
+HSP, the NHE and NH2 caps, and (MDTraj 1.10) CHARMM's HSD. On a system with
+disulfides every bridged cysteine fell out of `protein`: trypsin's SASA
+covered 211 residues of 223 (96.2 against 92.5 nm2, the holes' neighbours
+exposed), its DSSP changed at 38 residues, its radius of gyration read 1.1%
+large, and the protein side of each ligand analysis did not see them. The
+names are added to MDTraj's list where the analysis package is imported,
+so every analysis, the GUI and a typed selection mean the same protein.
+The finding that named HIE, HID and HSP is gone with the hole.
+
+**The alpha-carbon default is `protein and name CA`** (RMSD, RMSF, cluster,
+dimred, and the fits of the order parameters and the B-factor comparison).
+`name CA` also took a calcium ion, whose residue and atom are both named CA:
+on 3PTB a rigid protein beside a calcium that moved 1.5 nm read an RMSD of
+0.1 nm, and RMSF gave the ion a row.
+
+### The Sequence folds as the settings' sections do, and starts closed
+
 ### The molecule keeps its size as the Sequence or the Playback opens
 
 **Fixed:** opening the Viewer's Sequence made the molecule narrower (about

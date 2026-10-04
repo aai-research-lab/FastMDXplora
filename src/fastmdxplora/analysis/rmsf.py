@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
@@ -54,7 +55,7 @@ class RMSF(Analysis):
         by averaging over the residue's atoms. If False, return the
         per-atom array (one value per selected atom).
     selection : str, optional
-        MDTraj atom selection. Defaults to ``"name CA"`` (alpha carbons)
+        MDTraj atom selection. Defaults to ``"protein and name CA"`` (alpha carbons)
         for protein analysis.
     **kwargs
         Standard base-class options.
@@ -78,7 +79,7 @@ class RMSF(Analysis):
 
     name = "rmsf"
     description = "Root-mean-square fluctuation"
-    default_selection = "name CA"
+    default_selection = ALPHA_CARBONS
     #: A superposition needs three atoms to be defined.
     min_atoms_to_align = 3
 

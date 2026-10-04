@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 
+from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
@@ -112,7 +113,7 @@ class Cluster(Analysis):
         an RMSD matrix a classical MDS embedding stands in for them.
     selection : str, optional
         MDTraj atom selection for the RMSD calculation. Defaults to
-        ``"name CA"`` (CA-only is fast and capture the global fold well).
+        ``"protein and name CA"`` (CA-only is fast and capture the global fold well).
     **kwargs
         Standard base-class options.
 
@@ -128,7 +129,7 @@ class Cluster(Analysis):
     #: are recoverable. Which clusters exist is not: see the base class.
     reweightable_populations = True
     description = "Conformational clustering"
-    default_selection = "name CA"
+    default_selection = ALPHA_CARBONS
     #: A superposition needs three atoms to be defined. Without this,
     #: MDTraj returns identity rotations and the frames are compared
     #: unaligned -- a real run clustered a capped alanine and found one

@@ -95,7 +95,7 @@ def test_the_motion_is_the_hinge(hinge):
     assert said["from"] == "analysis" and said["frames"] == 40 and said["scale"] == 1
     assert said["said"].startswith("Motion 1: 9")
     assert said["said"].endswith("From the dimred analysis's principal components of "
-                                 "`name CA` over the 40 frames it analysed.")
+                                 "`protein and name CA` over the 40 frames it analysed.")
     starts, ends, numbers = _arrows(said)
     along = ends - starts
     lengths = np.linalg.norm(along, axis=1)
