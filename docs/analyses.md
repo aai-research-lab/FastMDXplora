@@ -300,6 +300,11 @@ against another tool.
   accuracy**: a B carries static disorder and refinement choices, and the
   lattice damps loop motion, so B-factors bound amplitudes from below. No
   regression slope is reported, because the two are not the same quantity.
+  Each residue is matched to its deposited B-factor by chain ID, number and
+  insertion code, so trypsin's GLY 184A and TYR 184 keep their own values and
+  a run of one chain is compared with that chain. Where the trajectory carries
+  no chain IDs (MDTraj before 1.11 drops them when it slices), chains are
+  matched by order and `findings.chains_matched_by_order` says so.
 
 - **Thermodynamics** reads the state record the simulation wrote and treats
   each column as a correlated series. Density is reported only from a

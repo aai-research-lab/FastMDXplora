@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### B-factors matched to their own residues
+
+**The B-factor comparison now matches each residue to its own deposited B-factor, by chain ID, residue number and insertion code.** B-factors were keyed by chain order and number alone, so trypsin's GLY 184A (B 9.49) and TYR 184 (B 20.72) were both compared with 20.72, and a run of 1HHO's chain B alone was compared with chain A's B-factors (VAL 1 against 70.91 rather than its own 25.93). `bfactors_from_pdb` now keys by (chain ID, number, insertion code); residues are matched by the insertion code where the trajectory carries it and by file order within a number where it does not; and chains are matched by ID, falling back to order only where the trajectory carries no IDs (MDTraj 1.10 drops them when it slices), with `findings["chains_matched_by_order"]` saying so. Results change: correlations on structures with insertion codes, and on runs of some of a structure's chains.
+
 ### Insertion codes from any structure file
 
 **Insertion codes are now read from whichever file gave the topology, PDB or mmCIF.** They were read only from an external `.pdb` topology, so a PDB loaded as the trajectory itself, or a trajectory given an mmCIF topology, lost them: trypsin's GLY 184A and TYR 184 came out as two residues numbered 184 in one chain, and the per-residue tables held a duplicated row. The loader now reads the codes from the trajectory file where it carries the topology, and mmCIF files are read for `_atom_site.pdbx_PDB_ins_code`, keyed by atom id and author residue name and number as MDTraj names the atoms. Results change: per-residue tables of such loads gain their `insertion` column and lose the duplicated rows.
