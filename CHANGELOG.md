@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The runs of a study, played together
+
+**A study of several runs plays its runs together in the Viewer**, which had
+nothing to show for one. The first run with a trajectory is played as any
+study's frames are, and every other run of the same atoms is rendered beside
+it in the colour the Analysis page gives it, read at the same source frames
+and fitted on the protein's backbone to the first run's first frame, so all
+the runs are superposed on one shared structure. **Runs**, in the panel,
+lists them, each with a box to hide it, and the runs left out (other atoms,
+still running, or no trajectory yet) with why; **Coloured by** offers **Run**, and is set to
+it. A run with fewer frames is not shown past its last; the other runs are
+hidden while the frames played are not fitted as they are. A scene written
+from such a study is of the run played alone, and says so.
+
 ### The Agent proposes a scene
 
 **An answer about something that can be seen may end with a scene the Agent

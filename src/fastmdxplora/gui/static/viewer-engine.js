@@ -148,7 +148,8 @@
     "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame",
     "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
     "showPicks", "showSelected", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
-    "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "still", "setCells"]);
+    "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "still", "setCells",
+    "showRuns", "removeRuns", "setRunShown", "setRunsAside"]);
 
   function oneAtATime(engine) {
     let last = Promise.resolve();
@@ -181,8 +182,9 @@
       const emit = (kind) => ({current, modifiers}) => {
         const loci = current && current.loci;
         // The periodic box's corners are not atoms of the structure.
+        // Nor are another run's: what is clicked is the run played.
         const atom = SE.Loci.is(loci) && !SE.Loci.isEmpty(loci) && !this.isTheBox(loci.structure)
-          ? this.record(SE.Loci.getFirstLocation(loci)) : null;
+          && !this.isARun(loci.structure) ? this.record(SE.Loci.getFirstLocation(loci)) : null;
         this.listeners[kind].forEach((listener) => listener(atom, modifiers || {}));
       };
       plugin.behaviors.interaction.click.subscribe(emit("click"));
@@ -367,6 +369,7 @@
     }
 
     async clear() {
+      this.runs = [];
       this.interactions = new Map();
       this.interactionGroups = {ligand: this.interactions};
       this.boxDataRef = null;
@@ -380,8 +383,9 @@
       const structures = this.plugin.managers.structure.hierarchy.current.structures;
       const main = structures.find((s) => s.cell.transform.ref === this.mainRef);
       if (main) return main.cell;
+      const runs = new Set((this.runs || []).map((run) => run.structureRef));
       const others = structures.filter((s) => s.cell.transform.ref !== this.environmentRef
-        && s.cell.transform.ref !== this.boxRef);
+        && s.cell.transform.ref !== this.boxRef && !runs.has(s.cell.transform.ref));
       return others.length ? others[others.length - 1].cell : null;
     }
 
@@ -514,6 +518,7 @@
       }
       await this.showBox(!!show.box && !s.mini);
       await this.paintSelections(named);
+      for (const run of this.runs || []) await this.renderRun(run);
       this.rendered = rendered;
       if (view) this.restoreCamera(view);
       else this.fit();
@@ -679,6 +684,11 @@
     }
 
     colourProps() {
+      // By run: the run played in its own colour, as the others are in theirs.
+      if (this.colour === "run") {
+        return {color: "uniform", colorParams: {value: this.runColour == null ? 0x0072b2
+          : this.runColour}};
+      }
       if (this.colour === "monochrome") return {color: "uniform", colorParams: {value: 0xffffff}};
       // By element is by element throughout: Mol*'s colours carbon by chain.
       if (this.colour === "element") {
@@ -900,7 +910,11 @@
     }
 
     trajectoryModelCell() {
-      const models = this.plugin.managers.structure.hierarchy.current.models;
+      const hierarchy = this.plugin.managers.structure.hierarchy.current;
+      const main = hierarchy.structures.find((s) => s.cell.transform.ref === this.mainRef);
+      if (main && main.model && main.model.cell.obj) return main.model.cell;
+      const runs = new Set((this.runs || []).map((run) => run.modelRef));
+      const models = hierarchy.models.filter((model) => !runs.has(model.cell.transform.ref));
       const info = this.lib.structure.Model.TrajectoryInfo;
       const moving = models.find((model) => model.cell.obj && info.get(model.cell.obj.data).size > 1);
       return (moving || models[0] || {}).cell || null;
@@ -911,10 +925,149 @@
       if (!cell) return;
       const total = this.frameCount();
       const frame = Math.max(0, Math.min(total - 1, Math.round(index)));
-      await this.plugin.build().to(cell.transform.ref)
-        .update((old) => ({...old, modelIndex: frame})).commit();
+      // The other runs move in the same commit, so no frame is rendered
+      // with them a step behind.
+      const update = this.plugin.build();
+      update.to(cell.transform.ref).update((old) => ({...old, modelIndex: frame}));
+      const ended = [];
+      for (const run of this.runs || []) {
+        if (run.frames > 0) {
+          update.to(run.modelRef).update((old) => ({...old,
+            modelIndex: Math.min(frame, run.frames - 1)}));
+        }
+        if ((frame >= run.frames) !== !!run.ended) {
+          run.ended = frame >= run.frames;
+          ended.push(run);
+        }
+      }
+      await update.commit();
+      // A run with fewer frames is not shown past its last.
+      for (const run of ended) await this.renderRun(run);
       await this.followThePocket();
       await this.followTheBox();
+    }
+
+    /* -------------------------------------------------------------- */
+    /* The other runs of a study                                        */
+    /* -------------------------------------------------------------- */
+
+    /** Other runs of the study beside the run played, each its own
+     * structure at the same frame: ``runs`` is [{topology, coordinates,
+     * colour, label}], their frames already fitted to the run played. The
+     * protein and the ligand are rendered as the run played is, in the
+     * run's colour. */
+    async showRuns(runs, colour) {
+      await this.removeRuns();
+      this.runColour = colour == null ? null : colour;
+      const builders = this.plugin.builders;
+      const Model = this.lib.plugin.StateTransforms.Model;
+      const info = this.lib.structure.Model.TrajectoryInfo;
+      for (const asked of runs || []) {
+        const topology = await builders.data.download({url: absolute(asked.topology),
+          isBinary: false});
+        const model = await builders.structure.createModel(
+          await builders.structure.parseTrajectory(topology, "pdb"));
+        const download = await builders.data.download({url: absolute(asked.coordinates),
+          isBinary: true});
+        const coordinates = await this.plugin.dataFormats.get("dcd").parse(this.plugin, download);
+        const trajectory = await this.plugin.build().toRoot()
+          .apply(Model.TrajectoryFromModelAndCoordinates,
+            {modelRef: model.ref, coordinatesRef: coordinates.ref},
+            {dependsOn: [model.ref, coordinates.ref]})
+          .commit();
+        const frames = await builders.structure.createModel(trajectory);
+        const structure = await builders.structure.createStructure(frames);
+        this.runs.push({label: asked.label, colour: asked.colour, shown: asked.shown !== false,
+          roots: [trajectory.ref, topology.ref, download.ref], modelRef: frames.ref,
+          structureRef: structure.ref, frames: frames.cell && frames.cell.obj
+            ? info.get(frames.cell.obj.data).size : 0, ended: false});
+      }
+      await this.setFrame(this.frame());
+      for (const run of this.runs) await this.renderRun(run);
+      return this.runsShown();
+    }
+
+    async removeRuns() {
+      const cells = this.plugin.state.data.cells;
+      const update = this.plugin.build();
+      (this.runs || []).forEach((run) => run.roots.forEach((ref) => {
+        if (cells.has(ref)) update.delete(ref);
+      }));
+      this.runs = [];
+      await update.commit();
+    }
+
+    /** One run shown or hidden, as the person asks. */
+    async setRunShown(index, shown) {
+      const run = (this.runs || [])[index];
+      if (!run) return;
+      run.shown = !!shown;
+      await this.renderRun(run);
+    }
+
+    /** Every other run hidden while the run played is not fitted as they
+     * are, and shown again once it is. */
+    async setRunsAside(aside) {
+      this.runsAside = !!aside;
+      for (const run of this.runs || []) await this.renderRun(run);
+    }
+
+    /** What each other run is and whether it is rendered now. */
+    runsShown() {
+      return (this.runs || []).map((run) => ({label: run.label, colour: run.colour,
+        frames: run.frames, shown: run.shown, ended: !!run.ended,
+        rendered: !!run.rendered}));
+    }
+
+    isARun(structure) {
+      const cells = this.plugin.state.data.cells;
+      return !!structure && (this.runs || []).some((run) => {
+        const cell = cells.get(run.structureRef);
+        return !!(cell && cell.obj && (structure === cell.obj.data
+          || structure.root === cell.obj.data));
+      });
+    }
+
+    async renderRun(run) {
+      const cells = this.plugin.state.data.cells;
+      if (!cells.has(run.structureRef)) return;
+      await this.removeChildren(run.structureRef);
+      run.rendered = false;
+      if (!run.shown || run.ended || this.runsAside) return;
+      const s = this.scene || {};
+      const show = Object.assign({protein: true, ligand: true, hydrogens: false}, s.show || {});
+      const ignoreHydrogens = !show.hydrogens;
+      const builders = this.plugin.builders.structure;
+      const value = Number.parseInt(String(run.colour).replace("#", ""), 16);
+      const uniform = {color: "uniform", colorParams: {value}};
+      const cell = cells.get(run.structureRef);
+      if (show.protein && !s.isolateLigand) {
+        const protein = this.hasCaps() ? `polymer or resn ${CAPS.join("+")}` : "polymer";
+        const component = await builders.tryCreateComponent(cell, {type: {name: "script",
+          params: {language: "pymol", expression: protein}}, nullIfEmpty: true,
+        label: "run protein"}, "fastmdx-run-polymer");
+        if (component) {
+          const type = REPRESENTATIONS[this.representation] || "cartoon";
+          const shape = type === "molecular-surface" ? "cartoon" : type;
+          const typeParams = shape === "ball-and-stick"
+            ? {sizeFactor: this.representation === "sticks" ? 0.18 : 0.3, ignoreHydrogens}
+            : shape === "line" || shape === "spacefill" ? {ignoreHydrogens} : {};
+          await builders.representation.addRepresentation(component,
+            Object.assign({type: shape, typeParams}, uniform));
+          run.rendered = true;
+        }
+      }
+      const ligands = (s.ligandNames || []).filter(Boolean);
+      if (show.ligand && ligands.length) {
+        const component = await builders.tryCreateComponent(cell, {type: {name: "script",
+          params: {language: "pymol", expression: `resn ${ligands.join("+")}`}},
+        nullIfEmpty: true, label: "run ligand"}, "fastmdx-run-ligand");
+        if (component) {
+          await builders.representation.addRepresentation(component, Object.assign(
+            {type: "ball-and-stick", typeParams: {sizeFactor: 0.3, ignoreHydrogens}}, uniform));
+          run.rendered = true;
+        }
+      }
     }
 
     async setRepresentation(name) {

@@ -3657,6 +3657,13 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .chain-contact-residues { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .chain-contact-share { flex: 0 0 auto; }
 #chain-contacts-note { margin: 6px 0 0; }
+.viewer-runs { list-style: none; margin: 4px 0 0; padding: 0; display: flex;
+               flex-direction: column; gap: 4px; }
+.viewer-run { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); }
+.viewer-run label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.viewer-run-swatch { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 3px; }
+.viewer-run-said { color: var(--text-muted); }
+#viewer-runs-note { margin: 6px 0 0; }
 #chain-contacts-note:empty { display: none; }
 
 /* A movie of the frames (viewer-movie.js). */

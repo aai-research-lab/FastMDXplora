@@ -156,6 +156,17 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
 })
 GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK = ("/static/", "/artifacts/", "/scenes/")
 
+#: What the Viewer reads of the run it plays: for a study of several runs,
+#: the first with a trajectory, the others rendered beside it
+#: (runs_together.py); for a study of one run, the study.
+_READ_FROM_THE_RUN_SHOWN = frozenset({
+    "/api/selection", "/api/residue-states", "/api/measure-over-frames",
+    "/api/secondary-structure", "/api/structure-info", "/api/ligands",
+    "/api/viewer-atoms", "/api/chain-contacts", "/api/interactions-over-frames",
+    "/api/frames-superposed", "/structure/topology.pdb", "/structure/frames.dcd",
+    "/structure/frames-topology.pdb",
+})
+
 
 #: How a document from a study is served: in a sandbox of its own origin,
 #: so a script in it, the report dashboard's or anybody's, runs without the
@@ -499,6 +510,14 @@ def make_handler(
                     # included. Beyond loopback one FastMDXplora did not
                     # write is served as no run at all.
                     root = app_runtime.workspace_root / _NO_CURRENT_RUN
+            study_root = root
+            if path in _READ_FROM_THE_RUN_SHOWN:
+                from fastmdxplora.gui.runs_together import run_shown
+
+                if path == "/structure/frames.dcd" and "run" in parse_qs(parsed.query):
+                    self._send_run_frames(root, parse_qs(parsed.query)["run"][0])
+                    return
+                root = run_shown(root) or root
             if path in {"/", "/index", "/results", "/live"}:
                 self._send_html(page_for(self.headers.get(ACCOUNT_HEADER)))
                 return
@@ -780,8 +799,14 @@ def make_handler(
                 return
             if path == "/api/frames-info":
                 # The trajectory as binary frames: a topology and a DCD.
+                from fastmdxplora.gui.runs_together import runs_together
                 from fastmdxplora.gui.trajectory_frames import frames_info
 
+                together = runs_together(study_root, most_frames=cfg.max_browser_frames,
+                                         force=allow_control and "force=1" in parsed.query)
+                if together is not None:
+                    self._send_json(together)
+                    return
                 sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
                 self._send_json(frames_info(
                     root, most_frames=cfg.max_browser_frames,
@@ -943,11 +968,20 @@ def make_handler(
 
                     selections = [*selections, highlighted(highlight.strip()[:500],
                                                            payload.get("labels") is True)]
-                self._send_json(write_scene(
+                # A study of several runs: the run the Viewer plays, alone.
+                from fastmdxplora.gui.runs_together import run_shown
+
+                played = run_shown(study)
+                said = write_scene(
                     study, payload.get("name"), payload.get("view"),
                     selections=selections or None,
                     ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
-                    else None))
+                    else None, source=played)
+                if played is not None and said.get("ok"):
+                    said["notes"] = [*said.get("notes", []),
+                                     f"The scene is of the run played ({played.name}) alone: "
+                                     "the other runs are not part of it."]
+                self._send_json(said)
                 return
             if path == "/api/viewer-selections":
                 # A selection of the Viewer named in the study, or forgotten.
@@ -1671,6 +1705,23 @@ def make_handler(
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream" if name.endswith(".dcd")
                              else "chemical/x-pdb; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_run_frames(self, root: Path, run: str) -> None:
+            """Another run's frames, fitted to the run shown's first frame:
+            named by its place in the study, never a path."""
+            from fastmdxplora.gui.runs_together import TOGETHER
+
+            target = root / TOGETHER / f"run_{run}.dcd"
+            if not run.isdigit() or not target.is_file():
+                self.send_error(404, "No such run's frames")
+                return
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
@@ -2502,6 +2553,9 @@ def _artifact_label(rel: str) -> tuple[str, str]:
         return named
 
     path = Path(rel)
+    if path.parts[:1] == ("viewer_runs",):
+        return ((f"Frames of a run fitted for the Viewer: {path.name}" if path.suffix == ".dcd"
+                 else "Which runs the Viewer plays together"), "record")
     if "live_frames" in path.parts or path.name.startswith("live_"):
         return (f"Live viewer scratch: {path.name}", "record")
     if path.name == "options.json":

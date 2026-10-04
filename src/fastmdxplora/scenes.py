@@ -594,15 +594,18 @@ def scene_bytes(scene: dict[str, Any]) -> bytes:
 
 def write_scene(root: str | Path, name: Any, view: dict[str, Any] | None = None, *,
                 selections: list[dict[str, Any]] | None = None,
-                ligands: list[str] | None = None) -> dict[str, Any]:
+                ligands: list[str] | None = None,
+                source: str | Path | None = None) -> dict[str, Any]:
     """The scene of a view written with the study, as
-    ``scenes/<name>.mvsx``, in place of one of that name."""
+    ``scenes/<name>.mvsx``, in place of one of that name: of ``source``
+    where it is given (the run a study of several plays), else the
+    study."""
     name = str(name or "").strip()
     if not _NAME.match(name):
         return {"ok": False, "reason": "A scene is named in 1 to 60 letters, digits, spaces, "
                                        "dots, dashes and underscores, from a letter or digit."}
     try:
-        scene = build_scene(root, view, selections, ligands=ligands, title=name)
+        scene = build_scene(source or root, view, selections, ligands=ligands, title=name)
     except Exception as exc:  # noqa: BLE001 - said, not raised
         return {"ok": False, "reason": f"The scene could not be made: {exc}"}
     if not scene.get("ok"):

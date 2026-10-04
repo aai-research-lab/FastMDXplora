@@ -53,6 +53,11 @@
     mode: "structure",
     representation: "cartoon",
     colorMode: "spectrum",
+    // A study of several runs: the runs played together, the colour of the
+    // run played, and the runs the person hid (runs_together.py).
+    runsTogether: null,
+    runColour: null,
+    runsHidden: new Set(),
     background: COLORS.black,
     visibility: {
       protein: true,
@@ -188,6 +193,10 @@
     STATE.residueLookups = null;
     STATE.secondaryStructure = null;
     STATE.secondaryStructures = null;
+    STATE.runsTogether = null;
+    STATE.runsFittedOnce = false;
+    STATE.runsHidden = new Set();
+    sayTheRuns(null);
     offerResultColours();
     sayTheSecondaryStructure();
     STATE.visibility = {
@@ -650,6 +659,7 @@
    * protein as a spectrum cartoon with its ligand, and nothing else. */
   function applyLook(engine, mini) {
     engine.representation = mini ? "cartoon" : STATE.representation;
+    engine.runColour = STATE.runColour;
     const property = !mini ? activeResult() : null;
     if (property) {
       const lookup = STATE.model ? lookupFor(property) : null;
@@ -1489,6 +1499,7 @@
       && previousPayload?.source_kind === "live-history"
       && payload?.source_kind === "live-history";
     STATE.playbackPayload = payload || null;
+    sayTheRuns(payload);
     // A running job appends to its history, so the signature changes on
     // every poll. That is not a new trajectory: keep the frames playing and
     // the new payload for the next explicit reload.
@@ -1595,7 +1606,10 @@
         if (!isViewerGenerationCurrent(generation)) return false;
         // Loaded once a frame is shown, with its cartoon and its preview.
         STATE.playbackLoaded = true;
+        const together = await showTheRuns(engine, available);
+        if (!isViewerGenerationCurrent(generation)) return false;
         if (STATE.superposed !== "none") await superpose(STATE.superposed);
+        if (together) await engine.setRunsAside(!runsFitAsPlayed());
         sayTheColours();
         updatePlaybackButtons();
         return true;
@@ -1671,6 +1685,8 @@
     STATE.superposedUrl = on === "none" ? null : url;
     STATE.appliedTo = to;
     STATE.appliedSmooth = over;
+    const runs = STATE.engine.runsShown().length > 0;
+    if (runs) await STATE.engine.setRunsAside(!runsFitAsPlayed());
     if (STATE.visibility.box) await STATE.engine.showBox(on === "none");
     // Water and ions are the first frame's: they sit where it does, and a
     // first frame fitted to another structure has moved from them.
@@ -1682,12 +1698,166 @@
     }
     if (select) select.value = on;
     if (label) label.setAttribute("data-said", said);
-    announce(on === "none" ? "The frames are shown as they were written."
+    announce((on === "none" ? "The frames are shown as they were written."
       : `Each frame is ${said}.`
         + (STATE.visibility.box ? " The periodic box is not shown in frames turned to fit." : "")
         + (environmentMoved() && (STATE.visibility.water || STATE.visibility.ions)
           ? " Water and ions are not shown: they are the first frame's, and it has moved." : "")
-        + (over > 1 ? " An average shortens bonds a little: measure on frames as written." : ""));
+        + (over > 1 ? " An average shortens bonds a little: measure on frames as written." : ""))
+      + (runs && !runsFitAsPlayed() ? " The other runs are hidden: they are fitted on the backbone"
+        + " to the first frame, and are shown again when these frames are." : ""));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The runs of a study, played together                                */
+  /* ------------------------------------------------------------------ */
+  /* A study of several runs plays its first run with a trajectory as any
+   * study's frames are played, and renders the other runs of the same
+   * atoms beside it, each in its colour, fitted on the backbone to the
+   * first frame of the run played (gui/runs_together.py). */
+  function runsTogether(payload) {
+    const together = payload && payload.runs_together;
+    return together && Array.isArray(together.runs) ? together : null;
+  }
+
+  /** Whether the run played is fitted as the others are: on the backbone
+   * to its first frame, and not smoothed. */
+  function runsFitAsPlayed() {
+    return STATE.superposed === "backbone" && (STATE.appliedTo || "first") === "first"
+      && (STATE.appliedSmooth || 1) === 1;
+  }
+
+  /** The other runs rendered beside the frames just loaded; the frames
+   * superposed on the backbone the first time, so all the runs are on one
+   * shared structure. Null where the study is of one run. */
+  async function showTheRuns(engine, payload) {
+    const together = runsTogether(payload);
+    const others = together ? together.runs.filter((run) => !run.main) : [];
+    if (!others.length) {
+      if (engine.runsShown().length) await engine.removeRuns();
+      return null;
+    }
+    if (!STATE.runsFittedOnce) {
+      STATE.runsFittedOnce = true;
+      if (STATE.superposed === "none") {
+        STATE.superposed = "backbone";
+        const select = document.getElementById("traj-superpose");
+        if (select) select.value = "backbone";
+      }
+    }
+    // Asked for afresh: a run finishing writes its frames again.
+    const version = Date.now();
+    await engine.showRuns(others.map((run) => ({label: run.label, colour: run.colour,
+      shown: !STATE.runsHidden.has(run.run_id),
+      topology: `/structure/frames-topology.pdb?v=${version}`,
+      coordinates: `/structure/frames.dcd?run=${run.index}&v=${version}`})), STATE.runColour);
+    sayTheRuns(payload);
+    return together;
+  }
+
+  /** The Runs section: each run in its colour, the others each shown or
+   * hidden, and how they were fitted; the colour by run offered. */
+  function sayTheRuns(payload) {
+    const together = runsTogether(payload);
+    const section = document.getElementById("side-runs");
+    const list = document.getElementById("viewer-runs-list");
+    const note = document.getElementById("viewer-runs-note");
+    const several = !!(together && together.runs.length + together.excluded.length > 1);
+    STATE.runsTogether = several ? together : null;
+    const played = several ? together.runs.find((run) => run.main) : null;
+    STATE.runColour = played ? Number.parseInt(played.colour.slice(1), 16) : null;
+    offerTheRunColour(several && together.runs.length > 1);
+    if (!section || !list) return;
+    section.hidden = !several;
+    const engineRuns = STATE.engine ? STATE.engine.runsShown() : [];
+    // Each poll brings the same runs: the list is made again only when
+    // they change, so a box is not replaced as it is clicked.
+    const key = JSON.stringify([together, engineRuns.length]);
+    if (key === STATE.runsSaid) return;
+    STATE.runsSaid = key;
+    list.replaceChildren();
+    if (!several) {
+      if (note) note.textContent = "";
+      return;
+    }
+    together.runs.forEach((run) => {
+      const item = document.createElement("li");
+      item.className = "viewer-run";
+      item.setAttribute("data-run", run.run_id);
+      const swatch = document.createElement("span");
+      swatch.className = "viewer-run-swatch";
+      swatch.style.background = run.colour;
+      const name = document.createElement("span");
+      name.textContent = run.label;
+      const said = document.createElement("span");
+      said.className = "viewer-run-said";
+      if (run.main) {
+        said.textContent = `played, ${run.frames} frames`;
+        said.title = "What is clicked, the ruler, the pocket and colours by a result are this run's";
+        item.append(swatch, name, said);
+      } else {
+        const label = document.createElement("label");
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = !STATE.runsHidden.has(run.run_id);
+        box.setAttribute("aria-label", `Show ${run.label}`);
+        box.addEventListener("change", async () => {
+          if (box.checked) STATE.runsHidden.delete(run.run_id);
+          else STATE.runsHidden.add(run.run_id);
+          const at = together.runs.filter((one) => !one.main).indexOf(run);
+          if (STATE.engine) await STATE.engine.setRunShown(at, box.checked);
+        });
+        label.append(box, swatch, name);
+        said.textContent = `${run.frames} frames`;
+        item.append(label, said);
+      }
+      list.append(item);
+    });
+    together.excluded.forEach((run) => {
+      const item = document.createElement("li");
+      item.className = "viewer-run is-excluded";
+      item.setAttribute("data-run", run.run_id);
+      const said = document.createElement("span");
+      said.className = "viewer-run-said";
+      said.textContent = `${run.label}: not shown. ${run.reason}`;
+      item.append(said);
+      list.append(item);
+    });
+    if (note) {
+      const loaded = engineRuns.length > 0 || together.runs.length < 2;
+      note.textContent = (together.fitted ? `Each run is fitted ${together.fitted}, and shown at `
+        + `the frames of ${together.first}'s simulation; a run with fewer frames is not shown `
+        + "past its last." : "")
+        + (loaded ? "" : " The other runs are shown with the frames: press Play.");
+    }
+  }
+
+  /** Coloured by run, offered while runs are played together and chosen
+   * the first time they are; taken away, with the colour it stood in for
+   * kept, when they are not. */
+  function offerTheRunColour(offered) {
+    const select = document.getElementById("viewer-color");
+    if (!select) return;
+    let option = select.querySelector('option[value="run"]');
+    if (offered && !option) {
+      option = document.createElement("option");
+      option.value = "run";
+      option.textContent = "Run";
+      select.insertBefore(option, select.firstChild);
+      if (!STATE.runColourChosen) {
+        STATE.runColourChosen = true;
+        STATE.colorMode = "run";
+        select.value = "run";
+        void restyleViewers();
+      }
+    } else if (!offered && option) {
+      option.remove();
+      if (STATE.colorMode === "run") {
+        STATE.colorMode = "spectrum";
+        select.value = "spectrum";
+        void restyleViewers();
+      }
+    }
   }
 
   /** The preview plays the same frames, where it is shown. */

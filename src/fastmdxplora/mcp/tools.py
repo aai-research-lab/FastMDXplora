@@ -694,7 +694,11 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
     selections = selections_of(folder)["selections"]
     if args.get("highlight"):
         selections.append(highlighted(args["highlight"], bool(args.get("labels"))))
-    said = write_scene(folder, args["name"], view, selections=selections)
+    from fastmdxplora.gui.runs_together import run_shown
+
+    # A study of several runs: the run the GUI plays, as its Viewer shows it.
+    played = run_shown(folder)
+    said = write_scene(folder, args["name"], view, selections=selections, source=played)
     if not said.get("ok"):
         raise ToolError(said.get("reason") or "The scene could not be made.")
     where = ctx.workspace.shown(Path(said["path"]))
@@ -705,6 +709,9 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
              "in the FastMDXplora GUI (Viewer, Saved views, Scenes) or dropped on "
              "molstar.org. Tell the person where it is.",
              f"The study's scenes are in its {SCENES_DIR}/ folder."]
+    if played is not None:
+        lines.append(f"The study is of several runs: the scene is of {played.name}, the run "
+                     "the GUI plays, alone.")
     lines += [f"- {note}" for note in said.get("notes") or []]
     return "\n".join(lines)
 
