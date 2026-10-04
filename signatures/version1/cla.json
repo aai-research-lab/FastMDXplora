@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "Paradoxicaly",
+      "id": 91711641,
+      "comment_id": 5983975871,
+      "created_at": "2026-10-04T20:16:14Z",
+      "repoId": 965215244,
+      "pullRequestNo": 52
+    }
+  ]
 }
