@@ -14,6 +14,13 @@ evidence with checksums and atomic record replacement. It is disabled by
 default, has no environment switch, and audit capture failures do not alter
 scientific preparation or its result.
 
+### Agent context receipts and active-view hints
+
+Agent replies now return and persist a bounded SHA-256 receipt containing the
+exact prompts sent through tool rounds and the tool output returned to the
+model. A request-scoped read-only `current_view` tool accepts bounded browser
+hints and routes factual questions through existing Agent tools.
+
 ### Saved views retain research annotations
 
 **Saved Viewer views can retain a bounded note, de-duplicated tags, and a named graph range.**

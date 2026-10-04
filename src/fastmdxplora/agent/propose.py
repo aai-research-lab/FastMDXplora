@@ -46,6 +46,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from fastmdxplora.agent.receipt import ContextReceipt, ReceiptBuilder
 from fastmdxplora.config.describe import describe_schema
 from fastmdxplora.config.loader import ConfigError, validate_config
 from fastmdxplora.refusals import Kind, Refusal, refusal_of
@@ -57,6 +58,7 @@ __all__ = [
     "propose_config",
     "prompt_for",
     "repair_prompt_for",
+    "ContextReceipt",
 ]
 
 
@@ -140,6 +142,8 @@ class Proposal:
     #: `SHOW:` line by a strict pattern, and written only when the person
     #: presses its button. The Agent's tools only look; this only offers.
     scene: dict[str, Any] | None = None
+    #: The exact bounded prompts and tool output used to reach this result.
+    receipt: ContextReceipt = ContextReceipt()
 
     @property
     def accepted(self) -> bool:
@@ -684,6 +688,7 @@ def propose_config(
     from fastmdxplora.agent.tools import MOST_LOOKS, use_in
 
     attempts: list[Attempt] = []
+    receipt = ReceiptBuilder()
     prompt = prompt_for(request, phases=phases, verbose=verbose_schema,
                         history=history, current_config=current_config,
                         run_status=run_status, attachments=attachments, tools=tools)
@@ -695,14 +700,19 @@ def propose_config(
     number = 0
     asked_to_look = 0
     while number < max_cycles:
-        raw = complete(prompt + (tools.said_so_far() if tools is not None else ""))
+        actual_prompt = prompt + (tools.said_so_far() if tools is not None else "")
+        receipt.prompt(actual_prompt)
+        raw = complete(actual_prompt)
         wanted = use_in(raw) if tools is not None else None
         if wanted is not None and asked_to_look < MOST_LOOKS:
             # Not an answer: the tool is run and the AI model asked again with
             # what it said. Looks are counted apart from attempts, since
             # nothing was proposed.
             asked_to_look += 1
+            before = len(tools.looks)
             tools.use(*wanted)
+            for look in tools.looks[before:]:
+                receipt.tool(look)
             continue
         number += 1
         if wanted is not None:
@@ -718,23 +728,23 @@ def propose_config(
         act = _action_in(raw)
         if act:
             return Proposal(config=None, attempts=tuple(attempts), action=act,
-                            looks=looked())
+                            looks=looked(), receipt=receipt.freeze())
         again = _windows_in(raw)
         if again is not None:
             return Proposal(config=None, attempts=tuple(attempts), action="rerun windows",
-                            arguments=again, looks=looked())
+                            arguments=again, looks=looked(), receipt=receipt.freeze())
         said = _answer_in(raw)
         if said:
             said, scene = _scene_in(said)
             return Proposal(config=None, attempts=tuple(attempts), answer=said,
-                            scene=scene, looks=looked())
+                            scene=scene, looks=looked(), receipt=receipt.freeze())
         asked = _question_in(raw)
         if asked:
             # The request is short of something an AI model cannot supply and
             # should not guess. Stop here; retrying would only ask an AI model
             # to invent what it was told not to.
             return Proposal(config=None, attempts=tuple(attempts),
-                            question=asked, looks=looked())
+                            question=asked, looks=looked(), receipt=receipt.freeze())
         config = _parse(raw)
 
         if config is None:
@@ -770,6 +780,8 @@ def propose_config(
             continue
 
         attempts.append(Attempt(number, raw, config, None))
-        return Proposal(config=config, attempts=tuple(attempts), looks=looked())
+        return Proposal(config=config, attempts=tuple(attempts), looks=looked(),
+                        receipt=receipt.freeze())
 
-    return Proposal(config=None, attempts=tuple(attempts), refusal=refusal, looks=looked())
+    return Proposal(config=None, attempts=tuple(attempts), refusal=refusal, looks=looked(),
+                    receipt=receipt.freeze())

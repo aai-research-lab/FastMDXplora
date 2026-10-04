@@ -254,7 +254,8 @@
     preview_setup: "Previewed what setup builds",
     check_config: "Checked the config",
     check_selection: "Checked a selection",
-    read_study: "Read another study's record"
+    read_study: "Read another study's record",
+    current_view: "Checked the current view"
   };
 
   function looked(box, looks) {
@@ -747,7 +748,9 @@
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
       current_config: currentConfig,
-      attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })
+      attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; }),
+      current_view: window.FastMDXMoleculeViewer?.currentViewHints
+        ? window.FastMDXMoleculeViewer.currentViewHints() : null
     }, box).then(function (data) {
       box.innerHTML = "";
       (data.attempts || []).forEach(function (attempt) {

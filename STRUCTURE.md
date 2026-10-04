@@ -38,6 +38,7 @@ FastMDXplora/
 │       │   └── workspace.py       # The one folder the tools may use
 │       ├── agent/                 # The Agent: an AI model writing and answering about studies
 │       │   ├── propose.py         # Propose a study, have it refused, repair it, try again
+│       │   ├── receipt.py         # Bounded prompt and tool-output receipts for Agent rounds
 │       │   ├── tools.py           # What the Agent looks at with the software's own tools
 │       │   ├── models.py          # A stored provider choice, as the function the Agent calls
 │       │   ├── evaluate.py        # How well an AI model writes a study, counted on a set of asks

@@ -16,6 +16,7 @@ the page runs.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -132,6 +133,12 @@ def propose_endpoint(payload: dict[str, Any],
 
     mode = str(payload.get("agent") or "assisted")
     phases = payload.get("phases") or ["setup", "simulation"]
+    view_hints = payload.get("current_view")
+    if view_hints is None:
+        view_hints = payload.get("view_hints")
+    scope_error = _active_view_error(view_hints, runtime, path_for)
+    if scope_error is not None:
+        return {"ok": False, "error": scope_error}
     try:
         complete = completion_for()
     except StudyError as exc:
@@ -161,9 +168,16 @@ def propose_endpoint(payload: dict[str, Any],
          "truncated": bool(a.get("truncated"))}
         for a in (payload.get("attachments") or []) if isinstance(a, dict) and a.get("text")
     ][:6]
-    from fastmdxplora.agent.tools import Toolbox
+    from fastmdxplora.agent.tools import Toolbox, current_view_tool
 
-    tools = Toolbox(path_for=path_for)
+    tools = Toolbox(
+        path_for=path_for,
+        extra=(current_view_tool(
+            view_hints,
+            active_root=getattr(runtime, "active_root", None),
+            path_for=path_for,
+        ),),
+    )
     if emit is not None:
         complete = _written_as_it_goes(complete, emit)
         _say_each_look(tools, emit)
@@ -178,8 +192,23 @@ def propose_endpoint(payload: dict[str, Any],
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code,
                 "looks": [look.as_record() for look in tools.looks]}
+    scope_error = _active_view_error(view_hints, runtime, path_for)
+    if scope_error is not None:
+        receipt = proposal.receipt.as_record()
+        answer = {"ok": False, "error": scope_error,
+                  "looks": [look.as_record() for look in proposal.looks],
+                  "context_receipt": receipt}
+        saved = _persist_context_receipt(runtime, receipt)
+        if saved is not None:
+            answer["context_receipt_path"] = str(saved)
+        return answer
     answer = _proposal_answer(proposal, payload, runtime, request, mode)
     answer["looks"] = [look.as_record() for look in proposal.looks]
+    receipt = proposal.receipt.as_record()
+    answer["context_receipt"] = receipt
+    saved = _persist_context_receipt(runtime, receipt)
+    if saved is not None:
+        answer["context_receipt_path"] = str(saved)
     return answer
 
 
@@ -194,6 +223,27 @@ def _written_as_it_goes(complete: Any, emit: Any) -> Any:
         emit({"type": "text", "text": text})
         return text
     return written
+
+
+def _active_view_error(view_hints: Any, runtime: Any, path_for: Any) -> str | None:
+    """Reject a stale or changed study before an Agent call begins."""
+    if not isinstance(view_hints, dict) or not view_hints.get("study"):
+        return None
+    if getattr(runtime, "data_stale", False):
+        return "Reload the current study before asking the Agent about its view."
+    active = getattr(runtime, "active_root", None)
+    try:
+        named = (path_for(view_hints["study"]) if path_for is not None
+                 else view_hints["study"])
+        matches = (
+            active is not None and named is not None
+            and Path(named).expanduser().resolve() == Path(active).expanduser().resolve()
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        matches = False
+    if not matches:
+        return "The current view changed. Select it again before asking the Agent."
+    return None
 
 
 def _say_each_look(tools: Any, emit: Any) -> None:
@@ -782,6 +832,7 @@ CONVERSATIONS_SUBDIR = Path("agent") / "conversations"
 WORKSPACE_CONVERSATIONS_DIR = ".fastmdxplora_agent_conversations"
 CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"  # pre-0047 single file
 CONVERSATION_KEEP = 400
+CONTEXT_RECEIPTS_DIR = Path("receipts")
 
 
 def _is_study(path: Any) -> bool:
@@ -876,6 +927,27 @@ def _current_in(store: Path) -> str | None:
     except OSError:
         return None
     return cid if (store / f"{cid}.json").is_file() else None
+
+
+def _persist_context_receipt(runtime: Any, record: dict[str, Any]) -> Path | None:
+    """Keep one returned context receipt beside the scoped conversation."""
+    if runtime is None or not isinstance(record, dict):
+        return None
+    digest = str(record.get("sha256") or "")
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        return None
+    workspace, study = _scope(runtime)
+    store = _store_for(workspace, study) / CONTEXT_RECEIPTS_DIR
+    target = store / f"{digest}.json"
+    temporary = target.with_suffix(".tmp")
+    try:
+        store.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(json.dumps(record, indent=1, ensure_ascii=True),
+                             encoding="utf-8")
+        temporary.replace(target)
+    except OSError:
+        return None
+    return target
 
 
 def _valid_id(cid: Any) -> bool:

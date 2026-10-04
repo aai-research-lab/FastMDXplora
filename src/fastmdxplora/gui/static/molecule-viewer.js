@@ -1169,6 +1169,32 @@
     return view;
   }
 
+  /* Navigation hints for the Agent. They identify what is on screen but do
+   * not claim what the study measured. The request-scoped server tool routes
+   * any factual question to the study's existing readers. */
+  function currentViewHints() {
+    const view = viewNow() || {};
+    const dashboard = window.FastMDXDashboard?.state || {};
+    const appState = dashboard.appState || {};
+    const hints = {
+      page: dashboard.activePage || null,
+      study: appState.active_run || null,
+      frame: Number.isInteger(view.frame) ? view.frame : null,
+      representation: view.representation || null,
+      colour: view.colour || null,
+      superposed: view.superposed || null,
+    };
+    if (STATE.selection?.expression) hints.expression = STATE.selection.expression;
+    else if (Array.isArray(STATE.selection?.residues) && STATE.selection.residues.length) {
+      hints.selection = STATE.selection.residues.slice(0, 20).map((residue) => ({
+        chain: String(residue.chain || "").slice(0, 32),
+        resi: Number.isInteger(residue.resi) ? residue.resi : null,
+        resn: String(residue.resn || "").slice(0, 8),
+      }));
+    }
+    return Object.fromEntries(Object.entries(hints).filter(([, value]) => value != null));
+  }
+
   async function showView(view) {
     if (!view || !view.camera) return false;
     const generation = STATE.viewerGeneration;
@@ -2895,6 +2921,7 @@
       return restyleViewers();
     },
     viewNow,
+    currentViewHints,
     showView,
     setPublication,
     resize: resizeViewers,

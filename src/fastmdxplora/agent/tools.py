@@ -39,7 +39,7 @@ from typing import Any, Callable
 from fastmdxplora.refusals import CodedError
 
 __all__ = ["AgentTool", "ENTRY_POINT_GROUP", "Look", "ToolRefused", "Toolbox",
-           "plugged_in", "use_in", "MOST_LOOKS"]
+           "current_view_tool", "plugged_in", "use_in", "MOST_LOOKS"]
 
 logger = logging.getLogger("fastmdx.agent.tools")
 
@@ -66,6 +66,15 @@ MOST_LOOKS = 4
 
 #: The most of a tool's answer given to the AI model and shown to the person.
 MOST_SAID = 4000
+
+# Hints describe what the browser is showing. They are deliberately smaller
+# than evidence, and the current-view tool sends facts to the existing tools.
+MOST_VIEW_HINTS = 12
+MOST_VIEW_HINT_TEXT = 512
+_VIEW_HINT_KEYS = frozenset({
+    "analysis", "colour", "expression", "field", "frame", "page", "representation",
+    "selection", "study", "superposed", "system",
+})
 
 #: A structure a tool may read: a PDB identifier or a structure file. Only
 #: these, so a tool asked for a path reads coordinates and nothing else.
@@ -276,6 +285,99 @@ def use_in(raw: str) -> tuple[str, dict[str, Any]] | None:
             asked = {"value": asked}
         return name.strip().strip("`").lower(), asked
     return None
+
+
+def _bounded_view_hints(value: Any) -> dict[str, Any]:
+    """Keep browser-supplied current-view hints small and non-factual."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise _Refused("Current-view hints must be a mapping.")
+    if len(value) > MOST_VIEW_HINTS:
+        raise _Refused(f"Current-view hints are bounded to {MOST_VIEW_HINTS} fields.")
+    kept: dict[str, Any] = {}
+    for key, item in value.items():
+        if key not in _VIEW_HINT_KEYS:
+            continue
+        if isinstance(item, bool):
+            kept[key] = item
+        elif isinstance(item, int) and not isinstance(item, bool):
+            if not 0 <= item < 10_000_000:
+                raise _Refused("Current-view frame hints must be a bounded frame number.")
+            kept[key] = item
+        elif isinstance(item, str) and len(item) <= MOST_VIEW_HINT_TEXT:
+            kept[key] = item
+        elif isinstance(item, dict):
+            kept[key] = _bounded_view_hints(item)
+        elif isinstance(item, list) and key == "selection" and len(item) <= 20:
+            kept[key] = [_bounded_view_hints(row) for row in item]
+        else:
+            raise _Refused("Current-view hints must contain bounded text or numbers.")
+    return kept
+
+
+def _same_path(left: Any, right: Any) -> bool:
+    try:
+        return Path(str(left)).expanduser().resolve() == Path(str(right)).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _current_view_look(box: Toolbox, asked: dict[str, Any], request_hints: Any,
+                       active_root: Any, path_for: Any) -> str:
+    supplied = asked.get("hints", request_hints)
+    if "hints" not in asked and any(key in _VIEW_HINT_KEYS for key in asked):
+        supplied = asked
+    hints = _bounded_view_hints(supplied)
+    if not hints:
+        return ("The current view supplied no bounded hints. Hints are navigation only; "
+                "ask an existing evidence tool for facts.")
+
+    study = hints.get("study")
+    named_study = study
+    if study and path_for is not None:
+        named_study = path_for(study)
+    if study and named_study is None:
+        raise _Refused("The current-view study is outside the workspace.")
+    if study and active_root is not None and not _same_path(named_study, active_root):
+        raise _Refused("The current view no longer names the active study.")
+
+    parts = ["Current-view hints are navigation only: " +
+             json.dumps(hints, sort_keys=True, default=str)]
+    expression = hints.get("expression")
+    selection = hints.get("selection")
+    if isinstance(selection, str) and not expression:
+        expression = selection
+    system = hints.get("system")
+    if expression and system:
+        look = box.use("check_selection", {"system": system, "expression": expression})
+        parts.append("Factual evidence from check_selection:\n" + look.said)
+    elif system:
+        look = box.use("inspect_structure", {"system": system})
+        parts.append("Factual evidence from inspect_structure:\n" + look.said)
+    elif named_study:
+        look = box.use("read_study", {"study": named_study})
+        parts.append("Factual evidence from read_study:\n" + look.said)
+    else:
+        parts.append("No study or structure hint was supplied for an existing evidence tool.")
+    return "\n".join(parts)
+
+
+def current_view_tool(hints: Any = None, *, active_root: Any = None,
+                      path_for: Any = None) -> AgentTool:
+    """Make a read-only current-view tool for one Agent request.
+
+    The browser hints can identify a page, frame, selection, study or
+    structure. They are not evidence. Factual work is delegated to the
+    existing tools, with the same workspace boundary as the request.
+    """
+    return AgentTool(
+        "current_view",
+        "`hints` (bounded current-view navigation hints).",
+        "the active view's bounded hints, then factual evidence from an existing "
+        "structure, selection or study tool; hints themselves are not facts.",
+        lambda box, asked: _current_view_look(box, asked, hints, active_root, path_for),
+    )
 
 
 # ---------------------------------------------------------------------------
