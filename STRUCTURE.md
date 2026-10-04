@@ -133,6 +133,7 @@ FastMDXplora/
 │       │   ├── occupancy.py       # Where the ligand and water went over the frames; water sites placed
 │       │   ├── motion.py          # A study's main motions, swung and shown as lines on the first frame
 │       │   ├── states.py          # The states the cluster analysis found, and two compared
+│       │   ├── backbone_angles.py # Each residue's φ and ψ in each frame played
 │       │   ├── beside.py          # Another study beside this one: paired by sequence, fitted, timed
 │       │   ├── measure.py         # A distance from the Viewer, over every frame
 │       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
@@ -165,7 +166,8 @@ FastMDXplora/
 │       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
 │       │   │                      #   frame-interactions.js, chain-contacts.js,
 │       │   │                      #   viewer-occupancy.js, viewer-motion.js,
-│       │   │                      #   viewer-states.js, viewer-beside.js; scene-view.js
+│       │   │                      #   viewer-states.js, viewer-ramachandran.js,
+│       │   │                      #   viewer-beside.js; scene-view.js
 │       │   │                      #   (a scene on a page of its own)
 │       │   └── templates/         # dashboard.html, scene.html
 │       ├── remote/

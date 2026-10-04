@@ -149,7 +149,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/frames-pieces", "/structure/frames-piece.xtc",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
-    "/api/states", "/api/state-difference",
+    "/api/states", "/api/state-difference", "/api/backbone-angles",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
@@ -169,7 +169,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
     "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
-    "/api/frames-pieces", "/structure/frames-piece.xtc",
+    "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/backbone-angles",
 })
 
 
@@ -967,6 +967,11 @@ def make_handler(
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+                return
+            if path == "/api/backbone-angles":
+                from fastmdxplora.gui.backbone_angles import backbone_angles
+
+                self._send_json(backbone_angles(root))
                 return
             if path == "/api/states":
                 from fastmdxplora.gui.states import states_of

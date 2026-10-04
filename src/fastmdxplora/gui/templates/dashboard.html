@@ -985,6 +985,20 @@
                 </div>
                 <p class="muted small" id="states-note" role="status"></p>
               </details>
+              <!-- A residue's backbone dihedrals over the frames played, on a
+                   Ramachandran plot tied to the frame shown
+                   (viewer-ramachandran.js, backbone_angles.py). -->
+              <details class="side-section" id="side-rama" hidden>
+                <summary>Backbone angles</summary>
+                <div class="occ-row">
+                  <label class="select-field">Residue
+                    <select id="rama-residue" aria-label="Residue followed"></select>
+                  </label>
+                </div>
+                <canvas class="rama-canvas" id="rama-canvas" width="300" height="300" role="img" aria-label="Ramachandran plot of the frames played"></canvas>
+                <p class="muted small" id="rama-key">Grey: every residue in every frame played. Dots: each residue in the frame shown (hollow, glycine). Line: the residue chosen over the frames, lighter later; the ring is the frame shown. A click on the line shows that frame; a click on a dot follows that residue.</p>
+                <p class="muted small" id="rama-note" role="status"></p>
+              </details>
               <!-- Another study's frames beside this one's: its residues
                    paired by sequence, fitted and timed to these
                    (viewer-beside.js, beside.py). -->
@@ -1557,6 +1571,7 @@
   <script src="/static/viewer-occupancy.js"></script>
   <script src="/static/viewer-motion.js"></script>
   <script src="/static/viewer-states.js"></script>
+  <script src="/static/viewer-ramachandran.js"></script>
   <script src="/static/viewer-beside.js"></script>
 </body>
 </html>

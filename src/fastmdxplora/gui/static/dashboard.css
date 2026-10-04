@@ -3681,6 +3681,11 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
                background: var(--border-subtle); overflow: hidden; }
 .state-share > span { display: block; height: 100%; background: var(--accent-blue); }
 #states-note { margin: 6px 0 0; }
+/* A residue's backbone dihedrals over the frames (viewer-ramachandran.js). */
+.rama-canvas { display: block; width: 100%; max-width: 320px; aspect-ratio: 1;
+               margin: 6px 0 4px; cursor: crosshair; }
+#rama-key, #rama-note { margin: 4px 0 0; }
+#rama-note:empty { display: none; }
 #chain-contacts-note:empty { display: none; }
 
 /* A movie of the frames (viewer-movie.js). */

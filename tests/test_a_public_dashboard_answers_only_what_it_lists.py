@@ -282,6 +282,8 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/motion",
             # The states the cluster analysis found, and two compared.
             "/api/states", "/api/state-difference",
+            # Each residue's backbone dihedrals over the frames played.
+            "/api/backbone-angles",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",

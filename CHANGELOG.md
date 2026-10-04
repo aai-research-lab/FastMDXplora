@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Backbone angles tied to the frame
+
+**The Viewer's Backbone angles section is a Ramachandran plot of the frames
+played.** Every residue's φ and ψ over every frame is plotted in grey, each
+residue in the frame shown as a dot that moves as the frames play, and the
+residue chosen (from a list, or selected in the structure or the sequence)
+as its path over the frames with a ring at the frame shown. A click on the
+path shows that frame; a click on a dot follows that residue and selects it.
+The angles are MDTraj's, from the frames played (`GET /api/backbone-angles`).
+
 ### Movies from the command line and from an AI app
 
 **`fastmdx movie`** makes a movie of a study's frames without opening the
