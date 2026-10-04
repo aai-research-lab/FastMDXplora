@@ -18,6 +18,7 @@ FastMDXplora/
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
+│       ├── movie_maker.py         # `fastmdx movie`: a movie made by the Viewer in a browser with no window
 │       ├── advisories.py          # What is worth knowing before a run starts, not after
 │       ├── cost.py                # How long a study will take, on this machine
 │       ├── naming.py              # One rule for the name of a study's output folder

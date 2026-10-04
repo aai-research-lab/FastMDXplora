@@ -32,6 +32,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx diff` | The settings two studies or Configs differ in |
 | `fastmdx scene` | Write a view of a study as a scene file (MolViewSpec) |
+| `fastmdx movie` | Make a movie of a study's frames, as the GUI's Viewer makes one |
 | `fastmdx info` | What is installed, and how to get what is not |
 | `fastmdx remote` | Inspect other machines over SSH: [Other machines](remote.md) |
 | `fastmdx resume` | Carry a study that stopped part-way on to its end: [When it stops early](production.md#when-it-stops-early) |
@@ -499,6 +500,38 @@ RMSF on the Viewer's scale) and the selections named in the GUI, unless
 where `--output` says; what a scene cannot hold (water at a frame, the
 periodic box) is said. Exits **0** when it is written, **1** when it could
 not be made, **2** where the folder or the view is not there.
+
+---
+
+## `movie`
+
+A movie of a study's frames without opening the GUI: the movie the Viewer's
+Movie section makes. The GUI is started for the study on this computer,
+reachable from it alone; a browser with no window opens its Viewer and
+shows a view saved with the study (or the Viewer as it opens), changed as
+asked; and the Viewer renders each frame and has ffmpeg encode it into the
+study's `movies/` folder, as H.264 in an MP4 or, where that ffmpeg has none,
+VP9 or VP8 in a WebM.
+
+```bash
+fastmdx movie runs/trypsin --view "pocket at 40 ns" --name pocket
+fastmdx movie runs/trypsin --from 0 --to 200 --every 2 --between 3 --turn
+fastmdx movie runs/trypsin --colour result:rmsf --superposed backbone --size 3840x2160
+```
+
+`--view` names a view saved in the GUI; `--representation`, `--colour` and
+`--superposed` change it (or the Viewer as it opens). `--from`, `--to` and
+`--every` choose the frames played, `--to` before `--from` playing them
+backwards; `--between` puts 1, 3 or 7 frames in between each two, each atom
+moved in a straight line, for a smoother movie (not more simulation; the
+frames are superposed on the backbone first where they would be shown as
+written). `--fps` (10 to 60), `--size` (`1280x720`, `1920x1080`,
+`3840x2160`), `--turn` (one turn about the screen's vertical) and
+`--no-time` (no simulated time in the corner) as in the GUI. A study without
+frames gives its structure turned once. It needs ffmpeg and a browser that
+renders WebGL: Playwright's Chromium (`pip install "fastmdxplora[movies]"`,
+then `playwright install chromium`), or Chrome or Edge where installed. Exits
+**0** when the movie is made and **1** when it could not be, with why.
 
 ---
 

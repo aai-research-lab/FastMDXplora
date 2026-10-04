@@ -716,6 +716,34 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _make_movie(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.movie_maker import make_movie
+
+    folder = _study(ctx, args["study"])
+    changes = {key: args[key] for key in ("representation", "colour", "superposed")
+               if args.get(key) is not None}
+    made = make_movie(folder, name=args.get("name") or "movie", view=args.get("view"),
+                      changes=changes or None, first=args.get("from"), last=args.get("to"),
+                      every=args.get("every") or 1, between=args.get("between") or 0,
+                      fps=args.get("fps") or 24, size=args.get("size") or "1920x1080",
+                      turn=bool(args.get("turn")), time=args.get("time", True) is not False)
+    if not made.get("ok"):
+        raise ToolError(made.get("reason") or "The movie could not be made.")
+    where = ctx.workspace.shown(Path(made["path"]))
+    lines = [f"Made the movie {where}: {made['frames']} frames, {made['seconds']} s at "
+             f"{made['fps']} frames a second, {made['width']} x {made['height']}, "
+             f"{made['format'].upper()} ({made['codec']}), {made['bytes'] / 1e6:.1f} MB. "
+             "Tell the person where it is.",
+             f"Rendered by the study's Viewer in a browser with no window ({made['browser']}); "
+             f"encoded as {made['encoder']}."]
+    if made.get("between"):
+        lines.append(f"{made['between']} frame{'s were' if made['between'] > 1 else ' was'} "
+                     "put in between each two frames played, "
+                     "each atom moved in a straight line: a smoother movie, not more "
+                     "simulation. Say so where the movie is shown.")
+    return "\n".join(lines)
+
+
 def _view_said(view: dict[str, Any]) -> str:
     said = []
     if view.get("frame") is not None:
@@ -1257,6 +1285,46 @@ TOOLS: tuple[Tool, ...] = (
          ("study", "name"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
           "openWorldHint": False}, _write_scene),
+    Tool("make_movie", "Make a movie of a study",
+         "Make a movie of a study's frames as its Viewer in the GUI makes one, into its "
+         "movies folder: each frame rendered as a view the person saved shows it (or as "
+         "the Viewer opens), changed as asked, with its simulated time, and encoded by "
+         "ffmpeg on this computer. It takes a minute or more: a browser with no window "
+         "renders every frame. A study without frames gives its structure turned once. "
+         "A movie of the same name is replaced.",
+         {"study": _STUDY,
+          "name": {"type": "string", "description": (
+              "The movie's name: letters, digits, spaces, dots, dashes, underscores "
+              "(default movie).")},
+          "view": {"type": "string", "description": (
+              "A view the person saved with the study in the GUI, to show.")},
+          "representation": {"type": "string", "enum": [
+              "cartoon", "backbone", "sticks", "ballAndStick", "lines", "surface",
+              "spacefill"], "description": "How the protein is represented."},
+          "colour": {"type": "string", "description": (
+              "chain, spectrum, residue, element, secondary_structure, monochrome, or one "
+              "of the study's per-residue results as result:<analysis>.")},
+          "superposed": {"type": "string", "enum": ["none", "backbone", "pocket"],
+                         "description": "Frames fitted to the first frame, on this."},
+          "from": {"type": "integer", "description": "The first frame, from 0 (default 0)."},
+          "to": {"type": "integer", "description": (
+              "The last frame (default the last); before `from`, the movie plays "
+              "backwards.")},
+          "every": {"type": "integer", "description": "Every Nth frame (default 1)."},
+          "between": {"type": "integer", "enum": [0, 1, 3, 7], "description": (
+              "Frames put in between each two, each atom moved in a straight line: "
+              "smoother, not more simulation (default 0).")},
+          "fps": {"type": "integer", "enum": [10, 15, 24, 25, 30, 60],
+                  "description": "Frames a second (default 24)."},
+          "size": {"type": "string", "enum": ["1280x720", "1920x1080", "3840x2160"],
+                   "description": "Width x height in pixels (default 1920x1080)."},
+          "turn": {"type": "boolean", "description": (
+              "Turn the camera once about the screen's vertical over the movie.")},
+          "time": {"type": "boolean", "description": (
+              "Stamp each frame's simulated time (default true).")}},
+         ("study",),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
+          "openWorldHint": False}, _make_movie, acts=True),
     Tool("ask_agent", "Ask the FastMDXplora Agent (optional; may use your API key)",
          "Optional: only when the person asks for FastMDXplora's own Agent. It writes "
          "with this AI app's model where the AI app lends it (the AI app may ask the "

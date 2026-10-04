@@ -1060,6 +1060,50 @@ def _build_parser() -> argparse.ArgumentParser:
     scn.add_argument("--no-selections", action="store_true",
                      help="Leave out the selections named in the GUI.")
 
+    mov = sub.add_parser(
+        "movie",
+        help="Make a movie of a study's frames, as the GUI's Viewer makes one.",
+        description=(
+            "Make a movie of a study's frames without opening the GUI: the "
+            "Viewer renders each frame in a browser with no window (Playwright's "
+            "Chromium, or Chrome or Edge), as a view saved with the study shows "
+            "it, and ffmpeg on this computer encodes the movie into the study's "
+            "movies folder (MP4, or WebM where ffmpeg has no H.264 encoder)."
+        ),
+    )
+    mov.add_argument("study", metavar="STUDY", help="The study's folder.")
+    mov.add_argument("--view", default=None, metavar="NAME",
+                     help="A view saved with the study in the GUI (default: the Viewer as "
+                          "it opens).")
+    mov.add_argument("--representation", default=None,
+                     choices=["cartoon", "backbone", "sticks", "ballAndStick", "lines",
+                              "surface", "spacefill"], help="How the protein is represented.")
+    mov.add_argument("--colour", "--color", default=None, metavar="COLOUR",
+                     help="chain, spectrum, residue, element, secondary_structure, "
+                          "monochrome, or a per-residue result as result:<analysis>.")
+    mov.add_argument("--superposed", default=None, choices=["none", "backbone", "pocket"],
+                     help="Fit the frames on this.")
+    mov.add_argument("--from", dest="first", type=int, default=None, metavar="N",
+                     help="The first frame, from 0 (default 0).")
+    mov.add_argument("--to", dest="last", type=int, default=None, metavar="N",
+                     help="The last frame (default the last); before --from, the movie "
+                          "plays backwards.")
+    mov.add_argument("--every", type=int, default=1, metavar="N",
+                     help="Every Nth frame (default 1).")
+    mov.add_argument("--between", type=int, default=0, choices=[0, 1, 3, 7],
+                     help="Frames put in between each two, each atom moved in a straight "
+                          "line: smoother, not more simulation (default 0).")
+    mov.add_argument("--fps", type=int, default=24, choices=[10, 15, 24, 25, 30, 60],
+                     help="Frames a second (default 24).")
+    mov.add_argument("--size", default="1920x1080",
+                     choices=["1280x720", "1920x1080", "3840x2160"],
+                     help="Width x height in pixels (default 1920x1080).")
+    mov.add_argument("--turn", action="store_true",
+                     help="Turn the camera once about the screen's vertical over the movie.")
+    mov.add_argument("--no-time", action="store_true",
+                     help="Leave out each frame's simulated time.")
+    mov.add_argument("--name", default="movie", help="The movie's name (default 'movie').")
+
     gui = sub.add_parser(
         "gui",
         help="Open the FastMDXplora graphical interface in a browser.",
@@ -2199,6 +2243,29 @@ def _cmd_scene(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_movie(args: argparse.Namespace) -> int:
+    """A movie of a study's frames, rendered by its Viewer."""
+    from fastmdxplora.movie_maker import make_movie
+
+    changes = {key: getattr(args, key) for key in ("representation", "colour", "superposed")
+               if getattr(args, key) is not None}
+    made = make_movie(args.study, name=args.name, view=args.view, changes=changes or None,
+                      first=args.first, last=args.last, every=args.every,
+                      between=args.between, fps=args.fps, size=args.size, turn=args.turn,
+                      time=not args.no_time, said=lambda text: print(text, flush=True))
+    if not made.get("ok"):
+        print(f"fastmdx: {made.get('reason')}", file=sys.stderr)
+        return 1
+    print(f"Made {made['path']}: {made['frames']} frames, {made['seconds']} s, "
+          f"{made['width']} x {made['height']}, {made['format'].upper()} ({made['codec']}), "
+          f"{made['bytes'] / 1e6:.1f} MB"
+          + (f", {made['between']} frame{'s' if made['between'] > 1 else ''} in between "
+             "each two played, interpolated"
+             if made.get("between") else "") + ".")
+    print(f"  Rendered by the Viewer in {made['browser']}; encoded as {made['encoder']}.")
+    return 0
+
+
 def _cmd_diff(args: argparse.Namespace) -> int:
     """The settings two studies or Configs differ in."""
     import json as _json
@@ -3100,6 +3167,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_diff(args)
         if args.command == "scene":
             return _cmd_scene(args)
+        if args.command == "movie":
+            return _cmd_movie(args)
         if args.command == "remote":
             return _cmd_remote(args)
     except ConfigError as exc:

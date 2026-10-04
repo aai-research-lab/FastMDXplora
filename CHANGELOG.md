@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Movies from the command line and from an AI app
+
+**`fastmdx movie`** makes a movie of a study's frames without opening the
+GUI, and **`make_movie`** does it for an AI app through `fastmdx mcp`. The
+movie is the Viewer's own: the GUI is started for the study on this
+computer, a browser with no window opens its Viewer and shows a view saved
+with the study (or the Viewer as it opens), changed as asked, and the
+Viewer renders each frame and has ffmpeg encode it into `movies/`. It needs
+Playwright's Chromium, or Chrome or Edge; a read-only `fastmdx mcp` does not
+offer it.
+
 ### Smoother movies
 
 **A movie can put frames in between the frames played.** A study saves a
