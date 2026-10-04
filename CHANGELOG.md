@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Order parameters of a second chain
+
+**The N-terminal NH3+ of every chain is left out of the N-H order parameters, not only the first chain's.** Only the topology's first residue was excluded, and OpenMM names the three terminal hydrogens H, H2 and H3, so on haemoglobin (1HHO) chain B's VAL1 was counted as an amide through the one named H. A residue is now left out when it is first in its chain, when its nitrogen carries H2 or H3 (or AMBER's H1 to H3, CHARMM's HT1 to HT3), or when the topology records peptide bonds and it has none to the residue before it. Results change: on a structure of several chains, each later chain loses one row, its first residue, and the mean S2 no longer includes it.
+
 ### A free-energy landscape on PC 1 and PC 2
 
 **`dimred` with PCA now writes the free-energy landscape over the first two principal components, as data and a figure.** G = -kT ln P, with P the histogram over `landscape_bins` bins each way (40 by default) normalised over the bin area, bins no frame visited left empty rather than infinite, and the lowest bin set to zero. It is in kJ/mol at the production temperature the study recorded in `simulation/simulation_parameters.json`, read where the reweighting reads it; where none is recorded it is -ln P in units of kT, and the record and the colour bar say so rather than assume a temperature. On a biased run the record says it is the landscape of the biased ensemble. Written as `dimred_pca_landscape.npz` (free energy, bin edges in nm, density, counts, unit, temperature) and `dimred_pca_landscape.png`. Results do not change.

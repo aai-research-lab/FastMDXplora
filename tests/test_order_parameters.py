@@ -180,3 +180,91 @@ def test_a_homodimer_s_order_parameters_are_saved(tmp_path) -> None:
     lines = result.data_path.read_text().splitlines()
     assert lines[0] == "chain,residue,s2"
     assert {line.split(",")[0] for line in lines[1:]} == {"A", "B"}
+
+
+def _chains_as_openmm_writes_them(n_chains: int = 2, n_residues: int = 4,
+                                  bonds: bool = True, gap_after: int | None = None,
+                                  one_chain: bool = False) -> md.Topology:
+    """Chains whose N-terminal NH3+ hydrogens are named H, H2 and H3.
+
+    That is how OpenMM and PDBFixer write them (1HHO chain B VAL1 reads
+    N, H, H2, H3), so the first terminal hydrogen answers to the amide
+    name ``H``. With ``one_chain`` every residue goes into a single chain,
+    as a file without TER records is read; ``gap_after`` leaves out the
+    peptide bond after that residue number."""
+    top = md.Topology()
+    chain = top.add_chain()
+    for copy in range(n_chains):
+        if copy and not one_chain:
+            chain = top.add_chain()
+        previous_c = None
+        for i in range(n_residues):
+            res = top.add_residue("ALA", chain, resSeq=i + 1)
+            n = top.add_atom("N", md.element.nitrogen, res)
+            names = ("H", "H2", "H3") if i == 0 else ("H",)
+            hs = [top.add_atom(name, md.element.hydrogen, res) for name in names]
+            ca = top.add_atom("CA", md.element.carbon, res)
+            c = top.add_atom("C", md.element.carbon, res)
+            if bonds:
+                for h in hs:
+                    top.add_bond(n, h)
+                top.add_bond(n, ca)
+                top.add_bond(ca, c)
+                if previous_c is not None and gap_after != i:
+                    top.add_bond(previous_c, n)
+            previous_c = c
+    return top
+
+
+class TestEveryNTerminusIsLeftOut:
+    """Only the topology's first residue was excluded as an N-terminus, so
+    the NH3+ of every later chain was counted as an amide through its
+    hydrogen named H: on 1HHO chain B's VAL1."""
+
+    def test_the_second_chain_s_first_residue_is_not_an_amide(self) -> None:
+        top = _chains_as_openmm_writes_them()
+        firsts = {next(iter(c.residues)).index for c in top.chains}
+        residues = {r for _, _, r in amide_pairs(top)}
+        assert firsts == {0, 4}
+        assert residues == {1, 2, 3, 5, 6, 7}
+
+    def test_a_terminus_inside_one_chain_is_found_by_its_hydrogens(self) -> None:
+        """Two chains read as one, without bonds: H2 and H3 still say it."""
+        top = _chains_as_openmm_writes_them(bonds=False, one_chain=True)
+        assert top.n_chains == 1
+        assert {r for _, _, r in amide_pairs(top)} == {1, 2, 3, 5, 6, 7}
+
+    def test_a_residue_after_a_break_in_the_chain_is_left_out(self) -> None:
+        """No peptide bond to the residue before: its N-H is not an amide
+        of a continuous backbone, and no experimental set means it."""
+        top = _chains_as_openmm_writes_them(n_chains=1, n_residues=6, gap_after=3)
+        assert {r for _, _, r in amide_pairs(top)} == {1, 2, 4, 5}
+
+    def test_haemoglobin_as_pdbfixer_writes_it(self) -> None:
+        """1HHO with hydrogens added by PDBFixer, the case the audit found:
+        chain B's VAL1 carries H, H2 and H3."""
+        import gzip
+        import tempfile
+        from pathlib import Path
+
+        pytest.importorskip("openmm")
+        pytest.importorskip("pdbfixer")
+        from openmm.app import PDBFile
+        from pdbfixer import PDBFixer
+        source = Path(__file__).parent / "data" / "assemblies" / "1HHO.pdb.gz"
+        with tempfile.TemporaryDirectory() as folder:
+            raw = Path(folder) / "1HHO.pdb"
+            raw.write_bytes(gzip.decompress(source.read_bytes()))
+            fixer = PDBFixer(filename=str(raw))
+            fixer.removeHeterogens(False)
+            fixer.missingResidues = {}
+            fixer.findMissingAtoms()
+            fixer.addMissingAtoms()
+            fixer.addMissingHydrogens(7.0)
+            built = Path(folder) / "1HHO_h.pdb"
+            with open(built, "w") as handle:
+                PDBFile.writeFile(fixer.topology, fixer.positions, handle, keepIds=True)
+            topology = md.load(str(built)).topology
+        firsts = {next(iter(c.residues)).index for c in topology.chains}
+        assert len(firsts) == 2
+        assert not [p for p in amide_pairs(topology) if p[2] in firsts]

@@ -333,7 +333,10 @@ against another tool.
   set is a choice that changes the answer and is recorded. A trajectory too
   short reports S² *too high* rather than too noisy, because motion it never
   saw is indistinguishable from rigidity — so the two halves are compared and
-  the values are called an upper bound where they disagree.
+  the values are called an upper bound where they disagree. Proline and every
+  N-terminal residue are left out: the first residue of each chain, a residue
+  whose nitrogen carries the terminal hydrogens H2 and H3, and one with no
+  peptide bond to the residue before it, since an NH3+ is not an amide.
 
 - **B-factor comparison** converts a refined B through B = (8π²/3)⟨u²⟩ and
   correlates it with the simulated RMSF. It is a correlation and **not an
