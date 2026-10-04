@@ -531,6 +531,29 @@ class Analysis(ABC):
         except Exception:  # an analysis with an axis of its own
             self._x_for_overlay = None
 
+    def _withhold_the_error(self, traj: md.Trajectory, reason: str, *,
+                            because: str, record: dict[str, Any] | None = None) -> None:
+        """Put ``reason`` in the mean's record and take its error bar away.
+
+        For what the analysis found that the mean cannot carry: a chain
+        reaching its own periodic image, a molecule broken across the box.
+        Kept in a finding of its own, the reason reached no reader: the
+        report, the GUI and the Agent read why a mean is qualified from the
+        mean's record, and printed the mean with its error bar. ``because``
+        is a few words for the figure's legend. ``record`` is a record other
+        than ``findings["mean"]``, which is made where there is none.
+        """
+        if record is None:
+            record = self.findings.get("mean")
+            if not isinstance(record, dict):
+                record = {"n_frames": int(traj.n_frames)}
+                self.findings["mean"] = record
+        earlier = record.get("not_a_measurement")
+        record["not_a_measurement"] = f"{reason} {earlier}" if earlier else reason
+        record["error_withheld_because"] = because
+        if "standard_error" in record:
+            record["standard_error"] = float("nan")
+
     def _mark_what_the_mean_rests_on(self, ax: plt.Axes) -> None:
         """Draw the equilibrated region, its mean, and the error bar or its absence.
 
@@ -643,6 +666,9 @@ class Analysis(ABC):
         mean = record["mean"]
         unit = self._mean_unit()
         counted = self._independent_samples(record.get("effective_samples"))
+        if record.get("error_withheld_because"):
+            return (f"mean after equilibration {mean:.4g}{unit}\n"
+                    f"(no error bar: {record['error_withheld_because']})")
         if has_error:
             from fastmdxplora.statistics import with_its_error
 

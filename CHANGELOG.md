@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Periodic warnings reach the mean
+
+**When an end-to-end distance or a set of moments of inertia is marked by the periodic box, every reader of its mean is now told, and the mean has no error bar.** Both analyses kept the warning in a top-level `findings["not_a_measurement"]`, which the report, the GUI and the Agent never open: they read `findings["mean"]`, so a chain folded by the box was reported as a mean with an error bar and nothing else. The warning is now written into the mean's record, its standard error is withheld, and the figure's legend says why there is no error bar. The top-level finding stays where it was.
+
 ### Moments of inertia in the default box
 
 **Moments of inertia now mark a molecule as broken across the periodic boundary only when it is.** The test compared the selection's extent against the smallest box vector, and in the rhombic dodecahedron setup builds by default every vector is a box length long, so whole proteins were marked: 1AKE, 8.54 nm across in a cell 10.39 nm long, was flagged though its narrowest width is 7.35 nm and no bond was broken. The test is now direct: a bond longer than half the cell's narrowest width, which the marking names with its frame. A selection without bonds is still compared by its extent, against the narrowest width.

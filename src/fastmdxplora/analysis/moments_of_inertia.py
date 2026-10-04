@@ -148,6 +148,15 @@ class MomentsOfInertia(Analysis):
                 "solute is whole before reading these moments."
             )
 
+    def _record_what_the_mean_is_worth(self, traj: md.Trajectory) -> None:
+        """Where the molecule is broken across the box, say so in the mean's
+        record, which is where the report, the GUI and the Agent read it."""
+        super()._record_what_the_mean_is_worth(traj)
+        reason = self.findings.get("not_a_measurement")
+        if reason:
+            self._withhold_the_error(traj, reason,
+                                     because="molecule broken across the box")
+
     def compute(self, traj: md.Trajectory) -> np.ndarray:
         atom_idx = self.select_atoms(traj)
         sub = traj.atom_slice(atom_idx) if len(atom_idx) < traj.n_atoms else traj

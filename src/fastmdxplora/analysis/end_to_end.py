@@ -239,6 +239,16 @@ class EndToEndDistance(Analysis):
         if reasons:
             self.findings["not_a_measurement"] = " ".join(reasons)
 
+    def _record_what_the_mean_is_worth(self, traj: md.Trajectory) -> None:
+        """The base class's record, qualified where the chain reaches its own
+        image: the reason goes where every reader of the mean looks, and the
+        mean carries no error bar."""
+        super()._record_what_the_mean_is_worth(traj)
+        reason = self.findings.get("not_a_measurement")
+        if reason:
+            self._withhold_the_error(traj, reason,
+                                     because="chain reaches its periodic image")
+
     def compute(self, traj: md.Trajectory) -> np.ndarray:
         atom_idx = self.select_atoms(traj)
         sub = traj.atom_slice(atom_idx) if len(atom_idx) < traj.n_atoms else traj

@@ -243,7 +243,9 @@ against another tool.
   bond of the selection is longer than half the cell's narrowest width, which a
   whole molecule's bonds never are. The selection's extent against the box
   marked whole proteins in the default dodecahedron, whose box vectors are all
-  longer than its narrowest width.
+  longer than its narrowest width. Either marking is written into the record of
+  the mean (`findings.mean.not_a_measurement` in `options.json`), where the
+  report, the GUI and the Agent read it, and that mean then has no error bar.
 
 - **Molecules are made whole when a trajectory is loaded**, and put in one
   periodic copy. The protein and nucleic chains are kept together, and every

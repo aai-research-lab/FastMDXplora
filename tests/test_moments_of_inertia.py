@@ -208,3 +208,30 @@ class TestItJoinsTheRegisters:
 
     def test_it_leaves_the_solvent_out_by_default(self):
         assert MomentsOfInertia.default_selection == "protein"
+
+
+class TestEveryReaderIsTold:
+    def test_a_broken_molecule_is_said_where_the_mean_is_read(self, tmp_path):
+        """The finding sat at the top level, which no reader opens."""
+        import json
+
+        from fastmdxplora.report.document import _findings_notes
+
+        top = md.Topology()
+        residue = top.add_residue("ALA", top.add_chain(), resSeq=1)
+        atoms = [top.add_atom(f"C{i}", md.element.carbon, residue) for i in range(6)]
+        for first, second in zip(atoms, atoms[1:]):
+            top.add_bond(first, second)
+        xyz = np.tile(np.array([[0.15 * i, 0.0, 0.0] for i in range(6)],
+                               dtype=np.float32), (20, 1, 1))
+        xyz[:, 3:, 0] += 3.0
+        traj = md.Trajectory(xyz, top)
+        traj.unitcell_lengths = np.full((20, 3), 3.0, dtype=np.float32)
+        traj.unitcell_angles = np.full((20, 3), 90.0, dtype=np.float32)
+
+        MomentsOfInertia(selection="all", output_dir=tmp_path).run(traj)
+        found = json.loads(
+            (tmp_path / "moments_of_inertia" / "options.json").read_text())["findings"]
+
+        assert "wrapped across a periodic boundary" in found["mean"]["not_a_measurement"]
+        assert any("wrapped across" in note for note in _findings_notes(found))

@@ -218,3 +218,47 @@ class TestItJoinsTheRegisters:
     def test_it_leaves_the_solvent_out_by_default(self):
         """The ends of a water box are not a chain's ends."""
         assert EndToEndDistance.default_selection == "protein"
+
+
+class TestEveryReaderIsTold:
+    """The warning sat in a finding no reader opens, under a mean printed
+    with its error bar."""
+
+    def _reaching_its_image(self):
+        traj = _straight_chains(n_residues=10, spacing=0.38, box=4.0, frames=400)
+        rng = np.random.default_rng(0)
+        traj.xyz = (traj.xyz + rng.normal(0.0, 0.01, traj.xyz.shape)).astype(np.float32)
+        traj.time = np.arange(400) * 10.0
+        return traj
+
+    def test_the_mean_carries_the_reason_and_no_error_bar(self, tmp_path):
+        import json
+
+        analysis = EndToEndDistance(output_dir=tmp_path)
+        assert analysis.run(self._reaching_its_image()).status == "ok"
+        found = json.loads((tmp_path / "end_to_end" / "options.json").read_text())["findings"]
+
+        assert "its own copy" in found["mean"]["not_a_measurement"]
+        assert found["mean"]["mean"] == pytest.approx(9 * 0.38, abs=0.01)
+        assert not np.isfinite(found["mean"]["standard_error"])
+
+    def test_the_report_says_it(self, tmp_path):
+        import json
+
+        from fastmdxplora.report.document import _findings_notes
+
+        EndToEndDistance(output_dir=tmp_path).run(self._reaching_its_image())
+        found = json.loads((tmp_path / "end_to_end" / "options.json").read_text())["findings"]
+        notes = _findings_notes(found)
+
+        assert any("its own copy" in note for note in notes)
+        assert not any("±" in note or "+/-" in note for note in notes)
+
+    def test_a_chain_clear_of_its_image_keeps_its_record(self, tmp_path):
+        analysis = EndToEndDistance(output_dir=tmp_path)
+        traj = self._reaching_its_image()
+        traj.unitcell_lengths = np.full((traj.n_frames, 3), 8.0, dtype=np.float32)
+        analysis.run(traj)
+
+        assert "not_a_measurement" not in analysis.findings
+        assert "error_withheld_because" not in analysis.findings["mean"]
