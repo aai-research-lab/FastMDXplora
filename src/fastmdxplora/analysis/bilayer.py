@@ -97,8 +97,9 @@ def _symbol(atom: Any) -> str:
 class Bilayer:
     """Where the bilayer's lipids are in a topology."""
 
-    #: One head atom per lipid: the phosphorus of a phospholipid, the
-    #: hydroxyl oxygen of a sterol.
+    #: One head atom per lipid: the phosphorus of a phospholipid (found by
+    #: its element, since force fields name it P, P31 or P8), the hydroxyl
+    #: oxygen of a sterol.
     heads: np.ndarray
     #: Whether each head is a phosphorus.
     phosphate: np.ndarray
@@ -108,6 +109,20 @@ class Bilayer:
     occupants: np.ndarray
     #: How many of each lipid, by residue name.
     composition: dict[str, int] = field(default_factory=dict)
+
+
+def _phosphorus(atoms: list[Any]) -> Any | None:
+    """A lipid's phosphate phosphorus, by element.
+
+    CHARMM36 names it P and AMBER's Lipid17 and Lipid21 name it P31, so a
+    name does not find it. Where a lipid has several (a cardiolipin, a
+    phosphoinositide), the one named P is the glycerol phosphate, and
+    otherwise the first is taken.
+    """
+    found = [a for a in atoms if _symbol(a) == "P"]
+    if not found:
+        return None
+    return next((a for a in found if a.name.upper() == "P"), found[0])
 
 
 def find_bilayer(topology: md.Topology) -> Bilayer:
@@ -128,7 +143,7 @@ def find_bilayer(topology: md.Topology) -> Bilayer:
         atoms = list(residue.atoms)
         if is_lipid(residue.name):
             lipid_atoms.extend(a.index for a in atoms if _symbol(a) != "H")
-            head = next((a for a in atoms if a.name.upper() == "P"), None)
+            head = _phosphorus(atoms)
             if head is not None:
                 heads.append(head.index)
                 phosphate.append(True)

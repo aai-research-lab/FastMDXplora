@@ -33,7 +33,8 @@ from fastmdxplora.analysis.bilayer import (
     leaflets,
 )
 from fastmdxplora.analysis.orchestrator import register_analysis
-from fastmdxplora.lipids import is_sterol
+from fastmdxplora.lipids import is_sterol, lipid_count
+from fastmdxplora.refusals import StudyError
 
 __all__ = ["AreaPerLipid"]
 
@@ -71,6 +72,15 @@ class AreaPerLipid(BilayerSeries):
 
     def compute(self, traj: md.Trajectory) -> np.ndarray:
         bilayer = find_bilayer(traj.topology)
+        if not len(bilayer.heads):
+            raise StudyError(
+                f"None of the {lipid_count(r.name for r in traj.topology.residues)} "
+                "lipids here has a head atom: no phosphorus, and no sterol "
+                "oxygen. The area per lipid divides the box among the lipids "
+                "whose heads are found, so with none there is nothing to "
+                "divide it among. A coarse-grained model, whose beads carry no "
+                "element, is not read by this analysis.",
+                code="analysis.system.inapplicable")
         sides = leaflets(traj, bilayer)
         vectors = box_vectors(traj)
         area = _area_xy(vectors)
