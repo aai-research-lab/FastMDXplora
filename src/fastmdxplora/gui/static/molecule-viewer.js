@@ -1695,7 +1695,8 @@
     STATE.superposedUrl = on === "none" ? null : url;
     STATE.appliedTo = to;
     STATE.appliedSmooth = over;
-    const runs = STATE.engine.runsShown().length > 0;
+    const runs = STATE.engine.runsShown().length > 0
+      || STATE.engine.runsShown("beside").length > 0;
     if (runs) await STATE.engine.setRunsAside(!runsFitAsPlayed());
     const placed = STATE.engine.volumesShown().length > 0 || !!STATE.engine.sitesRef
       || !!STATE.engine.motionShown();

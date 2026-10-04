@@ -975,9 +975,12 @@
      * colour, label}], their frames already fitted to the run played. The
      * protein and the ligand are rendered as the run played is, in the
      * run's colour. */
-    async showRuns(runs, colour) {
-      await this.removeRuns();
-      this.runColour = colour == null ? null : colour;
+    async showRuns(runs, colour, group) {
+      // The runs of this study ("runs"), or another study beside it
+      // ("beside"): each group shown and taken away on its own.
+      const kind = group || "runs";
+      await this.removeRuns(kind);
+      if (kind === "runs") this.runColour = colour == null ? null : colour;
       const builders = this.plugin.builders;
       const Model = this.lib.plugin.StateTransforms.Model;
       const info = this.lib.structure.Model.TrajectoryInfo;
@@ -996,29 +999,30 @@
           .commit();
         const frames = await builders.structure.createModel(trajectory);
         const structure = await builders.structure.createStructure(frames);
-        this.runs.push({label: asked.label, colour: asked.colour, shown: asked.shown !== false,
+        this.runs.push({group: kind, label: asked.label, colour: asked.colour,
+          shown: asked.shown !== false,
           roots: [trajectory.ref, topology.ref, download.ref], modelRef: frames.ref,
           structureRef: structure.ref, frames: frames.cell && frames.cell.obj
             ? info.get(frames.cell.obj.data).size : 0, ended: false});
       }
       await this.setFrame(this.frame());
-      for (const run of this.runs) await this.renderRun(run);
-      return this.runsShown();
+      for (const run of this.runs) if (run.group === kind) await this.renderRun(run);
+      return this.runsShown(kind);
     }
 
-    async removeRuns() {
+    async removeRuns(group) {
+      const kind = group || "runs";
       const cells = this.plugin.state.data.cells;
       const update = this.plugin.build();
-      (this.runs || []).forEach((run) => run.roots.forEach((ref) => {
-        if (cells.has(ref)) update.delete(ref);
-      }));
-      this.runs = [];
+      (this.runs || []).filter((run) => run.group === kind).forEach((run) => run.roots
+        .forEach((ref) => { if (cells.has(ref)) update.delete(ref); }));
+      this.runs = (this.runs || []).filter((run) => run.group !== kind);
       await update.commit();
     }
 
     /** One run shown or hidden, as the person asks. */
     async setRunShown(index, shown) {
-      const run = (this.runs || [])[index];
+      const run = (this.runs || []).filter((one) => one.group === "runs")[index];
       if (!run) return;
       run.shown = !!shown;
       await this.renderRun(run);
@@ -1032,8 +1036,10 @@
     }
 
     /** What each other run is and whether it is rendered now. */
-    runsShown() {
-      return (this.runs || []).map((run) => ({label: run.label, colour: run.colour,
+    runsShown(group) {
+      const kind = group || "runs";
+      return (this.runs || []).filter((run) => run.group === kind).map((run) => ({
+        label: run.label, colour: run.colour,
         frames: run.frames, shown: run.shown, ended: !!run.ended,
         rendered: !!run.rendered}));
     }

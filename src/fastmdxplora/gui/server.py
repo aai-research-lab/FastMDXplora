@@ -167,6 +167,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/api/frames-superposed", "/structure/topology.pdb", "/structure/frames.dcd",
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
+    "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
 })
 
 
@@ -910,6 +911,37 @@ def make_handler(
                 query = parse_qs(parsed.query)
                 self._send_json(motion(root, (query.get("mode") or ["1"])[0],
                                        (query.get("scale") or ["1"])[0]))
+                return
+            if path == "/api/beside":
+                # Another study's frames beside this one's. Not answered
+                # beyond loopback: it reads a study the request names.
+                from fastmdxplora.gui.beside import beside
+
+                named = self._path_for((parse_qs(parsed.query).get("path") or [""])[0])
+                if named is None:
+                    return
+                if not named:
+                    self._send_json({"ok": False, "reason": "No study was named."})
+                    return
+                self._send_json(beside(root, named, most_frames=cfg.max_browser_frames))
+                return
+            if path in ("/structure/beside.pdb", "/structure/beside.dcd"):
+                from fastmdxplora.gui.beside import BESIDE, beside_file
+
+                name = beside_file((parse_qs(parsed.query).get("key") or [""])[0],
+                                   path[-4:])
+                target = root / BESIDE / name if name else None
+                if target is None or not target.is_file():
+                    self.send_error(404, "No such study beside this one")
+                    return
+                data = target.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream"
+                                 if path.endswith(".dcd") else "chemical/x-pdb; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             if path == "/api/states":
                 from fastmdxplora.gui.states import states_of
@@ -2644,6 +2676,9 @@ def _artifact_label(rel: str) -> tuple[str, str]:
         return named
 
     path = Path(rel)
+    if path.parts[:1] == ("viewer_beside",):
+        return (f"Another study's frames fitted beside this one's for the Viewer: {path.name}",
+                "record")
     if path.parts[:1] == ("viewer_runs",):
         return ((f"Frames of a run fitted for the Viewer: {path.name}" if path.suffix == ".dcd"
                  else "Which runs the Viewer plays together"), "record")

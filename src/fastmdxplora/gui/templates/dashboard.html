@@ -984,6 +984,24 @@
                 </div>
                 <p class="muted small" id="states-note" role="status"></p>
               </details>
+              <!-- Another study's frames beside this one's: its residues
+                   paired by sequence, fitted and timed to these
+                   (viewer-beside.js, beside.py). -->
+              <details class="side-section" id="side-beside" open hidden>
+                <summary>Beside another study</summary>
+                <div class="occ-row">
+                  <label class="select-field">Study
+                    <select id="beside-study" aria-label="The study to show beside this one"></select>
+                  </label>
+                  <button type="button" class="chip-btn" id="beside-show" title="Play the other study's frames beside these, its residues paired by sequence and fitted on their alpha carbons to this study's first frame">Show beside</button>
+                  <button type="button" class="chip-btn" id="beside-remove" hidden>Remove</button>
+                </div>
+                <div class="occ-row" id="beside-colour-row" hidden>
+                  <label class="chip-toggle" title="This study's protein coloured by the other's RMSF less its own over the paired residues: red where the other moves more, blue where less"><input type="checkbox" id="beside-colour">Coloured by the difference in RMSF</label>
+                </div>
+                <ul class="occ-sites" id="beside-mutations" aria-label="Residues that differ"></ul>
+                <p class="muted small" id="beside-note" role="status"></p>
+              </details>
               <!-- What holds the chains together: hydrogen bonds and salt
                    bridges between the protein's chains in the frames played
                    (chain-contacts.js, chain_contacts.py). -->
@@ -1530,5 +1548,6 @@
   <script src="/static/viewer-occupancy.js"></script>
   <script src="/static/viewer-motion.js"></script>
   <script src="/static/viewer-states.js"></script>
+  <script src="/static/viewer-beside.js"></script>
 </body>
 </html>

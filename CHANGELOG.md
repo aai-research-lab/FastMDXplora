@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Another study beside this one
+
+**The Viewer plays another study beside this one**, under **Beside another
+study**: a wild type and its mutant, or two related proteins. Their residues
+are paired by sequence and the substituted ones listed; the other's frames
+are fitted on the paired alpha carbons to this study's first frame and timed
+by simulation time, since two studies need not save frames alike; and this
+study's protein can be coloured by the difference in RMSF. `GET /api/beside`,
+on loopback only.
+
 ### The states a study visited
 
 **The Viewer lists the states the cluster analysis found**, under
