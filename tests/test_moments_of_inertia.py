@@ -117,6 +117,52 @@ class TestThePeriodicBoundary:
         assert "wrapped across a periodic boundary" in (
             analysis.findings["not_a_measurement"])
 
+    def test_a_whole_protein_in_a_dodecahedron_is_not_marked(self, tmp_path):
+        """1AKE, 8.54 nm across, in the dodecahedron setup's padding rule
+        gives it: every box vector 10.39 nm long, the narrowest width 7.35.
+        Its extent against the box marked it broken; no bond is."""
+        import gzip
+        from pathlib import Path
+
+        source = tmp_path / "1AKE.pdb"
+        source.write_bytes(gzip.decompress(
+            (Path(__file__).parent / "data" / "assemblies" / "1AKE.pdb.gz").read_bytes()))
+        structure = md.load(str(source))
+        protein = structure.atom_slice(structure.topology.select("protein"))
+        x = protein.xyz[0]
+        a = 2 * float(np.linalg.norm(x - x.mean(axis=0), axis=1).max()) + 1.0
+        traj = md.Trajectory(protein.xyz, protein.topology)
+        traj.unitcell_vectors = np.array(
+            [[[a, 0, 0], [0, a, 0], [a / 2, a / 2, a * np.sqrt(2) / 2]]],
+            dtype=np.float32)
+        assert float(np.ptp(x, axis=0).max()) > 0.8 * a * np.sqrt(2) / 2
+
+        analysis = MomentsOfInertia()
+        analysis.compute(traj)
+
+        assert "not_a_measurement" not in analysis.findings
+
+    def test_a_bonded_molecule_split_by_the_boundary_is_marked(self):
+        """Half of a bonded chain moved by a box vector, as an engine writes
+        a molecule it did not keep whole."""
+        top = md.Topology()
+        residue = top.add_residue("ALA", top.add_chain(), resSeq=1)
+        atoms = [top.add_atom(f"C{i}", md.element.carbon, residue) for i in range(6)]
+        for first, second in zip(atoms, atoms[1:]):
+            top.add_bond(first, second)
+        xyz = np.array([[[0.15 * i, 0.0, 0.0] for i in range(6)]], dtype=np.float32)
+        xyz[0, 3:, 0] += 3.0
+        traj = md.Trajectory(xyz, top)
+        traj.unitcell_lengths = np.array([[3.0, 3.0, 3.0]], dtype=np.float32)
+        traj.unitcell_angles = np.array([[90.0, 90.0, 90.0]], dtype=np.float32)
+
+        analysis = MomentsOfInertia(selection="all")
+        analysis.compute(traj)
+
+        assert "wrapped across a periodic boundary" in (
+            analysis.findings["not_a_measurement"])
+        assert "C2 to" in analysis.findings["not_a_measurement"]
+
     def test_a_compact_molecule_is_not_marked(self):
         analysis = MomentsOfInertia(selection="all")
         analysis.compute(_points([[-0.2, 0, 0], [0, 0, 0], [0.2, 0, 0]],

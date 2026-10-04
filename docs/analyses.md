@@ -239,6 +239,12 @@ against another tool.
   periodic image of the other end, the chain is interacting with its own copy;
   the run is marked and the mean carries no error bar.
 
+- **Moments of inertia** are marked as describing a broken molecule only where a
+  bond of the selection is longer than half the cell's narrowest width, which a
+  whole molecule's bonds never are. The selection's extent against the box
+  marked whole proteins in the default dodecahedron, whose box vectors are all
+  longer than its narrowest width.
+
 - **Molecules are made whole when a trajectory is loaded**, and put in one
   periodic copy. The protein and nucleic chains are kept together, and every
   other solute molecule (a ligand, an ion) is moved to the copy whose centre

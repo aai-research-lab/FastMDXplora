@@ -27,9 +27,15 @@ analysis neither needs a superposition nor is disturbed by one that ran
 before it -- unlike every distance measured against a reference. What does
 disturb it is a molecule broken across a periodic boundary: the two halves
 sit a box apart, the tensor describes that separation rather than the
-molecule, and the moments come out enormous. The extent of the selection is
-compared against the box and the run is marked where the two are
-comparable.
+molecule, and the moments come out enormous. That is tested directly: a
+bond of the selection stretched past half the cell's narrowest width can
+only be a bond broken across the boundary. Comparing the selection's extent
+against the box instead marked whole proteins as broken in the
+dodecahedron setup builds by default, whose box vectors are all a box
+length long while its narrowest width is 0.707 of that (1AKE, 8.54 nm
+across, in a cell 10.39 nm long and 7.35 nm wide). A selection without
+bonds is compared by its extent against the narrowest width, and the
+finding says that is all it was.
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
-from fastmdxplora.analysis.base import Analysis
+from fastmdxplora.analysis.base import Analysis, narrowest_width
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
 
@@ -103,20 +109,43 @@ class MomentsOfInertia(Analysis):
     def _note_if_the_molecule_may_be_broken(
         self, traj: md.Trajectory, xyz: np.ndarray
     ) -> None:
-        """Say when the selection is as wide as the cell that holds it."""
-        if traj.unitcell_lengths is None:
+        """Say when a bond of the selection is broken across the boundary."""
+        widths = narrowest_width(traj)
+        if widths is None:
+            return
+        narrowest = float(np.min(widths))
+        bonds = np.array([[a.index, b.index] for a, b in traj.topology.bonds],
+                         dtype=np.int64).reshape(-1, 2)
+        if len(bonds):
+            lengths = np.linalg.norm(xyz[:, bonds[:, 0]] - xyz[:, bonds[:, 1]], axis=2)
+            stretched = lengths > 0.5 * widths[:, None]
+            if not stretched.any():
+                return
+            frame, which = np.unravel_index(int(np.argmax(lengths)), lengths.shape)
+            first, second = (traj.topology.atom(int(i)) for i in bonds[which])
+            self.findings["not_a_measurement"] = (
+                f"In {int(stretched.any(axis=1).sum())} of {traj.n_frames} "
+                f"frames a bond of the selection is longer than half the "
+                f"cell's narrowest width ({0.5 * narrowest:.3f} nm): "
+                f"{first.residue}:{first.name} to {second.residue}:{second.name} "
+                f"spans {float(lengths[frame, which]):.3f} nm in frame "
+                f"{int(frame)}. A bond that long is a molecule wrapped across "
+                "a periodic boundary, and its inertia tensor describes the "
+                "separation of the two pieces rather than the molecule. "
+                "Image the trajectory so the solute is whole before reading "
+                "these moments."
+            )
             return
         extent = float(np.max(xyz.max(axis=1) - xyz.min(axis=1)))
-        smallest = float(np.min(traj.unitcell_lengths))
-        if extent > 0.8 * smallest:
+        if extent > 0.8 * narrowest:
             self.findings["not_a_measurement"] = (
                 f"The selection spans {extent:.3f} nm in its widest frame, "
-                f"against a smallest box dimension of {smallest:.3f} nm. A "
-                "molecule wrapped across a periodic boundary looks exactly "
-                "like this, and its inertia tensor describes the separation "
-                "of the two pieces rather than the molecule. Image the "
-                "trajectory so the solute is whole before reading these "
-                "moments."
+                f"against a narrowest cell width of {narrowest:.3f} nm, and "
+                "its topology has no bonds to check whether it is whole. A "
+                "molecule wrapped across a periodic boundary looks like this, "
+                "and its inertia tensor describes the separation of the two "
+                "pieces rather than the molecule. Image the trajectory so the "
+                "solute is whole before reading these moments."
             )
 
     def compute(self, traj: md.Trajectory) -> np.ndarray:
