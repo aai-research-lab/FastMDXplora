@@ -231,6 +231,14 @@ against another tool.
 - **Contacts and hydrogen bonds** are computed across the periodic boundary where
   the trajectory carries a unit cell.
 
+- **End-to-end distance** is the length of the sum of the minimum-image steps
+  from one residue to the next along the chain, so it is the same whether the
+  chain was stored whole or wrapped into the cell, and it is not limited to
+  half the box. Taken between the two ends directly, a straight chain 3.42 nm
+  long in a 4.62 nm cube read 1.20 nm. Where an end comes within 1.0 nm of a
+  periodic image of the other end, the chain is interacting with its own copy;
+  the run is marked and the mean carries no error bar.
+
 - **Molecules are made whole when a trajectory is loaded**, and put in one
   periodic copy. The protein and nucleic chains are kept together, and every
   other solute molecule (a ligand, an ion) is moved to the copy whose centre

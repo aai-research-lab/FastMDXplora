@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### End-to-end distance past half the box
+
+**A chain's end-to-end distance is now its length, however long it is against the cell.** It was taken between the two ends under the minimum-image convention, on coordinates the loader had already made whole, so a chain extended past half the box was folded back the short way round: a straight 10-residue chain 3.420 nm long in a 4.62 nm cube (the box setup's padding rule gives it) read 1.200 nm with no warning, and the warning that did exist tested the folded distance, which the folding itself keeps under the bound it tested against, so it could not fire. The distance is now the length of the sum of the minimum-image steps from one residue to the next along the chain, the same for a chain stored whole or wrapped into the cell, and the run is marked where an end comes within 1.0 nm of a periodic image of the other end, found exactly over the lattice for any cell shape. The cell's narrowest width is a new shared helper, `analysis.base.narrowest_width`. Results change: end-to-end distances of chains longer than half the box were too short, and are now their length.
+
 ### `protein` is the whole protein
 
 **`protein` now covers every amino acid the force fields write.** MDTraj

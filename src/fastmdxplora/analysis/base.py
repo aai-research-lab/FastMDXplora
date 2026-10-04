@@ -837,6 +837,29 @@ class Analysis(ABC):
         return path
 
 
+def narrowest_width(traj) -> "np.ndarray | None":
+    """The cell's narrowest width in each frame, in nm, or None without a cell.
+
+    The perpendicular distance between the closest pair of opposite faces,
+    V / |b x c| and its two companions, which is what bounds the minimum-image
+    convention: a separation under half of it is found exactly. The smallest
+    box vector length is not that bound for a triclinic cell. In the rhombic
+    dodecahedron setup builds by default all three vectors are a box length
+    long while the narrowest width is 0.707 of it, so a test against the
+    lengths passed separations the convention had already folded.
+    """
+    vectors = getattr(traj, "unitcell_vectors", None)
+    if vectors is None:
+        return None
+    box = np.asarray(vectors, dtype=np.float64)
+    a, b, c = box[:, 0], box[:, 1], box[:, 2]
+    volume = np.abs(np.einsum("fi,fi->f", a, np.cross(b, c)))
+    faces = np.stack([np.linalg.norm(np.cross(b, c), axis=1),
+                      np.linalg.norm(np.cross(c, a), axis=1),
+                      np.linalg.norm(np.cross(a, b), axis=1)], axis=1)
+    return volume / faces.max(axis=1)
+
+
 def superposed(traj, *, frame=0, atom_indices=None, reference=None, ref_atom_indices=None):
     """Align a copy, and drop the box that no longer describes it.
 
