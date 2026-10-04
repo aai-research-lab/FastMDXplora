@@ -408,7 +408,11 @@ def test_clip_keeps_displaced_intermediate_frames_visible_without_changing_atoms
             assert metadata["frames"] == metadata["source_frames"] == list(range(0, 19, 3))
             assert path["base_view"] == pytest.approx(original["camera"])
             assert len(path["rendered_views"]) == 7
-            # Camera translation follows the recorded origin; zoom remains exactly the user's.
+            # Every frame's protein centroid is translated to the view origin.
+            protein_indices = trajectory.topology.select("protein")
+            centers = trajectory.xyz[metadata["frames"]][:, protein_indices].mean(axis=1) * 10
+            camera_views = np.asarray(path["rendered_views"])
+            np.testing.assert_allclose(camera_views[:, :3], -centers, atol=0.002, rtol=0)
             assert abs(path["rendered_views"][1][0] - path["rendered_views"][0][0]) > 190
             assert all(view[3] == pytest.approx(original["camera"][3]) for view in path["rendered_views"])
             if format == "both":
@@ -434,8 +438,8 @@ def test_clip_keeps_displaced_intermediate_frames_visible_without_changing_atoms
             assert restored["selection"] == original["selection"]
             assert not page.evaluate("document.querySelector('.viewer-layout').inert")
             assert not page.errors
-            # Fixed-camera mode remains available; it must not translate saved atoms either.
-            fixed = page.evaluate("""async () => {
+            # Even a legacy attempt to disable following cannot uncenter a clip.
+            forced_centering = page.evaluate("""async () => {
               const viewer = FastMDXMoleculeViewer.STATE.viewer;
               const clip = await FastMDXMoleculeViewer.clipSession({followMolecule: false});
               try {
@@ -445,9 +449,15 @@ def test_clip_keeps_displaced_intermediate_frames_visible_without_changing_atoms
                 return {first, last, tracking: clip.cameraTracking, xyz: atoms.map(a => [a.x, a.y, a.z])};
               } finally { await clip.restore(); }
             }""")
-            assert fixed["tracking"] == "fixed" and fixed["first"] == pytest.approx(fixed["last"])
+            assert forced_centering["tracking"] == "protein-centroid"
+            np.testing.assert_allclose(
+                forced_centering["first"][:3], -trajectory.xyz[0, protein_indices].mean(axis=0) * 10,
+                atol=0.002, rtol=0)
+            np.testing.assert_allclose(
+                forced_centering["last"][:3], -trajectory.xyz[9, protein_indices].mean(axis=0) * 10,
+                atol=0.002, rtol=0)
             expected_xyz = trajectory.xyz[9, trajectory.topology.select("protein")] * 10
-            np.testing.assert_allclose(fixed["xyz"], expected_xyz, atol=0.0011, rtol=0)
+            np.testing.assert_allclose(forced_centering["xyz"], expected_xyz, atol=0.0011, rtol=0)
         assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources} == before
     finally:
         session.server.shutdown()

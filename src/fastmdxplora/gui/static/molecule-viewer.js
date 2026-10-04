@@ -2228,8 +2228,7 @@
       STATE.clipExporting = true;
       const viewer = STATE.viewer, camera = captureView(viewer), labels = [];
       const referenceFrame = Number(document.getElementById("traj-slider")?.value || 0);
-      const referenceCenter = proteinCenter(STATE.model);
-      const tracking = options.followMolecule !== false && referenceCenter ? "protein-centroid" : "fixed";
+      const tracking = "protein-centroid";
       let renderedCamera = null;
       const check = () => { if (generation !== STATE.viewerGeneration || !STATE.clipExporting) throw new Error("The study changed during export."); };
       return {
@@ -2243,14 +2242,11 @@
             viewer.setWidth(options.dimensions[0]); viewer.setHeight(options.dimensions[1]);
           }
           const frameCamera = camera.slice();
-          if (tracking === "protein-centroid") {
-            const center = proteinCenter(STATE.model);
-            if (!center?.every(Number.isFinite)) throw new Error("The saved frame has no finite protein center for camera following.");
-            // Saved frames can cross a periodic boundary or use different
-            // origins. Move only the camera to retain protein-relative pan,
-            // zoom and orientation; leave every saved atom exactly as recorded.
-            for (let axis = 0; axis < 3; axis++) frameCamera[axis] += referenceCenter[axis] - center[axis];
-          }
+          const center = proteinCenter(STATE.model);
+          if (!center?.every(Number.isFinite)) throw new Error("The saved frame has no finite protein center to center the clip.");
+          // Recenter every saved frame at the model origin. Preserve zoom and
+          // orientation while discarding pan, and never change saved coordinates.
+          for (let axis = 0; axis < 3; axis++) frameCamera[axis] = -center[axis];
           viewer.setView(frameCamera); if (angle) viewer.rotate(angle, "y");
           renderedCamera = captureView(viewer);
           if (options.residues || options.atoms) {
