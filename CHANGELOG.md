@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### An AI app reads a study's views
+
+**`fastmdx mcp` has a `views_of_study` tool**: the views the person saved
+with a study in the GUI, each with its frame, representation, colouring and
+superposition, the selections they named, and the scenes written with it. An
+AI app asked to show something the person looked at starts `write_scene`
+from their view by its name rather than guessing a frame and a colouring.
+The Viewer's frames are fitted by the analyses' own superposition function,
+which now fits to another structure as well.
+
 ### A scene shown in the Viewer again
 
 **The eye beside the Scenes list shows the scene chosen in this Viewer

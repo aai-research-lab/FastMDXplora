@@ -57,7 +57,8 @@ recorded beside the results.
 5. **Read what it found.** `read_study` while it runs (step, time left,
    health) and after (what each analysis found, the checks, why it stopped,
    and the config that continues it).
-6. **Show what it found.** `write_scene` writes a view of the study as a
+6. **Show what it found.** `views_of_study` lists the views the person saved
+   and the selections they named; `write_scene` writes a view of the study as a
    scene file the person opens (the GUI, or molstar.org): a frame, a
    colouring such as `result:rmsf`, the atoms an answer is about
    highlighted. Say where it was written.

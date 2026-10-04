@@ -210,3 +210,24 @@ def test_a_scene_is_shown_in_the_viewer_again(workspace):
         assert shown[key] == pytest.approx(camera[key], abs=1e-3), key
         assert kept[key] == pytest.approx(shown[key], abs=1e-3), key
     assert errors == []
+
+
+def test_an_ai_app_reads_the_views_and_scenes_of_a_study(wire, workspace):
+    from fastmdxplora.gui.saved_views import save_view
+    from fastmdxplora.gui.viewer_selections import save_selection
+
+    study = workspace / "haemoglobin"
+    save_view(study, "fitted late", {
+        "camera": {"position": [0, 0, 80], "target": [0, 0, 0], "up": [0, 1, 0]},
+        "frame": 5, "colour": "chain", "representation": "sticks", "superposed": "backbone",
+        "superposed_to": "deposited", "smoothed_over": 3, "publication": True})
+    save_selection(study, "helix", {"kind": "expression", "expression": "resSeq 3 to 18"})
+    write_scene(study, "for the person", {"frame": 2})
+    said = wire.request("tools/call", {"name": "views_of_study",
+                                       "arguments": {"study": "haemoglobin"}})["result"]
+    text = _text(said)
+    assert not said.get("isError"), text
+    assert ("- fitted late: frame 5, representation sticks, colour chain, superposed on "
+            "backbone, fitted to deposited, smoothed over 3, publication look") in text
+    assert "- helix: resSeq 3 to 18" in text
+    assert "- for the person: haemoglobin/scenes/for the person.mvsx" in text

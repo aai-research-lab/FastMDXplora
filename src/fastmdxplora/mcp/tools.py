@@ -714,6 +714,47 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _view_said(view: dict[str, Any]) -> str:
+    said = []
+    if view.get("frame") is not None:
+        said.append(f"frame {view['frame']}")
+    for key in ("representation", "colour"):
+        if view.get(key):
+            said.append(f"{key} {view[key]}")
+    if view.get("superposed") and view["superposed"] != "none":
+        said.append(f"superposed on {view['superposed']}, fitted to "
+                    f"{view.get('superposed_to') or 'first'}"
+                    + (f", smoothed over {view['smoothed_over']}"
+                       if (view.get("smoothed_over") or 1) > 1 else ""))
+    if view.get("publication"):
+        said.append("publication look")
+    return ", ".join(said) or "the structure as it opens"
+
+
+def _views_of_study(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.gui.saved_views import views_of
+    from fastmdxplora.gui.viewer_selections import selections_of
+    from fastmdxplora.scenes import SCENES_DIR, scenes_of
+
+    folder = _study(ctx, args["study"])
+    shown = ctx.workspace.shown(folder)
+    views = views_of(folder)["views"]
+    scenes = scenes_of(folder)["scenes"]
+    selections = selections_of(folder)["selections"]
+    lines = [f"Views saved with {shown} in the GUI: {len(views)}"
+             + (" (write_scene starts from one by its name)." if views else ".")]
+    lines += [f"- {view['name']}: {_view_said(view)}" for view in views]
+    lines.append(f"Selections the person named: {len(selections)}"
+                 + (" (every scene shows them)." if selections else "."))
+    for selection in selections:
+        what = selection.get("expression") or f"{len(selection.get('residues') or [])} residues"
+        lines.append(f"- {selection.get('name')}: {what}")
+    lines.append(f"Scenes written: {len(scenes)}" + ("." if not scenes else ":"))
+    lines += [f"- {scene['name']}: {shown}/{SCENES_DIR}/{scene['name']}.mvsx"
+              for scene in scenes]
+    return "\n".join(lines)
+
+
 def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
     cards, more = studies_here(ctx.workspace)
     lines = [f"{len(cards)} stud{'y' if len(cards) == 1 else 'ies'} in {ctx.workspace.root}"
@@ -1171,6 +1212,11 @@ TOOLS: tuple[Tool, ...] = (
          "difference marked resolved only where it is more than twice its combined "
          "standard error.",
          {"first": _STUDY, "second": _STUDY}, ("first", "second"), _READS, _compare_studies),
+    Tool("views_of_study", "The views and scenes of a study",
+         "The views the person saved with a study in the GUI (each a frame, a "
+         "representation and colouring, a superposition), the selections they named, "
+         "and the scenes written with it. A view's name starts write_scene from it.",
+         {"study": _STUDY}, ("study",), _READS, _views_of_study),
     Tool("write_scene", "Write a scene of a study",
          "Write a view of a study as a scene file (MolViewSpec, .mvsx) in its scenes "
          "folder, for the person to open: the atoms at a frame, the study's secondary "
