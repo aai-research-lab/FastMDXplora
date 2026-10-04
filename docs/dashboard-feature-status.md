@@ -2,7 +2,7 @@
 
 Reviewed 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md). This is the current acceptance status; the lower receipts retain earlier evidence and limitations.
 
-**The framework is not fully complete.** The agreed features are implemented and the exact branch wheel has passed the configured combined suite plus integrated Agent, bookmark, clip and preparation-audit checks. Open items are bounded: live sign-in for Claude/Kimi/Gemini (the user has only OpenAI access), OS-native open-menu visual capture, and broader scientific/backend acceptance described below. No scientific engine, preparation, force-field or analysis implementation changed in this branch.
+**The framework is not fully complete.** Two Agent disable/docking fixes have reopened final acceptance. The earlier branch wheel passed the configured combined suite plus integrated Agent, bookmark, clip and preparation-audit checks. Open items are bounded: live sign-in for Claude/Kimi/Gemini (the user has only OpenAI access), OS-native open-menu visual capture, and broader scientific/backend acceptance described below. No scientific engine, preparation, force-field or analysis implementation changed in this branch.
 
 ### Current checkpoint — 2026-10-03
 
@@ -35,6 +35,10 @@ The exact wheel browser check displayed the missing-RMSD-source refusal, retaine
 ### Reopened source acceptance — disabled Agent Send boundary
 
 Installed-wheel interception reproduced a request from the Agent page Send button while the sidebar preference was disabled; selection-based Ask already refused. A source guard now refuses Send before modifying the composer/history or initiating inference. The three-theme regression passed 3/3, checking no propose request, preserved composer text and a visible refusal in the Agent transcript. CI Ruff F/B and diff checks pass. This code change reopens the combined suite and final-wheel build/integration gates: the earlier 02917ed wheel receipts remain historical evidence and do not verify this fix. The prior installed browser check also confirmed the review confirmation gate, controlled changed-baseline refusal before HTTP acceptance, cancellation, and sidebar-disable persistence on reload; actual study-switch interaction remains unverified.
+
+### Agent docking selector correction — 2026-10-03
+
+Installed-package testing reproduced a HierarchyRequestError when disabling the Agent on its own page. Navigation sets `data-page=agent` on the HTML root as well as the Agent section; the broad selector chose the root and attempted to move it after a descendant. Both docking selectors now explicitly target `section.page[data-page=agent]`. Regression coverage toggles the preference on that route, confirms the root marker, checks no browser error and a visible Agent section. The prior package is not the final candidate; this correction requires a new frozen build and combined acceptance.
 
 ### Milestone review
 

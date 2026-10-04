@@ -1183,6 +1183,18 @@ def test_a_suggestion_waits_for_add_to_draft_and_sidebar_can_be_disabled(tmp_pat
             assert page.locator("#research-agent-toggle").is_hidden()
             assert page.evaluate("FastMDXResearch.enabled()") is False
             page.goto(url + "/#agent")
+            docking_errors = []
+            page.on("pageerror", lambda error: docking_errors.append(str(error)))
+            assert page.evaluate("document.documentElement.dataset.page") == "agent"
+            page.evaluate("""() => {
+                const preference = document.getElementById('research-agent-enabled');
+                preference.checked = true;
+                preference.dispatchEvent(new Event('change'));
+                preference.checked = false;
+                preference.dispatchEvent(new Event('change'));
+            }""")
+            assert not docking_errors
+            assert page.locator("section.page[data-page=agent]").is_visible()
             disabled_requests = []
             page.on("request", lambda req: disabled_requests.append(req.url)
                     if "/api/agent/propose" in req.url else None)

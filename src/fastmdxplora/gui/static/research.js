@@ -108,7 +108,7 @@
     }
   }
   function setDock(open, returnFocus = false) {
-    const page = document.querySelector('[data-page="agent"]');
+    const page = document.querySelector('section.page[data-page="agent"]');
     const dock = el("research-agent-dock");
     if (!page || !dock) return;
     open = open && enabled;
@@ -355,7 +355,7 @@
         if (generation === contextGeneration) el("agent-context-evidence").textContent = "Could not inspect context. Check the dashboard connection.";
       }
     });
-    const page = document.querySelector('[data-page="agent"]');
+    const page = document.querySelector('section.page[data-page="agent"]');
     const anchor = document.createElement("span"); anchor.id = "research-agent-anchor";
     page.before(anchor);
     board()?.on("navigate", (event) => {
