@@ -7,6 +7,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+- Copied studies resolve graph residues and Agent evidence through a local topology only when its bytes exactly match the recorded original. Changed bytes remain refused.
+
 - Agent docking targets its page section explicitly, preventing a DOM hierarchy error when disabling the Agent on its own page.
 
 - Disabled Agent preference now blocks Send on the Agent page as well as selection questions, with a visible explanation and preserved composer text.

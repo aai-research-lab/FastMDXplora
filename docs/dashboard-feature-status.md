@@ -74,6 +74,12 @@ The existing seeded protein audit-on/off equivalence fixture was executed with w
 
 This is one paired small-protein preparation, not production MD or a statistical overhead benchmark. The negative timing difference is ordinary measurement variation and does not prove recording accelerates preparation. It adds full-preparation storage/timing evidence beyond the earlier single-observation POPC measurement; membrane/ligand overhead and broader backend gates remain qualified/open. No product source or scientific defaults changed.
 
+### Shared relocated-topology installed acceptance — 2026-10-03
+
+Behavior revision `a06a214` supersedes `6d5407a`; its final 244-case combined suite is running. A shared bounded verifier accepts the known local topology of a moved study only when its bytes exactly match the recorded original. Graph selection and server-side Agent evidence use this rule. Equal-sized changed bytes remain refused. Forty analysis/graph checks and four focused shared-verifier checks passed.
+
+Installed wheel `fastmdxplora-2.5.9.dev228+ga06a214d2-py3-none-any.whl` has SHA-256 `46b7e468b8aed20824352a74185050257cb692d05e428ad7f0045f3868246a51`. A new temporary environment reused repository dependencies; no clean-machine claim. The completed-study browser selected ASN A:1, pinned it, selected LEU A:2 and sent a fresh-conversation OpenAI comparison. The reply correctly reported RMSF 0.131109476 and 0.0686216503 nm, CA scope, frame-0 alignment, 2,000 frames and missing uncertainty; chemical causes remained unproven. No browser errors occurred and scientific hashes matched, excluding expected conversation/bookmark/media outputs. No settings or simulation were applied. Receipt: temporary `FastMDXplora-relocated-evidence-final/graph-agent-receipt.json`. The remaining coherent bookmark/restart/media/audit chain is still open.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
