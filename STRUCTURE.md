@@ -47,6 +47,7 @@ FastMDXplora/
 │       │   └── run.py             # Running a queued job as a real study
 │       ├── setup/
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
+│       │   ├── audit.py           # Optional bounded observations of preparation
 │       │   ├── prepare.py         # Modeller assembly, ligand merge, clash checks
 │       │   ├── pdbfix.py          # PDBFixer wrapper
 │       │   ├── forcefields.py     # Named force-field selector

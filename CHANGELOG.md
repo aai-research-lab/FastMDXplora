@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Opt-in preparation audit
+
+Setup accepts `preparation_audit: true` to record bounded observational
+evidence with checksums and atomic record replacement. It is disabled by
+default, has no environment switch, and audit capture failures do not alter
+scientific preparation or its result.
+
 ### Saved views retain research annotations
 
 **Saved Viewer views can retain a bounded note, de-duplicated tags, and a named graph range.**

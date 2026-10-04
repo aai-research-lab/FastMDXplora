@@ -99,6 +99,8 @@ class TestSchema:
         assert setup.get("ph").default == SETUP_DEFAULTS["ph"]
         assert setup.get("ion_concentration_M").default == SETUP_DEFAULTS["ion_concentration_M"]
         assert setup.get("box_shape").default == SETUP_DEFAULTS["box_shape"]
+        assert setup.get("preparation_audit").default is False
+        assert SETUP_DEFAULTS["preparation_audit"] is False
 
 
 # ===========================================================================

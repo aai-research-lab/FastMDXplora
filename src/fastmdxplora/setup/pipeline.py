@@ -642,6 +642,7 @@ def _repaired_complex(params: dict, input_pdb, setup_dir):
         settings = dict(arguments)
         set_by_hand = fix_pdb_with_pdbfixer(
             settings.pop("input_pdb"), str(prepared), complex_pdb=str(repaired),
+            audit=params.get("_preparation_audit"),
             **settings)
     except StudyError:
         raise
@@ -1130,6 +1131,13 @@ def _run(
     setup_dir = output_dir
 
     params: dict[str, Any] = {**DEFAULTS, **options}
+    audit = None
+    if params.get("preparation_audit"):
+        from fastmdxplora.setup.audit import PreparationRecorder
+
+        audit = PreparationRecorder(setup_dir, enabled=True)
+    params["_preparation_audit"] = audit
+    orchestrator._preparation_audit = audit
 
     # One ligand, either spelling. The collective-variable blocks call this
     # `ligand_resname` and setup has always called it `ligand_name`, and a
@@ -1189,6 +1197,13 @@ def _run(
 
     # ---- Stage 1: resolve input ----------------------------------------
     try:
+        if audit and input_form == "pdb_file":
+            audit.capture_file(
+                orchestrator.system,
+                "original_supplied_source",
+                details={"input_form": input_form},
+                reason="Supplied structure before existing conversion or selection operations.",
+            )
         input_pdb = _resolve_input(orchestrator.system, input_form, setup_dir)
 
         # Recorded here rather than at the manifest, because this is the last
@@ -1197,6 +1212,13 @@ def _run(
         # from, not what this run then did to it.
         orchestrator._structure_provenance = structure_provenance(
             orchestrator.system, input_form, input_pdb)
+        if audit:
+            audit.capture_file(
+                input_pdb,
+                "resolved_input",
+                details={"provenance": orchestrator._structure_provenance},
+                reason="Input delivered by the existing resolver.",
+            )
 
         # An OPM file marks its membrane with pseudo-atoms, which are not a
         # molecule: read as one they were a component to parameterise. Taken
@@ -1204,6 +1226,13 @@ def _run(
         # a bilayer.
         opm = _take_out_opm_markers(input_pdb)
         if opm is not None:
+            if audit:
+                audit.capture_file(
+                    input_pdb,
+                    "remove_opm_markers",
+                    details=opm,
+                    reason="Existing OPM marker removal and membrane frame retention.",
+                )
             params["_membrane_frame"] = "opm"
             logger.info(
                 "OPM file: %d membrane marker pseudo-atoms taken out; its frame "
@@ -1215,9 +1244,23 @@ def _run(
         # One model of an ensemble, where the study names one; where it does
         # not and the file holds several, which one is prepared is said.
         _the_model(input_pdb, params, notes)
+        if audit:
+            audit.capture_file(
+                input_pdb,
+                "model_selection",
+                details={"requested_model": params.get("model"), "notes": list(notes)},
+                reason="Existing model selection result.",
+            )
 
         input_pdb = _the_chains_to_simulate(
             orchestrator, input_pdb, input_form, params, presenter=presenter)
+        if audit:
+            audit.capture_file(
+                input_pdb,
+                "assembly_chain_selection",
+                details={"assembly": orchestrator._assembly},
+                reason="Existing assembly and chain selection result.",
+            )
 
         artifacts.append("input.pdb")
         if presenter:
@@ -1301,6 +1344,17 @@ def _run(
         _refuse_without_a_charge_provider(params)
 
     # ---- Stage 2: PDBFixer (or skip via fixed_pdb) ---------------------
+    if audit:
+        audit.decision(
+            "heterogen_policy",
+            {
+                "requested": params.get("heterogens"),
+                "decisions": params.get("_heterogen_decisions"),
+                "reinstated": params.get("_reinstated_heterogens"),
+                "explained": params.get("_explained_heterogens"),
+            },
+            reason="Existing heterogen classifier outputs. No unavailable reason is inferred.",
+        )
     prepared_pdb = setup_dir / "prepared.pdb"
     fixed_pdb = params.get("fixed_pdb")
     if fixed_pdb:
@@ -1345,7 +1399,7 @@ def _run(
             else:
                 settings = dict(arguments)
                 set_by_hand = fix_pdb_with_pdbfixer(
-                    settings.pop("input_pdb"), str(prepared_pdb), **settings)
+                    settings.pop("input_pdb"), str(prepared_pdb), audit=audit, **settings)
             artifacts.append("prepared.pdb")
             if set_by_hand:
                 # In the record's notes and on screen: a state chosen by hand
@@ -1375,6 +1429,13 @@ def _run(
             return artifacts
 
     # ---- Stage 3: Solvate, ionize, parameterize, serialize -------------
+    if audit:
+        audit.capture_file(
+            prepared_pdb,
+            "prepared_solute",
+            details={"provided_fixed_pdb": bool(params.get("fixed_pdb"))},
+            reason="Prepared solute passed to the existing system builder.",
+        )
     try:
         from fastmdxplora.setup.prepare import prepare_system
 
@@ -1432,6 +1493,18 @@ def _run(
         for _key, path in produced.items():
             if isinstance(path, (str, Path)):
                 artifacts.append(Path(path).relative_to(setup_dir).as_posix())
+        if audit and produced.get("topology_pdb"):
+            audit.capture_file(
+                produced["topology_pdb"],
+                "prepared_system",
+                details={
+                    "n_atoms_solvated": produced.get("n_atoms_solvated"),
+                    "resolved_forcefield": produced.get("resolved_forcefield"),
+                    "box": produced.get("box"),
+                    "membrane": produced.get("membrane"),
+                },
+                reason="System saved by the existing preparation path.",
+            )
         if presenter:
             # What it resolved to, not what was asked for: "auto" tells a
             # reader nothing, and the run recorded the answer.
@@ -1641,7 +1714,10 @@ def _write_manifest(
             # chains were chosen for the run or the file declares none.
             "assembly": getattr(orchestrator, "_assembly", None),
         },
-        "parameters": params,
+        "parameters": {
+            key: value for key, value in params.items()
+            if key != "_preparation_audit"
+        },
         # How big the system ended up. A methods section has to state it, and
         # it was only ever logged -- so the report had to say it was not
         # recorded, of a number the run had printed to the terminal.
@@ -1679,3 +1755,6 @@ def _write_manifest(
     }
     with (setup_dir / "setup_parameters.json").open("w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, default=str)
+    audit = getattr(orchestrator, "_preparation_audit", None)
+    if audit is not None and getattr(audit, "enabled", False):
+        audit.manifest(manifest)
