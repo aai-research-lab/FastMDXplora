@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Mean SASA bars by residue
+
+**The per-residue mean SASA figure of a single chain has one bar for each residue, labelled with its number and insertion code.** The bars stood at the residue number, so trypsin's 184A and 184 (and 188A, 221A) were plotted at the same x and the taller hid the other. Bars now stand at their position in the table, with the residue labels on the axis. The data files are unchanged.
+
 ### One spread for per-residue SASA
 
 **The spread of each residue's surface area is the sample standard deviation wherever it is written.** `average_residue` divided by the number of frames and the `sasa_average_per_residue.csv` beside a `residue` run by one less, both under `std_sasa_nm2`, so on five frames of trypsin the second read 11.8 per cent higher (sqrt(5/4)) for every residue. Both now divide by n - 1, and a single frame gives no spread rather than zero. Results change: `std_sasa_nm2` from `average_residue` rises by a factor sqrt(n/(n-1)), which is under 0.5 per cent on a run of a hundred frames.

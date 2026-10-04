@@ -297,12 +297,25 @@ class SASA(Analysis):
             # residue at 1.0 every frame and one alternating between 0 and 2
             # have the same mean, and a bar chart without the spread says they
             # are the same.
-            residues = result["residue"].to_numpy()
+            #
+            # One bar per row, placed by its position in the table and named
+            # by its residue: placed at the residue number, trypsin's 184A
+            # and 184 stood at the same x and one hid the other.
             means = result["mean_sasa_nm2"].to_numpy()
-            ax.bar(residues, means,
+            position = np.arange(len(result))
+            ax.bar(position, means,
                    yerr=result["std_sasa_nm2"].to_numpy(),
                    color=colour("SERIES"), error_kw={"ecolor": colour("ACCENT"),
                                               "elinewidth": 0.8, "capsize": 2})
+            names = [f"{number}{code}" for number, code in zip(
+                result["residue"].tolist(),
+                (result["insertion"].fillna("").astype(str).tolist()
+                 if "insertion" in result else [""] * len(result)))]
+            # About forty labels fit across a page-width figure.
+            every = max(1, int(np.ceil(len(names) / 40)))
+            ax.set_xticks(position[::every])
+            ax.set_xticklabels(names[::every], rotation=90, fontsize="x-small")
+            ax.set_xlim(-0.5, len(result) - 0.5)
             ax.set_ylim(bottom=0)
         else:
             # Per-residue heatmap: pivot long-form -> (residue × frame)

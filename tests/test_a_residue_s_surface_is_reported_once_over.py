@@ -103,3 +103,58 @@ class TestOneSpreadUnderOneName:
         assert len(both) == 223
         np.testing.assert_allclose(both["std_sasa_nm2_summary"].to_numpy(),
                                    both["std_sasa_nm2_direct"].to_numpy(), rtol=1e-4)
+
+
+def _with_an_insertion_code(monkeypatch) -> md.Trajectory:
+    """Five residues numbered 183, 184A, 184, 185, 186, as trypsin numbers
+    them: the code is known to the package by the first atom's serial, as
+    the loader records it from the topology file."""
+    from fastmdxplora.analysis import residues
+
+    traj = _peptide()
+    numbers = [(183, ""), (184, "A"), (184, ""), (185, ""), (186, "")]
+    top = traj.topology.copy()
+    codes = {}
+    serial = 1
+    for residue, (number, code) in zip(top.residues, numbers):
+        residue.resSeq = number
+        for atom in residue.atoms:
+            atom.serial = serial
+            serial += 1
+        if code:
+            codes[(next(iter(residue.atoms)).serial, residue.name, number)] = code
+    monkeypatch.setattr(residues, "_INSERTION_CODES", codes)
+    return md.Trajectory(traj.xyz, top)
+
+
+class TestEveryResidueHasItsOwnBar:
+    """Bars were placed at the residue number, so 184A and 184 of one chain
+    stood at the same x and the taller hid the other."""
+
+    def test_an_inserted_residue_is_a_bar_of_its_own(self, monkeypatch) -> None:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from fastmdxplora.analysis import sasa as sasa_module
+        from fastmdxplora.analysis.sasa import SASA
+
+        monkeypatch.setattr(sasa_module.md, "shrake_rupley", lambda *a, **k: AREAS.copy())
+        traj = _with_an_insertion_code(monkeypatch)
+        analysis = SASA(mode="average_residue")
+        table = analysis.compute(traj)
+        assert list(table["insertion"]) == ["", "A", "", "", ""]
+
+        figure, ax = plt.subplots()
+        try:
+            analysis.plot(table, ax)
+            bars = ax.patches
+            centres = [bar.get_x() + bar.get_width() / 2 for bar in bars]
+            heights = [bar.get_height() for bar in bars]
+            labels = [tick.get_text() for tick in ax.get_xticklabels()]
+        finally:
+            plt.close(figure)
+        assert len(set(centres)) == 5, "five residues, five places"
+        np.testing.assert_allclose(heights, AREAS.astype(np.float64).mean(axis=0), rtol=1e-6)
+        assert labels == ["183", "184A", "184", "185", "186"]
