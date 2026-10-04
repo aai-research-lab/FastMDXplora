@@ -30,6 +30,15 @@ in the rule's own docstring.
 | Metal coordination | metal to donor < 3.0 Å | PLIP |
 | Water bridge | one water 2.5–4.1 Å from each side, angle at the water 71–140° | PLIP |
 
+An acceptor is an atom with a lone pair free to take the bond: every oxygen;
+a nitrogen with one or two neighbours, or an amine nitrogen whose neighbours
+are all sp3 carbons; a sulphur with at most two heavy neighbours and no
+hydrogen (Met SD, a disulfide or thiolate Cys SG). An ammonium or other
+four-bonded nitrogen, a charged protein group, the backbone N, Asn ND2,
+Gln NE2, Trp NE1, the arginine nitrogens and amide, aniline and pyrrole
+nitrogens are not acceptors. The halogen bond takes its acceptors from the
+same rule.
+
 Every threshold is a setting, because the published values disagree and the
 disagreement is a real one rather than a rounding difference. PLIP allows a
 hydrogen bond at 4.1 Å and 100°; the literature standard is 3.5 Å and 120°.

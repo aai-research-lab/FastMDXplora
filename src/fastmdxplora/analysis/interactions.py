@@ -158,6 +158,14 @@ def _charge_from_hydrogens(family: str, hydrogens: set[str]) -> bool:
 #: out.
 _POLAR = frozenset({"N", "O", "S"})
 
+#: Protein nitrogens whose lone pair is in an amide or a conjugated cation,
+#: by residue family and atom name, so they are not acceptors whether or not
+#: the topology carries their hydrogens. The backbone N is every residue's.
+_NOT_ACCEPTING_N = {
+    "ASN": {"ND2"}, "GLN": {"NE2"}, "TRP": {"NE1"},
+    "ARG": {"NE", "NH1", "NH2"}, "ARN": {"NE", "NH1", "NH2"},
+}
+
 
 @dataclass(frozen=True)
 class Contact:
@@ -173,16 +181,67 @@ class Contact:
     angle_deg: float | None = None
 
 
+def _accepts(atom: Any, neighbours: list[Any], degree: dict[int, int],
+             positive: set[int]) -> bool:
+    """Whether a nitrogen, oxygen or sulphur has a lone pair free to accept.
+
+    Oxygen always does. Sulphur does when it has at most two heavy
+    neighbours and no hydrogen: Met SD and a disulfide or thiolate Cys SG
+    accept weakly, a sulfoxide, sulfone or sulfonamide S does not, and
+    neither does a thiol. A nitrogen accepts when its lone pair is neither
+    bonded nor delocalised:
+
+    * not with four bonds (ammonium, quaternary N, N-oxide), and not in a
+      charged protein group (Lys NZ, Arg, a doubly protonated His);
+    * not the protein backbone N, nor Asn ND2, Gln NE2, Trp NE1 or the
+      arginine nitrogens, which are amides or conjugated;
+    * with three neighbours, only as an amine: every heavy neighbour an sp3
+      carbon (four bonds). That keeps a neutral lysine's NZ and a
+      morpholine N and leaves out amide, aniline, pyrrole, amidinium,
+      sulfonamide and nitro nitrogens, which is ProLIF's acceptor
+      definition for nitrogen read from bonds rather than bond orders.
+
+    One or two neighbours (a nitrile, a pyridine or imine N, a deprotonated
+    imidazole N) accepts.
+    """
+    element = atom.element.symbol
+    if element == "O":
+        return True
+    heavy = [n for n in neighbours if n.element is None or n.element.symbol != "H"]
+    hydrogens = len(neighbours) - len(heavy)
+    if element == "S":
+        return len(heavy) <= 2 and hydrogens == 0
+    # Nitrogen.
+    if len(neighbours) >= 4 or atom.index in positive:
+        return False
+    residue = atom.residue
+    if residue.is_protein:
+        if atom.name == "N":
+            return False
+        family = _CHARGE_FAMILIES.get(residue.name.upper(), residue.name.upper())
+        if atom.name in _NOT_ACCEPTING_N.get(family, ()):
+            return False
+    if len(neighbours) <= 2:
+        return True
+    return all(n.element is not None and n.element.symbol == "C"
+               and degree.get(n.index, 0) >= 4 for n in heavy)
+
+
 def donors_and_acceptors(
     topology: Any, atom_indices: Any
 ) -> tuple[list[tuple[int, int]], list[int]]:
     """Which atoms can donate a hydrogen bond, and which can accept one.
 
-    A donor is a nitrogen, oxygen or sulphur with a hydrogen bonded to it; an
-    acceptor is any of those three. This is the criterion Baker and Hubbard
-    used (Prog Biophys Mol Biol 44:97, 1984) and it is what every tool
-    surveyed uses, because with explicit hydrogens present it needs no
-    perception: the hydrogen is either bonded to the nitrogen or it is not.
+    A donor is a nitrogen, oxygen or sulphur with a hydrogen bonded to it,
+    which with explicit hydrogens present needs no perception: the hydrogen
+    is either bonded to the nitrogen or it is not.
+
+    An acceptor is an oxygen, or a nitrogen or sulphur with a lone pair free
+    to accept, decided from the bonds as :func:`_accepts` sets out. Every N
+    and S used to be taken, so an ammonium nitrogen, a lysine NZ with three
+    hydrogens and every backbone amide N were acceptors, and a ligand NH3+
+    pointed at a lysine NZ was reported as a hydrogen bond between two
+    cations.
 
     Returns donors as ``(heavy, hydrogen)`` pairs, because the angle is
     measured at the hydrogen and a nitrogen with two hydrogens can donate
@@ -192,17 +251,21 @@ def donors_and_acceptors(
     atoms = list(topology.atoms)
 
     attached: dict[int, list[int]] = {}
+    neighbours: dict[int, list[Any]] = {}
     for bond in topology.bonds:
         first, second = bond[0], bond[1]
+        neighbours.setdefault(first.index, []).append(second)
+        neighbours.setdefault(second.index, []).append(first)
         for heavy, light in ((first, second), (second, first)):
             if light.element is not None and light.element.symbol == "H":
                 attached.setdefault(heavy.index, []).append(light.index)
+    degree = {index: len(around) for index, around in neighbours.items()}
+    positive = {i for group in protein_charged_groups(topology, wanted)[0]
+                for i in group}
 
     # A hydrogen bonded to nothing is the signal that connectivity is missing.
     # A hydrogen bonded to a carbon is not: that is an ordinary non-polar
     # hydrogen, and a selection made only of those legitimately cannot donate.
-    bonded_atoms = {a.index for bond in topology.bonds for a in (bond[0], bond[1])}
-
     donors: list[tuple[int, int]] = []
     acceptors: list[int] = []
     orphan_hydrogens = 0
@@ -211,12 +274,13 @@ def donors_and_acceptors(
             continue
         element = atom.element.symbol if atom.element is not None else ""
         if element == "H":
-            if atom.index not in bonded_atoms:
+            if atom.index not in neighbours:
                 orphan_hydrogens += 1
             continue
         if element not in _POLAR:
             continue
-        acceptors.append(atom.index)
+        if _accepts(atom, neighbours.get(atom.index, []), degree, positive):
+            acceptors.append(atom.index)
         for hydrogen in attached.get(atom.index, ()):
             donors.append((atom.index, hydrogen))
 

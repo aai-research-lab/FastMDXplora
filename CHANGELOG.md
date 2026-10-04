@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Hydrogen and halogen bond acceptors have a lone pair
+
+**`pl_interactions` and the chain-contacts view now count an atom as an acceptor only where it has a lone pair free to take the bond.** Every nitrogen, oxygen and sulphur was an acceptor, so a ligand NH3+ aimed at a lysine NZ with three hydrogens was reported as a hydrogen bond at 0.30 nm and 180 degrees between two cations, a C-Cl aimed at the same NZ was a halogen bond, and on a solvated 1BHL trajectory 28 of 2105 side-chain hydrogen-bond frames had a protonated nitrogen (mostly Asn ND2 and backbone N) as acceptor. Oxygens, amine and pyridine-type nitrogens, Met SD and a Cys SG without its hydrogen accept; four-bonded and charged nitrogens, the backbone N, Asn ND2, Gln NE2, Trp NE1, the arginine nitrogens and amide, aniline and pyrrole nitrogens do not. Results change: hydrogen bonds and halogen bonds to those nitrogens are no longer reported.
+
 ### A ligand file is read onto the right atoms
 
 **An SDF given for the ligand, or written by setup, is now matched to the trajectory by its graph of elements and bonds and used only where it is this ligand.** It was checked by atom count and mapped by position, so an acetate SDF listing C, H, H, H, C, O, O against a trajectory written C, C, O, O, H, H, H put the carboxylate's charge on two methyl hydrogens and lost the salt bridge to an arginine 0.44 nm away. The match now decides which file atom is which trajectory atom; where the topology has no bonds for the ligand the elements must agree in order, and a file that fails either test falls through to the next route. The Chemical Component Dictionary route is removed: it called the setup phase's fetch without the entry, chain and residue number it needs, so it failed on every run and the failure was swallowed. Results change: ligands whose chemistry file lists atoms in a different order from the trajectory now get their donors, charges and rings on the right atoms.

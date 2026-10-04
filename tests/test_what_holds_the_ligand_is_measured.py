@@ -113,7 +113,9 @@ def _ring(centre, normal, radius=0.14, n=6, start=0.0):
 # ---------------------------------------------------------------------------
 
 class TestDonorsAndAcceptors:
-    def test_an_no_s_with_hydrogen_donates_and_all_three_accept(self) -> None:
+    def test_an_no_s_with_hydrogen_donates_and_a_lone_pair_accepts(self) -> None:
+        """The backbone N-H donates and does not accept: its lone pair is in
+        the amide. The hydroxyl O and a sulphur with no hydrogen accept."""
         b = _Builder()
         idx = b.residue("SER", [
             ("N", "N", (0, 0, 0)), ("H", "H", (0.10, 0, 0)),
@@ -125,7 +127,7 @@ class TestDonorsAndAcceptors:
             b.bond(*pair)
         donors, acceptors = donors_and_acceptors(b.topology, idx)
         assert {d for d, _h in donors} == {idx[0], idx[2]}
-        assert set(acceptors) == {idx[0], idx[2], idx[4]}  # S accepts, C does not
+        assert set(acceptors) == {idx[2], idx[4]}  # S accepts, C and amide N do not
 
 
 class TestHydrogenBonds:
