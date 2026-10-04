@@ -14,6 +14,8 @@
   "use strict";
 
   var making = null;
+  // Without frames, a movie is the structure shown turned once, in this long.
+  var settings = { turnSeconds: 6 };
 
   function byId(id) { return document.getElementById(id); }
 
@@ -166,11 +168,18 @@
     var outcome = null;
     try {
       var loaded = await view.movie.frames();
-      if (!loaded || !loaded.count) {
-        say("The study has no frames to make a movie of yet.");
+      var still = !loaded || !loaded.count;
+      if (still && !state.model) {
+        say("There is no molecule shown to make a movie of.");
         return;
       }
-      var frames = framesOf(loaded.count);
+      // A structure without frames is turned once about the screen's vertical.
+      if (still) {
+        loaded = { count: 0, times: [] };
+        turn = true;
+        stamp = false;
+      }
+      var frames = still ? new Array(Math.round(fps * settings.turnSeconds)).fill(null) : framesOf(loaded.count);
       if (!frames.length) {
         say("No frames are in that range.");
         return;
@@ -178,7 +187,8 @@
       var dims = size();
       var started = await post("/api/movies", {
         name: name, fps: fps, width: dims[0], height: dims[1],
-        about: about(frames, loaded.times, fps),
+        about: still ? "the structure turned once, " + fps + " frames a second"
+          : about(frames, loaded.times, fps),
       });
       if (!started.ok) {
         say("The movie was not made: " + (started.reason || "no reason given"));
@@ -197,7 +207,7 @@
       var sending = Promise.resolve({ ok: true });
       for (var k = 0; k < frames.length; k += 1) {
         if (making.cancelled) break;
-        await view.movie.showFrame(frames[k]);
+        if (!still) await view.movie.showFrame(frames[k]);
         if (state.viewerGeneration !== generation) {
           outcome = "The structure shown changed while the movie was made, so it was stopped.";
           break;
@@ -205,12 +215,12 @@
         // One turn over the movie, the last frame a step short of the first
         // so that the movie loops without a pause.
         if (turn) engine.turnCamera(camera, 2 * Math.PI * k / frames.length);
-        var still = await engine.still(dims[0], dims[1]);
-        if (!still) {
+        var rendered = await engine.still(dims[0], dims[1]);
+        if (!rendered) {
           outcome = "The frame could not be rendered.";
           break;
         }
-        context.drawImage(still, 0, 0, dims[0], dims[1]);
+        context.drawImage(rendered, 0, 0, dims[0], dims[1]);
         if (stamp) {
           var time = loaded.times[frames[k]];
           drawTime(context, time != null ? timeSaid(time, step) : "Frame " + frames[k]);
@@ -259,7 +269,7 @@
       state.makingMovie = false;
       if (state.viewerGeneration === generation) {
         try {
-          await view.movie.showFrame(shownBefore);
+          if (state.framesRendered) await view.movie.showFrame(shownBefore);
           engine.restoreCamera(camera);
         } catch (error) {
           console.debug("the view was not put back", error);
@@ -274,16 +284,29 @@
   /** How many frames and seconds the movie will be, as it is set. */
   function sayLength() {
     var view = viewer();
-    var count = view && view.STATE ? view.STATE.playbackFrames : 0;
+    var state = view && view.STATE;
+    var count = state ? state.playbackFrames : 0;
     var length = byId("movie-length");
     if (!length) return;
+    var fps = whole("movie-fps", 24);
+    var dims = size();
+    // Known to have no frames: the structure, turned once.
+    var still = !count && !!state && !!state.model && !!state.playbackPayload
+      && !state.playbackPayload.playback_available;
+    ["movie-from", "movie-to", "movie-every"].forEach(function (id) {
+      var input = byId(id);
+      if (input) input.disabled = still;
+    });
+    if (still) {
+      length.textContent = "No frames: the structure turned once, " + Math.round(fps * settings.turnSeconds)
+        + " frames, " + settings.turnSeconds.toFixed(1) + " s, " + dims[0] + " × " + dims[1];
+      return;
+    }
     if (!count) {
       length.textContent = "";
       return;
     }
     var frames = framesOf(count).length;
-    var fps = whole("movie-fps", 24);
-    var dims = size();
     length.textContent = frames + " frames, " + (frames / fps).toFixed(1) + " s, "
       + dims[0] + " × " + dims[1];
   }
@@ -321,11 +344,13 @@
     });
     window.addEventListener("dashboard:viewer-page-opened", loadEncoding);
     window.addEventListener("dashboard:viewer-rendered", sayLength);
+    window.addEventListener("dashboard:playback-ready", sayLength);
     loadEncoding();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
   else wire();
 
-  window.FastMDXViewerMovie = { make: make, size: size, framesOf: framesOf, timeSaid: timeSaid };
+  window.FastMDXViewerMovie = { make: make, size: size, framesOf: framesOf, timeSaid: timeSaid,
+    settings: settings };
 }());

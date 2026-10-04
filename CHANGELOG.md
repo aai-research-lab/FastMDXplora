@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A movie of a structure without frames
+
+**A study without frames, set up and not yet run, makes a movie of its
+structure turned once** about the screen's vertical over six seconds, at the
+frame rate and size chosen: the movie a supplement shows of a structure. The
+Movie section says so before it is made.
+
 ### An AI app reads a study's views
 
 **`fastmdx mcp` has a `views_of_study` tool**: the views the person saved

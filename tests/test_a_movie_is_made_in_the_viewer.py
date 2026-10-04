@@ -225,3 +225,59 @@ def test_the_frames_and_the_time_are_as_asked(page):
     width, height = size["shown"]
     assert width % 2 == 0 and height % 2 == 0 and height <= 2160
     assert width / height == pytest.approx(size["aspect"], rel=0.01)
+
+
+def test_a_structure_without_frames_is_turned_once(tmp_path, study, page):
+    """A study set up and not yet run has no frames; its movie is the
+    structure shown turned once about the screen's vertical."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    still = tmp_path / "still"
+    (still / "setup").mkdir(parents=True)
+    (still / "setup" / "topology.pdb").write_text(
+        (study / "simulation" / "frames_topology.pdb").read_text(encoding="utf-8"),
+        encoding="utf-8")
+    (still / "resolved_config.yml").write_text("systems:\n  - system: 1HHO\n",
+                                               encoding="utf-8")
+    session = start_dashboard_session(output=str(still), host="127.0.0.1", port=0)
+    # In a context of its own in the module's browser, which is already open.
+    context = page.context.browser.new_context(viewport={"width": 1400, "height": 900},
+                                               accept_downloads=True)
+    try:
+        other = context.new_page()
+        other.set_default_timeout(300000)
+        errors: list[str] = []
+        other.on("pageerror", lambda error: errors.append(str(error)))
+        other.goto(session.url + "#viewer", wait_until="domcontentloaded")
+        other.wait_for_function(f"() => {VIEWER} && {VIEWER}.STATE.model")
+        other.wait_for_function("() => document.getElementById('movie-by').textContent")
+        other.evaluate("() => { window.FastMDXViewerMovie.settings.turnSeconds = 0.4; }")
+        other.select_option("#movie-fps", "10")
+        other.select_option("#movie-size", f"{WIDTH}x{HEIGHT}")
+        other.wait_for_function("() => document.getElementById('movie-length').textContent"
+                                ".startsWith('No frames')")
+        said = other.text_content("#movie-length")
+        disabled = other.is_disabled("#movie-from")
+        before = other.evaluate(f"() => {VIEWER}.STATE.engine.cameraSnapshot()")
+        other.fill("#movie-name", "turning")
+        with other.expect_download(timeout=600000) as caught:
+            other.click("#movie-make")
+        other.wait_for_function("() => !document.getElementById('movie-settings').disabled")
+        after = other.evaluate(f"() => {VIEWER}.STATE.engine.cameraSnapshot()")
+        name = caught.value.suggested_filename
+    finally:
+        context.close()
+        session.server.shutdown()
+    assert said == f"No frames: the structure turned once, 4 frames, 0.4 s, {WIDTH} × {HEIGHT}"
+    assert disabled
+    made = still / "movies" / name
+    frames = _frames(made)
+    assert len(frames) == 4
+    import numpy as np
+
+    # Each frame a quarter turn on from the last: none alike.
+    apart = [np.abs(frames[i] - frames[i + 1]).mean() for i in range(3)]
+    assert min(apart) > 1.0
+    for key in ("position", "target", "up"):
+        assert after[key] == pytest.approx(before[key], abs=1e-6), key
+    assert errors == []
