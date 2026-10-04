@@ -20,6 +20,10 @@ The required combined test set passed **241 tests, with 1 skip**, in 856.07 seco
 - **Preparation display:** Exact-wheel bookmark round-trip retained the selected saved event, before/after stages, overlay and linked view. Previous v7 study checks recorded a display-only heavy-atom overlay (154 exact matches) without changing scientific-file hashes. The overlay is visualization only, not trajectory RMSD or a preparation-quality score.
 - **Aesthetics:** The source visual matrix reported zero geometry issues in 300 route/theme/viewport/text-scale states and 30 screenshots were inspected across Graphite, Ink and Paper. On the exact wheel, all 21 populated dropdown options compute black backgrounds with white text; closed controls look correct. The in-app capture exposes expanded control state but not the OS-native option popup, so its open rendering remains unverified.
 
+### Additional exact-wheel acceptance — 2026-10-03
+
+The installed wheel on port 8786 returned the draft-review difference for `setup.ph` (7.4 → 6.5), including schema help. It refused acceptance after a changed draft, changed builder baseline, absent human confirmation, or changed review purpose. This exercised the real HTTP endpoint, not an imported source function. No valid acceptance was submitted and no scientific setting was applied. SHA-256 inventories for all 315 non-output study files were identical before and after. Study-revision invalidation, browser review interaction and expiry remain separately covered by source tests; this receipt does not claim their installed end-to-end acceptance.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |

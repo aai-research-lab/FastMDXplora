@@ -46,6 +46,10 @@ The combined suite must include the dashboard-boundary, Agent-reasoning, provide
 **Complete for this branch handoff.** The source revisions and closeout receipts were pushed only to `princeote/context-aware-agent`; local and remote heads matched when verified. Upstream main was not integrated, and no pull request was created. The README points to the feature-status page; packaged Agent knowledge already contains the scientific and human-control limits. Claude, Kimi Code and Gemini live accounts remain UNVERIFIED_EXTERNAL_DEPENDENCY: retain their adapters and local/synthetic tests, do not request purchases or repeat absent-account probes, and do not claim unqualified all-provider completion.
 
 
+## Remaining acceptance reconciliation
+
+Retain the full original M0–M8 contract. Before closing M7, directly reconcile the exact-wheel graph/residue explanation flow, actual server-restart bookmark persistence, stale/missing-source refusal, browser draft-review/study invalidation, stale-response isolation and Agent disabling. Earlier-build or source regression evidence must be labelled by scope. Installed HTTP draft review now verifies the pH before/after difference and rejection for changed draft/baseline, missing confirmation and changed purpose; 315 non-output study hashes remained unchanged. No setting was applied. Expanded/loading/error visual states still need requirement-by-requirement evidence matching.
+
 ## Closeout rule
 
 Each continuation must complete an item, fix a reproduced defect, produce evidence that changes the next action, or wait on a specifically verified live handle. Do not spend turns restating status or writing another unexecuted plan. Report deltas by requirement, evidence and next action. The Agent explains and proposes human-reviewed drafts only; it never runs simulations or applies scientific settings autonomously. Preserve physics and chemistry.
