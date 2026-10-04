@@ -84,6 +84,12 @@ Installed wheel `fastmdxplora-2.5.9.dev228+ga06a214d2-py3-none-any.whl` has SHA-
 
 The `a06a214` installed browser saved the LEU A:2 selection and pinned ASN A:1 comparison, reloaded, restored both exact identities, exported 4,281 bytes of JSON, previewed/imported it with skip-existing collision handling, and removed its QA bookmark. Earlier diagnostic QA rows were also removed. Scientific hashes matched and no page errors occurred. The harness now waits for the exact active study path before Restore; its earlier premature click was correctly refused by study isolation. This receipt proves reload restoration and JSON portability, not a new process restart or the remaining media/audit chain. Receipt: temporary `FastMDXplora-relocated-evidence-final/bookmark-flow-receipt.json`.
 
+### Current installed restart, media and audit acceptance — 2026-10-03
+
+The `a06a214` installed residue-bookmark flow passed an actual process restart: harness-owned server processes 30812 and 30488 exited normally. Browser restoration retained LEU A:2 and pinned ASN A:1, JSON export/import skip-existing handling passed, temporary QA rows were removed, scientific hashes matched and no browser errors occurred. Receipt: temporary `FastMDXplora-relocated-evidence-final/bookmark-restart-receipt.json`.
+
+On the same corrected package and completed-study copy, clip preview/export produced two-frame 640x480 GIF and H.264 MP4 plus metadata. System ffprobe confirmed two MP4 frames and ffmpeg decoded it with exit 0. All requested label/rotation options were exercised; frame, residue selection, camera, display and playback controls restored. All 320 non-output hashes matched, with no page errors. The subsequent preparation-audit bookmark restored its Preparation tag, event, input/prepared stage pair, overlay, linked views and both cameras; its QA record was deleted. These are sequential installed acceptance phases on the same fixture, not one uninterrupted browser session. No scientific settings or production simulation were applied.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
