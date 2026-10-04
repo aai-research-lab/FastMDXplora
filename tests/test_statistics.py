@@ -439,3 +439,45 @@ class TestOneRunGetsOneVerdict:
                        _correlated(0.999, 20000, seed=3)):
             assert (assess_series("cv", series).correlation_is_measurable
                     == correlation_is_resolved(series))
+
+
+class TestOneMissingValueDoesNotMakeFramesIndependent:
+    """One NaN made every autocorrelation NaN, no pair of lags compared as
+    non-positive, and ``max(1.0, nan)`` is 1.0: an AR(1) series with g = 39
+    read g = 1, and its bootstrap block was 2 frames instead of 83."""
+
+    @staticmethod
+    def _with_a_hole():
+        values = _correlated(0.95, n=20000, seed=0)
+        holed = values.copy()
+        holed[123] = np.nan
+        holed[4567] = np.inf
+        return values, holed
+
+    def test_the_inefficiency_ignores_it(self) -> None:
+        values, holed = self._with_a_hole()
+        assert statistical_inefficiency(holed) == pytest.approx(
+            statistical_inefficiency(values), rel=0.02)
+        assert statistical_inefficiency(holed) > 30.0
+
+    def test_the_error_of_the_mean_ignores_it(self) -> None:
+        from fastmdxplora.statistics import _for_the_mean
+
+        values, holed = self._with_a_hole()
+        assert _for_the_mean(holed)[0] == pytest.approx(
+            _for_the_mean(values)[0], rel=0.02)
+
+    def test_the_bootstrap_block_ignores_it(self) -> None:
+        from fastmdxplora.uncertainty import block_length_for
+
+        values, holed = self._with_a_hole()
+        assert block_length_for(holed) == pytest.approx(
+            block_length_for(values), abs=2)
+        assert block_length_for(holed) > 60
+
+    def test_resolution_and_equilibration_ignore_it(self) -> None:
+        values, holed = self._with_a_hole()
+        short = holed[:600]
+        assert correlation_is_resolved(short) == correlation_is_resolved(
+            values[:600][np.isfinite(short)])
+        assert detect_equilibration(holed)[1] > 30.0

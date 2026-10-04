@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A missing value no longer makes the frames independent
+
+**The statistical inefficiency, the error of a mean, the resolution check, equilibration detection and the bootstrap block length all leave values that are not finite out before they read a correlation.** One NaN made every autocorrelation NaN, and `max(1.0, nan)` is 1.0: an AR(1) series whose inefficiency was 41 read 1, and the bootstrap block built on it was 2 frames instead of 83, so a free energy's error bar from it came out 0.032 against 0.131. `summarise` already dropped such values; these functions are also called directly, by the bootstrap and the reweighting among others. Results change: series with a missing value now get the inefficiency and error their finite values support.
+
 ### One way to weight a metadynamics run
 
 **`fastmdxplora.analysis.reweight` no longer offers a `weights_for_run` of its own; `reweighted_averages.weights_for_run` is the one way the package weights a run's frames.** The removed function applied neither the Tiwary-Parrinello c(t) offset nor undid PLUMED's gamma/(gamma - 1) factor on stored hill heights: on a well-tempered run it read P(x < 0) as 0.965 against an exact 0.893. Nothing in the package called it, but it was documented and importable. The positional `reweight.read_colvar` it alone used is removed too, and the module's description, which said only the converged-bias form was implemented, now says where c(t) is applied.

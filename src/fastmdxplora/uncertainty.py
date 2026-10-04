@@ -132,8 +132,12 @@ class Bootstrap:
 
 
 def block_length_for(series: np.ndarray) -> int:
-    """Frames per bootstrap block, from the series' own correlation time."""
+    """Frames per bootstrap block, from the series' own correlation time:
+    ``ceil(2 g)``, with ``g`` read from the finite values. One NaN used to
+    make ``g`` read 1 and the block 2 frames on a series whose ``g`` was 39.
+    """
     values = np.asarray(series, dtype=float).ravel()
+    values = values[np.isfinite(values)]
     if values.size < 2:
         return 1
     g = statistical_inefficiency(values)

@@ -154,8 +154,14 @@ def statistical_inefficiency(series: np.ndarray) -> float:
 
     A constant series has no fluctuations to correlate, so ``g`` is one: every
     frame agrees, and there is nothing for a correlation time to describe.
+
+    Values that are not finite are left out first. One NaN made every
+    correlation NaN, no pair of lags compared as non-positive, and
+    ``max(1.0, nan)`` returned 1.0: a series with a true ``g`` of 39 read as
+    independent frames, and the bootstrap block built on it was 2 frames
+    rather than 83.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
     n = values.size
     if n < 3:
         return 1.0
@@ -171,6 +177,12 @@ def statistical_inefficiency(series: np.ndarray) -> float:
         return float(n)
 
     return _inefficiency_and_reach(fluctuation, variance, n)[0]
+
+
+def _finite(series: np.ndarray) -> np.ndarray:
+    """The series as floats, with values that are not finite left out."""
+    values = np.asarray(series, dtype=float).ravel()
+    return values[np.isfinite(values)]
 
 
 def _correlation(fluctuation: np.ndarray, variance: float) -> np.ndarray:
@@ -246,8 +258,10 @@ def _for_the_mean(series: np.ndarray) -> tuple[float, float]:
 
     The degrees of freedom are ``N / (2M + 1)``: the variance of a sum of
     ``2M + 1`` correlation estimates, each about as noisy as ``1 / N``.
+    Values that are not finite are left out first, as in
+    :func:`statistical_inefficiency`.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
     n = values.size
     if n < 3:
         return 1.0, float(max(n - 1, 1))
@@ -290,7 +304,7 @@ def correlation_is_resolved(series: np.ndarray) -> bool:
     the real correlation there was still 0.7. Asking where the correlation
     decayed answers a question about the estimator rather than the run.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
 
     # Nothing to resolve. Frames this close to independent have no
     # correlation time for a longer run to pin down.
@@ -321,9 +335,9 @@ def detect_equilibration(
     the start that maximises it leaves the most of a relaxation in the
     average: on three replicas sharing one relaxation, their mean was biased
     by about its own error. Starting a little later costs at most a tenth of
-    the samples.
+    the samples. Values that are not finite are left out first.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
     n = values.size
     if n < 10:
         return 0, 1.0, float(n)
