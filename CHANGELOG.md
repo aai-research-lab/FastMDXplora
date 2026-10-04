@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A sterol changing leaflet is not a damaged bilayer
+
+**The warning that flip-flop takes hours counts only phospholipids; sterols changing leaflet get a note of their own.** It counted every head, so a cholesterol moving to the other leaflet, which it does in microseconds or faster, was reported as a bilayer that had come apart. Now `leaflet_changes` gives the range of phospholipids in the upper leaflet, and `sterol_leaflet_changes` says that sterols (and other lipids without a phosphate) changing leaflet is expected in a long run. Results change: findings only.
+
 ### A Lipid21 bilayer from a PDB without bonds
 
 **`lipid_order` joins a Lipid17 or Lipid21 lipid's head and tail residues by covalent distance when the topology records no bonds between lipid residues.** They were joined only through the topology's bonds, and a PDB written without CONECT records has none, so each tail stood alone with no carbonyl to start a chain from and the analysis refused with "No acyl chain was found". Neighbouring split-lipid residues are now joined where a heavy atom of one lies within covalent distance of the other's, at the nearest periodic image. Results change: such bilayers now get an order profile, the same as with bonds.

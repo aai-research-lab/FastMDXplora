@@ -416,14 +416,27 @@ class BilayerSeries(Analysis):
             "normal": "z",
         }
         self._note_unread_lipids(traj, bilayer, sides)
-        if np.any(upper != upper[0]):
+        # Phospholipids and sterols apart: a phospholipid crosses the bilayer
+        # in hours, cholesterol in microseconds or less, so the same change
+        # in count means different things.
+        phospho = sides.upper[:, bilayer.phosphate].sum(axis=1)
+        if np.any(phospho != phospho[0]):
             self.findings["leaflet_changes"] = (
-                f"The number of lipids in the upper leaflet ranges from "
-                f"{int(upper.min())} to {int(upper.max())} over the run. A lipid "
-                "crossing the bilayer (flip-flop) takes hours on the "
-                "experimental clock, so a change within a simulation is a "
+                f"The number of phospholipids in the upper leaflet ranges from "
+                f"{int(phospho.min())} to {int(phospho.max())} over the run. A "
+                "phospholipid crossing the bilayer (flip-flop) takes hours on "
+                "the experimental clock, so a change within a simulation is a "
                 "head group wandering near the middle, a bilayer that has "
                 "come apart, or a lipid that has left it.")
+        others = sides.upper[:, ~bilayer.phosphate].sum(axis=1)
+        if np.any(others != others[0]):
+            self.findings["sterol_leaflet_changes"] = (
+                f"The number of sterols and other lipids without a phosphate "
+                f"in the upper leaflet ranges from {int(others.min())} to "
+                f"{int(others.max())} over the run. Cholesterol crosses a "
+                "bilayer in microseconds or faster, and lies near its middle "
+                "on the way, so this is expected in a long run and is not a "
+                "sign of a damaged bilayer.")
 
     def _note_unread_lipids(self, traj: md.Trajectory, bilayer: Bilayer,
                             sides: Leaflets) -> None:

@@ -319,3 +319,49 @@ class TestTheChainOrder:
         chains, whole = _order(traj)
         assert _order(bare)[0] == chains
         assert np.allclose(_order(bare)[1], whole, atol=1e-5)
+
+
+class TestALeafletChangeIsReadForWhatChanged:
+    """A sterol crossing the bilayer is ordinary; a phospholipid crossing it
+    in a simulation is not."""
+
+    @staticmethod
+    def _two_frames(move: str):
+        """DMPC with a sterol in each leaflet; in the second frame the upper
+        sterol, or one phospholipid, is moved into the lower leaflet."""
+        traj = _patch("DMPC")
+        top = traj.topology.copy()
+        middle = float(np.median(traj.xyz[0, top.select("name P"), 2]))
+        centre = traj.unitcell_lengths[0, :2] / 2
+        points = []
+        chain = top.add_chain()
+        for side in (1.0, -1.0):
+            residue = top.add_residue("CHL1", chain)
+            for index, depth in enumerate((1.3, 1.0, 0.7, 0.4)):
+                name, element = ("O3", md.element.oxygen) if index == 0 else (
+                    f"C{index}", md.element.carbon)
+                top.add_atom(name, element, residue)
+                points.append([centre[0], centre[1], middle + side * depth])
+        first = np.concatenate([traj.xyz[0], np.asarray(points, dtype=np.float32)])
+        second = first.copy()
+        if move == "sterol":
+            atoms = top.select("resname CHL1")[:4]
+        else:
+            upper = [r for r in top.residues if r.name == "DMP"
+                     and traj.xyz[0, next(a.index for a in r.atoms if a.name == "P"), 2] > middle]
+            atoms = np.array([a.index for a in upper[0].atoms])
+        second[atoms, 2] = 2 * middle - second[atoms, 2]
+        return md.Trajectory(np.stack([first, second]), top,
+                             unitcell_lengths=np.repeat(traj.unitcell_lengths, 2, axis=0),
+                             unitcell_angles=np.repeat(traj.unitcell_angles, 2, axis=0))
+
+    def test_a_sterol_crossing_is_noted_as_ordinary(self) -> None:
+        _, findings = _run(AreaPerLipid, self._two_frames("sterol"))
+        assert "leaflet_changes" not in findings
+        assert "1 to 2" not in findings["sterol_leaflet_changes"]
+        assert "0 to 1" in findings["sterol_leaflet_changes"]
+
+    def test_a_phospholipid_crossing_is_the_flip_flop_warning(self) -> None:
+        _, findings = _run(BilayerThickness, self._two_frames("phospholipid"))
+        assert "63 to 64" in findings["leaflet_changes"]
+        assert "sterol_leaflet_changes" not in findings
