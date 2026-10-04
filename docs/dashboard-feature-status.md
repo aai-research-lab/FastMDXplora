@@ -1,95 +1,51 @@
 # Dashboard feature changes and milestone status
 
-Reviewed on 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md),
-with implementation and verification revisions identified in the receipts below.
-This is the current status; the framework's milestone receipts are historical.
+Reviewed 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md). This is the current acceptance status; the lower receipts retain earlier evidence and limitations.
 
-**The complete framework is not finished.** All five feature areas have working
-implementations, but final visual, integration and release acceptance gates
-remain open. A milestone commit records a tested increment, not completion of
-every requirement in the expanded framework.
+**The framework is not fully complete.** The agreed features are implemented and the exact branch wheel has passed the configured combined suite plus integrated Agent, bookmark, clip and preparation-audit checks. Open items are bounded: live sign-in for Claude/Kimi/Gemini (the user has only OpenAI access), OS-native open-menu visual capture, and broader scientific/backend acceptance described below. No scientific engine, preparation, force-field or analysis implementation changed in this branch.
 
 ### Current checkpoint — 2026-10-03
 
-The active checkout is `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Local commit `a24dacb7d0968615e89228b91ac879a18eed2c04` records the source regressions and checkpoint revision; two documentation-only closeout updates followed it, and no behavior code changed after the combined suite. The branch is ahead of `princeote/context-aware-agent`. Keep its v2.5.8-based history; upstream main is not integrated. The committed branch diff since `b103dd8` and current follow-up docs are limited to GUI, tests and documentation; no scientific engine, preparation, force-field or analysis module is changed. The user's 8783 dashboard remains untouched. Push is held until exact-wheel acceptance.
+The active checkout is `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `context-aware-agent`, tracking `princeote/context-aware-agent`. Source commits `a24dacb7d0968615e89228b91ac879a18eed2c04` and `02917edc82ceb61f31eb0bec351d245daa016497` are local. Keep the existing v2.5.8-based history; upstream main is not integrated. Port 8783, the user's dashboard, was not restarted or changed. The exact candidate wheel on port 8786 and all QA study records/artifacts are outside the repository; temporary QA bookmarks were removed and the two original bookmarks remain.
 
-The existing installed v7 review wheel is `fastmdxplora-2.5.9.dev208+ge0d9796d3.d20261004-py3-none-any.whl`, SHA-256 `a8ded46ca9437bbe8a4da6d84f08f15bca2e7089bddc200ed5f10e115f860a0c`. It runs on 8785 against the existing disposable completed 1L2Y study. `pip check` and 127 packaged resource/error-reference checks passed. The wheel predates the current uncommitted navigation-focus fix; final package acceptance is still required.
+The tested wheel is `fastmdxplora-2.5.9.dev210+g02917edc8-py3-none-any.whl`, SHA-256 `7b3fc91a47b4627485ccc1e2a6640f86aad548dd61a78c1bdf65ca14106aee39`. It was installed in a temporary isolated environment, `pip check` passed, key dashboard/Agent/research/viewer resources were present, and its dashboard served HTTP 200. This is a development wheel, not a published release or a clean-machine dependency-install claim.
 
-M8 evidence: the 300-state route/theme/viewport/text-scale matrix reported zero geometry issues; all 30 screenshots were visually inspected across Graphite, Ink and Paper. The 750 available-select/control option styles compute to black with white text; three empty preparation selectors have no options. The native operating-system popup itself was not visually verified. Review exposed clipped mobile navigation links at 390 px/200% text. The source now scrolls a focused link into view; the new three-theme keyboard regression passes. Additional current-source targeted checks pass: 6 modal/bookmark focus/Escape checks and 8 Agent loading/refusal/draft/disable checks. The full current-source dashboard-boundary module now passes 93/93; the installed v7 wheel predates the focus fix and exact final-package acceptance remains open.
+The required combined test set passed **241 tests, with 1 skip**, in 856.07 seconds. The skip is the OpenFF ligand-preservation test because `openff.toolkit` is unavailable. Five Pillow `Image.getdata()` deprecation warnings came from clip-test assertions. Repository CI Ruff `F,B`, Ruff for affected tests, changed JavaScript syntax checks and `git diff --check` passed. The current-source dashboard boundary suite passed 93/93; the clip suite passed 26/26.
 
-Latest clip integration delta: on the existing v7/8785 preview, the requested GIF and MP4, metadata and downloads succeeded and both media decoded. That installed candidate left the viewer at frame 1 with Follow off after the test began at frame 0 with Follow on. The source now snapshots and restores Follow, playback, live-update and spin controls as well as the research view, and it attempts restoration if playback loading fails. The complete `tests/test_clip_exports.py` suite passes 26/26 in 138.83 seconds, including browser regressions for preview/export restoration and a failed-playback-load recovery. Ruff for the affected tests and `node --check` for the viewer pass. The installed v7 predates this fix; exact-wheel integration remains open.
+### Exact-wheel integration receipts
 
-Latest preparation-audit integration delta: on v7/8785, selected the observed ASN A:1 inventory difference and compared Saved setup input with Prepared solute. The display-only overlay reported 154 exact heavy-atom matches and explicitly said it is not trajectory RMSD or a preparation-quality score. A before/after SHA-256 inventory of all 326 non-`.research` files in the disposable study produced the same aggregate (`fd7159d2290b14e4545841d69f54535d479d806c98274a20fcf61f57fedbfd81`). This verifies that displayed overlay action on this study did not alter its scientific files. A new source-level browser regression now saves a Preparation-tagged audit view and restores its event, stage pair, overlay and linked display across Graphite, Ink and Paper (3/3); Ruff, JavaScript syntax checks and `git diff --check` also pass. This regression runs against the test fixture, not the final installed wheel. Existing duplicate-identity refusal tests pass; exact-wheel audit-bookmark acceptance remains open.
+- **Agent and OpenAI:** Applying the connected account/model selected GPT-6 Luna with max reasoning. A fresh question about the visible Preparation audit returned an evidence-bounded answer without an API-key prompt. The response distinguished an observed ASN A:1 hydrogen difference from a recorded operation, did not infer a chemical cause/protonation decision, and did not edit settings or run a simulation. Astra, Sol 6.1, Sol 6, Luna 6 ordering and 21 populated select lists/options with black/white computed styles were verified. The selected-account label and credentials were not recorded.
+- **Bookmarks and audit:** The exact wheel exported JSON plus a screenshot ZIP, showed collision preview, accepted skip-existing and keep-both import choices, persisted through reload, and restored a saved view. The audit bookmark restored its Preparation tag, event, stage pair, display-only overlay and linked state. Two original study bookmarks remain. Changed/missing-source refusal is covered by source regressions; the missing-analysis-source test preserves its note/screenshot while refusing restore.
+- **Trajectory clips:** Preview and download produced a two-frame 640×480 GIF and H.264 MP4; ffmpeg decoded both MP4 frames. Metadata downloaded. Selected-residue labels, atom/residue/frame/time/title/caption overlays, camera rotation and frame range were exercised. The viewer returned to the original frame, selection, camera and display; Follow, playback, live-update and spin controls were restored. SHA-256 checks for 315 non-output study files were identical before/after the test.
+- **Preparation display:** Exact-wheel bookmark round-trip retained the selected saved event, before/after stages, overlay and linked view. Previous v7 study checks recorded a display-only heavy-atom overlay (154 exact matches) without changing scientific-file hashes. The overlay is visualization only, not trajectory RMSD or a preparation-quality score.
+- **Aesthetics:** The source visual matrix reported zero geometry issues in 300 route/theme/viewport/text-scale states and 30 screenshots were inspected across Graphite, Ink and Paper. On the exact wheel, all 21 populated dropdown options compute black backgrounds with white text; closed controls look correct. The in-app capture exposes expanded control state but not the OS-native option popup, so its open rendering remains unverified.
 
-Agent-to-audit handoff delta: on the same disposable 8785 study, selecting the observed ASN A:1 change populated the Agent explanation request. The UI required inspecting the changed study evidence; the verified preview included the selected historical event and its selected-stage inventory. Sending it through the connected GPT-6 Luna subscription completed without an API-key prompt. The answer correctly distinguished the added-H inventory observation from a recorded operation, said it could not infer protonation or cause, and left chain/assembly and preparation choices for human review. No settings changed and no simulation ran. This verifies a selected-event explanation path, not residue-pair comparison or the final exact wheel.
+### Milestone review
 
-OpenAI subscription inference passed on v7, including Astra → Sol 6.1 → Sol 6 → Luna 6 ordering, supported reasoning values and saved GPT-6 Luna/max preferences. A harmless explanation used the selected RMSD view and preserved full-series/convergence limits without changing settings or running MD. Per-message context opt-out removed the current view fields. Bookmark testing on the same disposable study saved a tagged screenshot, exported JSON and a PNG bundle, previewed matching IDs, verified both skip-existing and keep-both imports, restored the imported view, and confirmed its screenshot and four records survived a restart of the exact 8785 process. Temporary smoke bookmarks were then removed; the two original bookmarks remain. SHA-256 manifest over 320 non-`.research` study files was identical before and after this work (`af0e80bdd73c319d89f5d0951db0f677e19481bdc342397a0ebbd2b99796bdff`).
-
-**Route discrepancy observed and tested 2026-10-03:** the user reported that Agent text asks for an API key despite the connected Codex account. Read-only inspection shows port 8783 is running `2.5.9.dev198+gd0b2a3bbb`; the v7 review on 8785 is `2.5.9.dev208+ge0d9796d3`. Both Settings views identify GPT-6 Luna/max as the active ChatGPT subscription model. Anthropic/Claude appear in the separate API-key/local-server section; their presence does not identify the active route. The 8783 Agent history contains an earlier API-key error followed by a later successful `Hello.` response. On the disposable v7 preview, explicitly applying **Use this account and model** and sending a fresh UI-label explanation with current-view context disabled returned an answer through GPT-6 Luna/max without asking for a key. A first meta-style test was misrouted into draft generation and returned schema refusals; it was not counted as an inference pass. Port 8783 remains on dev198 and was not restarted or changed. Repeat the focused route test against the final exact wheel during Gate D.
-
-The M0–M8 framework remains incomplete. The only operational work order and current open items are in [dashboard-next-goal.md](dashboard-next-goal.md); requirement contracts and historical scientific/implementation receipts below remain supporting evidence.
-
-## Changes available on this branch
-
-- **Context-aware Agent:** a persistent, disableable sidebar uses the current
-  page, graph/range, warning, residue/atom, saved trajectory frame, preparation
-  event and selected setting. The server resolves evidence from the current
-  study. Packaged Markdown explains the workflow, units, interpretation limits
-  and all 127 registered errors. Unknown external failures remain uncertain.
-  Suggestions can be added to the human-reviewed builder draft; the dashboard
-  Agent cannot execute a simulation or autonomously apply scientific settings.
-- **Residue explanations and comparisons:** canvas and verified per-residue
-  graph selections share protein identity handling. Pin one residue, select
-  another and prepare an unsent comparison question. Measurements require
-  verified analysis granularity and unambiguous topology correspondence.
-  Cropped graphs retain their identities; stale or unmatched selections clear
-  research selection instead of explaining the wrong residue.
-- **Research bookmarks:** titles, notes, preset/custom tags, search/filter,
-  optional screenshots and saved graph/viewer/settings/audit context. Study-local
-  persistence supports JSON and portable screenshot bundles, import previews,
-  collision choices, edit conflicts and source-fingerprint checks. Stale views
-  keep notes/screenshots and explain why restoration is unavailable.
-- **Trajectory clips:** export GIF, MP4 or both from saved viewer frames, with
-  range/stride, playback fps, signed camera rotation and residue/atom/frame/time
-  checkboxes. Source mapping, physical time, view, labels and encoder metadata
-  accompany saved media under `exports/clips/`. Export cancellation/failure
-  restores viewer state; rendering does not rewrite molecular coordinates.
-- **Preparation provenance:** future preparations record observed choices and
-  operations, source references, checksums and bounded snapshots separately from
-  scientific outputs. Historical studies show available evidence and missing
-  records without inventing the reason for a structural difference.
-- **Preparation audit:** a collapsed panel offers saved-stage inventories,
-  event evidence, linked side-by-side structures and an optional display-only
-  overlay requiring exact heavy-atom correspondence. Selected evidence can be
-  bookmarked or sent to the Agent. The factual view works without AI.
-- **Subscription connections:** one OAuth provider dropdown and contextual
-  Connect action for OpenAI/ChatGPT/Codex, Claude, Kimi Code and Gemini. Adapters
-  restrict inference tools and isolate credentials from study exports. Copilot
-  was removed from application scope. Other providers use their documented
-  official-client bridges rather than a claim of universal direct OAuth.
-- **Models and reasoning:** Codex ordering starts Astra, Sol 6.1, Sol 6, Luna 6,
-  then the remaining models. Published choices remain available despite catalog
-  omission; an unchecked choice requires successful inference before applying. A
-  model-specific reasoning slider uses supported levels, preserves account/model
-  preferences and disables unsupported controls. See the
-  [model/reasoning contract](agent-model-reasoning.md). Dropdowns/options use
-  black backgrounds and white text across dashboard themes.
-
-## Requirement-to-milestone review
-
-| Milestone | Current state | Evidence and remaining work |
+| Milestone | Current state | Remaining boundary |
 | --- | --- | --- |
-| M0 — reconcile | Implemented | Architecture/boundaries and branch scope documented; this review reconciles subsequent increments with the original full contract. |
-| M1 — context and human control | Implemented; representative live Agent routes verified | Eight context types, installed knowledge, refusal boundary, server-resolved context inspection, per-message view opt-out and outbound evidence receipts. OpenAI subscription inference passed both a harmless UI question and a selected preparation-change explanation; the latter retained historical-evidence limits and human review. Before/after draft review is bound to candidate, builder baseline and study; final Agent-authored builder runs require fresh exact-state human review. Expiry, changed-state rejection, cancellation and intercepted browser-run checks pass; full integrated regression remains M7. |
-| M2 — bookmarks | Main live portability flow verified; stale-source live acceptance remains open | On installed v7, screenshot capture, JSON and screenshot-bundle export, collision preview, skip-existing and keep-both import, post-restart persistence, screenshot reload and compatible view restore all passed. The full research-bundle suite passes 24/24, including refusal when an analysis source is missing while its note and screenshot remain accessible. Two pre-existing bookmarks remain. Stale/missing-source behavior still needs final installed integration acceptance. |
-| M3 — providers | OpenAI live acceptance passed; external accounts unverified | Installed v7 verified the OpenAI subscription route, model order, reasoning choices, preference persistence and harmless explanation. Claude, Kimi and Gemini have restricted adapters and synthetic/native transport tests; the user has no subscriptions for live acceptance. |
-| M4 — clips | Source restoration fix verified; exact-wheel integration remains open | On v7, preview/export/download and GIF/MP4 decoding succeeded but exposed loss of frame/Follow state. Source now preserves viewer controls; the complete 26/26 clip suite passes, including preview/export restoration and unavailable-playback recovery. Rebuild and repeat live acceptance on the exact final wheel. |
-| M5 — provenance | Implemented; controlled POPC and OpenFF preparation verified | Recording and missing/limited evidence handling tested. Seeded audit-on/off equivalence passed on Reference, full POPC packing/relaxation under deterministic CPU test controls, and an installed-wheel peptide/ethanol OpenFF preparation. Aggregate system snapshots do not record every individual solvent/ion operation. Broader backend/platform/fixture checks and CPU repeatability baseline remain open. |
-| M6 — audit visuals | Live selection, display-only overlay and one Agent explanation passed on v7; source audit-bookmark round trip passes | Selected observed ASN A:1 on the disposable completed study; Saved setup input vs Prepared solute showed 154 exact heavy-atom matches. The UI states the overlay is display-only and not RMSD or a quality score; all 326 non-`.research` study files matched the before-toggle aggregate SHA-256. The connected Agent explained the selected change without a key error or scientific action. Source tests cover duplicate-identity refusal; the new three-theme regression saves and restores the audit display. Exact-wheel audit-bookmark acceptance remains open. |
-| M8 — aesthetics and interactions | Source boundary suite and focused regressions pass; package/native-popup review remains open | All 30 matrix screenshots were visually inspected across three themes. A reproduced 390 px/200% navigation-focus clipping issue is fixed in source and its three-theme regression passes; 6 dialog/bookmark focus/Escape checks, 8 Agent-state checks and the new 3/3 audit-bookmark restoration cases pass. The current-source dashboard-boundary module passes 93/93. The latest wheel predates the source fixes, and the native operating-system menu popup has only computed-style evidence. |
-| M7 — integrated release validation | Combined source suite passed; exact-wheel release gate remains open | Commit `a24dacb` passed the required combined set: 241 tests, one dependency-conditional OpenFF skip and five Pillow deprecation warnings. Required CI Ruff checks, JavaScript syntax and diff checks pass. Final wheel build/install, package resource checks and integrated smoke are still required. Claude, Kimi and Gemini live accounts are unavailable to this user and remain explicitly unverified. |
+| M0 — reconcile | Complete | Scope, branch base and physics/chemistry guardrails are documented. |
+| M1 — context and human control | Implemented; OpenAI live route passed on exact wheel | Other subscription accounts remain external live dependencies. Human draft review, refusal and non-execution regressions pass. |
+| M2 — bookmarks | Core portability passed on exact wheel | Exact source compatibility is regression-tested; broader study/backend combinations remain limited by the documented fixtures. |
+| M3 — providers/models | OpenAI account, model order and reasoning verified | Claude, Kimi Code and Gemini adapters remain available but live sign-in/inference is UNVERIFIED because the user has no accounts for them. |
+| M4 — clips | Exact-wheel GIF/MP4 preview, download, decode and state restoration passed | Encoder and browser differences outside this host remain environment-dependent. |
+| M5 — provenance | Future-run observation and audit implemented; qualified scientific checks pass | Aggregate solvent/ion events do not identify each inserted molecule or retry. Broader backend/platform acceptance is open; do not claim universal chemical validation or deterministic CPU repeatability. |
+| M6 — audit visuals | Exact-wheel audit bookmark and Agent handoff passed | Overlay remains display-only and only describes the evidence available in saved study files. |
+| M7 — integrated release checks | Passed for the tested development environment and exact wheel | One OpenFF skip, external provider tests, and clean-machine installation remain unverified. |
+| M8 — aesthetics/interactions | Source suite and exact-wheel dropdown styles pass | Native OS popup visual remains unverified; no other reproduced contrast or geometry defect is open. |
 
-## Verification and scientific limits
+### Revised finish plan
+
+1. Commit the updated acceptance receipts and state provider account boundaries clearly in the current documentation.
+2. Review the full branch diff and verify no scientific implementation files changed; rerun documentation/diff checks.
+3. Push the reviewed commits only to `princeote/context-aware-agent`; confirm the remote head. Do not merge upstream main or create a pull request.
+4. Treat external provider live testing and broader scientific/backend acceptance as explicit follow-up items if suitable accounts/dependencies become available. Do not claim the whole framework is complete until those boundaries are resolved or the acceptance contract is narrowed with the user.
+
+README already points to this status page. The packaged Agent knowledge already contains the current scientific interpretation and human-control limits; no package-knowledge edit is needed. See [dashboard-next-goal.md](dashboard-next-goal.md) for the single operational checklist.
+
+## Historical verification receipts and scientific limits
+
+The following entries record earlier milestones; use the current checkpoint and milestone table above for the present acceptance state.
 
 Earlier focused verification before the latest audit-bookmark regression: **65 passed in 113.23 seconds**
 across `test_agent_reasoning.py`, `test_provider_connections.py`,

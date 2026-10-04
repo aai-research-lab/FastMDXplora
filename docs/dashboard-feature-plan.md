@@ -716,8 +716,8 @@ verified residue evidence. The provider TLS/transaction/connection suite passed
 `fastmdxplora-2.5.9.dev154+ga2035c5da-py3-none-any.whl` has SHA-256
 `d6c88f038d69f190d213a92e853dc91d34e0be2de8dc7624180819777a761999`.
 Its error reference equals the runtime registry byte-for-byte; its dropdown
-contains OpenAI/ChatGPT/Codex, Claude, Kimi and Gemini, with no Copilot files or
-option. The optional `agent` dependency includes the native TLS trust store.
+contains OpenAI/ChatGPT/Codex, Claude, Kimi and Gemini. The optional `agent`
+dependency includes the native TLS trust store.
 Public discovery and signing-key retrieval succeeded with certificate and
 hostname verification enabled. These public requests used no account tokens
 and do not establish subscription consent or successful account inference.

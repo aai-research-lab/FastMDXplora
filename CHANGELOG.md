@@ -75,9 +75,9 @@ error knowledge and human-reviewed draft suggestions, portable screenshot
 bookmarks, rotating MP4/GIF trajectory exports, future preparation provenance and
 an expandable saved-stage audit. Protein and graph selections support verified
 residue explanations and pinned comparisons without changing scientific source
-data. Subscription adapters cover OpenAI, Claude, Kimi and Gemini; Copilot is
-removed. Codex models are ordered Astra, Sol 6.1, Sol 6, Luna 6, then the remaining
-models, with model-specific reasoning controls and readable dark dropdowns.
+data. Subscription adapters cover OpenAI, Claude, Kimi and Gemini. Codex models
+are ordered Astra, Sol 6.1, Sol 6, Luna 6, then the remaining models, with
+model-specific reasoning controls and readable dark dropdowns.
 
 **The full implementation framework is not complete.** OpenAI sign-in/inference
 has live acceptance; the other providers still need real account tests. Context
@@ -85,6 +85,12 @@ review, draft diffs, clip preview/options and audit visuals are implemented.
 Remaining scientific, browser and packaging gates are listed in the
 [current milestone status and change description](docs/dashboard-feature-status.md).
 This branch update does not integrate upstream main or declare a new release.
+
+The required combined suite passed 241 tests with one dependency-conditional
+OpenFF skip. The exact development wheel passed live OpenAI Agent, bookmark,
+preparation-audit and GIF/MP4 clip checks without changing scientific files.
+Live Claude, Kimi and Gemini accounts remain unverified; this is branch QA, not
+a published release.
 
 The [completion and aesthetics plan](docs/dashboard-completion-plan.md) specifies
 the remaining controls and acceptance checks, plus a new M8 design milestone
