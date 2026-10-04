@@ -259,7 +259,7 @@
     box.addEventListener("change", function () { choose(study.path, box.checked); });
     pick.append(box, document.createTextNode(" Compare"));
     var tag = make("button", "file-action study-tag-edit",
-      (study.tags || []).length || study.note ? "Tags" : "Tag it");
+      (study.tags || []).length || study.note ? "Tags" : "Tag");
     tag.type = "button";
     tag.title = "Tags and a note of your own, kept in the study's folder";
     tag.addEventListener("click", function () {
