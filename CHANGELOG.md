@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The k-means seed is in the record
+
+**`cluster` now writes `random_state` and `n_init` to its `options.json`.** Both were settable and both decide which local optimum k-means finds, and neither was recorded, so a clustering could not be repeated from its record or told apart from one run with another seed. Results do not change.
+
 ### Ligand RMSD over heavy atoms, with the ligand's symmetry
 
 **`ligand_rmsd` is now taken over the ligand's heavy atoms, at the relabelling of a symmetric ligand that fits each frame best.** It counted every ligand atom, hydrogens included, and took the atoms as labelled, so a benzene turned by 60 degrees about its axis, lying exactly where it was, read 0.200 nm (0.139 nm over its carbons). Now hydrogens are left out by default (`include_hydrogens: true` counts them), and each frame's RMSD is the smallest over the automorphisms of the ligand's bond graph from the topology, atoms matched to atoms of the same element with the same bonds, with no refitting (`symmetry_corrected: false` turns this off). The same benzene reads 0.000 nm. The search stops at 10,000 automorphisms and says so; a ligand whose topology records no bonds is measured as labelled, and that is said. Which atoms were used, how many automorphisms, and the largest correction are recorded in the findings. Results change: every ligand RMSD with hydrogens in the ligand, and those of symmetric ligands that turned onto themselves.

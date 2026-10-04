@@ -181,6 +181,8 @@ class Cluster(Analysis):
             eps=self.eps,
             min_samples=self.min_samples,
             linkage=self.linkage,
+            random_state=self.random_state,
+            n_init=self.n_init,
         )
 
     def compute(self, traj: md.Trajectory) -> dict[str, np.ndarray]:
