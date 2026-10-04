@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### How a series converged, in one call
+
+**`statistics.convergence_of(values, times=None)` returns what a convergence view plots, from the estimators the recorded mean uses, as plain lists ready for JSON.** It gives the equilibration start `summarise` chooses with its mean and error; the running mean of the equilibrated part at about 50 points, each with the error the package would record for the frames up to it, withheld where it would be; Flyvbjerg-Petersen block averaging with each error's own uncertainty, SE / sqrt(2(n_b - 1)), and a plateau named only where the series resolves its own correlation time; the autocorrelation to its first zero or a quarter of the series, with tau_int = (g - 1) / 2 in frames and time; and Freedman-Diaconis histograms of the kept and discarded values, at most 60 bins. Fewer than ten finite values give a reason and no numbers. The correlations of every candidate start and prefix come from one Fourier pass, so a million values take about half a second of processor time. `summarise` was split into pieces this shares, and gives the same records as before.
+
 ### A constant-volume run's volume is said as fixed
 
 **The thermodynamics record gives a constant-volume run's box volume as the value the ensemble held, with that reason, as it already did for the density.** Read as a series, a volume that never changes is one observation however long the run, so it was refused as "not long against its own correlation time" with a longer run named as the remedy, which would never have changed it. Results change: `volume` in an NVT run's thermodynamics record now carries `value` and a reason in place of the refusal and its equilibration fields.

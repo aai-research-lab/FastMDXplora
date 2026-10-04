@@ -143,6 +143,29 @@ it is never less than as long again as the part of the run already averaged,
 since the independent samples the run appears to hold are themselves an upper
 bound. It is a planning figure. Run at least that much and analyse again.
 
+### Seeing how a series converged
+
+`convergence_of` gives, for one series, what the Analysis page's convergence
+view plots, from the same estimators the recorded mean uses, as plain lists
+ready for JSON (`None` where a value is withheld or not a number):
+
+```python
+from fastmdxplora.statistics import convergence_of
+
+view = convergence_of(rmsd_series, times=times_ns)
+view["equilibration"]   # the start summarise chose, its mean and error
+view["running_mean"]    # cumulative mean of what was kept, with an error per point
+view["blocking"]        # Flyvbjerg-Petersen block averaging, and its plateau
+view["autocorrelation"] # C(t) to its first zero, and tau_int = (g - 1) / 2
+view["histogram"]       # what was kept, and what was discarded, apart
+```
+
+The running mean's error at each point is the one the package would record
+for the frames up to it, withheld where it would be withheld. The blocking
+curve's plateau is named only where the series resolves its own correlation
+time; shorter than that, its blocks never reach the length at which the error
+stops growing. Fewer than ten finite values give a reason and no numbers.
+
 Averages taken on a biased run are corrected back to equilibrium where the bias
 allows, and labelled as biased where it does not —
 [Averages on a biased run](analyses.md#averages-on-a-biased-run).
