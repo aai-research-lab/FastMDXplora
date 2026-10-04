@@ -83,11 +83,12 @@ def test_encoded_clip_and_source_metadata_preserve_scientific_artifacts(runtime,
             "-of", "json", str(encoded)
         ], capture_output=True, text=True, check=True)
         stream = json.loads(probe.stdout)["streams"][0]
-        assert stream["avg_frame_rate"] == "10/1" and int(stream["nb_frames"]) == 2
+        assert stream["avg_frame_rate"] == "2/1" and int(stream["nb_frames"]) == 2
         assert stream["profile"] == "Constrained Baseline"
         assert stream["has_b_frames"] == 0
         assert stream["pix_fmt"] == "yuv420p"
         assert metadata["encoders"]["mp4"]["frame_timing"] == "constant"
+        assert metadata["encoders"]["mp4"]["effective_fps"] == 2
         assert metadata["encoders"]["mp4"]["profile"] == "baseline"
         assert metadata["encoders"]["mp4"]["b_frames"] == 0
         assert metadata["encoders"]["mp4"]["preset"] == "veryfast"
