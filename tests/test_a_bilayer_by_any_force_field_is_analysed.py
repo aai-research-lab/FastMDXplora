@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from fastmdxplora.refusals import StudyError
@@ -200,3 +201,57 @@ class TestTheLipidNamesAreOpenMMs:
         for name in ("PH-", "23SM", "POP", "WAT"):
             top.add_atom("C1", md.element.carbon, top.add_residue(name, chain))
         assert list(top.select(lipid_selection())) == [0, 1, 2]
+
+
+class TestWaterByAnyNameIsWater:
+    """OpenMM's POPC patch has water molecules among the head groups, within
+    the planes the protein's cross section is taken in, so water read as
+    protein takes area from the lipids."""
+
+    @pytest.mark.parametrize("name", ["OPC", "TIP3P", "TP3", "SPCE", "TIP4P", "TP4E",
+                                      "XWAT"])
+    def test_it_is_not_counted_as_protein(self, name) -> None:
+        traj = _patch("POPC")
+        renamed = _renamed(traj, lambda top: [
+            setattr(r, "name", name) for r in top.residues if r.name == "HOH"])
+        area, findings = _run(AreaPerLipid, renamed)
+        assert findings["area"]["protein_cross_section_nm2_mean"] == 0.0
+        assert area[0] == pytest.approx(_run(AreaPerLipid, traj)[0][0], rel=1e-9)
+
+    def test_four_site_water_with_its_virtual_site_is_water(self) -> None:
+        """OPC as OpenMM writes it: O, H1, H2 and a massless site, under a
+        name of the user's own."""
+        from fastmdxplora.analysis.bilayer import find_bilayer
+
+        traj = _patch("POPC")
+        top = md.Topology()
+        chain = top.add_chain()
+        xyz = []
+        for residue in traj.topology.residues:
+            water = residue.name == "HOH"
+            new = top.add_residue("W4" if water else residue.name, chain)
+            for atom in residue.atoms:
+                top.add_atom(atom.name, atom.element, new)
+                xyz.append(traj.xyz[0, atom.index])
+            if water:
+                top.add_atom("MW", md.element.virtual_site, new)
+                xyz.append(traj.xyz[0, atom.index])
+        four = md.Trajectory(np.asarray(xyz)[None], top, unitcell_lengths=traj.unitcell_lengths,
+                             unitcell_angles=traj.unitcell_angles)
+        assert len(find_bilayer(four.topology).occupants) == 0
+        area, findings = _run(AreaPerLipid, four)
+        assert findings["area"]["protein_cross_section_nm2_mean"] == 0.0
+
+    def test_a_molecule_of_three_atoms_that_is_not_water_is_an_occupant(self) -> None:
+        from fastmdxplora.analysis.bilayer import _is_water
+
+        top = md.Topology()
+        chain = top.add_chain()
+        for name, elements in (("MOH", [md.element.oxygen, md.element.carbon,
+                                        md.element.hydrogen]),
+                               ("AMN", [md.element.nitrogen, md.element.hydrogen,
+                                        md.element.hydrogen])):
+            residue = top.add_residue(name, chain)
+            for index, element in enumerate(elements):
+                top.add_atom(f"X{index}", element, residue)
+            assert not _is_water(residue, list(residue.atoms))

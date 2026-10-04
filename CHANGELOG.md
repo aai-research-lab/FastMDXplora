@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Water is water whatever it is called
+
+**The bilayer analyses read a residue as water by its name, by MDTraj's test, or by being one oxygen and two hydrogens with any massless sites.** The name list lacked OPC, TIP3P, TP3, SPCE, TIP4P and others, and water under those names was read as protein: on OpenMM's POPC patch with its water renamed OPC, the water among the head groups gave a "protein" cross section of 0.16 nm2 and an area per lipid of 0.663 against 0.666 nm2, and the error grows with water that reaches further into a thinner or more disordered bilayer. Results change: systems whose water is not named HOH, WAT, SOL, TIP3 or SPC lose a protein correction that was water, and a bilayer with no protein in it is again its box per lipid.
+
 ### Every lipid name is a lipid
 
 **A residue is a lipid when OpenMM has a lipid template of its name: CHARMM36's, as CHARMM-GUI writes them, and AMBER Lipid17's and Lipid21's.** The list kept by hand held about forty names, and every other lipid was counted as protein: with a third of a POPC bilayer renamed DSPE, PLPC, SOPE, DLPG or DAPC, the area per lipid read 10% large and the findings said a protein took 27% of the box. The names are now read from OpenMM's force field files where OpenMM is installed (295 templates, from DSPE to the cardiolipins, ceramides and phytosterols), and otherwise from a copy of that list kept in `lipids.py`, so an install without OpenMM reads the same names; a test checks the copy holds every template OpenMM ships. Lipid21's stearoyl (SA), docosahexaenoyl (DHA), arachidonoyl (AR) and lauroyl (LAL) tails are tails, and its PGS, PH- and SPM heads are heads. A ceramide's head is its hydroxyl oxygen, as a sterol's is. When a residue read as protein has a phosphorus among the lipid heads, the findings say so (`unread_lipids`). The default bilayer of `membrane_depth`, the membrane barostat and the crash diagnosis read the same names. Results change: mixed bilayers with lipids outside the old list get the right area per lipid and thickness, and lose a protein correction that was never there.

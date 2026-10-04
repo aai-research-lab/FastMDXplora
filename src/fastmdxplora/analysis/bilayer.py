@@ -80,9 +80,23 @@ _BOND_TOLERANCE_NM = 0.045
 #: bilayer normal to z.
 _MID_PLANE_NM = 1.0
 
-#: Water residue names, which neither occupy the bilayer nor are counted.
-_WATER = frozenset({"HOH", "WAT", "TIP", "TIP3", "TIP4", "TIP5", "SOL", "H2O",
-                    "SPC", "T3P", "T4P"})
+#: Water residue names, which neither occupy the bilayer nor are counted:
+#: those OpenMM's force fields and its PDB name table use (HOH, WAT, SOL,
+#: TIP3, TP3, T4P, SPCE, OPC, TP4E, TP5E, ...), and those other packages
+#: write for the same models. Water under any other name is still found by
+#: MDTraj's own test or by its composition (:func:`_is_water`).
+_WATER = frozenset({
+    "HOH", "WAT", "H2O", "DOD", "SOL", "OH2", "HHO", "OHH",
+    "TIP", "TIP2", "TIP3", "TIP4", "TIP5", "TIP3P", "TIP4P", "TIP5P",
+    "TIP4PEW", "TIP4P2005", "TP3", "TP3B", "TP3F", "TP4", "TP4E", "TP45",
+    "TP5", "TP5E", "T3P", "T4P", "T4E", "T5P", "SPC", "SPCE", "SPC/E",
+    "OPC", "OPC3", "SWM4", "SWM6",
+})
+
+#: How water models' virtual sites are named, for a topology that gives
+#: them no element: TIP4P's and OPC's M or MW (EPW in AMBER), TIP5P's lone
+#: pairs LP or EP.
+_VIRTUAL_SITE_NAMES = ("M", "EP", "LP")
 
 
 def _symbol(atom: Any) -> str:
@@ -112,6 +126,34 @@ class Bilayer:
     #: The phosphorus of each occupant residue that has one, by residue name.
     #: A lipid under a name not read as a lipid is one of these.
     occupant_phosphorus: dict[str, list[int]] = field(default_factory=dict)
+
+
+def _is_water(residue: Any, atoms: list[Any]) -> bool:
+    """Whether a residue is a water molecule.
+
+    By name (:data:`_WATER`), by MDTraj's own test, or by what it is made of:
+    one oxygen, two hydrogens, and nothing else but massless virtual sites,
+    which is every rigid water model from TIP3P to OPC and TIP5P whatever
+    the residue is called. Water reaching the bilayer's core and read as
+    protein would be taken out of the area per lipid.
+    """
+    if residue.name.strip().upper() in _WATER or getattr(residue, "is_water", False):
+        return True
+    oxygen = hydrogen = 0
+    for atom in atoms:
+        element = getattr(atom, "element", None)
+        if element is not None and not getattr(element, "mass", 1.0):
+            continue  # a virtual site: OPC's and TIP4P's M, TIP5P's lone pairs
+        if element is None and atom.name.upper().startswith(_VIRTUAL_SITE_NAMES):
+            continue
+        symbol = _symbol(atom)
+        if symbol == "O":
+            oxygen += 1
+        elif symbol == "H":
+            hydrogen += 1
+        else:
+            return False
+    return oxygen == 1 and hydrogen == 2
 
 
 def _phosphorus(atoms: list[Any]) -> Any | None:
@@ -163,7 +205,7 @@ def find_bilayer(topology: md.Topology) -> Bilayer:
             else:
                 continue
             composition[residue.name] = composition.get(residue.name, 0) + 1
-        elif residue.name.upper() not in _WATER and len(atoms) > 1:
+        elif len(atoms) > 1 and not _is_water(residue, atoms):
             occupants.extend(a.index for a in atoms)
             head = _phosphorus(atoms)
             if head is not None:
