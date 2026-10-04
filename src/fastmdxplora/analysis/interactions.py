@@ -25,6 +25,8 @@ from fastmdxplora.refusals import StudyError
 
 __all__ = [
     "Contact",
+    "HBOND_LIGAND_DONOR",
+    "HBOND_PROTEIN_DONOR",
     "hydrogen_bonds",
     "hydrophobic_contacts",
     "salt_bridges",
@@ -42,6 +44,11 @@ __all__ = [
     "water_bridges",
     "residues_not_covered",
 ]
+
+
+#: The two directions of a hydrogen bond, as the kind of its contact.
+HBOND_LIGAND_DONOR = "hydrogen_bond_ligand_donor"
+HBOND_PROTEIN_DONOR = "hydrogen_bond_protein_donor"
 
 
 #: Halogens with a positive sigma-hole when bound to carbon, which is what
@@ -371,7 +378,12 @@ def hydrogen_bonds(
 
     Both directions are found: the ligand donating to the protein and the
     protein donating to the ligand are different interactions, and a ligand
-    that can only accept is a fact about the ligand worth seeing.
+    that can only accept is a fact about the ligand worth seeing. So the
+    direction is in the kind, ``hydrogen_bond_ligand_donor`` or
+    ``hydrogen_bond_protein_donor``: with one kind for both, a ligand O-H
+    donating to a serine OG and the serine's OG-H donating back joined the
+    same two heavy atoms and were one row present in both frames, which
+    reported a bond held throughout where its direction had reversed.
     """
     ligand_donors, ligand_acceptors = donors_and_acceptors(
         traj.topology, ligand_indices)
@@ -381,16 +393,19 @@ def hydrogen_bonds(
     triples: list[tuple[int, int, int]] = []
     pairs: list[tuple[int, int]] = []
     sides: list[tuple[int, int]] = []      # (ligand atom, protein atom)
+    kinds: list[str] = []
     for heavy, hydrogen in ligand_donors:
         for acceptor in protein_acceptors:
             triples.append((heavy, hydrogen, acceptor))
             pairs.append((heavy, acceptor))
             sides.append((heavy, acceptor))
+            kinds.append(HBOND_LIGAND_DONOR)
     for heavy, hydrogen in protein_donors:
         for acceptor in ligand_acceptors:
             triples.append((heavy, hydrogen, acceptor))
             pairs.append((heavy, acceptor))
             sides.append((acceptor, heavy))
+            kinds.append(HBOND_PROTEIN_DONOR)
 
     if not triples:
         return []
@@ -404,7 +419,7 @@ def hydrogen_bonds(
     for frame, column in zip(*np.where(close_enough & straight_enough)):
         ligand_atom, protein_atom = sides[column]
         found.append(Contact(
-            kind="hydrogen_bond",
+            kind=kinds[column],
             frame=int(frame),
             ligand_atom=int(ligand_atom),
             protein_atom=int(protein_atom),

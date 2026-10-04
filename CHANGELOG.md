@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A hydrogen bond keeps its direction
+
+**`pl_interactions` now names each hydrogen bond by its donor, `hydrogen_bond_ligand_donor` or `hydrogen_bond_protein_donor`, in the `kind` column of its tables and of `pl_interactions_frames.json`.** Both directions were the kind `hydrogen_bond` and were keyed by the two heavy atoms, so a ligand O-H donating to a serine OG in one frame and the serine OG-H donating back in the next were one row at occupancy 1.0 with one episode, where each direction held for half the run. The Viewer colours both as a hydrogen bond, the ligand panel counts both, and the cross-tool comparison takes the larger as a bound on their union. Results change: hydrogen-bond rows split by direction, and a bond that reversed now shows the occupancy of each direction.
+
 ### Metal coordination looks at the ions
 
 **`pl_interactions` now finds a ligand donor coordinating a metal ion.** The rule was given the ligand and the protein selection, and an ion is its own residue in neither, so it had no metal to find: a zinc 0.20 nm from a ligand oxygen and from a histidine NE2 gave no metal coordination on any run. Every single-atom residue of a metal element is now passed as the metal side beside the protein. Results change: studies with a metal ion in the site now report its coordination by the ligand.

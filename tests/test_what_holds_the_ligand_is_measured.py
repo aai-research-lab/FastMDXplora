@@ -466,3 +466,32 @@ class TestResiduesNotCovered:
         idx += b.residue("ALA", [("CA", "C", (1, 0, 0))])
         left_out = residues_not_covered(b.topology, idx)
         assert "MSE" in left_out and "ALA" not in left_out
+
+
+class TestTheDirectionOfAHydrogenBond:
+    def test_each_direction_is_its_own_interaction(self) -> None:
+        """Frame 0: the ligand O1-H1 donates to a serine OG. Frame 1: the
+        serine OG-HG donates to O1 and the ligand's hydrogen has turned
+        away. One kind for both made these one row present in both frames,
+        a bond held throughout where its direction had reversed."""
+        from fastmdxplora.analysis.interaction_summary import occupancies
+
+        b = _Builder()
+        lig = b.residue("LIG", [("C1", "C", (-0.14, 0, 0)), ("O1", "O", (0, 0, 0)),
+                                ("H1", "H", (0.097, 0, 0))])
+        b.bond(lig[0], lig[1]); b.bond(lig[1], lig[2])
+        ser = b.residue("SER", [("CB", "C", (0.42, 0, 0)), ("OG", "O", (0.28, 0, 0)),
+                                ("HG", "H", (0.38, 0.05, 0))], chain=True)
+        b.bond(ser[0], ser[1]); b.bond(ser[1], ser[2])
+        first = np.array(b._xyz, dtype=float)
+        second = first.copy()
+        second[lig[2]] = (-0.03, 0.093, 0)
+        second[ser[2]] = (0.183, 0, 0)
+        traj = md.Trajectory(np.stack([first, second]), b.topology)
+
+        found = hydrogen_bonds(traj, lig, ser, periodic=False)
+        assert {(c.frame, c.kind) for c in found} == {
+            (0, "hydrogen_bond_ligand_donor"), (1, "hydrogen_bond_protein_donor")}
+        table = occupancies(found, 2)
+        assert sorted((o.kind, o.fraction) for o in table) == [
+            ("hydrogen_bond_ligand_donor", 0.5), ("hydrogen_bond_protein_donor", 0.5)]

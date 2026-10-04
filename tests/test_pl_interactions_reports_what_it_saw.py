@@ -79,8 +79,9 @@ class TestTheWholeAnalysis:
         assert "hydrophobic" in kinds
         # Benzene can form none of these; a rule finding one here would be
         # inventing it.
-        assert not kinds & {"hydrogen_bond", "salt_bridge", "halogen_bond",
+        assert not kinds & {"salt_bridge", "halogen_bond",
                             "water_bridge", "metal_coordination"}
+        assert not any(k.startswith("hydrogen_bond") for k in kinds)
 
     def test_an_always_present_contact_has_occupancy_one(self) -> None:
         analysis = ProteinLigandInteractions(ligand_resname="BNZ")

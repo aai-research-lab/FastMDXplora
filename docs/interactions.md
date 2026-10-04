@@ -30,6 +30,12 @@ in the rule's own docstring.
 | Metal coordination | metal to donor < 3.0 Å; the metal is the ligand or any single-atom metal residue in the system | PLIP |
 | Water bridge | one water 2.5–4.1 Å from each side, angle at the water 71–140° | PLIP |
 
+A hydrogen bond is reported in the direction it was found, as
+`hydrogen_bond_ligand_donor` or `hydrogen_bond_protein_donor` in the `kind`
+column, so a ligand O-H donating to a serine and the serine's O-H donating
+back are two rows with their own occupancies rather than one. The `kinds`
+setting still names the rule `hydrogen_bond`, which finds both.
+
 An acceptor is an atom with a lone pair free to take the bond: every oxygen;
 a nitrogen with one or two neighbours, or an amine nitrogen whose neighbours
 are all sp3 carbons; a sulphur with at most two heavy neighbours and no

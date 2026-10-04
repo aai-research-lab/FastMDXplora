@@ -2695,6 +2695,8 @@ def _last_metric_value(root: Path, field: str) -> str | None:
 #: reader is shown without opening the analysis.
 _PANEL_INTERACTION_KINDS = {
     "hydrogen_bond": "hbonds",
+    "hydrogen_bond_ligand_donor": "hbonds",
+    "hydrogen_bond_protein_donor": "hbonds",
     "hydrophobic": "hydrophobic",
     "salt_bridge": "salt_bridges",
 }

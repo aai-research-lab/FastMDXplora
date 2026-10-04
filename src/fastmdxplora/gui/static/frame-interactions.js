@@ -24,6 +24,18 @@
     metal_coordination: "#999999", water_bridge: "#7FC8F8",
   };
 
+  //  A kind's colour, or its family's: the analysis names a hydrogen bond
+  //  by its direction and a stack by its arrangement
+  //  (hydrogen_bond_ligand_donor, pi_stacking_face_to_face), and those take
+  //  the colour of hydrogen_bond and pi_stacking.
+  function kindColour(kind, fallback) {
+    if (KIND_COLOURS[kind]) return KIND_COLOURS[kind];
+    var family = Object.keys(KIND_COLOURS).filter(function (name) {
+      return String(kind || "").indexOf(name + "_") === 0;
+    }).sort(function (a, b) { return b.length - a.length; })[0];
+    return family ? KIND_COLOURS[family] : fallback;
+  }
+
   var state = {
     data: null,
     asked: null,
@@ -155,7 +167,7 @@
     }, host);
     pairs.forEach(function (pair, i) {
       var y = plotBox.top + i * ROW;
-      var colour = KIND_COLOURS[pair.kind] || muted;
+      var colour = kindColour(pair.kind, muted);
       el("line", { x1: plotBox.left, x2: plotBox.right, y1: y + ROW - 0.5, y2: y + ROW - 0.5,
         stroke: grid }, svg);
       var swatch = el("rect", { x: 2, y: y + 3, width: 7, height: 7, fill: colour }, svg);
@@ -242,7 +254,7 @@
       .filter(function (pair) { return Array.isArray(pair.atoms); })
       .map(function (pair) {
         return { a: pair.atoms[0], b: pair.atoms[1],
-          colour: parseInt((KIND_COLOURS[pair.kind] || "#999999").slice(1), 16) };
+          colour: parseInt(kindColour(pair.kind, "#999999").slice(1), 16) };
       }));
   }
 

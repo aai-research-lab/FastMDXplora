@@ -1366,7 +1366,7 @@ class TestWhatHoldsALigandInPlace:
         found = hydrogen_bonds(traj, ligand, protein, periodic=False)
         assert len(found) == 1
         bond = found[0]
-        assert bond.kind == "hydrogen_bond"
+        assert bond.kind == "hydrogen_bond_ligand_donor"
         assert np.isclose(bond.distance_nm, 0.20, atol=1e-3)
         assert np.isclose(bond.angle_deg, 180.0, atol=1.0)
 
