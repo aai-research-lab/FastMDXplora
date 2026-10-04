@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A joined run is pooled only from segments that resolve their correlation
+
+**A joined run's pooled mean is withheld while any contributing segment has not resolved its own correlation time, and the drift test can no longer be switched off by a segment without an error.** A segment whose error had been withheld was pooled anyway, and its NaN error made the heterogeneity NaN, which no comparison passes: on joined AR(1) runs with g = 200 in ten segments of 400 frames, a ramp of four standard deviations was pooled 50 times in 50, and the pooled error held the truth 21% of the time. Now the drift test runs on the segments whose errors can be read, a heterogeneity that is not a finite number counts as disagreement, and the pooled mean is then withheld as `analysis.sampling.correlation_unresolved` if any segment is unresolved. The report's convergence table reads the same function, so it shows no pooled error for such a run. Results change: joined runs whose segments are short against their correlation time no longer report a pooled mean (about a third of runs with g = 5 in segments of 400 frames).
+
 ### One set of water residue names
 
 **`water_sites` now finds water under every residue name MDTraj's `water` takes, and the names live in one set, `analysis/water_names.py`, for every module to use.** It kept six names (HOH, WAT, TIP, TIP3, SOL, H2O), so a run whose water was written TIP4, TIP2, OH2, HHO or OHH was refused as holding no water, and the Viewer's water map, which read the same list, found none. The set is MDTraj's eleven names with TIP5, TIP3P, SPC, T3P, T4P, T5P and DOD. Results change: water sites are found on systems whose water uses those names.

@@ -353,3 +353,65 @@ class TestTheReportReadsTheJoinsWithoutBeingTold(unittest.TestCase):
         (root / "joined.dcd.join.json").write_text("{not json",
                                                    encoding="utf-8")
         self.assertEqual(joins_beside(trajectory), [])
+
+
+def _ar1(n: int, g: float, seed: int) -> np.ndarray:
+    """A stationary AR(1) series of unit innovations whose statistical
+    inefficiency is ``g``: phi = (g - 1) / (g + 1)."""
+    phi = (g - 1.0) / (g + 1.0)
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(size=n)
+    series = np.empty(n)
+    series[0] = noise[0] / np.sqrt(1.0 - phi ** 2)
+    for i in range(1, n):
+        series[i] = phi * series[i - 1] + noise[i]
+    return series
+
+
+class TestASegmentWithoutAnErrorIsNotPooled(unittest.TestCase):
+    """A segment whose own error was withheld carried a NaN into the drift
+    test. ``1 / max(nan, 1e-300)`` is NaN, the heterogeneity was NaN, and
+    ``NaN > 1.0`` is False, so the refusal never fired: on joined AR(1) runs
+    with g = 200 in segments of 400 frames, a ramp of four standard
+    deviations was pooled 50 times in 50, and the pooled error held the
+    truth 21% of the time."""
+
+    G = 200.0
+    JOINS = [400 * i for i in range(1, 10)]
+
+    def _ramp(self, seed: int) -> np.ndarray:
+        sigma = 1.0 / np.sqrt(1.0 - ((self.G - 1) / (self.G + 1)) ** 2)
+        return _ar1(4000, self.G, seed) + np.linspace(0.0, 4.0 * sigma, 4000)
+
+    def test_the_audits_ramp_returns_no_mean(self):
+        for seed in range(5):
+            pooled, why = summarise_segments(self._ramp(seed), self.JOINS)
+            self.assertIsNone(pooled, f"seed {seed} pooled a ramp")
+            self.assertIn(refusal_of(why).code,
+                          {"analysis.sampling.drifting",
+                           "analysis.sampling.correlation_unresolved"})
+
+    def test_unresolved_segments_withhold_the_pooled_error(self):
+        # Stationary, so nothing is drifting: the reason is the segments.
+        pooled, why = summarise_segments(_ar1(4000, self.G, 11), self.JOINS)
+        self.assertIsNone(pooled)
+        refusal = refusal_of(why)
+        self.assertEqual(refusal.code,
+                         "analysis.sampling.correlation_unresolved")
+        self.assertEqual(refusal.details["needed"], 25.0)
+
+    def test_the_report_does_not_print_a_pooled_error_for_them(self):
+        from fastmdxplora.report.convergence import assess_series
+
+        assessment = assess_series("rmsd", self._ramp(0), joins=self.JOINS)
+        self.assertTrue(np.isnan(assessment.standard_error))
+
+    def test_a_non_finite_heterogeneity_counts_as_disagreement(self):
+        from fastmdxplora.statistics import _drift_test
+
+        means = np.arange(8, dtype=float)
+        precisions = np.full(8, np.nan)
+        _scatter, p, refusal = _drift_test(means, precisions)
+        self.assertLess(p, 0.05)
+        self.assertIsNotNone(refusal)
+        self.assertEqual(refusal_of(refusal).code, "analysis.sampling.drifting")

@@ -779,8 +779,13 @@ def summarise_segments(
     Returns
     -------
     (Pooled, None) or (None, Withholding)
-        Withheld where no segment supported a mean, or where the pooled
-        effective count falls short. Pooling does not rescue a run that
+        Withheld where no segment supported a mean, where the segment means
+        move in order (``analysis.sampling.drifting``), where any segment
+        that supported a mean did not resolve its own correlation time
+        (``analysis.sampling.correlation_unresolved``: its independent-sample
+        count is an upper bound, so the pooled error would be a lower one),
+        or where the pooled effective count falls short. Pooling does not
+        rescue a run that
         was too short: ten segments of two independent samples each is
         twenty, and twenty is twenty however it was collected -- but ten
         segments that each support nothing support nothing together.
@@ -800,6 +805,7 @@ def summarise_segments(
 
     edges = [0, *boundaries, values.size]
     pieces: list[Equilibrated] = []
+    kept_at: list[int] = []
     withheld: list[tuple[int, str]] = []
     for index, (start, stop) in enumerate(zip(edges, edges[1:])):
         # Each segment is equilibrated on its own. A segment that begins
@@ -813,6 +819,7 @@ def summarise_segments(
             withheld.append((index, str(why)))
             continue
         pieces.append(piece)
+        kept_at.append(index)
 
     if not pieces:
         return None, Withholding(
@@ -824,8 +831,51 @@ def summarise_segments(
             needed=float(minimum_effective_samples),
         )
 
-    weights = np.array([p.effective_samples for p in pieces], dtype=float)
+    # A segment whose own error was withheld (its correlation time is not
+    # resolved, or it holds one independent sample) has an independent-sample
+    # count that is an upper bound. Pooled in, it made the pooled error too
+    # small, and its NaN error made the agreement test NaN, which no
+    # comparison passes: on joined AR(1) runs with g = 200 in segments of
+    # 400 frames the drift refusal never fired on a ramp of four standard
+    # deviations, and the pooled error held the truth 21% of the time.
+    errors = np.array([p.standard_error for p in pieces], dtype=float)
+    resolved = np.isfinite(errors) & (errors > 0.0)
     means = np.array([p.mean for p in pieces], dtype=float)
+
+    # Before anything is pooled: do these segments agree that they are
+    # measuring one thing? Pooling assumes they do, and pooling estimates of
+    # a moving target gives a confident number for a quantity that does not
+    # exist. Asked first, of the segments whose errors can be read, because
+    # a run still moving is the more useful thing to say: longer segments
+    # would not cure it.
+    scatter, drifting, refusal = _drift_test(
+        means[resolved], 1.0 / errors[resolved] ** 2)
+    if refusal is not None:
+        return None, refusal
+
+    if not resolved.all():
+        unresolved = [index for index, ok in zip(kept_at, resolved) if not ok]
+        worst = min((p for p, ok in zip(pieces, resolved) if not ok),
+                    key=lambda p: p.effective_samples)
+        return None, Withholding(
+            f"{len(unresolved)} of {len(pieces)} segments of this joined run "
+            f"are not long against their own correlation time (numbered "
+            f"{', '.join(str(i) for i in unresolved)} from zero; the least "
+            f"resolved holds {worst.effective_samples:.1f} independent "
+            f"samples by its own estimate, against the "
+            f"{RESOLVED_SAMPLES:g} that resolve it). "
+            "Their independent-sample counts are upper bounds, so a pooled "
+            "error built on them would be too small, and the test for drift "
+            "between segments cannot be read from them. The remedy is longer "
+            "segments.",
+            code="analysis.sampling.correlation_unresolved",
+            frames=int(values.size),
+            independent=float(worst.effective_samples),
+            statistical_inefficiency=float(worst.inefficiency),
+            needed=float(RESOLVED_SAMPLES),
+        )
+
+    weights = np.array([p.effective_samples for p in pieces], dtype=float)
     total = float(weights.sum())
 
     if total < minimum_effective_samples:
@@ -848,31 +898,6 @@ def summarise_segments(
     pooled_variance = float((weights * variances).sum() / total)
     standard_error = float(np.sqrt(pooled_variance / total))
 
-    # Before reporting it: do these segments agree that they are measuring
-    # one thing? Pooling assumes they do, and pooling estimates of a moving
-    # target gives a confident number for a quantity that does not exist.
-    precisions = np.array(
-        [1.0 / max(p.standard_error ** 2, 1e-300) for p in pieces])
-    scatter = heterogeneity_ratio(means, precisions)
-    drifting = drift_across_segments(means, precisions)
-
-    if drifting < DRIFT_SIGNIFICANT_BELOW and scatter > 1.0:
-        # Both conditions, because either alone is not drift. A low p on
-        # segments that agree is a trend of nothing, and scatter with no
-        # order is underestimated error rather than movement.
-        span = float(means[-1] - means[0])
-        return None, Withholding(
-            f"The segment means move in order across the run, by {span:+.4g} "
-            f"from first to last, and an ordering this clean arises by "
-            f"chance about {drifting:.1%} of the time. The system had not "
-            "equilibrated at the scale of the whole run, so a pooled mean would "
-            "be the mean of a moving target with a confident error bar on "
-            "it. The remedy is a longer run, not more pooling.",
-            code="analysis.sampling.drifting",
-            drift_p=float(drifting), heterogeneity=float(scatter),
-            span=span, segments=len(pieces),
-        )
-
     qualification = ""
     if scatter > HETEROGENEITY_QUALIFY_ABOVE:
         qualification = (
@@ -893,6 +918,37 @@ def summarise_segments(
         drift_p=float(drifting),
         qualification=qualification,
     ), None
+
+
+def _drift_test(means: np.ndarray, precisions: np.ndarray
+                ) -> "tuple[float, float, Withholding | None]":
+    """The heterogeneity, the drift p-value, and the refusal for segment
+    means that move in order (None where they do not).
+
+    Both an ordering (``drift_across_segments`` below 0.05) and a
+    disagreement (``heterogeneity_ratio`` above one) are needed, because
+    either alone is not drift: a low p on segments that agree is a trend of
+    nothing, and scatter with no order is underestimated error rather than
+    movement. A heterogeneity that is not a finite number counts as
+    disagreement rather than agreement, so a NaN cannot switch the test off.
+    """
+    scatter = heterogeneity_ratio(means, precisions)
+    drifting = drift_across_segments(means, precisions)
+    agree = bool(np.isfinite(scatter) and scatter <= 1.0)
+    if drifting >= DRIFT_SIGNIFICANT_BELOW or agree:
+        return scatter, drifting, None
+    span = float(means[-1] - means[0])
+    return scatter, drifting, Withholding(
+        f"The segment means move in order across the run, by {span:+.4g} "
+        f"from first to last, and an ordering this clean arises by "
+        f"chance about {drifting:.1%} of the time. The system had not "
+        "equilibrated at the scale of the whole run, so a pooled mean would "
+        "be the mean of a moving target with a confident error bar on "
+        "it. The remedy is a longer run, not more pooling.",
+        code="analysis.sampling.drifting",
+        drift_p=float(drifting), heterogeneity=float(scatter),
+        span=span, segments=int(means.size),
+    )
 
 
 #: Observed scatter of segment means over what their own standard errors

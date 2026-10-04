@@ -267,6 +267,15 @@ scattered     mean=10.012 het=376   drift_p=0.69   qualified=True
 drifting      REFUSED -> analysis.sampling.drifting  (+1.75 first to last)
 ```
 
+**Every segment has to resolve its own correlation time.** A segment whose
+error was withheld holds an upper bound on its independent samples, so a
+pooled error built on it is too small (on joined AR(1) runs with g = 200 in
+segments of 400 frames it held the truth 21% of the time), and the drift test
+cannot be read from it. Where any contributing segment is in that state the
+pooled mean is withheld as `analysis.sampling.correlation_unresolved`, after
+the drift test has been run on the segments that can be read. The remedy is
+longer segments.
+
 One consequence worth knowing: any join offset large enough to fool the
 equilibration detector is also large enough to exceed what the per-segment
 errors predict, so a genuinely segmented run will usually come back **qualified
