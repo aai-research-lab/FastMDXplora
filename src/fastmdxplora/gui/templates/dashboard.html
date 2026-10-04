@@ -1021,6 +1021,16 @@
                 </div>
                 <p class="muted small" id="cmap-note" role="status"></p>
               </details>
+              <!-- The room in the ligand's pocket over the frames played,
+                   and the pocket rendered at the frame shown
+                   (viewer-pocket.js, pocket_volume.py). -->
+              <details class="side-section" id="side-pocket" hidden>
+                <summary>Pocket volume</summary>
+                <canvas class="pocket-canvas" id="pocket-canvas" width="300" height="110" role="img" aria-label="The pocket's volume over the frames played"></canvas>
+                <p class="small" id="pocket-now" role="status"></p>
+                <label class="chip-toggle" title="Render the pocket's empty space in the frame shown, the frames superposed on the pocket"><input type="checkbox" id="pocket-shown">Show the pocket</label>
+                <p class="muted small" id="pocket-note"></p>
+              </details>
               <!-- Another study's frames beside this one's: its residues
                    paired by sequence, fitted and timed to these
                    (viewer-beside.js, beside.py). -->
@@ -1595,6 +1605,7 @@
   <script src="/static/viewer-states.js"></script>
   <script src="/static/viewer-ramachandran.js"></script>
   <script src="/static/viewer-contact-map.js"></script>
+  <script src="/static/viewer-pocket.js"></script>
   <script src="/static/viewer-beside.js"></script>
 </body>
 </html>

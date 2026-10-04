@@ -150,7 +150,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/frames-pieces", "/structure/frames-piece.xtc",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
     "/api/states", "/api/state-difference", "/api/backbone-angles",
-    "/api/contact-map", "/api/contact-pair",
+    "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
@@ -171,7 +171,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
     "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
     "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/backbone-angles",
-    "/api/contact-map", "/api/contact-pair",
+    "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
 })
 
 
@@ -965,6 +965,27 @@ def make_handler(
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream"
                                  if path.endswith(".dcd") else "chemical/x-pdb; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path in ("/api/pocket-volume", "/structure/pocket.dx"):
+                from fastmdxplora.gui.pocket_volume import pocket_points, pocket_volume
+
+                asked = parse_qs(parsed.query)
+                one = lambda key: (asked.get(key) or [None])[0]  # noqa: E731
+                if path == "/api/pocket-volume":
+                    self._send_json(pocket_volume(root, one("ligand"), one("cutoff") or 5.0))
+                    return
+                text, reason = pocket_points(root, one("ligand"), one("cutoff") or 5.0,
+                                             one("frame"))
+                if text is None:
+                    self.send_error(404, reason)
+                    return
+                data = text.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()

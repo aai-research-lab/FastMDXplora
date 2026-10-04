@@ -135,6 +135,7 @@ FastMDXplora/
 │       │   ├── states.py          # The states the cluster analysis found, and two compared
 │       │   ├── backbone_angles.py # Each residue's φ and ψ in each frame played
 │       │   ├── contact_map.py     # Which residues touch which over the frames played
+│       │   ├── pocket_volume.py   # The room in a ligand's pocket, frame by frame (POVME's way)
 │       │   ├── beside.py          # Another study beside this one: paired by sequence, fitted, timed
 │       │   ├── measure.py         # A distance from the Viewer, over every frame
 │       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
@@ -168,7 +169,7 @@ FastMDXplora/
 │       │   │                      #   frame-interactions.js, chain-contacts.js,
 │       │   │                      #   viewer-occupancy.js, viewer-motion.js,
 │       │   │                      #   viewer-states.js, viewer-ramachandran.js,
-│       │   │                      #   viewer-contact-map.js,
+│       │   │                      #   viewer-contact-map.js, viewer-pocket.js,
 │       │   │                      #   viewer-beside.js; scene-view.js
 │       │   │                      #   (a scene on a page of its own)
 │       │   └── templates/         # dashboard.html, scene.html

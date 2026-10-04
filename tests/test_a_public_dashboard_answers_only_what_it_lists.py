@@ -287,6 +287,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # Which residues touch which over the frames played, and one
             # pair followed frame by frame.
             "/api/contact-map", "/api/contact-pair",
+            # The room in the ligand's pocket, frame by frame, and its empty
+            # points in one frame.
+            "/api/pocket-volume", "/structure/pocket.dx",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",

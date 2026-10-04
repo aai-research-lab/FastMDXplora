@@ -3692,6 +3692,11 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 #cmap-hover { margin: 2px 0 0; min-height: 1.4em; }
 #cmap-note { margin: 4px 0 0; }
 #cmap-note:empty { display: none; }
+/* The room in the ligand's pocket over the frames (viewer-pocket.js). */
+.pocket-canvas { display: block; width: 100%; max-width: 320px; height: 110px;
+                 margin: 6px 0 2px; cursor: crosshair; }
+#pocket-now { margin: 2px 0 6px; }
+#pocket-note { margin: 6px 0 0; }
 #chain-contacts-note:empty { display: none; }
 
 /* A movie of the frames (viewer-movie.js). */

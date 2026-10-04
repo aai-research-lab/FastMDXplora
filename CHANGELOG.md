@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A pocket's volume over the frames
+
+**The Viewer's Pocket volume section** plots, for a study with a ligand, how
+much room the protein leaves in the ligand's pocket in each frame played,
+counted on a grid as POVME counts it (within 4 Å of the ligand's place in
+the first frame, beyond every protein atom's van der Waals radius, inside
+the hull of the pocket's residues, joined to the ligand's place), the frames
+fitted on the pocket. A click on the plot shows that frame, and **Show the
+pocket** renders the empty space of the frame shown as a surface
+(`GET /api/pocket-volume`, `/structure/pocket.dx`). Checked against a
+known answer: a shell of protein atoms closing about a ligand.
+
 ### A contact map tied to the structure
 
 **The Viewer's Contact map** gives each pair of the protein's residues the
