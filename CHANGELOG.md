@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The live temperature counts only particles with mass
+
+**The temperature shown while a run is going counts the degrees of freedom of particles with mass only, as OpenMM's StateDataReporter does.** The massless M site of a four-point water was counted as three degrees of freedom: a TIP4P-Ew box at 300 K read 197.5 K against OpenMM's 296.4 K, and the GUI's telemetry flagged it as far from its target. A constraint between two massless particles is not counted either, and the count is made once per simulation rather than at every sample. Results change: live telemetry of runs with virtual sites (TIP4P-Ew, TIP5P, OPC) now reads the true temperature; the recorded state data, written by OpenMM, was always right.
+
 ### A joined run is pooled only from segments that resolve their correlation
 
 **A joined run's pooled mean is withheld while any contributing segment has not resolved its own correlation time, and the drift test can no longer be switched off by a segment without an error.** A segment whose error had been withheld was pooled anyway, and its NaN error made the heterogeneity NaN, which no comparison passes: on joined AR(1) runs with g = 200 in ten segments of 400 frames, a ramp of four standard deviations was pooled 50 times in 50, and the pooled error held the truth 21% of the time. Now the drift test runs on the segments whose errors can be read, a heterogeneity that is not a finite number counts as disagreement, and the pooled mean is then withheld as `analysis.sampling.correlation_unresolved` if any segment is unresolved. The report's convergence table reads the same function, so it shows no pooled error for such a run. Results change: joined runs whose segments are short against their correlation time no longer report a pooled mean (about a third of runs with g = 5 in segments of 400 frames).
