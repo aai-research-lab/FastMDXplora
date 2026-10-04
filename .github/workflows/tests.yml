@@ -84,13 +84,9 @@ jobs:
           # independent comparison with pre-registered tolerances, has never
           # been executed by CI either. From conda-forge here so pip does not
           # resolve numpy or scipy over the build openmm was compiled for.
-          #
-          # ffmpeg is what makes a movie in the GUI, found on the computer
-          # it runs on and never a dependency: here so the movie tests run.
           create-args: >-
             mdanalysis>=2.10
             prolif>=2.2
-            ffmpeg
             pytest
             pytest-timeout
             pytest-cov
@@ -204,6 +200,21 @@ jobs:
           python -m pip install -e ".[md]" || echo "::notice::the [md] extra has no wheels here; physics-dependent tests will skip"
           fi
 
+      - name: Install ffmpeg for the movie tests
+        # The GUI makes a movie with the ffmpeg of the computer it runs on,
+        # and is never given one. It was put in the corpus job's
+        # environment, which runs no movie test, so here every test that
+        # encodes a real movie skipped and coverage read the encoding as
+        # untested. The pipeline itself is tested against a stand-in ffmpeg
+        # on every job; these run the real one, on Linux, where it installs
+        # in seconds.
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -hide_banner -version | head -1
+
       - name: Install a browser for the GUI tests
         # The GUI is a web page, and what its scripts do can only be checked
         # in a browser: the composer's layout, the study frame, what the run
@@ -227,10 +238,13 @@ jobs:
         # faster untraced.
         shell: bash
         run: |
+          # -rs lists each skipped test with its reason, so a program or a
+          # package missing from a job is read here rather than inferred from
+          # a coverage report.
           if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.11" ]; then
-            pytest --cov=fastmdxplora --cov-report=term-missing --cov-report=xml
+            pytest -rs --cov=fastmdxplora --cov-report=term-missing --cov-report=xml
           else
-            pytest
+            pytest -rs
           fi
 
       - name: Lint

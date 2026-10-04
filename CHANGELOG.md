@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Movies tested on every job
+
+The encoding of a movie is tested against a stand-in ffmpeg on every job:
+which encoder is chosen and why, the command ffmpeg is given, and what is
+said when it fails. CI's Linux jobs install the real ffmpeg for the tests
+that encode a real movie, which had been put in the corpus job's
+environment, where no movie test runs, so they skipped where coverage was
+measured. Every job lists the tests it skipped, with the reason.
+
 ### A folder that holds no study is not shown as one
 
 **`fastmdx` typed alone opens the GUI with no study, as `fastmdx gui`
