@@ -84,6 +84,23 @@ def _resolve_profile_chains(root: Path, profile: dict) -> None:
     from fastmdxplora.gui.selection import topology_the_analyses_read
 
     topology = topology_the_analyses_read(root)
+    # A copied study may retain an existing absolute manifest path. Never
+    # resolve identities from that other study; accept a bounded local copy
+    # only when its bytes prove it is the same recorded topology.
+    if topology is not None and not topology.resolve().is_relative_to(root.resolve()):
+        recorded = topology
+        topology = None
+        try:
+            if recorded.stat().st_size <= 32_000_000:
+                for local in (root / "simulation" / "trajectory_topology.pdb",
+                              root / "setup" / "topology.pdb"):
+                    if (local.is_file() and local.resolve().is_relative_to(root.resolve())
+                            and local.stat().st_size == recorded.stat().st_size
+                            and local.read_bytes() == recorded.read_bytes()):
+                        topology = local
+                        break
+        except OSError:
+            pass
     identities: dict[int, set[tuple[str, str, str, str]]] = {}
     try:
         if (topology is not None and topology.suffix.lower() == ".pdb"

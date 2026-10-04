@@ -384,3 +384,21 @@ class TestTheChart:
         page.wait_for_function("FastMDXMoleculeViewer.STATE.researchSelection?.resseq === 6")
         assert page.evaluate("window.FastMDXMoleculeViewer.STATE.focusResidue") == {"resi": 6, "chain": "A", "icode": "", "resname": "ALA"}
         assert page.errors == []
+
+
+def test_moved_profile_uses_only_identical_local_recorded_topology(tmp_path):
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    root = _write_study(tmp_path / "study")
+    _analysis(root, "rmsf", "2 0.10\n3 0.25\n")
+    local = root / "simulation" / "trajectory_topology.pdb"
+    original = tmp_path / "original-topology.pdb"
+    original.write_bytes(local.read_bytes())
+    _manifest(root)
+    manifest_path = root / "analysis" / "analysis_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["resolved"]["topology"] = str(original)
+    manifest_path.write_text(json.dumps(manifest))
+    assert all(row["chain"] == "A" for row in series_payload(root, "rmsf")["residues"])
+    original.write_bytes(original.read_bytes().replace(b"ALA", b"GLY", 1))
+    assert all(row["chain"] is None for row in series_payload(root, "rmsf")["residues"])
