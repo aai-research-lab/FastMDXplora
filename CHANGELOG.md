@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Relative and polar surface
+
+**Per-residue SASA now gives each residue's surface as a fraction of its theoretical maximum, and a total run splits the surface into hydrophobic and polar.** An area alone does not say how exposed a residue is (0.5 nm² is about a sixth of a tryptophan's maximum and nearly all of a glycine's), and the total alone does not say whether a change is in exposed hydrophobic or polar surface. Both per-residue summaries gain `mean_relative_sasa`, the mean area over the theoretical maximum of Tien et al. 2013 (PLoS ONE 8, e80635), with the table of maxima in the code; a `total` run writes `sasa_polar_split.csv`, carbon and sulfur atoms' area as hydrophobic and nitrogen and oxygen atoms' as polar, each hydrogen with the atom it is bonded to, and records the mean of each after equilibration. Existing columns are unchanged.
+
 ### Secondary structure as fractions
 
 **Secondary structure now writes how much of the run each residue spent in helix, strand and coil, and how much of the protein is in each class in every frame.** It wrote the DSSP code of every residue in every frame and a heatmap of them, so a helix content or a residue's strand propensity had to be counted from the matrix by hand. `ss_fractions_per_residue.csv` and `ss_fractions.csv` are written beside `ss.dat`, with helix as DSSP H, G and I, strand as E and B, and coil as every other code, the grouping MDTraj's simplified alphabet uses. The helix and strand fractions over time are given a mean after equilibration with its standard error under `helix_fraction` and `strand_fraction` in the findings, by the same statistics as every other series.

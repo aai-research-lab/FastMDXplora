@@ -131,6 +131,68 @@ def _areas_that_were_written(
     , code="analysis.data.absent")
 
 
+#: Theoretical maximum accessible surface area of each amino acid, in A^2,
+#: from Tien, Meyer, Sydykova, Spielman and Wilke, "Maximum allowed solvent
+#: accessibilites of residues in proteins", PLoS ONE 8 (2013) e80635, Table 1,
+#: "Theor." column: the largest area DSSP gives residue X in a Gly-X-Gly
+#: tripeptide over every allowed backbone conformation, with a 1.4 A probe.
+#: A residue's relative SASA is its area divided by this.
+MAX_ASA_TIEN_2013_A2: dict[str, float] = {
+    "ALA": 129.0, "ARG": 274.0, "ASN": 195.0, "ASP": 193.0, "CYS": 167.0,
+    "GLN": 225.0, "GLU": 223.0, "GLY": 104.0, "HIS": 224.0, "ILE": 197.0,
+    "LEU": 201.0, "LYS": 236.0, "MET": 224.0, "PHE": 240.0, "PRO": 159.0,
+    "SER": 155.0, "THR": 172.0, "TRP": 285.0, "TYR": 263.0, "VAL": 174.0,
+}
+
+#: Force-field names of the twenty amino acids, read as the residue they are:
+#: AMBER's protonation and disulfide variants, CHARMM's histidines and
+#: GROMACS's, as `protein_names.PROTEIN_VARIANTS` lists them.
+_STANDARD_NAME = {
+    "CYX": "CYS", "CYM": "CYS", "CYS1": "CYS", "CYS2": "CYS",
+    "HID": "HIS", "HIE": "HIS", "HIP": "HIS", "HSD": "HIS", "HSE": "HIS",
+    "HSP": "HIS", "HISD": "HIS", "HISE": "HIS", "HISH": "HIS",
+    "ASH": "ASP", "ASPH": "ASP", "GLH": "GLU", "GLUH": "GLU",
+    "LYN": "LYS", "LYSN": "LYS",
+}
+
+
+def max_asa_nm2(residue_name: str) -> float:
+    """The Tien et al. 2013 theoretical maximum area of a residue, in nm^2,
+    or NaN for anything that is not one of the twenty amino acids."""
+    name = str(residue_name).strip().upper()
+    value = MAX_ASA_TIEN_2013_A2.get(_STANDARD_NAME.get(name, name))
+    return float("nan") if value is None else value / 100.0
+
+
+#: How an atom's area is classed in the hydrophobic/polar split: carbon and
+#: sulfur are hydrophobic (apolar), nitrogen and oxygen polar. A hydrogen
+#: takes the class of the heavy atom it is bonded to; anything else (a
+#: selenium, a phosphorus, a metal, a hydrogen with no bond recorded) is
+#: "other", so the three add up to the total.
+HYDROPHOBIC_ELEMENTS = frozenset({"C", "S"})
+POLAR_ELEMENTS = frozenset({"N", "O"})
+
+
+def surface_classes(topology: md.Topology) -> np.ndarray:
+    """Each atom's class for the split: 0 hydrophobic, 1 polar, 2 other."""
+
+    def by_element(atom) -> int:
+        symbol = getattr(atom.element, "symbol", "")
+        if symbol in HYDROPHOBIC_ELEMENTS:
+            return 0
+        if symbol in POLAR_ELEMENTS:
+            return 1
+        return 2
+
+    classes = np.array([by_element(a) for a in topology.atoms], dtype=int)
+    for first, second in topology.bonds:
+        for hydrogen, heavy in ((first, second), (second, first)):
+            if (getattr(hydrogen.element, "symbol", "") == "H"
+                    and getattr(heavy.element, "symbol", "") != "H"):
+                classes[hydrogen.index] = by_element(heavy)
+    return classes
+
+
 def _sample_std(values: np.ndarray) -> np.ndarray:
     """Each column's sample standard deviation over the frames (ddof=1),
     accumulated in double; NaN where there is a single frame, which has no
@@ -181,6 +243,30 @@ class SASA(Analysis):
 
     ``std_sasa_nm2`` is the sample standard deviation over the frames,
     dividing by n_frames - 1, in both places it is written.
+
+    Both per-residue summaries carry ``mean_relative_sasa``: the mean area
+    divided by the residue's theoretical maximum from Tien et al. 2013
+    (:data:`MAX_ASA_TIEN_2013_A2`), so 0 is buried and 1 as exposed as the
+    residue can be in a Gly-X-Gly tripeptide. NaN for a residue that is not
+    one of the twenty amino acids. The maxima were computed by DSSP on heavy
+    atoms with a 1.4 A probe, so the ratio is on that footing at the default
+    ``probe_radius``; with hydrogens present the areas here include them,
+    which on trypsin moves an exposed residue's area by a median of 4 per
+    cent.
+
+    A ``total`` run also writes ``sasa_polar_split.csv``, the total in each
+    frame split into ``hydrophobic_sasa_nm2`` (carbon and sulfur atoms),
+    ``polar_sasa_nm2`` (nitrogen and oxygen atoms) and ``other_sasa_nm2``
+    (any other element), each hydrogen counted with the heavy atom it is
+    bonded to; the three add up to ``sasa_nm2``. Their means after
+    equilibration are in the findings under ``hydrophobic_sasa`` and
+    ``polar_sasa``.
+
+    References
+    ----------
+    Tien, M. Z.; Meyer, A. G.; Sydykova, D. K.; Spielman, S. J.; Wilke, C. O.
+    Maximum allowed solvent accessibilites of residues in proteins.
+    *PLoS ONE* **2013**, 8, e80635.
     """
 
     name = "sasa"
@@ -324,9 +410,12 @@ class SASA(Analysis):
 
         if self.mode == "total":
             total = sasa.sum(axis=1)
+            self._record_polar_split(traj, sasa)
             return pd.DataFrame(
                 {"frame": np.arange(traj.n_frames), "sasa_nm2": total}
             )
+
+        self._remember_maxima(traj)
 
         if self.mode == "average_residue":
             # The mean exposure of each residue over the whole run, which is
@@ -367,6 +456,66 @@ class SASA(Analysis):
                 "sasa_nm2": sasa.flatten(),
             }
         )
+
+    _polar_split: pd.DataFrame | None = None
+    _maxima: pd.DataFrame | None = None
+
+    def _record_polar_split(self, traj: md.Trajectory, areas: np.ndarray) -> None:
+        """Split each frame's total by atom class and record the means."""
+        from fastmdxplora.analysis.base import _frame_interval_ns
+        from fastmdxplora.statistics import mean_record
+
+        classes = surface_classes(traj.topology)
+        split = np.stack([areas[:, classes == k].sum(axis=1, dtype=np.float64)
+                          for k in range(3)], axis=1)
+        self._polar_split = pd.DataFrame({
+            "frame": np.arange(traj.n_frames),
+            "hydrophobic_sasa_nm2": split[:, 0],
+            "polar_sasa_nm2": split[:, 1],
+            "other_sasa_nm2": split[:, 2],
+        })
+        interval = _frame_interval_ns(traj)
+        for k, name in enumerate(("hydrophobic_sasa", "polar_sasa")):
+            record = mean_record(split[:, k], frame_interval_ns=interval)
+            record["unit"] = "nm²"
+            self.findings[name] = record
+        self.findings["surface_classes"] = (
+            "Hydrophobic is the area of carbon and sulfur atoms, polar that of "
+            "nitrogen and oxygen atoms, each hydrogen counted with the heavy "
+            "atom it is bonded to; other is any remaining element. "
+            f"{int(np.sum(classes == 2))} of {classes.size} atoms are other."
+        )
+
+    def _remember_maxima(self, traj: md.Trajectory) -> None:
+        """Each residue's theoretical maximum area, keyed as the tables are."""
+        from fastmdxplora.analysis.residues import columns
+
+        residues = list(traj.topology.residues)
+        self._maxima = pd.DataFrame({
+            **columns(residues, traj.topology),
+            "max_asa_nm2": [max_asa_nm2(r.name) for r in residues],
+        })
+        self.findings["relative_sasa"] = (
+            "mean_relative_sasa is each residue's mean area over its "
+            "theoretical maximum, Tien et al. 2013 (PLoS ONE 8, e80635), "
+            "computed with a 1.4 A probe"
+            + ("." if abs(self.probe_radius - 0.14) < 1e-9 else
+               f"; this run used {self.probe_radius:g} nm, so the ratio is "
+               "not on the footing of those maxima.")
+        )
+
+    def _with_relative(self, summary: pd.DataFrame) -> pd.DataFrame:
+        """The summary with ``mean_relative_sasa`` beside its mean area."""
+        if self._maxima is None:
+            return summary
+        keys = [k for k in ("chain", "residue", "insertion") if k in summary]
+        maxima = self._maxima.drop_duplicates(subset=keys)
+        if "insertion" in keys:
+            maxima = maxima.assign(insertion=maxima["insertion"].fillna("").astype(str))
+            summary = summary.assign(insertion=summary["insertion"].fillna("").astype(str))
+        joined = summary.merge(maxima, on=keys, how="left")
+        joined["mean_relative_sasa"] = joined["mean_sasa_nm2"] / joined["max_asa_nm2"]
+        return joined.drop(columns="max_asa_nm2")
 
     def plot(self, result: pd.DataFrame, ax: plt.Axes) -> None:
         if self.mode == "total":
@@ -432,7 +581,13 @@ class SASA(Analysis):
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        result.to_csv(path, index=False)
+        if self.mode == "average_residue":
+            self._with_relative(result).to_csv(path, index=False)
+        else:
+            result.to_csv(path, index=False)
+        if self.mode == "total" and self._polar_split is not None:
+            self._polar_split.to_csv(path.parent / f"{self.name}_polar_split.csv",
+                                     index=False)
 
         if self.mode == "residue":
             # By chain and insertion code as well as number, where the table
@@ -447,7 +602,7 @@ class SASA(Analysis):
                 .agg(mean_sasa_nm2="mean", std_sasa_nm2="std")
                 .reset_index()
             )
-            summary.to_csv(
+            self._with_relative(summary).to_csv(
                 path.parent / f"{self.name}_average_per_residue.csv",
                 index=False,
             )

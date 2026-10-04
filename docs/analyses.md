@@ -33,7 +33,7 @@ analysis:
 |---|---|
 | `rmsd` | How far the structure has moved from a reference frame |
 | `rg` | Radius of gyration — how compact it is |
-| `sasa` | Solvent-accessible surface area: total, per residue, or each residue's mean |
+| `sasa` | Solvent-accessible surface area: total and its hydrophobic and polar parts, per residue, or each residue's mean and relative SASA |
 | `ss` | Secondary structure per residue per frame, by DSSP |
 
 ### Flexibility
@@ -287,6 +287,16 @@ against another tool.
   frames, and the spread is the sample standard deviation, dividing by the
   number of frames less one, both in `average_residue` mode and in the
   `sasa_average_per_residue.csv` written beside a `residue` run.
+
+- **Relative SASA** is written beside each residue's mean area in both
+  per-residue summaries, `mean_relative_sasa`: the mean over the residue's
+  theoretical maximum from Tien et al. 2013 (PLoS ONE 8, e80635), so 0 is
+  buried and 1 as exposed as the residue gets in a Gly-X-Gly tripeptide. Those
+  maxima were computed with a 1.4 Å probe, the default `probe_radius`. A
+  `total` run also writes `sasa_polar_split.csv`, the total of each frame
+  split into hydrophobic surface (carbon and sulfur atoms) and polar surface
+  (nitrogen and oxygen atoms), each hydrogen counted with the atom it is
+  bonded to, with their means after equilibration in the findings.
 
 - **SASA beside a ligand** is the protein's surface without it by default,
   because the selection is the protein: residues lining the pocket read as
