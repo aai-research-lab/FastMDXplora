@@ -199,6 +199,11 @@ against another tool.
 - **RMSD** superposes each frame on the reference before computing it, unless
   `align: false`.
 
+- **RMSF per residue** is the square root of the residue's mass-weighted mean
+  squared fluctuation, sqrt(Σ mᵢ MSFᵢ / Σ mᵢ), as GROMACS `gmx rmsf -res`
+  gives it. With the alpha-carbon default it is each alpha carbon's own RMSF.
+  A single frame is refused rather than reported as rigid.
+
 - **Radius of gyration** is mass-weighted by default, which is the physical
   definition; `mass_weighted: false` gives the geometric one.
 

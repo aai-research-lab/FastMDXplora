@@ -3,13 +3,19 @@
 Per-residue (default) or per-atom RMSF over the trajectory. The
 trajectory is first superposed onto a reference (frame 0 or a user-chosen
 reference) using the selected atom subset to remove rigid-body motion;
-the per-atom RMSF is then the standard deviation of each atom's position
-around its mean. The per-residue RMSF reduces per-atom RMSF to one value
-per residue by averaging over the atoms that belong to each residue.
+the per-atom RMSF is then the root-mean-square deviation of each atom's
+position about its mean::
+
+    MSF_i = < |r_i(t) - <r_i>|^2 >_t,   RMSF_i = sqrt(MSF_i)
+
+The per-residue RMSF is the square root of the residue's mass-weighted
+mean MSF, which is what GROMACS ``gmx rmsf -res`` reports::
+
+    RMSF_res = sqrt( sum_{i in res} m_i MSF_i / sum_{i in res} m_i )
 
 This is the standard "flexibility profile" plot used in nearly every MD
-publication — peaks indicate flexible loops/termini, troughs indicate
-rigid secondary structure.
+publication: peaks indicate flexible loops and termini, troughs rigid
+secondary structure.
 """
 
 from __future__ import annotations
@@ -51,9 +57,12 @@ class RMSF(Analysis):
         to each atom's mean position over the full trajectory, which is
         invariant under rigid-body alignment.
     per_residue : bool, default True
-        If True, collapse the per-atom RMSF down to one value per residue
-        by averaging over the residue's atoms. If False, return the
-        per-atom array (one value per selected atom).
+        If True, collapse the per-atom RMSF to one value per residue, the
+        square root of the mass-weighted mean of its atoms' squared
+        fluctuations, sqrt(sum m_i MSF_i / sum m_i), as GROMACS
+        ``gmx rmsf -res`` gives it. With the alpha-carbon default each
+        residue has one atom and this is that atom's RMSF. If False, return
+        the per-atom array (one value per selected atom).
     selection : str, optional
         MDTraj atom selection. Defaults to ``"protein and name CA"`` (alpha carbons)
         for protein analysis.
@@ -94,6 +103,36 @@ class RMSF(Analysis):
         self.ref: int = int(ref)
         self.per_residue: bool = bool(per_residue)
         self.options.update(ref=self.ref, per_residue=self.per_residue)
+        if self.per_residue:
+            self.options["per_residue_average"] = (
+                "sqrt(sum_i m_i MSF_i / sum_i m_i) over the residue's selected "
+                "atoms, as gmx rmsf -res")
+
+    def _weights(self, atoms: list) -> np.ndarray:
+        """Each atom's mass for the per-residue average, in amu.
+
+        A virtual site (element ``VS``, mass zero) has no mass and so no
+        weight. Where any other atom's mass is unknown, every atom is
+        weighted equally, and the finding says so.
+        """
+        masses = []
+        unknown: set[str] = set()
+        for atom in atoms:
+            element = getattr(atom, "element", None)
+            mass = getattr(element, "mass", None)
+            if mass is None or (not mass and getattr(element, "symbol", "") != "VS"):
+                unknown.add(atom.name)
+                masses.append(1.0)
+            else:
+                masses.append(float(mass))
+        if unknown:
+            self.findings["per_residue_weights"] = (
+                f"No element, and so no mass, for {len(unknown)} atom name(s) "
+                f"({', '.join(sorted(unknown)[:8])}), so the atoms of each "
+                "residue are weighted equally rather than by mass."
+            )
+            return np.ones(len(atoms), dtype=np.float64)
+        return np.asarray(masses, dtype=np.float64)
 
     def compute(self, traj: md.Trajectory) -> np.ndarray:
         """Compute the RMSF.
@@ -116,6 +155,13 @@ class RMSF(Analysis):
                 f"with {n} frames."
             , code="analysis.option.out_of_range")
 
+        if n < 2:
+            raise StudyError(
+                f"{n} frame: a fluctuation is a spread over frames, and one "
+                "frame has none, so every RMSF would read zero. At least two "
+                "frames are needed.",
+                code="analysis.sampling.too_few_frames", found=n, needed=2)
+
         aligned = superposed(traj, frame=ref, atom_indices=atom_idx)
 
         # Per-atom RMSF on the selected atoms only:
@@ -131,12 +177,19 @@ class RMSF(Analysis):
             atom_serials = _atom_labels(atoms)
             return np.column_stack([atom_serials, per_atom]).astype(np.float64)
 
-        # Collapse to per-residue by averaging over each residue's atoms in
-        # the selection. Preserve residue order as encountered.
+        # Collapse to per-residue: the square root of the mass-weighted mean
+        # MSF of the residue's atoms in the selection, which is what
+        # `gmx rmsf -res` reports. Averaging the RMSF instead reads low
+        # wherever a residue has one mobile atom among several rigid ones
+        # (0.1985 nm against 0.2951 on one floppy atom in four), and
+        # weighting the atoms equally counts a hydrogen for as much as a
+        # carbon. The "protein and name CA" default is one atom per residue,
+        # where all three expressions coincide.
         atoms = [traj.topology.atom(int(i)) for i in atom_idx]
-        residues: dict[int, list[float]] = {}
-        for atom, val in zip(atoms, per_atom):
-            residues.setdefault(atom.residue.index, []).append(float(val))
+        weights = self._weights(atoms)
+        residues: dict[int, list[tuple[float, float]]] = {}
+        for atom, val, weight in zip(atoms, per_atom, weights):
+            residues.setdefault(atom.residue.index, []).append((float(val), float(weight)))
 
         # Use residue.resSeq (PDB numbering) for the x axis when available;
         # fall back to topology index otherwise.
@@ -146,16 +199,11 @@ class RMSF(Analysis):
         for ridx in sorted(residues):
             res = traj.topology.residue(ridx)
             label = number(res)
-            # sqrt(mean(MSF)), which is what `rmsf -res` and cpptraj
-            # report and therefore what a published per-residue RMSF is.
-            # Averaging the RMSF instead reads low wherever a residue has
-            # one mobile atom among several rigid ones -- 0.1985 nm against
-            # 0.2951 on one floppy atom in four -- and the number is then
-            # not comparable with anything. Only bites for a multi-atom
-            # selection; the "name CA" default is one atom per residue and
-            # the two expressions coincide there.
-            values = np.asarray(residues[ridx], dtype=float)
-            rows.append((label, float(np.sqrt(np.mean(values ** 2)))))
+            values = np.array([v for v, _ in residues[ridx]], dtype=float)
+            mass = np.array([w for _, w in residues[ridx]], dtype=float)
+            if mass.sum() <= 0.0:
+                mass = np.ones_like(values)
+            rows.append((label, float(np.sqrt(np.sum(mass * values ** 2) / mass.sum()))))
 
         ordered = [traj.topology.residue(ridx) for ridx in sorted(residues)]
         if not distinct(traj.topology):

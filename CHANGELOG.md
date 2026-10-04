@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Per-residue RMSF as GROMACS gives it
+
+**A residue's RMSF is now the square root of its atoms' mass-weighted mean squared fluctuation, sqrt(sum m_i MSF_i / sum m_i), which is what `gmx rmsf -res` reports.** It was the unweighted sqrt(mean MSF) while its comment said it agreed with GROMACS, so a residue with a mobile hydrogen among rigid heavy atoms read more than 1.5 times the GROMACS value. The formula is stated in the docstring and in `options.json`; atoms with no known mass are weighted equally and a finding says so, and a virtual site has no weight. A trajectory of one frame, which returned an RMSF of zero for every residue with status ok, is refused with `analysis.sampling.too_few_frames`. Results change: per-residue RMSF over a selection with several atoms per residue; the alpha-carbon default is unchanged.
+
 ### Periodic warnings reach the mean
 
 **When an end-to-end distance or a set of moments of inertia is marked by the periodic box, every reader of its mean is now told, and the mean has no error bar.** Both analyses kept the warning in a top-level `findings["not_a_measurement"]`, which the report, the GUI and the Agent never open: they read `findings["mean"]`, so a chain folded by the box was reported as a mean with an error bar and nothing else. The warning is now written into the mean's record, its standard error is withheld, and the figure's legend says why there is no error bar. The top-level finding stays where it was.
