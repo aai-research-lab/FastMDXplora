@@ -1,11 +1,14 @@
 """Secondary structure assignment.
 
 Per-residue secondary structure across the trajectory using DSSP (Kabsch
-& Sander algorithm via MDTraj). Produces two outputs:
+& Sander algorithm via MDTraj). Produces:
 
   - A time-series heatmap showing the secondary structure of each residue
     at each frame (residue × frame matrix, colored by DSSP code).
   - The DSSP codes as a CSV (one row per frame, columns are residues).
+  - The fractions of helix, strand and coil, per residue over the frames
+    and per frame over the residues, with the equilibrated mean of the
+    helix and strand fractions in the findings.
 
 DSSP codes used (MDTraj's "simplified" 3-state output by default):
   - ``H`` : helix (3-10, alpha, pi)
@@ -53,6 +56,31 @@ _DSSP_TO_INT = {
 }
 _LABELS = {0: "Coil/Other", 1: "β-strand", 2: "Helix"}
 
+#: The three classes the fractions are reported in, from DSSP's eight codes
+#: as MDTraj's own simplification groups them: helix is alpha, 3-10 and pi
+#: (H, G, I), strand is extended strand and isolated bridge (E, B), and coil
+#: is every other code (turn T, bend S, and none). The simplified alphabet's
+#: H, E and C are the same three classes already.
+HELIX_CODES = frozenset({"H", "G", "I"})
+STRAND_CODES = frozenset({"E", "B"})
+CLASSES = ("helix", "strand", "coil")
+
+
+def class_fractions(codes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Helix, strand and coil fractions from a (frames, residues) code array.
+
+    Returns the per-frame fractions, shape (frames, 3): of the residues
+    assigned, the share in each class; and the per-residue fractions, shape
+    (residues, 3): of the frames analysed, the share in each class. Each row
+    of either sums to one.
+    """
+    codes = np.asarray(codes).astype(str)
+    helix = np.isin(codes, list(HELIX_CODES))
+    strand = np.isin(codes, list(STRAND_CODES))
+    coil = ~(helix | strand)
+    stacked = np.stack([helix, strand, coil], axis=-1).astype(np.float64)
+    return stacked.mean(axis=1), stacked.mean(axis=0)
+
 
 class SS(Analysis):
     """Per-residue secondary structure via DSSP.
@@ -70,7 +98,17 @@ class SS(Analysis):
     Output
     ------
     ``ss.dat`` — CSV with the per-frame DSSP code matrix.
+    ``ss_fractions_per_residue.csv``: each residue's fraction of the frames
+    analysed in helix, strand and coil.
+    ``ss_fractions.csv``: each frame's fraction of residues in helix, strand
+    and coil.
     ``ss.png`` — Heatmap (residue × frame), colored by structure class.
+
+    The three classes are helix (DSSP H, G, I), strand (E, B) and coil
+    (every other code), as MDTraj's simplification groups them. The mean
+    helix and strand fractions after equilibration, with their standard
+    errors, are recorded in the findings under ``helix_fraction`` and
+    ``strand_fraction`` by the same statistics as every other series.
     """
 
     name = "ss"
@@ -145,7 +183,31 @@ class SS(Analysis):
 
         df = pd.DataFrame(codes, columns=labels)
         df.insert(0, "frame", np.arange(traj.n_frames))
+        self._record_fractions(traj, codes, residues)
         return df
+
+    def _record_fractions(self, traj: md.Trajectory, codes: np.ndarray,
+                          residues: list) -> None:
+        """Keep the class fractions for the files, and put the mean helix
+        and strand fractions in the findings."""
+        from fastmdxplora.analysis.base import _frame_interval_ns
+        from fastmdxplora.analysis.residues import columns
+        from fastmdxplora.statistics import mean_record
+
+        per_frame, per_residue = class_fractions(codes)
+        self._per_frame = pd.DataFrame(
+            {"frame": np.arange(traj.n_frames),
+             **{f"{name}_fraction": per_frame[:, k] for k, name in enumerate(CLASSES)}})
+        named = (columns(residues, traj.topology) if len(residues) == codes.shape[1]
+                 else {"residue": np.arange(codes.shape[1])})
+        self._per_residue = pd.DataFrame(
+            {**named,
+             **{f"{name}_fraction": per_residue[:, k] for k, name in enumerate(CLASSES)}})
+        interval = _frame_interval_ns(traj)
+        for k, name in enumerate(CLASSES[:2]):
+            record = mean_record(per_frame[:, k], frame_interval_ns=interval)
+            record["unit"] = ""  # a fraction of the residues, as base records one
+            self.findings[f"{name}_fraction"] = record
 
     def plot(self, result: pd.DataFrame, ax: plt.Axes) -> None:
         # Drop the frame column for the heatmap
@@ -175,12 +237,22 @@ class SS(Analysis):
         cbar = ax.figure.colorbar(im, ax=ax, ticks=[0, 1, 2], shrink=0.7)
         cbar.set_ticklabels([_LABELS[0], _LABELS[1], _LABELS[2]])
 
+    _per_frame: pd.DataFrame | None = None
+    _per_residue: pd.DataFrame | None = None
+
     def save_data(self, result: pd.DataFrame, path) -> Any:
+        """The code matrix, and the class fractions per residue and per frame
+        beside it."""
         from pathlib import Path
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         result.to_csv(path, index=False)
+        if self._per_residue is not None:
+            self._per_residue.to_csv(
+                path.parent / f"{self.name}_fractions_per_residue.csv", index=False)
+        if self._per_frame is not None:
+            self._per_frame.to_csv(path.parent / f"{self.name}_fractions.csv", index=False)
         return path
 
     def default_xlabel(self) -> str | None:

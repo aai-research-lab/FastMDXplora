@@ -255,7 +255,13 @@ against another tool.
   assign, so a ligand does not appear as coil. There is no option to shell out
   to an external `mkdssp`: a system package is a poor dependency for something
   that already works, and where the two disagree that is a finding about DSSP
-  worth reporting rather than configuring around.
+  worth reporting rather than configuring around. Beside the code matrix it
+  writes the fraction of the frames each residue spent in helix (DSSP H, G, I),
+  strand (E, B) and coil (the rest), `ss_fractions_per_residue.csv`, and the
+  fraction of residues in each class in every frame, `ss_fractions.csv`. The
+  helix and strand fractions over time are given a mean after equilibration
+  with its error, as every series is, under `helix_fraction` and
+  `strand_fraction` in the findings.
 
 - **Q-value** uses a switching function rather than a hard cutoff, with β and λ
   exposed. Its contact set is over *pairs of heavy atoms*, which is the

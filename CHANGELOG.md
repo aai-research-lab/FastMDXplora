@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Secondary structure as fractions
+
+**Secondary structure now writes how much of the run each residue spent in helix, strand and coil, and how much of the protein is in each class in every frame.** It wrote the DSSP code of every residue in every frame and a heatmap of them, so a helix content or a residue's strand propensity had to be counted from the matrix by hand. `ss_fractions_per_residue.csv` and `ss_fractions.csv` are written beside `ss.dat`, with helix as DSSP H, G and I, strand as E and B, and coil as every other code, the grouping MDTraj's simplified alphabet uses. The helix and strand fractions over time are given a mean after equilibration with its standard error under `helix_fraction` and `strand_fraction` in the findings, by the same statistics as every other series.
+
 ### SASA beside a bound ligand
 
 **SASA on a complex now says that the surface reported is the protein's without the ligand, and `with_ligand: true` gives the surface with the ligand in place.** The selection is the protein by default, so the residues lining a pocket read as exposed: in trypsin with benzamidine bound, SER190 reads 0.110 nm² rather than the 0.001 nm² it has with the ligand present, with nothing in the record to say which. Where the study has a ligand the findings now say the surface is the apo surface in the bound conformation. The new option `with_ligand` runs Shrake-Rupley on the selection and the ligand together and reports the selection's atoms, summed by residue; it needs `ligand_resname`, which the analysis phase supplies. Results are unchanged unless `with_ligand` is set.
