@@ -1001,7 +1001,15 @@
                   </label>
                 </div>
                 <canvas class="rama-canvas" id="rama-canvas" width="300" height="300" role="img" aria-label="Ramachandran plot of the frames played"></canvas>
-                <p class="muted small" id="rama-key">Grey: every residue in every frame played. Dots: each residue in the frame shown (hollow, glycine). Line: the residue chosen over the frames, lighter later; the ring is the frame shown. A click on the line shows that frame; a click on a dot follows that residue.</p>
+                <!-- What each mark of the plot is, with the mark itself. -->
+                <ul class="plot-key" id="rama-key">
+                  <li><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" style="fill: var(--text-muted); opacity: .45"/><rect x="12" y="2" width="8" height="8" style="fill: var(--text-muted); opacity: .2"/></svg>All residues, all frames (darker where more often)</li>
+                  <li><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><circle cx="6" cy="6" r="3.5" style="fill: var(--accent-cyan)"/><circle cx="17" cy="6" r="3" style="fill: none; stroke: var(--accent-cyan); stroke-width: 1.4"/></svg>Each residue at the frame shown (hollow: glycine)</li>
+                  <li data-key="path" hidden><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><polyline points="2,9 8,4 14,8 21,3" style="fill: none; stroke: var(--accent-orange); stroke-width: 1.4"/><circle cx="2.5" cy="9" r="1.6" style="fill: var(--accent-orange); opacity: .35"/><circle cx="8" cy="4" r="1.6" style="fill: var(--accent-orange); opacity: .55"/><circle cx="14" cy="8" r="1.6" style="fill: var(--accent-orange); opacity: .8"/><circle cx="21" cy="3" r="1.6" style="fill: var(--accent-orange)"/></svg><span><span class="rama-key-chosen"></span> over the frames, faint at the first, solid at the last</span></li>
+                  <li data-key="ring" hidden><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><circle cx="12" cy="6" r="4.5" style="fill: none; stroke: var(--text-primary); stroke-width: 1.6"/></svg><span><span class="rama-key-chosen"></span> at the frame shown</span></li>
+                  <li data-key="choose">Choose a residue above, or click one in the structure, to follow it over the frames.</li>
+                </ul>
+                <p class="muted small" id="rama-hint">Click a point of the path to show that frame; click a dot to follow that residue.</p>
                 <p class="muted small" id="rama-note" role="status"></p>
               </details>
               <!-- Which residues touch which over the frames played, a pair

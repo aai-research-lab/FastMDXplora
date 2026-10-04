@@ -4,10 +4,12 @@
  * Behind, in grey, where every residue's φ and ψ fell over every frame
  * played; over it, each residue at the frame shown, moving as the frames
  * play (glycine hollow); and the residue chosen, its path over the frames,
- * lighter later, with a ring at the frame shown. A click on the path shows
- * that frame; a click on a dot follows that residue and selects it in the
- * structure; a residue selected in the structure or the sequence is
- * followed. The angles are computed once, when the section is first opened.
+ * faint at the first frames and solid at the last, with a ring at the frame
+ * shown. A key under the plot shows each mark beside what it is, the
+ * residue chosen named in it. A click on the path shows that frame; a click
+ * on a dot follows that residue and selects it in the structure; a residue
+ * selected in the structure or the sequence is followed. The angles are
+ * computed once, when the section is first opened.
  */
 (function () {
   "use strict";
@@ -228,10 +230,24 @@
     select.value = state.chosen == null ? "" : String(state.chosen);
   }
 
+  /* The key's lines for the residue chosen, named; or how to choose one. */
+  function keyed() {
+    var key = byId("rama-key");
+    if (!key) return;
+    var chosen = state.chosen != null && state.data ? nameOf(state.data.residues[state.chosen]) : "";
+    key.querySelectorAll(".rama-key-chosen").forEach(function (span) { span.textContent = chosen; });
+    key.querySelectorAll("[data-key='path'], [data-key='ring']").forEach(function (li) {
+      li.hidden = !chosen;
+    });
+    var ask = key.querySelector("[data-key='choose']");
+    if (ask) ask.hidden = !!chosen;
+  }
+
   function choose(index, select) {
     state.chosen = index == null || index < 0 ? null : index;
     var listed = byId("rama-residue");
     if (listed) listed.value = state.chosen == null ? "" : String(state.chosen);
+    keyed();
     draw();
     if (!select || state.chosen == null) return;
     var v = viewer();
@@ -343,6 +359,7 @@
       state.chosen = null;
       state.phi = state.psi = null;
       section.hidden = true;
+      keyed();
       say("");
     });
   }

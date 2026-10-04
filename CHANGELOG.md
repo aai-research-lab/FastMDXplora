@@ -73,6 +73,8 @@ residue in the frame shown as a dot that moves as the frames play, and the
 residue chosen (from a list, or selected in the structure or the sequence)
 as its path over the frames with a ring at the frame shown. A click on the
 path shows that frame; a click on a dot follows that residue and selects it.
+A key under the plot shows each mark beside what it is, the residue chosen
+named in it; the path is faint at the first frames and solid at the last.
 The angles are MDTraj's, from the frames played (`GET /api/backbone-angles`).
 
 ### Movies from the command line and from an AI app

@@ -122,7 +122,11 @@ def test_the_viewer_follows_a_residue_over_the_frames(study):
                                    ".textContent.startsWith('φ and ψ of')")
             listed = page.eval_on_selector_all("#rama-residue option",
                                                "o => o.map((x) => x.textContent)")
+            shown = "(sel) => [...document.querySelectorAll(sel)].filter((e) => !e.hidden)" \
+                ".map((e) => e.textContent.trim())"
+            key_before = page.evaluate(f"({shown})('#rama-key li')")
             page.select_option("#rama-residue", label="A ALA 55")
+            key_after = page.evaluate(f"({shown})('#rama-key li')")
             path = page.evaluate(f"() => {rama}.state.path.length")
             selected = page.evaluate(f"() => {VIEWER}.STATE.selection.residues")
             note = page.text_content("#rama-note")
@@ -177,6 +181,13 @@ def test_the_viewer_follows_a_residue_over_the_frames(study):
     finally:
         session.server.shutdown()
     assert errors == []
+    # The key: each mark beside what it is, the residue chosen named.
+    assert key_before == ["All residues, all frames (darker where more often)",
+                          "Each residue at the frame shown (hollow: glycine)",
+                          "Choose a residue above, or click one in the structure, to follow it "
+                          "over the frames."]
+    assert key_after[2:] == ["A ALA 55 over the frames, faint at the first, solid at the last",
+                             "A ALA 55 at the frame shown"]
     assert listed[0] == "None chosen" and "A ILE 16" in listed and "A GLY 193" in listed
     assert path == FRAMES
     assert selected == [{"chain": "A", "resi": 55, "icode": "", "resn": "ALA"}]
