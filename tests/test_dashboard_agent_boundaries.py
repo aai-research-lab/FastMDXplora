@@ -1216,6 +1216,23 @@ def test_protein_residue_clicks_highlight_and_prepare_a_question(tmp_path, monke
                 atom.callback(atom);
             }""")
             assert page.evaluate("FastMDXResearch.capture().selection.atom") == "CA"
+            # Playback replaces the atoms; clicks must remain available on
+            # the initial trajectory frame and after advancing to another.
+            page.locator('[data-action="next-frame"]').click()
+            page.wait_for_function("FastMDXMoleculeViewer.STATE.playbackLoaded")
+            for index in (1, 2):
+                page.wait_for_function("index => Number(document.getElementById('traj-slider').value) === index", arg=index)
+                page.evaluate("""() => {
+                    const atom = FastMDXMoleculeViewer.STATE.model.selectedAtoms({resn:'ALA',resi:2,atom:'CA'})[0];
+                    if (!atom.clickable || typeof atom.callback !== 'function') throw new Error('Playback atom is not clickable');
+                    atom.callback(atom);
+                }""")
+                assert page.evaluate("FastMDXResearch.capture().selection.atom") == "CA"
+                assert page.evaluate("FastMDXResearch.capture().selection.resseq") == 2
+                assert page.evaluate("FastMDXResearch.capture().frame") == index
+                if index == 1:
+                    page.locator('[data-action="next-frame"]').click()
+
             browser.close()
     finally:
         server.shutdown()

@@ -7,6 +7,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+- Trajectory playback now attaches atom/residue click callbacks to each displayed frame, so direct selection and pinning work after stepping through the trajectory.
+
 - Restore documented dashboard Agent actions and modes; requested validated scientific settings load directly into the builder without an extra approval dialog. Saved conversations do not automatically overwrite its settings.
 
 - Copied studies resolve graph residues and Agent evidence through a local topology only when its bytes exactly match the recorded original. Changed bytes remain refused.

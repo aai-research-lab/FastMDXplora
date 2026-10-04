@@ -527,6 +527,7 @@
       if (opts.main) {
         STATE.model = model;
         STATE.playbackLoaded = true;
+        bindResearchInteractions(viewer);
         document.getElementById("viewer-canvas-frame")?.setAttribute("data-ready", "true");
         styleViewer(viewer, model, false);
       } else {
@@ -1515,6 +1516,7 @@
     if (!viewer || typeof viewer.setFrame !== "function") return;
     try {
       await Promise.resolve(viewer.setFrame(index));
+      if (viewer === STATE.viewer) bindResearchInteractions(viewer);
       viewer.render();
     } catch (error) {
       console.debug("3Dmol setFrame failed", error);
@@ -1590,6 +1592,13 @@
       setOverlay(false, {stage: "playback", frame, simtime: STATE.playbackFrameTimes[frame]});
     } else if (STATE.mode === "live" && STATE.liveDisplayInfo) setOverlay(true, STATE.liveDisplayInfo);
     else setOverlay(false, {stage: "prepared system"});
+  }
+
+  function bindResearchInteractions(viewer) {
+    // Each playback frame has its own atoms. Attach presentation callbacks
+    // after switching frames, without changing any coordinates or identities.
+    viewer.setHoverable({}, true, onHoverAtom, clearHoverAtom);
+    viewer.setClickable({}, true, onClickAtom);
   }
 
   function onHoverAtom(atom) {
