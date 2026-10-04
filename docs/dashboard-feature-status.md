@@ -68,6 +68,12 @@ A fresh direct NDJSON request through the installed `6d5407a` dashboard returned
 
 Windows.Graphics.Capture through the bundled computer-use skill exposed the actual native option popup on corrected installed wheel `6d5407a`, port 8787. Default protein-representation menus were visually inspected in Graphite, Ink and Paper: unselected options have black backgrounds/white text; the native selected highlight is light blue/dark text and readable. The subscription-model menu was also inspected in Paper, confirming the readable options and Astra → Sol 6.1 → Sol 6 → Luna 6 → remaining order. Popups were dismissed without selecting an option; Graphite was restored. No account/model/reasoning or scientific setting changed. This supersedes the earlier browser-only capture limitation for representative menus on this Windows host; it does not claim every OS/browser implementation or every individual menu was visually captured. The corrected-wheel review server on 8787 remains available; the user server on 8783 was untouched.
 
+### Bounded full-preparation recorder measurement — 2026-10-03
+
+The existing seeded protein audit-on/off equivalence fixture was executed with wall-clock measurement around the complete `a_real_setup` call on the explicit Reference backend, seed 314159. Audit off took 7.649 s; audit on took 7.552 s. The enabled journal and sixteen immutable snapshot files occupied 271,139 bytes (17 files total); disabled recording produced none. The existing exact input/prepared/topology PDB and System XML comparisons passed, as did positions/box comparisons with absolute tolerance 1e-10. The journal completed without warnings. Receipt: temporary `FastMDXplora-recorder-overhead-qnt_qruj/receipt.json`.
+
+This is one paired small-protein preparation, not production MD or a statistical overhead benchmark. The negative timing difference is ordinary measurement variation and does not prove recording accelerates preparation. It adds full-preparation storage/timing evidence beyond the earlier single-observation POPC measurement; membrane/ligand overhead and broader backend gates remain qualified/open. No product source or scientific defaults changed.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
