@@ -17,6 +17,7 @@ FastMDXplora/
 │       ├── own_programs.py        # Puts this environment's programs (AmberTools) on PATH
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
+│       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
@@ -94,7 +95,8 @@ FastMDXplora/
 │       │   │                      #   molecule-viewer.js, charts.js, and the viewer:
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
 │       │   │                      #   viewer-sequence.js, viewer-selections.js,
-│       │   │                      #   viewer-views.js, frame-series.js, frame-interactions.js
+│       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
+│       │   │                      #   frame-interactions.js
 │       │   └── templates/         # dashboard.html
 │       ├── remote/
 │       │   ├── probe.py           # The read-only inspection script, and reading its answer

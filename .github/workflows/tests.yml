@@ -84,9 +84,13 @@ jobs:
           # independent comparison with pre-registered tolerances, has never
           # been executed by CI either. From conda-forge here so pip does not
           # resolve numpy or scipy over the build openmm was compiled for.
+          #
+          # ffmpeg is what makes a movie in the GUI, found on the computer
+          # it runs on and never a dependency: here so the movie tests run.
           create-args: >-
             mdanalysis>=2.10
             prolif>=2.2
+            ffmpeg
             pytest
             pytest-timeout
             pytest-cov

@@ -7,6 +7,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Movies of the frames
+
+**The Viewer makes a movie of a study's frames as they are shown**, from its
+new Movie section: from one frame to another, every so many, at 10 to 60
+frames a second, as wide as the view is shown (1920 pixels across) or at
+720p, 1080p or 4K, with the time of each frame in the corner, the colour bar
+of a result, and one turn about the screen's vertical where asked. Each frame
+is rendered as a picture, as the camera button renders one, and sent to the
+GUI's server, where **ffmpeg on the same computer** encodes them as they
+arrive: H.264 in an MP4 (libx264, then VideoToolbox or OpenH264), or VP9 or
+VP8 in a WebM where that ffmpeg has no H.264 encoder, each encoder tried on a
+test movie before it is chosen. The pictures' RGB is encoded as BT.709 and
+the movie is tagged so, so a result's colours come back as they went in. The
+movie is kept with the study (`movies/<name>.mp4`, its comment saying the
+frames and the version that made it) and downloaded, and the frame and the
+camera shown before are put back. ffmpeg is not a dependency: `fastmdx info`
+says where it is found, or how to install it. The tests check each frame of
+a movie is the frame it says it is.
+
 ### Scenes opened, and written by an AI app
 
 **The scenes written with a study are listed beside its saved views, and

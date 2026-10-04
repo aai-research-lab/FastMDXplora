@@ -1963,6 +1963,11 @@ _BACKENDS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
     ("to write the report as a PDF", (
         ("WeasyPrint", "weasyprint", "conda install -c conda-forge weasyprint"),
     )),
+    ("to make a movie in the GUI", (
+        # A program rather than a module, answered by _CAPABILITIES: the
+        # ffmpeg the GUI would run, found as it finds it.
+        ("ffmpeg", "ffmpeg", "conda install -c conda-forge ffmpeg"),
+    )),
     ("for optional extras", (
         ("UMAP", "umap", "conda install -c conda-forge umap-learn"),
         ("PLUMED", "openmmplumed", "conda install -c conda-forge openmm-plumed"),
@@ -1975,6 +1980,7 @@ _BACKENDS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
 #: cannot disagree.
 _CAPABILITIES: dict[str, tuple[str, str]] = {
     "am1bcc": ("fastmdxplora.setup.ligand", "am1bcc_provider"),
+    "ffmpeg": ("fastmdxplora.movies", "find_ffmpeg"),
 }
 
 

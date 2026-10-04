@@ -844,6 +844,14 @@ def make_handler(
 
                 self._send_json(scenes_of(root))
                 return
+            if path == "/api/movies":
+                # What a movie is made with on this computer, and the movies
+                # made. Not answered beyond loopback: it names this
+                # computer's ffmpeg, and making one writes the study.
+                from fastmdxplora.movies import encoding, movies_of
+
+                self._send_json({**encoding(), "movies": movies_of(root)["movies"]})
+                return
             if path.startswith("/scenes/"):
                 # One file of a scene written with the study, so a viewer
                 # given the scene's address finds the files it names.
@@ -880,7 +888,36 @@ def make_handler(
                 # Refused unless listed as open; see the list for why.
                 self._refuse_beyond_loopback()
                 return
+            if path.startswith("/api/movies/") and path.endswith("/frame"):
+                # A frame of a movie, a PNG as the body rather than JSON.
+                self._add_movie_frame(path.removeprefix("/api/movies/").removesuffix("/frame"))
+                return
             payload = self._read_json_body()
+            if path == "/api/movies":
+                # A movie of the study's frames started: ffmpeg on this
+                # computer encodes the frames the Viewer sends (movies.py).
+                from fastmdxplora.movies import start_movie
+
+                study = app_runtime.data_root()
+                if not is_study(study):
+                    self._send_json({"ok": False, "reason": "No study is open to save it in."})
+                    return
+                self._send_json(start_movie(study, payload.get("name"), fps=payload.get("fps"),
+                                            width=payload.get("width"),
+                                            height=payload.get("height"),
+                                            about=str(payload.get("about") or "")))
+                return
+            if path.startswith("/api/movies/"):
+                from fastmdxplora.movies import cancel_movie, finish_movie
+
+                key, _, action = path.removeprefix("/api/movies/").partition("/")
+                if action == "finish":
+                    self._send_json(finish_movie(key))
+                elif action == "cancel":
+                    self._send_json(cancel_movie(key))
+                else:
+                    self.send_error(404, "Not found")
+                return
             if path == "/api/scenes":
                 # A view of the Viewer written with the study as a scene.
                 from fastmdxplora.gui.viewer_selections import selections_of
@@ -1287,6 +1324,26 @@ def make_handler(
                 if not chunk:
                     return
                 remaining -= len(chunk)
+
+        def _add_movie_frame(self, key: str) -> None:
+            from fastmdxplora.movies import MOST_A_FRAME_MAY_BE, add_frame
+
+            try:
+                length = int(self.headers.get("Content-Length", "0") or 0)
+            except ValueError:
+                length = -1
+            if not 0 < length <= MOST_A_FRAME_MAY_BE:
+                # Not read: the answer is sent and the connection closed,
+                # with whatever body there is left on it.
+                self.close_connection = True
+                self._body_was_read = True
+                self._send_json({"ok": False, "reason": "A frame is a PNG of at most "
+                                 f"{MOST_A_FRAME_MAY_BE // 1_000_000} MB."}, status=413
+                                if length > MOST_A_FRAME_MAY_BE else 400)
+                return
+            self._body_was_read = True
+            data = self.rfile.read(length)
+            self._send_json(add_frame(key, data))
 
         def _read_json_body(self) -> dict[str, Any]:
             try:

@@ -1211,6 +1211,8 @@
   function wireKeys() {
     document.addEventListener("keydown", (event) => {
       if (document.documentElement.dataset.page !== "viewer") return;
+      // A movie being made shows its own frames (viewer-movie.js).
+      if (STATE.makingMovie) return;
       if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
       const target = event.target;
       // Escape is the one key a button does nothing with.
@@ -1391,41 +1393,7 @@
           canvas.height = image.naturalHeight;
           const context = canvas.getContext("2d");
           context.drawImage(image, 0, 0);
-          const scale = Math.max(1, canvas.width / 900);
-          const pad = 10 * scale;
-          const width = 200 * scale;
-          const lookup = STATE.model ? lookupFor(property) : null;
-          const none = lookup && lookup.unnamed
-            ? (lookup.named ? `No value: ${lookup.unnamed}` : "No residue shown has a value") : "";
-          const height = (none ? 74 : 56) * scale;
-          const left = 14 * scale;
-          const top = canvas.height - 14 * scale - height;
-          context.fillStyle = "rgba(5, 5, 5, 0.82)";
-          context.fillRect(left, top, width, height);
-          context.fillStyle = "#f5f5f7";
-          context.textBaseline = "top";
-          context.font = `600 ${12 * scale}px sans-serif`;
-          context.fillText(legendTitle(property), left + pad, top + pad, width - 2 * pad);
-          const bar = context.createLinearGradient(left + pad, 0, left + width - pad, 0);
-          const stops = property.reverse ? RESULT_STOPS.slice().reverse() : RESULT_STOPS;
-          stops.forEach((stop, index) => bar.addColorStop(index / (stops.length - 1), `rgb(${stop.join(",")})`));
-          context.fillStyle = bar;
-          context.fillRect(left + pad, top + pad + 18 * scale, width - 2 * pad, 10 * scale);
-          context.fillStyle = "#c4c4ca";
-          context.font = `${11 * scale}px monospace`;
-          const ends = top + pad + 31 * scale;
-          context.textAlign = "left";
-          context.fillText(formatValue(Number(property.low)), left + pad, ends);
-          context.textAlign = "right";
-          context.fillText(formatValue(Number(property.high)), left + width - pad, ends);
-          if (none) {
-            context.textAlign = "left";
-            context.fillStyle = NO_VALUE;
-            context.fillRect(left + pad, ends + 17 * scale, 10 * scale, 10 * scale);
-            context.fillStyle = "#c4c4ca";
-            context.font = `${11 * scale}px sans-serif`;
-            context.fillText(none, left + pad + 16 * scale, ends + 16 * scale);
-          }
+          drawTheLegend(context, property);
           resolve(canvas.toDataURL("image/png"));
         } catch (error) {
           reject(error);
@@ -1433,6 +1401,49 @@
       };
       image.src = uri;
     });
+  }
+
+  /** The colour bar of a result, in the lower left corner of what
+   * ``context`` draws on: a picture, or a frame of a movie. */
+  function drawTheLegend(context, property) {
+    const canvas = context.canvas;
+    const scale = Math.max(1, canvas.width / 900);
+    const pad = 10 * scale;
+    const width = 200 * scale;
+    const lookup = STATE.model ? lookupFor(property) : null;
+    const none = lookup && lookup.unnamed
+      ? (lookup.named ? `No value: ${lookup.unnamed}` : "No residue shown has a value") : "";
+    const height = (none ? 74 : 56) * scale;
+    const left = 14 * scale;
+    const top = canvas.height - 14 * scale - height;
+    context.save();
+    context.fillStyle = "rgba(5, 5, 5, 0.82)";
+    context.fillRect(left, top, width, height);
+    context.fillStyle = "#f5f5f7";
+    context.textBaseline = "top";
+    context.font = `600 ${12 * scale}px sans-serif`;
+    context.fillText(legendTitle(property), left + pad, top + pad, width - 2 * pad);
+    const bar = context.createLinearGradient(left + pad, 0, left + width - pad, 0);
+    const stops = property.reverse ? RESULT_STOPS.slice().reverse() : RESULT_STOPS;
+    stops.forEach((stop, index) => bar.addColorStop(index / (stops.length - 1), `rgb(${stop.join(",")})`));
+    context.fillStyle = bar;
+    context.fillRect(left + pad, top + pad + 18 * scale, width - 2 * pad, 10 * scale);
+    context.fillStyle = "#c4c4ca";
+    context.font = `${11 * scale}px monospace`;
+    const ends = top + pad + 31 * scale;
+    context.textAlign = "left";
+    context.fillText(formatValue(Number(property.low)), left + pad, ends);
+    context.textAlign = "right";
+    context.fillText(formatValue(Number(property.high)), left + width - pad, ends);
+    if (none) {
+      context.textAlign = "left";
+      context.fillStyle = NO_VALUE;
+      context.fillRect(left + pad, ends + 17 * scale, 10 * scale, 10 * scale);
+      context.fillStyle = "#c4c4ca";
+      context.font = `${11 * scale}px sans-serif`;
+      context.fillText(none, left + pad + 16 * scale, ends + 16 * scale);
+    }
+    context.restore();
   }
 
   /* ------------------------------------------------------------------ */
@@ -2498,6 +2509,32 @@
     modelSignature,
     needsFullTopology,
     restyle: restyleViewers,
+    // What a movie is made of (viewer-movie.js): the frames loaded, one
+    // shown, the playback and the following stopped, and the colour bar.
+    movie: {
+      frames: async () => {
+        const payload = await ensurePlaybackPayload();
+        if (!payload || !payload.playback_available || !(await loadPlayback(payload))) return null;
+        return {count: STATE.playbackFrames, times: STATE.playbackFrameTimes.slice()};
+      },
+      shownFrame: () => Number(document.getElementById("traj-slider")?.value || 0),
+      showFrame: setPlaybackFrame,
+      hold: () => {
+        pausePlayback();
+        stopFollowing();
+        STATE.liveUpdates = false;
+        const spinning = !!STATE.spinning;
+        if (spinning) setSpinning(STATE.engine, false);
+        return {spinning};
+      },
+      release: (held) => {
+        if (held && held.spinning) setSpinning(STATE.engine, true);
+      },
+      legend: (context) => {
+        const property = activeResult();
+        if (property) drawTheLegend(context, property);
+      },
+    },
     // The atoms a selection names, as the engine reads them, for the tests.
     atoms: (selection) => (STATE.engine ? STATE.engine.find(selection || {}) : []),
     // What the colours and the cartoon are made from, for the tests.

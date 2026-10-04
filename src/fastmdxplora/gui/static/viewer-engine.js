@@ -148,7 +148,7 @@
     "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame",
     "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
     "showPicks", "showSelected", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
-    "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "setCells"]);
+    "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "still", "setCells"]);
 
   function oneAtATime(engine) {
     let last = Promise.resolve();
@@ -1627,11 +1627,68 @@
       return helper.getImageDataUri();
     }
 
+    /** The view rendered at `width` by `height` pixels, as a canvas, for a
+     * frame of a movie: what has changed in the scene is committed first,
+     * so the frame shown is the frame rendered. Mol*'s screenshot helper
+     * renders it, as for a picture, without encoding it as a PNG only to
+     * be read back. */
+    async still(width, height) {
+      const canvas3d = this.plugin.canvas3d;
+      if (!canvas3d) return null;
+      canvas3d.commit(true);
+      const helper = this.plugin.helpers.viewportScreenshot;
+      helper.behaviors.values.next({...helper.behaviors.values.value,
+        resolution: {name: "custom", params: {width, height}}});
+      if (typeof helper.draw === "function" && helper.canvas) {
+        await helper.draw(QUIET_RUNTIME);
+        return helper.canvas;
+      }
+      const uri = await helper.getImageDataUri();
+      const image = new Image();
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = uri;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext("2d").drawImage(image, 0, 0);
+      return canvas;
+    }
+
+    /** The camera turned by `angle` radians about the screen's vertical
+     * through what it looks at, from `snapshot`, at once. */
+    turnCamera(snapshot, angle) {
+      const canvas3d = this.plugin.canvas3d;
+      if (!canvas3d || !snapshot) return;
+      const {position, target, up} = snapshot;
+      const k = normalised(up);
+      const v = [0, 1, 2].map((i) => position[i] - target[i]);
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const kv = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+      const cross = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
+      // Rodrigues' rotation of the line of sight about the up vector.
+      const turned = [0, 1, 2].map((i) => target[i]
+        + v[i] * cos + cross[i] * sin + k[i] * kv * (1 - cos));
+      canvas3d.camera.setState({...snapshot, position: turned}, 0);
+    }
+
     dispose() {
       if (this.resizing) this.resizing.disconnect();
       this.view.unmount();
       this.plugin.dispose();
     }
+  }
+
+  /* What Mol*'s rendering asks of a task as it goes; a frame of a movie
+   * reports nothing. */
+  const QUIET_RUNTIME = {isSynchronous: false, shouldUpdate: false, update: async () => {}};
+
+  function normalised(v) {
+    const length = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / length, v[1] / length, v[2] / length];
   }
 
   function absolute(url) {

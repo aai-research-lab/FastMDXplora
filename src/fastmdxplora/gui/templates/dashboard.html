@@ -911,6 +911,56 @@
                     </div>
                 </div>
               </details>
+              <!-- A movie of the frames, rendered here and encoded by ffmpeg
+                   on this computer (viewer-movie.js, movies.py). -->
+              <details class="side-section" id="side-movie" open>
+                <summary>Movie</summary>
+                <form class="movie-form" id="movie-form" autocomplete="off">
+                  <fieldset class="movie-settings" id="movie-settings">
+                    <legend class="sr-only">How the movie is made</legend>
+                    <div class="control-row">
+                      <label class="select-field">From frame <input type="number" id="movie-from" min="0" step="1" value="0"></label>
+                      <label class="select-field">To <input type="number" id="movie-to" min="0" step="1" placeholder="last"></label>
+                      <label class="select-field">Every <input type="number" id="movie-every" min="1" step="1" value="1"></label>
+                    </div>
+                    <div class="control-row">
+                      <label class="select-field">Frames a second
+                        <select id="movie-fps">
+                          <option value="10">10</option>
+                          <option value="15">15</option>
+                          <option value="24" selected>24</option>
+                          <option value="25">25</option>
+                          <option value="30">30</option>
+                          <option value="60">60</option>
+                        </select>
+                      </label>
+                      <label class="select-field">Size
+                        <select id="movie-size">
+                          <option value="shown" selected>As shown, 1920 across</option>
+                          <option value="1280x720">1280 &times; 720 (HD)</option>
+                          <option value="1920x1080">1920 &times; 1080 (Full HD)</option>
+                          <option value="3840x2160">3840 &times; 2160 (4K)</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="control-group" role="group" aria-label="In the movie">
+                      <label class="chip-toggle" title="The simulated time of each frame, in the lower right corner"><input type="checkbox" id="movie-time" checked>Time</label>
+                      <label class="chip-toggle" title="The camera turned once about the screen's vertical over the movie"><input type="checkbox" id="movie-turn">One turn</label>
+                    </div>
+                    <div class="sel-naming">
+                      <input type="text" id="movie-name" maxlength="60" aria-label="Name of the movie" value="movie">
+                      <button type="submit" class="chip-btn" id="movie-make" title="Render the frames as the Viewer shows them and encode them as a movie with the study (movies/), then download it">Make the movie</button>
+                    </div>
+                  </fieldset>
+                  <p class="muted small" id="movie-length"></p>
+                  <div class="movie-progress-row">
+                    <progress id="movie-progress" max="1" value="0" hidden></progress>
+                    <button type="button" class="chip-btn" id="movie-cancel" hidden>Cancel</button>
+                  </div>
+                  <p class="muted small" id="movie-said" role="status"></p>
+                  <p class="muted small" id="movie-by"></p>
+                </form>
+              </details>
               <details class="side-section" open>
                 <summary>Information</summary>
                 <div class="info-panel">
@@ -1366,5 +1416,6 @@
   <script src="/static/frame-series.js"></script>
   <script src="/static/frame-interactions.js"></script>
   <script src="/static/viewer-views.js"></script>
+  <script src="/static/viewer-movie.js"></script>
 </body>
 </html>
