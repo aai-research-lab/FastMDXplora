@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A ligand group is charged only when it carries a charge
+
+**`pl_interactions` now takes a ligand group as charged only where its atoms carry a net formal charge of that sign.** Charged groups were found by pattern and by single formal charges, so neutral cyanoguanidine (the cimetidine core) and an acylguanidine were cations, a nitro group was both a cation and an anion, and nitromethane between an aspartate and a lysine formed a salt bridge to each, at 0.36 and 0.34 nm. A pattern match now needs a nonzero net charge of its sign, and a formal charge on an atom bonded to an opposite charge (nitro, N-oxide, azide) is left out. Results change: salt bridges and cation-pi contacts from nitro groups, N-oxides and neutral guanidine analogues are no longer reported.
+
 ### Hydrogen and halogen bond acceptors have a lone pair
 
 **`pl_interactions` and the chain-contacts view now count an atom as an acceptor only where it has a lone pair free to take the bond.** Every nitrogen, oxygen and sulphur was an acceptor, so a ligand NH3+ aimed at a lysine NZ with three hydrogens was reported as a hydrogen bond at 0.30 nm and 180 degrees between two cations, a C-Cl aimed at the same NZ was a halogen bond, and on a solvated 1BHL trajectory 28 of 2105 side-chain hydrogen-bond frames had a protonated nitrogen (mostly Asn ND2 and backbone N) as acceptor. Oxygens, amine and pyridine-type nitrogens, Met SD and a Cys SG without its hydrogen accept; four-bonded and charged nitrogens, the backbone N, Asn ND2, Gln NE2, Trp NE1, the arginine nitrogens and amide, aniline and pyrrole nitrogens do not. Results change: hydrogen bonds and halogen bonds to those nitrogens are no longer reported.

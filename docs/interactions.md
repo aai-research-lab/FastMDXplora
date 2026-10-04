@@ -87,6 +87,12 @@ hydrogen, and a moved hydrogen invents or destroys a hydrogen bond.
 
 ## Some interactions are refused
 
+**A charged group carries a net charge.** A ligand's group is charged only
+where its atoms' formal charges sum to its sign, so cyanoguanidine (the
+cimetidine core) is not a cation for matching the guanidine pattern. A formal
+charge on one atom bonded to an atom of the opposite charge is a way of
+writing a neutral group, so a nitro group or an N-oxide forms no salt bridge.
+
 **Salt bridges and π-cation interactions are claims about charge.** A ligand's
 charge inferred from coordinates is ambiguous more often than not: for
 guanidinium both +1 and −1 balance, and for a phenol both 0 and −2 do. Where

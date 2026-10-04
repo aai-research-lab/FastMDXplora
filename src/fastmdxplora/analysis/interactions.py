@@ -508,6 +508,14 @@ def ligand_charged_groups(
     why it has to be resolved first. A carboxylate carries -1 across two
     oxygens whichever one the file happens to mark, so the charge is spread
     over the group it is delocalised across.
+
+    A group is charged only where its atoms carry a net formal charge of its
+    sign. The guanidine pattern also matches cyanoguanidine (the cimetidine
+    core) and an acylguanidine as written neutral, and both were cations. A
+    formal charge on one atom bonded to an atom of the opposite charge is a
+    way of writing a neutral group, not an ion: nitro N+ and O-, an N-oxide,
+    an azide. Those pairs are left out, where each half had been a charged
+    group of its own and a nitrobenzene formed salt bridges from both ends.
     """
     from rdkit import Chem
 
@@ -533,6 +541,9 @@ def ligand_charged_groups(
         if pattern is None:
             continue
         for match in mol.GetSubstructMatches(pattern):
+            net = sum(mol.GetAtomWithIdx(i).GetFormalCharge() for i in match)
+            if (net > 0) != (sign == "+") or net == 0:
+                continue
             group = [
                 order[i] for i in match
                 if i < len(order) and mol.GetAtomWithIdx(i).GetSymbol() in elements
@@ -548,6 +559,9 @@ def ligand_charged_groups(
         if index >= len(order) or index in claimed:
             continue
         charge = atom.GetFormalCharge()
+        if charge and any(neighbour.GetFormalCharge() * charge < 0
+                          for neighbour in atom.GetNeighbors()):
+            continue
         if charge > 0:
             positive.append([order[index]])
         elif charge < 0:

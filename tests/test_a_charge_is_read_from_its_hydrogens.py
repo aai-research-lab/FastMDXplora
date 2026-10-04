@@ -7,6 +7,11 @@ keyed on the name therefore missed every doubly protonated histidine and
 counted every neutral lysine and protonated aspartate as charged. The
 hydrogens present are the protonation the setup phase chose, so they
 decide.
+
+On the ligand side, a pattern match or a formal charge on one atom is not
+a charged group when the molecule around it is neutral: a nitro group
+carries N+ and O- and no net charge, and cyanoguanidine matches the
+guanidine pattern while being neutral.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ pytest.importorskip("rdkit.Chem")
 from rdkit import Chem  # noqa: E402
 
 from fastmdxplora.analysis.interactions import (  # noqa: E402
+    ligand_charged_groups,
     protein_charged_groups,
     salt_bridges,
 )
@@ -120,3 +126,47 @@ class TestTheProteinSide:
         ash = b.residue("ASH", [("OD1", "O", (2, 0, 0)), ("OD2", "O", (2.1, 0, 0))])
         positive, negative = protein_charged_groups(b.topology, lys + lyn + ash)
         assert positive == [lys] and negative == []
+
+
+class TestTheLigandSide:
+    """A pattern match or a formal charge on one atom is not a charged
+    group when the atoms around it are neutral."""
+
+    @pytest.mark.parametrize("smiles", [
+        "CNC(=NC#N)NC",             # cyanoguanidine, the cimetidine core
+        "CC(=O)NC(=N)N",            # acylguanidine, as written neutral
+        "c1ccccc1[N+](=O)[O-]",     # nitrobenzene
+        "C[N+](C)(C)[O-]",          # trimethylamine N-oxide
+    ])
+    def test_neutral_chemistry_has_no_charged_group(self, smiles) -> None:
+        chemistry = _chemistry(smiles)
+        positive, negative = ligand_charged_groups(
+            chemistry, list(range(chemistry.mol.GetNumAtoms())))
+        assert positive == [] and negative == []
+
+    @pytest.mark.parametrize("smiles,n_positive,n_negative", [
+        ("CS(=O)(=O)[O-]", 0, 1),
+        ("NC(=[NH2+])N", 1, 0),
+        ("C[NH3+]", 1, 0),
+        ("CC(=O)[O-]", 0, 1),
+    ])
+    def test_ions_keep_their_groups(self, smiles, n_positive, n_negative) -> None:
+        chemistry = _chemistry(smiles)
+        positive, negative = ligand_charged_groups(
+            chemistry, list(range(chemistry.mol.GetNumAtoms())))
+        assert (len(positive), len(negative)) == (n_positive, n_negative)
+
+    def test_a_nitro_group_forms_no_salt_bridge(self) -> None:
+        """Nitromethane between an aspartate and a lysine: it formed one to
+        each, from its N+ and from its O-."""
+        b = _Builder()
+        lig = b.residue("LIG", [("C1", "C", (-0.15, 0, 0)), ("N1", "N", (0, 0, 0)),
+                                ("O1", "O", (0.06, 0.1, 0)), ("O2", "O", (0.06, -0.1, 0))])
+        asp = b.residue("ASP", [("OD1", "O", (0.0, 0.0, 0.33)),
+                                ("OD2", "O", (0.0, 0.1, 0.38))], chain=True)
+        lys = b.residue("LYS", [("NZ", "N", (0.40, -0.1, 0))], chain=True)
+        mol = Chem.MolFromSmiles("C[N+](=O)[O-]")
+        chemistry = ResolvedChemistry(mol=mol, source="supplied", detail="test",
+                                      resname="LIG", n_atoms=4)
+        assert salt_bridges(b.trajectory(), chemistry, lig, asp + lys,
+                            periodic=False) == []
