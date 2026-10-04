@@ -942,6 +942,25 @@
                 <ul class="occ-sites" id="occ-sites-list" aria-label="Water sites"></ul>
                 <p class="muted small" id="occ-note" role="status"></p>
               </details>
+              <!-- The study's main motions: its principal components, as the
+                   atoms swinging along one and as lines to where it takes
+                   them (viewer-motion.js, motion.py). -->
+              <details class="side-section" id="side-motion" open hidden>
+                <summary>Main motions</summary>
+                <div class="occ-row">
+                  <label class="select-field">Motion
+                    <select id="motion-mode" aria-label="Which motion"><option value="1">Motion 1</option><option value="2">Motion 2</option><option value="3">Motion 3</option></select>
+                  </label>
+                  <label class="select-field">Size
+                    <select id="motion-scale" aria-label="How large the motion is shown"><option value="1" selected>As it is</option><option value="3">Three times larger</option></select>
+                  </label>
+                </div>
+                <div class="occ-row">
+                  <label class="chip-toggle" title="The atoms the motion moves, swinging from two standard deviations of it one way to two the other"><input type="checkbox" id="motion-swing">Play the motion</label>
+                  <label class="chip-toggle" title="A line from each atom to where two standard deviations of the motion take it"><input type="checkbox" id="motion-arrows">Lines along it</label>
+                </div>
+                <p class="muted small" id="motion-note" role="status"></p>
+              </details>
               <!-- What holds the chains together: hydrogen bonds and salt
                    bridges between the protein's chains in the frames played
                    (chain-contacts.js, chain_contacts.py). -->
@@ -1486,5 +1505,6 @@
   <script src="/static/viewer-movie.js"></script>
   <script src="/static/chain-contacts.js"></script>
   <script src="/static/viewer-occupancy.js"></script>
+  <script src="/static/viewer-motion.js"></script>
 </body>
 </html>

@@ -169,6 +169,17 @@ class DimRed(Analysis):
                 embedding = model.fit_transform(coords)
                 # Stash variance ratios for the plot annotation
                 self._explained_variance = getattr(model, "explained_variance_ratio_", None)
+                # The motions themselves, kept beside the projections: the
+                # projections alone say when the study moved, not how.
+                self._modes = {
+                    "mean": aligned.xyz[:, atom_idx, :].mean(axis=0).astype(np.float64),
+                    "vectors": np.asarray(model.components_, dtype=np.float64).reshape(
+                        len(model.components_), len(atom_idx), 3),
+                    "variance": np.asarray(model.explained_variance_, dtype=np.float64),
+                    "ratio": np.asarray(model.explained_variance_ratio_, dtype=np.float64),
+                    "atoms": np.asarray(atom_idx, dtype=np.int64),
+                    "frames": np.int64(traj.n_frames),
+                }
             elif method == "mds":
                 # Metric MDS on the pairwise RMSD between frames, which is
                 # what version 1 offered and what a reader comparing against
@@ -251,6 +262,14 @@ class DimRed(Analysis):
                 if svg_path.is_file():
                     artifacts.append(svg_path)
 
+            if "pca" in self.result and self._modes is not None:
+                # Each motion as a unit vector over the atoms (nm per nm of
+                # projection), its variance (nm^2), its share of the total,
+                # the mean structure fitted to the first frame (nm), and the
+                # atoms, numbered in the trajectory's topology.
+                modes_path = self.output_dir / "dimred_pca_modes.npz"
+                np.savez(modes_path, **self._modes)
+                artifacts.append(modes_path)
             finished = datetime.now(timezone.utc).isoformat()
             primary = self.methods[0]
             return AnalysisResult(
@@ -288,6 +307,7 @@ class DimRed(Analysis):
         )
 
     _explained_variance: np.ndarray | None = None
+    _modes: dict[str, np.ndarray] | None = None
 
 
 def _plot_dimred_scatter(

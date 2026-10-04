@@ -275,6 +275,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # computed from them on request as the superposed frames are,
             # and the water sites the study found, placed on the first.
             "/api/occupancy", "/structure/occupancy.dx", "/api/water-sites",
+            # The study's main motions, from what its analysis kept or from
+            # the frames played, as the frames are computed on request.
+            "/api/motion",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",

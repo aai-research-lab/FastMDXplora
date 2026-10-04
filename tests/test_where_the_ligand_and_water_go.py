@@ -282,7 +282,7 @@ def test_the_viewer_shows_them_on_the_first_frame(trypsin):
             # Frames as written are not fitted to the first: set aside.
             page.select_option("#traj-superpose", "none")
             page.wait_for_function("() => document.getElementById('sr-live').textContent"
-                                   ".includes('The maps and water sites are hidden')")
+                                   ".includes('What is placed on the first frame is hidden')")
             aside = page.evaluate(f"() => {state}.engine.volumesShown()"
                                   ".every((v) => !v.rendered)"
                                   f" && !{state}.engine.sitesRendered")

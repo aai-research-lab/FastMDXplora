@@ -1694,7 +1694,8 @@
     STATE.appliedSmooth = over;
     const runs = STATE.engine.runsShown().length > 0;
     if (runs) await STATE.engine.setRunsAside(!runsFitAsPlayed());
-    const placed = STATE.engine.volumesShown().length > 0 || !!STATE.engine.sitesRef;
+    const placed = STATE.engine.volumesShown().length > 0 || !!STATE.engine.sitesRef
+      || !!STATE.engine.motionShown();
     if (placed) await STATE.engine.setPlacedAside(!placedFitAsPlayed());
     if (STATE.visibility.box) await STATE.engine.showBox(on === "none");
     // Water and ions are the first frame's: they sit where it does, and a
@@ -1715,7 +1716,7 @@
         + (over > 1 ? " An average shortens bonds a little: measure on frames as written." : ""))
       + (runs && !runsFitAsPlayed() ? " The other runs are hidden: they are fitted on the backbone"
         + " to the first frame, and are shown again when these frames are." : "")
-      + (placed && !placedFitAsPlayed() ? " The maps and water sites are hidden: they are placed"
+      + (placed && !placedFitAsPlayed() ? " What is placed on the first frame is hidden: it is placed"
         + " on the first frame, and are shown again when the frames are fitted to it." : ""));
   }
 

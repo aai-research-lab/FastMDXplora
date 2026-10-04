@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A study's main motion
+
+**The Viewer shows a study's main motions** under **Main motions**: its
+principal components, swung as a backbone from two standard deviations one
+way to two the other, and as lines from each atom to where the motion takes
+it, placed on the first frame played, with each motion's share of the
+fluctuation said. `dimred` now keeps the motions themselves
+(`dimred_pca_modes.npz`), where it wrote only each frame's projection; a
+study analysed before has them found from its frames, and is told so.
+`GET /api/motion`.
+
 ### Where the ligand and the water went
 
 **The Viewer shows where the ligand and the water went over the frames

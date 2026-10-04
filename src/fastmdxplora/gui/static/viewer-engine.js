@@ -150,7 +150,8 @@
     "showPicks", "showSelected", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
     "renderEnvironment", "moveEnvironment", "removeEnvironment", "picture", "still", "setCells",
     "showRuns", "removeRuns", "setRunShown", "setRunsAside", "showVolume", "setVolumeLevel",
-    "removeVolume", "showWaterSites", "removeWaterSites", "setPlacedAside"]);
+    "removeVolume", "showWaterSites", "removeWaterSites", "setPlacedAside", "showMotion",
+    "setMotionFrame", "setMotionParts", "removeMotion"]);
 
   function oneAtATime(engine) {
     let last = Promise.resolve();
@@ -186,6 +187,7 @@
         // Nor are another run's: what is clicked is the run played.
         const atom = SE.Loci.is(loci) && !SE.Loci.isEmpty(loci) && !this.isTheBox(loci.structure)
           && !this.isARun(loci.structure) && !this.isTheSites(loci.structure)
+          && !this.isTheMotion(loci.structure)
           ? this.record(SE.Loci.getFirstLocation(loci)) : null;
         this.listeners[kind].forEach((listener) => listener(atom, modifiers || {}));
       };
@@ -375,6 +377,7 @@
       this.volumes = {};
       this.sitesRef = null;
       this.sitesDataRef = null;
+      this.motion = null;
       this.interactions = new Map();
       this.interactionGroups = {ligand: this.interactions};
       this.boxDataRef = null;
@@ -391,7 +394,7 @@
       const runs = new Set((this.runs || []).map((run) => run.structureRef));
       const others = structures.filter((s) => s.cell.transform.ref !== this.environmentRef
         && s.cell.transform.ref !== this.boxRef && s.cell.transform.ref !== this.sitesRef
-        && !runs.has(s.cell.transform.ref));
+        && !this.isTheMotionRef(s.cell.transform.ref) && !runs.has(s.cell.transform.ref));
       return others.length ? others[others.length - 1].cell : null;
     }
 
@@ -920,6 +923,7 @@
       const main = hierarchy.structures.find((s) => s.cell.transform.ref === this.mainRef);
       if (main && main.model && main.model.cell.obj) return main.model.cell;
       const runs = new Set((this.runs || []).map((run) => run.modelRef));
+      if (this.motion) runs.add(this.motion.modelRef);
       const models = hierarchy.models.filter((model) => !runs.has(model.cell.transform.ref));
       const info = this.lib.structure.Model.TrajectoryInfo;
       const moving = models.find((model) => model.cell.obj && info.get(model.cell.obj.data).size > 1);
@@ -1137,12 +1141,112 @@
         && (structure === cell.obj.data || structure.root === cell.obj.data));
     }
 
+    /** A motion (gui/motion.py): its atoms as a PDB of models swinging
+     * along it, played by ``setMotionFrame``, and lines from each atom to
+     * where it goes, in ``colour``. */
+    async showMotion(pdb, arrows, colour) {
+      await this.removeMotion();
+      const builders = this.plugin.builders;
+      const swing = await builders.data.rawData({data: pdb, label: "motion"});
+      const trajectory = await builders.structure.parseTrajectory(swing, "pdb");
+      const model = await builders.structure.createModel(trajectory);
+      const structure = await builders.structure.createStructure(model);
+      const lines = await builders.data.rawData({data: arrows, label: "motion arrows"});
+      const linesModel = await builders.structure.createModel(
+        await builders.structure.parseTrajectory(lines, "pdb"));
+      const linesStructure = await builders.structure.createStructure(linesModel);
+      this.motion = {roots: [swing.ref, lines.ref], modelRef: model.ref,
+        structureRef: structure.ref, arrowsRef: linesStructure.ref, colour,
+        swing: true, arrows: false, frame: 0, rendered: false,
+        frames: model.cell && model.cell.obj
+          ? this.lib.structure.Model.TrajectoryInfo.get(model.cell.obj.data).size : 0};
+      await this.renderMotion();
+      return this.motion.frames;
+    }
+
+    async renderMotion() {
+      const shown = this.motion;
+      const cells = this.plugin.state.data.cells;
+      if (!shown || !cells.has(shown.structureRef)) return;
+      await this.removeChildren(shown.structureRef);
+      await this.removeChildren(shown.arrowsRef);
+      shown.rendered = false;
+      if (this.placedAside) return;
+      const builders = this.plugin.builders.structure;
+      const uniform = {color: "uniform", colorParams: {value: shown.colour}};
+      if (shown.swing) {
+        const all = await builders.tryCreateComponentStatic(cells.get(shown.structureRef), "all");
+        if (all) {
+          // A trace through the atoms the motion moves: alpha carbons, of
+          // which Mol* makes a backbone.
+          await builders.representation.addRepresentation(all, Object.assign(
+            {type: "backbone", typeParams: {sizeFactor: 0.4}}, uniform));
+          shown.rendered = true;
+        }
+      }
+      if (shown.arrows) {
+        const all = await builders.tryCreateComponentStatic(cells.get(shown.arrowsRef), "all");
+        if (all) {
+          await builders.representation.addRepresentation(all, Object.assign(
+            {type: "ball-and-stick", typeParams: {sizeFactor: 0.12, sizeAspectRatio: 1}},
+            uniform));
+          shown.rendered = true;
+        }
+      }
+    }
+
+    async setMotionFrame(index) {
+      const shown = this.motion;
+      if (!shown || !shown.frames || !this.plugin.state.data.cells.has(shown.modelRef)) return;
+      shown.frame = ((Math.round(index) % shown.frames) + shown.frames) % shown.frames;
+      await this.plugin.build().to(shown.modelRef)
+        .update((old) => ({...old, modelIndex: shown.frame})).commit();
+    }
+
+    /** The swing, the lines, or both. */
+    async setMotionParts(swing, arrows) {
+      if (!this.motion) return;
+      this.motion.swing = !!swing;
+      this.motion.arrows = !!arrows;
+      await this.renderMotion();
+    }
+
+    async removeMotion() {
+      const shown = this.motion;
+      this.motion = null;
+      if (!shown) return;
+      const cells = this.plugin.state.data.cells;
+      const update = this.plugin.build();
+      shown.roots.forEach((ref) => { if (cells.has(ref)) update.delete(ref); });
+      await update.commit();
+    }
+
+    motionShown() {
+      const shown = this.motion;
+      return shown ? {frames: shown.frames, frame: shown.frame, swing: shown.swing,
+        arrows: shown.arrows, rendered: shown.rendered} : null;
+    }
+
+    isTheMotionRef(ref) {
+      return !!(this.motion && (ref === this.motion.structureRef || ref === this.motion.arrowsRef));
+    }
+
+    isTheMotion(structure) {
+      const cells = this.plugin.state.data.cells;
+      return !!(this.motion && structure && [this.motion.structureRef, this.motion.arrowsRef]
+        .some((ref) => {
+          const cell = cells.get(ref);
+          return cell && cell.obj && (structure === cell.obj.data || structure.root === cell.obj.data);
+        }));
+    }
+
     /** What is placed on the first frame (the maps, the water sites) hidden
      * while the frames are not fitted to it, and shown again once they are. */
     async setPlacedAside(aside) {
       this.placedAside = !!aside;
       for (const key of Object.keys(this.volumes || {})) await this.renderVolume(key);
       await this.renderWaterSites();
+      await this.renderMotion();
     }
 
     isARun(structure) {

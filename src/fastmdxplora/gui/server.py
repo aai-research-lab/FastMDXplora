@@ -147,7 +147,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/series", "/api/runs-compared", "/api/selection",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
-    "/api/chain-contacts", "/api/occupancy", "/api/water-sites",
+    "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
@@ -165,7 +165,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/api/viewer-atoms", "/api/chain-contacts", "/api/interactions-over-frames",
     "/api/frames-superposed", "/structure/topology.pdb", "/structure/frames.dcd",
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
-    "/structure/occupancy.dx",
+    "/structure/occupancy.dx", "/api/motion",
 })
 
 
@@ -902,6 +902,13 @@ def make_handler(
                 return
             if path == "/structure/occupancy.dx":
                 self._send_occupancy(root, parse_qs(parsed.query))
+                return
+            if path == "/api/motion":
+                from fastmdxplora.gui.motion import motion
+
+                query = parse_qs(parsed.query)
+                self._send_json(motion(root, (query.get("mode") or ["1"])[0],
+                                       (query.get("scale") or ["1"])[0]))
                 return
             if path == "/api/water-sites":
                 from fastmdxplora.gui.occupancy import water_sites_placed
