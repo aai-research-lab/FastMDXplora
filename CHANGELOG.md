@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Stride across several trajectory files
+
+**Frames loaded with a stride from several files now carry the times they were written.** MDTraj strides each file on its own from its first frame, and the loader timed the frames as one stream: two files of five frames at stride 2, saved every 10 ps, are frames 0, 2, 4, 5, 7, 9 of the run, written at 10, 30, 50, 60, 80 and 100 ps, and read 10 to 110 ps. The loader now reads each file's length and builds every frame's index in the run (`loading.written_frames`), and the clock is set from those. Files whose lengths are multiples of the stride, and single files, read as before. Results change: time axes, and durations taken from them, of multi-file loads with a stride where a file's length is not a multiple of it.
+
 ### Radius of gyration weights and chains
 
 **A radius of gyration is now weighted as `options.json` says it is, and a virtual site weighs nothing.** One atom without a mass, such as a TIP4P water's charge site, turned the whole radius unweighted while the options still read `mass_weighted: true`. A virtual site (element VS, which MDTraj also gives any atom whose element it cannot read) now has zero weight and a finding names such atoms; where no atom has a mass or one carries no element at all, every atom is weighted equally, `mass_weighted` is recorded as false and a finding says why. `by_chain` wrote bare columns numbered by position with no header, against a docstring promising a frame column; it now writes a table with `total` and one `chain <ID>` column per chain, named by chain ID as `end_to_end` does, and the legend names the chains the same way. Results change: the radius of gyration of a selection holding a virtual site, which was unweighted, is now mass-weighted.

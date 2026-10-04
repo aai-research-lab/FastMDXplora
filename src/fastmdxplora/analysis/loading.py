@@ -305,11 +305,70 @@ def _with_one_clock(trajectory: md.Trajectory, n_files: int) -> md.Trajectory:
     return trajectory
 
 
+def _frames_in(path: Path, top: Path | None) -> int | None:
+    """How many frames one trajectory file holds, or None where it cannot say."""
+    from fastmdxplora.utils import suppress_native_output
+
+    try:
+        with suppress_native_output(), md.open(str(path)) as handle:
+            return int(len(handle))
+    except Exception:  # noqa: BLE001 - a format without a length; count instead
+        pass
+    try:
+        with suppress_native_output():
+            loaded = (md.load(str(path), top=str(top)) if top is not None
+                      else md.load(str(path)))
+        return int(loaded.n_frames)
+    except Exception:  # noqa: BLE001 - the caller falls back and says so
+        return None
+
+
+def written_frames(
+    paths: list[Path], top: Path | None, stride: int | None, n_loaded: int
+) -> np.ndarray:
+    """Which frame of the run, counted across every file, each loaded frame is.
+
+    MDTraj strides each file on its own from that file's first frame, so
+    with several files the loaded frames are not every ``stride``-th frame
+    of the run: two files of five frames at stride 2 give frames 0, 2, 4 of
+    the first and 0, 2, 4 of the second, which are frames 0, 2, 4, 5, 7, 9
+    of the run, not 0 to 10. Built from each file's own length; where a
+    length cannot be read, the frames are taken as one stream and the log
+    says so.
+    """
+    step = int(stride) if stride and int(stride) > 0 else 1
+    one_stream = np.arange(n_loaded, dtype=np.int64) * step
+    if step == 1 or len(paths) < 2:
+        return one_stream
+    frames: list[np.ndarray] = []
+    offset = 0
+    for path in paths:
+        length = _frames_in(path, top)
+        if length is None:
+            logger.warning(
+                "Could not read how many frames %s holds, so the %d files are "
+                "taken as one stream strided by %d. With several files that "
+                "is only right where every file's length is a multiple of the "
+                "stride.", path.name, len(paths), step)
+            return one_stream
+        frames.append(offset + np.arange(0, length, step, dtype=np.int64))
+        offset += length
+    joined = np.concatenate(frames)
+    if joined.size != n_loaded:
+        logger.warning(
+            "The %d files hold %d frames at stride %d by their own lengths, "
+            "and %d were loaded, so they are taken as one stream.",
+            len(paths), joined.size, step, n_loaded)
+        return one_stream
+    return joined
+
+
 def _with_a_real_clock(
     trajectory: md.Trajectory,
     paths: list[Path],
     saving_interval_ps: float | None,
     stride: int | None,
+    written: np.ndarray | None = None,
 ) -> md.Trajectory:
     """The run's own clock, or none at all -- never the frame index.
 
@@ -335,7 +394,9 @@ def _with_a_real_clock(
     * The format carries a clock and it varies -- trust it, touch nothing.
     * The interval is known -- build the clock from it. Frame ``k`` was
       written at ``(k + 1) * interval`` because a reporter fires after its
-      first interval, not at step zero.
+      first interval, not at step zero. ``written`` gives ``k`` for each
+      loaded frame (:func:`written_frames`); without it, every
+      ``stride``-th frame of one stream.
     * Neither -- **fill ``time`` with NaN.** A frame axis is honest and a
       wrong nanosecond axis is not, and NaN is the one marker that survives
       slicing, joining and ``atom_slice`` (checked, not assumed), so it still
@@ -365,8 +426,10 @@ def _with_a_real_clock(
     if saving_interval_ps and float(saving_interval_ps) > 0:
         step = int(stride) if stride and int(stride) > 0 else 1
         interval = float(saving_interval_ps)
+        if written is None or len(written) != n:
+            written = np.arange(n, dtype=np.float64) * step
         trajectory.time = (
-            (np.arange(n, dtype=np.float64) * step + 1.0) * interval
+            (np.asarray(written, dtype=np.float64) + 1.0) * interval
         ).astype(np.float32)
         logger.info(
             "Time axis set from the run's own record: %.4g ps between saved "
@@ -501,8 +564,10 @@ def load_trajectory(
     # Last, so it wins: where the interval is known it supersedes both what
     # the file said and what the seam-mender inferred, and where it is not
     # known the clock is marked absent rather than left as a frame index.
+    written = (written_frames(traj_paths, top_path, stride, trajectory.n_frames)
+               if saving_interval_ps else None)
     trajectory = _with_a_real_clock(
-        trajectory, traj_paths, saving_interval_ps, stride)
+        trajectory, traj_paths, saving_interval_ps, stride, written)
 
     if first is not None or last is not None:
         n = trajectory.n_frames
