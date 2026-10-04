@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### RMSF over the equilibrated frames
+
+**RMSF is now computed over the frames after equilibration, found by the same detection every per-frame mean uses.** It averaged every frame, so a relaxation away from the starting structure was read as fluctuation: a loop of 3PTB relaxing 0.4 nm over the first 300 of 1000 frames read 0.0819 nm against 0.0514 after the discard and 0.052 by construction. The start is now detected on the RMSD of the fitted atoms from the reference frame (`statistics.summarise`), the fluctuations are taken over the frames after it, and the discard is recorded as `findings["discard"]` in frames and ns and said on the figure. The new option `equilibrated_from` gives the start instead, and `0` keeps every frame. Results change: RMSF of any run that relaxed from its starting structure is lower, and is the equilibrium fluctuation.
+
 ### Per-residue RMSF as GROMACS gives it
 
 **A residue's RMSF is now the square root of its atoms' mass-weighted mean squared fluctuation, sqrt(sum m_i MSF_i / sum m_i), which is what `gmx rmsf -res` reports.** It was the unweighted sqrt(mean MSF) while its comment said it agreed with GROMACS, so a residue with a mobile hydrogen among rigid heavy atoms read more than 1.5 times the GROMACS value. The formula is stated in the docstring and in `options.json`; atoms with no known mass are weighted equally and a finding says so, and a virtual site has no weight. A trajectory of one frame, which returned an RMSF of zero for every residue with status ok, is refused with `analysis.sampling.too_few_frames`. Results change: per-residue RMSF over a selection with several atoms per residue; the alpha-carbon default is unchanged.

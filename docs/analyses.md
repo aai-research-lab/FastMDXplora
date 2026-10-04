@@ -203,6 +203,13 @@ against another tool.
   squared fluctuation, sqrt(Σ mᵢ MSFᵢ / Σ mᵢ), as GROMACS `gmx rmsf -res`
   gives it. With the alpha-carbon default it is each alpha carbon's own RMSF.
   A single frame is refused rather than reported as rigid.
+  It is computed over the equilibrated frames only: the start is found on the
+  RMSD of the fitted atoms by the same detection every per-frame mean uses,
+  recorded as `findings.discard` and said on the figure, and
+  `equilibrated_from` sets it (`0` for every frame). A loop relaxing 0.4 nm
+  in the first fifth of a run read 0.082 nm averaged over every frame, against
+  0.052 nm once relaxed. Results change from earlier releases on any run that
+  relaxed.
 
 - **Radius of gyration** is mass-weighted by default, which is the physical
   definition; `mass_weighted: false` gives the geometric one.

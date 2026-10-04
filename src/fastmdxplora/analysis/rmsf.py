@@ -16,6 +16,17 @@ mean MSF, which is what GROMACS ``gmx rmsf -res`` reports::
 This is the standard "flexibility profile" plot used in nearly every MD
 publication: peaks indicate flexible loops and termini, troughs rigid
 secondary structure.
+
+**Only the equilibrated frames.** A fluctuation about the mean position is
+a property of the equilibrium ensemble, and a relaxation away from the
+starting structure is not one: averaged in, a loop that moves 0.4 nm in the
+first fifth of a run reads 0.082 nm against the 0.052 it fluctuates by
+afterwards. So the first frames are left out, as many as the package's own
+equilibration detection (:func:`fastmdxplora.statistics.summarise`, the one
+every per-frame mean uses) finds on the RMSD of the fitted atoms from the
+reference frame. ``equilibrated_from`` gives the start instead, and ``0``
+keeps every frame. What was left out is recorded as ``findings["discard"]``
+and said on the figure.
 """
 
 from __future__ import annotations
@@ -52,10 +63,10 @@ class RMSF(Analysis):
     Parameters
     ----------
     ref : int, default 0
-        Reference frame for the alignment (superposition) step. The choice
-        affects only the bookkeeping; fluctuations are measured relative
-        to each atom's mean position over the full trajectory, which is
-        invariant under rigid-body alignment.
+        Reference frame for the alignment (superposition) step, and the
+        frame the RMSD that locates the equilibration is taken from.
+        Fluctuations are about each atom's mean position over the frames
+        kept (see ``equilibrated_from``).
     per_residue : bool, default True
         If True, collapse the per-atom RMSF to one value per residue, the
         square root of the mass-weighted mean of its atoms' squared
@@ -63,6 +74,12 @@ class RMSF(Analysis):
         ``gmx rmsf -res`` gives it. With the alpha-carbon default each
         residue has one atom and this is that atom's RMSF. If False, return
         the per-atom array (one value per selected atom).
+    equilibrated_from : int or None, default None
+        The first analysed frame the fluctuations are computed over. ``None``
+        finds it from the RMSD of the selected atoms from ``ref``, by the
+        equilibration detection the per-frame means use; ``0`` uses every
+        frame; a positive number is that frame. At least two frames must
+        remain.
     selection : str, optional
         MDTraj atom selection. Defaults to ``"protein and name CA"`` (alpha carbons)
         for protein analysis.
@@ -97,16 +114,56 @@ class RMSF(Analysis):
         *,
         ref: int = 0,
         per_residue: bool = True,
+        equilibrated_from: int | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.ref: int = int(ref)
         self.per_residue: bool = bool(per_residue)
-        self.options.update(ref=self.ref, per_residue=self.per_residue)
+        self.equilibrated_from: int | None = (
+            None if equilibrated_from is None else int(equilibrated_from))
+        self.options.update(ref=self.ref, per_residue=self.per_residue,
+                            equilibrated_from=self.equilibrated_from)
         if self.per_residue:
             self.options["per_residue_average"] = (
                 "sqrt(sum_i m_i MSF_i / sum_i m_i) over the residue's selected "
                 "atoms, as gmx rmsf -res")
+
+    def _start(self, traj: md.Trajectory, ref: int, atom_idx: np.ndarray) -> int:
+        """The first frame the fluctuations are taken over, recorded.
+
+        Detected on the RMSD of the fitted atoms from the reference frame,
+        by :func:`fastmdxplora.statistics.summarise`, the detection behind
+        every per-frame mean, unless ``equilibrated_from`` gives it.
+        """
+        from fastmdxplora.analysis.base import _frame_interval_ns
+
+        n = traj.n_frames
+        if self.equilibrated_from is not None:
+            start = self.equilibrated_from
+            if not 0 <= start <= n - 2:
+                raise StudyError(
+                    f"equilibrated_from is {start}, and this trajectory has {n} "
+                    f"frames: it must lie from 0 to {n - 2}, so that at least "
+                    "two frames remain to fluctuate.",
+                    code="analysis.option.out_of_range")
+            how = "given by equilibrated_from"
+        else:
+            from fastmdxplora.statistics import summarise
+
+            rmsd = md.rmsd(traj, traj, frame=ref, atom_indices=atom_idx)
+            equilibrated, _ = summarise(np.asarray(rmsd, dtype=float))
+            start = int(equilibrated.discard) if equilibrated is not None else 0
+            how = (f"detected on the RMSD of the selected atoms from frame {ref}, "
+                   "as for the per-frame means")
+        interval = _frame_interval_ns(traj)
+        self.findings["discard"] = {
+            "frames": int(start),
+            "of_frames": int(n),
+            "ns": float(start * interval) if interval is not None else None,
+            "how": how,
+        }
+        return start
 
     def _weights(self, atoms: list) -> np.ndarray:
         """Each atom's mass for the per-residue average, in amu.
@@ -162,7 +219,9 @@ class RMSF(Analysis):
                 "frames are needed.",
                 code="analysis.sampling.too_few_frames", found=n, needed=2)
 
-        aligned = superposed(traj, frame=ref, atom_indices=atom_idx)
+        start = self._start(traj, ref, atom_idx)
+        aligned = superposed(traj[start:], frame=ref, atom_indices=atom_idx,
+                             reference=traj)
 
         # Per-atom RMSF on the selected atoms only:
         # rmsf[i] = sqrt(mean over frames of ||r_i(t) - <r_i>||^2)
@@ -222,11 +281,27 @@ class RMSF(Analysis):
 
             plot_by_chain(ax, result, "rmsf_nm", linewidth=1.4, marker="o",
                           markersize=3, markeredgewidth=0)
-            return
-        x = result[:, 0]
-        y = result[:, 1]
-        ax.plot(x, y, linewidth=1.4, marker="o", markersize=3, markeredgewidth=0)
-        ax.fill_between(x, 0, y, alpha=0.12)
+        else:
+            x = result[:, 0]
+            y = result[:, 1]
+            ax.plot(x, y, linewidth=1.4, marker="o", markersize=3, markeredgewidth=0)
+            ax.fill_between(x, 0, y, alpha=0.12)
+        said = self._which_frames()
+        if said:
+            ax.text(0.01, 0.98, said, transform=ax.transAxes, ha="left",
+                    va="top", fontsize="small")
+
+    def _which_frames(self) -> str | None:
+        """The frames the fluctuations are over, for the figure."""
+        discard = self.findings.get("discard")
+        if not isinstance(discard, dict):
+            return None
+        frames, n = discard["frames"], discard["of_frames"]
+        if not frames:
+            return f"over all {n:,} frames"
+        span = f" ({discard['ns']:.4g} ns)" if discard.get("ns") is not None else ""
+        return (f"over frames {frames:,} to {n - 1:,}; the first {frames:,}"
+                f"{span} left out as equilibration")
 
     def default_xlabel(self) -> str | None:
         return "Residue" if self.per_residue else "Atom serial"
