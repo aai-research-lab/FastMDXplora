@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Smoother movies
+
+**A movie can put frames in between the frames played.** A study saves a
+frame every so often, and a movie of its frames jumped from one to the next.
+The Movie section's **In between** puts 1, 3 or 7 frames between each two,
+each atom moved in a straight line from its place in one frame to its place
+in the next (`/structure/frames.dcd?...&span=&between=`). They are not
+simulated, and the movie's record says they were interpolated; since a
+straight line between two places of a molecule turning is a molecule
+shrunk, frames shown as written are superposed on the backbone first.
+
 ### A preparation repeats to the last velocity, and a runaway packing is caught both ways
 
 **`state.xml` is the same file from the same seed.** The velocities setup

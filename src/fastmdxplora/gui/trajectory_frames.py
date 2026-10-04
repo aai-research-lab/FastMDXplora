@@ -553,6 +553,67 @@ def as_xtc(dcd: Path) -> Path:
     return target
 
 
+#: How many frames a movie may put in between two frames played.
+BETWEEN = (1, 3, 7)
+
+
+def frames_between(source: Path, span: Any, between: Any
+                   ) -> tuple[Path | None, str | None]:
+    """For a movie: the frames played ``from:to:every`` (``span``, either
+    way), with ``between`` frames after each but the last, each atom moved
+    in a straight line from its place in one frame played to its place in
+    the next. Not simulated: a display between frames, which shortens a bond
+    whose atoms swing far between them. Written beside ``source`` (the
+    frames, or the frames superposed), replacing the last written for it."""
+    import mdtraj as md
+
+    from fastmdxplora.utils.native_output import suppress_native_output
+
+    try:
+        n = int(str(between))
+        first, last, every = (int(part) for part in str(span).split(":"))
+    except (TypeError, ValueError):
+        return None, "Frames in between are asked for as span=from:to:every and between=1, 3 or 7."
+    if n not in BETWEEN:
+        return None, "A movie puts 1, 3 or 7 frames in between two frames played."
+    if every < 1 or first < 0 or last < 0:
+        return None, "A movie's frames are counted from 0, every 1 or more."
+    target = source.with_name(f"{source.stem}_between{n}_{first}_{last}_{every}.dcd")
+    with _LOCKS_GUARD:
+        lock = _LOCKS.setdefault(str(source.parent.parent.resolve()), threading.RLock())
+    with lock:
+        if target.is_file() and target.stat().st_mtime_ns >= source.stat().st_mtime_ns:
+            return target, None
+        with suppress_native_output():
+            frames = md.load_dcd(str(source), top=str(source.parent / FRAMES_TOPOLOGY))
+        if max(first, last) >= frames.n_frames:
+            return None, f"The frames played are 0 to {frames.n_frames - 1}."
+        played = list(range(first, last + 1, every) if first <= last
+                      else range(first, last - 1, -every))
+        count = (len(played) - 1) * (n + 1) + 1
+        if count * frames.n_atoms > BINARY_ATOM_FRAMES:
+            return None, (f"{count:,} frames of {frames.n_atoms:,} atoms are too many to send; "
+                          "choose fewer frames, or fewer in between.")
+        xyz = frames.xyz[played].astype(np.float64)
+        steps = np.arange(n + 1, dtype=np.float64) / (n + 1)
+        moved = (xyz[:-1, None] + steps[None, :, None, None] * (xyz[1:] - xyz[:-1])[:, None])
+        out = np.concatenate([moved.reshape(-1, *xyz.shape[1:]), xyz[-1:]]).astype(np.float32)
+        lengths = angles = None
+        if frames.unitcell_lengths is not None:
+            given = frames.unitcell_lengths[played].astype(np.float64)
+            lengths = np.concatenate([
+                (given[:-1, None] + steps[None, :, None] * (given[1:] - given[:-1])[:, None])
+                .reshape(-1, 3), given[-1:]])
+            angles = np.repeat(frames.unitcell_angles[played], n + 1, axis=0)[:count]
+        tweened = md.Trajectory(out, frames.topology, unitcell_lengths=lengths,
+                                unitcell_angles=angles)
+        for old in source.parent.glob(f"{source.stem}_between*"):
+            if old.stem != target.stem:
+                old.unlink(missing_ok=True)
+        _write_dcd(tweened, target)
+    return target, None
+
+
 def _write_topology(source: Path, kept: Any, target: Path) -> None:
     """The source's own lines for the atoms kept, in order, with the box
     and the bonds among them."""

@@ -1050,6 +1050,14 @@
                       <label class="select-field">From frame <input type="number" id="movie-from" min="0" step="1" value="0"></label>
                       <label class="select-field">To <input type="number" id="movie-to" min="0" step="1" placeholder="last"></label>
                       <label class="select-field">Every <input type="number" id="movie-every" min="1" step="1" value="1"></label>
+                      <label class="select-field" title="Frames put in between two frames played, each atom moved in a straight line from one to the next: a smoother movie, not more simulation. The frames are superposed first.">In between
+                        <select id="movie-between">
+                          <option value="0" selected>None</option>
+                          <option value="1">1</option>
+                          <option value="3">3</option>
+                          <option value="7">7</option>
+                        </select>
+                      </label>
                     </div>
                     <div class="control-row">
                       <label class="select-field">Frames a second

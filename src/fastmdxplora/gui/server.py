@@ -1783,6 +1783,17 @@ def make_handler(
                         self.send_error(404, said.get("reason"))
                         return
                 target = root / "simulation" / file
+            between = ((query or {}).get("between") or [""])[0]
+            if between and name.endswith(".dcd"):
+                # A movie's frames with frames in between them.
+                from fastmdxplora.gui.trajectory_frames import frames_between
+
+                tweened, reason = frames_between(
+                    target, ((query or {}).get("span") or [""])[0], between)
+                if tweened is None:
+                    self.send_error(404, reason)
+                    return
+                target = tweened
             if ((query or {}).get("as") or [""])[0] == "xtc" and name.endswith(".dcd"):
                 # As the frames were loaded in pieces: XTC, read in place of
                 # them without loading them again.
