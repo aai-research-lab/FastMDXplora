@@ -235,3 +235,104 @@ class TestEveryReaderIsTold:
 
         assert "wrapped across a periodic boundary" in found["mean"]["not_a_measurement"]
         assert any("wrapped across" in note for note in _findings_notes(found))
+
+
+class TestTheShapeDescriptors:
+    """Asphericity, acylindricity and relative shape anisotropy (Theodorou
+    and Suter 1985), from the gyration tensor's eigenvalues."""
+
+    @staticmethod
+    def _independent(xyz, masses):
+        """The gyration tensor eigenvalues by an SVD of the mass-weighted
+        coordinates, rather than by diagonalising the tensor, and the three
+        descriptors from them by the second form of kappa^2."""
+        out = []
+        for frame in np.asarray(xyz, dtype=np.float64):
+            w = masses / masses.sum()
+            r = frame - (w[:, None] * frame).sum(axis=0)
+            singular = np.linalg.svd(np.sqrt(w)[:, None] * r, compute_uv=False)
+            l1, l2, l3 = np.sort(singular ** 2)
+            first = l1 * l2 + l2 * l3 + l3 * l1
+            out.append([l3 - (l1 + l2) / 2, l2 - l1, 1 - 3 * first / (l1 + l2 + l3) ** 2])
+        return np.array(out)
+
+    def test_they_agree_with_an_independent_computation(self):
+        rng = np.random.default_rng(4)
+        top = md.Topology()
+        residue = top.add_residue("ALA", top.add_chain(), resSeq=1)
+        elements = [md.element.carbon, md.element.nitrogen, md.element.oxygen,
+                    md.element.hydrogen, md.element.sulfur] * 6
+        for i, element in enumerate(elements):
+            top.add_atom(f"X{i}", element, residue)
+        xyz = rng.normal(size=(5, len(elements), 3)) * np.array([1.5, 0.7, 0.3])
+        traj = md.Trajectory(xyz.astype(np.float32), top)
+
+        analysis = MomentsOfInertia(selection="all")
+        analysis.compute(traj)
+        masses = np.array([e.mass for e in elements])
+
+        assert np.allclose(analysis._shape, self._independent(traj.xyz, masses),
+                           rtol=1e-6, atol=1e-9)
+
+    def test_a_rod_has_an_anisotropy_of_one(self):
+        analysis = MomentsOfInertia(selection="all")
+        analysis.compute(_points([[x, 0, 0] for x in np.linspace(-2, 2, 11)]))
+        b, c, kappa2 = analysis._shape[0]
+
+        assert kappa2 == pytest.approx(1.0, abs=1e-6)
+        assert c == pytest.approx(0.0, abs=1e-6)
+        # All the spread is on one axis: b is that variance, 1.6 nm^2.
+        assert b == pytest.approx(np.var(np.linspace(-2, 2, 11)), rel=1e-5)
+
+    def test_a_cube_has_none(self):
+        corners = [[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]
+        analysis = MomentsOfInertia(selection="all")
+        analysis.compute(_points(corners))
+
+        assert np.allclose(analysis._shape[0], 0.0, atol=1e-6)
+
+    def test_a_spherical_cloud_has_almost_none(self):
+        rng = np.random.default_rng(0)
+        cloud = rng.normal(size=(4000, 3))
+        analysis = MomentsOfInertia(selection="all")
+        analysis.compute(_points(cloud, frames=1))
+
+        assert analysis._shape[0, 2] < 0.005
+
+    def test_a_disc_has_a_quarter(self):
+        """Two equal eigenvalues and a third of zero: kappa^2 = 1/4."""
+        analysis = MomentsOfInertia(selection="all")
+        analysis.compute(_square())
+        b, c, kappa2 = analysis._shape[0]
+
+        # Eigenvalues (0, 0.5, 0.5) nm^2: b = 0.5 - 0.25, c = 0.5 - 0.
+        assert kappa2 == pytest.approx(0.25, abs=1e-6)
+        assert b == pytest.approx(0.25, abs=1e-6)
+        assert c == pytest.approx(0.5, abs=1e-6)
+
+    def test_they_are_written_with_their_means(self, tmp_path):
+        import json
+
+        import pandas as pd
+
+        rng = np.random.default_rng(3)
+        rod = np.array([[x, 0, 0] for x in np.linspace(-2, 2, 11)])
+        frames = rod[None] + rng.normal(scale=0.05, size=(200, 11, 3))
+        traj = md.Trajectory(frames.astype(np.float32), _points(rod).topology)
+        traj.time = np.arange(1, 201) * 10.0
+
+        assert MomentsOfInertia(selection="all", output_dir=tmp_path).run(traj).status == "ok"
+        folder = tmp_path / "moments_of_inertia"
+        table = pd.read_csv(folder / "moments_of_inertia_shape.dat")
+        found = json.loads((folder / "options.json").read_text())["findings"]
+
+        assert list(table.columns) == ["asphericity_nm2", "acylindricity_nm2",
+                                       "relative_shape_anisotropy"]
+        assert len(table) == 200
+        record = found["relative_shape_anisotropy"]
+        assert record["mean"] == pytest.approx(
+            table["relative_shape_anisotropy"].iloc[record["discard"]:].mean(), rel=1e-9)
+        assert 0.98 < record["mean"] <= 1.0
+        assert record["n_frames"] == 200
+        assert found["asphericity"]["unit"] == "nm²"
+        assert np.loadtxt(folder / "moments_of_inertia.dat").shape == (200, 3)

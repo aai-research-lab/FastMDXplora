@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Shape descriptors
+
+**`moments_of_inertia` now also gives, per frame, the asphericity, acylindricity and relative shape anisotropy of the selection's gyration tensor.** The three principal moments separate a rod from a disc, but a reader comparing shapes wanted the descriptors polymer and protein papers quote. From the eigenvalues l1 <= l2 <= l3 of the mass-weighted gyration tensor, b = l3 - (l1 + l2)/2, c = l2 - l1 (nm^2) and kappa^2 = (b^2 + 3c^2/4)/(l1 + l2 + l3)^2, as Theodorou and Suter define them (Macromolecules 18, 1206, 1985), are written to `moments_of_inertia_shape.dat`, and each one's mean after equilibration is recorded in the findings under its name by the statistics every per-frame series uses. Checked against an independent computation and against shapes solvable on paper: a rod gives kappa^2 = 1, a cube 0, a spherical cloud under 0.005 and a flat square 1/4.
+
 ### B-factors matched to their own residues
 
 **The B-factor comparison now matches each residue to its own deposited B-factor, by chain ID, residue number and insertion code.** B-factors were keyed by chain order and number alone, so trypsin's GLY 184A (B 9.49) and TYR 184 (B 20.72) were both compared with 20.72, and a run of 1HHO's chain B alone was compared with chain A's B-factors (VAL 1 against 70.91 rather than its own 25.93). `bfactors_from_pdb` now keys by (chain ID, number, insertion code); residues are matched by the insertion code where the trajectory carries it and by file order within a number where it does not; and chains are matched by ID, falling back to order only where the trajectory carries no IDs (MDTraj 1.10 drops them when it slices), with `findings["chains_matched_by_order"]` saying so. Results change: correlations on structures with insertion codes, and on runs of some of a structure's chains.

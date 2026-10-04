@@ -57,7 +57,7 @@ minimum in g(r) — never assumed, because the radius decides the number.
 |---|---|
 | `pair_distance` | The separation of two selections, by centre of mass or closest approach, folded into the periodic cell |
 | `end_to_end` | The distance between the two ends of a chain, the coarsest description of extension there is |
-| `moments_of_inertia` | The three principal moments, which separate a rod from a disc where the radius of gyration cannot |
+| `moments_of_inertia` | The three principal moments, which separate a rod from a disc where the radius of gyration cannot, and the asphericity, acylindricity and relative shape anisotropy of the gyration tensor |
 
 ### The bilayer
 
@@ -263,6 +263,14 @@ against another tool.
   longer than its narrowest width. Either marking is written into the record of
   the mean (`findings.mean.not_a_measurement` in `options.json`), where the
   report, the GUI and the Agent read it, and that mean then has no error bar.
+
+- **Shape descriptors** are written beside the moments, per frame, to
+  `moments_of_inertia_shape.dat`: from the eigenvalues λ₁ ≤ λ₂ ≤ λ₃ of the
+  mass-weighted gyration tensor, the asphericity b = λ₃ - (λ₁ + λ₂)/2, the
+  acylindricity c = λ₂ - λ₁ (both nm²) and the relative shape anisotropy
+  κ² = (b² + ¾c²)/(λ₁ + λ₂ + λ₃)², as Theodorou and Suter define them
+  (Macromolecules 18, 1206, 1985). κ² is 0 for a sphere and 1 for a rod. Each
+  one's mean after equilibration is recorded in `options.json` under its name.
 
 - **Molecules are made whole when a trajectory is loaded**, and put in one
   periodic copy. The protein and nucleic chains are kept together, and every
