@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Every analysis has its own section
+
+**Every analysis has its own section on the Analysis page and in the
+report's dashboard, ordered by what it studies**: the run's ensemble, the
+protein's structure and stability, its flexibility, its secondary structure
+and backbone, its contacts and solvent, the states it visited, a ligand, a
+bilayer and a free energy. Twelve of the thirty analyses were missing from
+the list of sections, so their figures fell together under one "Other":
+end-to-end distance beside lipid order, a radial distribution beside the
+B-factors. The list is one table (`report_dashboard.ANALYSIS_THEMES`) that a
+test keeps every registered analysis in.
+
 ### One start for RMSF, clustering and the projections
 
 **RMSF takes `start` as clustering and dimred take it**: a time in ns, `0`

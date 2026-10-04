@@ -22,29 +22,74 @@ if TYPE_CHECKING:
 
 logger = get_logger("gui.report_dashboard")
 
-# Each analysis gets its own section, in the order the analysis phase runs
-# them. Grouping several analyses under invented headings ("Core Metrics",
-# "Additional Analysis") made the placement look arbitrary: whether SASA got
-# its own heading depended on how many figures it happened to produce.
-SECTION_ORDER: tuple[str, ...] = (
-    "RMSD",
-    "RMSF",
-    "Radius of Gyration",
-    "Hydrogen Bonds",
-    "Secondary Structure",
-    "Solvent Accessible Surface Area",
-    "Dihedrals",
-    "Q-value",
-    "Clustering",
-    "Dimensionality Reduction",
-    "Ligand Pose RMSD",
-    "Ligand RMSF",
-    "Protein-Ligand Contacts",
-    "Protein-Ligand Hydrogen Bonds",
-    "Region Highlights",
-    "Apo/Holo Comparison",
-    "Other",
+# Each analysis gets its own section. Grouping several analyses under
+# invented headings ("Core Metrics", "Additional Analysis") made the
+# placement look arbitrary: whether SASA got its own heading depended on how
+# many figures it happened to produce. The sections are ordered, and the
+# page's index grouped, by what each analysis studies: the run's ensemble
+# first (whether the run held what it was asked to), then the protein's
+# structure, its flexibility, its backbone, its contacts and solvent, the
+# states it visited, a ligand, a bilayer and a free energy. This is the one
+# list: every registered analysis is in it, and a test keeps it so. An
+# analysis left out of it fell into one "Other" section with every other
+# left out: twelve of thirty, end-to-end distance beside lipid order.
+ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("The run's ensemble", (
+        ("thermodynamics", "Energy, Temperature and Density"),
+    )),
+    ("Structure and stability", (
+        ("rmsd", "RMSD"),
+        ("rg", "Radius of Gyration"),
+        ("end_to_end", "End-to-end Distance"),
+        ("moments_of_inertia", "Moments of Inertia and Shape"),
+        ("qvalue", "Q-value"),
+    )),
+    ("Flexibility", (
+        ("rmsf", "RMSF"),
+        ("bfactor_comparison", "Comparison with B-factors"),
+        ("order_parameters", "Backbone Order Parameters"),
+    )),
+    ("Secondary structure and backbone", (
+        ("ss", "Secondary Structure"),
+        ("dihedrals", "Dihedrals"),
+    )),
+    ("Contacts and solvent", (
+        ("hbonds", "Hydrogen Bonds"),
+        ("pair_distance", "Pair Distance"),
+        ("sasa", "Solvent Accessible Surface Area"),
+        ("rdf", "Radial Distribution Function"),
+        ("coordination_number", "Coordination Number"),
+        ("water_sites", "Water Sites"),
+    )),
+    ("Conformations", (
+        ("cluster", "Clustering"),
+        ("dimred", "Dimensionality Reduction"),
+    )),
+    ("The ligand", (
+        ("ligand_rmsd", "Ligand Pose RMSD"),
+        ("ligand_rmsf", "Ligand RMSF"),
+        ("pl_contacts", "Protein-Ligand Contacts"),
+        ("pl_hbonds", "Protein-Ligand Hydrogen Bonds"),
+        ("pl_interactions", "Protein-Ligand Interactions"),
+    )),
+    ("The bilayer", (
+        ("area_per_lipid", "Area per Lipid"),
+        ("bilayer_thickness", "Bilayer Thickness"),
+        ("lipid_order", "Lipid Chain Order"),
+    )),
+    ("Free energy", (
+        ("pmf", "Potential of Mean Force"),
+        ("metad_surface", "Free-energy Surface"),
+        ("steered_work", "Steered Work"),
+    )),
 )
+
+#: Sections the report adds beside the analyses' own.
+_REPORT_SECTIONS: tuple[str, ...] = ("Region Highlights", "Apo/Holo Comparison", "Other")
+
+SECTION_ORDER: tuple[str, ...] = tuple(
+    title for _, members in ANALYSIS_THEMES for _, title in members
+) + _REPORT_SECTIONS
 
 SECTION_ANCHORS: dict[str, str] = {
     title: re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
@@ -52,23 +97,18 @@ SECTION_ANCHORS: dict[str, str] = {
 }
 
 ANALYSIS_SECTION_BY_FOLDER: dict[str, str] = {
-    "rmsd": "RMSD",
-    "rmsf": "RMSF",
-    "rg": "Radius of Gyration",
-    "hbonds": "Hydrogen Bonds",
-    "ss": "Secondary Structure",
-    "sasa": "Solvent Accessible Surface Area",
-    "dihedrals": "Dihedrals",
-    "qvalue": "Q-value",
-    "cluster": "Clustering",
-    "dimred": "Dimensionality Reduction",
-    "ligand_rmsd": "Ligand Pose RMSD",
-    "ligand_rmsf": "Ligand RMSF",
-    "contacts": "Protein-Ligand Contacts",
-    "pl_hbonds": "Protein-Ligand Hydrogen Bonds",
-    "apo_holo": "Apo/Holo Comparison",
+    folder: title for _, members in ANALYSIS_THEMES for folder, title in members
 }
+# Studies analysed before the contacts analysis was named pl_contacts.
+ANALYSIS_SECTION_BY_FOLDER["contacts"] = "Protein-Ligand Contacts"
+ANALYSIS_SECTION_BY_FOLDER["apo_holo"] = "Apo/Holo Comparison"
 
+#: The theme each section belongs to, for the page's index.
+SECTION_THEME: dict[str, str] = {
+    title: theme for theme, members in ANALYSIS_THEMES for _, title in members
+}
+SECTION_THEME.update({title: "From the report" for title in _REPORT_SECTIONS[:2]})
+SECTION_THEME["Other"] = "Other"
 
 
 DASHBOARD_ASSET_TITLE_ALIASES: dict[str, tuple[str, ...]] = {
@@ -154,6 +194,7 @@ class DashboardSection:
     title: str
     anchor: str
     panels: list[DashboardPanel]
+    theme: str = ""
 
 
 @dataclass(frozen=True)
@@ -1033,6 +1074,7 @@ def _analysis_sections(
                     title=title,
                     anchor=SECTION_ANCHORS[title],
                     panels=panels,
+                    theme=SECTION_THEME.get(title, "Other"),
                 )
             )
     return sections
