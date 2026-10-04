@@ -2,7 +2,7 @@
 
 Reviewed 2026-10-03 against the [full implementation framework](dashboard-feature-plan.md). This is the current acceptance status; the lower receipts retain earlier evidence and limitations.
 
-**The framework is not fully complete.** Two Agent disable/docking fixes have reopened final acceptance. The earlier branch wheel passed the configured combined suite plus integrated Agent, bookmark, clip and preparation-audit checks. Open items are bounded: live sign-in for Claude/Kimi/Gemini (the user has only OpenAI access), OS-native open-menu visual capture, and broader scientific/backend acceptance described below. The closeout diff since documented baseline `b103dd8` changes GUI, tests and documentation; that scoped comparison does not certify all inherited changes relative to the v2.5.8 tag. Scientific preservation receipts retain their fixture/backend limits.
+**The framework is not fully complete.** Two Agent disable/docking fixes have reopened final acceptance. The earlier branch wheel passed the configured combined suite plus integrated Agent, bookmark, clip and preparation-audit checks. Open items are bounded: live sign-in for Claude/Kimi/Gemini (the user has only OpenAI access), remaining detailed acceptance reconciliation and broader scientific/backend coverage described below. The closeout diff since documented baseline `b103dd8` changes GUI, tests and documentation; that scoped comparison does not certify all inherited changes relative to the v2.5.8 tag. Scientific preservation receipts retain their fixture/backend limits.
 
 ### Current checkpoint — 2026-10-03
 
@@ -60,6 +60,10 @@ The required ten-module combined suite completed on the corrected source at `6d5
 
 A fresh direct NDJSON request through the installed `6d5407a` dashboard returned an explanation in 11.19 seconds with no error, action or configuration. Its answer distinguished saved preparation operations from inventory evidence and chemical-cause claims. Explanation replies deliberately use `ok=false`; an earlier harness incorrectly interpreted that as failure. The browser subscription status separately confirmed `selection=subscription`, provider `openai-chatgpt`, and GPT-6 Luna/max persisted after reload. The real context inspector confirmed selected-view evidence exclusion when Use current view was off. One earlier browser probe was interrupted after a prolonged harness wait and remains inconclusive; these bounded HTTP/UI checks supply independent completed evidence without claiming that interrupted probe passed. No credentials or account labels were recorded, and no scientific settings were applied.
 
+### Native Windows option-menu acceptance — 2026-10-03
+
+Windows.Graphics.Capture through the bundled computer-use skill exposed the actual native option popup on corrected installed wheel `6d5407a`, port 8787. Default protein-representation menus were visually inspected in Graphite, Ink and Paper: unselected options have black backgrounds/white text; the native selected highlight is light blue/dark text and readable. The subscription-model menu was also inspected in Paper, confirming the readable options and Astra → Sol 6.1 → Sol 6 → Luna 6 → remaining order. Popups were dismissed without selecting an option; Graphite was restored. No account/model/reasoning or scientific setting changed. This supersedes the earlier browser-only capture limitation for representative menus on this Windows host; it does not claim every OS/browser implementation or every individual menu was visually captured. The corrected-wheel review server on 8787 remains available; the user server on 8783 was untouched.
+
 ### Milestone review
 
 | Milestone | Current state | Remaining boundary |
@@ -72,12 +76,12 @@ A fresh direct NDJSON request through the installed `6d5407a` dashboard returned
 | M5 — provenance | Future-run observation and audit implemented; qualified scientific checks pass | Aggregate solvent/ion events do not identify each inserted molecule or retry. Broader backend/platform acceptance is open; do not claim universal chemical validation or deterministic CPU repeatability. |
 | M6 — audit visuals | Exact-wheel audit bookmark and Agent handoff passed | Overlay remains display-only and only describes the evidence available in saved study files. |
 | M7 — integrated release checks | Passed for the tested development environment and exact wheel | One OpenFF skip, external provider tests, and clean-machine installation remain unverified. |
-| M8 — aesthetics/interactions | Source suite and exact-wheel dropdown styles pass | Native OS popup visual remains unverified; no other reproduced contrast or geometry defect is open. |
+| M8 — aesthetics/interactions | Source suite and exact-wheel dropdown styles pass | Representative native option menus now visually pass on Windows in three themes; platform-wide acceptance remains scoped to this host. |
 
 ### Remaining follow-up
 
 1. If access becomes available, live-test Claude, Kimi and Gemini through their documented authentication flows. The user currently has OpenAI access only.
-2. Verify the native Windows dropdown popup if a capture can expose the OS menu. The in-page controls and available option styles pass black/white contrast checks.
+2. Native Windows representative option menus are now verified. Retain explicit host/browser scope; complete any remaining detailed visual-state requirements against the original contract.
 3. Broaden scientific/backend acceptance only when the required dependencies and fixtures are available. Preserve the known CPU-repeatability and aggregate-provenance limits; do not alter scientific algorithms to hide them.
 
 The source, tests and closeout receipts were pushed to `princeote/context-aware-agent`. Local and remote heads matched when verified. No upstream main integration or pull request was created.
