@@ -67,7 +67,8 @@ one tool that calls another AI model is `ask_agent` (below).
 | `save_study` | A config written as a new file, once the validator accepts it, with its plan and `plan_id`; a file is never written over. Recorded as written in an AI app (`agent: assisted`, and in `agent_model` the AI app, as it names itself; it does not name its model) unless the config says otherwise, or `by_hand` says you wrote it |
 | `start_study` | A checked config run on this machine (below) |
 | `stop_study` | A running study stopped at its next frame, with a checkpoint there |
-| `list_studies` | The studies in the workspace, newest first, with their state and the means they recorded; and the config files not yet run |
+| `list_studies` | The studies in the workspace, newest first, with their state, the means they recorded, and the tags and note you gave each (or only those with a tag); and the config files not yet run |
+| `tag_study` | Tags added to a study as you ask, kept in its folder and shown on its card in the GUI; it only adds: removing a tag, or writing the study's note, is yours in the GUI; not offered by a read-only server |
 | `read_study` | Where a study stands (its step and time left while it runs) and what it recorded: its config, what its analyses found with errors and units, the checks, why it stopped and what would fix it |
 | `methods_of_study` | A study's methods paragraphs as its report gives them: preparation, protocol, how each mean and its error were determined, any rule it ran until, an AI model's part, and the software; a preparation outside the workspace is not read |
 | `compare_studies` | The settings two studies differ in, and the means each recorded, a difference marked resolved only past twice its combined standard error, and one that cannot be judged (no error, or a mean not determined) said to be not assessed |

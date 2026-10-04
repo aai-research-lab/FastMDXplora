@@ -276,11 +276,16 @@
             </div>
             <div class="page-header-actions">
               <input type="search" class="studies-search" id="studies-search" autocomplete="off"
-                     placeholder="Search by name, structure, kind or state" aria-label="Search the studies">
+                     placeholder="Search by name, structure, kind, state, tag or note" aria-label="Search the studies">
               <button type="button" class="ghost-btn" id="studies-look-in">Look in another folder</button>
               <input type="hidden" id="studies-path">
             </div>
           </div>
+          <div class="studies-tag-filter" id="studies-tag-filter" hidden>
+            <span class="study-tag is-filter" id="studies-tag-filter-said"></span>
+            <button type="button" class="ghost-btn" id="studies-tag-filter-clear">Every study</button>
+          </div>
+          <datalist id="studies-tags-used"></datalist>
           <div class="studies-compare-bar" id="studies-compare-bar" hidden>
             <span class="muted small" id="studies-chosen-said"></span>
             <button type="button" class="primary-btn" id="studies-compare" disabled>Compare</button>

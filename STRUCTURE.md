@@ -17,6 +17,7 @@ FastMDXplora/
 │       ├── own_programs.py        # Puts this environment's programs (AmberTools) on PATH
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
+│       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
 │       ├── movie_maker.py         # `fastmdx movie`: a movie made by the Viewer in a browser with no window
 │       ├── advisories.py          # What is worth knowing before a run starts, not after

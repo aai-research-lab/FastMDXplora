@@ -4252,6 +4252,25 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .studies-settings td:first-child, .studies-settings th:first-child { width: 34%; }
 .studies-more { align-self: flex-start; }
 .studies-means tr.is-resolved td { color: var(--accent-orange); }
+/* A study's tags and note (studies.js, study_tags.py). */
+.study-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.study-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px;
+             border: 1px solid color-mix(in srgb, var(--accent-blue) 45%, transparent);
+             background: color-mix(in srgb, var(--accent-blue) 9%, transparent);
+             color: var(--text-primary); font: inherit; font-size: var(--text-2xs); cursor: pointer; }
+.study-tag:hover { background: color-mix(in srgb, var(--accent-blue) 18%, transparent); }
+.study-tag.is-editing, .study-tag.is-filter { cursor: default; }
+.study-tag-drop { border: none; background: none; padding: 0 0 0 2px; color: var(--text-secondary);
+                  font: inherit; cursor: pointer; }
+.study-note { color: var(--text-secondary); font-style: italic; overflow-wrap: anywhere; }
+.study-tag-editor { display: flex; flex-direction: column; gap: 6px; }
+.study-tag-row { display: flex; gap: 6px; align-items: center; }
+.study-tag-input, .study-note-input { flex: 1; min-width: 0; padding: 4px 8px; font: inherit;
+    font-size: var(--text-xs); color: var(--text-primary); border: 1px solid var(--border-primary);
+    border-radius: 6px; background: color-mix(in srgb, var(--text-primary) 2.8%, transparent); }
+.study-tag-said:empty { display: none; }
+.studies-tag-filter { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.studies-tag-filter[hidden] { display: none; }
 
 /* The Agent's reply as it is written (agent-panel.js). */
 .agent-writing { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); font-size: var(--text-sm); }

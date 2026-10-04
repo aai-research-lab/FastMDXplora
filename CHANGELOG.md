@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Tags and a note on a study
+
+**A study can carry tags and a note of the person's own** ("wild type",
+"JCIM Fig. 4"; "Ca²⁺ missing, rerun before quoting"), kept in its folder in
+`study_tags.json`, beside its records and never in them, so they go where
+the study goes. All studies shows them on each card, edits them there
+(offering the tags used as one is typed), narrows the cards to a tag
+clicked, and searches them. Through `fastmdx mcp`, `list_studies` gives
+each study's tags and note and lists those with a tag, and `tag_study`
+adds tags; removing one and writing the note stay with the person, and a
+read-only server writes neither.
+
 ### A pocket's volume over the frames
 
 **The Viewer's Pocket volume section** plots, for a study with a ligand, how

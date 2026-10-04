@@ -1048,6 +1048,19 @@ def make_handler(
                 self._add_movie_frame(path.removeprefix("/api/movies/").removesuffix("/frame"))
                 return
             payload = self._read_json_body()
+            if path == "/api/study-tags":
+                # A study's tags and note, as the person set them on its card,
+                # kept in its folder beside its records (study_tags.py).
+                from fastmdxplora.study_tags import set_tags
+
+                named = self._path_for(str(payload.get("path") or ""))
+                if named is None:
+                    return
+                if not is_study(Path(named)):
+                    self._send_json({"ok": False, "reason": f"{named} is not a study."})
+                    return
+                self._send_json(set_tags(named, payload.get("tags"), payload.get("note")))
+                return
             if path == "/api/movies":
                 # A movie of the study's frames started: ffmpeg on this
                 # computer encodes the frames the Viewer sends (movies.py).

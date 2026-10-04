@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-__all__ = ["studies_in", "card_of", "studies_compared", "thumbnail_of"]
+__all__ = ["studies_in", "card_of", "studies_compared", "tags_used", "thumbnail_of"]
 
 #: A difference is marked past this many combined standard errors.
 RESOLVED_AT = 2.0
@@ -81,7 +81,19 @@ def studies_in(root: Path | str, *, deepest: int = DEEPEST,
         walk(base, 1)
     cards = [card_of(folder) for folder in found]
     cards.sort(key=lambda card: card.get("when") or "", reverse=True)
-    return {"ok": True, "root": str(base), "studies": cards, "more": more}
+    return {"ok": True, "root": str(base), "studies": cards, "more": more,
+            "tags_used": tags_used(cards)}
+
+
+def tags_used(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The tags the studies carry, the most used first, each with how many
+    carry it: one tag whatever its case, written as it was first."""
+    counted: dict[str, list[Any]] = {}
+    for card in cards:
+        for tag in card.get("tags") or []:
+            counted.setdefault(tag.casefold(), [tag, 0])[1] += 1
+    return [{"tag": tag, "studies": n}
+            for tag, n in sorted(counted.values(), key=lambda kept: (-kept[1], kept[0].casefold()))]
 
 
 def card_of(folder: Path | str) -> dict[str, Any]:
@@ -101,6 +113,10 @@ def card_of(folder: Path | str) -> dict[str, Any]:
         "means": [],
         "thumbnail": bool(thumbnail_of(base)),
     }
+    from fastmdxplora.study_tags import tags_of
+
+    # What the person said the study is, kept beside its records.
+    card.update(tags_of(base))
     simulation = (config or {}).get("simulation") if isinstance(config, dict) else None
     from fastmdxplora.simulation.resume import extended_production
 

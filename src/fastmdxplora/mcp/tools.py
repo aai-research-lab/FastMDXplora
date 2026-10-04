@@ -744,6 +744,23 @@ def _make_movie(ctx: Context, args: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _tag_study(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.study_tags import add_tags
+
+    folder = _study(ctx, args["study"])
+    said = add_tags(folder, args.get("tags"))
+    if not said.get("ok"):
+        raise ToolError(said.get("reason") or "The tags could not be added.")
+    where = ctx.workspace.shown(folder)
+    added = said.get("added") or []
+    return "\n".join([
+        (f"Tagged {where} " + ", ".join(repr(t) for t in added) + "." if added
+         else f"{where} had those tags already."),
+        "Its tags now: " + ", ".join(said["tags"]) + ".",
+        "Kept in its study_tags.json; the person removes a tag, or writes the study's note, "
+        "on its card in the GUI's All studies."])
+
+
 def _view_said(view: dict[str, Any]) -> str:
     said = []
     if view.get("frame") is not None:
@@ -787,7 +804,11 @@ def _views_of_study(ctx: Context, args: dict[str, Any]) -> str:
 
 def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
     cards, more = studies_here(ctx.workspace)
+    wanted = " ".join(str(args.get("tag") or "").split()).casefold()
+    if wanted:
+        cards = [c for c in cards if any(t.casefold() == wanted for t in c.get("tags") or [])]
     lines = [f"{len(cards)} stud{'y' if len(cards) == 1 else 'ies'} in {ctx.workspace.root}"
+             + (f" tagged {args['tag']!r}" if wanted else "")
              + (", newest first:" if cards else ".")]
     for card in cards:
         said = [str(card.get("system") or "no system"), str(card.get("kind") or "study"),
@@ -800,6 +821,10 @@ def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
         if card.get("when"):
             said.append(str(card["when"])[:10])
         lines.append(f"- {ctx.workspace.shown(card['path'])}: " + ", ".join(s for s in said if s))
+        if card.get("tags"):
+            lines.append("    tagged: " + ", ".join(card["tags"]))
+        if card.get("note"):
+            lines.append(f"    the person's note: {card['note']}")
         for mean in card.get("means") or []:
             lines.append(f"    {mean.get('label') or mean['analysis']}: {_mean(mean)}")
     if more:
@@ -1223,9 +1248,23 @@ TOOLS: tuple[Tool, ...] = (
          {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True,
           "openWorldHint": False}, _stop_study, acts=True),
     Tool("list_studies", "List the studies here",
-         "The studies in the workspace, newest first, each with its system, state and the "
-         "means it recorded with their errors; and the YAML files at its top.",
-         {}, (), _READS, _list_studies),
+         "The studies in the workspace, newest first, each with its system, state, the "
+         "means it recorded with their errors, and the tags and note the person gave it; "
+         "or only those with a tag. And the YAML files at its top.",
+         {"tag": {"type": "string", "description": (
+             "Only the studies with this tag, whatever its case.")}},
+         (), _READS, _list_studies),
+    Tool("tag_study", "Tag a study",
+         "Add tags to a study, as the person asks: short words of their own such as wild "
+         "type or JCIM Fig. 4, kept in the study's folder beside its records and shown on "
+         "its card in the GUI. Tags are only added; the person removes one, or writes the "
+         "study's note, in the GUI.",
+         {"study": _STUDY,
+          "tags": {"type": "array", "items": {"type": "string"}, "description": (
+              "The tags to add, each up to 40 characters on one line.")}},
+         ("study", "tags"),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
+          "openWorldHint": False}, _tag_study, acts=True),
     Tool("read_study", "Read a study",
          "Where a study stands (running, with its step and time left, or finished) and "
          "what it recorded: its config, what its analyses found with errors and units, "
