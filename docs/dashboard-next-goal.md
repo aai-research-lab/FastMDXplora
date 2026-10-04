@@ -12,7 +12,7 @@ Continue in `C:\Users\User\OneDrive\Documents\GitHub\FastMDXplora`, branch `cont
 2. Record Gate C preservation receipts from the final diff and existing qualified scientific tests. Keep known CPU-repeatability, aggregate-provenance and unavailable-backend limits explicit; do not change scientific algorithms or run production MD.
 3. Freeze one code revision only after source fixes stop. Run the specified complete combined test/lint gate without concurrent edits; any code change after this point reopens the affected checks.
 4. Build and install that exact wheel outside the checkout. On disposable study data and port 8785, verify the repaired focus, clip-state restoration, audit bookmark restore, remaining bookmark/Agent interactions and OpenAI route. Do not restart or modify the user's port 8783 dashboard.
-5. Update README, changelog, packaged Agent knowledge and closeout receipts once. Review the full branch diff and scientific-source hashes, commit and push only `princeote/context-aware-agent`, then verify the remote revision. Do not integrate upstream main or create/merge a PR.
+5. The tested source increment is committed locally as `a24dacb`. After final-wheel acceptance, update README, changelog, packaged Agent knowledge and closeout receipts once. Review the full branch diff and scientific-source hashes, push only `princeote/context-aware-agent`, then verify the remote revision. Do not integrate upstream main or create/merge a PR.
 
 ## Gate A — visual and interaction acceptance
 
@@ -36,7 +36,7 @@ The combined suite must include the dashboard-boundary, Agent-reasoning, provide
 
 ## Gate E — evidence and branch handoff
 
-**Open.** Update README/changelog, packaged knowledge, this checklist and the status record once for final behavior and limitations. Review the complete diff and scientific-source hashes. Commit and push only to `princeote/context-aware-agent` under the existing goal authorization; verify local and remote revisions. Do not integrate upstream main or create/merge a PR. Claude, Kimi Code and Gemini live accounts remain UNVERIFIED_EXTERNAL_DEPENDENCY: retain adapters and local/synthetic tests, do not request purchases or repeat absent-account probes, and do not claim unqualified all-provider completion.
+**Open.** The tested source increment is committed locally as `a24dacb`; it has not been pushed. After exact-wheel acceptance, update README/changelog, packaged knowledge, this checklist and the status record once for final behavior and limitations. Review the complete diff and scientific-source hashes. Push only to `princeote/context-aware-agent` under the existing goal authorization and verify local/remote revisions. Do not integrate upstream main or create/merge a PR. Claude, Kimi Code and Gemini live accounts remain UNVERIFIED_EXTERNAL_DEPENDENCY: retain adapters and local/synthetic tests, do not request purchases or repeat absent-account probes, and do not claim unqualified all-provider completion.
 
 ## Closeout rule
 
