@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Ward dendrogram is the Ward clustering
+
+**With `linkage: ward`, the saved dendrogram and `hierarchical_linkage.npy` are now the hierarchy that labelled the frames.** The labels came from Ward's linkage on the frames as points (the superposed coordinates, or a classical MDS embedding of the pairwise RMSD), while the dendrogram and the linkage file were built by average linkage on the distances: cut at the number of clusters asked for, they agreed with the labels to an adjusted Rand index of 0.64 on a drifting trajectory. Now both are built with SciPy's Ward on the same points, which agree to 1.0, and which points they were is recorded under `findings.hierarchical`. Results change: the dendrogram figure and `hierarchical_linkage.npy` of Ward clusterings; the labels do not.
+
 ### The k-means seed is in the record
 
 **`cluster` now writes `random_state` and `n_init` to its `options.json`.** Both were settable and both decide which local optimum k-means finds, and neither was recorded, so a clustering could not be repeated from its record or told apart from one run with another seed. Results do not change.

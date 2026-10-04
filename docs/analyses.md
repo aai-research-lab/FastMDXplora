@@ -243,7 +243,11 @@ against another tool.
 
 - **Clustering** seeds k-means at 42 by default. A clustering that survives a
   change of seed is a finding; one that does not is an artefact of where the
-  algorithm started, and the seed is a setting so that can be tested.
+  algorithm started, and the seed is a setting so that can be tested. The
+  seed and the number of starts are written to `options.json`. A Ward
+  hierarchy is built on the points its labels came from (the superposed
+  coordinates, or an MDS embedding of the pairwise RMSD), so its dendrogram
+  and `hierarchical_linkage.npy` cut to the same clusters.
 
 - **Contacts and hydrogen bonds** are computed across the periodic boundary where
   the trajectory carries a unit cell.

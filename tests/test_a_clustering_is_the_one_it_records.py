@@ -11,6 +11,7 @@ import json
 
 import mdtraj as md
 import numpy as np
+import pytest
 
 from fastmdxplora.analysis.cluster import Cluster
 
@@ -42,3 +43,23 @@ def test_the_seed_and_the_starts_are_recorded(tmp_path):
     options = json.loads((tmp_path / "cluster" / "options.json").read_text())["options"]
     assert options["random_state"] == 7
     assert options["n_init"] == 3
+
+
+@pytest.mark.parametrize("features", ["rmsd", "coordinates"])
+def test_the_saved_ward_hierarchy_is_the_one_that_labelled_the_frames(tmp_path, features):
+    """It was average linkage on the distances: cut at five clusters it
+    agreed with the labels to an adjusted Rand index of 0.64."""
+    from scipy.cluster.hierarchy import fcluster
+    from sklearn.metrics import adjusted_rand_score
+
+    analysis = Cluster(methods=["hierarchical"], n_clusters=5, linkage="ward",
+                       features=features, output_dir=tmp_path)
+    result = analysis.run(_drifting())
+    assert result.status == "ok", result.message
+
+    saved = np.load(tmp_path / "cluster" / "hierarchical_linkage.npy")
+    cut = fcluster(saved, 5, "maxclust")
+
+    assert adjusted_rand_score(result.data["hierarchical"], cut) == pytest.approx(1.0)
+    recorded = json.loads((tmp_path / "cluster" / "options.json").read_text())["findings"]
+    assert "ward_points" in recorded["hierarchical"]
