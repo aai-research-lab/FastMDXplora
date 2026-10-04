@@ -166,7 +166,7 @@ is checked against before anything about the protein in it is believed.
 | Analysis | What it computes |
 |---|---|
 | `area_per_lipid` | The box's area in xy, less the protein's cross section in the hydrophobic core, per lipid of one leaflet, and each leaflet's own beside it. nm², per frame |
-| `bilayer_thickness` | The distance between the two leaflets' phosphate planes, D_PP. nm, per frame |
+| `bilayer_thickness` | The distance between the two leaflets' phosphate planes, D_PP. nm, per frame. Beside it, the mass density profile of the lipid heads, lipid chains, water, protein and ions along the normal |
 | `lipid_order` | The deuterium order parameter S_CD of every acyl-chain carbon, by chain. −S_CD is plotted |
 
 Both per-frame quantities carry the mean after equilibration, its error, and the
@@ -193,6 +193,19 @@ asymmetric one the leaflets share one area, so the leaflet with fewer lipids
 has more area per lipid, and the bilayer's value is neither leaflet's: compare
 each leaflet's with experiment on its own lipid. The file's columns are the
 upper leaflet's, the lower leaflet's and the bilayer's, in that order.
+
+**The mass density profile** is written beside the thickness
+(`density_profile.dat` and `density_profile.png`): the density of each part of
+the system in g/cm³, in 0.1 nm slabs along z, centred on the bilayer centre in
+every frame and averaged over the frames analysed. The lipids are split into
+their hydrocarbon chains (carbons bonded only to carbon and hydrogen, and
+their hydrogens) and their heads (everything else, the ester carbonyls
+included); protein is anything else of more than one atom, and ions single
+atoms. Each row carries the slab's width inside the box, so the density times
+the width, summed and multiplied by the box's area, is the component's mass.
+The heads' peaks are the phosphate planes D_PP is taken between; where water
+falls to half its bulk density on each side is the usual water boundary of the
+bilayer.
 
 **The chains are found from the bonds**, not from atom names, so any force
 field's naming works: a chain starts at a carbonyl bonded to an ester oxygen,

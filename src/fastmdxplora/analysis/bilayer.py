@@ -27,6 +27,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
+import pandas as pd
 
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.lipids import (
@@ -48,6 +49,9 @@ __all__ = [
     "cross_section",
     "find_bilayer",
     "bilayer_centre",
+    "density_profile",
+    "PROFILE_BIN_NM",
+    "PROFILE_COMPONENTS",
 ]
 
 #: Heights, relative to the bilayer centre, at which the protein's cross
@@ -379,6 +383,121 @@ def _closed(grid: np.ndarray, matrix: np.ndarray, na: int, nb: int,
     padded = np.pad(grid, ((ra, ra), (rb, rb)), mode="wrap")
     shrunk = ndimage.binary_erosion(padded, structure=element)[ra:-ra, rb:-rb]
     return ndimage.binary_fill_holes(shrunk)
+
+
+#: Width of the slabs the mass density profile is counted in, nm.
+PROFILE_BIN_NM = 0.1
+
+#: One atomic mass unit per cubic nanometre, in g/cm^3.
+_AMU_PER_NM3_IN_G_PER_CM3 = 1.66053906660e-3
+
+#: The parts of the system the density profile separates, in column order.
+PROFILE_COMPONENTS = ("lipid_heads", "lipid_tails", "water", "protein", "ions")
+
+
+def _hydrocarbon(residue: Any, xyz: np.ndarray, cell: np.ndarray) -> np.ndarray:
+    """For each atom of a lipid residue, whether it belongs to the chains.
+
+    A carbon bonded to nothing but carbon and hydrogen is chain, and so is a
+    hydrogen on one; everything else (the phosphate, the choline, the
+    glycerol, the ester carbonyls, a sterol's hydroxyl and the carbon that
+    carries it) is head. Bonds are found within the residue by covalent
+    distance at the nearest image, so a split Lipid21 tail is all chain and
+    its head residue keeps its carbonyls.
+    """
+    atoms = list(residue.atoms)
+    symbols = [_symbol(a) for a in atoms]
+    delta = xyz[:, None, :] - xyz[None, :, :]
+    fractional = delta @ np.linalg.inv(cell)
+    delta = (fractional - np.round(fractional)) @ cell
+    distance = np.sqrt((delta ** 2).sum(axis=-1))
+    radius = np.array([_COVALENT_NM.get(s, 0.076) for s in symbols])
+    bonded = distance < radius[:, None] + radius[None, :] + _BOND_TOLERANCE_NM
+    np.fill_diagonal(bonded, False)
+    carbon = np.array([s == "C" for s in symbols])
+    hydrogen = np.array([s == "H" for s in symbols])
+    other = ~(carbon | hydrogen)
+    chain = carbon & ~(bonded & other[None, :]).any(axis=1)
+    owner = np.where(hydrogen, np.argmax(bonded & ~hydrogen[None, :], axis=1), -1)
+    return chain | (hydrogen & (owner >= 0) & chain[np.maximum(owner, 0)])
+
+
+def _component_of_each_atom(traj: md.Trajectory) -> np.ndarray:
+    """The index into :data:`PROFILE_COMPONENTS` of every atom."""
+    topology = traj.topology
+    vectors = box_vectors(traj)[0]
+    part = np.full(topology.n_atoms, PROFILE_COMPONENTS.index("protein"), dtype=int)
+    templates: dict[tuple, np.ndarray] = {}
+    for residue in topology.residues:
+        atoms = list(residue.atoms)
+        index = np.array([a.index for a in atoms], dtype=int)
+        if is_lipid(residue.name):
+            key = (residue.name, tuple(a.name for a in atoms))
+            if key not in templates:
+                templates[key] = _hydrocarbon(
+                    residue, traj.xyz[0, index].astype(np.float64), vectors)
+            part[index] = np.where(templates[key], PROFILE_COMPONENTS.index("lipid_tails"),
+                                   PROFILE_COMPONENTS.index("lipid_heads"))
+        elif _is_water(residue, atoms):
+            part[index] = PROFILE_COMPONENTS.index("water")
+        elif len(atoms) == 1:
+            part[index] = PROFILE_COMPONENTS.index("ions")
+    return part
+
+
+def _masses(topology: md.Topology) -> np.ndarray:
+    """Each atom's mass, amu; zero for a virtual site or an unknown element."""
+    return np.array([float(getattr(a.element, "mass", 0.0) or 0.0)
+                     if a.element is not None else 0.0 for a in topology.atoms])
+
+
+def density_profile(traj: md.Trajectory, sides: Leaflets,
+                    bin_nm: float = PROFILE_BIN_NM) -> pd.DataFrame:
+    """Mass density along the normal of each part of the system, g/cm^3.
+
+    Every atom's height above the bilayer centre is taken in each frame,
+    across the periodic boundary, and its mass counted in a slab of
+    thickness ``bin_nm``; the slabs are laid from the centre outwards, so
+    one is centred on it in every frame. The density of a slab is the mass
+    in it summed over the frames, over the volume it had summed over the
+    frames::
+
+        rho(z) = sum_f m_f(z) / sum_f (A_f w_f(z))
+
+    with ``A_f`` the box's area in xy and ``w_f(z)`` the part of the slab
+    inside the box (``bin_nm``, less at the two ends where the slab passes
+    the box's face). ``width_nm`` is that part, averaged over the frames,
+    so ``sum(rho * width_nm) * A`` is the mean mass of a component.
+    """
+    vectors = box_vectors(traj)
+    area = _area_xy(vectors)
+    heights = vectors[:, 2, 2]
+    half = float(np.ceil(heights.max() / 2.0 / bin_nm - 1e-9))
+    edges = (np.arange(-half, half + 1) - 0.5) * bin_nm
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    bins = len(centres)
+    part = _component_of_each_atom(traj)
+    masses = _masses(traj.topology)
+    mass = np.zeros((len(PROFILE_COMPONENTS), bins))
+    volume = np.zeros(bins)
+    width = np.zeros(bins)
+    for frame in range(traj.n_frames):
+        dz = _wrapped(traj.xyz[frame, :, 2].astype(np.float64) - sides.centre[frame],
+                      heights[frame])
+        slab = np.clip(np.floor((dz - edges[0]) / bin_nm).astype(int), 0, bins - 1)
+        mass += np.bincount(part * bins + slab, weights=masses,
+                            minlength=len(PROFILE_COMPONENTS) * bins
+                            ).reshape(len(PROFILE_COMPONENTS), bins)
+        inside = np.clip(np.minimum(edges[1:], heights[frame] / 2)
+                         - np.maximum(edges[:-1], -heights[frame] / 2), 0.0, None)
+        volume += area[frame] * inside
+        width += inside
+    with np.errstate(divide="ignore", invalid="ignore"):
+        density = np.where(volume > 0, mass / volume, np.nan) * _AMU_PER_NM3_IN_G_PER_CM3
+    table = pd.DataFrame({"z_nm": centres, "width_nm": width / traj.n_frames})
+    for index, name in enumerate(PROFILE_COMPONENTS):
+        table[f"{name}_g_cm3"] = density[index]
+    return table[table["width_nm"] > 0].reset_index(drop=True)
 
 
 class BilayerSeries(Analysis):

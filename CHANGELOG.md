@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Mass density across the bilayer
+
+**`bilayer_thickness` writes the mass density of each part of the system along the normal beside the thickness:** lipid heads, lipid hydrocarbon chains, water, protein and ions, in g/cm3, in 0.1 nm slabs centred on the bilayer centre in every frame and averaged over the frames analysed (`density_profile.dat`, `density_profile.png`). The density of a slab is its mass summed over frames over its volume summed over frames, `rho(z) = sum_f m_f(z) / sum_f A_f w_f(z)`, with each row's width inside the box written beside it so the density times the width, summed and times the box's area, is the component's mass. On OpenMM's POPC patch the water is 1.0 g/cm3 in bulk and none within 0.3 nm of the centre, and the heads peak 1.8 nm out, half of D_PP. Nothing computed before changes.
+
 ### Each leaflet's area per lipid
 
 **`area_per_lipid` gives each leaflet's own area per lipid, `A / N_upper` and `A / N_lower`, beside the bilayer's `2 A / (N_upper + N_lower)`**, with `A` the box's area in xy less the protein's cross section and the leaflets counted every frame. In an asymmetric bilayer the leaflets share one area, so the one with fewer lipids is the more stretched, and the bilayer's value is neither: OpenMM's DMPC patch with eight lipids taken from the upper leaflet reads 0.664 nm2 for the bilayer, 0.711 for the upper leaflet and 0.622 for the lower. `area_per_lipid.dat` now has three columns, upper, lower and the bilayer's, the bilayer's last so every reader that takes the last column (the dashboard, the comparison of runs, reweighting) reads what it read before; the findings carry both leaflets' means (`per_leaflet`) and, where the counts differ, say so (`asymmetric`). The figure adds both leaflets' series when they differ. Results change: the data file gains two columns; the bilayer's area per lipid is unchanged.

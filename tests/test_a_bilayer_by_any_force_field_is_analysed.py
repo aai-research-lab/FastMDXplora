@@ -409,3 +409,53 @@ class TestEachLeafletHasItsOwnArea:
         assert found["per_leaflet"]["upper_nm2_mean"] == pytest.approx(area[0], rel=1e-9)
         assert found["per_leaflet"]["lower_nm2_mean"] == pytest.approx(area[0], rel=1e-9)
         assert "asymmetric" not in found
+
+
+class TestTheMassDensityProfile:
+
+    def test_the_water_profile_holds_the_water(self) -> None:
+        """The profile integrated over the box's height, times its area, is
+        the water's mass, on a box moved through its own face so the bilayer
+        crosses it, over two frames of different heights."""
+        from fastmdxplora.analysis.bilayer import density_profile, find_bilayer, leaflets
+
+        traj = _patch("POPC")
+        moved = traj[:]
+        moved.xyz[..., 2] = np.mod(moved.xyz[..., 2] + 2.9, moved.unitcell_lengths[0, 2])
+        taller = moved[:]
+        taller.unitcell_lengths = moved.unitcell_lengths * np.array([1.0, 1.0, 1.04])
+        both = md.join([moved, taller])
+        table = density_profile(both, leaflets(both, find_bilayer(both.topology)))
+        assert np.allclose(np.diff(table["z_nm"]), 0.1)
+        assert table["z_nm"].abs().min() < 1e-9  # a slab is centred on the centre
+        water = [a.index for a in both.topology.atoms if a.residue.name == "HOH"]
+        mass = sum(both.topology.atom(i).element.mass for i in water)
+        area = float(np.mean(both.unitcell_lengths[:, 0] * both.unitcell_lengths[:, 1]))
+        integral = float((table["water_g_cm3"].fillna(0) * table["width_nm"]).sum()) * area
+        assert integral / 1.66053906660e-3 == pytest.approx(mass, rel=1e-6)
+        lipid = sum(a.element.mass for a in both.topology.atoms if a.residue.name == "POP")
+        lipids = float(((table["lipid_heads_g_cm3"] + table["lipid_tails_g_cm3"])
+                        * table["width_nm"]).sum()) * area
+        assert lipids / 1.66053906660e-3 == pytest.approx(lipid, rel=1e-6)
+
+    def test_it_reads_as_a_bilayer(self, tmp_path) -> None:
+        """Water near 1 g/cm3 in bulk and absent at the centre, the chains
+        densest at the centre, the heads peaking about D_PP / 2 out."""
+        import pandas as pd
+
+        traj = _patch("POPC")
+        result = BilayerThickness(output_dir=tmp_path).run(md.join([traj, traj]))
+        assert result.status == "ok", result.message
+        folder = result.output_dir
+        table = pd.read_csv(folder / "density_profile.dat")
+        assert (folder / "density_profile.png").is_file()
+        assert folder / "density_profile.dat" in result.artifacts
+        far = table[table["z_nm"].abs() > 3.0]
+        assert 0.9 < far["water_g_cm3"].mean() < 1.1
+        assert table.loc[table["z_nm"].abs() < 0.3, "water_g_cm3"].max() < 0.01
+        tails = table.set_index("z_nm")["lipid_tails_g_cm3"]
+        assert abs(tails.idxmax()) < 1.5
+        heads = table.set_index("z_nm")["lipid_heads_g_cm3"]
+        peak = abs(heads[heads.index > 0].idxmax())
+        assert peak == pytest.approx(result.data[0] / 2, abs=0.35)
+        assert table["protein_g_cm3"].max() == 0.0
