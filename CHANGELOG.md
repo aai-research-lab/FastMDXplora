@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### t-SNE on a short trajectory
+
+**`dimred` with `methods: [tsne]` now runs on a trajectory of five frames or fewer.** The perplexity was min(perplexity, max(5, n/4)), whose floor of 5 is not below the number of frames when there are five or fewer, and t-SNE refused to run. It is now min(perplexity, max(1, (n - 1)/3)), which stays below the frame count, and the value used is recorded under `findings.tsne`. Results change: t-SNE embeddings of trajectories under 120 frames at the default perplexity of 30.
+
 ### PCA axes with MDS beside them
 
 **The PCA figure's axes now say each component's share of the variance whichever other methods run.** MDS cleared the attribute that held PCA's shares, so with `methods: [pca, mds]` the PCA axes read "PCA 1" and "PCA 2" in place of "PC 1 (98.5%)". MDS now leaves them alone. Results do not change; the PCA figure's labels do.

@@ -62,7 +62,9 @@ class DimRed(Analysis):
         Dimensionality of the embedding. For visualization keep at 2 (or 3).
     perplexity : float, default 30.0
         t-SNE perplexity parameter. Roughly the effective number of
-        neighbors each point is balanced against; 5-50 is typical.
+        neighbors each point is balanced against; 5-50 is typical. It must
+        stay below the number of frames, so the value used is
+        min(perplexity, max(1, (n_frames - 1) / 3)) and is recorded.
     n_neighbors : int, default 15
         UMAP neighborhood size.
     min_dist : float, default 0.1
@@ -198,8 +200,8 @@ class DimRed(Analysis):
                 # shared took "(98.5%)" off the PCA axes whenever MDS ran
                 # after it.
             elif method == "tsne":
-                # t-SNE requires perplexity < n_samples
-                p = min(self.perplexity, max(5.0, traj.n_frames / 4))
+                p = _tsne_perplexity(self.perplexity, traj.n_frames)
+                self.findings.setdefault("tsne", {})["perplexity_used"] = float(p)
                 model = TSNE(
                     n_components=self.n_components,
                     perplexity=p,
@@ -241,6 +243,9 @@ class DimRed(Analysis):
 
         try:
             self.result = self.compute(traj)
+            # Written again, as the base class does, so what the projection
+            # found out about its own run is kept beside what it was told.
+            options_path = self._write_options_manifest()
             artifacts: list[Path] = [options_path]
             for method, embedding in self.result.items():
                 # Data file
@@ -312,6 +317,18 @@ class DimRed(Analysis):
 
     _explained_variance: np.ndarray | None = None
     _modes: dict[str, np.ndarray] | None = None
+
+
+def _tsne_perplexity(asked: float, n_frames: int) -> float:
+    """The perplexity t-SNE is given: min(asked, max(1, (n - 1) / 3)).
+
+    scikit-learn refuses a perplexity at or above the number of samples.
+    The earlier rule, min(asked, max(5, n / 4)), let the floor of 5 win on
+    five frames or fewer, and t-SNE then refused to run at all. A third of
+    the other frames keeps it below n with room for the neighbourhood to
+    mean something, and 1 is the smallest perplexity that does.
+    """
+    return float(min(float(asked), max(1.0, (int(n_frames) - 1) / 3.0)))
 
 
 def _plot_dimred_scatter(
