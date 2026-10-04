@@ -7,6 +7,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `pl_contacts` is a heavy-atom contact
+
+**`pl_contacts` now counts a residue as touching the ligand when one of its heavy atoms is within the cutoff of a ligand heavy atom, as its documentation and its 0.4 nm threshold say.** It used every atom, hydrogens included, so a leucine whose nearest carbon was 0.48 nm from the ligand was in contact because two hydrogens pointing at each other were 0.22 nm apart. A test now also holds the residue names `protein` now covers: seven residues around a ligand, five named as AMBER writes them (HIE, HID, HSP, CYX, ASH), give seven contacts. Results change: per-frame contact counts and per-residue contact frequencies fall where hydrogens alone brought a residue within the cutoff.
+
 ### `sidechain_only` keeps bonds involving a side chain
 
 **`hbonds` with `sidechain_only: true` now counts every bond whose donor or acceptor heavy atom is in a side chain, as its documentation says.** It passed the option to MDTraj, which keeps a bond only when donor, hydrogen and acceptor are all side-chain atoms, so a serine OG-H donating to a backbone carbonyl was dropped: on a solvated 1BHL run it reported 16.1 bonds a frame where 40.3 involve a side chain. The bonds are now found over the whole selection and filtered on the donor or the acceptor, for Baker-Hubbard and Wernet-Nilsson alike. Results change: side-chain hydrogen-bond counts rise to include side chain to backbone bonds.

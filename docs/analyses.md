@@ -158,7 +158,7 @@ of the method rather than a threshold to tune.
 
 | | |
 |---|---|
-| `pl_contacts` | How much of the protein the ligand touches, with a per-residue fingerprint |
+| `pl_contacts` | How much of the protein the ligand touches, with a per-residue fingerprint: residues with a heavy atom within 0.4 nm of a ligand heavy atom |
 | `pl_hbonds` | Hydrogen bonds between them |
 | `pl_interactions` | What holds the ligand: eight interaction types, each against a published criterion |
 
