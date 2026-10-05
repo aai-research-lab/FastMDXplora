@@ -382,7 +382,7 @@ def atoms_opposite(trajectory: Any, site_selection: str, axis: np.ndarray, *,
     topology = trajectory.topology
     axis = np.asarray(axis, dtype=float)
     axis = axis / max(float(np.linalg.norm(axis)), 1e-12)
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
 
     alpha = topology.select(ALPHA_CARBONS)
     if alpha.size == 0:

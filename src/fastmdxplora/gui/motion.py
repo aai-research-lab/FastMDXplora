@@ -45,7 +45,7 @@ def modes_of(root: str | Path) -> dict[str, Any]:
 
 
 def _from_the_analysis(out: Path) -> dict[str, Any] | None:
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     from fastmdxplora.gui.series import of_the_played_trajectory
     from fastmdxplora.gui.trajectory_frames import _source
 
@@ -77,7 +77,7 @@ def _from_the_analysis(out: Path) -> dict[str, Any] | None:
 
 
 def _from_the_frames(out: Path) -> dict[str, Any]:
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     import mdtraj as md
 
     from fastmdxplora.analysis.base import superposed

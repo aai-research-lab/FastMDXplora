@@ -274,7 +274,7 @@ def _span(rows: list[list[Any]], *, low: float | None = None,
 
 
 def _rmsf(folder: Path, record: dict[str, Any], frames: int | None) -> dict[str, Any] | None:
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     options = record.get("options") or {}
     if options.get("per_residue") is False:
         return None

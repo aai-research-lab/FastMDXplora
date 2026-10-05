@@ -312,9 +312,15 @@ disulfides every bridged cysteine fell out of `protein`: trypsin's SASA
 covered 211 residues of 223 (96.2 against 92.5 nm2, the holes' neighbours
 exposed), its DSSP changed at 38 residues, its radius of gyration read 1.1%
 large, and the protein side of each ligand analysis did not see them. The
-names are added to MDTraj's list where the analysis package is imported,
-so every analysis, the GUI and a typed selection mean the same protein.
-The finding that named HIE, HID and HSP is gone with the hole.
+names are added to MDTraj's own list, with their one-letter codes, the
+moment MDTraj's topology loads in a process that imported this package,
+whichever was imported first (`fastmdxplora/protein_names.py`), so every
+analysis, the GUI, a typed selection and `backbone` and `sidechain` mean
+the same protein. The finding that named HIE, HID and HSP is gone with the
+hole. Results change on a topology that keeps these names (one from AMBER's
+tleap or a GROMACS force field): the analyses cover the whole protein, and
+equilibration's positional restraints on `protein` hold its bridged
+cysteines and histidines too, which they had left free.
 
 **The alpha-carbon default is `protein and name CA`** (RMSD, RMSF, cluster,
 dimred, and the fits of the order parameters and the B-factor comparison).

@@ -12,6 +12,7 @@ FastMDXplora/
 │       ├── dependencies.py        # Optional-backend detection (OpenMM, PDBFixer, …)
 │       ├── statistics.py          # Statistical inefficiency: how many independent samples a mean rests on
 │       ├── lipids.py              # Which residues are lipids, and how many make a bilayer
+│       ├── protein_names.py       # `protein` covers every amino acid a force field writes, from MDTraj's first import
 │       ├── provenance.py          # Which code a run was made from
 │       ├── user_dir.py            # Where per-user settings live, outside any study
 │       ├── own_programs.py        # Puts this environment's programs (AmberTools) on PATH
@@ -90,7 +91,6 @@ FastMDXplora/
 │       │   ├── imaging.py         # Molecules made whole, MDTraj's imaging for every frame at once
 │       │   ├── water_names.py     # The one set of water residue names every module uses
 │       │   ├── starting_frame.py  # Which frames clustering and the projections read, and where the RMSD equilibrates
-│       │   ├── protein_names.py   # `protein` covers every amino acid a force field writes
 │       │   ├── plotting.py        # Shared figure style
 │       │   ├── rmsd.py rmsf.py rg.py qvalue.py sasa.py ss.py
 │       │   ├── hbonds.py dihedrals.py cluster.py dimred.py water_sites.py

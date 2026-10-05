@@ -167,7 +167,7 @@ class TestEveryHistidineKeepsItsChemistry:
 
 class TestAProteinSelectionKeepsEveryAminoAcid:
     """AUD9's other half: MDTraj's `protein` excluded HIE, HID and HSP. They
-    are now protein to it (analysis/protein_names.py), so nothing is left
+    are now protein to it (protein_names.py), so nothing is left
     out and there is nothing to say."""
 
     def _peptide(self, middle: str):

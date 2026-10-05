@@ -56,7 +56,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 
-from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+from fastmdxplora.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (

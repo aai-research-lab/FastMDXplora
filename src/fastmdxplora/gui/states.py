@@ -31,7 +31,7 @@ MOST_FOR_A_MEDOID = 300
 def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     """Each state the cluster analysis found, with its frames played, its
     share and its representative; or why there are none."""
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     import mdtraj as md
     import pandas as pd
 
@@ -105,7 +105,7 @@ def state_difference(root: str | Path, first: Any, second: Any,
     residue's alpha carbon's displacement in angstroms, as the Viewer's
     results are given. ``frames_file`` names the frames as the Viewer shows
     them (superposed or not), so the second is placed on the first as shown."""
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     import mdtraj as md
 
     from fastmdxplora.gui.trajectory_frames import FRAMES_FILE, FRAMES_TOPOLOGY, _atom_lines, _read

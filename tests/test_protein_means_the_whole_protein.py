@@ -67,7 +67,7 @@ def _calcium_moved(trypsin: md.Trajectory) -> md.Trajectory:
 
 def test_an_alpha_carbon_is_never_the_calcium(tmp_path: Path) -> None:
     trypsin = _trypsin(tmp_path)
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
 
     assert len(trypsin.topology.select("name CA")) == 224
     assert len(trypsin.topology.select(ALPHA_CARBONS)) == 223
@@ -76,7 +76,7 @@ def test_an_alpha_carbon_is_never_the_calcium(tmp_path: Path) -> None:
 @pytest.mark.parametrize("analysis", ["rmsd", "rmsf", "cluster", "dimred"])
 def test_the_alpha_carbon_default_leaves_the_ion_out(analysis: str) -> None:
     from fastmdxplora.analysis.orchestrator import get_analysis_class
-    from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+    from fastmdxplora.protein_names import ALPHA_CARBONS
 
     assert get_analysis_class(analysis).default_selection == ALPHA_CARBONS
 
@@ -96,3 +96,43 @@ def test_the_calcium_has_no_rmsf_row(tmp_path: Path) -> None:
     atoms = analysis.select_atoms(_trypsin(tmp_path))
     names = {_trypsin(tmp_path).topology.atom(int(i)).residue.name for i in atoms}
     assert "CA" not in names
+
+
+# The names are MDTraj's from its first import in any process that imported
+# this package, whichever came first: added where the analysis package
+# happened to be imported, a restraint on `protein` held 8 atoms in one
+# process and 20 in another.
+
+_PEPTIDE = """
+import mdtraj as md
+top = md.Topology()
+chain = top.add_chain()
+for name in ("ALA", "CYX", "CYX", "HIE", "GLY", "NHE"):
+    residue = top.add_residue(name, chain)
+    top.add_atom("N", md.element.nitrogen, residue)
+print(len(top.select("protein")), top.to_fasta())
+"""
+
+
+def _run(code: str) -> str:
+    import subprocess
+    import sys
+
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                          check=True)
+    return done.stdout.strip().splitlines()[-1]
+
+
+def test_importing_the_package_loads_no_mdtraj() -> None:
+    assert _run("import sys, fastmdxplora; print('mdtraj' in sys.modules)") == "False"
+
+
+@pytest.mark.parametrize("first", ["import fastmdxplora", "import mdtraj; import fastmdxplora",
+                                   "import fastmdxplora.setup"])
+def test_the_protein_is_whole_whatever_was_imported_first(first: str) -> None:
+    assert _run(first + "\n" + _PEPTIDE) == "6 ['ACCHG']"
+
+
+def test_without_the_package_mdtraj_is_untouched() -> None:
+    assert _run(_PEPTIDE.replace("print(len(top.select(\"protein\")), top.to_fasta())",
+                                 "print(len(top.select('protein')))")) == "2"

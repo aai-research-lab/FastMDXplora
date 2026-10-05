@@ -28,7 +28,7 @@ import mdtraj as md
 import numpy as np
 
 from fastmdxplora.analysis.plotting import colour
-from fastmdxplora.analysis.protein_names import ALPHA_CARBONS
+from fastmdxplora.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
