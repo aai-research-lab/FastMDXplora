@@ -86,13 +86,23 @@ class Occupancy:
         this did, gave one too large by ``1 / sqrt(2 p (1 - p))``, at least
         1.41 times: on a two-state contact with known rates, 1.4 to 2.3
         times the spread of the fraction over independent replicas, where
-        this gives 0.86 to 0.97 of it.
+        this gives 0.86 to 1.0 of it where the correlation is resolved.
 
         NaN where the contact formed fewer than twice, or where the
         inefficiency was not computed: a contact seen to form once carries
-        no fluctuation to estimate a correlation time from.
+        no fluctuation to estimate a correlation time from. NaN too where the
+        frames hold fewer than 25 independent samples by their own estimate
+        while the presence is correlated (``g`` of 2 or more), the rule every
+        mean's error is held to (`statistics.summarise`): the inefficiency
+        reads low there, and the error with it, 0.72 to 0.76 of the spread
+        over replicas of a contact slow against the run.
         """
+        from fastmdxplora.statistics import RESOLVED_SAMPLES
+
         if self.episodes < 2 or not np.isfinite(self.inefficiency):
+            return float("nan")
+        if (self.inefficiency >= 2.0
+                and self.frames_total / self.inefficiency < RESOLVED_SAMPLES):
             return float("nan")
         p = self.fraction
         return float(np.sqrt(

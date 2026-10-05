@@ -157,3 +157,27 @@ class TestTheErrorOfAnOccupancy:
             errors.append(found[0].uncertainty)
         ratio = np.nanmedian(errors) / np.std(fractions, ddof=1)
         assert 0.8 <= ratio <= 1.2, ratio
+
+    @pytest.mark.parametrize("on,off,n_frames", [(0.002, 0.002, 2000), (0.01, 0.01, 500)])
+    def test_a_contact_slow_against_the_run_has_no_error(self, on, off, n_frames) -> None:
+        """Where the frames hold fewer than 25 independent samples of the
+        presence by its own estimate, the error is withheld, as every mean's
+        is: given, it read 0.72 to 0.76 of the spread over replicas."""
+        from fastmdxplora.analysis.interactions import Contact
+        from fastmdxplora.statistics import RESOLVED_SAMPLES, statistical_inefficiency
+
+        rng = np.random.default_rng(13)
+        given = 0
+        for _ in range(60):
+            present = self._telegraph(rng, n_frames, on, off)
+            contacts = [Contact("hydrophobic", int(f), 1, 2, 0.35)
+                        for f in np.flatnonzero(present)]
+            found = occupancies(contacts, n_frames)
+            if not found:
+                continue
+            error = found[0].uncertainty
+            g = statistical_inefficiency(present.astype(float))
+            if np.isfinite(error):
+                given += 1
+                assert g < 2.0 or n_frames / g >= RESOLVED_SAMPLES
+        assert given <= 6
