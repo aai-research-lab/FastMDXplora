@@ -406,8 +406,29 @@
   }
 
   /** One structure into the Viewer's engine or the preview's, as PDB text:
-   * rendered as the controls say, its cartoon given DSSP. */
-  async function mountStructure(pdbText, options) {
+   * rendered as the controls say, its cartoon given DSSP. The same text
+   * asked for again while it is being loaded is that load: the structure's
+   * first state and the page's opening both asked for it before the first
+   * had set the model, and the second emptied the engine for a moment and
+   * rendered it all again. */
+  function mountStructure(pdbText, options) {
+    const key = options && options.mini ? "mini" : "main";
+    const going = STATE.mountsGoing && STATE.mountsGoing[key];
+    if (going && going.text === pdbText && going.generation === STATE.viewerGeneration) {
+      return going.promise;
+    }
+    const mount = {text: pdbText, generation: STATE.viewerGeneration};
+    // Shared until the structure is in the engine, not while its cartoon is
+    // given DSSP: asked for again after that, it is loaded again.
+    mount.loaded = () => {
+      if (STATE.mountsGoing && STATE.mountsGoing[key] === mount) delete STATE.mountsGoing[key];
+    };
+    STATE.mountsGoing = Object.assign(STATE.mountsGoing || {}, {[key]: mount});
+    mount.promise = mountStructureNow(pdbText, options, mount.loaded).finally(mount.loaded);
+    return mount.promise;
+  }
+
+  async function mountStructureNow(pdbText, options, loadedNow) {
     const opts = options || {};
     const mini = !!opts.mini;
     const generation = STATE.viewerGeneration;
@@ -426,6 +447,7 @@
       const loaded = await engine.loadStructure({text: pdbText,
         coordinates: coordinates ? coordinates.bytes : null,
         keepCamera: hadModel && !opts.fit && STATE.preservingCamera});
+      if (loadedNow) loadedNow();
       if (!isViewerGenerationCurrent(generation)) return;
       const rendered = {atoms: loaded.atoms, frames: loaded.frames, of};
       if (mini) {

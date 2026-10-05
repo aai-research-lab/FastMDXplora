@@ -243,6 +243,16 @@ the choice was replaced by "Run". It is now chosen only where nobody chose a
 colour (in the list, by a saved view or a scene). CI's browser leg failed
 on both, waiting for the mean RMSF's bar.
 
+### The Viewer loads a structure once
+
+**A structure asked for twice while it loads is loaded once.** As the page
+opened, the structure's state could arrive twice before the first load had
+finished, and each asked for the structure: it was loaded and rendered
+again, the Viewer's engine empty for a moment between the two. Besides the
+second render's time, anything that read the atoms then found none, which
+is why the browser tests of the pocket and of the solvent-free structure
+failed now and then (once in five or six openings here).
+
 ### A preparation repeats to the last velocity, and a runaway packing is caught both ways
 
 **`state.xml` is the same file from the same seed.** The velocities setup
