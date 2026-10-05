@@ -252,17 +252,73 @@
     return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
   }
 
+  /* An explanation is folded behind the line it explains, as "why", and
+   * opened there: printed in full under every stage, the narration of a
+   * short run was 420 pixels of prose for each line of what happened.
+   * Under the "why" filter, the explanations are what was asked for and
+   * stand open. A refusal or a qualification is never folded. Which were
+   * opened is kept across the panel's redraws, by the line's place. */
+  var openWhy = {};
+
+  function lineOf(ev, c) {
+    var line = document.createElement("div");
+    line.className = "side-log-line";
+    line.dataset.level = c.level;
+    var ts = document.createElement("span");
+    ts.className = "side-log-ts";
+    ts.textContent = stamp(ev.timestamp);
+    var text = document.createElement("span");
+    text.className = "side-log-text";
+    text.textContent = String(ev.message || "");
+    line.appendChild(ts);
+    line.appendChild(text);
+    return line;
+  }
+
   function renderLog(events) {
     var box = el("side-log");
     if (!box) return;
     var wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
     box.innerHTML = "";
     var shown = 0;
+    var lastLine = null;   // {row, key, folded}: where the next explanation goes
     events.forEach(function (ev) {
       var c = classify(ev);
       if (logFilter === "refusals" && c.kind !== "refused") return;
       if (logFilter === "why" && c.kind !== "why" && c.kind !== "qualified") return;
       shown += 1;
+      /* An explanation with no line before it to explain (the first of
+       * the window, or one after a refusal) stands open on its own. */
+      if (c.kind === "why" && logFilter !== "why" && lastLine) {
+        if (!lastLine.folded) {
+          var fold = document.createElement("details");
+          fold.className = "side-log-entry";
+          fold.dataset.key = lastLine.key;
+          fold.open = Boolean(openWhy[lastLine.key]);
+          var summary = document.createElement("summary");
+          summary.className = "side-log-summary";
+          lastLine.row.replaceWith(fold);
+          summary.appendChild(lastLine.row);
+          var mark = document.createElement("span");
+          mark.className = "side-log-why-mark";
+          mark.textContent = "why";
+          lastLine.row.appendChild(mark);
+          fold.appendChild(summary);
+          var body = document.createElement("div");
+          body.className = "side-log-block";
+          body.dataset.kind = "why";
+          fold.appendChild(body);
+          fold.addEventListener("toggle", function () {
+            if (fold.open) openWhy[fold.dataset.key] = true;
+            else delete openWhy[fold.dataset.key];
+          });
+          lastLine.folded = body;
+        }
+        var said = document.createElement("p");
+        said.textContent = String(ev.message || "");
+        lastLine.folded.appendChild(said);
+        return;
+      }
       if (c.kind === "why" || c.kind === "refused" || c.kind === "qualified") {
         var block = document.createElement("div");
         block.className = "side-log-block";
@@ -275,19 +331,13 @@
         }
         block.appendChild(document.createTextNode(String(ev.message || "")));
         box.appendChild(block);
+        lastLine = null;
       } else {
-        var line = document.createElement("div");
-        line.className = "side-log-line";
-        line.dataset.level = c.level;
-        var ts = document.createElement("span");
-        ts.className = "side-log-ts";
-        ts.textContent = stamp(ev.timestamp);
-        var text = document.createElement("span");
-        text.className = "side-log-text";
-        text.textContent = String(ev.message || "");
-        line.appendChild(ts);
-        line.appendChild(text);
-        box.appendChild(line);
+        var row = lineOf(ev, c);
+        box.appendChild(row);
+        /* Kept by what the line says and when: the panel shows the last
+         * hundred events, so a place in the list moves as a run writes. */
+        lastLine = { row: row, key: String(ev.timestamp || "") + "|" + String(ev.message || "") };
       }
     });
     if (!shown) {

@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Log says what happened, and folds each explanation behind its line
+
+**Each stage's explanation and its citation are folded behind the line
+they explain**, under a **why** mark that opens them, and stay open as the
+Log is drawn again; under the **why** filter they stand open, and a
+refusal or a qualification is never folded. They were printed in full,
+so the narration of a short run was about 420 pixels of prose for each
+line of what happened. The narration is in the text face, its times in the
+fixed-width one. The panel opens by itself only while a study runs.
+
 ### The interface brings its fonts, and keeps the fixed-width one for numbers
 
 **Inter and JetBrains Mono ship with the package** (Latin and Greek, about

@@ -3081,16 +3081,32 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
    show a pane the tabs have hidden. */
 .side-pane[hidden] { display: none !important; }
 
+/* The narration in the text face, its times in the fixed-width one. */
 .side-log {
     flex: 1; overflow-y: auto; padding: 12px 14px;
-    display: flex; flex-direction: column; gap: 8px;
-    font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.5;
+    display: flex; flex-direction: column; gap: 6px;
+    font-family: var(--font-stack); font-size: var(--text-xs); line-height: 1.5;
 }
 .side-log-line { display: flex; gap: 10px; color: var(--text-secondary); }
 .side-log-line[data-level="error"] .side-log-text { color: var(--status-error); }
 .side-log-line[data-level="warning"] .side-log-text { color: var(--status-waiting); }
 .side-log-line[data-level="success"] .side-log-text { color: var(--status-completed); }
-.side-log-ts { color: var(--text-muted); flex: none; }
+.side-log-ts { color: var(--text-muted); flex: none; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+/* A line with its explanation folded behind it. */
+.side-log-entry > summary { list-style: none; cursor: pointer; }
+.side-log-entry > summary::-webkit-details-marker { display: none; }
+.side-log-entry > summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
+.side-log-why-mark {
+    flex: none; margin-left: auto; align-self: flex-start;
+    padding: 0 6px; border-radius: 4px;
+    font-size: var(--text-2xs); color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+}
+.side-log-entry > summary:hover .side-log-why-mark,
+.side-log-entry[open] .side-log-why-mark { color: var(--accent-text); border-color: var(--accent-cyan); }
+.side-log-entry > .side-log-block { margin: 6px 0 2px; }
+.side-log-block p { margin: 0; }
+.side-log-block p + p { margin-top: 6px; color: var(--text-muted); }
 .side-log-text { min-width: 0; overflow-wrap: anywhere; }
 .side-log-block {
     padding: 10px 12px; border-radius: 6px;
