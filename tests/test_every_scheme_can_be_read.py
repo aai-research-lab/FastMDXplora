@@ -27,7 +27,7 @@ from tests.test_the_drawing_scripts_run_in_a_browser import _write_study  # noqa
 PAGES = ("overview", "viewer", "analysis", "report", "files", "run", "agent")
 #: Preferences and the citation, which were pages, and the Agent's settings.
 DIALOGS = ("prefs-dialog", "cite-dialog", "agent-settings")
-SCHEMES = ("graphite", "ink", "paper")
+SCHEMES = ("dark", "light")
 
 #: The text on the page measured against what is behind it; returns what
 #: falls under 3:1. Text under a picture is not measured, since what is
@@ -186,32 +186,67 @@ def test_every_page_can_be_read(browser, dashboard, scheme) -> None:
 
 def test_the_status_colours_follow_the_scheme(browser, dashboard) -> None:
     """Declared on :root from the accents, so the scheme is set there too."""
-    page = _in(browser, dashboard, "paper")
+    page = _in(browser, dashboard, "light")
     root = page.evaluate("() => [document.documentElement.dataset.theme, getComputedStyle("
                          "document.body).getPropertyValue('--status-completed').trim()]")
     page.context.close()
-    assert root == ["paper", "#1b7a45"]
+    assert root == ["light", "#1b7a45"]
 
 
 def test_the_first_visit_takes_the_systems_scheme(browser, dashboard) -> None:
     light = _in(browser, dashboard, color_scheme="light")
-    assert light.evaluate("() => document.body.dataset.theme") == "paper"
+    assert light.evaluate("() => document.body.dataset.theme") == "light"
     light.context.close()
     dark = _in(browser, dashboard, color_scheme="dark")
-    assert dark.evaluate("() => document.body.dataset.theme") == "graphite"
+    assert dark.evaluate("() => document.body.dataset.theme") == "dark"
     dark.context.close()
 
 
 def test_a_chosen_scheme_is_kept(browser, dashboard) -> None:
-    page = _in(browser, dashboard, "ink", color_scheme="light")
+    page = _in(browser, dashboard, "dark", color_scheme="light")
     page.reload(wait_until="domcontentloaded")
     page.wait_for_function("() => document.body.dataset.theme")
-    assert page.evaluate("() => document.body.dataset.theme") == "ink"
+    assert page.evaluate("() => document.body.dataset.theme") == "dark"
     page.context.close()
 
 
+@pytest.mark.parametrize("former,now", [("graphite", "dark"), ("ink", "dark"), ("paper", "light")])
+def test_a_scheme_chosen_before_is_its_new_name(browser, dashboard, former, now) -> None:
+    """Graphite and Ink were dark schemes and Paper the light one; a
+    person who chose one keeps it, under its new name, whatever the
+    computer asks for."""
+    context = browser.new_context(viewport={"width": 1440, "height": 900},
+                                  color_scheme="light" if now == "dark" else "dark")
+    context.add_init_script(f"try {{ localStorage.setItem('fmx.theme', '{former}'); }} catch (e) {{}}")
+    page = context.new_page()
+    page.set_default_timeout(60000)
+    page.goto(dashboard.url + "#overview", wait_until="domcontentloaded")
+    page.wait_for_function("() => window.FastMDXDashboard && document.body.dataset.theme")
+    said = page.evaluate("""() => [document.documentElement.dataset.theme,
+        document.body.dataset.theme, localStorage.getItem('fmx.theme'),
+        document.querySelector('.seg-btn.active[data-theme]').dataset.theme]""")
+    context.close()
+    assert said == [now, now, now, now]
+
+
+def test_the_dark_ground_is_neutral(browser, dashboard) -> None:
+    """The dark scheme's ground was #050505 under cyan and violet glows,
+    which read as green: now the lab website's #1c1c1d, flat, with cards
+    #212529 and its cyan."""
+    page = _in(browser, dashboard, "dark")
+    said = page.evaluate("""() => {
+        const shell = getComputedStyle(document.querySelector('.app-shell'));
+        const card = document.querySelector('.card');
+        return [shell.backgroundColor, shell.backgroundImage,
+                getComputedStyle(card).backgroundColor,
+                getComputedStyle(document.body).getPropertyValue('--accent-cyan').trim()];
+    }""")
+    page.context.close()
+    assert said == ["rgb(28, 28, 29)", "none", "rgb(33, 37, 41)", "#2698ba"]
+
+
 def test_the_charts_redraw_in_the_new_scheme(browser, dashboard) -> None:
-    page = _in(browser, dashboard, "graphite")
+    page = _in(browser, dashboard, "dark")
     # As long as the other browser tests wait: beside a full suite on two
     # cores the chart's first value took over thirty seconds.
     page.wait_for_function("() => document.querySelector('[data-chart-value=\"temperature\"]')"
@@ -231,11 +266,11 @@ def test_the_charts_redraw_in_the_new_scheme(browser, dashboard) -> None:
         }""")
 
     before = brightness()
-    _choose(page, "paper")
+    _choose(page, "light")
     page.wait_for_timeout(200)
     after = brightness()
     page.context.close()
-    # The series and labels were light, for a dark ground; on Paper they are
+    # The series and labels were light, for a dark ground; on Light they are
     # drawn dark.
     assert before is not None and after is not None
     assert after < before - 60

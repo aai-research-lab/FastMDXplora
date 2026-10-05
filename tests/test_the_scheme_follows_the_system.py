@@ -41,16 +41,21 @@ def test_it_follows_the_system_until_one_is_chosen(session) -> None:
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = _page(browser, session, "light")
-        assert _theme(page) == "paper"
+        assert _theme(page) == "light"
         page.emulate_media(color_scheme="dark")
-        page.wait_for_function("() => document.documentElement.dataset.theme === 'graphite'")
+        page.wait_for_function("() => document.documentElement.dataset.theme === 'dark'")
         assert page.evaluate("() => localStorage.getItem('fmx.theme')") is None
 
         # In Settings, which is closed; the button is what is being tested.
-        page.evaluate("() => document.querySelector(\".seg-btn[data-theme='paper']\").click()")
-        assert page.evaluate("() => localStorage.getItem('fmx.theme')") == "paper"
+        page.evaluate("() => document.querySelector(\".seg-btn[data-theme='light']\").click()")
+        assert page.evaluate("() => localStorage.getItem('fmx.theme')") == "light"
         page.emulate_media(color_scheme="light")
         page.emulate_media(color_scheme="dark")
         page.wait_for_timeout(300)
-        assert _theme(page) == "paper", "a chosen scheme is kept"
+        assert _theme(page) == "light", "a chosen scheme is kept"
+
+        # System chosen again: the page follows the computer once more.
+        page.evaluate("() => document.querySelector(\".seg-btn[data-theme='system']\").click()")
+        page.wait_for_function("() => document.documentElement.dataset.theme === 'dark'")
+        assert page.evaluate("() => localStorage.getItem('fmx.theme')") == "system"
         browser.close()

@@ -1925,7 +1925,7 @@
     const cell = periodicCell(boxVectors(e.box_shape, Number(e.width_nm) * 10));
     const centre = e.centre_angstrom || [0, 0, 0];
     const at = (v) => [v[0] + centre[0], v[1] + centre[1], v[2] + centre[2]];
-    const colour = tone("--accent-cyan", "#63e6ff");
+    const colour = tone("--accent-cyan", "#2698ba");
     const tubes = cell.edges.map(([i, j]) => ({ start: at(cell.vertices[i]),
       end: at(cell.vertices[j]), radius: 0.35, colour }));
     // Turned a little off the box's axes, so the cell reads as a solid, and

@@ -42,7 +42,7 @@
 
   function colours() {
     return {
-      line: token("--accent-cyan", "#63e6ff"),
+      line: token("--accent-cyan", "#2698ba"),
       mean: token("--accent-orange", "#ffb86b"),
       second: token("--accent-violet", "#b49cff"),
       grid: token("--border-subtle", "rgba(255,255,255,0.07)"),

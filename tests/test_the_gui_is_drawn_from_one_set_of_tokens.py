@@ -70,7 +70,7 @@ def paper(tmp_path_factory):
             page = browser.new_page(viewport={"width": 1400, "height": 900}, color_scheme="light")
             page.set_default_timeout(60000)
             page.goto(session.url + "#overview", wait_until="domcontentloaded")
-            page.wait_for_function("() => document.documentElement.dataset.theme === 'paper'")
+            page.wait_for_function("() => document.documentElement.dataset.theme === 'light'")
             yield page
             browser.close()
     finally:
@@ -87,18 +87,18 @@ def _rgb(text: str) -> tuple[float, ...]:
 
 
 def test_a_tint_follows_the_scheme(paper) -> None:
-    """An active chip on Paper is tinted with Paper's blue, not the dark
-    scheme's cyan."""
+    """An active chip on Light is tinted with Light's cyan, not the dark
+    scheme's."""
     tint = paper.evaluate("""() => {
         const b = document.createElement('button');
         b.className = 'chip-btn active'; document.body.appendChild(b);
         const border = getComputedStyle(b).borderColor; b.remove(); return border; }""")
     accent = paper.evaluate(
         "() => getComputedStyle(document.documentElement).getPropertyValue('--accent-cyan').trim()")
-    assert accent == "#2b6cb0"
-    # 50% of #2b6cb0 over transparent: the blue's own channels.
+    assert accent == "#1b7590"
+    # 50% of #1b7590 over transparent: the cyan's own channels.
     red, green, blue = _rgb(tint)
-    assert (round(red), round(green), round(blue)) == (43, 108, 176)
+    assert (round(red), round(green), round(blue)) == (27, 117, 144)
 
 
 def test_the_toast_is_on_the_schemes_ground(paper) -> None:

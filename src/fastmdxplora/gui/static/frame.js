@@ -26,39 +26,56 @@
   };
 
   /* ---- Theme -------------------------------------------------------- */
-  /* Kept only when chosen. Stored every time, the scheme the system asked
-   * for on a first visit was remembered as though chosen, and a system
-   * that went dark at sunset left the page light for good. */
-  function applyTheme(name, chosen) {
+  /* System, Light or Dark. System, the default, follows the operating
+   * system as it changes; Light or Dark is kept once chosen. Graphite and
+   * Ink, the dark schemes chosen before, are Dark, and Paper is Light. */
+  var CHOICES = { system: 1, light: 1, dark: 1 };
+  var FORMER = { graphite: "dark", ink: "dark", paper: "light" };
+
+  function chosenScheme() {
+    var kept = store.get("theme", null);
+    if (kept && FORMER[kept]) { kept = FORMER[kept]; store.set("theme", kept); }
+    return CHOICES[kept] ? kept : "system";
+  }
+
+  function systemScheme() {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+        return "light";
+      }
+    } catch (e) { /* no media queries */ }
+    return "dark";
+  }
+
+  /* `choice` is system, light or dark (a former name is read as its
+   * scheme); the page is drawn in light or dark. Kept only when chosen:
+   * stored every time, the scheme the system asked for on a first visit
+   * was remembered as though chosen, and a system that went dark at
+   * sunset left the page light for good. */
+  function applyTheme(choice, chosen) {
+    choice = FORMER[choice] || (CHOICES[choice] ? choice : "system");
+    var name = choice === "system" ? systemScheme() : choice;
     document.documentElement.dataset.theme = name;
     document.body.dataset.theme = name;
     $$(".seg-btn[data-theme]").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.theme === name);
+      var on = b.dataset.theme === choice;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
     });
-    if (chosen) store.set("theme", name);
+    if (chosen) store.set("theme", choice);
     document.dispatchEvent(new CustomEvent("fmx:theme", { detail: name }));
   }
 
-  /* Until one is chosen, the page follows the system as it changes. */
+  /* With System chosen, the page follows the system as it changes. */
   function followTheSystem() {
     try {
       var query = window.matchMedia("(prefers-color-scheme: light)");
       var follow = function () {
-        if (store.get("theme", null) === null) applyTheme(firstTheme(), false);
+        if (chosenScheme() === "system") applyTheme("system", false);
       };
       if (query.addEventListener) query.addEventListener("change", follow);
       else if (query.addListener) query.addListener(follow);
     } catch (e) { /* no media queries */ }
-  }
-
-  /* Until one is chosen, the one the system asks for. */
-  function firstTheme() {
-    try {
-      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
-        return "paper";
-      }
-    } catch (e) { /* no media queries */ }
-    return "graphite";
   }
 
   /* ---- Column widths ------------------------------------------------ */
@@ -787,7 +804,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     if (!el("side-panel")) return;
 
-    applyTheme(store.get("theme", null) || firstTheme(), false);
+    applyTheme(chosenScheme(), false);
     followTheSystem();
     $$(".seg-btn[data-theme]").forEach(function (b) {
       b.addEventListener("click", function () { applyTheme(b.dataset.theme, true); });

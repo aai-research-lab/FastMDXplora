@@ -137,7 +137,7 @@ the live process before anything is believed, and a process that is not
 FastMDXplora running that study is never adopted.
 
 **The settings**, from the gear at the sidebar's foot: the scheme
-(Graphite, Ink or Paper), the Agent's AI model and mode with **Agent
+(System, which follows the computer, Light or Dark), the Agent's AI model and mode with **Agent
 settings**, **Preferences**, **Cite FastMDXplora**, the documentation and
 the repository. Each of the three opens as a dialog over the page shown;
 Escape, Close or a click outside closes it, and `#settings` or `#cite` in

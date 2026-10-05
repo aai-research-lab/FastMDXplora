@@ -178,7 +178,7 @@ class TestTheSettingsPopup(unittest.TestCase):
         page = _page()
         popup = page[page.index('id="settings-popup"'):]
         self.assertIn('role="dialog"', popup[:200])
-        for theme in ("graphite", "ink", "paper"):
+        for theme in ("system", "light", "dark"):
             with self.subTest(theme=theme):
                 self.assertIn(f'data-theme="{theme}"', popup)
 
@@ -214,19 +214,20 @@ class TestTheSettingsPopup(unittest.TestCase):
 
 class TestTheThemes(unittest.TestCase):
 
-    def test_three_schemes_over_one_set_of_tokens(self):
+    def test_two_schemes_over_one_set_of_tokens(self):
         theme = (STATIC / "theme.css").read_text(encoding="utf-8")
-        self.assertIn('body[data-theme="ink"]', theme)
-        self.assertIn('body[data-theme="paper"]', theme)
-        # Graphite is the default: the tokens themselves, no override.
-        self.assertNotIn('body[data-theme="graphite"]', theme)
+        self.assertIn('body[data-theme="light"]', theme)
+        # Dark is the default: the tokens themselves, no override.
+        self.assertNotIn('body[data-theme="dark"]', theme)
+        for former in ("graphite", "ink", "paper"):
+            self.assertNotIn(f'data-theme="{former}"', theme)
 
     def test_a_scheme_changes_the_ground_and_not_the_meaning_of_colour(self):
         # Green done, amber qualified, red refused are the same in all
-        # three. A scheme that recoloured status would make a warning look
-        # like one thing in Graphite and another in Paper.
+        # schemes. A scheme that recoloured status would make a warning look
+        # like one thing in Dark and another in Light.
         theme = (STATIC / "theme.css").read_text(encoding="utf-8")
-        for name in ("ink", "paper"):
+        for name in ("light",):
             block = theme[theme.index(f'body[data-theme="{name}"]'):]
             block = block[:block.index("}")]
             with self.subTest(theme=name):
@@ -244,7 +245,7 @@ class TestTheThemes(unittest.TestCase):
                     self.assertEqual(max(range(3), key=lambda c: rgb[c]), channel, token)
 
     def test_the_choice_is_remembered(self):
-        self.assertIn('store.set("theme", name)', _script())
+        self.assertIn('if (chosen) store.set("theme", choice);', _script())
 
     def test_the_wordmark_needs_no_network(self):
         # This GUI runs on machines with no route out -- a cluster login
@@ -578,18 +579,18 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         self.assertNotIn('id="copy-output-path"', page)
         self.assertIn('openOut.textContent = "Path copied";', _script())
 
-    def test_paper_leaves_no_token_dark(self):
+    def test_light_leaves_no_token_dark(self):
         import re
 
         theme = (STATIC / "theme.css").read_text(encoding="utf-8")
         root = theme[theme.index(":root {"):theme.index("}", theme.index(":root {"))]
-        paper = theme[theme.index('body[data-theme="paper"]'):]
+        paper = theme[theme.index('body[data-theme="light"]'):]
         paper = paper[:paper.index("}")]
         overridden = set(re.findall(r"(--[a-z0-9-]+):", paper))
         for token, value in re.findall(r"(--[a-z0-9-]+):\s*([^;]+);", root):
             if re.search(r"#[01][0-9a-f]{5}\b|rgba\(0, 0, 0, 0\.[3-9]|rgba\(255, 255, 255", value):
                 with self.subTest(token=token):
-                    self.assertIn(token, overridden, f"{token} is still {value.strip()} under Paper")
+                    self.assertIn(token, overridden, f"{token} is still {value.strip()} under Light")
 
     def test_the_sidebar_collapses_like_the_panel(self):
         page = _page()

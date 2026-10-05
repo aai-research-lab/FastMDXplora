@@ -8,38 +8,46 @@
 :root {
     color-scheme: dark;
 
-    /* Backgrounds */
-    --background-primary: #050505;
-    --background-secondary: #0a0a0b;
-    --background-elevated: #101012;
-    --background-soft: #151518;
+    /* Dark, the default: a neutral ground, as the lab's website has it
+       (#1c1c1d, cards #212529), with nothing tinted. The first dark scheme
+       was #050505 under cyan and violet glows, which read as green. */
 
-    /* Panels (frosted) */
-    --panel-glass: rgba(18, 18, 20, 0.84);
-    --panel-hover: rgba(27, 27, 31, 0.95);
+    /* Backgrounds */
+    --background-primary: #1c1c1d;
+    --background-secondary: #171718;
+    --background-elevated: #232629;
+    --background-soft: #2a2d31;
+
+    /* Cards */
+    --panel-glass: #212529;
+    --panel-hover: #272b30;
 
     /* Borders */
-    --border-primary: rgba(255, 255, 255, 0.13);
-    --border-strong: rgba(255, 255, 255, 0.25);
+    --border-primary: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.24);
     --border-subtle: rgba(255, 255, 255, 0.07);
 
     /* Text */
-    --text-primary: #f5f5f7;
-    --text-secondary: #b5b5bb;
+    --text-primary: #ececee;
+    --text-secondary: #b4b6ba;
     /* At least 4.5:1 on every ground of its scheme (WCAG AA for text). */
-    --text-muted: #85858f;
+    --text-muted: #9a9ca1;
 
-    /* Accents */
-    --accent-white: #ffffff;
+    /* Accents: one, cyan, the lab website's dark-mode link colour, 4.5:1
+       or more on every ground of the scheme. */
+    --accent-white: #f5f5f7;
     --accent-silver: #d8d8dd;
-    --accent-cyan: #63e6ff;
+    --accent-cyan: #2698ba;
+    /* The same cyan a step lighter for words, which sit on cards and
+       menus as well as the ground: #2698ba is 4.4:1 on a menu. */
+    --accent-text: #33a6c8;
     --accent-blue: #6ea8ff;
     --accent-violet: #a78bfa;
     --accent-green: #67e8a3;
     --accent-orange: #ffb86b;
     --accent-red: #ff7272;
     /* Text on a filled accent button. */
-    --on-accent: #030506;
+    --on-accent: #0b1316;
 
     /* Status */
     --status-live: var(--accent-cyan);
@@ -49,8 +57,8 @@
     --status-stale: var(--text-muted);
 
     /* Surfaces */
-    --shadow-card: 0 14px 40px rgba(0, 0, 0, 0.42);
-    --shadow-modal: 0 28px 80px rgba(0, 0, 0, 0.55);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.5);
 
     /* Layout */
     --sidebar-width: 248px;
@@ -86,19 +94,19 @@
 }
 
 /* Colour used inside composed box-shadows. */
-:root { --shadow-color: rgba(0, 0, 0, 0.42); }
+:root { --shadow-color: rgba(0, 0, 0, 0.35); }
 
 /* ---------------------------------------------------------------------------
-   Three schemes over one set of tokens.
+   Two schemes over one set of tokens, and the system's choice between them.
 
    Every rule in the dashboard reads a token, so a scheme is an override of
-   the tokens and nothing else. Graphite is the default the tokens above
-   already describe; Ink and Paper redefine the ground and the text and
-   leave the status colours alone -- green done, amber qualified, red
-   refused mean the same in all three, which is the rule a scheme must not
-   break. Chosen from the settings popup and remembered in localStorage;
-   until one is chosen, Paper if the system asks for light and Graphite
-   otherwise.
+   the tokens and nothing else. Dark is the default the tokens above
+   describe; Light redefines the ground and the text and darkens the
+   status colours to read on white -- green done, amber qualified, red
+   refused mean the same in both, which is the rule a scheme must not
+   break. System, the default, follows the operating system as it changes;
+   Light or Dark chosen in the settings popup is remembered in
+   localStorage. Graphite and Ink, chosen before, are Dark; Paper is Light.
 
    A scheme is set on the root element as well as the body. The status
    tokens are declared on :root as var(--accent-green) and the rest, and a
@@ -106,43 +114,28 @@
    --accent-green on the body alone left --status-completed at the dark
    scheme's green. The body keeps data-theme so a page can style for one.
    --------------------------------------------------------------------------- */
-:root[data-theme="ink"],
-body[data-theme="ink"] {
-    --background-primary: #0a0a0a;
-    --background-secondary: #0f0f0f;
-    --background-elevated: #141414;
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-primary: rgba(255, 255, 255, 0.14);
-    --text-primary: #ededed;
-    --text-secondary: #a3a3a3;
-    --text-muted: #838383;
-    --accent-cyan: #e8e8e8;
-}
-:root[data-theme="paper"],
-body[data-theme="paper"] {
+:root[data-theme="light"],
+body[data-theme="light"] {
     color-scheme: light;
     --background-primary: #faf9f5;
     --background-secondary: #f3f2ed;
     --background-elevated: #ffffff;
+    --background-soft: #efeee9;
     --border-subtle: rgba(0, 0, 0, 0.08);
     --border-primary: rgba(0, 0, 0, 0.14);
+    --border-strong: rgba(0, 0, 0, 0.22);
     --text-primary: #141413;
     --text-secondary: #4a4a48;
     --text-muted: #696965;
     --accent-white: #141413;
-    --accent-cyan: #2b6cb0;
+    /* The dark scheme's cyan, darkened to 4.5:1 on each light ground. */
+    --accent-cyan: #1b7590;
+    --accent-text: #1b7590;
     --shadow-color: rgba(0, 0, 0, 0.14);
-    /* The four tokens the first Paper block left at their dark values,
-       which is where the blacks and greys were still coming from: a soft
-       background at #151518, a white border, and two heavy shadows. */
-    --background-soft: #efeee9;
-    --border-strong: rgba(0, 0, 0, 0.22);
-    --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.08);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
     --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.16);
-    /* The cards. Left at their dark values, every card on a Paper page was
-       a near-black slab with near-black text on it. */
-    --panel-glass: rgba(255, 255, 255, 0.86);
-    --panel-hover: rgba(255, 255, 255, 0.98);
+    --panel-glass: #ffffff;
+    --panel-hover: #ffffff;
     /* The same hues, dark enough to read on white: the pastels that read
        on black measured 1.5:1 here. Each is at least 4.5:1 on the ground.
        The status tokens are these, so green is still done and red still

@@ -175,8 +175,8 @@ def test_the_pages_open_from_the_sidebar_and_the_series_is_plotted(tmp_path: Pat
             assert page.evaluate("document.documentElement.dataset.page") == "analysis"
 
             page.click("#settings-open")
-            page.click('.seg-btn[data-theme="paper"]')
-            assert page.evaluate("document.documentElement.dataset.theme") == "paper"
+            page.click('.seg-btn[data-theme="light"]')
+            assert page.evaluate("document.documentElement.dataset.theme") == "light"
 
             # An analysis's anchor opens the page it is on.
             page.goto(page_url + "#rmsd")

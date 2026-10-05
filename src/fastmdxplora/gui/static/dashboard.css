@@ -44,7 +44,7 @@ body.state-loading .app-shell {
 }
 
 a {
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     text-decoration: none;
     transition: color var(--duration-fast) var(--ease);
 }
@@ -93,10 +93,9 @@ button {
     display: grid;
     grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     min-height: 100vh;
-    background:
-        radial-gradient(ellipse at 15% -10%, color-mix(in srgb, var(--accent-cyan) 6%, transparent), transparent 55%),
-        radial-gradient(ellipse at 90% 110%, color-mix(in srgb, var(--accent-violet) 6%, transparent), transparent 55%),
-        var(--background-primary);
+    /* Flat: the cyan and violet glows here made the dark ground read as
+       green. */
+    background: var(--background-primary);
 }
 
 /* ============================================================ */
@@ -171,10 +170,9 @@ button {
     color: var(--accent-white);
 }
 .nav-link.active {
-    background: linear-gradient(90deg, color-mix(in srgb, var(--accent-cyan) 10%, transparent), color-mix(in srgb, var(--accent-cyan) 2%, transparent));
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
     color: var(--accent-white);
     border-left-color: var(--accent-cyan);
-    box-shadow: 0 0 24px color-mix(in srgb, var(--accent-cyan) 8%, transparent) inset;
 }
 .nav-icon {
     width: 12px;
@@ -263,7 +261,7 @@ button {
     align-items: center;
     padding: 14px 24px;
     border-bottom: 1px solid var(--border-subtle);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 2%, transparent), transparent);
+    background: var(--background-primary);
     position: sticky;
     top: 0;
     z-index: 5;
@@ -468,13 +466,6 @@ button {
     position: relative;
     overflow: hidden;
 }
-.card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-cyan) 4%, transparent), transparent 30%);
-    pointer-events: none;
-}
 .card-header {
     display: flex;
     align-items: center;
@@ -508,8 +499,7 @@ button {
 /* Hero card */
 .hero-card {
     padding: 22px 22px 20px;
-    background:
-        linear-gradient(135deg, color-mix(in srgb, var(--accent-cyan) 8%, transparent), color-mix(in srgb, var(--accent-violet) 6%, transparent) 60%, color-mix(in srgb, var(--accent-green) 4%, transparent));
+    background: var(--panel-glass);
 }
 .hero-card-top {
     display: flex;
@@ -540,7 +530,7 @@ button {
     color: var(--text-secondary);
     text-transform: capitalize;
 }
-.stage-pill[data-state="live"] { color: var(--accent-cyan); }
+.stage-pill[data-state="live"] { color: var(--accent-text); }
 .stage-pill[data-state="completed"] { color: var(--accent-green); }
 .stage-pill[data-state="error"] { color: var(--accent-red); }
 .stage-pill[data-state="waiting"] { color: var(--accent-orange); }
@@ -635,7 +625,7 @@ button {
     box-shadow: 0 0 12px color-mix(in srgb, var(--accent-green) 40%, transparent);
 }
 .stage-step[data-state="current"] {
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     border-color: color-mix(in srgb, var(--accent-cyan) 32%, transparent);
     background: color-mix(in srgb, var(--accent-cyan) 7%, transparent);
 }
@@ -730,7 +720,7 @@ button {
     animation: flash 1.4s var(--ease);
 }
 @keyframes flash {
-    0% { color: var(--accent-cyan); }
+    0% { color: var(--accent-text); }
     100% { color: var(--accent-white); }
 }
 
@@ -790,7 +780,7 @@ button {
     height: 280px;
     border: 1px solid var(--border-primary);
     border-radius: 10px;
-    background: radial-gradient(ellipse at center 40%, color-mix(in srgb, var(--accent-cyan) 6%, transparent), transparent 60%), var(--background-elevated);
+    background: var(--background-elevated);
     overflow: hidden;
 }
 .preview-empty {
@@ -878,7 +868,7 @@ button {
 }
 .events-list li[data-level="warning"] .level-badge { color: var(--accent-orange); }
 .events-list li[data-level="error"] .level-badge { color: var(--accent-red); }
-.events-list li[data-level="info"] .level-badge { color: var(--accent-cyan); }
+.events-list li[data-level="info"] .level-badge { color: var(--accent-text); }
 .events-list .event-time { color: var(--text-muted); }
 
 /* ============================================================ */
@@ -942,7 +932,8 @@ button {
     --text-muted: #9a9aa2;
     --status-stale: #9a9aa2;
     --border-primary: color-mix(in srgb, var(--text-primary) 16%, transparent);
-    --accent-cyan: #63e6ff;
+    --accent-cyan: #33a6c8;
+    --accent-text: #33a6c8;
     position: absolute;
     top: 14px;
     right: 14px;
@@ -965,7 +956,7 @@ button {
     font-weight: 700;
     letter-spacing: 0.08em;
 }
-.viewer-overlay[data-live="true"] .overlay-tag { color: var(--accent-cyan); }
+.viewer-overlay[data-live="true"] .overlay-tag { color: var(--accent-text); }
 
 /* The colour bar of a per-residue result, on the canvas: dark in every
    scheme, as the overlay is. */
@@ -1056,7 +1047,7 @@ button {
 }
 .chip-btn.active {
     background: color-mix(in srgb, var(--accent-cyan) 10%, transparent);
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     border-color: color-mix(in srgb, var(--accent-cyan) 50%, transparent);
 }
 .chip-toggle {
@@ -1130,7 +1121,7 @@ button {
     outline: 2px solid var(--accent-cyan); outline-offset: 1px;
 }
 .icon-btn.active, .icon-btn[aria-pressed="true"] {
-    color: var(--accent-cyan); background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
+    color: var(--accent-text); background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
     border-color: color-mix(in srgb, var(--accent-cyan) 45%, transparent);
 }
 .icon-btn.is-primary { width: 38px; color: var(--text-primary); border-color: var(--border-primary); }
@@ -1191,7 +1182,7 @@ button {
 }
 .info-tab:hover { color: var(--accent-white); }
 .info-tab.active {
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     border-bottom-color: var(--accent-cyan);
 }
 .info-pane { padding: 14px 16px; }
@@ -1297,7 +1288,7 @@ button {
     background: transparent;
     cursor: pointer;
 }
-.file-action:hover { border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); color: var(--accent-cyan); }
+.file-action:hover { border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); color: var(--accent-text); }
 
 .empty-state {
     text-align: center;
@@ -1349,7 +1340,7 @@ button {
 .analysis-results-table tbody tr:not(.analysis-results-theme-row):hover { background: color-mix(in srgb, var(--accent-cyan) 4%, transparent); }
 .analysis-results-name { font-weight: 600; text-align: left; }
 .analysis-results-name a { color: var(--text-primary); text-decoration: none; }
-.analysis-results-name a:hover { color: var(--accent-cyan); text-decoration: underline; }
+.analysis-results-name a:hover { color: var(--accent-text); text-decoration: underline; }
 .analysis-results-table tr.is-quantity .analysis-results-name {
     padding-left: 24px;
     font-weight: 400;
@@ -1400,7 +1391,7 @@ button {
     background: color-mix(in srgb, var(--accent-orange) 8%, transparent);
 }
 .analysis-results-status[data-status="running"] {
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     border-color: color-mix(in srgb, var(--accent-cyan) 45%, transparent);
 }
 .analysis-results-status[data-status="failed"] {
@@ -1441,7 +1432,7 @@ button {
     border: 1px solid transparent;
     text-decoration: none;
 }
-.analysis-index-link:hover { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 35%, transparent); }
+.analysis-index-link:hover { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent-cyan) 35%, transparent); }
 .analysis-index-link.is-filtered-out { opacity: 0.35; }
 .analysis-filter-none { margin: 0 0 16px; }
 .analysis-theme { margin-bottom: 8px; }
@@ -1471,7 +1462,7 @@ button {
 .convergence-svg text { font-family: var(--font-mono); }
 .convergence-key { display: flex; gap: 12px; font-size: var(--text-2xs); color: var(--text-muted); margin-top: 2px; }
 .convergence-key i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border: 1px solid; opacity: 0.8; vertical-align: -1px; }
-.file-action.is-chosen { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
+.file-action.is-chosen { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
 
 .analysis-section { margin-bottom: 26px; }
 .analysis-section-heading {
@@ -1527,7 +1518,7 @@ button {
     background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 .analysis-card[data-state="complete"] .ac-status { color: var(--accent-green); }
-.analysis-card[data-state="running"] .ac-status { color: var(--accent-cyan); }
+.analysis-card[data-state="running"] .ac-status { color: var(--accent-text); }
 .analysis-card[data-state="waiting"] .ac-status { color: var(--accent-orange); }
 .analysis-card[data-state="failed"] .ac-status { color: var(--accent-red); }
 .analysis-card[data-state="skipped"] .ac-status { color: var(--text-muted); }
@@ -1562,7 +1553,7 @@ button {
 /* What the Agent looked at before it answered (agent-panel.js, agent/tools.py). */
 .agent-looks { margin: 6px 0 8px; font-size: var(--text-xs); color: var(--text-secondary); }
 .agent-looks > summary { cursor: pointer; color: var(--text-muted); }
-.agent-looks > summary:hover { color: var(--accent-cyan); }
+.agent-looks > summary:hover { color: var(--accent-text); }
 .agent-look { margin: 8px 0 0 12px; }
 /* A refused run's fix under the Agent's Run here (agent-panel.js). */
 .agent-run-fix { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 8px; font-size: var(--text-sm); }
@@ -1597,7 +1588,7 @@ button {
 .analysis-card .figure-chip:hover,
 .analysis-card .figure-chip[aria-expanded="true"],
 .report-figure-made .figure-chip:hover,
-.report-figure-made .figure-chip[aria-expanded="true"] { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
+.report-figure-made .figure-chip[aria-expanded="true"] { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
 .analysis-card .figure-provenance {
     padding: 10px 14px 14px;
     border-top: 1px solid var(--border-subtle);
@@ -1615,7 +1606,7 @@ button {
 .chip-toggle.is-unavailable { opacity: 0.42; cursor: not-allowed; }
 .figure-provenance-runs li { margin: 2px 0; overflow-wrap: anywhere; }
 .figure-provenance-widths { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 6px; }
-.figure-provenance-widths .file-action.is-chosen { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
+.figure-provenance-widths .file-action.is-chosen { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent); }
 .figure-provenance-command {
     margin: 0 0 6px;
     padding: 8px 10px;
@@ -1633,10 +1624,7 @@ button {
 .loading-screen {
     position: fixed;
     inset: 0;
-    background:
-        radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--accent-cyan) 7%, transparent), transparent 70%),
-        radial-gradient(ellipse at 50% 70%, color-mix(in srgb, var(--accent-violet) 6%, transparent), transparent 70%),
-        var(--background-primary);
+    background: var(--background-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1698,19 +1686,6 @@ body.state-ready .loading-screen {
 }
 .loading-step[data-state="done"] { color: var(--accent-green); }
 .loading-step[data-state="done"] .loading-bullet { background: var(--accent-green); }
-
-.loading-particles {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-        radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent-cyan) 15%, transparent) 1px, transparent 1.5px),
-        radial-gradient(circle at 70% 65%, color-mix(in srgb, var(--accent-violet) 13%, transparent) 1px, transparent 1.5px),
-        radial-gradient(circle at 50% 85%, color-mix(in srgb, var(--accent-green) 10%, transparent) 1px, transparent 1.5px);
-    background-size: 64px 64px, 96px 96px, 72px 72px;
-    opacity: 0.55;
-    mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
-}
 
 /* ============================================================ */
 /* Responsive                            */
@@ -1881,7 +1856,7 @@ body.state-ready .loading-screen {
     height: 32px;
     border: 1px solid color-mix(in srgb, var(--accent-cyan) 34%, transparent);
     border-radius: 50%;
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     background: color-mix(in srgb, var(--accent-cyan) 5.5%, transparent);
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
@@ -1980,7 +1955,7 @@ body.state-ready .loading-screen {
 }
 
 .builder-duration {
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     text-align: right;
     font-size: var(--text-xs);
 }
@@ -2132,7 +2107,7 @@ body.state-ready .loading-screen {
     font-size: var(--text-xs);
 }
 .builder-message[data-kind="ok"] { color: var(--accent-green); }
-.builder-message[data-kind="working"] { color: var(--accent-cyan); }
+.builder-message[data-kind="working"] { color: var(--accent-text); }
 .builder-message[data-kind="warning"] { color: var(--accent-orange); }
 .builder-message[data-kind="error"] { color: var(--accent-red); }
 
@@ -2334,7 +2309,7 @@ body.state-ready .loading-screen {
 /* A folder holding data is the one being looked for, so it is the only thing
    in the list allowed any colour. */
 .analyse-folder-holds {
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     letter-spacing: .05em;
@@ -2658,7 +2633,7 @@ body.state-ready .loading-screen {
     margin-bottom: 8px;
 }
 .footer-cite a {
-    color: var(--accent-cyan);
+    color: var(--accent-text);
     font-size: var(--text-xs);
     text-decoration: none;
 }
@@ -3287,7 +3262,7 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 .report-document th { color: var(--text-muted); font-weight: 500; font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: .08em; text-transform: uppercase; }
 .report-document td { font-family: var(--font-mono); font-size: var(--text-xs); }
 .report-document img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0 14px; display: block; }
-.report-document a { color: var(--accent-cyan); text-decoration: none; }
+.report-document a { color: var(--accent-text); text-decoration: none; }
 .report-document a:hover { text-decoration: underline; }
 .report-document ul, .report-document ol { padding-left: 22px; margin: 0 0 12px; }
 .report-document li { margin: 3px 0; }
@@ -3573,7 +3548,7 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .agent-answer strong { color: var(--text-primary); font-weight: 600; }
 .agent-answer em { font-style: italic; }
 .agent-answer code { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-primary); background: var(--background-elevated); padding: 1px 5px; border-radius: 4px; }
-.agent-answer a { color: var(--accent-cyan); text-decoration: none; }
+.agent-answer a { color: var(--accent-text); text-decoration: none; }
 .agent-answer a:hover { text-decoration: underline; }
 .agent-msg-agent .agent-attempt { font-size: var(--text-md); }
 .agent-msg-agent .agent-attempt.ok { font-family: inherit; font-size: var(--text-xs); }
@@ -3681,7 +3656,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     padding: 8px 8px 4px; font-family: var(--font-mono); font-size: var(--text-2xs);
     letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
 }
-.agent-conv-group.loaded { color: var(--accent-cyan); }
+.agent-conv-group.loaded { color: var(--accent-text); }
 
 /* The + at the left of the composer, and the chips above it. */
 .agent-composer-box textarea { padding-left: 46px; }
@@ -3710,10 +3685,10 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 /* The picker tells a study from a folder of structures from a folder of
    trajectories at a glance. A study is a FastMDXplora output folder: it
    has a manifest or a resolved config. */
-.fastmdx-picker-row .badge-study { color: var(--accent-cyan); border-color: var(--accent-cyan); }
+.fastmdx-picker-row .badge-study { color: var(--accent-text); border-color: var(--accent-cyan); }
 .fastmdx-picker-row .badge-structure { color: var(--status-completed); border-color: var(--status-completed); }
 .fastmdx-picker-row .badge-trajectory { color: var(--status-waiting); border-color: var(--status-waiting); }
-.fastmdx-picker-row.is-study .name { color: var(--accent-cyan); }
+.fastmdx-picker-row.is-study .name { color: var(--accent-text); }
 
 /* The Agent's footer: small links under the composer, at the right. */
 .agent-footer {
@@ -3769,7 +3744,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .file-tree { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; }
 .tree-row { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 .tree-toggle { border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0 2px; font-size: var(--text-2xs); width: 14px; }
-.tree-key { color: var(--accent-cyan); }
+.tree-key { color: var(--accent-text); }
 .tree-meta { color: var(--text-muted); font-size: var(--text-2xs); }
 .tree-val { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
 .tree-val.number { color: var(--status-waiting); }
@@ -3777,7 +3752,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .tree-val.null { color: var(--text-muted); font-style: italic; }
 /* The table, for CSV and friends: sortable, header stays. */
 .file-table th { cursor: pointer; user-select: none; }
-.file-table th.sorted { color: var(--accent-cyan); }
+.file-table th.sorted { color: var(--accent-text); }
 /* A Markdown file rendered in the preview uses the report's own styles. */
 .side-preview-body .report-document { font-size: var(--text-sm); }
 
@@ -3935,7 +3910,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
     box-shadow: none; color: var(--text-primary); font-weight: 600;
 }
-.sidebar-nav .nav-link.active .nav-icon { color: var(--accent-cyan); }
+.sidebar-nav .nav-link.active .nav-icon { color: var(--accent-text); }
 .sidebar-nav .nav-link > span:not(.nav-count) { flex: 1; min-width: 0; }
 .nav-count { font-size: var(--text-2xs); color: var(--text-muted); }
 
@@ -3983,7 +3958,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sidebar .sidebar-metrics .metric-value:nth-of-type(n+2) { color: var(--text-muted); font-size: var(--text-2xs); }
 .sidebar-fix {
     display: none; font-size: var(--text-xs); font-weight: 600;
-    color: var(--accent-cyan); text-decoration: none;
+    color: var(--accent-text); text-decoration: none;
 }
 .sidebar-progress[data-run="stopped"] .sidebar-fix,
 .sidebar-progress[data-run="failed"] .sidebar-fix { display: block; }
@@ -4335,7 +4310,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     cursor: pointer;
     padding: 2px 0;
 }
-.sel-pick:hover { color: var(--accent-cyan); }
+.sel-pick:hover { color: var(--accent-text); }
 .sel-count { flex: 0 0 auto; }
 .sel-shape { flex: 1 1 auto; min-width: 0; font-size: var(--text-xs); }
 @container viewerpage (min-width: 901px) {
@@ -5037,7 +5012,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
         --panel-hover: #ffffff;
         --accent-white: #000000;
         --accent-silver: #3a3a38;
-        --accent-cyan: #1f7c98;
+        --accent-cyan: #1b7590;
+        --accent-text: #1b7590;
         --accent-blue: #1f5fa8;
         --accent-violet: #6541c8;
         --accent-green: #1b7a45;

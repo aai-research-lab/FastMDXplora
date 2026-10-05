@@ -69,7 +69,7 @@ def test_the_menu_opens_with_the_service(workspace: Path) -> None:
     page = _page(_hosting(workspace, account_url="/_mdx/"))
     popup = page[page.index('id="settings-popup"'):]
     item = popup.index('<a href="/_mdx/" class="settings-item" id="settings-account-link">')
-    assert item < popup.index('data-theme="graphite"'), "first in the menu"
+    assert item < popup.index('data-theme="system"'), "first in the menu"
     assert "sidebar-service" not in page, "one foot item, not two"
 
 

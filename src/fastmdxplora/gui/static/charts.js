@@ -6,7 +6,7 @@
   /* Colours are the theme's, read when a chart is drawn: fixed to the dark
      scheme's, the axis labels and the pale series vanished on Paper. */
   const FALLBACK = {
-    cyan: "#63e6ff",
+    cyan: "#2698ba",
     orange: "#ffb86b",
     violet: "#a78bfa",
     silver: "#d8d8dd",

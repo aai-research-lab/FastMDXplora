@@ -31,7 +31,7 @@
 
   function colours() {
     return {
-      line: token("--accent-cyan", "#63e6ff"),
+      line: token("--accent-cyan", "#2698ba"),
       mean: token("--accent-orange", "#ffb86b"),
       grid: token("--border-subtle", "rgba(255,255,255,0.07)"),
       axis: token("--text-muted", "#85858f"),

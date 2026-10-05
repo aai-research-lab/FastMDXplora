@@ -1830,9 +1830,9 @@ def _render_settings(version: str) -> str:
   <div class="settings-row">
     <span>Theme</span>
     <div class="seg" role="group" aria-label="Theme">
-      <button type="button" class="seg-btn active" data-theme="graphite">Graphite</button>
-      <button type="button" class="seg-btn" data-theme="ink">Ink</button>
-      <button type="button" class="seg-btn" data-theme="paper">Paper</button>
+      <button type="button" class="seg-btn active" data-theme="system" aria-pressed="true" title="As the computer is set, light or dark">System</button>
+      <button type="button" class="seg-btn" data-theme="light" aria-pressed="false">Light</button>
+      <button type="button" class="seg-btn" data-theme="dark" aria-pressed="false">Dark</button>
     </div>
   </div>
   <div class="settings-divider"></div>
@@ -2240,13 +2240,14 @@ _STATIC_ONLY_CSS = """
 #: one chosen, kept under the GUI's own key, or the system's light or dark.
 _THEME_FIRST_JS = """
 (function () {
-  var name = null;
-  try { name = localStorage.getItem("fmx.theme"); } catch (e) {}
-  if (!name) {
-    try { name = matchMedia("(prefers-color-scheme: light)").matches ? "paper" : "graphite"; }
-    catch (e) { name = "graphite"; }
+  var kept = null, former = {graphite: "dark", ink: "dark", paper: "light"};
+  try { kept = localStorage.getItem("fmx.theme"); } catch (e) {}
+  kept = former[kept] || kept;
+  if (kept !== "light" && kept !== "dark") {
+    try { kept = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; }
+    catch (e) { kept = "dark"; }
   }
-  document.documentElement.dataset.theme = name;
+  document.documentElement.dataset.theme = kept;
 })();
 """
 
@@ -2275,14 +2276,38 @@ _PAGE_JS = """
   var PAGES = ["overview", "analysis", "report", "files"];
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
-  function applyTheme(name, chosen) {
+  /* As the GUI's (frame.js): System, Light or Dark, System following the
+   * computer as it changes; a former scheme's name read as its scheme. */
+  var FORMER = { graphite: "dark", ink: "dark", paper: "light" };
+  function chosenScheme() {
+    var kept = null;
+    try { kept = localStorage.getItem("fmx.theme"); } catch (e) {}
+    kept = FORMER[kept] || kept;
+    return kept === "light" || kept === "dark" ? kept : "system";
+  }
+  function systemScheme() {
+    try { return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; }
+    catch (e) { return "dark"; }
+  }
+  function applyTheme(choice, chosen) {
+    choice = FORMER[choice] || choice;
+    if (choice !== "light" && choice !== "dark") choice = "system";
+    var name = choice === "system" ? systemScheme() : choice;
     document.documentElement.dataset.theme = name;
     document.body.dataset.theme = name;
-    $$(".seg-btn[data-theme]").forEach(function (b) { b.classList.toggle("active", b.dataset.theme === name); });
-    if (chosen) { try { localStorage.setItem("fmx.theme", name); } catch (e) {} }
+    $$(".seg-btn[data-theme]").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.theme === choice);
+      b.setAttribute("aria-pressed", String(b.dataset.theme === choice));
+    });
+    if (chosen) { try { localStorage.setItem("fmx.theme", choice); } catch (e) {} }
     document.dispatchEvent(new CustomEvent("fmx:theme", { detail: name }));
   }
-  applyTheme(document.documentElement.dataset.theme || "graphite", false);
+  applyTheme(chosenScheme(), false);
+  try {
+    var query = matchMedia("(prefers-color-scheme: light)");
+    var follow = function () { if (chosenScheme() === "system") applyTheme("system", false); };
+    if (query.addEventListener) query.addEventListener("change", follow);
+  } catch (e) { /* no media queries */ }
   $$(".seg-btn[data-theme]").forEach(function (b) {
     b.addEventListener("click", function () { applyTheme(b.dataset.theme, true); });
   });

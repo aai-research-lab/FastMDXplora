@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Themes are System, Light and Dark, with one cyan accent
+
+**The settings menu offers System, Light and Dark** in place of Graphite,
+Ink and Paper. System, the default, follows the computer as it changes;
+Light and Dark are kept once chosen, and a scheme chosen before keeps its
+look under its new name (Graphite and Ink are Dark, Paper is Light). Dark
+is a neutral ground, the lab website's #1c1c1d with cards #212529, where the
+old one was #050505 under cyan and violet glows that read as green; the
+glows are gone from both schemes. One accent, cyan: #2698ba in Dark (a step
+lighter for words, #33a6c8, at 4.5:1 or more on its cards and menus) and
+#1b7590 in Light, at 4.5:1 on each of its grounds. The scheme is set before
+the page is first drawn, so a light computer's page no longer opens dark.
+The standalone dashboard offers the same three.
+
 ### Each analysis is named in sentence case
 
 **The Analysis page, its index and the standalone dashboard

@@ -18,7 +18,7 @@
     "CYX", "ASH", "GLH", "LYN", "HSD", "HSE", "HSP",
   ];
   const COLORS = {
-    cyan: "#63e6ff",
+    cyan: "#2698ba",
     silver: "#d8d8dd",
     white: "#ffffff",
     violet: "#a78bfa",

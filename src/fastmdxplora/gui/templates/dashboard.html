@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>__FASTMDX_TITLE__</title>
+  <script src="/static/theme-first.js"></script>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/dashboard.css">
   <!--__FASTMDX_LAB_ICON__-->
@@ -30,7 +31,6 @@
           <span class="loading-label">Preparing simulation metrics</span>
         </div>
       </div>
-      <div class="loading-particles" aria-hidden="true"></div>
     </div>
   </div>
 
@@ -231,9 +231,9 @@
     <div class="settings-row">
       <span>Theme</span>
       <div class="seg" role="group" aria-label="Theme">
-        <button type="button" class="seg-btn active" data-theme="graphite">Graphite</button>
-        <button type="button" class="seg-btn" data-theme="ink">Ink</button>
-        <button type="button" class="seg-btn" data-theme="paper">Paper</button>
+        <button type="button" class="seg-btn active" data-theme="system" aria-pressed="true" title="As the computer is set, light or dark">System</button>
+        <button type="button" class="seg-btn" data-theme="light" aria-pressed="false">Light</button>
+        <button type="button" class="seg-btn" data-theme="dark" aria-pressed="false">Dark</button>
       </div>
     </div>
     <div class="settings-divider"></div>
