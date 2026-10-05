@@ -437,8 +437,9 @@ class TestThePopupItemsAct(unittest.TestCase):
         self.assertIn("Display preferences", _page())
 
     def test_pause_is_one_word(self):
-        # "Pause updates" overlapped Refresh in a 232px sidebar.
-        self.assertIn('<span id="pause-label">Pause</span>', _page())
+        # "Pause updates" overlapped Refresh in a 232px sidebar; now an
+        # icon, its one word for a screen reader.
+        self.assertIn('<span id="pause-label" class="sr-only">Pause</span>', _page())
 
 
 class TestTheViewerFollowsTheRun(unittest.TestCase):
@@ -646,8 +647,9 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         page = _page()
         sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
         self.assertNotIn('class="study-facts', sidebar)
-        self.assertIn('<span id="topbar-stage" hidden></span>', sidebar)
-        self.assertIn('<span class="metric-label">Complete</span>', sidebar)
+        # The progress card is headed by the stage, with how far it is.
+        self.assertIn('<span class="progress-stage" id="topbar-stage">', sidebar)
+        self.assertIn('<span class="progress-pct mono" id="topbar-progress">', sidebar)
         self.assertNotIn('<span class="metric-label">Progress</span>', sidebar)
 
 

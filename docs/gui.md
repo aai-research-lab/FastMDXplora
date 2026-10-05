@@ -50,8 +50,9 @@ you. Nothing is uploaded anywhere.
 | **Report** | The report itself, rendered as a document, with downloads for what was produced and a notice for what could not be. **Write it again** runs the report phase alone on the study open (each run's, for a study of several), from its records and the report settings it recorded, after asking, the report before kept in `previous/`; nothing is simulated or analysed |
 | **Files** | Everything the run wrote, grouped by phase |
 
-Three things are on every page. The **sidebar**: the study block, the run's
-controls, the nav, and at its foot the settings trigger. The **side panel**:
+Three things are on every page. The **sidebar**: the study on screen, its
+pages, the two ways to start a new one, where a run stands while it runs,
+and at its foot the person and the settings. The **side panel**:
 a *Log* tab, which is what the command line prints, sorted so a refusal is a
 red-edged block and the explain text a quiet one, with filters and a
 scroll-to-newest toggle; and a *Files* tab, which opens any of the run's
@@ -65,28 +66,53 @@ another page brings them back as they were; a column kept open on the
 Viewer stays open there. Every page's header is one band across the
 centre column, and stays put while the page scrolls.
 
-**The study block** reads top-down, in the order a person thinks: what is
-on screen, what is running, what else there is.
+**The sidebar** reads top-down:
 
 ```
-1UAO
-● ok · CPU · live
+⬡ FastMDXplora                        [⇤]
+┌───────────────────────────────────────┐
+│ STUDY                                 │
+│ 1UAO                               ⌄  │
+│ ● Running · CUDA                      │
+└───────────────────────────────────────┘
+RUNNING  ● 1UBQ           50.0%  [View]
 
-RUNNING
-● 1UBQ                    50.0%   [View]
+▦ All studies                         14
+THIS STUDY
+◔ Overview   ⚛ Viewer   ⌁ Analysis   ▤ Report   ▭ Files
+NEW STUDY
+✦ Agent   ⚙ Config
 
-[ Load available study ]
+┌ Production                     62.0% ┐
+│ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬░░░░░░░░░░░░    │
+│ Stage 5 of 7               1 h 12 min │
+│ Step       1240000 / 2000000          │
+│ [‖] [↻]                updated 14:02  │
+└───────────────────────────────────────┘
+(AA) Adekunle Aina                    ⚙
 ```
 
-The study's name is its system. The status row says the run's state, the
-platform, and whether the page is live. The *Running* section appears only
-when a run is going in a study other than the one on screen — from this
-GUI at most one study runs at a time — with its fraction complete read from
-its own telemetry and a *View* button back to it. *Load available study*
-opens a picker on the workspace, the folder your studies are in, with each
-study badged and a continuation badged as one. A finished study can be
-loaded and read while another runs; Stop still stops the running one from
-any page.
+The study card says the study's name (its system) and one line: where it
+stands (running, completed, stopped, failed), the platform, and, when the
+page has stopped hearing from the server, that too. Pressed, it opens the
+studies to switch to: the newest of the workspace, **All studies**, **Open
+another folder** (a picker on any folder), and the study's own folder with
+**Open the folder** (where it cannot be opened from here, its path is
+copied). The *Running* line appears only when a run is going in a study
+other than the one on screen (from this GUI at most one study runs at a
+time), with its fraction complete read from its own telemetry and a *View*
+button back to it; a study of several runs lists them there, and a run of
+one names its study and the way back. All studies says how many studies
+the workspace holds. Under *New study*, the Agent and the Config builder.
+The progress card is there while a run goes on:
+its stage and how far it is, a bar of the stages it can reach (each named
+when pointed at), which of them it is in, the time left at its speed so
+far, its step, and buttons to pause the page's updates (the run goes on)
+and to refresh now. A run that stopped or failed keeps the card, saying
+where, with **What would fix it**, which opens the Overview at that card.
+A finished study has no card: its own card says it completed. A finished
+study can be opened and read while another runs; Stop still stops the
+running one from any page.
 
 **A study's folder** is named for what it holds:
 `fastmdxplora_<system>_study_<UTC timestamp>` — the first system in the
@@ -97,7 +123,7 @@ CLI, the API and the GUI all ask.
 **The run outlives the server.** A study started from the GUI is its own
 process. Close the browser tab and it runs on; Ctrl-C the server and it runs
 on, and the server says where it is and how to stop it. A server opened
-later on that folder, or brought to it by *Load available study*, adopts
+later on that folder, or brought to it from the study card, adopts
 the run: it shows as running, and Stop reaches it. The run records its own
 process in the folder; a stale record left by a crash is checked against
 the live process before anything is believed, and a process that is not

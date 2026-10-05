@@ -138,6 +138,7 @@ FastMDXplora/
 │       │   ├── states.py          # The states the cluster analysis found, and two compared
 │       │   ├── backbone_angles.py # Each residue's φ and ψ in each frame played
 │       │   ├── backbone_picture.py # A study's backbone for its card, before any figure
+│       │   ├── sidebar_icons.py   # The sidebar's line icons, for the GUI and the standalone dashboard
 │       │   ├── contact_map.py     # Which residues touch which over the frames played
 │       │   ├── pocket_volume.py   # The room in a ligand's pocket, frame by frame (POVME's way)
 │       │   ├── beside.py          # Another study beside this one: paired by sequence, fitted, timed

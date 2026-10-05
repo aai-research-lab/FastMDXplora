@@ -28,6 +28,28 @@ they were left. **Each page's header is one band across the centre
 column**, its rule under it; it was the width of the page's text, a strip
 of another colour over the column's own ground.
 
+### The sidebar, rebuilt
+
+**The sidebar reads top-down and fits a laptop's screen.** The lab's logo
+(or a hosted service's own, `--product-logo`) and the product's name on one
+line (the product's expansion is on the Cite page now; a hosted service's
+own line still shows under its name). The study on screen as a
+card: its name and one line of where it stands (Running, Completed,
+Stopped, Failed) with the platform, and, when the page stops hearing from
+the server, that too; pressed, it opens the workspace's newest studies to
+switch to, All studies, Open another folder, and the study's folder with
+Open the folder (this replaces Load available study and the Output
+button). Each page has a line icon in place of the grey squares, All
+studies says how many studies the workspace holds, and the Agent and the
+Config builder stay under New study. Where a run stands is a card shown
+only while it runs, or after it stopped or failed: its stage and how far
+it is, the stages as one bar (each named when pointed at), which stage of
+how many, the time left, its step, pause and refresh, and for a stopped or
+failed run **What would fix it**, which opens the Overview at that card. A
+finished study has no card. At 900 pixels the old sidebar ran past the
+window, its foot over the stage list and its buttons out of reach. The
+standalone dashboard has the same sidebar.
+
 ### Backbone angles says what is plotted
 
 The line under the plot gives the residues, the frames and the unit, and no

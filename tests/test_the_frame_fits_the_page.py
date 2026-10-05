@@ -89,7 +89,7 @@ class TestTheNavigation:
         page.context.close()
         # Every study first, then the one on screen, then the ways to start one.
         assert order == ["studies"] + STUDY_NAV + NEW_NAV
-        assert headings == ["Study", "New study"]
+        assert headings == ["This study", "New study"]
 
     def test_every_entry_is_in_a_short_window(self, browser, studies) -> None:
         page = _open(browser, studies["finished"], height=720)

@@ -381,6 +381,9 @@ def make_handler(
     )
     cfg = config or DashboardConfig()
     html = template_html if template_html is not None else _load_template()
+    from fastmdxplora.gui.sidebar_icons import with_icons
+
+    html = with_icons(html)
     refresh_seconds = min(60.0, max(1.0, float(cfg.refresh_seconds or 3.0)))
     html = html.replace("__FASTMDX_REFRESH_SECONDS__", f"{refresh_seconds:g}")
     # Injected rather than written into the template, so the citation cannot
@@ -422,9 +425,14 @@ def make_handler(
                     f"__FASTMDX_INITIALS_{mark}__": "initials"}
     for spot, which in person_marks.items():
         html = html.replace(f"__FASTMDX_ACCOUNT_{which.upper()}__", spot)
+    # The sidebar's line under the name is a service's own only: the
+    # product's expansion is on the Cite page and the loading screen.
+    brand_line = hosting.product_tagline if hosting is not None else ""
     shown = {"__FASTMDX_TITLE__": product or "FastMDXplora GUI",
              "__FASTMDX_PRODUCT__": product or "FastMDXplora",
-             "__FASTMDX_TAGLINE__": tagline}
+             "__FASTMDX_TAGLINE__": tagline,
+             "__FASTMDX_BRAND_LINE__": brand_line,
+             "__FASTMDX_EXPANSION__": __expansion__}
     html = _re.sub("|".join(shown), lambda m: _escape(shown[m.group(0)]), html)
     # The settings menu at the foot of the sidebar opens with the way back
     # to the service's own page for the person; the GUI has no other.
@@ -445,6 +453,10 @@ def make_handler(
             else f"/static/{LAB_LOGO}")
     html = html.replace("<!--__FASTMDX_LAB_ICON__-->",
                         f'<link rel="icon" href="{_escape(logo)}">')
+    # And as the mark beside the name at the top of the sidebar.
+    html = html.replace("<!--__FASTMDX_BRAND_MARK__-->",
+                        f'<img class="brand-mark" src="{_escape(logo)}" alt="" width="22" '
+                        'height="22">')
     logo_mark = f'<img class="sidebar-account-logo" src="{_escape(logo)}" alt="">'
     logo_spot = f"__FASTMDX_LOGO_{_secrets.token_hex(8)}__"
     html = html.replace("<!--__FASTMDX_LAB_MARK__-->", logo_spot)

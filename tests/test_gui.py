@@ -4577,7 +4577,7 @@ class TestOnePageForOneRun:
         assert 'card-title">Phases<' in markup
         assert 'card-title">Exploration progress<' not in markup
         sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
-        assert 'study-label mono">Progress<' in sidebar
+        assert 'class="sidebar-progress"' in sidebar and 'id="topbar-stage"' in sidebar
 
     def test_opening_the_overview_starts_the_polling(self) -> None:
         """It was keyed to opening a page that no longer exists, so nothing

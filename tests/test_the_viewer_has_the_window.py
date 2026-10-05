@@ -88,8 +88,11 @@ def _settled(tab):
 
 def test_the_title_band_spans_the_column(browser, session) -> None:
     tab = _open(browser, session, stored={"panelCollapsed": "1"})
-    # Once the page has loaded and its colours have stopped changing.
+    # Once the page has loaded and its colours have stopped changing, the
+    # loading screen gone, not fading.
     tab.wait_for_selector("body:not(.state-loading)")
+    tab.wait_for_function("() => getComputedStyle(document.querySelector('.loading-screen'))"
+                          ".opacity === '0'")
     tab.wait_for_timeout(1000)
     band = tab.evaluate("""() => {
         const header = document.querySelector('.page[data-page="overview"] .page-header');

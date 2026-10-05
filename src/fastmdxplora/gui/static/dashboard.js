@@ -555,6 +555,7 @@
       : (ageSeconds > 30 ? "lost" : "reconnecting");
 
     setText("sidebar-connection-state", connection);
+    byId("sidebar-connection-state")?.setAttribute("data-connection", connection);
     setClassName(
       "sidebar-status-dot",
       `status-dot ${connection === "live" ? "status-dot-live" : "status-dot-stale"}`
@@ -568,8 +569,9 @@
   function updateRefreshedAt() {
     const date = new Date(state.lastUpdateMs);
     const use24 = byId("setting-time-format")?.value !== "12h";
+    // A time is enough for "updated at": the page is open today.
     const text = use24
-      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour12: false})}`
+      ? date.toLocaleTimeString([], {hour12: false})
       : date.toLocaleTimeString();
     setText("refreshed-at", text);
   }
@@ -628,7 +630,8 @@
   function renderTopBar(status, health) {
     if (!state.appState?.active_run) {
       setClassName("topbar-status-dot", "status-dot status-dot-waiting");
-      setText("topbar-status-text", "ready");
+      setText("topbar-status-text", "Ready");
+      byId("sidebar-progress")?.setAttribute("data-run", "");
       setText("topbar-stage", "configure a simulation");
       setText("topbar-step", "—");
       setText("topbar-total", "—");
@@ -641,7 +644,18 @@
       setText("topbar-run-title", "No active study");
       return;
     }
-    const statusName = String(health.state || status.status || "waiting").toLowerCase();
+    let statusName = String(health.state || status.status || "waiting").toLowerCase();
+    // A study with no live record (finished before it kept one, or a study
+    // of several runs) is said from the phases it recorded.
+    const quiet = ["unknown", "waiting", "stale", ""];
+    if (quiet.includes(statusName) && quiet.includes(String(status.status || "").toLowerCase())) {
+      const phases = (state.results?.phases || []).map((p) => String(p.status || "").toLowerCase());
+      if (phases.some((s) => ["error", "failed"].includes(s))) statusName = "failed";
+      else if (phases.some((s) => ["ok", "complete", "completed"].includes(s))
+        && phases.every((s) => ["ok", "complete", "completed", "skipped", "not run", "not-run"].includes(s))) {
+        statusName = "completed";
+      }
+    }
     // Pausing the browser's updates means something only while there is
     // something to update: a finished study offered "Pause" beside its
     // results. Kept while paused, so there is a way to resume.
@@ -651,19 +665,41 @@
         || !!state.appState?.process_running;
       pause.hidden = !live && !state.paused;
     }
-    const dotClass = stateDotClass(statusName);
-    setClassName("topbar-status-dot", `status-dot ${dotClass}`);
-    setText("topbar-status-text", statusName);
+    // The progress card is for a run going on, or one that stopped short:
+    // where it is or where it stopped, and for the second, what would fix
+    // it. A finished study's card above says it finished.
+    const run = runState(status, statusName);
+    // The card's word is where the run is (running, stopped, failed);
+    // for a finished run, the health verdict's.
+    const word = run === "running" ? String(status.status || "running") : (run || statusName);
+    setText("topbar-status-text", statusWord(word));
+    // Its dot: live while it runs, green once it finished well, red when
+    // it failed, grey otherwise (stopped, waiting, no recent word).
+    const finished = !run && ["ok", "completed", "complete"].includes(statusName);
+    setClassName("topbar-status-dot", `status-dot ${run === "running" ? "status-dot-live"
+      : run === "failed" ? "status-dot-error"
+      : run === "stopped" ? "status-dot-waiting"
+      : finished ? "status-dot-completed" : stateDotClass(statusName)}`);
+    byId("sidebar-progress")?.setAttribute("data-run", run);
     // A run that has not reported a stage has not reached one; it is
     // starting. It is not a run whose stage cannot be determined.
-    setText("topbar-stage", status.stage || "starting");
+    const stage = stageWord(status.stage) || "Starting";
+    setText("topbar-stage", run === "stopped" ? `Stopped in ${stage}`
+      : run === "failed" ? `Failed in ${stage}` : stage);
     setText("topbar-step", valueOrDash(status.current_step));
     setText("topbar-total", valueOrDash(status.total_planned_steps));
     const pct = progressPercent(status);
     setText("topbar-progress", pct != null ? `${pct.toFixed(1)}%` : "—");
     setText("topbar-eta", computeETA(status));
 
-    setText("sidebar-platform", status.platform || state.simManifest.platform || "—");
+    const platform = status.platform || state.simManifest.platform || "";
+    setText("sidebar-platform", platform || "\u2014");
+    // No platform recorded: the card's line ends at the state.
+    const said = byId("sidebar-platform");
+    if (said) {
+      said.hidden = !platform;
+      if (said.previousElementSibling) said.previousElementSibling.hidden = !platform;
+    }
     setTextWithTooltip("sidebar-output-folder", state.outputDir || "—");
     byId("open-output")?.setAttribute(
       "title", state.outputDir ? `Open ${state.outputDir}` : "Open output folder"
@@ -682,6 +718,41 @@
     setTextWithTooltip("topbar-run-title", name);
     const title = byId("topbar-run-title");
     if (title && state.runId && name !== state.runId) title.title = state.runId;
+  }
+
+  /* The run's state in a word a person reads: the health verdict for a
+   * finished run ("ok" read as a code), the status otherwise. */
+  function statusWord(name) {
+    const words = {
+      ok: "Completed", completed: "Completed", complete: "Completed",
+      running: "Running", starting: "Starting", paused: "Paused",
+      waiting: "Waiting", stale: "No recent updates", warning: "Running, with a warning",
+      failed: "Failed", error: "Failed", stopped: "Stopped", ready: "Ready",
+    };
+    const key = String(name || "").toLowerCase();
+    return words[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : "Ready");
+  }
+
+  /* Whether the progress card shows, and how: a run going on, one that
+   * stopped, one that failed, or none (finished, or nothing open). */
+  function runState(status, statusName) {
+    const raw = String(status.status || "").toLowerCase();
+    if (["failed", "error"].includes(raw) || ["failed", "error"].includes(statusName)) return "failed";
+    if (raw === "stopped" || statusName === "stopped") return "stopped";
+    if (["running", "starting", "paused"].includes(raw) || state.appState?.process_running) {
+      return "running";
+    }
+    return "";
+  }
+
+  function stageWord(stage) {
+    const words = {
+      setup: "Setup", minimization: "Minimisation", minimisation: "Minimisation",
+      nvt: "NVT", npt: "NPT", production: "Production", analysis: "Analysis",
+      report: "Report",
+    };
+    const key = normaliseStage(stage);
+    return words[key] || (stage ? String(stage) : "");
   }
 
   /* A system given as a file is named by the file: the sidebar read
@@ -799,6 +870,16 @@
       }
       element.setAttribute("data-state", stageState);
     });
+    // "Stage 5 of 7" in the progress card: the stage reached among those
+    // this run can reach.
+    const shown = $$('.sidebar-stages .stage-step').filter((element) => !element.hidden);
+    const stateOf = (element) => element.getAttribute("data-state");
+    let at = shown.findIndex((element) => ["current", "failed"].includes(stateOf(element)));
+    if (at < 0) {
+      shown.forEach((element, index) => { if (stateOf(element) === "completed") at = index; });
+    }
+    setText("sidebar-stage-count", at >= 0 && shown.length
+      ? `Stage ${at + 1} of ${shown.length}` : "");
   }
 
   /* Why a study open here has no live record, said as what it is. Several

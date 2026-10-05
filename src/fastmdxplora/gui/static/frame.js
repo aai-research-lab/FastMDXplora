@@ -871,11 +871,64 @@
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(path.trim()).then(function () {
             openOut.textContent = "Path copied";
-            setTimeout(function () { openOut.textContent = "Output"; }, 1400);
+            setTimeout(function () { openOut.textContent = "Open the folder"; }, 1400);
           });
         }
       }, true);
     }
+
+    /* The study card opens the studies to switch to; Escape, a click
+     * elsewhere or a choice closes it, and focus goes back to the card. */
+    var studyCard = el("study-card");
+    var studyMenu = el("study-menu");
+    function setStudyMenu(open) {
+      if (!studyCard || !studyMenu) return;
+      studyMenu.hidden = !open;
+      studyCard.setAttribute("aria-expanded", String(open));
+      if (open) {
+        if (window.FastMDXStudies && window.FastMDXStudies.offerRecent) {
+          window.FastMDXStudies.offerRecent();
+        }
+        var first = studyMenu.querySelector(".study-menu-item");
+        if (first) first.focus();
+      }
+    }
+    if (studyCard && studyMenu) {
+      studyCard.addEventListener("click", function (e) {
+        e.stopPropagation();
+        setStudyMenu(studyMenu.hidden);
+      });
+      studyMenu.addEventListener("click", function (e) {
+        var item = e.target.closest(".study-menu-item");
+        var page = item && item.getAttribute("data-menu-page");
+        if (page && window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+          e.preventDefault();
+          window.FastMDXDashboard.navigate(page);
+        }
+        // The folder picker opens over the page; the menu goes first.
+        if (item) setStudyMenu(false);
+        e.stopPropagation();
+      });
+      document.addEventListener("click", function () {
+        if (!studyMenu.hidden) setStudyMenu(false);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !studyMenu.hidden) {
+          setStudyMenu(false);
+          studyCard.focus();
+        }
+      });
+    }
+
+    /* "What would fix it" in the progress card: the Overview, at its card. */
+    $$("[data-fix-link]").forEach(function (a) {
+      a.addEventListener("click", function () {
+        setTimeout(function () {
+          var card = el("fixes-card");
+          if (card && !card.hidden) card.scrollIntoView({ block: "start" });
+        }, 60);
+      });
+    });
 
     var loadStudy = el("load-study");
     var loadPath = el("load-study-path");

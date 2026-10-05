@@ -129,7 +129,10 @@ def _what_shows_at_the_ends(page) -> list[str]:
       const side = document.querySelector('.sidebar');
       side.scrollTop = 140;
       const box = side.getBoundingClientRect(), found = [];
-      for (const y of [box.top + 3, box.top + 60, box.bottom - 4, box.bottom - 30])
+      // Along the top and bottom of each pinned end, however tall it is.
+      const brand = side.querySelector('.sidebar-brand').getBoundingClientRect();
+      const foot = side.querySelector('.sidebar-foot').getBoundingClientRect();
+      for (const y of [box.top + 3, brand.bottom - 4, box.bottom - 4, foot.top + 4])
         for (const x of [box.left + 3, box.left + box.width / 2, box.right - 4]) {
           const at = document.elementFromPoint(x, y);
           found.push(!at ? 'nothing' : at.closest('.sidebar-brand') ? 'brand'

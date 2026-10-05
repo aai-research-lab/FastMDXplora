@@ -458,6 +458,7 @@
         }
         lookedIn = data.root;
         studies = data.studies || [];
+        if (!where) counted(data);
         tagsUsed = data.tags_used || [];
         offerTags();
         if (tagged && !studies.some(function (s) { return hasTag(s, tagged); })) tagged = null;
@@ -503,8 +504,67 @@
     if (location.hash === "#studies") load();
   }
 
+  /* The sidebar's part: how many studies the workspace holds, beside All
+   * studies, and the newest of them in the study card's menu, to switch
+   * to. Asked once, a moment after the page opens, and again when the
+   * All studies page lists the workspace. */
+  var RECENT = 6;
+  var workspace = null;
+  var asked = null;
+
+  function counted(data) {
+    workspace = data && data.ok ? data : null;
+    var count = el("nav-studies-count");
+    if (count) {
+      count.textContent = workspace
+        ? String(workspace.studies.length) + (workspace.more ? "+" : "") : "";
+    }
+  }
+
+  function askTheWorkspace() {
+    if (asked) return asked;
+    asked = fetch("/api/studies")
+      .then(function (r) { return r.json(); })
+      .then(function (data) { counted(data); return workspace; })
+      .catch(function () { asked = null; return null; });
+    return asked;
+  }
+
+  function sameFolder(a, b) {
+    return String(a || "").replace(/\/+$/, "") === String(b || "").replace(/\/+$/, "");
+  }
+
+  function offerRecent() {
+    var list = el("study-menu-list");
+    if (!list) return;
+    askTheWorkspace().then(function (data) {
+      var open = (el("sidebar-output-folder") || {}).textContent || "";
+      var recent = (data && data.studies || []).filter(function (study) {
+        return !sameFolder(study.path, open.trim());
+      }).slice(0, RECENT);
+      if (!recent.length) {
+        list.replaceChildren(make("div", "study-menu-empty muted",
+          data ? "No other study in this workspace." : "The studies could not be listed."));
+        return;
+      }
+      list.replaceChildren.apply(list, recent.map(function (study) {
+        var item = make("button", "study-menu-item study-menu-study");
+        item.type = "button";
+        item.setAttribute("role", "menuitem");
+        item.title = study.path;
+        item.dataset.path = study.path;
+        item.append(make("span", "study-menu-name", study.name),
+          make("span", "study-menu-state", (study.system ? study.system + " \u00b7 " : "") +
+            (study.state || "")));
+        item.addEventListener("click", function () { openStudy(study.path, item); });
+        return item;
+      }));
+    });
+  }
+
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
   else attach();
+  setTimeout(askTheWorkspace, 1500);
 
-  window.FastMDXStudies = { load: load, narrowTo: narrowTo };
+  window.FastMDXStudies = { load: load, narrowTo: narrowTo, offerRecent: offerRecent };
 }());

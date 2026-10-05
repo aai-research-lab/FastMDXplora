@@ -1686,6 +1686,11 @@ def _render_sidebar(
     expansion: str,
     logo: str = "",
 ) -> str:
+    """The GUI's sidebar, as a page with no server can have it: the study as
+    its card (no studies to switch to), its pages, where a run stood when it
+    stopped short, and what the page was written from."""
+    from fastmdxplora.gui.sidebar_icons import icon
+
     by_label = {card.label: card for card in cards}
     facts = [("Written", f'<span data-when="{escape(generated_epoch)}">{escape(generated)}</span>')]
     for label in ("Simulation time", "Wall time"):
@@ -1696,7 +1701,7 @@ def _render_sidebar(
     nav = "\n".join(
         f'<a href="#{key}" class="nav-link{" active" if key == "overview" else ""}" '
         f'data-view-link="{key}"{current if key == "overview" else ""}>'
-        f'<span class="nav-icon" aria-hidden="true"></span><span>{label}</span></a>'
+        f'{icon(key)}<span>{label}</span></a>'
         for key, label in PAGES)
     steps = "\n".join(
         f'<li class="stage-step" data-stage="{escape(step.stage)}" '
@@ -1707,46 +1712,66 @@ def _render_sidebar(
     metrics = "\n".join(
         f'<span class="metric-label">{escape(label)}</span>'
         f'<span class="metric-value mono">{value}</span>' for label, value in facts)
+    # The progress card as the GUI shows it: for a run that was going on,
+    # stopped short or failed when the page was written; none once it
+    # finished.
+    state = str(word or "").lower()
+    run = ("failed" if state in {"failed", "error"} else
+           "stopped" if state == "stopped" else
+           "running" if state in {"running", "starting", "paused"} else "")
+    shown = [step for step in stages if not step.hidden]
+    at = next((k for k, step in enumerate(shown) if step.state in {"current", "failed"}), -1)
+    stage = shown[at].label if at >= 0 else ""
+    heading = (f"Failed in {stage}" if run == "failed" and stage else
+               f"Stopped in {stage}" if run == "stopped" and stage else stage or "Stopped")
+    count = f"Stage {at + 1} of {len(shown)}" if at >= 0 else ""
+    said = {"completed": "Completed", "failed": "Failed", "recorded": "Recorded",
+            "not run": "Not run"}.get(state, state[:1].upper() + state[1:])
+    platform_line = (f'<span class="status-divider" aria-hidden="true">&middot;</span>'
+                     f'<span class="status-platform mono" title="Platform">{escape(platform)}</span>'
+                     if platform else "")
     return f"""<div class="sidebar-brand">
+  {f'<img class="brand-mark" src="{logo}" alt="" width="22" height="22">' if logo else ""}
   <div class="brand-text">
-    <div class="brand-product">FastMDXplora</div>
-    <div class="brand-tagline">{escape(expansion)}</div>
+    <div class="brand-product" title="{escape(expansion)}">FastMDXplora</div>
   </div>
 </div>
 <div class="sidebar-study">
-  <div class="study-label mono">{escape(system_label)}</div>
-  <div class="study-name" title="{escape(title)}">{escape(title)}</div>
-  <div class="study-status" role="status">
-    <span class="status-dot status-dot-{escape(dot)}"></span>
-    <span class="status-text">{escape(word)}</span>
-    <span class="status-divider" aria-hidden="true">·</span>
-    <span class="mono" title="Platform">{escape(platform or DASH)}</span>
-    <span class="status-divider" aria-hidden="true">·</span>
-    <span class="mono" title="Written by the report phase; it does not update">Snapshot</span>
+  <div class="sidebar-study-card" title="{escape(system_label)}">
+    <span class="study-card-body">
+      <span class="study-kicker">Study</span>
+      <span class="study-name" title="{escape(title)}">{escape(title)}</span>
+      <span class="study-status" role="status">
+        <span class="status-dot status-dot-{escape(dot)}"></span>
+        <span class="status-text">{escape(said)}</span>{platform_line}
+        <span class="status-divider" aria-hidden="true">&middot;</span>
+        <span title="Written by the report phase; it does not update">Snapshot</span>
+      </span>
+    </span>
   </div>
-  <div class="study-path mono" title="Output folder">{escape(output_folder)}</div>
 </div>
 <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
-  <div class="nav-heading">Study</div>
+  <div class="nav-heading">This study</div>
   {nav}
 </nav>
-<div class="sidebar-progress">
-  <div class="study-label mono">Progress</div>
-  <ol class="sidebar-stages" aria-label="Stages">
-  {steps}
-  </ol>
+<div class="sidebar-snapshot">
   <div class="sidebar-metrics">
   {metrics}
   </div>
-  <div class="sidebar-controls">
-    <button class="ghost-btn" type="button" data-copy-text="{escape(output_folder)}" title="Copy the output folder's path">Output</button>
-  </div>
+  <button class="ghost-btn" type="button" data-copy-text="{escape(output_folder)}" title="Copy the output folder's path">Copy the folder's path</button>
+</div>
+<div class="sidebar-progress" data-run="{run}">
+  <div class="progress-head"><span class="progress-stage">{escape(heading)}</span></div>
+  <ol class="sidebar-stages" aria-label="Stages">
+  {steps}
+  </ol>
+  <div class="sidebar-metrics"><span class="metric-label">{escape(count)}</span></div>
 </div>
 <div class="sidebar-foot">
   <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false" title="Settings">
     <span class="sidebar-account-avatar" aria-hidden="true">{mark}</span>
     <span class="sidebar-account-text"><span class="sidebar-account-name">FastMDXplora</span></span>
-    <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
+    {icon("gear", "sidebar-account-gear")}
   </button>
 </div>"""
 
