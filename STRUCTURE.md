@@ -19,6 +19,7 @@ FastMDXplora/
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
 │       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
 │       ├── replaced.py            # What a phase run again replaces, and what it leaves stale
+│       ├── again.py               # What can be run again on a study, and the command that does it
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
 │       ├── movie_maker.py         # `fastmdx movie`: a movie made by the Viewer in a browser with no window
 │       ├── advisories.py          # What is worth knowing before a run starts, not after
@@ -147,6 +148,7 @@ FastMDXplora/
 │       │   ├── figure_provenance.py  # What made each figure, and the command that makes it again
 │       │   ├── report_page.py     # The report as a document, in the page
 │       │   ├── browse.py          # Walking the filesystem from the page; what is a study
+│       │   ├── again_view.py      # What the GUI offers to run again on the study on screen
 │       │   ├── directory_inspect.py  # What is in a folder, and what can be done with it
 │       │   ├── config_builder.py  # What the page holds as a config file, checked
 │       │   ├── run_from_config.py # Run what the page describes, from the file it would give
@@ -162,7 +164,7 @@ FastMDXplora/
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css, dashboard.js,
 │       │   │                      #   frame.js (columns, side panel, theme), studies.js,
-│       │   │                      #   run-builder.js, file-picker.js, report-page.js,
+│       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
 │       │   │                      #   series-chart.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, charts.js,
 │       │   │                      #   molecule-viewer.js, and the viewer:

@@ -799,6 +799,14 @@ def make_handler(
 
                 self._send_json(stopping_payload(root))
                 return
+            if path == "/api/again":
+                # What can be run again on the study on screen, and why not,
+                # with the analyses it ran last and those this release has.
+                # Not answered beyond loopback, like the POST it offers.
+                from fastmdxplora.gui.again_view import again_payload
+
+                self._send_json(again_payload(root))
+                return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its
                 # price. Not answered beyond loopback: it names the
@@ -1322,6 +1330,24 @@ def make_handler(
                     return
                 self._send_json(app_runtime.run_a_fix(
                     asked.get("index"), dashboard_url=self.headers.get("Origin")))
+                return
+            if path == "/api/again":
+                # A study's analysis or report run again in its folder
+                # (`fastmdxplora.again`). It starts work on this machine, so
+                # loopback only, like every route not listed open; the page
+                # asks the person first.
+                asked = payload if isinstance(payload, dict) else {}
+                self._send_json(app_runtime.run_again(
+                    asked.get("phases") or [], asked.get("analyses"),
+                    dashboard_url=self.headers.get("Origin")))
+                return
+            if path == "/api/report/write":
+                # The report phase alone on the study open, from its records.
+                # It starts work on this machine, so it needs the machine's
+                # trust, which it has only on loopback, like every route not
+                # listed open. The page asks the person first.
+                self._send_json(app_runtime.write_the_report_again(
+                    dashboard_url=self.headers.get("Origin")))
                 return
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import write_conversation

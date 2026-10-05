@@ -1253,8 +1253,14 @@
                 download
                 hidden
               >Download all SVG figures</a>
+              <!-- The study's analyses run again in its folder, from its
+                   records (analyze-again.js, again_view.py). -->
+              <button type="button" class="ghost-btn" id="analysis-again" hidden
+                      aria-controls="analysis-again-ask" aria-expanded="false"
+                      title="Analyze this study's frames again, with the analyses you choose, simulating nothing">Analyze again</button>
             </div>
           </div>
+          <section class="card again-ask" id="analysis-again-ask" aria-label="Analyze again" hidden></section>
           <div class="quick-actions" id="analysis-quick-actions" hidden></div>
           <!-- A study of several runs: the runs side by side
                (runs-compared.js). Hidden for a study of one run. -->
@@ -1292,8 +1298,15 @@
               <h1 class="page-title">Report</h1>
               <div class="page-subtitle" id="report-subtitle">The study, written up.</div>
             </div>
-            <div class="page-header-actions" id="report-downloads"></div>
+            <div class="page-header-actions">
+              <div class="page-header-actions" id="report-downloads"></div>
+              <!-- The report phase alone on the study open, from its records
+                   and the report settings it recorded (report-page.js). -->
+              <button type="button" class="ghost-btn" id="report-write" hidden
+                      title="Write the report again from this study's records, simulating and analysing nothing">Write it again</button>
+            </div>
           </div>
+          <div class="fix-actions report-write-ask" id="report-write-ask" role="status" hidden></div>
           <div id="report-notices" class="report-notices" hidden></div>
           <div class="empty-state" id="report-empty">
             <p>No report yet. The report phase writes one at the end of a run.</p>
@@ -1603,6 +1616,7 @@
   <script src="/static/agent-panel.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>
+    <script src="/static/analyze-again.js"></script>
     <script src="/static/dashboard.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>

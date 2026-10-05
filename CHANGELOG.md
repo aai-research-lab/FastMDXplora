@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Analyze again and Write it again, from the GUI
+
+**The Analysis page's Analyze again** runs the study open's analyses again
+in its folder: the analyses it ran last offered ticked and every other one
+this release has to add, what is written again and what is kept in
+`previous/` said before anything starts, and the analyses shown as they are
+written. It runs `fastmdx analyze --output <study> --rerun`, or `fastmdx
+explore --include-phase analysis report --rerun` where the study has a
+report, which is then written again too. A study of several runs is
+analysed run by run, and its comparison built again. **Write it again** on
+the Report page runs `fastmdx report --output <study> --rerun`, from the
+report settings the study recorded, and writes each run's report for a
+study of several. The GUI ran a study's phases only into a new, empty
+folder.
+
 ### The lab's mark, and a sidebar that covers what scrolls under it
 
 **The AAi Research Lab's logo is the tab's icon and the avatar at the foot
